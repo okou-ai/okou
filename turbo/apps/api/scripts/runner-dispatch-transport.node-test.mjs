@@ -8,7 +8,6 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createSecureContext,
@@ -323,8 +322,8 @@ test(
 );
 
 test(
-  "shares the socket across reserved and direct POSTs after an idle gap",
-  { timeout: 12_000 },
+  "shares the socket across reserved and direct POSTs once idle",
+  { timeout: 5000 },
   async (t) => {
     const pool = createRunnerDispatchPool();
     try {
@@ -335,9 +334,30 @@ test(
           reserve(transport, "retained", origin, t.signal);
           await peer.firstHandshake;
           assert.deepEqual(peer.requestPaths, []);
-          peer.releaseHandshake();
-          await send(transport, origin);
-          await delay(5500, undefined, { signal: t.signal });
+          const idleTimeout = Promise.withResolvers();
+          const schedule = globalThis.setTimeout;
+          const timerObserver = t.mock.method(
+            globalThis,
+            "setTimeout",
+            (callback, milliseconds, ...args) => {
+              const timer = schedule(callback, milliseconds, ...args);
+              // Undici 7.30.2 uses a native parser timer when HTTP/1.1 becomes idle.
+              if (callback.name === "onParserTimeout") {
+                idleTimeout.resolve(milliseconds);
+              }
+              return timer;
+            },
+          );
+          try {
+            peer.releaseHandshake();
+            const [, milliseconds] = await Promise.all([
+              send(transport, origin),
+              awaitWithSignal(idleTimeout.promise, t.signal),
+            ]);
+            assert.equal(milliseconds, 30_000);
+          } finally {
+            timerObserver.mock.restore();
+          }
           await send(transport, origin + "/next");
           assert.deepEqual(peer.requestPaths, ["/", "/next"]);
           assert.deepEqual(peer.bodies, [dispatchBody, dispatchBody]);
