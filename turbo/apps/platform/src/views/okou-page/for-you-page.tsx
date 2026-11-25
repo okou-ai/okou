@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -28,10 +28,8 @@ import {
 import {
   browseForYou$,
   finishForYouPaginationOnRef$,
-  forYouCardMinHeight$,
   forYouDeck$,
   forYouPagination$,
-  measureForYouCardOnRef$,
   swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -46,6 +44,7 @@ import {
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
+import { FOR_YOU_CARD_GROUND } from "./for-you-card-heading.tsx";
 import {
   forYouCover$,
   forYouPaintedCover$,
@@ -98,8 +97,13 @@ const STACK_LAYERS = [
   "z-2 translate-y-4 scale-x-[0.96] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
 ] as const;
 
-const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-10";
+// Every card fills the deck, so the deck keeps one shape as it pages. A card
+// being dragged follows the pointer through `--for-you-drag-x`, which the
+// departure animation also starts from.
+const STACK_CARD = cn(
+  "@container/suggestion col-start-1 row-start-1 flex min-h-0 origin-[50%_85%] touch-pan-y flex-col rounded-surface border-border shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] data-dragging:cursor-grabbing data-dragging:select-none data-dragging:[transform:translateX(var(--for-you-drag-x,0px))]",
+  FOR_YOU_CARD_GROUND,
+);
 
 function SuggestionSendStatus({
   entry,
@@ -117,8 +121,6 @@ function SuggestionSendStatus({
 function ForYouStack() {
   const deck = useLastResolved(forYouDeck$);
   const pagination = useGet(forYouPagination$);
-  const minHeight = useGet(forYouCardMinHeight$);
-  const measureCard = useSet(measureForYouCardOnRef$);
   const finishPagination = useSet(finishForYouPaginationOnRef$);
   if (!deck) {
     return null;
@@ -134,15 +136,8 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="pointer-events-none relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
-      <div
-        className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
-        style={
-          {
-            "--for-you-card-min-height": `${String(minHeight)}px`,
-          } as CSSProperties
-        }
-      >
+    <div className="pointer-events-none relative">
+      <div className="relative isolate grid h-(--for-you-card)">
         {STACK_LAYERS.slice(0, Math.max(0, cards.length - 1)).map((layer) => {
           return (
             <Card
@@ -154,6 +149,16 @@ function ForYouStack() {
             />
           );
         })}
+        {complete && (
+          <Card
+            className={cn(
+              STACK_CARD,
+              "pointer-events-auto relative items-center justify-center overflow-y-auto p-8",
+            )}
+          >
+            <SuggestionsComplete celebrate={settled.length > 0} />
+          </Card>
+        )}
         {displayed.map((card) => {
           const { entry, outcome } = card;
           const outgoing = card === departure?.from;
@@ -162,36 +167,24 @@ function ForYouStack() {
             <Card
               key={entry.item.id}
               data-slot="suggestion-stack-card"
-              ref={
-                outgoing ? finishPagination : active ? measureCard : undefined
-              }
+              ref={outgoing ? finishPagination : undefined}
               inert={!active}
               aria-hidden={!active || undefined}
               className={cn(
                 STACK_CARD,
                 outcome
-                  ? cn(
-                      "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
-                      // The last card keeps its layout footprint while it
-                      // flies away, so completion does not move its origin.
-                      complete && entry === settled.at(-1)?.entry
-                        ? "relative"
-                        : "absolute",
-                    )
+                  ? // A handled card sinks away where it stood.
+                    "pointer-events-none absolute inset-0 z-5 motion-safe:animate-card-settle motion-reduce:invisible"
                   : outgoing && departure
                     ? cn(
-                        "relative z-5 pointer-events-none",
+                        "pointer-events-none relative z-5",
                         departure.direction === "next"
                           ? "motion-safe:animate-card-page-next-out"
                           : "motion-safe:animate-card-page-previous-out",
                       )
-                    : cn(
-                        "pointer-events-auto relative z-4",
-                        departure &&
-                          (departure.direction === "next"
-                            ? "motion-safe:animate-card-page-next-in"
-                            : "motion-safe:animate-card-page-previous-in"),
-                      ),
+                    : // The card in front rises out of the deck, whether it
+                      // was paged to or follows a handled one.
+                      "pointer-events-auto relative z-4 motion-safe:animate-card-rise",
               )}
             >
               <ForYouCardContents entry={entry} active={active}>
@@ -222,89 +215,131 @@ function ForYouCardContents({
   const read = useSet(entry.readOnRef$);
   const swipe = useSet(swipeForYouOnRef$);
   return (
-    <div ref={active ? read : undefined} className="flex flex-1 flex-col">
-      <div ref={active ? swipe : undefined} className="flex flex-1 flex-col">
+    <div
+      ref={active ? read : undefined}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div
+        ref={active ? swipe : undefined}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         {children}
       </div>
     </div>
   );
 }
 
-function ForYouNavigation() {
+type PagerDirection = "previous" | "next";
+
+/** Paging moves through the whole stack, wrapping round at either end. */
+function useForYouPager() {
   const { t } = useTranslation();
   const cards = useLastResolved(forYouDeck$)?.cards ?? [];
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
+  if (cards.length < 2) {
+    return [];
+  }
+  return [
+    {
+      card: cards.at(-1),
+      label: t(($) => {
+        return $.chat.agentSuggestions.forYou.previous;
+      }),
+      Icon: ChevronLeft,
+      direction: "previous" as PagerDirection,
+    },
+    {
+      card: cards[1],
+      label: t(($) => {
+        return $.chat.agentSuggestions.forYou.next;
+      }),
+      Icon: ChevronRight,
+      direction: "next" as PagerDirection,
+    },
+  ].flatMap(({ card, ...item }) => {
+    return card
+      ? [
+          {
+            ...item,
+            id: card.entry.item.id,
+            browse: (event: MouseEvent<HTMLAnchorElement>) => {
+              if (shouldHandleLinkClick(event)) {
+                // This changes the reading position in the current visit;
+                // Router navigation would reload its snapshot.
+                event.preventDefault();
+                detach(
+                  browse(card.entry.item.id, item.direction, signal),
+                  Reason.DomCallback,
+                );
+              }
+            },
+          },
+        ]
+      : [];
+  });
+}
+
+/** On a wide page the paging controls stand on the card's flanks. */
+function ForYouNavigation() {
+  const { t } = useTranslation();
+  const pager = useForYouPager();
+  if (pager.length === 0) {
+    return null;
+  }
   return (
-    <>
-      {cards.length > 1 && (
-        <nav
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.homeCard.navigation;
-          })}
-          className={cn(
-            // Paging moves through the whole stack, so the controls sit
-            // outside the card: on its flanks when the page has room, below
-            // it otherwise.
-            "-mt-3 flex items-center justify-end gap-2",
-            "@min-[56rem]/for-you:pointer-events-none @min-[56rem]/for-you:absolute @min-[56rem]/for-you:inset-0 @min-[56rem]/for-you:m-0",
-          )}
-        >
-          {[
-            {
-              card: cards.at(-1),
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.previous;
-              }),
-              Icon: ChevronLeft,
-              direction: "previous" as const,
-            },
-            {
-              card: cards[1],
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.next;
-              }),
-              Icon: ChevronRight,
-              direction: "next" as const,
-            },
-          ].map(({ card, label, Icon, direction }) => {
-            return card ? (
-              <Link
-                key={label}
-                pathname={ROUTES.forYou}
-                options={{
-                  searchParams: new URLSearchParams({
-                    suggestion: card.entry.item.id,
-                  }),
-                }}
-                aria-label={label}
-                onClick={(event) => {
-                  if (shouldHandleLinkClick(event)) {
-                    // This changes the reading position in the current
-                    // visit; Router navigation would reload its snapshot.
-                    event.preventDefault();
-                    detach(
-                      browse(card.entry.item.id, direction, signal),
-                      Reason.DomCallback,
-                    );
-                  }
-                }}
-                className={cn(
-                  buttonVariants({ variant: "neutral", size: "icon-lg" }),
-                  "pointer-events-auto rounded-full bg-card shadow-surface",
-                  "@min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
-                  direction === "previous"
-                    ? "@min-[56rem]/for-you:-left-17"
-                    : "@min-[56rem]/for-you:-right-17",
-                )}
-              >
-                <Icon aria-hidden className="size-4" />
-              </Link>
-            ) : null;
-          })}
-        </nav>
-      )}
-    </>
+    <nav
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.homeCard.navigation;
+      })}
+      className="pointer-events-none absolute inset-0 hidden @min-[56rem]/for-you:block"
+    >
+      {pager.map(({ id, label, Icon, direction, browse }) => {
+        return (
+          <Link
+            key={label}
+            pathname={ROUTES.forYou}
+            options={{
+              searchParams: new URLSearchParams({ suggestion: id }),
+            }}
+            aria-label={label}
+            onClick={browse}
+            className={cn(
+              buttonVariants({ variant: "neutral", size: "icon-lg" }),
+              "pointer-events-auto absolute top-1/2 -translate-y-1/2 rounded-full bg-card shadow-surface active:scale-96",
+              direction === "previous" ? "-left-16" : "-right-16",
+            )}
+          >
+            <Icon aria-hidden className="size-4" />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** On a narrower page they sit beside the counter, which never moves. */
+function ForYouHeaderPager() {
+  const pager = useForYouPager();
+  return (
+    <span className="-ml-2 flex shrink-0 items-center gap-0.5 @min-[56rem]/for-you:hidden">
+      {pager.map(({ id, label, Icon, browse }) => {
+        return (
+          <Link
+            key={label}
+            pathname={ROUTES.forYou}
+            options={{
+              searchParams: new URLSearchParams({ suggestion: id }),
+            }}
+            aria-label={label}
+            onClick={browse}
+            className="inline-flex size-7 items-center justify-center rounded-lg text-[rgb(var(--for-you-ink)/0.9)] outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 active:bg-[rgb(var(--for-you-ink)/0.14)]"
+          >
+            <Icon aria-hidden className="size-4" />
+          </Link>
+        );
+      })}
+    </span>
   );
 }
 
@@ -316,11 +351,14 @@ function ForYouCover() {
   const markPainted = useSet(markForYouCoverPainted$);
   if (!cover) {
     return (
-      <Skeleton className="-mx-4 h-58 shrink-0 rounded-none sm:-mx-8 sm:h-56" />
+      <Skeleton className="-mx-4 aspect-[5/2] max-h-75 shrink-0 rounded-none sm:-mx-8" />
     );
   }
   return (
-    <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
+    // At most 300px of the picture shows, anchored to its foot, so the sky gives
+    // way first and the scene's ground always stays; the page continues below
+    // in the cover's own ground color.
+    <div className="group/cover relative -mx-4 aspect-[5/2] max-h-75 shrink-0 sm:-mx-8">
       <img
         data-slot="for-you-cover"
         src={cover.src}
@@ -329,17 +367,25 @@ function ForYouCover() {
         onLoad={() => {
           markPainted(cover.id);
         }}
-        className="pointer-events-none size-full select-none object-cover object-[50%_65%]"
+        className="pointer-events-none size-full select-none object-cover object-bottom"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[22%] bg-[linear-gradient(transparent,rgb(var(--for-you-ground)))]"
+      />
+      {/* Night dims the whole scene, picture and ground alike. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 hidden bg-black/34 dark:block"
       />
       <Popover>
-        {/* The control sits in the banner's lower corner only when the page is
-            wide enough for it to clear the card; otherwise it moves to the top. */}
+        {/* The control sits under the header's right end, clear of the card. */}
         <PopoverTrigger
           render={
             <Button
               variant="neutral"
               size="sm"
-              className="absolute top-24 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:top-17 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
+              className="absolute top-17 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:right-6"
             />
           }
         >
@@ -564,6 +610,7 @@ function ForYouHeader() {
             {cards.length}
           </span>
         )}
+        <ForYouHeaderPager />
         <span role="status" className="sr-only">
           {deck
             ? t(
@@ -581,64 +628,86 @@ function ForYouHeader() {
   );
 }
 
+// The deck stands on the scene: from the cover's lower third (where its
+// foreground ends on the covers) down to the page's foot, and never less than
+// 60% of the page, so a short window may cover that foreground. The cover
+// shows the picture at its own proportions up to 300px and the card is at most
+// 680px tall. Container units read the page, which is a size container.
+const FOR_YOU_STAGE = [
+  "relative mx-auto w-full max-w-176 [--for-you-pad:1rem] sm:[--for-you-pad:2rem]",
+  "[--for-you-width:calc(100cqw_+_2_*_var(--for-you-pad))]",
+  "[--for-you-cover:min(calc(var(--for-you-width)_*_0.4),300px)]",
+  "[--for-you-top:max(4.5rem,min(calc(var(--for-you-cover)_-_var(--for-you-width)_*_0.12),calc(40cqh_-_1rem)))]",
+  "[--for-you-card:max(20rem,min(calc(100cqh_-_var(--for-you-top)_-_1rem),680px))]",
+  "mt-[calc(var(--for-you-top)_-_var(--for-you-cover))]",
+].join(" ");
+
+// Before a cover is known the page keeps the brand's Off White.
+const DEFAULT_GROUND = "248 245 243";
+
 export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useLastLoadable(forYouDeck$);
+  const cover = useLastResolved(forYouPaintedCover$);
   const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
-  const cards = deck.state === "hasData" ? deck.data.cards : [];
   const settled = deck.state === "hasData" ? deck.data.settled : [];
-  const complete = deck.state === "hasData" && cards.length === 0;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
-      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8">
+      <main
+        data-slot="for-you-page"
+        style={
+          {
+            "--for-you-ground": cover?.ground ?? DEFAULT_GROUND,
+          } as CSSProperties
+        }
+        className="relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[rgb(var(--for-you-ground))] px-4 pb-safe-offset-8 transition-[background-color] duration-500 [container-name:for-you] [container-type:size] sm:px-8 dark:bg-[color-mix(in_srgb,rgb(var(--for-you-ground))_66%,black)]"
+      >
         {/* The header sits on the banner and scrolls away with it. */}
         <ForYouHeader />
         <ForYouCover />
-        {deck.state === "hasError" ? (
-          <div
-            role="alert"
-            className="m-auto flex flex-col items-center gap-4 rounded-3xl bg-card p-6"
-          >
-            <p className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.global.errors.requestFailed;
-              })}
-            </p>
-            <Button
-              variant="neutral"
-              disabled={reloading.state === "loading"}
-              onClick={() => {
-                detach(reload(signal), Reason.DomCallback);
-              }}
+        <div className={FOR_YOU_STAGE}>
+          {deck.state === "hasError" ? (
+            <div
+              role="alert"
+              className={cn(
+                "flex h-(--for-you-card) flex-col items-center justify-center gap-4 rounded-surface border border-border p-6 shadow-surface",
+                FOR_YOU_CARD_GROUND,
+              )}
             >
-              {t(($) => {
-                return $.chat.errors.recovery.tryAgain;
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.global.errors.requestFailed;
+                })}
+              </p>
+              <Button
+                variant="neutral"
+                disabled={reloading.state === "loading"}
+                onClick={() => {
+                  detach(reload(signal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.chat.errors.recovery.tryAgain;
+                })}
+              </Button>
+            </div>
+          ) : deck.state !== "hasData" ? (
+            <div
+              role="status"
+              aria-label={t(($) => {
+                return $.chat.agentSuggestions.forYou.loading;
               })}
-            </Button>
-          </div>
-        ) : deck.state !== "hasData" ? (
-          <div
-            role="status"
-            aria-label={t(($) => {
-              return $.chat.agentSuggestions.forYou.loading;
-            })}
-            className="m-auto w-full max-w-160"
-          >
-            <Skeleton className="h-125 w-full rounded-3xl" />
-          </div>
-        ) : (
-          <>
-            {complete && (
-              <SuggestionsComplete
-                celebrate={settled.length > 0}
-                className="absolute inset-x-4 top-58 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
-              />
-            )}
+            >
+              <Skeleton className="h-(--for-you-card) w-full rounded-surface" />
+            </div>
+          ) : (
             <ForYouStack />
-          </>
-        )}
-        <div className="relative mx-auto w-full max-w-160 shrink-0 space-y-3">
+          )}
+        </div>
+        {/* The card fills the page, so notices float over the header, clear
+            of the card's own controls, until they are closed. */}
+        <div className="pointer-events-none absolute inset-x-4 top-3 z-20 mx-auto max-w-160 space-y-3 sm:inset-x-8 [&>*]:pointer-events-auto">
           <SuggestionSaveErrors />
           {settled.map((card) => {
             return card.kind === "suggestion" &&

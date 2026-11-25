@@ -1279,3 +1279,93 @@ test("A member opens the preloaded unread suggestion without waiting for the det
     offline.resolve();
   }
 });
+
+test("Folding the inline direction keeps what was written until it opens again", async () => {
+  const item = proposal("Supply forecast");
+  feed([item]);
+  await openDeck();
+  const card = await activeCard(item);
+  click(await findFastControl("button", "What do you have in mind?", card));
+  const region = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const edit = await within(region).findByRole("textbox", { name: /message/i });
+  await appendDirection(edit, "Expedite shipping");
+  expect(
+    queryFastControl("button", "Prepare Supply forecast", card),
+  ).not.toBeInTheDocument();
+
+  click(await findFastControl("button", "Collapse", region));
+
+  await waitFor(() => {
+    expect(region).not.toBeVisible();
+  });
+  await expect(
+    findFastControl("button", "Prepare Supply forecast", card),
+  ).resolves.toBeInTheDocument();
+  click(await findFastControl("button", "What do you have in mind?", card));
+  await waitFor(() => {
+    expect(region).toBeVisible();
+  });
+  expect(edit).toHaveTextContent("Expedite shipping");
+});
+
+test("Escape folds the inline direction and returns focus to its entry", async () => {
+  const item = proposal("Packing list");
+  feed([item]);
+  await openDeck();
+  const card = await activeCard(item);
+  click(await findFastControl("button", "What do you have in mind?", card));
+  const region = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const edit = await within(region).findByRole("textbox", { name: /message/i });
+  await appendDirection(edit, "Add the spare parts");
+
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(region).not.toBeVisible();
+  });
+  const entry = await findFastControl(
+    "button",
+    "What do you have in mind?",
+    card,
+  );
+  await waitFor(() => {
+    expect(entry).toHaveFocus();
+  });
+});
+
+test("Each direction says whether it sends now or drafts in its chat", async () => {
+  const item = proposal("Buyer review");
+  const source = crypto.randomUUID();
+  item.content.options.push({
+    ...item.content.options[0]!,
+    id: "continue",
+    label: "Continue with the buyer",
+    threadId: source,
+    draft: {
+      draftAttachments: null,
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "chat_thread", threadId: source, titleSnapshot: "Ledger" },
+          { type: "text", text: "Continue with the buyer" },
+        ],
+      },
+    },
+  });
+  feed([item]);
+  await openDeck();
+  const card = await activeCard(item);
+
+  const send = await findFastControl("button", "Prepare Buyer review", card);
+  const draft = await findFastControl(
+    "button",
+    "Continue with the buyer",
+    card,
+  );
+  expect(send).toHaveTextContent("Send to a new chat");
+  expect(draft).toHaveTextContent("Draft in Ledger");
+});

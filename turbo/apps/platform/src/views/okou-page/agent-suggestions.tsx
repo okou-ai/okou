@@ -3,14 +3,15 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   Check,
+  ChevronDown,
   Loader2,
+  MessageSquare,
   X,
   CircleCheck,
   CircleMinus,
   BellOff,
   EyeOff,
   SquarePen,
-  Send,
 } from "lucide-react";
 import { Button, buttonVariants, cn } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
@@ -22,48 +23,84 @@ import {
   submitSuggestionFeedbackWithUndo$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
+  foldSuggestionDirection$,
+  foldSuggestionDirectionOnRef$,
   openSuggestionDirection$,
   startAgentSuggestion$,
-  suggestionDirectionItemId$,
   suggestionDirectionComposer$,
+  suggestionDirectionEntryOnRef$,
+  suggestionDirectionFolded$,
+  suggestionDirectionItemId$,
+  suggestionDirectionReopened$,
 } from "../../signals/okou-page/agent-suggestions.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { captureSuggestionCard } from "../../lib/posthog.ts";
 import { Link } from "../router/link.tsx";
-import { ForYouCardHeading } from "./for-you-card-heading.tsx";
+import { ForYouCardLayout } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
 
-// Option rows and the direction trigger share one shape. The rows and the
-// feedback group hang out of the card's content box by this 16px inset, so
-// their text lines up with the heading. Hover lays the state overlay over the
-// row's own fill, so the row darkens instead of losing it.
-const SUGGESTION_ROW =
-  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
+// Directions are white cards standing on the card's grey ground, a hairline
+// each, so their outline shows without a shadow. Hover lays the state overlay
+// over the card's own fill instead of replacing it.
+const DIRECTION_CARD =
+  "relative w-full rounded-xl border border-border bg-card text-foreground transition-[border-color,background-color,transform] duration-150 hover:bg-card [&:hover]:border-control-border [&:hover]:bg-state-hover-overlay focus-visible:ring-offset-muted dark:focus-visible:ring-offset-background";
 
-// An option is a raised button on the card; the direction trigger stays a
-// quiet input-like row in the muted fill, the gray ramp's Linen stop that the
-// brand's Off White sits on. The option's outline is a real hairline border on
-// a pointer-transparent layer, so it rounds to device pixels exactly like the
-// feedback buttons' border beside it, yet takes no width: the label keeps the
-// 16px inset the heading aligns to.
-const SUGGESTION_OPTION =
-  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-3xl after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
-
-const SUGGESTION_DIRECTION_TRIGGER =
-  "bg-muted text-muted-foreground hover:bg-muted";
+/** The line above a direction's label says what choosing it does. */
+function SuggestionOptionAction({
+  option,
+  chat,
+}: {
+  readonly option: SuggestionOption;
+  readonly chat: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "mb-1 flex min-w-0 items-center gap-1.5 text-xs leading-4 font-medium",
+        option.threadId
+          ? "text-muted-foreground"
+          : "text-primary-700 dark:text-primary-200",
+      )}
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-current" />
+      <span className="truncate">
+        {option.threadId === null
+          ? t(($) => {
+              return $.chat.agentSuggestions.sendNew;
+            })
+          : chat
+            ? t(
+                ($) => {
+                  return $.chat.agentSuggestions.draftIn;
+                },
+                { chat },
+              )
+            : t(($) => {
+                return $.chat.agentSuggestions.draftInExistingChat;
+              })}
+      </span>
+    </span>
+  );
+}
 
 function SuggestionOptionContent({
   option,
+  chat,
 }: {
   readonly option: SuggestionOption;
+  readonly chat: string | null;
 }) {
   return (
-    <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <span className="leading-6">{option.label}</span>
+    <span className="flex min-w-0 flex-col wrap-break-word">
+      <SuggestionOptionAction option={option} chat={chat} />
+      <span className="text-sm leading-5 font-medium">{option.label}</span>
       {option.description && (
-        <span className="text-[13px] leading-5 text-muted-foreground">
+        <span className="mt-0.5 text-sm leading-5 text-muted-foreground">
           {option.description}
         </span>
       )}
@@ -225,12 +262,17 @@ function SuggestionDirectionEntry({
 }) {
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
+  const entryRef = useSet(suggestionDirectionEntryOnRef$);
   const signal = useGet(pageSignal$);
   return (
     <Button
+      ref={entryRef}
       type="button"
       variant="quiet"
-      className={cn(SUGGESTION_ROW, SUGGESTION_DIRECTION_TRIGGER)}
+      className={cn(
+        DIRECTION_CARD,
+        "h-11 justify-between gap-3 px-4 text-sm font-normal text-muted-foreground",
+      )}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
       })}
@@ -238,45 +280,82 @@ function SuggestionDirectionEntry({
         detach(open(entry, signal), Reason.DomCallback);
       }}
     >
-      <span className="min-w-0 flex-1 leading-6">
+      <span className="min-w-0 flex-1 truncate text-left">
         {t(($) => {
           return $.chat.agentSuggestions.customPlaceholder;
         })}
       </span>
-      <SquarePen aria-hidden className="shrink-0 text-muted-foreground" />
+      <SquarePen aria-hidden className="shrink-0" />
     </Button>
   );
 }
 
-function SuggestionDirection({
-  entry,
+/** Shows the editor again where it was folded and puts the caret back in it. */
+function FocusReopenedDirection({
+  composer,
 }: {
-  readonly entry: AgentSuggestionEntry;
+  readonly composer: ComposerSignals;
 }) {
-  const itemId = useGet(suggestionDirectionItemId$);
-  return itemId === entry.item.id ? (
-    <SuggestionDirectionComposer />
-  ) : (
-    <SuggestionDirectionEntry entry={entry} />
+  const reopened = useGet(suggestionDirectionReopened$);
+  const focus = useSet(composer.editor.focus$);
+  return (
+    <span
+      key={reopened}
+      hidden
+      ref={(node) => {
+        if (node && reopened > 0) {
+          focus();
+        }
+      }}
+    />
   );
 }
 
-function SuggestionDirectionComposer() {
+function SuggestionDirectionComposer({ folded }: { readonly folded: boolean }) {
   const { t } = useTranslation();
   const prepared = useLoadable(suggestionDirectionComposer$);
+  const fold = useSet(foldSuggestionDirection$);
+  const foldOnRef = useSet(foldSuggestionDirectionOnRef$);
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
+  const label = t(($) => {
+    return $.chat.agentSuggestions.customPlaceholder;
+  });
+  // Folded, the editor stays mounted and hidden, so what was written stays.
   return (
     <section
-      aria-label={t(($) => {
-        return $.chat.agentSuggestions.customPlaceholder;
-      })}
+      ref={foldOnRef}
+      aria-label={label}
       aria-busy={!ready}
+      hidden={folded}
       className="min-w-0"
     >
+      <div className="mb-1.5 flex h-7 items-center justify-between gap-3">
+        <span
+          aria-hidden
+          className="text-xs leading-4 font-medium text-muted-foreground"
+        >
+          {label}
+        </span>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          className="-mr-1.5"
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.collapseDirection;
+          })}
+          onClick={() => {
+            fold(false);
+          }}
+        >
+          <ChevronDown />
+        </Button>
+      </div>
       {!ready && (
-        <div className="flex min-h-14 items-center justify-center rounded-3xl bg-muted">
+        <div className="flex min-h-14 items-center justify-center rounded-xl border border-border bg-card">
           <Loader2
             size={16}
             className="animate-spin text-muted-foreground"
@@ -286,7 +365,7 @@ function SuggestionDirectionComposer() {
       )}
       <div
         className={cn(
-          "grid min-w-0 rounded-3xl",
+          "grid min-w-0 rounded-xl",
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
             : "grid-rows-[0fr] overflow-clip",
@@ -313,6 +392,7 @@ function SuggestionDirectionComposer() {
                 showPendingItems={false}
                 layout="card"
               />
+              <FocusReopenedDirection composer={composer} />
             </div>
           ) : null}
         </div>
@@ -321,22 +401,8 @@ function SuggestionDirectionComposer() {
   );
 }
 
-function SuggestionHeading({
-  entry,
-  active,
-}: {
-  readonly entry: AgentSuggestionEntry;
-  readonly active: boolean;
-}) {
-  const { t } = useTranslation();
-  const { item } = entry;
-  const show = useSet(entry.show$);
-  const recordClick = () => {
-    captureSuggestionCard({
-      eventName: "suggestion_card_action_clicked",
-      properties: { ...show(), action: "view_source" },
-    });
-  };
+/** The chat a card came from, which a draft in that chat lands in. */
+function suggestionSource(item: AgentSuggestionEntry["item"]) {
   const sourceOption = item.content.options.find((option) => {
     return option.threadId !== null;
   });
@@ -351,40 +417,64 @@ function SuggestionHeading({
     sourceParts.find((part) => {
       return part.threadId === sourceOption?.threadId;
     }) ?? sourceParts[0];
-  const sourceThreadId =
+  const threadId =
     sourceOption?.threadId ??
     (sourcePart?.type === "chat_thread" ? sourcePart.threadId : null);
+  const title =
+    sourcePart?.type === "chat_thread" && sourcePart.threadId === threadId
+      ? sourcePart.titleSnapshot
+      : null;
+  return { threadId, title };
+}
+
+function optionChatTitle(option: SuggestionOption) {
+  const part = (option.draft.draftUserMessage?.parts ?? []).find(
+    (candidate) => {
+      return (
+        candidate.type === "chat_thread" &&
+        candidate.threadId === option.threadId
+      );
+    },
+  );
+  return part?.type === "chat_thread" ? part.titleSnapshot : null;
+}
+
+function SuggestionSource({ entry }: { readonly entry: AgentSuggestionEntry }) {
+  const { t } = useTranslation();
+  const show = useSet(entry.show$);
+  const recordClick = () => {
+    captureSuggestionCard({
+      eventName: "suggestion_card_action_clicked",
+      properties: { ...show(), action: "view_source" },
+    });
+  };
+  const source = suggestionSource(entry.item);
+  if (!source.threadId) {
+    return null;
+  }
   return (
-    <ForYouCardHeading
-      id={item.id}
-      title={item.content.title}
-      description={item.content.rationale}
-      active={active}
-      source={
-        sourceThreadId ? (
-          <Link
-            pathname={ROUTES.chat}
-            onClick={recordClick}
-            onAuxClick={(event) => {
-              if (event.button === 1) {
-                recordClick();
-              }
-            }}
-            options={{ pathParams: { threadId: sourceThreadId } }}
-            className="-mx-1.5 -my-0.5 inline-block max-w-full truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
-            aria-label={t(($) => {
-              return $.chat.agentSuggestions.viewSource;
-            })}
-          >
-            {sourcePart?.threadId === sourceThreadId
-              ? sourcePart.titleSnapshot
-              : t(($) => {
-                  return $.chat.agentSuggestions.viewSource;
-                })}
-          </Link>
-        ) : null
-      }
-    />
+    <Link
+      pathname={ROUTES.chat}
+      onClick={recordClick}
+      onAuxClick={(event) => {
+        if (event.button === 1) {
+          recordClick();
+        }
+      }}
+      options={{ pathParams: { threadId: source.threadId } }}
+      className="group/source inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-sm text-xs leading-4 font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.viewSource;
+      })}
+    >
+      <MessageSquare aria-hidden className="size-3.5 shrink-0" />
+      <span className="truncate underline decoration-transparent underline-offset-3 transition-[text-decoration-color] group-hover/source:decoration-control-border">
+        {source.title ??
+          t(($) => {
+            return $.chat.agentSuggestions.viewSource;
+          })}
+      </span>
+    </Link>
   );
 }
 
@@ -399,77 +489,91 @@ export function AgentSuggestionCard({
   const { item } = entry;
   const start = useSet(startAgentSuggestion$);
   const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
+  const directionItemId = useGet(suggestionDirectionItemId$);
+  const folded = useGet(suggestionDirectionFolded$);
   const signal = useGet(pageSignal$);
+  const directionOpen = active && directionItemId === item.id;
+  // While the member writes their own direction, the card keeps its heading
+  // as the context and the offered directions step aside.
+  const writing = directionOpen && !folded;
   return (
     <article
       aria-labelledby={`suggestion-title-${item.id}`}
-      className="flex flex-1 flex-col"
+      className="flex min-h-0 flex-1 flex-col"
     >
-      <SuggestionHeading entry={entry} active={active} />
-      <div className="-mx-4 mt-5 mb-6 flex flex-col gap-3">
-        {item.content.options.map((option, index) => {
-          return (
-            <Button
-              key={option.id}
-              type="button"
-              variant="quiet"
-              className={cn(SUGGESTION_ROW, SUGGESTION_OPTION)}
-              aria-label={option.label}
-              aria-description={[
-                option.description,
-                option.threadId
-                  ? t(($) => {
-                      return $.chat.agentSuggestions.editDraft;
-                    })
-                  : t(($) => {
-                      return $.chat.agentSuggestions.sendNew;
-                    }),
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => {
-                detach(
-                  start(entry, option, index + 1, signal),
-                  Reason.DomCallback,
+      <ForYouCardLayout
+        id={item.id}
+        title={item.content.title}
+        description={item.content.rationale}
+        active={active}
+        source={<SuggestionSource entry={entry} />}
+        dismiss={
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            showTooltip
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.dismiss;
+            })}
+            onClick={() => {
+              detach(
+                submitFeedback(item.id, "dismissed", signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            <X />
+          </Button>
+        }
+        actions={
+          <div className="flex flex-col gap-2">
+            {!writing &&
+              item.content.options.map((option, index) => {
+                return (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    variant="quiet"
+                    className={cn(
+                      DIRECTION_CARD,
+                      "block h-auto px-4 py-3 text-left font-normal whitespace-normal active:scale-[0.99]",
+                    )}
+                    aria-label={option.label}
+                    aria-description={[
+                      option.description,
+                      option.threadId
+                        ? t(($) => {
+                            return $.chat.agentSuggestions.editDraft;
+                          })
+                        : t(($) => {
+                            return $.chat.agentSuggestions.sendNew;
+                          }),
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => {
+                      detach(
+                        start(entry, option, index + 1, signal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    <SuggestionOptionContent
+                      option={option}
+                      chat={optionChatTitle(option)}
+                    />
+                  </Button>
                 );
-              }}
-            >
-              <SuggestionOptionContent option={option} />
-              {option.threadId ? (
-                <SquarePen
-                  aria-hidden
-                  className="shrink-0 text-muted-foreground"
-                />
-              ) : (
-                <Send aria-hidden className="shrink-0 text-muted-foreground" />
-              )}
-            </Button>
-          );
-        })}
-        {active && <SuggestionDirection entry={entry} />}
-      </div>
-      <SuggestionFeedback entry={entry} />
-      {/* Dismissing closes the whole card, so it sits on the card's corner,
-          its icon on the content's right edge. It comes last so ordinary paint
-          order keeps it above the artwork. */}
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-sm"
-        showTooltip
-        aria-label={t(($) => {
-          return $.chat.agentSuggestions.dismiss;
-        })}
-        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
-        onClick={() => {
-          detach(
-            submitFeedback(item.id, "dismissed", signal),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <X />
-      </Button>
+              })}
+            {active && (!directionOpen || folded) && (
+              <SuggestionDirectionEntry entry={entry} />
+            )}
+            {directionOpen && <SuggestionDirectionComposer folded={folded} />}
+          </div>
+        }
+        footer={<SuggestionFeedback entry={entry} />}
+      />
     </article>
   );
 }
@@ -513,21 +617,24 @@ function SuggestionFeedback({
       Icon: EyeOff,
     },
   ];
+  // Turning a suggestion down is quieter than taking it: caption-size quiet
+  // actions in the card's footer, two by two when the card is narrow.
   return (
     <div
       role="group"
       aria-label={t(($) => {
         return $.chat.agentSuggestions.feedbackPrompt;
       })}
-      className="-mx-4 mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
+      className="flex flex-wrap gap-1 @max-[30rem]/suggestion:grid @max-[30rem]/suggestion:grid-cols-2"
     >
       {feedbackActions.map(({ kind, label, Icon }) => {
         return (
           <Button
             key={kind}
             type="button"
-            variant="neutral"
-            className="h-auto min-h-9 gap-1.5 rounded-3xl border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            variant="quiet"
+            size="xs"
+            className="h-7 justify-start gap-1.5 px-2 text-xs font-medium [&_svg]:size-3.5"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}
