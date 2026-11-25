@@ -127,10 +127,7 @@ export const confirmArtifactDeletion$ = command(
     await set(
       session.confirm$,
       () => {
-        if (
-          origin.kind !== "catalog-row" ||
-          get(artifactDeletionSession(origin)) === session
-        ) {
+        if (get(artifactDeletionSession(origin)) === session) {
           set(leaveDeletedArtifactSurface$, origin, signal);
         }
       },

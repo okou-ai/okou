@@ -7,7 +7,7 @@ import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
 import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
-import { apiClient$ } from "./api-client.ts";
+import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
 import {
@@ -18,6 +18,30 @@ import {
 type Settings = zInfer<typeof hostedDomainSettingsSchema>;
 type SiteSignal = Computed<Promise<zInfer<typeof hostedSiteUrlSchema> | null>>;
 function createDomainState(site$: SiteSignal) {
+  const request$ = state<
+    | ((
+        createClient: ApiClientFactory,
+        siteId: string,
+      ) => Promise<Settings | null>)
+    | null
+  >(null);
+  const initialize$ = command(({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(request$, () => {
+      return async (createClient: ApiClientFactory, siteId: string) => {
+        signal.throwIfAborted();
+        const result = await accept(
+          createClient(hostContract).siteDomains({
+            params: { siteId },
+            fetchOptions: { cache: "no-store", signal },
+          }),
+          [200, 403, 404],
+          signal,
+        );
+        return result.status === 200 ? result.body : null;
+      };
+    });
+  });
   const saved$ = state<Settings | null>(null);
   const open$ = state(false);
   const addressMode$ = state<"platform" | "custom">("platform");
@@ -28,6 +52,10 @@ function createDomainState(site$: SiteSignal) {
   const notice$ = state<string | null>(null);
   const removalConfirmation$ = state(false);
   const settings$ = computed(async (get) => {
+    const request = get(request$);
+    if (!request) {
+      return null;
+    }
     const site = await get(site$);
     if (
       !(await get(featureSwitches$))[
@@ -44,14 +72,7 @@ function createDomainState(site$: SiteSignal) {
     if (saved) {
       return saved;
     }
-    const result = await accept(
-      get(apiClient$)(hostContract).siteDomains({
-        params: { siteId: site.siteId },
-        fetchOptions: { cache: "no-store" },
-      }),
-      [200, 403, 404],
-    );
-    return result.status === 200 ? result.body : null;
+    return await request(get(apiClient$), site.siteId);
   });
   const setup$ = computed(async (get) => {
     const settings = await get(settings$);
@@ -77,6 +98,7 @@ function createDomainState(site$: SiteSignal) {
     return get(saved$)?.effectiveUrl ?? null;
   });
   return {
+    initialize$,
     saved$,
     open$,
     addressMode$,

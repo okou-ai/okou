@@ -34,10 +34,6 @@ import {
   getArtifactShareScope,
   type ArtifactShareSession,
 } from "../../signals/artifact-sharing.ts";
-import type {
-  ArtifactShareIdentity,
-  AttachmentPreviewSignals,
-} from "../../signals/attachment-resource-url.ts";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -488,23 +484,25 @@ function ShareButtonPlaceholder({
 
 function ArtifactPeoplePermissions({
   session,
+  busy,
+  failed,
   saving,
   unavailable,
   onChange,
+  onShare,
+  onRemove,
 }: {
   readonly session: ArtifactShareSession;
+  readonly busy: boolean;
+  readonly failed: boolean;
   readonly saving: boolean;
   readonly unavailable: boolean;
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
+  readonly onShare: (email: string) => void;
+  readonly onRemove: (id: string) => void;
 }) {
   const details = useLastResolved(session.details$);
   const pending = useGet(session.pendingAudience$);
-  const signal = useGet(session.signal$);
-  const [sharing, share] = useLoadableSet(session.people.share$);
-  const [removing, remove] = useLoadableSet(session.people.remove$);
-  if (!signal) {
-    throw new Error("Artifact sharing session is not mounted");
-  }
   return (
     <ShareAudienceChoices
       selected={details?.audience}
@@ -516,17 +514,32 @@ function ArtifactPeoplePermissions({
     >
       <SharePeople
         session={session}
-        busy={sharing.state === "loading" || removing.state === "loading"}
-        failed={sharing.state === "hasError" || removing.state === "hasError"}
-        onShare={(email) => {
-          detach(share(email, signal), Reason.DomCallback);
-        }}
-        onRemove={(id) => {
-          detach(remove(id, signal), Reason.DomCallback);
-        }}
+        busy={busy}
+        failed={failed}
+        onShare={onShare}
+        onRemove={onRemove}
       />
     </ShareAudienceChoices>
   );
+}
+
+function useArtifactPeopleOperations(session: ArtifactShareSession) {
+  const [sharing, share] = useLoadableSet(session.people.share$);
+  const [removing, remove] = useLoadableSet(session.people.remove$);
+  const signal = useGet(session.signal$);
+  if (!signal) {
+    throw new Error("Artifact sharing session has no preview owner");
+  }
+  return {
+    busy: sharing.state === "loading" || removing.state === "loading",
+    failed: sharing.state === "hasError" || removing.state === "hasError",
+    onShare: (email: string) => {
+      detach(share(email, signal), Reason.DomCallback);
+    },
+    onRemove: (id: string) => {
+      detach(remove(id, signal), Reason.DomCallback);
+    },
+  };
 }
 
 function ShareSessionMenu({
@@ -540,6 +553,7 @@ function ShareSessionMenu({
   const loadable = useLoadable(session.details$);
   const details = useLastResolved(session.details$);
   const [audienceOperation, change] = useLoadableSet(session.change$);
+  const people = useArtifactPeopleOperations(session);
   const features = useLastResolved(featureSwitches$);
   const emailSharing =
     features?.[FeatureSwitchKey.HostedSiteEmailSharing] &&
@@ -562,7 +576,11 @@ function ShareSessionMenu({
   return (
     <Popover
       open={requestedOpen && !recipient}
-      onOpenChange={(next) => {
+      onOpenChange={(next, details) => {
+        if (people.busy) {
+          details.cancel();
+          return;
+        }
         if (next) {
           detach(open(signal), Reason.DomCallback);
         } else {
@@ -590,6 +608,7 @@ function ShareSessionMenu({
           emailSharing ? (
             <ArtifactPeoplePermissions
               session={session}
+              {...people}
               saving={audienceOperation.state === "loading"}
               unavailable={failed}
               onChange={(audience) => {
@@ -623,95 +642,27 @@ interface ArtifactShareMenuProps extends ShareButtonProps {
   readonly url: string;
   readonly surface: "dialog" | "sidebar" | "viewer";
   readonly copyUrl?: string;
-  readonly artifactShareIdentity$?: AttachmentPreviewSignals["artifactShareIdentity$"];
 }
 
-function artifactShareMenuKey({
-  url,
-  copyUrl,
-  artifactShareIdentity,
-}: {
-  readonly url: string;
-  readonly copyUrl?: string;
-  readonly artifactShareIdentity?: ArtifactShareIdentity;
-}): string {
-  const identity = artifactShareIdentity
-    ? `${artifactShareIdentity.target.kind}:${artifactShareIdentity.target.id}:${artifactShareIdentity.sharedThreadSnapshot === true ? "snapshot" : "artifact"}`
-    : "";
-  return `${url}:${copyUrl ?? ""}:${identity}`;
-}
-
-function ArtifactShareMenuContent({
+export function ArtifactShareMenu({
   url,
   surface,
   copyUrl,
-  artifactShareIdentity,
   ...buttonProps
-}: Omit<ArtifactShareMenuProps, "artifactShareIdentity$"> & {
-  readonly artifactShareIdentity?: ArtifactShareIdentity;
-}) {
+}: ArtifactShareMenuProps) {
   const scope = getArtifactShareScope(surface);
   const session = useGet(scope.session$);
-  const mountRef = useSet(scope.mountRef$);
-  const identityKey = artifactShareMenuKey({
-    url,
-    copyUrl,
-    artifactShareIdentity,
-  });
   return (
-    <span
-      key={identityKey}
-      ref={mountRef}
-      data-share-url={url}
-      data-copy-url={copyUrl}
-      data-share-target-kind={artifactShareIdentity?.target.kind}
-      data-share-target-id={artifactShareIdentity?.target.id}
-      data-shared-thread-snapshot={
-        artifactShareIdentity?.sharedThreadSnapshot === true
-          ? "true"
-          : undefined
-      }
-      className="inline-flex"
-    >
-      {session && artifactShareMenuKey(session.source) === identityKey ? (
-        <ShareSessionMenu session={session} {...buttonProps} />
+    <span className="inline-flex">
+      {session?.source.url === url && session.source.copyUrl === copyUrl ? (
+        <ShareSessionMenu
+          key={session.peopleInputId}
+          session={session}
+          {...buttonProps}
+        />
       ) : (
         <ShareButtonPlaceholder {...buttonProps} />
       )}
     </span>
-  );
-}
-
-function ResolvedArtifactShareMenu({
-  artifactShareIdentity$,
-  ...props
-}: Omit<ArtifactShareMenuProps, "artifactShareIdentity$"> & {
-  readonly artifactShareIdentity$: AttachmentPreviewSignals["artifactShareIdentity$"];
-}) {
-  const identity = useLoadable(artifactShareIdentity$);
-  if (identity.state === "loading") {
-    return <ShareButtonPlaceholder {...props} />;
-  }
-  return (
-    <ArtifactShareMenuContent
-      {...props}
-      {...(identity.state === "hasData" && identity.data
-        ? { artifactShareIdentity: identity.data }
-        : {})}
-    />
-  );
-}
-
-export function ArtifactShareMenu({
-  artifactShareIdentity$,
-  ...props
-}: ArtifactShareMenuProps) {
-  return artifactShareIdentity$ ? (
-    <ResolvedArtifactShareMenu
-      artifactShareIdentity$={artifactShareIdentity$}
-      {...props}
-    />
-  ) : (
-    <ArtifactShareMenuContent {...props} />
   );
 }

@@ -7,6 +7,7 @@ import type {
 import { accept } from "../../lib/accept.ts";
 import { artifactPreviewUrlsMatch } from "../../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "../api-client.ts";
+import type { ArtifactDeletionIdentity } from "../artifact-deletion.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -49,6 +50,53 @@ interface CrossChatArtifactPreview {
 export interface CrossChatArtifactPreviewSignals {
   readonly view$: Computed<ChatArtifactPreviewView | undefined>;
   readonly artifact$: Computed<Promise<CrossChatArtifactPreview | undefined>>;
+}
+
+/** The preview and its deletion control resolve the same current thread metadata. */
+export function createChatArtifactDeletionIdentity(
+  source$: Computed<
+    | {
+        readonly url: string;
+        readonly threadId?: string;
+        readonly artifactId?: string;
+      }
+    | undefined
+  >,
+  crossChat: CrossChatArtifactPreviewSignals,
+): Computed<Promise<ArtifactDeletionIdentity | null>> {
+  return computed(async (get) => {
+    const source = get(source$);
+    if (!source) {
+      return null;
+    }
+    const threads = [get(currentLeftThread$), get(currentRightThread$)].filter(
+      (thread) => {
+        return (
+          thread && (!source.threadId || thread.threadId === source.threadId)
+        );
+      },
+    );
+    for (const thread of threads) {
+      if (!thread) {
+        continue;
+      }
+      const item = findChatArtifactForUrl(
+        await get(thread.artifacts$),
+        source.url,
+      );
+      if (item) {
+        return item.file.artifactId
+          ? { artifactId: item.file.artifactId }
+          : null;
+      }
+    }
+    const other = await get(crossChat.artifact$);
+    const artifactId =
+      other?.view.url === source.url
+        ? other.item.file.artifactId
+        : source.artifactId;
+    return artifactId ? { artifactId } : null;
+  });
 }
 
 /** The other pane can resolve the file, while Drive status belongs to the viewing Chat. */

@@ -1,4 +1,5 @@
 import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifactReferencesContract,
   artifactReferencePath,
@@ -8,7 +9,7 @@ import {
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -30,6 +31,7 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
+import { openSharing } from "../../artifacts-page/__tests__/site-access-fixtures.ts";
 
 const context = testContext();
 const fileId = "00000000-0000-4000-8000-000000000721";
@@ -57,9 +59,10 @@ function permission(name: string) {
   return choice;
 }
 
-async function openArtifact(
+async function previewArtifact(
   surface: "thread" | "catalog" | "viewer",
   emailSharing = true,
+  configureSharing?: () => void,
 ) {
   const detail = fileArtifactDetail(summary, {
     filename: summary.title,
@@ -146,6 +149,7 @@ async function openArtifact(
     shares = [];
     return respond(200, { removed: params.shareId });
   });
+  configureSharing?.();
   await setupPage({
     context,
     host: "app.okou.ai",
@@ -168,6 +172,19 @@ async function openArtifact(
   await waitFor(() => {
     return expect(getButtonByName(label)).toBeVisible();
   });
+  return { label };
+}
+
+async function openArtifact(
+  surface: "thread" | "catalog" | "viewer",
+  emailSharing = true,
+  configureSharing?: () => void,
+) {
+  const { label } = await previewArtifact(
+    surface,
+    emailSharing,
+    configureSharing,
+  );
   click(getButtonByName(label));
   const menu = await screen.findByRole("dialog", { name: "Share" });
   return { menu, label };
@@ -236,3 +253,367 @@ test("ordinary file invitations stay behind the existing server switch", async (
   expect(permission("Only me")).toBeChecked();
   expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
 });
+
+test("A catalog snapshot copies its immutable reference without offering permission edits", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const { label } = await previewArtifact("catalog", true, () => {
+    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+      return respond(200, {
+        url: signed,
+        downloadUrl: signed,
+        expiresAt: "2099-01-01T00:00:00Z",
+        filename: summary.title,
+        contentType: "video/mp4",
+        target: { kind: "file", id: fileId },
+        sharedThreadSnapshot: true,
+      });
+    });
+  });
+  click(getButtonByName(label));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([
+      new URL(canonical, "https://app.okou.ai").href,
+    ]);
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Share" }),
+  ).not.toBeInTheDocument();
+});
+
+test("A catalog publication replacing its file shares the current resource", async () => {
+  const replacementFileId = "00000000-0000-4000-8000-000000000724";
+  let currentFileId = fileId;
+  let title = summary.title;
+  let audience: ArtifactShareStatus["audience"] = "private";
+  const status = (): ArtifactShareStatus => {
+    return {
+      ownerUrl: new URL(
+        artifactReferencePath(currentFileId, title),
+        "https://app.okou.ai",
+      ).href,
+      audience,
+      shareId: null,
+      organization: { id: "org_test", name: "Acme" },
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+      url: null,
+      shortUrl: null,
+    };
+  };
+  const { menu } = await openArtifact("catalog", true, () => {
+    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+      return respond(
+        200,
+        fileArtifactDetail(
+          { ...summary, title },
+          {
+            filename: title,
+            contentType: "video/mp4",
+            fileId: currentFileId,
+            url: canonical,
+          },
+        ),
+      );
+    });
+    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+      return respond(200, {
+        url: signed,
+        downloadUrl: signed,
+        expiresAt: "2099-01-01T00:00:00Z",
+        filename: title,
+        contentType: "video/mp4",
+        target: { kind: "file", id: currentFileId },
+      });
+    });
+    context.mocks.api(artifactSharesContract.status, ({ body, respond }) => {
+      return body.id === currentFileId
+        ? respond(200, status())
+        : respond(404, {
+            error: {
+              code: "NOT_FOUND",
+              message: "Previous file is no longer owned",
+            },
+          });
+    });
+    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+      if (body.target.id !== replacementFileId) {
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Previous file is no longer owned",
+          },
+        });
+      }
+      audience = body.audience;
+      return respond(200, status());
+    });
+  });
+  await userEvent.setup().keyboard("{Escape}");
+  await waitFor(() => {
+    expect(menu).not.toBeInTheDocument();
+  });
+  currentFileId = replacementFileId;
+  title = "Updated field recording.mp4";
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: summary.id });
+  });
+  await within(screen.getByTestId("artifact-sidebar")).findByText(title);
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact")).toBeVisible();
+  });
+  click(getButtonByName("Share artifact"));
+  const reopened = await screen.findByRole("dialog", { name: "Share" });
+  click(permission("Anyone"));
+  await screen.findByText("Access updated");
+  expect(permission("Anyone")).toBeChecked();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(getButtonByName("Copy link", reopened));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([status().ownerUrl]);
+  });
+});
+
+test("Closing a preview cancels its pending invitation and reopening reads the server outcome", async () => {
+  const began = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const processed = context.mocks.deferred<void>();
+  let shares: { id: string; email: string }[] = [];
+  const { menu } = await openArtifact("catalog", true, () => {
+    context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+      return respond(200, { shares });
+    });
+    context.mocks.api(
+      artifactSharingContract.share,
+      async ({ request, respond }) => {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve();
+          },
+          { once: true },
+        );
+        began.resolve();
+        await release.promise;
+        shares = [{ id: shareId, email: account.email }];
+        processed.resolve();
+        return respond(200, { share: shares[0]! });
+      },
+    );
+  });
+  const invite = getButtonByName("Invite", menu);
+  await fill(
+    within(menu).getByRole("combobox", { name: "Share with people" }),
+    "Taylor",
+  );
+  await screen.findByRole("option", { name: /Taylor Viewer/ });
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowDown}{Enter}");
+  await waitFor(() => {
+    expect(invite).toBeEnabled();
+  });
+  await user.click(invite);
+  await began.promise;
+  click(
+    getButtonByName("Close artifact", screen.getByTestId("artifact-sidebar")),
+  );
+  await aborted.promise;
+  await waitFor(() => {
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  });
+  await act(async () => {
+    release.resolve();
+    await processed.promise;
+  });
+  click(await findArtifactAction(summary.title));
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact")).toBeVisible();
+  });
+  click(getButtonByName("Share artifact"));
+  const reopened = await screen.findByRole("dialog", { name: "Share" });
+  await within(reopened).findByText(account.email);
+  expect(
+    screen.queryByText("Sharing invitation processed"),
+  ).not.toBeInTheDocument();
+});
+
+test("A failed file invitation releases dismissal and keeps the address available for retry", async () => {
+  const began = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const { menu } = await openArtifact("catalog", true, () => {
+    context.mocks.api(artifactSharingContract.share, async ({ respond }) => {
+      began.resolve();
+      await release.promise;
+      return respond(429, {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Invitation temporarily unavailable",
+        },
+      });
+    });
+  });
+  const invite = getButtonByName("Invite", menu);
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "Taylor");
+  await screen.findByRole("option", { name: /Taylor Viewer/ });
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowDown}{Enter}");
+  await waitFor(() => {
+    expect(invite).toBeEnabled();
+  });
+  await user.click(invite);
+  await began.promise;
+  await user.click(getButtonByName("Share artifact"));
+  expect(menu).toBeInTheDocument();
+  release.resolve();
+  await screen.findByText("Invitation temporarily unavailable");
+  await waitFor(() => {
+    expect(invite).toBeEnabled();
+  });
+  expect(input).toHaveValue(account.email);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(menu).not.toBeInTheDocument();
+  });
+});
+
+test.each(["file", "website"] as const)(
+  "Closing %s Share cancels its people read and reopening shows the current list",
+  async (kind) => {
+    const began = context.mocks.deferred<void>();
+    const aborted = context.mocks.deferred<void>();
+    const released = context.mocks.deferred<void>();
+    const responded = context.mocks.deferred<void>();
+    let pending = true;
+    const configure = () => {
+      context.mocks.api(
+        artifactSharingContract.list,
+        async ({ request, respond }) => {
+          if (pending) {
+            request.signal.addEventListener(
+              "abort",
+              () => {
+                aborted.resolve();
+              },
+              { once: true },
+            );
+            began.resolve();
+            await released.promise;
+            responded.resolve();
+            return respond(403, {
+              error: {
+                code: "FORBIDDEN",
+                message: "Closed preview people read failed",
+              },
+            });
+          }
+          return respond(200, {
+            shares: [{ id: shareId, email: account.email }],
+          });
+        },
+      );
+    };
+    let menu: HTMLElement;
+    if (kind === "file") {
+      ({ menu } = await openArtifact("catalog", true, configure));
+    } else {
+      configure();
+      ({ dialog: menu } = await openSharing(context, { emailSharing: true }));
+    }
+    await began.promise;
+    await userEvent.setup().keyboard("{Escape}");
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    await aborted.promise;
+    pending = false;
+    await act(async () => {
+      released.resolve();
+      await responded.promise;
+    });
+    click(getButtonByName("Share artifact"));
+    const reopened = await screen.findByRole("dialog", {
+      name: kind === "file" ? "Share" : "Share artifact",
+    });
+    await expect(
+      within(reopened).findByText(account.email),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByText("Closed preview people read failed"),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each(["invite", "remove"] as const)(
+  "File Share keeps a pending %s visible until it completes",
+  async (operation) => {
+    const began = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    let shares =
+      operation === "remove" ? [{ id: shareId, email: account.email }] : [];
+    const { menu } = await openArtifact("catalog", true, () => {
+      context.mocks.api(artifactSharingContract.list, ({ respond }) => {
+        return respond(200, { shares });
+      });
+      context.mocks.api(artifactSharingContract.share, async ({ respond }) => {
+        began.resolve();
+        await release.promise;
+        shares = [{ id: shareId, email: account.email }];
+        return respond(200, { share: shares[0]! });
+      });
+      context.mocks.api(
+        artifactSharingContract.remove,
+        async ({ params, respond }) => {
+          began.resolve();
+          await release.promise;
+          shares = [];
+          return respond(200, { removed: params.shareId });
+        },
+      );
+    });
+    const user = userEvent.setup();
+    let action: HTMLElement;
+    if (operation === "invite") {
+      action = getButtonByName("Invite", menu);
+      await fill(
+        within(menu).getByRole("combobox", { name: "Share with people" }),
+        account.email,
+      );
+      await screen.findByRole("option", { name: /Taylor Viewer/ });
+      await user.keyboard("{ArrowDown}{Enter}");
+    } else {
+      await within(menu).findByText(account.email);
+      action = getButtonByName(`Remove access for ${account.email}`, menu);
+    }
+    await waitFor(() => {
+      expect(action).toBeEnabled();
+    });
+    await user.click(action);
+    await began.promise;
+    expect(action).toBeDisabled();
+    await user.click(getButtonByName("Share artifact"));
+    expect(menu).toBeInTheDocument();
+    expect(action).toBeDisabled();
+    release.resolve();
+    await screen.findByText(
+      operation === "invite"
+        ? "Sharing invitation processed"
+        : "Access removed",
+    );
+    await waitFor(() => {
+      const list = within(menu).getByRole("list", {
+        name: "People with access",
+      });
+      expect(within(list).queryByText(account.email)?.textContent ?? null).toBe(
+        operation === "invite" ? account.email : null,
+      );
+    });
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+  },
+);

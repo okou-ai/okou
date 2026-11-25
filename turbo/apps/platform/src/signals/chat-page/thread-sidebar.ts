@@ -15,7 +15,12 @@ import {
 } from "ccstate";
 
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
-import { createCatalogArtifactPreviewSignals } from "../artifacts-page/artifact-catalog-preview.ts";
+import {
+  createCatalogArtifactPreviewSignals,
+  createCatalogPreviewSessionsRefresh$,
+} from "../artifacts-page/artifact-catalog-preview.ts";
+import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
+import type { ArtifactDeletionIdentity } from "../artifact-deletion.ts";
 import {
   createZipArtifactPreviewScope,
   type ZipArtifactPreviewScope,
@@ -31,6 +36,7 @@ import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 import {
   createCrossChatArtifactPreview,
+  createChatArtifactDeletionIdentity,
   type CrossChatArtifactPreviewSignals,
 } from "./chat-artifact-preview.ts";
 import {
@@ -127,7 +133,10 @@ export type ArtifactMetadataRef = {
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;
 
 type AttachmentArtifactRef = ArtifactRef &
-  Pick<AttachmentPreviewSignals, "refreshOnArtifactChange$" | "refreshOnOpen$">;
+  Pick<
+    AttachmentPreviewSignals,
+    "refreshOnArtifactChange$" | "refreshOnOpen$" | "artifactShareIdentity$"
+  >;
 
 function artifactRefFromUrl(url: string): AttachmentArtifactRef {
   const attachment = previewAttachmentFromUrl(url);
@@ -270,6 +279,7 @@ export interface ThreadSidebarSignals {
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
+  readonly refreshPreviewSessions$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactImageUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
@@ -343,6 +353,7 @@ function createOpenAttachmentCommand(
   startSession$: Command<AbortSignal, [AbortSignal]>,
   publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
   previewContext: ThreadArtifactPreviewContext,
+  deletionIdentity$: Computed<Promise<ArtifactDeletionIdentity | null>>,
 ) {
   return command(
     ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
@@ -356,11 +367,56 @@ function createOpenAttachmentCommand(
           ref,
         },
       });
+      set(
+        selectArtifactPreviewSessions$,
+        "sidebar",
+        {
+          url: ref.url,
+          shareAvailable: ref.shareAvailable,
+          artifactShareIdentity$: ref.artifactShareIdentity$,
+          deletionIdentity: deletionIdentity$,
+        },
+        sessionSignal,
+      );
       detach(
         set(ref.refreshOnOpen$, ref.text$, sessionSignal),
         Reason.DomCallback,
         "retry attachment preview on open",
       );
+    },
+  );
+}
+
+function createOpenCatalogArtifactCommand(
+  startSession$: Command<AbortSignal, [AbortSignal]>,
+  publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
+  artifactCatalog: ArtifactCatalogViewSignals,
+  contentReady$: Computed<Promise<void>>,
+  refreshPreviewSessions$: Command<Promise<void>, [AbortSignal]>,
+) {
+  return command(
+    async ({ set }, artifactId: string, signal: AbortSignal): Promise<void> => {
+      const sessionSignal = set(startSession$, signal);
+      set(artifactCatalog.selectArtifact$, artifactId);
+      set(publishTarget$, {
+        type: "artifact",
+        source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
+      });
+      await set(refreshPreviewSessions$, sessionSignal);
+      signal.throwIfAborted();
+      sessionSignal.throwIfAborted();
+      const selectedPreview = await set(
+        artifactCatalog.ensureSelectedArtifactPreview$,
+        artifactId,
+        sessionSignal,
+      );
+      signal.throwIfAborted();
+      sessionSignal.throwIfAborted();
+      if (selectedPreview) {
+        await set(selectedPreview.refreshOnOpen$, contentReady$, sessionSignal);
+        signal.throwIfAborted();
+        sessionSignal.throwIfAborted();
+      }
     },
   );
 }
@@ -458,6 +514,21 @@ export function createThreadSidebarSignals(
   artifactCatalog: ArtifactCatalogViewSignals,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<NonMailThreadSidebarTarget | null>(null);
+  const targets = createThreadSidebarTargetSignals(
+    threadId,
+    mailRegistry,
+    internalTarget$,
+  );
+  const readCatalogOwner$ = command(({ get }) => {
+    const target = get(internalTarget$);
+    return target?.type === "artifact" && target.source.kind === "catalog"
+      ? target.source.ownerSignal
+      : undefined;
+  });
+  const refreshPreviewSessions$ = createCatalogPreviewSessionsRefresh$(
+    artifactCatalog,
+    readCatalogOwner$,
+  );
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
@@ -497,37 +568,28 @@ export function createThreadSidebarSignals(
     },
   );
 
-  const openCatalogArtifact$ = command(
-    async ({ set }, artifactId: string, signal: AbortSignal): Promise<void> => {
-      const sessionSignal = set(startSession$, signal);
-      set(artifactCatalog.selectArtifact$, artifactId);
-      set(publishTarget$, {
-        type: "artifact",
-        source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
-      });
-      const selectedPreview = await set(
-        artifactCatalog.ensureSelectedArtifactPreview$,
-        artifactId,
-        sessionSignal,
-      );
-      signal.throwIfAborted();
-      sessionSignal.throwIfAborted();
-      if (selectedPreview) {
-        await set(
-          selectedPreview.refreshOnOpen$,
-          preview.contentReady$,
-          sessionSignal,
-        );
-        signal.throwIfAborted();
-        sessionSignal.throwIfAborted();
-      }
-    },
+  const openCatalogArtifact$ = createOpenCatalogArtifactCommand(
+    startSession$,
+    publishTarget$,
+    artifactCatalog,
+    preview.contentReady$,
+    refreshPreviewSessions$,
   );
 
   const openAttachment$ = createOpenAttachmentCommand(
     startSession$,
     publishTarget$,
     previewContext,
+    createChatArtifactDeletionIdentity(
+      computed((get) => {
+        const target = get(internalTarget$);
+        return target?.type === "artifact" &&
+          target.source.kind === "attachment"
+          ? { url: target.source.ref.url, threadId }
+          : undefined;
+      }),
+      targets.crossChatArtifact,
+    ),
   );
 
   const dismiss$ = command(({ get, set }) => {
@@ -541,14 +603,11 @@ export function createThreadSidebarSignals(
   });
 
   return {
-    ...createThreadSidebarTargetSignals(
-      threadId,
-      mailRegistry,
-      internalTarget$,
-    ),
+    ...targets,
     open$,
     openCatalogArtifact$,
     openAttachment$,
+    refreshPreviewSessions$,
     close$: command(({ set }) => {
       set(dismiss$);
       set(closeThreadMailLocation$, threadId);
