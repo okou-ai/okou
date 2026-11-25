@@ -23,7 +23,8 @@ final class MessageTimeTests: XCTestCase {
         content: content, timeFormat: MessageTime.format(locale: locale, timeZone: timeZone))
       let rendered = try parser.attributedString(for: source)
       let expected = Date.FormatStyle(locale: locale, timeZone: timeZone)
-        .year().month(.abbreviated).day().hour().minute().second().timeZone(.specificName(.short))
+        .year().month(.abbreviated).day().hour().minute(.twoDigits).second(.twoDigits).timeZone(
+          .specificName(.short))
       XCTAssertEqual(String(rendered.characters), "下次检查：\(instant.formatted(expected))。")
       let linked = try XCTUnwrap(rendered.runs.first { $0.link == link })
       XCTAssertEqual(String(rendered[linked.range].characters), instant.formatted(expected))
