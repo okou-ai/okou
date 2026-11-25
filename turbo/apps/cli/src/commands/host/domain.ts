@@ -223,7 +223,16 @@ export function createHostedSiteDomainCommand(): Command {
             );
             const domain = findDomain(saved, hostname);
             printSettings(publicSlug, saved, cmd);
-            requireReady(domain);
+            if (!domain.ready || domain.removing) {
+              console.error(
+                chalk.yellow(
+                  "Domain is not ready. Apply the returned DNS records, allow DNS/HTTPS provisioning to finish, then explicitly run verify again.",
+                ),
+              );
+              // Let stdout finish writing the verification JSON before exiting.
+              process.exitCode = 1;
+              return;
+            }
             if (!cmd.optsWithGlobals<DomainOptions>().json) {
               console.log(
                 chalk.green(

@@ -72,6 +72,7 @@ function verification(ready: boolean): NonNullable<Domain["verification"]> {
 }
 
 describe("okou host domain", () => {
+  let previousExitCode: typeof process.exitCode;
   const logs = vi.spyOn(console, "log").mockImplementation(() => {});
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(process, "exit").mockImplementation(() => {
@@ -79,12 +80,15 @@ describe("okou host domain", () => {
   });
 
   beforeEach(() => {
+    previousExitCode = process.exitCode;
+    process.exitCode = 0;
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
   });
 
   afterEach(() => {
+    process.exitCode = previousExitCode;
     logs.mockClear();
     errors.mockClear();
     vi.unstubAllEnvs();
@@ -333,9 +337,8 @@ describe("okou host domain", () => {
     const api = mockApi();
     await run("add", "demo-site", hostname, "--json");
     expect(jsonOutput().domains[0]).toMatchObject({ hostname, ready: false });
-    await expect(
-      run("verify", "demo-site", hostname, "--json"),
-    ).rejects.toThrow("process.exit called");
+    await run("verify", "demo-site", hostname, "--json");
+    expect(process.exitCode).toBe(1);
     expect(jsonOutput().domains[0]!.verification).toMatchObject({
       status: "incomplete",
       checks: { certificate: { status: "pending" } },
@@ -351,8 +354,10 @@ describe("okou host domain", () => {
       }),
     ).toHaveLength(1);
     expect(api.calls).not.toContain("select");
+    process.exitCode = 0;
     api.ready();
     await run("verify", "demo-site", hostname, "--json");
+    expect(process.exitCode).toBe(0);
     expect(jsonOutput().domains[0]!.verification).toMatchObject({
       status: "ready",
       eligibleForSelection: true,
