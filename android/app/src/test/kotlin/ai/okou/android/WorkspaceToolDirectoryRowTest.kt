@@ -1,0 +1,85 @@
+package ai.okou.android
+
+import androidx.activity.ComponentActivity
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "en-rUS-w320dp-h440dp", application = TestOkouApplication::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class WorkspaceToolDirectoryRowTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun narrowRowGrowsForLargeTextAndKeepsItsMediaSpace() {
+        val title = "Quarterly planning notes for workspace administrators"
+        val description = "Ready for review"
+        compose.setContent {
+            val density = Density(LocalDensity.current.density, fontScale = 2f)
+            CompositionLocalProvider(LocalDensity provides density) {
+                OkouTheme(false) {
+                    WorkspaceToolDirectoryRow(
+                        title = title,
+                        selected = true,
+                        onClick = {},
+                        modifier = Modifier.testTag("directory_row"),
+                        leading = {},
+                    ) { supportingColor ->
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = supportingColor,
+                        )
+                    }
+                }
+            }
+        }
+
+        val row =
+            compose
+                .onNodeWithTag("directory_row")
+                .assertIsDisplayed()
+                .assertHasClickAction()
+                .assertIsSelected()
+                .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+                .assertTextContains(title)
+                .assertTextContains(description)
+                .getUnclippedBoundsInRoot()
+        val heading =
+            compose.onNodeWithText(title, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val supporting =
+            compose.onNodeWithText(description, useUnmergedTree = true).getUnclippedBoundsInRoot()
+
+        assertTrue(row.height > 80.dp)
+        assertEquals(64.dp, heading.left - row.left)
+        assertEquals(8.dp, heading.top - row.top)
+        assertEquals(4.dp, supporting.top - heading.bottom)
+        assertTrue(supporting.bottom + 8.dp <= row.bottom)
+    }
+}

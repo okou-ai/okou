@@ -3,6 +3,7 @@ package ai.okou.android.artifacts
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.workspaceSearchFocusOutline
@@ -28,7 +29,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -53,7 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -345,42 +344,17 @@ private fun ArtifactRow(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
-    val meta = if (selected) foreground else colors.onSurfaceVariant
-    val shape = RoundedCornerShape(8.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .clip(shape)
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .workspaceSearchFocusOutline(shape)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .testTag("artifact_row"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        ArtifactThumbnail(item, thumbnail)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = foreground,
-            )
-            Text(
-                stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
-                style = artifactSmallText(),
-                color = meta,
-            )
-        }
-        Icon(
-            painterResource(R.drawable.ic_chevron_right),
-            contentDescription = null,
-            modifier = Modifier.align(Alignment.CenterVertically).size(18.dp),
-            tint = foreground,
+    WorkspaceToolDirectoryRow(
+        title = item.title,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.testTag("artifact_row"),
+        leading = { ArtifactThumbnail(item, thumbnail) },
+    ) { supportingColor ->
+        Text(
+            stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
+            style = artifactSmallText(),
+            color = supportingColor,
         )
     }
 }
@@ -394,27 +368,16 @@ private fun ArtifactThumbnail(
         produceState<android.graphics.Bitmap?>(null, item.thumbnail) {
             value = item.thumbnail?.let { thumbnail(it) }
         }
-    val colors = MaterialTheme.colorScheme
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        val image = bitmap
-        if (image != null) {
-            Image(
-                image.asImageBitmap(),
-                null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            Icon(
-                painterResource(item.kind.icon()),
-                null,
-                Modifier.size(20.dp),
-                tint = colors.onSurface,
-            )
-        }
+    val image = bitmap
+    if (image != null) {
+        Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+    } else {
+        Icon(
+            painterResource(item.kind.icon()),
+            null,
+            Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 
