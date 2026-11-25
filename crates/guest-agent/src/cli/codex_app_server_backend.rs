@@ -362,6 +362,14 @@ async fn run_codex_app_server(
     .map_err(|error| app_server_error(masker, error))?;
     let mut heartbeat_done = false;
     let active_input_controller = active_input.controller();
+    let mut sink = EventIngestSink {
+        ingestor: &mut ingestor,
+        output_timing: &mut output_timing,
+        agent_log: &mut agent_log,
+        masker,
+        should_send_events,
+        event_tx,
+    };
 
     let run = async {
         race_with_heartbeat(
@@ -389,14 +397,6 @@ async fn run_codex_app_server(
         )?;
         notification_state.allow_historical_usage = native_resumed;
         while let Some(notification) = client.pop_notification() {
-            let mut sink = EventIngestSink {
-                ingestor: &mut ingestor,
-                output_timing: &mut output_timing,
-                agent_log: &mut agent_log,
-                masker,
-                should_send_events,
-                event_tx,
-            };
             ingest_notification(
                 notification,
                 &mut sink,
@@ -409,14 +409,6 @@ async fn run_codex_app_server(
         }
 
         if !notification_state.thread_started_emitted {
-            let mut sink = EventIngestSink {
-                ingestor: &mut ingestor,
-                output_timing: &mut output_timing,
-                agent_log: &mut agent_log,
-                masker,
-                should_send_events,
-                event_tx,
-            };
             ingest_event(
                 synthesize_thread_started_event(&thread_identity.canonical_id),
                 &mut sink,
@@ -471,14 +463,6 @@ async fn run_codex_app_server(
             .await?;
             match event {
                 CodexRunEvent::Notification(notification) => {
-                    let mut sink = EventIngestSink {
-                        ingestor: &mut ingestor,
-                        output_timing: &mut output_timing,
-                        agent_log: &mut agent_log,
-                        masker,
-                        should_send_events,
-                        event_tx,
-                    };
                     let notification_scope = CodexTurnScope {
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
@@ -514,14 +498,6 @@ async fn run_codex_app_server(
                         masker,
                     )
                     .await?;
-                    let mut sink = EventIngestSink {
-                        ingestor: &mut ingestor,
-                        output_timing: &mut output_timing,
-                        agent_log: &mut agent_log,
-                        masker,
-                        should_send_events,
-                        event_tx,
-                    };
                     let notification_scope = CodexTurnScope {
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
@@ -565,7 +541,7 @@ async fn run_codex_app_server(
 
         Ok::<CliExecutionResult, CodexRunError>(app_server_execution_result(
             exit_code,
-            ingestor.failure_diagnostic(),
+            sink.ingestor.failure_diagnostic(),
         ))
     };
     let run_outcome = run_with_execution_deadline(
@@ -582,14 +558,6 @@ async fn run_codex_app_server(
         AppServerRunOutcome::ExecutionTimedOut { .. } | AppServerRunOutcome::UserCancelled
     ) && let Some(active_turn) = active_turn.as_ref()
     {
-        let mut sink = EventIngestSink {
-            ingestor: &mut ingestor,
-            output_timing: &mut output_timing,
-            agent_log: &mut agent_log,
-            masker,
-            should_send_events,
-            event_tx,
-        };
         match tokio::time::timeout(
             TURN_INTERRUPT_GRACE,
             interrupt_active_turn(
