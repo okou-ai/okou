@@ -210,42 +210,46 @@ final class ChatProjectStore {
   /// Each list read is confirmed once, as a subscription would on its invalidation.
   private func confirmProjects() {
     guard !closed, !blocked else { return }
-    do {
-      let read = try stateStore.get(listValue)
-      guard read != publishedRead else { return }
-      publishedRead = read
+    let read: Task<[ChatProject], Error>
+    do { read = try stateStore.get(listValue) } catch is CancellationError {
       publication?.cancel()
-      let id = UUID()
-      readID = id
-      let previous = revision
-      publication = Task { [weak self] in
-        guard let self else { return }
-        defer { if readID == id { publication = nil } }
-        do {
-          let result = try await read.value
-          try Task.checkCancellation()
-          guard !closed, !blocked, readID == id, previous == revision, pending.isEmpty else {
-            return
-          }
-          revision += 1
-          projects = result
-          restoredSnapshot = true
-          hasConfirmedProjects = true
-          let knownIDs = Set(result.map(\.id))
-          updateActions { $0.expansion = $0.expansion.filter { knownIDs.contains($0.key) } }
-          if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
-          await sync.persistProjects(result)
-        } catch is CancellationError {
-        } catch {
-          guard !closed, !Task.isCancelled, readID == id else { return }
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
-        }
-      }
-      if let publication { lifecycleTasks.track(publication) }
-    } catch is CancellationError {
       publication = nil
-    } catch { didFail(error) }
+      return
+    } catch {
+      didFail(error)
+      return
+    }
+    guard read != publishedRead else { return }
+    publishedRead = read
+    publication?.cancel()
+    let id = UUID()
+    readID = id
+    let previous = revision
+    publication = Task { [weak self] in
+      guard let self else { return }
+      defer { if readID == id { publication = nil } }
+      do {
+        let result = try await read.value
+        try Task.checkCancellation()
+        guard !closed, !blocked, readID == id, previous == revision, pending.isEmpty else {
+          return
+        }
+        revision += 1
+        projects = result
+        restoredSnapshot = true
+        hasConfirmedProjects = true
+        let knownIDs = Set(result.map(\.id))
+        updateActions { $0.expansion = $0.expansion.filter { knownIDs.contains($0.key) } }
+        if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
+        await sync.persistProjects(result)
+      } catch is CancellationError {
+      } catch {
+        guard !closed, !Task.isCancelled, readID == id else { return }
+        blocked = (error as? APIClientError)?.statusCode == 426
+        didFail(error)
+      }
+    }
+    if let publication { lifecycleTasks.track(publication) }
   }
 
   @discardableResult
