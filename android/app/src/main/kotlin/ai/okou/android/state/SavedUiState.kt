@@ -721,7 +721,20 @@ internal fun rememberConversationUiState(): ConversationUiState {
     return remember(holder, recent) { ConversationUiState(holder, recent) }
 }
 
-internal class JournalEditor(val value: TextFieldValue, val edit: (TextFieldValue) -> Unit)
+internal class JournalEditor(
+    val value: TextFieldValue,
+    private val updateNative: (TextFieldValue) -> Unit,
+) {
+    private var lastInputText = value.text
+
+    fun edit(input: TextFieldValue): Boolean {
+        // Several input events can arrive before the next composition.
+        val changed = input.text != lastInputText
+        lastInputText = input.text
+        updateNative(input)
+        return changed
+    }
+}
 
 /** Wait for journal hydration before consuming the restored native selection. */
 @Composable

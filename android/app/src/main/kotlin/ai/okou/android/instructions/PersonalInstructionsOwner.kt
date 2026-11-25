@@ -143,8 +143,8 @@ internal class PersonalInstructionsOwner(
     }
 
     fun open(connection: Connection) {
-        if (!connection.current()) return
         val state = mutable.value
+        if (!connection.current() || state.busy) return
         if (state.draft == null) {
             val cached = if (restored) store.freshConfirmed(identity) else null
             mutable.value =

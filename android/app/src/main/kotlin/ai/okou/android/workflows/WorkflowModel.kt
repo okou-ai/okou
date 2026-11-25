@@ -682,8 +682,11 @@ internal constructor(
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
         if (!authorized() || state.writing) return
-        val editor =
-            if (value == null) null else value.updateConfirmed(state.detail ?: return) ?: return
+        val editor = value?.let {
+            val detail = state.detail ?: return
+            // A user action can arrive from the frame before the confirmed values changed.
+            it.updateConfirmed(detail, keepInput = state.editor != null || it.changed) ?: return
+        }
         val issue =
             state.issue?.takeIf {
                 editor != null &&

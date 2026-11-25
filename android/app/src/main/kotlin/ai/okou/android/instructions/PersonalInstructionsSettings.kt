@@ -216,8 +216,7 @@ internal fun PersonalInstructionsSettings(
                 BasicTextField(
                     value = editing.value,
                     onValueChange = { value ->
-                        editing.edit(value)
-                        if (value.text != editing.value.text) {
+                        if (editing.edit(value)) {
                             closeAfterSave = false
                             model.edit(value.text)
                         }
