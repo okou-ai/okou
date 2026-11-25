@@ -2121,6 +2121,7 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         newTarget,
+                                                        defaultModel = defaultModel,
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
                                                                 canOpenConnectors

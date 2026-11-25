@@ -5805,16 +5805,26 @@
         "resetUsage": "重置用量"
       },
       "antigravity": {
-        "check": "查看登入狀態",
-        "error": "請檢查分配給你的登入環境，再試一次。",
-        "expired": "登入已過期，請重新連線。",
-        "openTerminal": "開啟 Google 登入終端機",
-        "terminal": "在終端機執行以下指令，然後使用你的個人 Google AI 帳戶登入。",
-        "title": "Google AI（Antigravity）",
-        "unassigned": "請管理員為你分配登入終端機。",
-        "verify": "執行此命令會使用你的訂閱額度，分別向 Neon、Carbon 和 Hydrogen 傳送一次請求。"
+        "title": "Google AI（Antigravity）"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "瀏覽器中的網址",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "請貼上瀏覽器中的網址以繼續。",
+          "connectedToast": "已連接 Google AI 帳號",
+          "connectTitle": "連接 Google AI（Antigravity）",
+          "expired": "登入已過期，請重新開始。",
+          "failed": "Google 登入失敗，請再試一次。",
+          "instructions": "使用你的個人 Google AI Pro 或 Ultra 帳號授權存取。接著 Google 會開啟一個無法載入的頁面，請從瀏覽器複製該頁面的完整網址並貼到下方。",
+          "openApproval": "開啟 Google 登入",
+          "preparing": "正在準備 Google 登入…",
+          "reconnectAction": "重新登入",
+          "reconnectTitle": "重新連接 Google AI（Antigravity）",
+          "signIn": "使用 Google 登入",
+          "submit": "連接",
+          "usageNotice": "內部員工試點。Google 可能會限制透過第三方用戶端使用的帳號。"
+        },
         "claude": {
           "authorizationCode": "授權碼",
           "codePlaceholder": "貼上 Claude 提供的授權碼",
@@ -7404,6 +7414,8 @@
       "all": "全部",
       "automated": "已自動化",
       "automations": "自動化",
+      "clearFilters": "清除篩選",
+      "clearSearch": "清除搜尋",
       "createdBy": "建立者",
       "createInChat": "在對話中建立",
       "description": "把一項任務沉澱成可複用的標準流程。可以從零編寫，也可以從日常工作中提煉，然後隨時執行、編輯或自動化。",
@@ -7412,13 +7424,18 @@
         "automated": "給工作流新增自動化後，它就會出現在這裡。",
         "private": "還沒有私有工作流。",
         "public": "還沒有公開工作流。",
+        "search": "試試其他關鍵字，或調整篩選條件。",
         "without": "這裡的每個工作流都按定時任務或事件執行。"
       },
+      "filter": "篩選工作流程",
+      "filters": "篩選",
+      "noResults": "沒有符合的工作流程",
       "noWorkflows": "沒有工作流",
       "open": "開啟{{title}}",
       "openRecovery": "開啟{{title}}的恢復",
       "ownerLoading": "正在載入作者…",
       "ownerUnavailable": "無法獲取作者",
+      "search": "搜尋工作流程…",
       "section": {
         "event": "由自動化觸發",
         "later": "更久以後",
@@ -7428,12 +7445,16 @@
       },
       "sort": {
         "alphabetical": "按名稱",
-        "created": "建立時間",
-        "label": "下次執行",
+        "created": "最近建立",
+        "label": "工作流程排序",
         "nextRun": "下次執行"
       },
       "title": "工作流",
-      "viewAutomations": "檢視自動化"
+      "viewAutomations": "檢視自動化",
+      "visibility": "可見範圍",
+      "withAutomations": "有自動化",
+      "withoutAutomations": "無自動化",
+      "workspaceShared": "工作區共享"
     },
     "skillImport": {
       "action": "匯入技能",

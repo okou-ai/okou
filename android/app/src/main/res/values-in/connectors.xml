@@ -102,6 +102,7 @@
     </plurals>
     <string name="chat_options_title">Opsi chat</string>
     <string name="chat_options_settings">Setelan percakapan</string>
+    <string name="chat_options_model">Model</string>
     <string name="chat_connector_scope">Berlaku untuk chat ini. Pada awalnya akun mengikuti setelan default ruang kerja.</string>
     <string name="chat_connector_empty">Tidak ada akun yang terhubung di ruang kerja ini.</string>
     <string name="chat_connector_manage">Kelola konektor</string>

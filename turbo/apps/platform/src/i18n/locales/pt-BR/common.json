@@ -5896,16 +5896,26 @@
         "resetUsage": "Redefinir uso"
       },
       "antigravity": {
-        "check": "Verificar login",
-        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
-        "expired": "O login expirou. Conecte a conta novamente.",
-        "openTerminal": "Abrir o terminal de login do Google",
-        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
-        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Endereço do navegador",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Cole o endereço do navegador para continuar.",
+          "connectedToast": "Conta do Google AI conectada",
+          "connectTitle": "Conectar Google AI (Antigravity)",
+          "expired": "O login expirou. Comece novamente.",
+          "failed": "Falha no login do Google. Tente novamente.",
+          "instructions": "Aprove o acesso com sua conta pessoal do Google AI Pro ou Ultra. Em seguida, o Google abre uma página que não carrega. Copie o endereço completo dessa página no navegador e cole abaixo.",
+          "openApproval": "Abrir login do Google",
+          "preparing": "Preparando o login do Google…",
+          "reconnectAction": "Entrar novamente",
+          "reconnectTitle": "Reconectar Google AI (Antigravity)",
+          "signIn": "Entrar com o Google",
+          "submit": "Conectar",
+          "usageNotice": "Piloto interno da equipe. O Google pode restringir contas usadas por clientes de terceiros."
+        },
         "claude": {
           "authorizationCode": "Código de autorização",
           "codePlaceholder": "Cole o código do Claude",
@@ -7515,6 +7525,8 @@
       "all": "Todos",
       "automated": "Automatizados",
       "automations": "Automações",
+      "clearFilters": "Limpar filtros",
+      "clearSearch": "Limpar busca",
       "createdBy": "Criado por",
       "createInChat": "Criar no chat",
       "description": "Um procedimento operacional padrão reutilizável para uma tarefa. Crie um do zero ou extraia-o do seu trabalho diário; depois, execute, edite ou automatize.",
@@ -7523,13 +7535,18 @@
         "automated": "Adicione uma automação a um fluxo de trabalho para que ele apareça aqui.",
         "private": "Nenhum fluxo de trabalho privado ainda.",
         "public": "Nenhum fluxo de trabalho público ainda.",
+        "search": "Tente outra busca ou altere o filtro.",
         "without": "Todos os fluxos de trabalho daqui são executados por agendamento ou evento."
       },
+      "filter": "Filtrar fluxos de trabalho",
+      "filters": "Filtros",
+      "noResults": "Nenhum fluxo de trabalho correspondente",
       "noWorkflows": "Nenhum fluxo de trabalho",
       "open": "Abrir {{title}}",
       "openRecovery": "Abrir recuperação de {{title}}",
       "ownerLoading": "Carregando autor…",
       "ownerUnavailable": "Autor indisponível",
+      "search": "Buscar fluxos de trabalho…",
       "section": {
         "event": "Por automação",
         "later": "Mais tarde",
@@ -7539,12 +7556,16 @@
       },
       "sort": {
         "alphabetical": "Ordem alfabética",
-        "created": "Data de criação",
-        "label": "Próxima execução",
+        "created": "Criados recentemente",
+        "label": "Ordenar workflows",
         "nextRun": "Próxima execução"
       },
       "title": "Fluxos de trabalho",
-      "viewAutomations": "Ver automações"
+      "viewAutomations": "Ver automações",
+      "visibility": "Visibilidade",
+      "withAutomations": "Com automações",
+      "withoutAutomations": "Sem automações",
+      "workspaceShared": "Compartilhado no espaço"
     },
     "skillImport": {
       "action": "Importar skills",

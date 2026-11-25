@@ -5828,16 +5828,26 @@
         "resetUsage": "Nutzung zurücksetzen"
       },
       "antigravity": {
-        "check": "Anmeldung prüfen",
-        "error": "Prüfe die dir zugewiesene Anmeldeumgebung und versuche es erneut.",
-        "expired": "Die Anmeldung ist abgelaufen. Verbinde dich erneut.",
-        "openTerminal": "Google-Anmeldeterminal öffnen",
-        "terminal": "Führe diesen Befehl im Terminal aus und melde dich mit deinem persönlichen Google AI-Konto an.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Bitte einen Administrator, dir ein Anmeldeterminal zuzuweisen.",
-        "verify": "Dieser Befehl verwendet dein Abo, um je eine Anfrage an Neon, Carbon und Hydrogen zu senden."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Adresse aus dem Browser",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Füge die Adresse aus dem Browser ein, um fortzufahren.",
+          "connectedToast": "Google AI-Konto verbunden",
+          "connectTitle": "Google AI (Antigravity) verbinden",
+          "expired": "Die Anmeldung ist abgelaufen. Beginne erneut.",
+          "failed": "Google-Anmeldung fehlgeschlagen. Versuche es erneut.",
+          "instructions": "Genehmige den Zugriff mit deinem persönlichen Google AI Pro- oder Ultra-Konto. Google öffnet danach eine Seite, die nicht lädt. Kopiere die vollständige Adresse dieser Seite aus deinem Browser und füge sie unten ein.",
+          "openApproval": "Google-Anmeldung öffnen",
+          "preparing": "Google-Anmeldung wird vorbereitet…",
+          "reconnectAction": "Erneut anmelden",
+          "reconnectTitle": "Google AI (Antigravity) erneut verbinden",
+          "signIn": "Mit Google anmelden",
+          "submit": "Verbinden",
+          "usageNotice": "Interner Pilot für Mitarbeitende. Google kann Konten einschränken, die über Drittanbieter-Clients verwendet werden."
+        },
         "claude": {
           "authorizationCode": "Autorisierungscode",
           "codePlaceholder": "Code von Claude einfügen",
@@ -7433,6 +7443,8 @@
       "all": "Alle",
       "automated": "Automatisiert",
       "automations": "Automatisierungen",
+      "clearFilters": "Filter löschen",
+      "clearSearch": "Suche löschen",
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
       "description": "Eine wiederverwendbare SOP für eine Aufgabe. Schreiben Sie eines von Grund auf oder destillieren Sie es aus Ihrer täglichen Arbeit und führen Sie es dann aus, bearbeiten oder automatisieren Sie es.",
@@ -7441,13 +7453,18 @@
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",
         "private": "Noch keine privaten Workflows.",
         "public": "Noch keine öffentlichen Workflows.",
+        "search": "Versuche einen anderen Suchbegriff oder ändere den Filter.",
         "without": "Jeder Workflow läuft hier nach einem Zeitplan oder Ereignis."
       },
+      "filter": "Workflows filtern",
+      "filters": "Filter",
+      "noResults": "Keine passenden Workflows",
       "noWorkflows": "Keine Workflows",
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
       "ownerLoading": "Autor wird geladen…",
       "ownerUnavailable": "Autor nicht verfügbar",
+      "search": "Workflows suchen…",
       "section": {
         "event": "Über Automatisierung",
         "later": "Später",
@@ -7457,12 +7474,16 @@
       },
       "sort": {
         "alphabetical": "Alphabetisch",
-        "created": "Zeit geschaffen",
-        "label": "Nächste Ausführung",
+        "created": "Zuletzt erstellt",
+        "label": "Workflows sortieren",
         "nextRun": "Nächste Ausführung"
       },
       "title": "Workflows",
-      "viewAutomations": "Automatisierungen anzeigen"
+      "viewAutomations": "Automatisierungen anzeigen",
+      "visibility": "Sichtbarkeit",
+      "withAutomations": "Mit Automatisierungen",
+      "withoutAutomations": "Ohne Automatisierungen",
+      "workspaceShared": "Im Arbeitsbereich geteilt"
     },
     "skillImport": {
       "action": "Skills importieren",

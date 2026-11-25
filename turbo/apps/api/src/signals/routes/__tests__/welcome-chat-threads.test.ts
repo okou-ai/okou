@@ -1,4 +1,8 @@
 import {
+  WELCOME_THREAD_ASSETS,
+  MY_OKOU_WELCOME_THREAD_ASSETS,
+} from "@okouai/core/welcome-thread-assets";
+import {
   chatThreadConnectorSelectionContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
@@ -282,17 +286,15 @@ describe("POST /api/welcome-chat-threads", () => {
         "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
       );
       expect(content).not.toContain("{{");
-      expect(content).toContain(
-        "https://my-okou-quickstart-20261112-review.okou.app",
-      );
-      for (const filename of [
-        "my-okou-instructions-8ec43cd079ea.png",
-        "my-okou-workflow-instructions-5f1222f7d3ea.png",
-        "my-okou-workflow-settings-5c32a5d6a9c6.png",
+      for (const url of [
+        WELCOME_THREAD_ASSETS.campaignVisualUrl,
+        WELCOME_THREAD_ASSETS.presentationArtifactUrl,
+        WELCOME_THREAD_ASSETS.websiteArtifactUrl,
+        WELCOME_THREAD_ASSETS.slackSceneUrl,
+        WELCOME_THREAD_ASSETS.telegramSceneUrl,
+        ...Object.values(MY_OKOU_WELCOME_THREAD_ASSETS),
       ]) {
-        expect(content).toContain(
-          `https://my-okou-quickstart-20261112-review.okou.app/assets/${filename}`,
-        );
+        expect(content).toContain(url);
       }
     },
   );

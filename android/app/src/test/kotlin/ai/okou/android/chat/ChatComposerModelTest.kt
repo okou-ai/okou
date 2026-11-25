@@ -8,10 +8,19 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.CreateThreadRequestReasoningEffort
 import ai.okou.android.api.generated.CreatedThread
 import ai.okou.android.api.generated.CreatedThreadServiceTier
+import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValue
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValueEffort
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.settings.DefaultModelChoice
+import ai.okou.android.settings.DefaultModelOptions
+import ai.okou.android.settings.DefaultModelRecord
+import ai.okou.android.settings.DefaultModelState
+import ai.okou.android.settings.ModelEffort
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -495,6 +504,113 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun aReplacedModelCannotOverrideTheCurrentModelsSavedEffort() = check { service, _, create ->
+        val target = ComposerTarget()
+        val choice =
+            DefaultModelChoice(
+                id = "current-model",
+                label = "Current model",
+                canSelect = true,
+                efforts = listOf(ModelEffort.LOW, ModelEffort.MEDIUM, ModelEffort.HIGH),
+                defaultEffort = ModelEffort.MEDIUM,
+                fastMultiplier = null,
+            )
+        val options =
+            DefaultModelOptions(
+                listOf(choice),
+                mapOf("current-model" to "current-model", "retired-model" to "current-model"),
+            )
+        val confirmed =
+            DefaultModelPreference(
+                selectedModel = "current-model",
+                serviceTier = null,
+                modelSettings =
+                    mapOf(
+                        "current-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.LOW,
+                            ),
+                        "retired-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.HIGH,
+                            ),
+                    ),
+            )
+        val defaults = DefaultModelState(record = DefaultModelRecord(confirmed), options = options)
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use the current model's effort")
+        model.editDraftModel(target, defaults.draftDefaults())
+        model.send(target, options)
+        runCurrent()
+        assertEquals(
+            CreateThreadRequestReasoningEffort.LOW,
+            service.creates.single().reasoningEffort,
+        )
+    }
+
+    @Test
+    fun explicitAutoSurvivesRejectedCreationAndDraftRestore() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use Auto for this draft")
+        val selection =
+            DraftModelSelection(null, mapOf("gpt-test" to CreateThreadRequestReasoningEffort.HIGH))
+        model.editDraftModel(target, selection)
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        val request = service.creates.single()
+        assertEquals(CanonicalOptional.Present(null), request.model)
+        assertEquals(CanonicalOptional.Present(null), request.serviceTier)
+        assertNull(request.reasoningEffort)
+        assertTrue(service.requests.isEmpty())
+
+        val rejected = store.load(identity).journal
+        assertNull(rejected.newChatModel)
+        model.restoreDraft(target, rejected.retainedDrafts.keys.single())
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+        assertEquals("Use Auto for this draft", model.uiState.value.entry(target).text)
+    }
+
+    @Test
+    fun restoredRejectedDraftKeepsInheritingTheDefault() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use my personal default")
+        val createThread = service.create
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        assertEquals(CanonicalOptional.Absent, service.creates.single().model)
+        val journal = store.load(identity).journal
+        val rejected = journal.retainedDrafts.keys.single()
+        assertTrue(rejected in journal.retainedDraftModels)
+        assertNull(journal.retainedDraftModels[rejected])
+
+        model.editDraftModel(target, DraftModelSelection("gpt-test", fast = true))
+        model.restoreDraft(target, rejected)
+        service.create = createThread
+        model.send(target)
+        runCurrent()
+
+        val restored = service.creates.last()
+        assertEquals(CanonicalOptional.Absent, restored.model)
+        assertEquals(CanonicalOptional.Absent, restored.serviceTier)
+        assertNull(restored.reasoningEffort)
+        assertEquals("Use my personal default", service.requests.single().prompt)
+    }
+
     @Test
     fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
         val model = create(false, identity)

@@ -5826,16 +5826,26 @@
         "resetUsage": "Reset usage"
       },
       "antigravity": {
-        "check": "Check sign-in",
-        "error": "Check your assigned sign-in worker and try again.",
-        "expired": "Sign-in expired. Connect again to start a new session.",
-        "openTerminal": "Open Google sign-in terminal",
-        "terminal": "Run this command in your terminal and sign in with your personal Google AI account.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Ask an administrator to assign your sign-in terminal.",
-        "verify": "This command uses your subscription to send one request each to Neon, Carbon and Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Address from your browser",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Paste the address from your browser to continue.",
+          "connectedToast": "Google AI account connected",
+          "connectTitle": "Connect Google AI (Antigravity)",
+          "expired": "Sign-in expired. Start again.",
+          "failed": "Google sign-in failed. Try again.",
+          "instructions": "Approve access with your personal Google AI Pro or Ultra account. Google then opens a page that does not load. Copy that page's full address from your browser and paste it below.",
+          "openApproval": "Open Google sign-in",
+          "preparing": "Preparing Google sign-in…",
+          "reconnectAction": "Sign in again",
+          "reconnectTitle": "Reconnect Google AI (Antigravity)",
+          "signIn": "Sign in with Google",
+          "submit": "Connect",
+          "usageNotice": "Internal staff pilot. Google may restrict accounts that are used through third-party clients."
+        },
         "claude": {
           "authorizationCode": "Authorization code",
           "codePlaceholder": "Paste code from Claude",
@@ -7431,6 +7441,8 @@
       "all": "All",
       "automated": "Automated",
       "automations": "Automations",
+      "clearFilters": "Clear filters",
+      "clearSearch": "Clear search",
       "createdBy": "Created by",
       "createInChat": "Create in chat",
       "description": "A reusable SOP for a task. Write one from scratch or distill it from your daily work, then run, edit, or automate it.",
@@ -7439,13 +7451,18 @@
         "automated": "Add an automation to a workflow and it shows up here.",
         "private": "No private workflows yet.",
         "public": "No public workflows yet.",
+        "search": "Try another search or change the filter.",
         "without": "Every workflow here runs on a schedule or event."
       },
+      "filter": "Filter workflows",
+      "filters": "Filters",
+      "noResults": "No matching workflows",
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
       "openRecovery": "Open {{title}} recovery",
       "ownerLoading": "Loading author…",
       "ownerUnavailable": "Author unavailable",
+      "search": "Search workflows…",
       "section": {
         "event": "On automation",
         "later": "Later",
@@ -7455,12 +7472,16 @@
       },
       "sort": {
         "alphabetical": "Alphabetical",
-        "created": "Created time",
-        "label": "Next run",
+        "created": "Newest created",
+        "label": "Sort workflows",
         "nextRun": "Next run"
       },
       "title": "Workflows",
-      "viewAutomations": "View automations"
+      "viewAutomations": "View automations",
+      "visibility": "Visibility",
+      "withAutomations": "With automations",
+      "withoutAutomations": "Without automations",
+      "workspaceShared": "Workspace shared"
     },
     "skillImport": {
       "action": "Import skills",

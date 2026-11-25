@@ -5896,16 +5896,26 @@
         "resetUsage": "Reimposta l'utilizzo"
       },
       "antigravity": {
-        "check": "Verifica accesso",
-        "error": "Controlla l’ambiente di accesso che ti è stato assegnato e riprova.",
-        "expired": "La sessione di accesso è scaduta. Ricollega il tuo account.",
-        "openTerminal": "Apri il terminale di accesso a Google",
-        "terminal": "Esegui questo comando nel terminale e accedi con il tuo account Google AI personale.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "Chiedi a un amministratore di assegnarti un terminale di accesso.",
-        "verify": "Questo comando usa il tuo abbonamento per inviare una richiesta a ciascuno dei modelli Neon, Carbon e Hydrogen."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "Indirizzo dal browser",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "Incolla l'indirizzo dal browser per continuare.",
+          "connectedToast": "Account Google AI connesso",
+          "connectTitle": "Connetti Google AI (Antigravity)",
+          "expired": "L'accesso è scaduto. Ricomincia.",
+          "failed": "Accesso a Google non riuscito. Riprova.",
+          "instructions": "Approva l'accesso con il tuo account personale Google AI Pro o Ultra. Google apre poi una pagina che non si carica. Copia l'indirizzo completo di quella pagina dal browser e incollalo qui sotto.",
+          "openApproval": "Apri l'accesso a Google",
+          "preparing": "Preparazione dell'accesso a Google…",
+          "reconnectAction": "Accedi di nuovo",
+          "reconnectTitle": "Riconnetti Google AI (Antigravity)",
+          "signIn": "Accedi con Google",
+          "submit": "Connetti",
+          "usageNotice": "Pilota interno per il personale. Google può limitare gli account usati tramite client di terze parti."
+        },
         "claude": {
           "authorizationCode": "Codice di autorizzazione",
           "codePlaceholder": "Incolla il codice da Claude",
@@ -7515,6 +7525,8 @@
       "all": "Tutto",
       "automated": "Automatizzato",
       "automations": "Automazioni",
+      "clearFilters": "Cancella filtri",
+      "clearSearch": "Cancella ricerca",
       "createdBy": "Creato da",
       "createInChat": "Crea nella chat",
       "description": "Una SOP riutilizzabile per un'attività. Scrivine uno da zero o distillalo dal tuo lavoro quotidiano, quindi eseguilo, modificalo o automatizzalo.",
@@ -7523,13 +7535,18 @@
         "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",
         "private": "Nessun flusso di lavoro privato ancora.",
         "public": "Nessun flusso di lavoro pubblico ancora.",
+        "search": "Prova un’altra ricerca o modifica il filtro.",
         "without": "Ogni flusso di lavoro qui viene eseguito in base a una pianificazione o a un evento."
       },
+      "filter": "Filtra i flussi di lavoro",
+      "filters": "Filtri",
+      "noResults": "Nessun flusso di lavoro corrispondente",
       "noWorkflows": "Nessun flusso di lavoro",
       "open": "Apri {{title}}",
       "openRecovery": "Apri il ripristino di {{title}}",
       "ownerLoading": "Caricamento autore…",
       "ownerUnavailable": "Autore non disponibile",
+      "search": "Cerca flussi di lavoro…",
       "section": {
         "event": "Sull'automazione",
         "later": "Più tardi",
@@ -7539,12 +7556,16 @@
       },
       "sort": {
         "alphabetical": "Alfabetico",
-        "created": "Tempo creato",
-        "label": "Prossima esecuzione",
+        "created": "Creati di recente",
+        "label": "Ordina workflow",
         "nextRun": "Prossima esecuzione"
       },
       "title": "Flussi di lavoro",
-      "viewAutomations": "Visualizza le automazioni"
+      "viewAutomations": "Visualizza le automazioni",
+      "visibility": "Visibilità",
+      "withAutomations": "Con automazioni",
+      "withoutAutomations": "Senza automazioni",
+      "workspaceShared": "Condiviso nello spazio"
     },
     "skillImport": {
       "action": "Importa skill",

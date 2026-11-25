@@ -73,15 +73,8 @@ class NativeComposerDraftTest {
                         10_000,
                     ),
                 )
-            fun editor() =
-                checkNotNull(
-                    device.wait(
-                        Until.findObject(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true),
-                        ),
-                        10_000,
-                    ),
-                )
+            val editText = By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
+            fun editor() = checkNotNull(device.wait(Until.findObject(editText), 10_000))
             checkNotNull(device.wait(Until.findObject(chatListRegion(app)), 10_000))
             device
                 .findObject(
@@ -99,14 +92,21 @@ class NativeComposerDraftTest {
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 listJob = ready.chats.viewModelScope.coroutineContext[Job]
             }
-            editor().text = "Native edit while Web draft is loading"
+            val draft = "Native edit\nWhile loading"
+            val emptyEditor = editor()
+            val emptyHeight = emptyEditor.visibleBounds.height()
+            emptyEditor.text = draft
+            await {
+                val edited = device.findObject(editText)
+                edited?.text == draft && edited.visibleBounds.height() > emptyHeight
+            }
             val heldEditor = editor().visibleBounds
             held.countDown()
-            await { fixture.drafts[path]?.plainText() == "Native edit while Web draft is loading" }
-            assertEquals("Native edit while Web draft is loading", editor().text)
+            await { fixture.drafts[path]?.plainText() == draft }
+            assertEquals(draft, editor().text)
             assertEquals(heldEditor, editor().visibleBounds)
             scenario.recreate()
-            assertEquals("Native edit while Web draft is loading", editor().text)
+            assertEquals(draft, editor().text)
             fixture.drafts[path] = plainDraftDocument("Updated on Web")
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED)

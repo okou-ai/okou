@@ -28,6 +28,7 @@ import {
 } from "../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { AntigravitySignInDialog } from "./components/settings/antigravity-device-auth-dialog.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
@@ -309,6 +310,7 @@ export function PersonalSubscriptionDialogs() {
     <>
       <PersonalClaudeCodeDeviceAuthDialog />
       <PersonalCodexDeviceAuthDialog />
+      <AntigravitySignInDialog />
     </>
   );
 }

@@ -5805,16 +5805,26 @@
         "resetUsage": "使用量をリセットする"
       },
       "antigravity": {
-        "check": "ログイン状態を確認",
-        "error": "割り当てられたログイン環境を確認して、もう一度お試しください。",
-        "expired": "ログインの有効期限が切れました。もう一度接続してください。",
-        "openTerminal": "Google ログイン用のターミナルを開く",
-        "terminal": "ターミナルで次のコマンドを実行し、個人の Google AI アカウントでログインしてください。",
-        "title": "Google AI（Antigravity）",
-        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。",
-        "verify": "このコマンドはサブスクリプションの利用枠を使い、Neon、Carbon、Hydrogen にそれぞれ 1 件のリクエストを送信します。"
+        "title": "Google AI（Antigravity）"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "ブラウザのアドレス",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "続行するにはブラウザのアドレスを貼り付けてください。",
+          "connectedToast": "Google AI アカウントを接続しました",
+          "connectTitle": "Google AI（Antigravity）に接続",
+          "expired": "サインインの有効期限が切れました。もう一度開始してください。",
+          "failed": "Google サインインに失敗しました。もう一度お試しください。",
+          "instructions": "個人の Google AI Pro または Ultra アカウントでアクセスを承認してください。その後 Google が読み込めないページを開きます。ブラウザでそのページの完全なアドレスをコピーし、下に貼り付けてください。",
+          "openApproval": "Google サインインを開く",
+          "preparing": "Google サインインを準備しています…",
+          "reconnectAction": "もう一度サインイン",
+          "reconnectTitle": "Google AI（Antigravity）に再接続",
+          "signIn": "Google でサインイン",
+          "submit": "接続",
+          "usageNotice": "社内スタッフ向けのパイロットです。Google はサードパーティ クライアント経由で使用されるアカウントを制限する場合があります。"
+        },
         "claude": {
           "authorizationCode": "認証コード",
           "codePlaceholder": "Claude からコードを貼り付けます",
@@ -7404,6 +7414,8 @@
       "all": "すべて",
       "automated": "自動化",
       "automations": "オートメーション",
+      "clearFilters": "フィルターをクリア",
+      "clearSearch": "検索をクリア",
       "createdBy": "作成者",
       "createInChat": "チャットで作成",
       "description": "タスク用の再利用可能なSOP。ゼロから作成するか、日常業務から抽出して実行、編集、自動化します。",
@@ -7412,13 +7424,18 @@
         "automated": "ワークフローにオートメーションを追加すると、ここに表示されます。",
         "private": "プライベート ワークフローはまだありません。",
         "public": "公開ワークフローはまだありません。",
+        "search": "別のキーワードで検索するか、フィルターを変更してください。",
         "without": "ここでのすべてのワークフローは、スケジュールまたはイベントに基づいて実行されます。"
       },
+      "filter": "ワークフローを絞り込む",
+      "filters": "フィルター",
+      "noResults": "一致するワークフローがありません",
       "noWorkflows": "ワークフローなし",
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
       "ownerLoading": "作成者を読み込み中…",
       "ownerUnavailable": "作成者情報を取得できません",
+      "search": "ワークフローを検索…",
       "section": {
         "event": "オートメーションについて",
         "later": "後で",
@@ -7428,12 +7445,16 @@
       },
       "sort": {
         "alphabetical": "アルファベット順",
-        "created": "作成時間",
-        "label": "次の実行",
+        "created": "作成日時が新しい順",
+        "label": "ワークフローの並べ替え",
         "nextRun": "次の実行"
       },
       "title": "ワークフロー",
-      "viewAutomations": "オートメーションを表示する"
+      "viewAutomations": "オートメーションを表示する",
+      "visibility": "公開範囲",
+      "withAutomations": "自動化あり",
+      "withoutAutomations": "自動化なし",
+      "workspaceShared": "ワークスペースで共有"
     },
     "skillImport": {
       "action": "スキルをインポート",

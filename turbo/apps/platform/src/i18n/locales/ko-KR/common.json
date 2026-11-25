@@ -5805,16 +5805,26 @@
         "resetUsage": "사용량 초기화"
       },
       "antigravity": {
-        "check": "로그인 확인",
-        "error": "할당된 로그인 환경을 확인한 후 다시 시도하세요.",
-        "expired": "로그인이 만료되었습니다. 계정을 다시 연결하세요.",
-        "openTerminal": "Google 로그인 터미널 열기",
-        "terminal": "터미널에서 이 명령을 실행한 후 개인 Google AI 계정으로 로그인하세요.",
-        "title": "Google AI (Antigravity)",
-        "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요.",
-        "verify": "이 명령은 구독 할당량을 사용해 Neon, Carbon, Hydrogen에 각각 한 번씩 요청을 보냅니다."
+        "title": "Google AI (Antigravity)"
       },
       "deviceAuth": {
+        "antigravity": {
+          "address": "브라우저의 주소",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "계속하려면 브라우저의 주소를 붙여넣으세요.",
+          "connectedToast": "Google AI 계정이 연결되었습니다",
+          "connectTitle": "Google AI (Antigravity) 연결",
+          "expired": "로그인이 만료되었습니다. 다시 시작하세요.",
+          "failed": "Google 로그인에 실패했습니다. 다시 시도하세요.",
+          "instructions": "개인 Google AI Pro 또는 Ultra 계정으로 액세스를 승인하세요. 그러면 Google이 로드되지 않는 페이지를 엽니다. 브라우저에서 해당 페이지의 전체 주소를 복사해 아래에 붙여넣으세요.",
+          "openApproval": "Google 로그인 열기",
+          "preparing": "Google 로그인 준비 중…",
+          "reconnectAction": "다시 로그인",
+          "reconnectTitle": "Google AI (Antigravity) 다시 연결",
+          "signIn": "Google로 로그인",
+          "submit": "연결",
+          "usageNotice": "내부 직원 파일럿입니다. Google은 타사 클라이언트를 통해 사용되는 계정을 제한할 수 있습니다."
+        },
         "claude": {
           "authorizationCode": "승인 코드",
           "codePlaceholder": "Claude에서 코드 붙여넣기",
@@ -7404,6 +7414,8 @@
       "all": "전체",
       "automated": "자동화됨",
       "automations": "자동화",
+      "clearFilters": "필터 지우기",
+      "clearSearch": "검색 지우기",
       "createdBy": "작성자",
       "createInChat": "채팅에서 생성",
       "description": "작업을 위한 재사용 가능한 SOP입니다. 처음부터 작성하거나 일상 업무에서 추출한 후 실행, 편집 또는 자동화하세요.",
@@ -7412,13 +7424,18 @@
         "automated": "워크플로에 자동화를 추가하면 여기에 표시됩니다.",
         "private": "비공개 워크플로가 아직 없습니다.",
         "public": "공개 워크플로가 아직 없습니다.",
+        "search": "다른 검색어를 입력하거나 필터를 변경하세요.",
         "without": "여기에 있는 모든 워크플로는 일정 또는 이벤트에 따라 실행됩니다."
       },
+      "filter": "워크플로 필터",
+      "filters": "필터",
+      "noResults": "일치하는 워크플로가 없습니다",
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
       "ownerLoading": "작성자 불러오는 중…",
       "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
+      "search": "워크플로 검색…",
       "section": {
         "event": "자동화 시",
         "later": "나중에",
@@ -7428,12 +7445,16 @@
       },
       "sort": {
         "alphabetical": "알파벳순",
-        "created": "생성 시간",
-        "label": "다음 실행",
+        "created": "최근 생성순",
+        "label": "워크플로 정렬",
         "nextRun": "다음 실행"
       },
       "title": "워크플로",
-      "viewAutomations": "자동화 보기"
+      "viewAutomations": "자동화 보기",
+      "visibility": "공개 범위",
+      "withAutomations": "자동화 있음",
+      "withoutAutomations": "자동화 없음",
+      "workspaceShared": "워크스페이스 공유"
     },
     "skillImport": {
       "action": "스킬 가져오기",
