@@ -13,6 +13,7 @@ import ai.okou.android.renameForm
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -44,7 +45,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,9 +100,7 @@ internal fun RenameListItemSheet(
         editor.updateConfirmedName(confirmedName, readOnly)
     }
 
-    val validation =
-        if (form.error == RenameFieldError.Required) stringResource(R.string.chat_rename_required)
-        else if (projectName) projectNameError(editor.field) else null
+    val validation = form.error ?: if (projectName) projectNameError(editor.field) else null
     val notice =
         when {
             status == RenameStatus.Saving && !projectName -> R.string.settings_saving
@@ -253,13 +254,12 @@ private fun projectNameActionLabels(@StringRes idle: Int, @StringRes pending: In
         stringResource(R.string.chat_project_checking),
     )
 
-@Composable
-private fun projectNameError(field: WorkspaceNameField): String? =
+private fun projectNameError(field: WorkspaceNameField): RenameFieldError? =
     if (
         field.overlongSubmission != null &&
             field.overlongSubmission == normalizedRenameName(field.input.text)
     )
-        stringResource(R.string.chat_project_name_too_long, ProjectNameLimit)
+        RenameFieldError.TooLong
     else null
 
 @Composable
@@ -267,7 +267,7 @@ private fun WorkspaceNameFormBody(
     field: WorkspaceNameField,
     label: String,
     readOnly: Boolean,
-    validation: String?,
+    validation: RenameFieldError?,
     projectName: Boolean,
     @StringRes notice: Int?,
     noticeIsError: Boolean,
@@ -276,8 +276,16 @@ private fun WorkspaceNameFormBody(
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
     val input = field.input
-    val supportingText =
-        validation ?: if (projectName) null else stringResource(R.string.chat_rename_trim_hint)
+    val requiredMessage = stringResource(R.string.chat_rename_required)
+    val lengthMessage =
+        if (projectName) stringResource(R.string.chat_project_name_too_long, ProjectNameLimit)
+        else null
+    val validationMessage =
+        when (validation) {
+            RenameFieldError.Required -> requiredMessage
+            RenameFieldError.TooLong -> lengthMessage
+            null -> null
+        }
     val lineHeightStyle =
         LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
     val supportingStyle =
@@ -288,7 +296,27 @@ private fun WorkspaceNameFormBody(
         )
     val inputStyle = okouFormInputStyle().copy(lineHeightStyle = lineHeightStyle)
     val density = LocalDensity.current
-    val supportingLineHeight = with(density) { supportingStyle.lineHeight.toDp() }
+    val textMeasurer = rememberTextMeasurer()
+    // A fallback font can need more vertical space than the configured line height.
+    val supportingLineHeight =
+        remember(textMeasurer, density, supportingStyle, requiredMessage, lengthMessage) {
+            with(density) {
+                listOfNotNull(requiredMessage, lengthMessage)
+                    .maxOf {
+                        textMeasurer
+                            .measure(
+                                AnnotatedString(it),
+                                supportingStyle,
+                                softWrap = false,
+                                maxLines = 1,
+                            )
+                            .size
+                            .height
+                            .toDp()
+                    }
+                    .coerceAtLeast(supportingStyle.lineHeight.toDp())
+            }
+        }
     val inputLineHeight = with(density) { inputStyle.lineHeight.toDp() }
     val outlineMinHeight = OutlinedTextFieldDefaults.MinHeight
     val fieldPadding = OkouFormLayout.FieldPadding.calculateTopPadding()
@@ -312,22 +340,21 @@ private fun WorkspaceNameFormBody(
                     .onFocusChanged { fieldFocused = it.isFocused }
                     .semantics {
                         contentDescription = label
-                        if (validation != null) error(validation)
+                        if (validationMessage != null) error(validationMessage)
                     },
             textStyle = inputStyle,
             readOnly = readOnly,
             supportingText = {
-                Text(
-                    supportingText.orEmpty(),
+                Box(
                     Modifier.fillMaxWidth()
                         .animateContentSize(tween(250, easing = ChatListMotionEasing))
                         .heightIn(min = supportingLineHeight),
-                    color = if (validation == null) colors.onSurfaceVariant else colors.error,
-                    style = supportingStyle,
-                    minLines = 1,
-                )
+                ) {
+                    if (validationMessage != null)
+                        Text(validationMessage, color = colors.error, style = supportingStyle)
+                }
             },
-            isError = validation != null,
+            isError = validationMessage != null,
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             onKeyboardAction = submit?.let { action -> { action() } },

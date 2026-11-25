@@ -227,6 +227,15 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         compose.onNodeWithText("Rename chat").performClick()
         val editor = compose.onNodeWithContentDescription("Chat title")
         val save = compose.onNodeWithText("Save")
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        compose.onNodeWithText("Leading and trailing spaces are removed.").assertDoesNotExist()
+        editor.performTextReplacement("")
+        val required = app.getString(R.string.chat_rename_required)
+        compose.onNodeWithText(required, useUnmergedTree = true).assertIsDisplayed()
+        editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.Error, required))
+        save.assertIsNotEnabled()
+        assertEquals(saveBounds, save.getUnclippedBoundsInRoot())
+        editor.performTextReplacement("Personal chat")
 
         fun publishTitle(sequence: Long, eventId: String, title: String) {
             events.add(

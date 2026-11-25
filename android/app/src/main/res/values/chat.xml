@@ -108,7 +108,6 @@
     <string name="chat_row_action_offline_named">Could not complete “%1$s”. Check your connection and try again.</string>
     <string name="chat_rename_save_failed">Could not save. Your changes are still here.</string>
     <string name="chat_rename_check_result">Check result</string>
-    <string name="chat_rename_trim_hint">Leading and trailing spaces are removed.</string>
     <string name="chat_rename_required">Enter a name.</string>
     <string name="chat_rename_checking_result">Checking the result…</string>
     <string name="chat_rename_save_unconfirmed">The save result is still unconfirmed.</string>

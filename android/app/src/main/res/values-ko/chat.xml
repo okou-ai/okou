@@ -105,7 +105,6 @@
     <string name="chat_row_action_offline_named">‘%1$s’을 완료하지 못했습니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="chat_rename_save_failed">저장하지 못했습니다. 변경 사항은 유지됩니다.</string>
     <string name="chat_rename_check_result">결과 확인</string>
-    <string name="chat_rename_trim_hint">앞뒤 공백은 자동으로 제거됩니다.</string>
     <string name="chat_rename_required">이름을 입력하세요.</string>
     <string name="chat_rename_checking_result">결과를 확인하는 중…</string>
     <string name="chat_rename_save_unconfirmed">저장 결과가 아직 확인되지 않았습니다.</string>
