@@ -829,8 +829,9 @@ internal fun ConversationRoute(
                             if (composer != null && !missing) ChatComposerTopInset else 0.dp
                         WorkspaceFeedbackHost(
                             controlSnackbar,
-                            stopFeedbackBounds.padding(bottom = 8.dp - composerTopInset),
+                            Modifier.padding(bottom = 8.dp - composerTopInset),
                             manageTimeout = false,
+                            surfaceModifier = stopFeedbackBounds,
                         )
                     }
                 }

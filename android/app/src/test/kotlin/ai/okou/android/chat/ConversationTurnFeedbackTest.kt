@@ -2,13 +2,21 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.WorkspaceFeedbackHost
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsEqualTo
@@ -153,5 +161,45 @@ class ConversationTurnFeedbackTest {
         assertTrue(layout.isLineEllipsized(0))
         assertEquals(13.sp, layout.layoutInput.style.fontSize)
         assertEquals(20.sp, layout.layoutInput.style.lineHeight)
+    }
+
+    @Test
+    fun snackbarCollisionBoundsFollowTheSurfaceInsideItsMargins() {
+        val message = "Could not stop the task"
+        var outerBounds: Rect? = null
+        var surfaceBounds: Rect? = null
+        compose.setContent {
+            val host = remember { SnackbarHostState() }
+            LaunchedEffect(host) {
+                host.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            }
+            OkouTheme {
+                WorkspaceFeedbackHost(
+                    host,
+                    Modifier.width(240.dp)
+                        .onGloballyPositioned { outerBounds = it.boundsInRoot() }
+                        .padding(bottom = 4.dp),
+                    surfaceModifier =
+                        Modifier.onGloballyPositioned { surfaceBounds = it.boundsInRoot() },
+                )
+            }
+        }
+
+        compose.onNodeWithText(message).assertExists()
+        compose.runOnIdle {
+            val outer = checkNotNull(outerBounds)
+            val surface = checkNotNull(surfaceBounds)
+            val sideGap = with(compose.density) { 12.dp.roundToPx().toFloat() }
+            val bottomGap = with(compose.density) { 4.dp.roundToPx().toFloat() }
+            assertEquals(
+                Rect(
+                    outer.left + sideGap,
+                    outer.top,
+                    outer.right - sideGap,
+                    outer.bottom - bottomGap,
+                ),
+                surface,
+            )
+        }
     }
 }

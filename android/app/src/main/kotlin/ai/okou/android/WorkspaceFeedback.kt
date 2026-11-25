@@ -583,6 +583,7 @@ internal fun WorkspaceFeedbackHost(
     state: SnackbarHostState,
     modifier: Modifier,
     manageTimeout: Boolean = true,
+    surfaceModifier: Modifier = Modifier,
     restorePaneFocus: (() -> Unit)? = null,
 ) {
     if (manageTimeout) WorkspaceFeedbackTimeout(state)
@@ -603,7 +604,12 @@ internal fun WorkspaceFeedbackHost(
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
         Surface(
-            modifier = modifier.padding(horizontal = 12.dp).widthIn(max = 480.dp).fillMaxWidth(),
+            modifier =
+                modifier
+                    .padding(horizontal = 12.dp)
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth()
+                    .then(surfaceModifier),
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.inverseSurface,
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
