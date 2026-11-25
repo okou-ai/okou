@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.6](https://github.com/okou-ai/okou/compare/ios-v0.65.5...ios-v0.65.6) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep the conversation's delivery state in the session graph ([#50712](https://github.com/okou-ai/okou/issues/50712)) ([98141fe](https://github.com/okou-ai/okou/commit/98141fecb19a1f8c853a6b283c61f65f5686195e))
+
 ## [0.65.5](https://github.com/okou-ai/okou/compare/ios-v0.65.4...ios-v0.65.5) (2026-11-25)
 
 
