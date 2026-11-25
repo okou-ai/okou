@@ -636,6 +636,7 @@ test("a supported DNS setup opens provider consent without verifying or saving t
   );
   click(await findNamedButton(`Manage ${hostname}`, menu));
   const link = await findNamedLink("Configure website records", menu);
+  expect(link).toHaveRole("link");
   expect(link).toHaveAttribute("href", automaticUrl);
   expect(link).toHaveAttribute("target", "_blank");
   expect(

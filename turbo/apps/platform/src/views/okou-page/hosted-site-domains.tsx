@@ -9,6 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
   Button,
+  buttonVariants,
   IconButton,
   Input,
 } from "@okouai/ui";
@@ -281,36 +282,24 @@ function DomainSetup({
         <>
           <div className="flex flex-wrap items-center gap-2">
             {setup.data.automaticUrl && (
-              <Button
-                size="sm"
-                nativeButton={false}
-                variant="outline"
-                render={
-                  <a
-                    href={setup.data.automaticUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                }
+              <a
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+                href={setup.data.automaticUrl}
+                target="_blank"
+                rel="noopener noreferrer"
               >
                 {t(($) => {
                   return $.artifacts.customDomain.automaticSetup;
                 })}
                 <ExternalLink size={12} />
-              </Button>
+              </a>
             )}
             {setup.data.controlPanelUrl && (
-              <Button
-                size="sm"
-                nativeButton={false}
-                variant="quiet"
-                render={
-                  <a
-                    href={setup.data.controlPanelUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  />
-                }
+              <a
+                className={buttonVariants({ size: "sm", variant: "quiet" })}
+                href={setup.data.controlPanelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
               >
                 {t(
                   ($) => {
@@ -321,7 +310,7 @@ function DomainSetup({
                   },
                 )}
                 <ExternalLink size={12} />
-              </Button>
+              </a>
             )}
           </div>
           <p className="mt-2 text-muted-foreground">

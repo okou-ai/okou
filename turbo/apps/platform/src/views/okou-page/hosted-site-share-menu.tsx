@@ -1126,7 +1126,11 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          domainEditor ? "w-105" : emailSharing ? "w-100" : "w-90",
+          domainEditor
+            ? "max-h-[var(--available-height)] w-105 overflow-y-auto overscroll-contain"
+            : emailSharing
+              ? "w-100"
+              : "w-90",
         )}
       >
         <HostedSiteShareBody
