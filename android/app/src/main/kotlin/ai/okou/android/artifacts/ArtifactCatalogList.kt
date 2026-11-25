@@ -6,6 +6,7 @@ import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ChatListTextAction
+import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
@@ -111,7 +112,10 @@ internal fun ArtifactCatalogList(
             ArtifactCatalogFailure.ChatUnavailable -> state
             else ->
                 key(input, query) {
-                    retainSearchResultsWhileComposing(state, input.composition != null)
+                    retainSearchResultsWhileComposing(
+                        state,
+                        hasPendingSearchText(input.text, input.composition, query.keyword),
+                    )
                 }
         }
     val page = displayed.page.takeIf { displayed.query == query }

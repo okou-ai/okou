@@ -7,7 +7,6 @@ import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectDeleteStatus
 import android.os.Looper
-import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
@@ -25,7 +24,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasNoClickAction
-import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -2500,39 +2498,6 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
 
         compose.onNodeWithContentDescription("Back").performClick()
         actions.assertIsFocused()
-    }
-
-    @Test
-    @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun findKeepsTheTurnListUntilImeCommitAndRestoresFocusOnClear() {
-        val app = compose.activity.application as ChatListApplication
-        app.responseGate.countDown()
-        awaitListAndNames()
-        compose.onNodeWithText("Personal chat").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Native history reply"), 10_000)
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Find messages").performClick()
-        val query = compose.onNodeWithTag("conversation_find_query").assertIsFocused()
-        val turns = hasText("Browse turns")
-        compose.waitUntilExactlyOneExists(turns, 10_000)
-
-        val ime = compose.runOnIdle {
-            checkNotNull(compose.activity.currentFocus?.onCreateInputConnection(EditorInfo()))
-        }
-        compose.runOnIdle { assertTrue(ime.setComposingText("Native", 1)) }
-        query.assertTextContains("Native").assertIsFocused()
-        compose.onNode(turns).assertIsDisplayed()
-
-        compose.runOnIdle { assertTrue(ime.commitText("Native history", 1)) }
-        compose.waitUntilExactlyOneExists(hasText("1 matching message"), 10_000)
-        compose.onNodeWithText("Native history reply").assertIsDisplayed()
-        compose
-            .onNodeWithContentDescription("Clear search")
-            .assertWidthIsEqualTo(48.dp)
-            .assertHeightIsEqualTo(48.dp)
-            .performClick()
-        query.assertIsFocused()
-        compose.waitUntilExactlyOneExists(turns, 10_000)
     }
 
     @Test

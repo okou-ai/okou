@@ -113,7 +113,7 @@ internal fun WorkspaceSearchScreen(
             remote?.artifacts == SearchRead.AccessLost,
             workflowResults == SearchRead.AccessLost,
         ) {
-            retainSearchResultsWhileComposing(incomingResults, query.composition != null)
+            retainSearchResultsWhileComposing(incomingResults, search.hasPendingInput)
         }
     val colors = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current

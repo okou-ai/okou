@@ -32,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -180,6 +181,13 @@ internal fun searchClearAction(focus: FocusRequester, clear: () -> Unit): () -> 
 
 internal fun TextFieldState.committedSearchText(): String? =
     if (composition == null) text.toString() else null
+
+// An IME can mark an already committed word while offering suggestions.
+internal fun hasPendingSearchText(
+    text: CharSequence,
+    composition: TextRange?,
+    committedKeyword: String,
+): Boolean = composition != null && text.trim().toString() != committedKeyword
 
 private class DisplayedSearchValue<T>(var value: T)
 

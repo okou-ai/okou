@@ -7,6 +7,7 @@ import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
 import ai.okou.android.chat.WorkspaceSearchType
+import ai.okou.android.hasPendingSearchText
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
@@ -262,6 +263,9 @@ internal class ChatSearchState(
 
     var keyword by mutableStateOf(query.text.trim())
         private set
+
+    val hasPendingInput: Boolean
+        get() = hasPendingSearchText(query.text, query.composition, keyword)
 
     var type by mutableStateOf(type)
         private set

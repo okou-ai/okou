@@ -8,6 +8,7 @@ import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ContentReadFeedback
+import ai.okou.android.hasPendingSearchText
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
@@ -307,7 +308,10 @@ private fun ConnectorDirectory(
             state.matches?.entries?.failure == ConnectorReadFailure.Unavailable,
             state.accounts.failure == ConnectorReadFailure.Unavailable,
         ) {
-            retainSearchResultsWhileComposing(state, route.query.composition != null)
+            retainSearchResultsWhileComposing(
+                state,
+                hasPendingSearchText(route.query.text, route.query.composition, query),
+            )
         }
     val recommended = !route.connected && filter == null
     val connected = directory.connected.data

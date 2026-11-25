@@ -131,7 +131,12 @@ internal class ConversationFindVisit(
                 withContext(Dispatchers.Default) {
                     findMessages(messages, rows, pendingInputIds, artifactCards, names)
                 }
-            if (input.composition != null) snapshotFlow { input.composition == null }.first { it }
+            if (input.composition != null) {
+                snapshotFlow {
+                    input.composition == null || normalizeFindText(input.text.toString()) == keyword
+                }
+                    .first { it }
+            }
             index = refreshed
             indexedImageNames = names
         }

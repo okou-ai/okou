@@ -368,8 +368,7 @@ private fun WorkflowDirectory(
     val clearQuery = searchClearAction(searchFocus, query::clearQuery)
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
-        else
-            key(query) { retainSearchResultsWhileComposing(state, query.query.composition != null) }
+        else key(query) { retainSearchResultsWhileComposing(state, query.hasPendingInput) }
     val catalog =
         remember(displayedState.catalog, state.catalog) {
             val displayed = displayedState.catalog
