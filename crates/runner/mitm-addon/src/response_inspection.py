@@ -16,7 +16,7 @@ from typing import Protocol
 # bounded partial/discarded fragment. This is an aggregate quantum across ALL
 # decoded deliveries, not a new allowance for each feed.
 _STEPS_PER_TURN = 8
-_JSON_STEP_BYTES = 4 * 1024
+JSON_STEP_BYTES = 4 * 1024
 INSPECTION_INTERRUPTED = "response inspection interrupted"
 
 
@@ -119,10 +119,10 @@ class BufferedResponseInspection(CooperativeResponseInspection):
 
 def json_steps(inspector: _JsonFeed, chunk: bytes) -> Generator[None]:
     """Feed bounded HTTP JSON slices without replacing the inspector's state."""
-    for offset in range(0, len(chunk), _JSON_STEP_BYTES):
+    for offset in range(0, len(chunk), JSON_STEP_BYTES):
         if not inspector.accepts_more_input():
             return
-        inspector.feed(chunk[offset : offset + _JSON_STEP_BYTES])
+        inspector.feed(chunk[offset : offset + JSON_STEP_BYTES])
         yield
 
 
