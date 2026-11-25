@@ -45,24 +45,20 @@ export async function validatePermanentComputerUseHostStorage(
       ).rows[0]?.name,
       null,
     );
+    const [device] = await db
+      .insert(remoteDevices)
+      .values({ orgId, userId: values.userId, displayName: values.displayName })
+      .returning();
+    assert.ok(device);
+    assert.equal(device.accessAllowed, false);
+    assert.equal(device.accessExpiresAt, null);
     const [created] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .returning();
     assert.ok(created);
     assert.equal(created.connectionGeneration, 0);
     assert.equal(created.status, "online");
-    const assigned = await db.query.computerUseHosts.findFirst({
-      where: eq(computerUseHosts.id, created.id),
-    });
-    assert.ok(assigned?.remoteDeviceId);
-    const [device] = await db
-      .select()
-      .from(remoteDevices)
-      .where(eq(remoteDevices.id, assigned.remoteDeviceId));
-    assert.equal(device?.accessAllowed, false);
-    assert.equal(device?.accessExpiresAt, null);
-
     const [destination] = await db
       .insert(remoteDevices)
       .values({
@@ -110,7 +106,7 @@ export async function validatePermanentComputerUseHostStorage(
           .where(eq(remoteDevices.orgId, orgId))
       ).length,
       2,
-      "Registration retries must not create additional devices",
+      "A move must preserve both device records",
     );
     assert.deepEqual(
       await db.query.computerUseHosts.findFirst({

@@ -21,16 +21,18 @@ export const remoteDevices = pgTable(
     accessExpiresAt: timestamp("access_expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [
-    unique("uq_remote_devices_id_owner").on(
-      table.id,
-      table.orgId,
-      table.userId,
-    ),
-    index("idx_remote_devices_owner").on(table.orgId, table.userId),
-    check(
-      "chk_remote_devices_access_expiry",
-      sql`${table.accessAllowed} OR ${table.accessExpiresAt} IS NULL`,
-    ),
-  ],
+  (table) => {
+    return [
+      unique("uq_remote_devices_id_owner").on(
+        table.id,
+        table.orgId,
+        table.userId,
+      ),
+      index("idx_remote_devices_owner").on(table.orgId, table.userId),
+      check(
+        "chk_remote_devices_access_expiry",
+        sql`${table.accessAllowed} OR ${table.accessExpiresAt} IS NULL`,
+      ),
+    ];
+  },
 );

@@ -1,3 +1,4 @@
+import { publishRemoteChannelDevice } from "./remote-device-publication";
 import {
   vncConnectionResponseSchema,
   type CreateVncConnectionRequest,
@@ -540,6 +541,7 @@ function vncConnectionCreationValues(
   return {
     ...args.owner,
     id: args.body.id,
+    remoteDeviceId: sql`gen_random_uuid()`,
     displayName: args.body.displayName,
     host: prepared.host.value,
     port: args.body.port,
@@ -573,14 +575,21 @@ const writeInlineVncConnectionCreate$ = command(
           credentialId: sql`(select ${generated.id} from ${generated})`,
           authMethod: create.authMethod,
         })
-        .returning({ ...metadata }),
+        .returning({
+          ...metadata,
+          remoteDeviceId: vncConnections.remoteDeviceId,
+          orgId: vncConnections.orgId,
+          userId: vncConnections.userId,
+        }),
     );
+    const device = publishRemoteChannelDevice(db, connection);
     const complete = publication.completion(connection);
     const [created] = await db
       .with(
         ...publication.ctes,
         generated,
         connection,
+        device,
         createdCredential,
         complete,
       )
@@ -685,11 +694,17 @@ export const createVncConnection$ = command(
               ...vncConnectionCreationValues(args, prepared.value),
               ...credentialDatabaseValues(credential),
             })
-            .returning({ ...metadata }),
+            .returning({
+              ...metadata,
+              remoteDeviceId: vncConnections.remoteDeviceId,
+              orgId: vncConnections.orgId,
+              userId: vncConnections.userId,
+            }),
         );
+        const device = publishRemoteChannelDevice(db, connection);
         const complete = publication.completion(connection);
         const [created] = await db
-          .with(...publication.ctes, connection, complete)
+          .with(...publication.ctes, connection, device, complete)
           .select()
           .from(complete)
           .leftJoin(connection, sql`true`);

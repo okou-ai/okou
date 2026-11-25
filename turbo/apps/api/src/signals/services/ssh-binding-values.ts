@@ -183,6 +183,9 @@ export function sshConnectionCreationSource(
       displayName: sql`${args.body.displayName}`
         .mapWith(pgTextDecoder)
         .as("display_name"),
+      remoteDeviceId: sql`gen_random_uuid()`
+        .mapWith(sshConnections.remoteDeviceId)
+        .as("remote_device_id"),
       host: sql`${args.canonicalHost}`.mapWith(pgTextDecoder).as("host"),
       port: sql`${args.body.port}`.mapWith(pgIntegerDecoder).as("port"),
       credentialId: credential

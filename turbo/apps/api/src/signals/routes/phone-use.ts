@@ -1,3 +1,4 @@
+import { publishRemoteChannelDevice } from "../services/remote-device-publication";
 import { joinAll, settle } from "../utils";
 import { createHash, randomUUID } from "node:crypto";
 import { command, type Command } from "ccstate";
@@ -308,14 +309,24 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     ready: false,
     lastSeenAt: nowDate(),
   };
-  const [device] = await set(writeDb$)
-    .insert(devices)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [devices.orgId, devices.userId, devices.installationId],
-      set: { ...values, generation: sql`${devices.generation}+1` },
-    })
-    .returning();
+  const db = set(writeDb$);
+  const candidateId = randomUUID();
+  const paired = db.$with("registered_phone_use_device").as(
+    db
+      .insert(devices)
+      .values({ ...values, remoteDeviceId: candidateId })
+      .onConflictDoUpdate({
+        target: [devices.orgId, devices.userId, devices.installationId],
+        set: {
+          ...values,
+          remoteDeviceId: sql`coalesce(${devices.remoteDeviceId}, excluded.remote_device_id)`,
+          generation: sql`${devices.generation}+1`,
+        },
+      })
+      .returning(),
+  );
+  const published = publishRemoteChannelDevice(db, paired, candidateId);
+  const [device] = await db.with(paired, published).select().from(paired);
   signal.throwIfAborted();
   if (!device) {
     throw new Error("Device registration returned no row");

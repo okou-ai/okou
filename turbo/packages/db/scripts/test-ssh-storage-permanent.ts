@@ -73,11 +73,17 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
       "cloudflare_access",
       "tailscale",
     ] as const) {
+      const [device] = await db
+        .insert(remoteDevices)
+        .values({ ...owner, displayName: "SSH device" })
+        .returning({ id: remoteDevices.id });
+      assert.ok(device);
       const hosts: (typeof sshConnections.$inferSelect)[] = await db
         .insert(sshConnections)
         .values({
           ...owner,
           displayName: `Canonical ${connectionMode}`,
+          remoteDeviceId: device.id,
           host:
             connectionMode === "tailscale" ? "100.64.0.2" : "ssh.example.com",
           port: connectionMode === "cloudflare_access" ? 443 : 22,
@@ -91,17 +97,8 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
           learnedHostKeyFingerprint: "SHA256:pin",
         })
         .returning();
-      const [inserted] = hosts;
-      assert.ok(inserted);
-      const host = await db.query.sshConnections.findFirst({
-        where: eq(sshConnections.id, inserted.id),
-      });
-      // A legacy insert receives its device after PostgreSQL forms RETURNING.
-      assert.ok(host?.remoteDeviceId);
-      assert.deepEqual(host, {
-        ...inserted,
-        remoteDeviceId: host.remoteDeviceId,
-      });
+      const [host] = hosts;
+      assert.ok(host);
       const readState = async () => {
         const [row] = await db
           .select({

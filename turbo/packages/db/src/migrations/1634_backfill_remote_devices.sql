@@ -1,5 +1,5 @@
--- The compatibility hooks already cover new inserts. Updating only rows with
--- no association makes reruns safe and preserves explicit moves.
+-- Backfill existing rows. Replay after old API writers drain to cover rows
+-- they wrote without an association. Preserve all existing device links.
 WITH assigned AS (
   UPDATE "computer_use_hosts"
   SET "remote_device_id" = gen_random_uuid()

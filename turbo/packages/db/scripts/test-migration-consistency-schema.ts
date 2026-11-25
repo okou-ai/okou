@@ -1015,14 +1015,6 @@ async function generateFreshMigrations(): Promise<void> {
   );
   // Drizzle does not model routines. Install the independently maintained
   // current definition, then validate its exact body on both schema shapes.
-  const remoteChannelAttachment = await fs.readFile(
-    path.join(PACKAGE_DIR, "src/functions/attach-new-remote-channel.sql"),
-    "utf-8",
-  );
-  await fs.appendFile(
-    path.join(MIGRATIONS_DIR, finalSql),
-    `\n--> statement-breakpoint\n${remoteChannelAttachment}`,
-  );
   const workflowDeletion = await fs.readFile(
     path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
     "utf-8",
@@ -1363,48 +1355,9 @@ type PermanentFunction = {
 
 // Exported from a database built by the existing migration chain. Extension-owned
 // pgcrypto and vector functions are deliberately absent from the function list.
-const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [
-  {
-    schemaName: "public",
-    tableName: "computer_use_hosts",
-    triggerName: "attach_new_remote_channel",
-    definition:
-      "CREATE TRIGGER attach_new_remote_channel AFTER INSERT ON public.computer_use_hosts FOR EACH ROW WHEN ((new.remote_device_id IS NULL)) EXECUTE FUNCTION attach_new_remote_channel()",
-  },
-  {
-    schemaName: "public",
-    tableName: "phone_use_devices",
-    triggerName: "attach_new_remote_channel",
-    definition:
-      "CREATE TRIGGER attach_new_remote_channel AFTER INSERT ON public.phone_use_devices FOR EACH ROW WHEN ((new.remote_device_id IS NULL)) EXECUTE FUNCTION attach_new_remote_channel()",
-  },
-  {
-    schemaName: "public",
-    tableName: "ssh_connections",
-    triggerName: "attach_new_remote_channel",
-    definition:
-      "CREATE TRIGGER attach_new_remote_channel AFTER INSERT ON public.ssh_connections FOR EACH ROW WHEN ((new.remote_device_id IS NULL)) EXECUTE FUNCTION attach_new_remote_channel()",
-  },
-  {
-    schemaName: "public",
-    tableName: "vnc_connections",
-    triggerName: "attach_new_remote_channel",
-    definition:
-      "CREATE TRIGGER attach_new_remote_channel AFTER INSERT ON public.vnc_connections FOR EACH ROW WHEN ((new.remote_device_id IS NULL)) EXECUTE FUNCTION attach_new_remote_channel()",
-  },
-];
+const EXPECTED_PERMANENT_TRIGGERS: readonly PermanentTrigger[] = [];
 
 const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
-  {
-    schemaName: "public",
-    functionName: "attach_new_remote_channel",
-    identityArguments: "",
-    kind: "f",
-    volatility: "v",
-    securityDefiner: false,
-    parallel: "u",
-    bodyHash: "d0113328b888a895ce253dc00c578b79",
-  },
   {
     schemaName: "public",
     functionName: "delete_builtin_connector_local_state",
