@@ -1,6 +1,5 @@
 import {
   billingStatusContract,
-  billingFeedbackRewardContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackManagementContract,
@@ -18,13 +17,6 @@ import {
   billingPlanCapabilities,
   defaultBillingStatus,
 } from "../../../mocks/handlers/api-billing.ts";
-import {
-  createChatRunFixtures,
-  promptEvent,
-  readyChat,
-  RUN_PATH,
-} from "./chat-run-test-fixtures.ts";
-
 vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
 });
@@ -180,103 +172,6 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
   expect(plans).not.toBeInTheDocument();
-});
-
-function prepareExhaustedCredits() {
-  const telemetry = prepareBilling();
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, { ...freeBilling(), canBuyCredits: false });
-  });
-  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
-    return respond(200, { rewardCredits: 200, token: "signed-offer-from-api" });
-  });
-  const fixtures = createChatRunFixtures(context);
-  fixtures.installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "feedback-user-prompt",
-        runId: "d0000000-0000-4000-a000-000000001401",
-        seqId: 1,
-        text: "Draft the launch plan",
-      }),
-      {
-        id: "feedback-out-of-credits",
-        eventType: "output.error",
-        role: "assistant",
-        content: null,
-        error: "insufficient_credits",
-        runId: "d0000000-0000-4000-a000-000000001401",
-        seqId: 2,
-        createdAt: "2026-08-01T10:00:02.000Z",
-      },
-    ],
-  });
-  return telemetry;
-}
-
-test("an upgrade-required exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
-  const telemetry = prepareExhaustedCredits();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-  click(button("Share feedback"));
-  await waitFor(() => {
-    expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
-      }),
-    ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
-  });
-  expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
-    billing_feedback_kind: "credits_exhausted",
-    billing_feedback_reward_token: "signed-offer-from-api",
-  });
-});
-
-test("the exhaustion feedback entry follows PostHog survey availability", async () => {
-  const telemetry = prepareExhaustedCredits();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-
-  telemetry.setActiveSurveyIds([]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-  });
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-
-  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-
-  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.upgrade_dismissed]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-  });
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-});
-
-test("the exhaustion feedback entry waits for PostHog targeting before appearing", async () => {
-  const telemetry = prepareExhaustedCredits();
-  const flags = telemetry.deferFeatureFlags();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await flags.subscribed;
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-  expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-
-  flags.resolve();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
 });
 
 test("a completed in-app upgrade closes the funnel without an abandonment question", async () => {

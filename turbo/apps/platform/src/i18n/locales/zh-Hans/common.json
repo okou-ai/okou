@@ -1202,9 +1202,6 @@
       "teamWarning": "你的 Team 权益会持续到当前账单周期结束，之后这个工作区会变成{{plan}}。",
       "title": "降级套餐"
     },
-    "feedback": {
-      "shareFeedback": "分享反馈"
-    },
     "invoices": {
       "amount": "金额",
       "date": "日期",
@@ -1737,6 +1734,7 @@
       "waiting": "正在等待 Mastercard Data Connect。在那边完成后，回到聊天继续。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "最低充值 $5 即可继续使用，或升级 Pro 解锁专属功能。",
       "addCreditsToContinue": "添加积分，继续和 {{assistantName}} 对话。",
       "askAdminCredits": "请工作区管理员添加积分，你就能继续和 {{assistantName}} 对话。",
       "askAdminUpgrade": "请工作区管理员升级到 Pro，你就能继续和 {{assistantName}} 对话。",
@@ -1750,7 +1748,6 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
-      "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",

@@ -127,6 +127,66 @@ async function withFeedbackRun<T>(
   });
 }
 
+/** An ordinary chat is the manual Run that keeps Official schedules serving the owner. */
+function startOwnerChat(owned: Awaited<ReturnType<typeof publicChatActor>>) {
+  return withFeedbackRun(owned, () => {
+    return Promise.resolve();
+  });
+}
+
+/** Settle Official Runs still in flight, such as those launched by the same cron tick. */
+async function failActiveOfficialRuns(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  workflows: readonly WorkflowSummary[],
+  include: (workflow: WorkflowSummary) => boolean,
+) {
+  const fixture = createChatEventsFixture(context);
+  const app = setupApp({ context, routes: workflowAutomationsRoutes });
+  const headers = { authorization: "Bearer clerk-session" };
+  for (const item of workflows.filter(include)) {
+    const schedules = await owned.run(() => {
+      return accept(
+        app(workflowAutomationsContract).list({
+          headers,
+          params: { workflowId: item.id },
+        }),
+        [200],
+      );
+    });
+    const threadId = schedules.body[0]?.chatThreadId;
+    if (!threadId) {
+      continue;
+    }
+    const events = await owned.run(() => {
+      return createChatFilesBddApi(context).listThreadEventRows(
+        owned.actor,
+        threadId,
+      );
+    });
+    for (const event of events) {
+      if (event.eventType !== "input.prompt" || !event.runId) {
+        continue;
+      }
+      const runId = event.runId;
+      const run = await owned.run(() => {
+        return createRunsApi(context).readRun(owned.actor, runId);
+      });
+      if (run.status !== "pending" && run.status !== "running") {
+        continue;
+      }
+      const { sandboxHeaders } = await owned.runExecution(runId);
+      await owned.run(() => {
+        return fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Concurrent Official Run inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    }
+  }
+}
+
 async function saveFeedback(
   agentToken: string,
   title: string,
@@ -381,6 +441,8 @@ async function expectSuggestionFeedbackLifecycle(
   const day = 86_400_000;
   function readFeedback(at: number, expectedComplete = true) {
     return withMockNowForTest(at, async () => {
+      // Each read serves an owner who is still chatting with Okou.
+      await startOwnerChat(owned);
       await owned.run(() => {
         return accept(
           app(proactiveSuggestionsContract).update({
@@ -929,6 +991,8 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    // Official schedules serve an owner with a recent manual Run.
+    await startOwnerChat(owned);
     const feedback = await prepareWorkflowFeedback(owned, definitionName);
     createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
     const workflows = await owned.run(() => {
@@ -1072,56 +1136,207 @@ test.each(scenarios)(
         workflow.id,
       );
     }
-    async function finishConcurrentProactiveWorkflows() {
-      const concurrent = workflows.body.filter((item) => {
-        return (
-          item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item)
-        );
+    await failActiveOfficialRuns(owned, workflows.body, (item) => {
+      return item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item);
+    });
+    await expectSharedProactiveSchedules(owned, workflows.body, false);
+  },
+);
+
+const activityScenarios = Object.freeze([
+  {
+    schedules: "Suggestions and Learning",
+    definitionNames: ["agent-suggestions", "proactive-learning"],
+    preferenceContract: proactiveSuggestionsContract,
+  },
+  {
+    schedules: "Morning Brief",
+    definitionNames: ["morning-brief"],
+    preferenceContract: morningBriefPreferenceContract,
+  },
+]);
+
+test.each(activityScenarios)(
+  "serves $schedules only within seven days of the owner's manual Run",
+  { timeout: 15_000 },
+  async ({ definitionNames, preferenceContract }) => {
+    mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronOfficialWorkflowCatalogRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+        ...proactiveSuggestionsRoutes,
+        ...morningBriefPreferenceRoutes,
+        ...workflowAutomationsRoutes,
+        ...workflowsRoutes,
+      ],
+    });
+    const fixture = createChatEventsFixture(context);
+    const owned = await publicChatActor(context);
+    installWorkflowVolumeS3Fixture(context);
+    const cronHeaders = {
+      authorization: "Bearer official-workflow-catalog-cron-secret",
+    };
+    await owned.run(() => {
+      return accept(
+        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
+        [200],
+      );
+    });
+    const { actor } = owned;
+    await owned.run(() => {
+      return fixture.bdd.completeOnboarding(actor, {
+        timezone: "Asia/Shanghai",
       });
-      for (const item of concurrent) {
-        const schedules = await owned.run(() => {
+    });
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    await owned.run(() => {
+      const request = app(preferenceContract).update({
+        headers,
+        body: { enabled: true },
+      });
+      return accept<Awaited<typeof request>, 200>(request, [200]);
+    });
+    const workflows = await owned.run(() => {
+      return accept(
+        app(workflowsCollectionContract).list({ headers, query: {} }),
+        [200],
+      );
+    });
+    const watched = definitionNames.map((name) => {
+      const workflow = workflows.body.find((item) => {
+        return item.official?.definitionName === name;
+      });
+      if (!workflow) {
+        throw new Error(`Expected the ${name} installation`);
+      }
+      return workflow;
+    });
+    async function readSchedules() {
+      const schedules = [];
+      for (const workflow of watched) {
+        const listed = await owned.run(() => {
           return accept(
             app(workflowAutomationsContract).list({
               headers,
-              params: { workflowId: item.id },
+              params: { workflowId: workflow.id },
             }),
             [200],
           );
         });
-        const threadId = schedules.body[0]?.chatThreadId;
-        if (!threadId) {
-          continue;
+        const schedule = listed.body[0];
+        if (!schedule) {
+          throw new Error("Expected the Official schedule");
         }
-        const events = await owned.run(() => {
-          return createChatFilesBddApi(context).listThreadEventRows(
-            actor,
-            threadId,
+        schedules.push(schedule);
+      }
+      return schedules;
+    }
+    async function readLaunchedRunIds(threadId: string | null) {
+      if (!threadId) {
+        return [];
+      }
+      const events = await owned.run(() => {
+        return createChatFilesBddApi(context).listThreadEventRows(
+          actor,
+          threadId,
+        );
+      });
+      return events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId
+          ? [event.runId]
+          : [];
+      });
+    }
+    async function dispatch(at: number) {
+      await withMockNowForTest(at, async () => {
+        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+        await owned.run(() => {
+          return accept(
+            app(cronExecuteWorkflowAutomationsContract).execute({
+              headers: cronHeaders,
+            }),
+            [200],
           );
         });
-        for (const event of events) {
-          if (event.eventType !== "input.prompt" || !event.runId) {
-            continue;
+        await owned.run(flushWaitUntilForTest);
+      });
+      return await readSchedules();
+    }
+    function latestDue(schedules: readonly WorkflowAutomationSummary[]) {
+      return Math.max(
+        ...schedules.map((schedule) => {
+          if (!schedule.nextRunAt) {
+            throw new Error("Expected the next Official occurrence");
           }
-          const runId = event.runId;
-          const run = await owned.run(() => {
-            return createRunsApi(context).readRun(actor, runId);
-          });
-          if (run.status !== "pending" && run.status !== "running") {
-            continue;
-          }
-          const { sandboxHeaders } = await owned.runExecution(runId);
-          await owned.run(() => {
-            return fixture.failChatRun(
-              runId,
-              sandboxHeaders,
-              "Concurrent proactive Run inspected",
-            );
-          });
-          await owned.run(flushWaitUntilForTest);
-        }
+          return Date.parse(schedule.nextRunAt);
+        }),
+      );
+    }
+    async function expectSkipped(
+      schedules: readonly WorkflowAutomationSummary[],
+      due: number,
+      launched: readonly (readonly string[])[],
+    ) {
+      for (const [index, schedule] of schedules.entries()) {
+        expect(schedule).toMatchObject({
+          enabled: true,
+          official: { intendedEnabled: true },
+        });
+        expect(Date.parse(schedule.nextRunAt ?? "")).toBeGreaterThan(due);
+        await expect(
+          readLaunchedRunIds(schedule.chatThreadId),
+        ).resolves.toStrictEqual(launched[index] ?? []);
       }
     }
-    await finishConcurrentProactiveWorkflows();
-    await expectSharedProactiveSchedules(owned, workflows.body, false);
+    const day = 86_400_000;
+
+    // An owner without a manual Run receives no occurrence, and the schedule
+    // moves on without pausing their preference.
+    const firstDue = latestDue(await readSchedules());
+    await expectSkipped(await dispatch(firstDue), firstDue, []);
+    const preference = await owned.run(() => {
+      const request = app(preferenceContract).get({ headers });
+      return accept<Awaited<typeof request>, 200>(request, [200]);
+    });
+    expect(preference.body).toMatchObject({ enabled: true, status: "enabled" });
+
+    // A manual Run brings back the next occurrence.
+    const activeDue = latestDue(await readSchedules());
+    const chattedAt = activeDue - 10 * 60_000;
+    await withMockNowForTest(chattedAt, () => {
+      return startOwnerChat(owned);
+    });
+    const active = await dispatch(activeDue);
+    const launched = [];
+    for (const schedule of active) {
+      launched.push(await readLaunchedRunIds(schedule.chatThreadId));
+    }
+    expect(
+      launched.map((runIds) => {
+        return runIds.length;
+      }),
+    ).toStrictEqual(
+      active.map(() => {
+        return 1;
+      }),
+    );
+    await withMockNowForTest(activeDue, () => {
+      return failActiveOfficialRuns(owned, workflows.body, (item) => {
+        return item.official !== null;
+      });
+    });
+
+    // Scheduled Runs do not count as activity: one week after the manual Run,
+    // fresh occurrences are skipped again.
+    const lapsedDue = latestDue(await dispatch(chattedAt + 7 * day + 60_000));
+    await expectSkipped(await dispatch(lapsedDue), lapsedDue, launched);
   },
 );

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.17...runner-supervisor-v0.29.0) (2026-11-25)
+
+
+### Features
+
+* receive computer use app state on the assigned runner ([#50745](https://github.com/okou-ai/okou/issues/50745)) ([9977243](https://github.com/okou-ai/okou/commit/99772436210306fef0b462d019a9fe57d118ff81))
+
 ## [0.28.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.16...runner-supervisor-v0.28.17) (2026-11-25)
 
 

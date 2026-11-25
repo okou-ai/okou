@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 
@@ -32,7 +33,64 @@ final class CommandExecutorSnapshotTests: XCTestCase {
     XCTAssertEqual(result["result"]["action"]["snapshotId"].string, current)
   }
 
-  private func makeExecutor() throws -> CommandExecutor {
+  func testDirectCaptureRetriesOriginalWindowAndReturnsOnlyTheSandboxReceipt() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AppStateUploadProtocol.self]
+    let executor = try makeExecutor(uploadConfiguration: configuration)
+    let command = UUID().uuidString.lowercased()
+    let result = await directCapture(executor, command: command, host: "retry.runner.example")
+    let bodies = AppStateUploadProtocol.takeBodies(for: command)
+    XCTAssertEqual(bodies.count, 2)
+    let bytes = try XCTUnwrap(bodies.first)
+    XCTAssertEqual(bytes, bodies.last)
+    XCTAssertGreaterThan(bytes.count, 12)
+    let length = bytes.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+    XCTAssertLessThan(length + 4, bytes.count)
+    guard bytes.count > 4, length + 4 < bytes.count else { return }
+    let envelope = try JSONDecoder().decode(JSONValue.self, from: bytes.subdata(in: 4..<(4 + length)))
+    XCTAssertEqual(envelope["commandId"].string, command)
+    XCTAssertEqual(envelope["result"]["snapshotId"], result["result"]["snapshotId"])
+    XCTAssertNotNil(envelope["result"]["appState"].string)
+    XCTAssertEqual(envelope["result"]["windowId"].number, 1)
+    XCTAssertNil(envelope["result"]["screenshot"].string)
+    XCTAssertTrue(bytes.dropFirst(4 + length).starts(with: [0x89, 0x50, 0x4e, 0x47]))
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    XCTAssertEqual(result["result"]["sha256"].string, digest)
+    XCTAssertEqual(Set(result["result"].object?.keys.map { $0 } ?? []), ["snapshotId", "sha256"])
+  }
+
+  func testLostMacReceiptIsRecoveredWithoutUploadingWindowAgain() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AppStateUploadProtocol.self]
+    let executor = try makeExecutor(uploadConfiguration: configuration)
+    let command = UUID().uuidString.lowercased()
+    let result = await directCapture(executor, command: command, host: "receipt.runner.example")
+    XCTAssertEqual(result["status"].string, "succeeded")
+    XCTAssertEqual(AppStateUploadProtocol.takeBodies(for: command).count, 1)
+  }
+
+  func testRejectedGrantAndInvalidReceiptCannotCompleteTheCapture() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AppStateUploadProtocol.self]
+    let executor = try makeExecutor(uploadConfiguration: configuration)
+    for (host, code) in [("retired.runner.example", "permission_denied"), ("invalid.runner.example", "invalid_arguments")] {
+      let command = UUID().uuidString.lowercased()
+      let result = await directCapture(executor, command: command, host: host)
+      XCTAssertEqual(result["error"]["code"].string, code)
+      XCTAssertEqual(AppStateUploadProtocol.takeBodies(for: command).count, 1)
+    }
+  }
+
+  private func directCapture(_ executor: CommandExecutor, command: String, host: String) async -> JSONValue {
+    let runner = UUID().uuidString.lowercased()
+    let run = UUID().uuidString.lowercased()
+    let url = "https://" + host + "/runners/" + runner + "/sandbox/runs/" + run + "/app-state/" + command
+    return await execute(
+      executor, kind: "app.state", payload: ["app": .string("Notes")], commandId: command,
+      target: .init(url: url, token: "fixture"))
+  }
+
+  private func makeExecutor(uploadConfiguration: URLSessionConfiguration = .ephemeral) throws -> CommandExecutor {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let helper = directory.appendingPathComponent("helper")
@@ -58,7 +116,7 @@ final class CommandExecutorSnapshotTests: XCTestCase {
         print(json.dumps({'id': request['id'], 'status': 'succeeded', 'result': result}), flush=True)
     """.write(to: helper, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
-    let executor = CommandExecutor(helper: NativeProcess(executable: helper))
+    let executor = CommandExecutor(helper: NativeProcess(executable: helper), uploadConfiguration: uploadConfiguration)
     addTeardownBlock {
       await executor.stop()
       try FileManager.default.removeItem(at: directory)
@@ -81,15 +139,16 @@ final class CommandExecutorSnapshotTests: XCTestCase {
   }
 
   private func execute(
-    _ executor: CommandExecutor, kind: String, payload: [String: JSONValue]
+    _ executor: CommandExecutor, kind: String, payload: [String: JSONValue],
+    commandId: String = UUID().uuidString, target: ComputerUseCommandClaim.Command.AppStateUpload? = nil
   ) async -> JSONValue {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let time = formatter.string(from: Date())
     let command = ComputerUseCommandClaim.Command(
-      id: UUID().uuidString, kind: .init(rawValue: kind), status: .running,
+      id: commandId, kind: .init(rawValue: kind), status: .running,
       hostId: nil, hostName: nil, payload: .init(additionalFields: payload),
-      result: nil, error: nil, timeoutMs: 60_000, createdAt: time, claimedAt: time, completedAt: nil)
+      result: nil, error: nil, timeoutMs: 60_000, createdAt: time, claimedAt: time, completedAt: nil, appStateUpload: target)
     return await executor.execute(command, claimStarted: .now)
   }
 }

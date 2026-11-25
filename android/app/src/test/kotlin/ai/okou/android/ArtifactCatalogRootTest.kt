@@ -139,7 +139,11 @@ internal abstract class ArtifactCatalogRootTestFixture {
         compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
     }
 
-    protected fun failWebsiteDocument(view: WebView, status: Int = 503) {
+    protected fun failWebsiteDocument(
+        view: WebView,
+        status: Int = 503,
+        retryAfter: String? = null,
+    ) {
         compose.runOnIdle {
             val address = Uri.parse(checkNotNull(shadowOf(view).lastLoadedUrl))
             val request =
@@ -157,7 +161,14 @@ internal abstract class ArtifactCatalogRootTestFixture {
                     override fun getRequestHeaders() = emptyMap<String, String>()
                 }
             val response =
-                WebResourceResponse("text/plain", "UTF-8", status, "Unavailable", emptyMap(), null)
+                WebResourceResponse(
+                    "text/plain",
+                    "UTF-8",
+                    status,
+                    "Unavailable",
+                    retryAfter?.let { mapOf("retry-after" to it) }.orEmpty(),
+                    null,
+                )
             view.webViewClient.onReceivedHttpError(view, request, response)
         }
     }
@@ -1423,25 +1434,66 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun unreadableImageShowsAnUnsupportedPreview() {
+    fun unreadableImageShowsAPreviewFailureAndKeepsAuthorizedSave() {
         val fixture =
-            ArtifactApiFixture(app.fixture, imageBody = "Invalid raster".encodeToByteArray())
+            ArtifactApiFixture(
+                app.fixture,
+                imageBody = "Invalid raster".encodeToByteArray(),
+                imageDownloadAllowed = true,
+            )
         fixture.install()
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithContentDescription("Artifacts").performClick()
         awaitText(fixture.image.title)
         compose.onNodeWithText(fixture.image.title).performClick()
-        awaitText("No preview is available for this file")
+        awaitText("Temporarily unable to load preview")
+        compose.onNodeWithText("Save file").assertIsEnabled()
         val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
         val status =
-            compose
-                .onNodeWithText("No preview is available for this file")
-                .getUnclippedBoundsInRoot()
+            compose.onNodeWithText("Temporarily unable to load preview").getUnclippedBoundsInRoot()
         assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
         val frameCenter = frame.top + frame.height / 2
         val statusCenter = status.top + status.height / 2
         assertTrue(abs((statusCenter - frameCenter).value) <= 1)
+    }
+
+    @Test
+    fun imagePreviewReservesItsFrameBeforeShowingLoadingAndAccessLoss() {
+        val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
+        val releaseImage = CountDownLatch(1)
+        fixture.imageResponse = {
+            releaseImage.await()
+            MockResponse().setResponseCode(403)
+        }
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.image.title)
+
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        val loading = compose.onNodeWithText("Loading preview…")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText(fixture.image.title).performClick()
+            compose.mainClock.advanceTimeBy(160)
+            val pending = surface.assertIsDisplayed().getUnclippedBoundsInRoot()
+            loading.assertDoesNotExist()
+            assertEquals(pending.width.value * 9f / 16f, pending.height.value, 1f)
+            compose.mainClock.advanceTimeBy(160)
+            loading.assertIsDisplayed()
+            assertEquals(pending.height, surface.getUnclippedBoundsInRoot().height)
+            compose.mainClock.autoAdvance = true
+            awaitText("Save file")
+            compose.onNodeWithText("Save file").assertIsEnabled()
+        } finally {
+            releaseImage.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+        awaitText("Image unavailable")
+        loading.assertDoesNotExist()
+        compose.onNodeWithText("Save file").assertDoesNotExist()
     }
 
     @Test
@@ -1697,9 +1749,20 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         val first = checkNotNull(websiteView())
         val frame = compose.onNodeWithTag("artifact_preview_surface")
         val originalBounds = frame.getUnclippedBoundsInRoot()
-        failWebsiteDocument(first)
-        compose.waitUntil(10_000) { websiteView()?.let { it !== first } == true }
-        val retry = checkNotNull(websiteView())
+        compose.mainClock.autoAdvance = false
+        val retry =
+            try {
+                failWebsiteDocument(first, retryAfter = "1")
+                compose.mainClock.advanceTimeBy(750)
+                val waiting = websiteView()
+                assertTrue(waiting == null || waiting === first)
+                compose.mainClock.advanceTimeUntil(1_250) {
+                    websiteView()?.let { it !== first } == true
+                }
+                checkNotNull(websiteView())
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         assertEquals(fixture.requestedSiteGrants.single(), loadedWebsiteUrl())
         assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
 

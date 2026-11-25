@@ -302,7 +302,6 @@ public struct ChatConnectorService: Sendable {
       intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID)
     if let slug = status.target.connectorSlug, let method {
       guard status.builtin?.authMethods.contains(method) == true,
-        status.account == nil || status.account?.authMethod == method.id,
         method.hasRequiredInputs(values: values, options: options)
       else { throw ChatConnectorInputError.settingsChanged }
       let body = Body(

@@ -1,18 +1,14 @@
 import { currentLocale } from "../i18n/index.ts";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { billingFeedbackRewardContract } from "@okouai/api-contracts/client/billing";
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import { accept } from "../lib/accept.ts";
-import {
-  displayBillingFeedbackSurvey,
-  watchBillingFeedbackSurvey,
-} from "../lib/posthog.ts";
+import { displayBillingFeedbackSurvey } from "../lib/posthog.ts";
 import { apiClient$ } from "./api-client.ts";
-import { authenticatedIdentity$, authenticatedSessionKey$ } from "./auth.ts";
+import { authenticatedIdentity$ } from "./auth.ts";
 import {
   consumeBillingFeedback$,
   pendingBillingFeedback$,
-  requestBillingFeedback$,
 } from "./billing-feedback-flow.ts";
 import {
   billingStatusAsync$,
@@ -23,31 +19,7 @@ import { isOrgAdmin$ } from "./org.ts";
 import { searchParams$ } from "./route.ts";
 import { resetSignal } from "./utils.ts";
 
-const creditsFeedbackSurveyMatch$ = state<{
-  readonly sessionKey: string | null;
-  readonly available: boolean;
-} | null>(null);
-
-export const creditsFeedbackSurveyAvailable$ = computed((get) => {
-  const match = get(creditsFeedbackSurveyMatch$);
-  return match?.sessionKey === get(authenticatedSessionKey$) && match.available;
-});
-
-export const watchCreditsFeedbackSurvey$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    const sessionKey = get(authenticatedSessionKey$);
-    set(creditsFeedbackSurveyMatch$, null);
-    watchBillingFeedbackSurvey(
-      BILLING_FEEDBACK_SURVEYS.credits_exhausted,
-      (available) => {
-        set(creditsFeedbackSurveyMatch$, { sessionKey, available });
-      },
-      signal,
-    );
-  },
-);
-
-export const creditsFeedbackOffer$ = computed(async (get) => {
+const creditsFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);
   if (
     status.hasSubscription ||
@@ -125,13 +97,6 @@ export const handleBillingFeedbackRedirect$ = command(
     await set(handleBillingRedirect$, signal);
     signal.throwIfAborted();
     // The initial Stripe return precedes page setup and belongs to app startup.
-    await set(showPendingBillingFeedback$, signal);
-  },
-);
-
-export const requestCreditsFeedback$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    set(requestBillingFeedback$, "credits_exhausted");
     await set(showPendingBillingFeedback$, signal);
   },
 );

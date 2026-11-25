@@ -108,8 +108,6 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
         providerApplication: provider, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(.configuration(target: .builtin(slug), threadID: nil))
-      try await waitForBusinessResult { store.active != nil }
-      store.submit()
       await fulfillment(of: [initial], timeout: 3)
       XCTAssertTrue(provider.requiresUniversalLink)
       XCTAssertEqual(provider.openedURL?.absoluteString, responses.authorizationURL)
@@ -139,8 +137,6 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("google-docs"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let browser = try XCTUnwrap(flow.browserURL)
@@ -167,17 +163,15 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       didContinue: { XCTFail("Denial cannot continue") }, didFail: { _ in },
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
-    store.activate(.configuration(target: .builtin("gmail"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
+    let action = ChatConnectorAction.configuration(target: .builtin("gmail"), threadID: nil)
+    store.activate(action)
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { flow.session == nil }
+    try await waitForBusinessResult { store.active == nil }
     XCTAssertNil(flow.browserURL)
-    XCTAssertTrue(flow.canSubmit)
-    XCTAssertNotNil(flow.notice)
+    XCTAssertNotNil(store.notices[action.id])
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
 

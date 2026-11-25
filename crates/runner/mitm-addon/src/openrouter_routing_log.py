@@ -111,9 +111,6 @@ class RoutingObservation:
             return
         self._document.extend(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def accepts_more_input(self) -> bool:
         return not self._oversize
 

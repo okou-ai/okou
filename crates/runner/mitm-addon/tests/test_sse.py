@@ -25,9 +25,6 @@ class _CaptureHandler:
         assert self.current is not None
         self.current.extend(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         assert self.current is not None
         self.events.append((event_name, bytes(self.current)))

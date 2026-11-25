@@ -160,8 +160,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Project title reveal",
     description:
       "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.OkouAnimatedAvatar]: {
     maintainer: "tongx@okou.ai",
@@ -176,6 +175,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "TikTok OAuth connector",
     description:
       "Connect a TikTok account with automatically refreshed read-only access.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.LinkedInOAuthConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "LinkedIn OAuth connector",
+    description:
+      "Connect LinkedIn for personal publishing through the official API. Other LinkedIn tasks use Cloud Browser.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,

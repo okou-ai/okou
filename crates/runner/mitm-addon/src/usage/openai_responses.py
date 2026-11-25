@@ -737,9 +737,6 @@ class _OpenAIResponsesSseUsageHandler:
             return
         self._feed_event_data(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         self._resolve_event_prefix()
         extractor = self._extractor

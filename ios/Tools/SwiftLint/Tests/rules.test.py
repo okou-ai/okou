@@ -8,6 +8,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from application_subscription_cases import APPLICATION_SUBSCRIPTION_CASES
 from async_helper_failure_cases import ASYNC_HELPER_FAILURE_CASES
 from cancellation_cases import CANCELLATION_CASES
 from collection_publication_cases import COLLECTION_PUBLICATION_CASES
@@ -876,6 +877,31 @@ class NativeRuleTests(unittest.TestCase):
         rule = "okou_global_mutable_state"
         with tempfile.TemporaryDirectory(prefix="native global state cases ") as directory:
             for index, (name, filename, source) in enumerate(GLOBAL_STATE_CASES):
+                with self.subTest(name=name):
+                    source = textwrap.dedent(source).lstrip()
+                    expected = [
+                        i
+                        for i, line in enumerate(source.splitlines(), 1)
+                        if "// violation" in line
+                    ]
+                    root = Path(directory) / str(index)
+                    root.mkdir()
+                    result, diagnostics = self.lint(root, source, rule, filename)
+                    self.assertEqual(
+                        result.returncode, 2 if expected else 0, result.stderr
+                    )
+                    self.assertEqual(
+                        sorted((d["rule_id"], d["line"]) for d in diagnostics),
+                        [(rule, line) for line in expected],
+                        result.stdout,
+                    )
+
+    def test_application_subscriptions(self):
+        rule = "okou_application_subscription"
+        with tempfile.TemporaryDirectory(prefix="native subscription cases ") as directory:
+            for index, (name, filename, source) in enumerate(
+                APPLICATION_SUBSCRIPTION_CASES
+            ):
                 with self.subTest(name=name):
                     source = textwrap.dedent(source).lstrip()
                     expected = [

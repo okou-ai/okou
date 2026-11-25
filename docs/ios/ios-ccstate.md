@@ -296,9 +296,10 @@ disappearing must not cancel another consumer's shared read.
 Register teardown with acquisition. Retain the original request Task where the
 resource owner needs to cancel it. Keep subscriptions, native observers, SDK
 callbacks, streams, and temporary files under that same owner. Application code
-does not add manual `store.watch` listeners; see
-[Native Adapters and Review](#native-adapters-and-review). Where one predates
-that rule, it needs explicit `Subscription.cancel()` and an initial read:
+does not add manual `store.watch` listeners, and `okou_application_subscription`
+rejects them in production sources; see
+[Native Adapters and Review](#native-adapters-and-review). A test waiter that
+watches a signal needs explicit `Subscription.cancel()` and an initial read:
 `watch` establishes dependencies but does not initially invoke its listener.
 
 After any suspension that can outlive a request or identity, check native
@@ -331,8 +332,9 @@ code that changes the graph cannot see who reacts, and callers cannot await the
 reaction. SwiftUI reads graph values through CCStateSwiftUI, actions read them
 through their owner's synchronous accessors, and follow-up work continues in the
 command that made the change. The adapter's own subscriptions and test waiting
-support are the only listeners. Existing bridges are removed by their owning
-issue; do not add new ones, and do not mirror their pattern elsewhere.
+support are the only listeners. When an owner triggers every reload of a read, it
+confirms the new read in that method instead of watching for invalidation. Do
+not mirror the bridge pattern through other callbacks either.
 
 Review the complete path: trigger, graph/Store identity, dependency Task,
 publication, invalidation, and teardown. Confirm which state is a resource

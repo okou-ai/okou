@@ -29,6 +29,10 @@ final class ProjectDisclosureTests: XCTestCase {
     await restoring?.value
     XCTAssertFalse(store.isExpanded("clicked"))
     XCTAssertTrue(store.isExpanded("untouched"))
+    // The sidebar reads the same disclosure from the graph.
+    let disclosure = try store.stateStore.get(store.presentation)
+    XCTAssertFalse(disclosure.isExpanded("clicked"))
+    XCTAssertTrue(disclosure.isExpanded("untouched"))
     store.expand("last-click")
     store.close()
     let replacement = projectStore(http, storage: storage(fixture, scope: scope))
