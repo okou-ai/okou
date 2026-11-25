@@ -797,6 +797,30 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         }
 
     @Test
+    fun workflowEditFromThePreviousFrameUsesTheLatestConfirmedValue() = check { service, model ->
+        model.select(service.summary.id)
+        model.visibilityChanged(true)
+        runCurrent()
+        val opened = checkNotNull(model.state.value.detail).editableInstructions()
+        val rendered = opened.copy(value = opened.value.copy(instruction = "Local edit"))
+        model.edit(rendered)
+        service.detail = service.detail.copy(instruction = "Updated elsewhere")
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+
+        val refreshed = model.state.value.editor as WorkflowEdit.Instructions
+        assertEquals("Updated elsewhere", refreshed.original.instruction)
+        model.edit(
+            rendered.copy(value = rendered.value.copy(instruction = opened.value.instruction)),
+        )
+        val current = model.state.value.editor as WorkflowEdit.Instructions
+        assertEquals(opened.value, current.value)
+        assertEquals(refreshed.original, current.original)
+        assertTrue(current.canSave)
+    }
+
+    @Test
     fun aConfirmedSaveRefreshesTheDetailCacheAge() = check { service, model ->
         model.select(service.summary.id)
         model.visibilityChanged(true)
