@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">毎日 %1$s</string>
     <string name="workflow_discard">破棄</string>
     <string name="workflow_discard_title">未保存の変更を破棄しますか？</string>
+    <string name="workflow_discard_detail">この端末で「%1$s」に加えた未保存の変更は破棄されます。</string>
     <string name="workflow_draft_unavailable">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。</string>
     <string name="workflow_edit">編集</string>
     <string name="workflow_edit_automation">自動化を編集</string>

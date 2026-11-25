@@ -352,14 +352,17 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
+        val instructions =
+            "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose
             .onNodeWithText(
                 "Review launch copy and product notes.\nCheck the website, email, and community assets.",
             )
-            .performTextReplacement("Confirm the release owner.")
+            .performTextReplacement(instructions)
         compose.onNodeWithTag("workflow_save").performClick()
         waitForTag("workflow_detail_title")
-        compose.onNodeWithText("Confirm the release owner.").assertIsDisplayed()
+        compose.onNodeWithText(instructions).assertIsDisplayed()
+        assertEquals(instructions, app.fixture.instruction)
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
         compose.onNodeWithText("Trigger rules").assertIsDisplayed()
@@ -378,6 +381,11 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("View connections").assertIsDisplayed()
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         back()
+        compose
+            .onNodeWithText(
+                "Unsaved changes to “Release checklist” on this device will be discarded.",
+            )
+            .assertIsDisplayed()
         compose.onNodeWithText("Discard").performClick()
         compose.onNodeWithTag("workflow_toggle_weekday").performClick()
         waitFor("Enabled")
@@ -682,15 +690,42 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         edit.pressEnter()
         compose.onNodeWithText("Cancel").pressEnter()
         edit.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
-        val field = compose.onNodeWithContentDescription("Display name")
-        field.performTextReplacement("Prepare the release")
+        val field = compose.onNodeWithContentDescription("Workflow instructions")
+        val draft = "Prepare the release.\n![Checklist](<https://example.test/checklist.png>)"
+        field.performTextReplacement(draft)
         compose.onNodeWithText("Cancel").pressEnter()
+        compose
+            .onNodeWithText(
+                "Unsaved changes to “Release checklist” on this device will be discarded.",
+            )
+            .assertIsDisplayed()
         compose.onNodeWithText("Keep editing").pressEnter()
-        field.assertTextContains("Prepare the release")
+        field.assertTextContains(draft)
         compose.onNodeWithText("Cancel").pressEnter()
         compose.onNodeWithText("Discard").pressEnter()
         edit.assertIsFocused()
         compose.onNodeWithTag("workflow_detail_title").assertTextContains(app.fixture.releaseTitle)
+    }
+
+    @Test
+    fun frequencyMenuMarksItsValueAndReturnsKeyboardFocus() = withHardwareKeyboard {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").pressEnter()
+
+        val weekdays = compose.onNodeWithText("Weekdays")
+        val inMenu = hasAnyAncestor(hasTestTag("workspace_popup"))
+        val selected = compose.onNode(hasText("Weekdays") and inMenu)
+        val daily = compose.onNode(hasText("Daily") and inMenu)
+
+        weekdays.pressEnter()
+        selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Tab) }
+        weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        selected.assertIsSelected().assertIsFocused().performKeyInput { pressKey(Key.Escape) }
+        weekdays.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        selected.assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        daily.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        compose.onNodeWithText("Daily").assertIsFocused()
     }
 
     @Test
@@ -732,12 +767,20 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
             }
             waitFor(heading)
             compose.onNodeWithText(heading).assertIsDisplayed()
-            compose.onNodeWithText("Discard").assertIsDisplayed()
-            compose.onNodeWithText("Keep editing").assertIsDisplayed().performClick()
+            compose
+                .onNodeWithText(
+                    "Unsaved changes to “Release checklist” on this device will be discarded.",
+                )
+                .assertIsDisplayed()
+            compose
+                .onNodeWithText("Keep editing")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
             input.assertTextContains("Prepare the release")
 
             compose.onNodeWithText("Cancel").performClick()
-            compose.onNodeWithText("Discard").assertIsDisplayed().performClick()
+            compose.onNodeWithText("Discard").performScrollTo().assertIsDisplayed().performClick()
             waitForTag("workflow_detail_title")
             compose
                 .onNodeWithTag("workflow_detail_title")

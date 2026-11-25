@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
@@ -30,7 +31,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,14 +53,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,7 +69,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
@@ -100,7 +97,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -129,8 +125,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 private const val SECTION_EDITOR_FOCUS = "section"
 
@@ -165,6 +159,7 @@ internal fun WorkflowScreen(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val editor = state.editor
+    val detail = state.detail?.takeIf { it.id == route.id }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
@@ -186,14 +181,24 @@ internal fun WorkflowScreen(
         }
     }
     BackHandler(onBack = ::back)
-    if (discard && editor?.changed == true) {
-        WorkflowDiscardDialog(
-            onClose = { discard = false },
-            onDiscard = {
+    if (discard && editor?.changed == true && detail != null) {
+        OkouConfirmationDialog(
+            title = stringResource(R.string.workflow_discard_title),
+            confirm = stringResource(R.string.workflow_discard),
+            dismissLabel = stringResource(R.string.workflow_keep_editing),
+            onDismiss = { discard = false },
+            onConfirm = {
                 discard = false
                 model.edit(null)
             },
-        )
+        ) {
+            Text(
+                stringResource(
+                    R.string.workflow_discard_detail,
+                    detail.displayName ?: detail.name,
+                ),
+            )
+        }
     }
 
     Row(
@@ -240,7 +245,6 @@ internal fun WorkflowScreen(
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (wide || route.id != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                val detail = state.detail?.takeIf { it.id == route.id }
                 if (!wide || editor != null)
                     WorkflowToolbar(
                         if (editor != null) stringResource(R.string.workflow_edit)
@@ -310,77 +314,6 @@ private val WorkflowEdit.focusKey: String
     get() = (this as? WorkflowEdit.Rule)?.id?.let(::ruleEditorFocusKey) ?: SECTION_EDITOR_FOCUS
 
 private fun ruleEditorFocusKey(ruleId: String) = "rule:$ruleId"
-
-@Composable
-private fun WorkflowDiscardDialog(onClose: () -> Unit, onDiscard: () -> Unit) {
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        val dialogWidth = 360.dp
-        val regularMargin = 24.dp
-        BoxWithConstraints(
-            Modifier.widthIn(max = dialogWidth + regularMargin * 2),
-            contentAlignment = Alignment.Center,
-        ) {
-            val compact = maxHeight < with(LocalDensity.current) { 16.sp.toDp() * 12 }
-            val margin = if (compact) 12.dp else regularMargin
-            val colors = MaterialTheme.colorScheme
-            val actionColors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
-            val actionStyle =
-                MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp)
-            val actionPadding =
-                PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 8.dp)
-            Surface(
-                modifier = Modifier.padding(margin).widthIn(max = dialogWidth).fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                color = colors.surfaceContainerHigh,
-                contentColor = colors.onSurface,
-            ) {
-                Column(
-                    Modifier.verticalScroll(rememberScrollState())
-                        .padding(if (compact) 16.dp else 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 24.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.workflow_discard_title),
-                        Modifier.semantics { heading() },
-                        style =
-                            MaterialTheme.typography.headlineSmall.copy(
-                                fontSize = if (compact) 20.sp else 24.sp,
-                                lineHeight = if (compact) 28.sp else 32.sp,
-                            ),
-                    )
-                    FlowRow(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        TextButton(
-                            onClick = onClose,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            colors = actionColors,
-                            contentPadding = actionPadding,
-                        ) {
-                            Text(
-                                stringResource(R.string.workflow_keep_editing),
-                                style = actionStyle,
-                            )
-                        }
-                        TextButton(
-                            onClick = onDiscard,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            colors = actionColors,
-                            contentPadding = actionPadding,
-                        ) {
-                            Text(stringResource(R.string.workflow_discard), style = actionStyle)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun WorkflowToolbar(

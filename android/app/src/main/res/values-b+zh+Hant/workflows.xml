@@ -15,7 +15,8 @@
     <string name="workflow_daily">每天</string>
     <string name="workflow_daily_schedule">每天 %1$s</string>
     <string name="workflow_discard">捨棄變更</string>
-    <string name="workflow_discard_title">捨棄未儲存的變更？</string>
+    <string name="workflow_discard_title">捨棄變更？</string>
+    <string name="workflow_discard_detail">你在這部裝置上對「%1$s」尚未儲存的變更將被捨棄。</string>
     <string name="workflow_draft_unavailable">無法開啟新聊天草稿。已保留現有草稿。</string>
     <string name="workflow_edit">編輯</string>
     <string name="workflow_edit_automation">編輯自動化</string>

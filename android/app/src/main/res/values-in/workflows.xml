@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Setiap hari pukul %1$s</string>
     <string name="workflow_discard">Buang</string>
     <string name="workflow_discard_title">Buang perubahan yang belum disimpan?</string>
+    <string name="workflow_discard_detail">Perubahan pada “%1$s” yang belum disimpan di perangkat ini akan dibuang.</string>
     <string name="workflow_draft_unavailable">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit otomatisasi</string>
