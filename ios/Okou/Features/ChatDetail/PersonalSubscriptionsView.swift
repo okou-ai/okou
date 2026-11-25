@@ -15,14 +15,18 @@ private struct PersonalSubscriptionsContent: View {
   @Bindable var store: PersonalSubscriptionStore
   @ResolvedValue private var groups: [PersonalSubscriptionResources.Group]?
   @LoadableStatus<[PersonalSubscriptionResources.Group]> private var status: LoadableState
+  /// The confirmed accounts, kept in the workspace session's Store.
+  @ResolvedValue private var confirmed: PersonalSubscriptionResources.Confirmed?
 
   init(store: PersonalSubscriptionStore) {
     self.store = store
     _groups = ResolvedValue(task: store.resources.groups, keepLast: true)
     _status = LoadableStatus(task: store.resources.groups)
+    _confirmed = ResolvedValue(store.resources.confirmed)
   }
+  private var accounts: [PersonalSubscription] { confirmed?.accounts ?? store.accounts }
   private var accountGroups: [PersonalSubscriptionResources.Group] {
-    groups ?? store.resources.confirmedGroups
+    groups ?? PersonalSubscriptionResources.group(accounts)
   }
   private var readError: String? { $groups.error.map(ChatRequestFailure.message(for:)) }
 
@@ -33,7 +37,7 @@ private struct PersonalSubscriptionsContent: View {
 
   var body: some View {
     List {
-      if status == .loading && store.accounts.isEmpty {
+      if status == .loading && accounts.isEmpty {
         OkouLoadingRow("Loading accounts…")
       }
       if let error = readError ?? store.error {
@@ -59,7 +63,7 @@ private struct PersonalSubscriptionsContent: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .contentShape(Rectangle())
           }
-          .disabled(store.accounts.filter { $0.type == type.rawValue }.count >= 10)
+          .disabled(accounts.filter { $0.type == type.rawValue }.count >= 10)
         }
       } header: {
         Text("Add account").okouSectionHeader()
