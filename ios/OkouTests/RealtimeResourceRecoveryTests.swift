@@ -640,11 +640,15 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
     remote.withLock { $0 = "unread" }
     try fixture.server.notify("chatIndicatorsChanged", channel: fixture.channel)
-    try await waitForBusinessResult { fixture.workspace.list.hasUnreadThreads }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { fixture.workspace.list.hasUnreadThreads }
 
     remote.withLock { $0 = "none" }
     try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.channel)
-    try await waitForBusinessResult { !fixture.workspace.list.hasUnreadThreads }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { !fixture.workspace.list.hasUnreadThreads }
     XCTAssertEqual(
       fixture.http.history.requests.values.withLock {
         $0.filter { $0 == "GET /api/chat-threads/events" }.count
