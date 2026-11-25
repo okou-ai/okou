@@ -62,6 +62,9 @@ API returns `wssUrl`, `ticket` and `expiresAt`. Connect to `wssUrl` and send
 The admission deadline is five seconds. Established channels support WebSocket
 Ping/Pong and close when the local Run ends or is cancelled. Reconnecting
 requires a new bootstrap.
+Each Run supports up to eight authenticated connections. A Runner process
+allows up to 16 simultaneous handshakes. If a Run's connection quota is full,
+the server closes the upgraded connection before acknowledging authentication.
 
 `playbooks/provision-runner.yml` is the shared host-dependency entry point used
 by Runner build/release/preview provisioning. Its cache covers the complete

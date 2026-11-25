@@ -32,7 +32,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_PENDING_TICKETS: usize = 256;
 const MAX_PENDING_TICKETS_PER_RUN: usize = 16;
 const MAX_HANDSHAKES: usize = 16;
-const MAX_CONNECTIONS: usize = 32;
+const MAX_CONNECTIONS_PER_RUN: usize = 8;
 const MAX_MESSAGE_BYTES: usize = 256;
 const GENERATION_HEADER: &str = "x-okou-runner-heartbeat-generation";
 
@@ -81,12 +81,33 @@ impl PendingTicket {
 
 type TicketDigest = [u8; 32];
 
+struct RunConnection<'a> {
+    run_id: RunId,
+    counts: &'a Mutex<HashMap<RunId, usize>>,
+}
+
+impl Drop for RunConnection<'_> {
+    fn drop(&mut self) {
+        let mut counts = self
+            .counts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let std::collections::hash_map::Entry::Occupied(mut entry) = counts.entry(self.run_id) {
+            if *entry.get() == 1 {
+                entry.remove();
+            } else {
+                *entry.get_mut() -= 1;
+            }
+        }
+    }
+}
+
 pub(super) struct RunWebSocket {
     active_runs: ActiveRuns,
     cancellations: RunCancellationRegistry,
     tickets: Mutex<HashMap<TicketDigest, PendingTicket>>,
     handshakes: Arc<Semaphore>,
-    connections: Arc<Semaphore>,
+    connections: Mutex<HashMap<RunId, usize>>,
     cancel: CancellationToken,
     tasks: TaskTracker,
 }
@@ -102,7 +123,7 @@ impl RunWebSocket {
             cancellations,
             tickets: Mutex::default(),
             handshakes: Arc::new(Semaphore::new(MAX_HANDSHAKES)),
-            connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+            connections: Mutex::default(),
             cancel,
             tasks: TaskTracker::new(),
         }
@@ -161,7 +182,7 @@ impl RunWebSocket {
         Ok(IssuedTicket { ticket, expires_at })
     }
 
-    fn redeem(&self, run_id: RunId, frame: &str) -> Option<LiveRun> {
+    fn redeem(&self, run_id: RunId, frame: &str) -> Option<(LiveRun, RunConnection<'_>)> {
         let first = serde_json::from_str::<FirstFrame>(frame).ok()?;
         if URL_SAFE_NO_PAD.decode(first.ticket.as_bytes()).ok()?.len() != 32 {
             return None;
@@ -172,7 +193,20 @@ impl RunWebSocket {
         if pending.run_id != run_id || !pending.is_redeemable(Instant::now()) {
             return None;
         }
-        tickets.remove(&digest).map(|pending| pending.run)
+        let mut counts = self.connections.lock().ok()?;
+        let count = counts.entry(run_id).or_default();
+        if *count >= MAX_CONNECTIONS_PER_RUN {
+            return None;
+        }
+        let pending = tickets.remove(&digest)?;
+        *count += 1;
+        Some((
+            pending.run,
+            RunConnection {
+                run_id,
+                counts: &self.connections,
+            },
+        ))
     }
 
     fn upgrade(
@@ -184,16 +218,12 @@ impl RunWebSocket {
         let Ok(reply) = create_response(&request) else {
             return response(StatusCode::BAD_REQUEST, "");
         };
-        let (Ok(connection), Ok(handshake)) = (
-            self.connections.clone().try_acquire_owned(),
-            self.handshakes.clone().try_acquire_owned(),
-        ) else {
+        let Ok(handshake) = self.handshakes.clone().try_acquire_owned() else {
             return response(StatusCode::TOO_MANY_REQUESTS, "");
         };
         let upgraded = hyper::upgrade::on(&mut request);
         let server = self.clone();
         self.tasks.spawn(async move {
-            let _connection = connection;
             tokio::select! {
                 biased;
                 () = server.cancel.cancelled() => {},
@@ -216,17 +246,17 @@ impl RunWebSocket {
             let Some(Ok(Message::Text(first))) = ws.next().await else {
                 return None;
             };
-            let mut run = self.redeem(run_id, &first)?;
+            let (mut run, connection) = self.redeem(run_id, &first)?;
             tokio::select! {
                 biased;
                 () = run.ended() => return None,
                 result = ws.send(Message::Text(r#"{"type":"auth.ok"}"#.into())) => result.ok()?,
             }
-            Some((ws, run))
+            Some((ws, run, connection))
         })
         .await;
         drop(handshake);
-        let Ok(Some((mut ws, mut run))) = admitted else {
+        let Ok(Some((mut ws, mut run, _connection))) = admitted else {
             return;
         };
         tokio::select! {

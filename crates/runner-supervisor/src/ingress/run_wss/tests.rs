@@ -151,3 +151,39 @@ async fn issued_ticket_expires_and_does_not_survive_run_cancellation() {
     ));
     registration.unregister().await;
 }
+
+#[tokio::test]
+async fn each_run_has_eight_connection_slots_released_on_disconnect() {
+    let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
+    let cancellations = RunCancellationRegistry::new();
+    let run = RunId::new_v4();
+    let other_run = RunId::new_v4();
+    let _active = active_runs.register(run, None, "vm0/default".into());
+    let _other_active = active_runs.register(other_run, None, "vm0/default".into());
+    let registration = cancellations.register(run).await.unwrap();
+    let other_registration = cancellations.register(other_run).await.unwrap();
+    let server = RunWebSocket::new(active_runs, cancellations, CancellationToken::new());
+
+    let mut connections = Vec::new();
+    for _ in 0..8 {
+        let ticket = server.issue(run).await.unwrap();
+        let first = json!({"ticket": ticket.ticket}).to_string();
+        connections.push(server.redeem(run, &first).unwrap());
+    }
+    let overflow = server.issue(run).await.unwrap();
+    let overflow_frame = json!({"ticket": overflow.ticket}).to_string();
+    assert!(server.redeem(run, &overflow_frame).is_none());
+
+    let ticket = server.issue(other_run).await.unwrap();
+    assert!(
+        server
+            .redeem(other_run, &json!({"ticket": ticket.ticket}).to_string())
+            .is_some()
+    );
+
+    drop(connections.pop().unwrap());
+    assert!(server.redeem(run, &overflow_frame).is_some());
+    drop(connections);
+    registration.unregister().await;
+    other_registration.unregister().await;
+}
