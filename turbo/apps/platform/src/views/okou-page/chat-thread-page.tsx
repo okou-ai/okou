@@ -6161,7 +6161,7 @@ function shareGroupClassName({
     "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-transparent data-selected:before:border-primary data-selected:bg-state-selected",
     phase === "selecting" &&
       (hasSelection
-        ? "hover:bg-state-selected-hover"
+        ? "data-selected:hover:bg-state-selected-hover"
         : "hover:bg-state-hover hover:before:border-border"),
   );
 }
