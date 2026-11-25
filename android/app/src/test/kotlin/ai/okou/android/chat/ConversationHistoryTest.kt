@@ -1456,6 +1456,21 @@ internal class ConversationHistoryProjectionTest : ConversationHistoryTestFixtur
     }
 
     @Test
+    fun replyCopyPreservesTableCellAndRowBoundaries() {
+        val table =
+            "Outside\ttable\n\n| Evidence | Status |\n| --- | --- |\n" +
+                "| `First\tsecond` | Checked |\n| Here&#13;&#10;there | |"
+        assertEquals(
+            "Outside\ttable\n\nEvidence\tStatus\nFirst second\tChecked\nHere there\t",
+            conversationMarkdownForCopy(table, "Image"),
+        )
+        assertEquals(
+            "Status\n\n",
+            conversationMarkdownForCopy("| Status |\n| --- |\n| |\n| |", "Image"),
+        )
+    }
+
+    @Test
     fun replyCopyUsesKnownStableTargetsAndLocalizedImageDescriptions() {
         val external = "https://example.com/evidence.png"
         val temporary = "$external?signature=temporary"

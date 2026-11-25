@@ -806,7 +806,7 @@ private fun historyMarkdownRows(
     table: TableBlock,
     interactiveLinks: Boolean,
     inlineImages: Boolean = false,
-    copyImages: ReplyImageCopy? = null,
+    replyCopy: ReplyCopy? = null,
 ): List<List<HistoryMarkdownCell>> =
     table
         .children()
@@ -822,7 +822,7 @@ private fun historyMarkdownRows(
                                 cell,
                                 interactiveLinks = interactiveLinks,
                                 images = images,
-                                copyImages = copyImages,
+                                replyCopy = replyCopy,
                             ),
                             images.orEmpty(),
                         ),
@@ -910,15 +910,24 @@ internal fun conversationMarkdownForCopy(
     source: String,
     imageLabel: String,
     authorizedImages: Map<String, String> = emptyMap(),
-): String =
-    renderHistoryMarkdownNode(
-            historyMarkdownParser.parse(source),
-            copyImages = ReplyImageCopy(imageLabel, authorizedImages),
-        )
-        .text
-        .trimEnd('\n')
+): String {
+    val copy = ReplyCopy(imageLabel, authorizedImages)
+    val text =
+        renderHistoryMarkdownNode(
+                historyMarkdownParser.parse(source),
+                replyCopy = copy,
+            )
+            .text
+    // Trim block spacing while keeping row separators before trailing empty cells.
+    val end = maxOf(text.indexOfLast { it != '\n' } + 1, copy.lastTableEnd)
+    return text.substring(0, end)
+}
 
-private class ReplyImageCopy(val label: String, val authorizedNames: Map<String, String>) {
+private val tableCellSeparators = Regex("[\\t\\r\\n]+")
+
+private class ReplyCopy(val imageLabel: String, val authorizedNames: Map<String, String>) {
+    var lastTableEnd: Int = 0
+
     fun target(source: String, outer: String?): String? {
         if (outer != null) {
             val artifact = messageArtifactLink(outer)?.takeIf { it.startsWith("/artifacts/") }
@@ -958,7 +967,7 @@ private fun renderHistoryMarkdownNode(
     seenArtifacts: MutableSet<String>? = null,
     interactiveLinks: Boolean = false,
     images: MutableList<MarkdownImage>? = null,
-    copyImages: ReplyImageCopy? = null,
+    replyCopy: ReplyCopy? = null,
     paragraphBreak: (Paragraph) -> String = { if (it.parent is ListItem) "\n" else "\n\n" },
 ): AnnotatedString = buildAnnotatedString {
     val builder = this
@@ -969,15 +978,18 @@ private fun renderHistoryMarkdownNode(
 
             override fun visit(node: org.commonmark.node.CustomBlock) {
                 if (node is TableBlock) {
-                    for (row in
-                        historyMarkdownRows(node, interactiveLinks, copyImages = copyImages)) {
+                    val rows = historyMarkdownRows(node, interactiveLinks, replyCopy = replyCopy)
+                    for ((rowIndex, row) in rows.withIndex()) {
+                        if (rowIndex > 0) append('\n')
                         for ((index, cell) in row.withIndex()) {
                             if (index > 0) append('\t')
-                            append(cell.content.text)
+                            val content = cell.content.text
+                            if (replyCopy == null) append(content)
+                            else append(content.text.replace(tableCellSeparators, " "))
                         }
-                        append("\n")
                     }
-                    append("\n")
+                    replyCopy?.lastTableEnd = length
+                    append("\n\n")
                 } else visitChildren(node)
             }
 
@@ -1089,7 +1101,7 @@ private fun renderHistoryMarkdownNode(
             }
 
             override fun visit(node: Image) {
-                if (images != null || copyImages != null) {
+                if (images != null || replyCopy != null) {
                     val description = node.imageDescription()
                     val outer =
                         generateSequence(node.parent) { it.parent }
@@ -1097,11 +1109,11 @@ private fun renderHistoryMarkdownNode(
                             .firstOrNull()
                             ?.destination
                     val source = inlineImageSource(node.destination)
-                    if (copyImages != null) {
-                        val name = source?.let { copyImages.authorizedNames[it] }
-                        append(description.ifBlank { name ?: copyImages.label })
+                    if (replyCopy != null) {
+                        val name = source?.let { replyCopy.authorizedNames[it] }
+                        append(description.ifBlank { name ?: replyCopy.imageLabel })
                         if (source != null && name != null) {
-                            copyImages.target(source, outer)?.let { append(" [$it]") }
+                            replyCopy.target(source, outer)?.let { append(" [$it]") }
                         }
                         copiedImages++
                     } else if (images != null) {
