@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.131.0](https://github.com/okou-ai/okou/compare/api-v2.130.3...api-v2.131.0) (2026-11-25)
+
+
+### Features
+
+* **api:** support device chat over mcp ([#50911](https://github.com/okou-ai/okou/issues/50911)) ([b455daa](https://github.com/okou-ai/okou/commit/b455daa4f5ce613d3d6981e479f246ac85695260))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.0
+    * @okouai/core bumped to 8.881.3
+    * @okouai/db bumped to 2.69.4
+    * @okouai/pi-agent-runtime bumped to 1.52.81
+
 ## [2.130.3](https://github.com/okou-ai/okou/compare/api-v2.130.2...api-v2.130.3) (2026-11-25)
 
 
