@@ -255,14 +255,14 @@ messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files
 messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-005	planned		
 messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-007	planned		
 messaging	src/signals/routes/__tests__/feishu-files-history.test.ts	feishu-files-history-008	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-001	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-002	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-003	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-010	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-011	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-012	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-013	planned		
-messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-020	planned		
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-001	rewritten	41.8	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-002	rewritten	150.0	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-003	rewritten	126.6	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-010	rewritten	177.9	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-011	rewritten	5.4	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-012	rewritten	126.5	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-013	rewritten	113.2	
+messaging	src/signals/routes/__tests__/feishu-installation.test.ts	feishu-installation-020	rewritten	89.7	
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-001	planned		
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-002	planned		
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-003	planned		
