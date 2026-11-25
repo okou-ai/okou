@@ -52,7 +52,10 @@ internal data class FixtureChatOverride(
     val enabled: Boolean?,
 )
 
-internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Closeable {
+internal class ConnectorApiFixture(
+    includeGrantExamples: Boolean = false,
+    private val requireDeviceEnvironment: Boolean = false,
+) : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
     val service: ConnectorService
@@ -117,6 +120,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     "engineering-team-execution",
                     null,
                     grantKind = "device-auth",
+                    startOptions =
+                        if (requireDeviceEnvironment)
+                            """[{"id":"environment","kind":"select","label":"Environment","required":true,"defaultValue":null,"options":[{"value":"test","label":"Test workspace"},{"value":"live","label":"Live workspace"}]}]"""
+                        else "[]",
                 ),
             )
             add(
@@ -524,7 +531,16 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             }
             path == "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions" &&
                 request.method == "POST" -> {
-                if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
+                val input = body(request)
+                if (
+                    input["authMethod"]?.jsonPrimitive?.content != "device-auth" ||
+                        requireDeviceEnvironment &&
+                            input["options"]
+                                ?.jsonObject
+                                ?.get("environment")
+                                ?.jsonPrimitive
+                                ?.contentOrNull !in setOf("test", "live")
+                )
                     return rejected(400)
                 deviceStartRequests.incrementAndGet()
                 jsonResponse(
@@ -690,6 +706,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         val category: String,
         val rank: Int?,
         val grantKind: String = "auth-code",
+        val startOptions: String = "[]",
     ) {
         fun body(icon: JsonObject): JsonObject {
             val method = if (grantKind == "auth-code") "oauth" else grantKind
@@ -714,7 +731,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         .joinToString(",", "[", "]")
                 } else "[]"
             return Json.parseToJsonElement(
-                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
+                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":$startOptions}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
                 )
                 .jsonObject
         }
