@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { escapeText } from "entities/escape";
 import {
   array,
+  boolean,
   literal,
   object,
   string,
@@ -39,7 +40,12 @@ export const slackLinkSharedEventSchema = object({
   type: literal("link_shared"),
   channel: string().min(1),
   message_ts: string().min(1),
+  thread_ts: string().min(1).optional(),
   links: array(object({ url: string().min(1) })),
+  user: string().min(1).optional(),
+  is_bot_user_member: boolean().optional(),
+  source: string().optional(),
+  is_unfurl_refresh: boolean().optional(),
 });
 
 export type SlackLinkSharedEvent = zInfer<typeof slackLinkSharedEventSchema>;
