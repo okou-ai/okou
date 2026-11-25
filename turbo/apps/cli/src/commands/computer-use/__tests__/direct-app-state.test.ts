@@ -64,6 +64,7 @@ it("publishes both private files before acknowledging and handles an identical r
     );
   };
   const output = await read(chunks);
+  expect(output.windowId).toBe(7);
   expect(await readFile(output.appState, "utf8")).toBe(text);
   expect(await readFile(output.screenshot)).toEqual(png);
   const before = await stat(output.screenshot);
