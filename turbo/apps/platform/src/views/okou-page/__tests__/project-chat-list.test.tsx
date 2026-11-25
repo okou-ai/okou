@@ -1,5 +1,5 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import type {
@@ -266,6 +266,53 @@ test.each([false, true])(
     expect(queryMenuItemByText("Archive") !== null).toBe(enabled);
   },
 );
+
+test("The Mac archive shortcut toggles the current Project on its page", async () => {
+  context.mocks.browser.userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X)");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 332,
+    threads: [],
+  });
+  installProjects();
+  const updates: { id: string; archived: boolean | undefined }[] = [];
+  context.mocks.api(projectsContract.update, ({ params, body, respond }) => {
+    updates.push({ id: params.id, archived: body.archived });
+    return respond(200, {
+      id: params.id,
+      name: "Launch",
+      createdAt: at,
+      updatedAt: at,
+      archived: body.archived,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/projects/${launchId}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.ProjectArchive]: true },
+  });
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toBeInTheDocument();
+  });
+
+  const shortcut = { key: "X", code: "KeyX", metaKey: true, shiftKey: true };
+  fireEvent.keyDown(document, shortcut);
+  await waitFor(() => {
+    expect(updates).toStrictEqual([{ id: launchId, archived: true }]);
+    expect(projectRows()).toHaveLength(0);
+  });
+  expect(projectToggle("Research", researchId)).toBeInTheDocument();
+
+  fireEvent.keyDown(document, shortcut);
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      { id: launchId, archived: true },
+      { id: launchId, archived: false },
+    ]);
+    expect(projectToggle("Launch")).toBeInTheDocument();
+  });
+  expect(location.pathname).toBe(`/projects/${launchId}`);
+});
 
 test.each([
   { mobile: false, rejected: false },

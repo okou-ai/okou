@@ -35,7 +35,7 @@ export const GLOBAL_KEYBOARD_SHORTCUTS = {
     binding: "alt+shift+arrowdown",
     ariaKeyShortcuts: "Alt+Shift+ArrowDown",
   },
-  toggleChatArchive: {
+  toggleArchive: {
     binding: "mod+shift+x",
     ariaKeyShortcuts: "Meta+Shift+X Control+Shift+X",
   },
