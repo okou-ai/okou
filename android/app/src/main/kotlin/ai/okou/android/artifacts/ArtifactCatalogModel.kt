@@ -114,6 +114,11 @@ internal constructor(
     private val catalogs = LinkedHashMap<ArtifactQuery, ConfirmedArtifactCatalog>(8, 0.75f, true)
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
+    internal val inlineImages =
+        InlineArtifactImages(service, viewModelScope) { error ->
+            val failure = problem(error)
+            if (error is ApiFailure.Unauthenticated) ArtifactProblem.Denied else failure
+        }
     private var active = false
     private var catalogVisible = false
     private var catalogJob: Job? = null
@@ -152,6 +157,9 @@ internal constructor(
         }
         viewModelScope.launch {
             catalogChanges.collect { changes ->
+                if (changes.resync) inlineImages.invalidate()
+                else if (changes.artifactThreads.isNotEmpty())
+                    inlineImages.invalidate(changes.artifactThreads)
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
                 if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
@@ -166,7 +174,10 @@ internal constructor(
         viewModelScope.launch {
             unavailableChat.collect { threadId ->
                 missingThread = threadId
-                if (threadId != null) evictChatCatalog(threadId)
+                if (threadId != null) {
+                    inlineImages.invalidate(setOf(threadId))
+                    evictChatCatalog(threadId)
+                }
             }
         }
     }
@@ -274,6 +285,9 @@ internal constructor(
         }
         if (id != null) readPreview(id)
     }
+
+    internal fun retainedExternalImageId(): String? =
+        mutable.value.preview?.id?.takeIf { it.startsWith(ExternalImagePreviewPrefix) }
 
     internal suspend fun thumbnail(url: String, offline: Boolean): Bitmap? {
         thumbnails.get(url)?.let {
@@ -676,6 +690,7 @@ internal constructor(
         catalogs.clear()
         previews.clear()
         thumbnails.evictAll()
+        inlineImages.invalidate()
         cache?.let {
             storeCatalog {
                 it.deleteArtifactCatalog()
@@ -753,6 +768,8 @@ internal constructor(
         }
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
+            // External image metadata describes the URL. Only reading it establishes access.
+            val externalImage = id.startsWith(ExternalImagePreviewPrefix)
             var detailAuthorized = false
             var fileAccessAuthorized = false
             try {
@@ -761,7 +778,7 @@ internal constructor(
                     detailAuthorized = false
                     fileAccessAuthorized = false
                     val info = service.info(id)
-                    detailAuthorized = true
+                    detailAuthorized = !externalImage
                     updatePreview(id) {
                         copy(
                             item = info.item,
@@ -773,7 +790,7 @@ internal constructor(
                         when (val resource = info.resource) {
                             is ArtifactResource.File -> {
                                 val access = info.resolvedAccess ?: service.fileAccess(resource)
-                                fileAccessAuthorized = true
+                                fileAccessAuthorized = !externalImage
                                 updatePreview(id) { copy(access = access) }
                                 service.fileContent(resource, access)
                             }
@@ -808,7 +825,14 @@ internal constructor(
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
                     if (discardContent) previews.remove(id)
+                    if (revoked && !detailAuthorized) {
+                        val source =
+                            if (externalImage) id
+                            else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
+                        source?.let(inlineImages::revoke)
+                    }
                     copy(
+                        item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
                         access = access.takeUnless { revoked && !fileAccessAuthorized },

@@ -114,4 +114,9 @@
     <string name="chat_rename_save_unconfirmed">Das Ergebnis der Speicherung ist noch nicht bestätigt.</string>
     <string name="chat_title_saved">Chattitel gespeichert</string>
     <string name="chat_project_name_saved">Projektname gespeichert</string>
+    <string name="inline_image_loading">Bild wird geladen…</string>
+    <string name="inline_image_no_thumbnail">Miniaturansicht nicht verfügbar</string>
+    <string name="inline_image_unavailable">Bild nicht verfügbar</string>
+    <string name="inline_image_view_original">Original ansehen</string>
+    <string name="inline_image_open_link">Link öffnen</string>
 </resources>
