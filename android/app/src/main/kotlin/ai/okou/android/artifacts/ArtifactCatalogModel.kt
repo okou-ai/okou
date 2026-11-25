@@ -823,6 +823,11 @@ internal constructor(
                 val discardContent = revoked || errorType == ArtifactProblem.Unsupported
                 updatePreview(id) {
                     if (discardContent) previews.remove(id)
+                    if (revoked && !detailAuthorized) {
+                        messageArtifactLink(id)
+                            ?.takeIf { it.startsWith("/artifacts/") }
+                            ?.let(inlineImages::revoke)
+                    }
                     copy(
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },

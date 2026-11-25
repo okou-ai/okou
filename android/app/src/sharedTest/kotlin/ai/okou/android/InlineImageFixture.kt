@@ -25,6 +25,7 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
     val thumbnails = CopyOnWriteArrayList<String>()
     val originals = CopyOnWriteArrayList<String>()
     var missingThumbnail = false
+    @Volatile var readyReferenceDenied = false
 
     fun install(latest: String? = null, earlier: Boolean = true) {
         val image = chart()
@@ -37,7 +38,10 @@ internal class InlineImageFixture(private val api: ChatListApiFixture) {
                     name in listOf(readyReference, earlierReference, deniedReference) -> {
                     assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
                     references.add(name)
-                    if (name == deniedReference)
+                    if (name == readyReference && readyReferenceDenied)
+                        jsonResponse("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")
+                            .setResponseCode(403)
+                    else if (name == deniedReference)
                         jsonResponse("""{"error":{"code":"NOT_FOUND","message":"Unavailable"}}""")
                             .setResponseCode(404)
                     else {

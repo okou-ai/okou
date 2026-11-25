@@ -14,8 +14,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -108,8 +106,14 @@ internal fun ConversationInlineImage(
                 remember(reader, request) { reader.observe(request) }
                     .collectAsStateWithLifecycle(initialValue = reader.get(request))
             var visible by remember { mutableStateOf(false) }
-            LaunchedEffect(reader, request, visible, result == null) {
-                if (visible && result == null) reader.request(request)
+            if (visible) {
+                DisposableEffect(reader, request) {
+                    reader.retainVisible(request)
+                    onDispose { reader.releaseVisible(request) }
+                }
+                LaunchedEffect(reader, request, result == null) {
+                    if (result == null) reader.request(request)
+                }
             }
             VisibleImage(
                 result,
@@ -163,8 +167,6 @@ internal fun ConversationInlineImage(
             else stringResource(R.string.inline_image_view_original)
         val focus = remember { FocusRequester() }
         val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
-        val interaction = remember { MutableInteractionSource() }
-        val pressed by interaction.collectIsPressedAsState()
         var focused by remember { mutableStateOf(false) }
         val restore = artifacts.restoreKey == focusKey || links?.restoreKey == focusKey
         val restored = if (artifacts.restoreKey == focusKey) artifacts.restored else links?.restored
@@ -200,8 +202,8 @@ internal fun ConversationInlineImage(
         val activation =
             if (action != null)
                 Modifier.clickable(
-                    interactionSource = interaction,
-                    indication = null,
+                    interactionSource = null,
+                    indication = ChatPressRipple,
                     role = if (opensLink) null else Role.Button,
                     onClickLabel = actionLabel,
                     onClick = action,
@@ -237,10 +239,6 @@ internal fun ConversationInlineImage(
                 .semantics {
                     contentDescription = description
                     if (statusLabel != null) stateDescription = statusLabel
-                }
-                .drawWithContent {
-                    drawContent()
-                    if (pressed) drawRect(colors.onSurface.copy(alpha = 0.09f))
                 }
                 .then(activation),
             contentAlignment = Alignment.Center,

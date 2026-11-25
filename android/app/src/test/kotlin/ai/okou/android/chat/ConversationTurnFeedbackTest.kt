@@ -3,20 +3,13 @@ package ai.okou.android.chat
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsEqualTo
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -29,6 +22,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,7 +38,7 @@ class ConversationTurnFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun textActionsExtendIntoTheGutterAndHighlightOnlyWhilePressedInTouchMode() {
+    fun textActionsExtendIntoTheGutterAndActivateOnRelease() {
         val prompt = "Review the checklist"
         val completion =
             ConversationCompletion(
@@ -53,26 +47,23 @@ class ConversationTurnFeedbackTest {
                 null,
                 listOf(ConversationFollowup(prompt, ConversationFollowupKind.Talk)),
             )
-        var toggled = false
+        var toggles = 0
         var selected: String? = null
-        val pageColor = Color.Magenta
-        var pressedColor = Color.Unspecified
         compose.setContent {
             OkouTheme {
-                val colors = MaterialTheme.colorScheme
-                pressedColor =
-                    colors.onSecondaryContainer
-                        .copy(alpha = 0.09f)
-                        .compositeOver(colors.secondaryContainer)
-                Column(Modifier.width(240.dp).background(pageColor).padding(horizontal = 24.dp)) {
-                    ConversationReplySummary(
-                        ReplySummary(ReplyPhase.Completed, null, null),
-                        2,
-                        false,
-                    ) {
-                        toggled = true
+                LazyColumn(Modifier.width(240.dp).padding(horizontal = 24.dp)) {
+                    item {
+                        ConversationReplySummary(
+                            ReplySummary(ReplyPhase.Completed, null, null),
+                            2,
+                            false,
+                        ) {
+                            toggles++
+                        }
                     }
-                    ConversationCompletionRow(completion) { selected = it }
+                    item {
+                        ConversationCompletionRow(completion) { selected = it }
+                    }
                 }
             }
         }
@@ -88,18 +79,25 @@ class ConversationTurnFeedbackTest {
 
         for (action in listOf(summary, followup)) {
             action.assertHeightIsEqualTo(48.dp)
-            fun colorAtOutset(): Int {
-                val pixels = action.captureToImage().toPixelMap()
-                return pixels[2, pixels.height / 2].toArgb()
-            }
-            assertEquals(pageColor.toArgb(), colorAtOutset())
             action.performTouchInput { down(Offset(2f, centerY)) }
-            assertEquals(pressedColor.toArgb(), colorAtOutset())
-            action.performTouchInput { up() }
-            assertEquals(pageColor.toArgb(), colorAtOutset())
+            compose.runOnIdle {
+                assertEquals(0, toggles)
+                assertNull(selected)
+            }
+            action.performTouchInput { cancel() }
         }
         compose.runOnIdle {
-            assertTrue(toggled)
+            assertEquals(0, toggles)
+            assertNull(selected)
+        }
+        for (action in listOf(summary, followup)) {
+            action.performTouchInput {
+                down(Offset(2f, centerY))
+                up()
+            }
+        }
+        compose.runOnIdle {
+            assertEquals(1, toggles)
             assertEquals(prompt, selected)
         }
     }

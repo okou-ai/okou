@@ -67,6 +67,46 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
     }
 
     @Test
+    fun withdrawsAnInlineImageAndItsSearchableFilenameWhenOriginalAccessIsDenied() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.install()
+        openConversation()
+        val image = hasContentDescription(fixture.readyAlt)
+        val loaded =
+            image and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
+        val frame = compose.onNode(image).getUnclippedBoundsInRoot()
+
+        fixture.readyReferenceDenied = true
+        compose.onNode(image).performClick()
+        awaitText("You don’t have access to this artifact")
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        val unavailable =
+            image and
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Image unavailable",
+                )
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(unavailable).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(unavailable).assert(!hasClickAction())
+        assertEquals(frame, compose.onNode(unavailable).getUnclippedBoundsInRoot())
+        assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
+        assertTrue(fixture.originals.isEmpty())
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement(fixture.filename)
+        awaitText("No matching messages")
+        query.performTextReplacement(fixture.readyAlt)
+        awaitText("1 matching message")
+    }
+
+    @Test
     fun findsAHiddenTimelineImageWithoutLoadingItUntilTheResultIsOpened() {
         val fixture = InlineImageFixture(app.fixture)
         fixture.install()
@@ -187,6 +227,34 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
         assertEquals(130.dp, frame.height)
         assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
         assertTrue(fixture.originals.isEmpty())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1400dp-h1460dp")
+    fun keepsAllVisibleTableImagesWhenTheResultCacheIsFull() {
+        val fixture = InlineImageFixture(app.fixture)
+        val names = List(25) { "cell-$it.png" }
+        val table = buildString {
+            appendLine("| A | B | C | D | E |")
+            appendLine("| --- | --- | --- | --- | --- |")
+            for (row in names.chunked(5)) {
+                appendLine(
+                    row.joinToString(" | ", "| ", " |") { name ->
+                        "![Table cell $name](${app.fixture.server.url("/inline-thumbnail/$name")})"
+                    },
+                )
+            }
+        }
+        fixture.install(latest = table, earlier = false)
+        openConversation()
+        val loaded =
+            hasContentDescription("Table cell ", substring = true) and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(loaded).fetchSemanticsNodes().size == names.size
+        }
+        assertEquals(names.sorted(), fixture.thumbnails.sorted())
     }
 
     private fun openConversation() {

@@ -35,7 +35,7 @@ internal data class InlineImageState(
     val bitmap: Bitmap? = null,
 )
 
-/** The authorized workspace owns in-flight reads and keeps a bounded, memory-only result cache. */
+/** The workspace owns in-flight reads and retains offscreen results within a memory budget. */
 internal class InlineArtifactImages(
     private val service: ArtifactService,
     private val scope: CoroutineScope,
@@ -43,10 +43,25 @@ internal class InlineArtifactImages(
 ) {
     private val entries = MutableStateFlow<Map<InlineImageRequest, InlineImageState>>(emptyMap())
     private val reads = mutableMapOf<InlineImageRequest, Job>()
+    private val visibleCounts = mutableMapOf<InlineImageRequest, Int>()
 
     fun observe(request: InlineImageRequest) = entries.map { it[request] }.distinctUntilChanged()
 
     fun get(request: InlineImageRequest): InlineImageState? = entries.value[request]
+
+    fun retainVisible(request: InlineImageRequest) {
+        visibleCounts[request] = (visibleCounts[request] ?: 0) + 1
+    }
+
+    fun releaseVisible(request: InlineImageRequest) {
+        val remaining = visibleCounts.getValue(request) - 1
+        if (remaining > 0) {
+            visibleCounts[request] = remaining
+        } else {
+            visibleCounts.remove(request)
+            entries.value = trim(entries.value)
+        }
+    }
 
     fun names(threadId: String) =
         entries
@@ -62,7 +77,7 @@ internal class InlineArtifactImages(
             .distinctUntilChanged()
 
     fun request(request: InlineImageRequest) {
-        if (request in entries.value) return
+        if (request !in visibleCounts || request in entries.value) return
         put(request, InlineImageState(InlineImageStatus.Loading))
         val read =
             scope.launch(start = CoroutineStart.LAZY) {
@@ -71,6 +86,7 @@ internal class InlineArtifactImages(
                 try {
                     val bitmap =
                         service.readInlineImage(request.source, request.width) { authorized ->
+                            job?.ensureActive()
                             grant = authorized
                             put(request, InlineImageState(InlineImageStatus.Loading, authorized))
                         }
@@ -89,6 +105,15 @@ internal class InlineArtifactImages(
                 } catch (error: Exception) {
                     currentCoroutineContext().ensureActive()
                     val failure = onFailure(error)
+                    if (
+                        grant == null &&
+                            request.source.startsWith("/artifacts/") &&
+                            (failure == ArtifactProblem.Denied ||
+                                failure == ArtifactProblem.Missing)
+                    ) {
+                        revoke(request.source)
+                        return@launch
+                    }
                     val canShowFallback =
                         failure != ArtifactProblem.Denied &&
                             (grant != null || failure == ArtifactProblem.Temporary)
@@ -104,6 +129,15 @@ internal class InlineArtifactImages(
             }
         reads[request] = read
         read.start()
+    }
+
+    fun revoke(source: String) {
+        val current = entries.value
+        val matching = current.keys.filter { it.source == source }
+        if (matching.isEmpty()) return
+        for (request in matching) reads.remove(request)?.cancel()
+        val unavailable = InlineImageState(InlineImageStatus.Unavailable)
+        entries.value = current + matching.associateWith { unavailable }
     }
 
     fun invalidate(threadIds: Set<String>? = null) {
@@ -123,16 +157,25 @@ internal class InlineArtifactImages(
     }
 
     private fun put(request: InlineImageRequest, result: InlineImageState) {
-        val next = entries.value.toMutableMap()
-        next[request] = result
-        var bytes = next.values.sumOf { it.bitmap?.allocationByteCount?.toLong() ?: 0L }
+        entries.value = trim(entries.value + (request to result))
+    }
+
+    private fun trim(
+        images: Map<InlineImageRequest, InlineImageState>,
+    ): Map<InlineImageRequest, InlineImageState> {
+        val maxBytes = 16L * 1024 * 1024
+        val maxEntries = 24
+        var bytes = images.values.sumOf { it.bitmap?.allocationByteCount?.toLong() ?: 0L }
+        if (images.size <= maxEntries && bytes <= maxBytes) return images
+        val next = images.toMutableMap()
         val older = next.entries.iterator()
-        while ((next.size > 24 || bytes > 16L * 1024 * 1024) && older.hasNext()) {
+        while ((next.size > maxEntries || bytes > maxBytes) && older.hasNext()) {
             val (key, value) = older.next()
-            if (key == request || value.status == InlineImageStatus.Loading) continue
+            if (key in visibleCounts) continue
+            reads.remove(key)?.cancel()
             bytes -= value.bitmap?.allocationByteCount ?: 0
             older.remove()
         }
-        entries.value = next
+        return next
     }
 }

@@ -20,8 +20,6 @@ import android.text.format.Formatter
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -173,8 +171,6 @@ internal fun updateToolbarAction(
 internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
-    val interactions = remember { MutableInteractionSource() }
-    val pressed by interactions.collectIsPressedAsState()
     val focus = rememberInstallControlFocus(inProgress = action.activate == null)
     val maxTextSize = with(LocalDensity.current) { 16.dp.toSp() }
     TextButton(
@@ -190,10 +186,9 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
                 .semantics { contentDescription = action.label },
         shape = shape,
         contentPadding = PaddingValues(0.dp),
-        interactionSource = interactions,
         colors =
             ButtonDefaults.textButtonColors(
-                containerColor = if (pressed) colors.onSurfaceVariant else colors.inverseSurface,
+                containerColor = colors.inverseSurface,
                 contentColor = colors.inverseOnSurface,
                 disabledContainerColor = colors.surfaceVariant,
                 disabledContentColor = colors.onSurfaceVariant,
