@@ -1,3 +1,5 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { randomUUID } from "node:crypto";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   findAction,
@@ -149,8 +151,10 @@ test.each([
     });
   },
 );
-test("chat-official-template-previews-010 seven welcome illustrations and the guide open from a runless conversation", async () => {
+test("chat-official-template-previews-010 nine welcome illustrations and the guide open from a runless conversation", async () => {
   const pictures = [
+    legacy.campaignVisualUrl,
+    legacy.telegramSceneUrl,
     current.personalInstructionsUrl,
     legacy.slackSceneUrl,
     current.workflowSharingUrl,
@@ -159,6 +163,42 @@ test("chat-official-template-previews-010 seven welcome illustrations and the gu
     legacy.newAgentDialogUrl,
     current.workflowInstructionsUrl,
   ];
+  const imageFiles = pictures
+    .filter((picture) => {
+      return new URL(picture).pathname.startsWith("/artifacts/");
+    })
+    .map((picture) => {
+      const reference = new URL(picture).pathname.split("/").at(-1)!;
+      return {
+        picture,
+        reference,
+        id: randomUUID(),
+        previewUrl: "https://welcome-images.example.test/" + reference,
+        contentType: reference.endsWith(".jpg") ? "image/jpeg" : "image/png",
+      };
+    });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const image = imageFiles.find((file) => {
+        return file.reference === params.reference;
+      });
+      if (!image) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown welcome image" },
+        });
+      }
+      return respond(200, {
+        url: image.previewUrl,
+        downloadUrl: image.previewUrl,
+        downloadAllowed: true,
+        expiresAt: "2099-02-01T00:00:00Z",
+        filename: image.reference,
+        contentType: image.contentType,
+        target: { kind: "file", id: image.id },
+      });
+    },
+  );
   const url = legacy.quickStartUrl;
   const snapshot = "https://ps-" + "a".repeat(48) + ".okou.app/";
   context.mocks.api(hostContract.sitePreview, ({ query, respond }) => {
@@ -184,11 +224,15 @@ test("chat-official-template-previews-010 seven welcome illustrations and the gu
     ),
   });
   for (const [index, picture] of pictures.entries()) {
+    const previewUrl =
+      imageFiles.find((image) => {
+        return image.picture === picture;
+      })?.previewUrl ?? picture;
     click(await screen.findByText("Diagram " + (index + 1)));
     await waitFor(() => {
       return expect(
         document.querySelector(
-          '[data-testid="artifact-sidebar"] img[src="' + picture + '"]',
+          '[data-testid="artifact-sidebar"] img[src="' + previewUrl + '"]',
         ),
       ).toBeVisible();
     });
