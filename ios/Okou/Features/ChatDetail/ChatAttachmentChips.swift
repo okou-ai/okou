@@ -82,7 +82,9 @@ struct ChatAttachmentChips: View {
           }
           .font(.okou(.caption2))
           .padding(OkouSpace.ten)
-          .frame(width: chipWidth, alignment: .leading)
+          .containerRelativeFrame(.horizontal, alignment: .leading) { availableWidth, _ in
+            min(chipWidth, availableWidth)
+          }
           .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.control))
         }
       }
