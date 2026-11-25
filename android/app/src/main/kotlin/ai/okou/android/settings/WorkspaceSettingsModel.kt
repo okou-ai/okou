@@ -39,6 +39,7 @@ internal val RecoverySubscriptionsSubscriptionsItem.provider: ModelAccountProvid
             RecoverySubscriptionsSubscriptionsItemType.CLAUDE_CODE_OAUTH_TOKEN ->
                 ModelAccountProvider.Claude
             RecoverySubscriptionsSubscriptionsItemType.OPENROUTER_CODEX,
+            RecoverySubscriptionsSubscriptionsItemType.ANTIGRAVITY,
             RecoverySubscriptionsSubscriptionsItemType.BUILT_IN -> null
         }
 

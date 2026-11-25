@@ -58,9 +58,17 @@ export const hostedSitePreviewGrantSchema = object({
   publicBrand: literal("okou"),
   siteId: uuid(),
   deploymentId: uuid(),
-  prefix: string().regex(
-    /^(?:sites\/brands\/okou|private-sites\/okou|shared-artifacts\/okou)\/[a-zA-Z0-9/-]+$/u,
-  ),
+  prefix: string()
+    .regex(
+      /^(?:sites\/brands\/okou|private-sites\/okou|shared-artifacts\/okou)\/[a-zA-Z0-9/-]+$/u,
+    )
+    // Retained public sites still use organization-scoped publication keys.
+    // Remove after those publications are migrated or retired (#50841).
+    .or(
+      string().regex(
+        /^sites\/orgs\/[a-zA-Z0-9_-]+\/[a-z0-9-]+\/(?:versions\/[1-9][0-9]*|deployments\/[a-f0-9-]{36})$/u,
+      ),
+    ),
   expiresAt: iso.datetime(),
   immutableContent: literal(true).optional(),
 });

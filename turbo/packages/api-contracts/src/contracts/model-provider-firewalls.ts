@@ -18,7 +18,12 @@ export interface ModelProviderPiEndpoint {
   readonly inferenceUrl: string;
 }
 
-type FirewallSupportedProvider = Exclude<ModelProviderType, "built-in">;
+// Antigravity is excluded: the official `agy` CLI validates its local Google
+// login before any request, so a firewall placeholder cannot satisfy it.
+type FirewallSupportedProvider = Exclude<
+  ModelProviderType,
+  "built-in" | "antigravity"
+>;
 type SingleSecretFirewallProvider = Exclude<
   FirewallSupportedProvider,
   "codex-oauth-token"

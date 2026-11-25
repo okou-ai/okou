@@ -284,7 +284,7 @@ private struct ChatComposerContent: View {
           if editor.workflows.query != nil {
             content = .workflows(editor.workflows)
           } else if editor.mentionQuery != nil {
-            content = .chats(editor)
+            content = .chats(editor, mentionSource)
           } else {
             return nil
           }
@@ -333,9 +333,6 @@ private struct ChatComposerContent: View {
     // while the reader types; the open composer's model control shows what they resolve to.
     .task(id: modelSelection.map { ObjectIdentifier($0) }) {
       await modelSelection?.open()
-    }
-    .onChange(of: mentionSource, initial: true) { _, source in
-      draftState.editor.mentionSource = source
     }
     .onChange(
       of: workflowSource?.id, initial: true
@@ -397,7 +394,8 @@ private struct ChatComposerContent: View {
       acceptsImages: !isBusy && !needsUpgrade, placeholder: configuration.placeholder,
       followup: followup,
       showsTrailingParagraph: showsTrailingFeedbackInput,
-      expanded: showsEditingLayout
+      expanded: showsEditingLayout,
+      mentionSource: mentionSource
     )
     .id(inputID)
     .transition(.identity)

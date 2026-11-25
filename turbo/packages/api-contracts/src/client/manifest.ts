@@ -7,6 +7,10 @@ export const clientDescriptorManifest = [
     contracts: ["androidUpdatesContract"],
   },
   {
+    module: "antigravity-device-auth",
+    contracts: ["antigravityDeviceAuthContract"],
+  },
+  {
     module: "antigravity-personal-subscription",
     contracts: ["antigravityPersonalSubscriptionContract"],
   },

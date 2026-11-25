@@ -1217,12 +1217,12 @@ export function HostedSiteShareMenu({
 }) {
   const scope = getHostedSiteShareScope(surface);
   const session = useGet(scope.session$);
-  const mountRef = useSet(scope.mountRef$);
   return (
-    <span key={url} ref={mountRef} data-share-url={url} className="inline-flex">
+    <span className="inline-flex">
       {session?.sourceUrl === url ? (
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
+          key={session.inputId}
           session={session}
           surface={surface}
           banner={<HostedSiteBannerSetting session={session} />}

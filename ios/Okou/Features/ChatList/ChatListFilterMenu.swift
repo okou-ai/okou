@@ -26,7 +26,8 @@ extension ChatListFilter {
 struct ChatListFilterMenu: UIViewRepresentable {
   let store: WorkspaceStore
   @Binding var selection: ChatListFilter
-  /// Whether a chat that is not muted is unread, from the chats the sidebar resolves.
+  /// Whether a chat is unread: one the read-state snapshot marks, or a chat that is not muted in
+  /// the list, from the values the sidebar resolves.
   let hasUnreadChats: Bool
   /// Names a new Project; the sidebar owns its name dialog.
   let newProject: () -> Void
@@ -74,8 +75,7 @@ struct ChatListFilterMenu: UIViewRepresentable {
     ]
     let list = store.list
     let enabled =
-      !list.markingAllRead && list.updatingThreads.isEmpty
-      && (!list.unreadThreadIDs.isEmpty || hasUnreadChats)
+      !list.markingAllRead && list.updatingThreads.isEmpty && hasUnreadChats
     groups.append(
       UIMenu(
         options: .displayInline,

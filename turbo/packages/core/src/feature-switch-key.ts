@@ -10,6 +10,7 @@ export enum FeatureSwitchKey {
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   MemberConnectorAccountAccess = "memberConnectorAccountAccess",
+  RemoteDevices = "remoteDevices",
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",

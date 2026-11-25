@@ -1,6 +1,6 @@
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -135,6 +135,7 @@ async function page(
     readOnly?: boolean;
     onOwnerReturned?: () => void;
     ownerError?: boolean;
+    configureRights?: (entry: ReturnType<typeof resource>) => void;
   } = {},
 ) {
   const r = resource(
@@ -154,6 +155,7 @@ async function page(
     });
   }
   const ownerUrl = rights(r, options);
+  options.configureRights?.(r);
   await route();
   const button = await findAction("link", r.item.title);
   click(button);
@@ -304,6 +306,94 @@ test("chat-artifact-action-group-012 a read-only viewer copies the reference wit
   expect(getAction("button", "Download artifact", panel)).toBeVisible();
   expect(queryAction("button", "More artifact actions", panel)).toBeNull();
 });
+
+test.each(["sharing", "deletion"] as const)(
+  "Closing a preview cancels its %s permission read and reopening recovers",
+  async (kind) => {
+    const began = context.mocks.deferred<void>();
+    const aborted = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const responded = context.mocks.deferred<void>();
+    let pending = true;
+    const hold = async (request: Request) => {
+      if (!pending) {
+        return false;
+      }
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      began.resolve();
+      await release.promise;
+      responded.resolve();
+      return true;
+    };
+    const { panel, button } = await page({
+      configureRights: (r) => {
+        if (kind === "sharing") {
+          context.mocks.api(
+            artifactSharesContract.status,
+            async ({ request, respond }) => {
+              return (await hold(request))
+                ? respond(500, {
+                    error: {
+                      code: "FAILED",
+                      message: "Closed preview permission read failed",
+                    },
+                  })
+                : respond(200, {
+                    ownerUrl: "https://app.okou.ai" + r.file.path,
+                    shareId: null,
+                    audience: "private",
+                    organization: { id: "org_default", name: "Field team" },
+                    selectedTarget: null,
+                    selectedVersion: null,
+                    candidateVersion: null,
+                    url: null,
+                    shortUrl: null,
+                  });
+            },
+          );
+        } else {
+          context.mocks.api(
+            artifactCatalogContract.get,
+            async ({ request, respond }) => {
+              return (await hold(request))
+                ? respond(500, {
+                    error: {
+                      code: "FAILED",
+                      message: "Closed preview permission read failed",
+                    },
+                  })
+                : respond(200, r.detail);
+            },
+          );
+        }
+      },
+    });
+    await began.promise;
+    click(await findAction("button", "Close artifact", panel));
+    await waitFor(() => {
+      expect(panel).not.toBeInTheDocument();
+    });
+    await aborted.promise;
+    pending = false;
+    await act(async () => {
+      release.resolve();
+      await responded.promise;
+    });
+    click(button);
+    const current = await screen.findByTestId("artifact-sidebar");
+    await ready(current);
+    expect(getAction("button", "Share artifact", current)).toBeVisible();
+    expect(
+      screen.queryByText("Closed preview permission read failed"),
+    ).not.toBeInTheDocument();
+  },
+);
 test("chat-artifact-action-group-014 a failed ownership read still allows the original document download", async () => {
   const browser = context.mocks.browser.blobDownload();
   const { panel, file } = await page({ ownerError: true });

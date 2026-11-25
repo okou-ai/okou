@@ -23,6 +23,7 @@ import {
 } from "./shared-thread-rich-content.ts";
 import { createPublicArtifactPreviewSignals } from "../public-artifact-preview.ts";
 import { classifyChatAttachment } from "../chat-page/parse-body-blocks.ts";
+import { artifactPreviewDeletionScope } from "../artifact-deletion.ts";
 
 const sharedThreadResponse$ = state<SharedThreadResponse | null>(null);
 const sharedThread$ = computed((get) => {
@@ -91,6 +92,16 @@ export const setupSharedThreadPage$ = command(
     );
     set(sharedThreadResponse$, result.status === 200 ? result.body : null);
     const sharedThread = get(sharedThread$);
+    set(
+      artifactPreviewDeletionScope("page").select$,
+      sharedThread
+        ? {
+            artifactId: id,
+            sourceKind: "shared-thread",
+          }
+        : null,
+      signal,
+    );
     if (sharedThread) {
       set(sharedThread.artifactPreview.initialize$, signal);
     }

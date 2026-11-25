@@ -8,7 +8,7 @@ struct ChatSidebarHeader: View {
   let isScrolled: Bool
   @Binding var accountError: String?
   let threadFilter: Binding<ChatListFilter>
-  /// Whether a chat that is not muted is unread, for Mark all as read.
+  /// Whether a chat is unread, for Mark all as read.
   let hasUnreadChats: Bool
   let close: () -> Void
   let newProject: () -> Void
