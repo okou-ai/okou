@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.57.0](https://github.com/okou-ai/okou/compare/android-v0.56.5...android-v0.57.0) (2026-11-25)
+
+
+### Features
+
+* **android:** choose model settings for new chat drafts ([#50818](https://github.com/okou-ai/okou/issues/50818)) ([209fadc](https://github.com/okou-ai/okou/commit/209fadcc132361e5f1b1e78a0ac5e52f620b4a13))
+
+
+### Refactoring
+
+* **android:** share native search field interactions ([#50823](https://github.com/okou-ai/okou/issues/50823)) ([a819f8f](https://github.com/okou-ai/okou/commit/a819f8feaa4e6cb1ef1b517af681f9ce2142dc2c))
+
 ## [0.56.5](https://github.com/okou-ai/okou/compare/android-v0.56.4...android-v0.56.5) (2026-11-25)
 
 
