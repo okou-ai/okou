@@ -39,9 +39,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -109,7 +110,7 @@ internal fun imageFocusReply(focusKey: String?): String? =
 private fun imageFocusKey(messageBlock: String, path: String, source: String?) =
     "image/$messageBlock/$path/${source.hashCode()}"
 
-/** Parse Markdown off Main and retain the previous layout while streaming text is updated. */
+/** Lay out the first visible reply with formatting and keep it while the next chunk is parsed. */
 @Composable
 internal fun HistoryMarkdown(
     source: String,
@@ -123,71 +124,69 @@ internal fun HistoryMarkdown(
     beforeParsedLayout: (() -> Unit)? = null,
 ) =
     key(messageId, artifacts != null, artifacts?.images != null, links != null) {
-        val onBeforeParsedLayout by rememberUpdatedState(beforeParsedLayout)
         val inlineImages = artifacts?.images != null
-        val rendered by
-            produceState<List<HistoryMarkdownBlock>?>(null, source) {
-                val blocks =
-                    withContext(Dispatchers.Default) {
-                        historyMarkdownBlocks(
-                            source,
-                            artifactCards = artifacts != null,
-                            interactiveLinks = links != null,
-                            inlineImages = inlineImages,
-                        )
+        val blocks =
+            rememberMarkdownLayout(source, beforeParsedLayout) {
+                historyMarkdownBlocks(
+                    it,
+                    artifactCards = artifacts != null,
+                    interactiveLinks = links != null,
+                    inlineImages = inlineImages,
+                )
+            }
+        val hit = highlight?.target?.markdownBlock?.takeIf { it in blocks.indices } ?: -1
+        val whole = highlight.takeIf { hit < 0 }
+        val findImage =
+            highlight?.target?.markdownImage?.takeIf { path ->
+                blocks.indexedImages().any { it.first == path }
+            }
+        val restore =
+            (artifacts?.restoreKey ?: links?.restoreKey)?.takeIf {
+                it.startsWith("image/$messageId/")
+            }
+        if (restore != null) {
+            LaunchedEffect(restore, blocks) {
+                if (
+                    blocks.indexedImages().none { (path, image) ->
+                        imageFocusKey(messageId, path, image.source) == restore
                     }
-                onBeforeParsedLayout?.invoke()
-                value = blocks
+                )
+                    artifacts?.restoreReply?.invoke()
             }
-        val blocks = rendered
-        if (blocks == null) {
-            if (!inlineImages || "![" !in source) Text(source, style = style)
-        } else {
-            val hit = highlight?.target?.markdownBlock?.takeIf { it in blocks.indices } ?: -1
-            val whole = highlight.takeIf { hit < 0 }
-            val findImage =
-                highlight?.target?.markdownImage?.takeIf { path ->
-                    blocks.indexedImages().any { it.first == path }
-                }
-            val restore =
-                (artifacts?.restoreKey ?: links?.restoreKey)?.takeIf {
-                    it.startsWith("image/$messageId/")
-                }
-            if (restore != null) {
-                LaunchedEffect(restore, blocks) {
-                    if (
-                        blocks.indexedImages().none { (path, image) ->
-                            imageFocusKey(messageId, path, image.source) == restore
-                        }
-                    )
-                        artifacts?.restoreReply?.invoke()
-                }
-            }
-            HistoryMarkdownBlocks(
-                blocks,
-                if (whole?.target?.highlighted == true)
-                    style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
-                else style,
-                artifacts,
-                messageId,
-                artifactTurnKey,
-                Modifier.conversationFindHighlight(whole),
-                hit,
-                highlight,
-                links,
-                compactReply,
-                findImage,
-            )
         }
+        HistoryMarkdownBlocks(
+            blocks,
+            if (whole?.target?.highlighted == true)
+                style.copy(color = MaterialTheme.colorScheme.onSecondaryContainer)
+            else style,
+            artifacts,
+            messageId,
+            artifactTurnKey,
+            Modifier.conversationFindHighlight(whole),
+            hit,
+            highlight,
+            links,
+            compactReply,
+            findImage,
+        )
     }
 
+/** The first layout is needed during composition. Later updates can reuse its geometry. */
 @Composable
-internal fun HistoryMarkdown(source: String, compactLists: Boolean = false) {
-    val rendered by
-        produceState<AnnotatedString?>(null, source, compactLists) {
-            value = withContext(Dispatchers.Default) { renderHistoryMarkdown(source, compactLists) }
-        }
-    Text(rendered ?: AnnotatedString(source))
+internal fun <Input, Layout> rememberMarkdownLayout(
+    input: Input,
+    beforeUpdate: (() -> Unit)? = null,
+    render: (Input) -> Layout,
+): Layout {
+    var rendered by remember { mutableStateOf(input to render(input)) }
+    val onBeforeUpdate by rememberUpdatedState(beforeUpdate)
+    LaunchedEffect(input) {
+        if (rendered.first == input) return@LaunchedEffect
+        val layout = withContext(Dispatchers.Default) { render(input) }
+        onBeforeUpdate?.invoke()
+        rendered = input to layout
+    }
+    return rendered.second
 }
 
 @Composable

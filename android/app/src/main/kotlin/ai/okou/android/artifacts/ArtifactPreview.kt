@@ -4,7 +4,6 @@ import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
 import ai.okou.android.api.retryAfter
 import ai.okou.android.chat.ConfirmedChat
-import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.rememberArtifactWebScroll
 import ai.okou.android.workspaceSearchFocusOutline
@@ -342,9 +341,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?) {
                                 lineHeight = if (content.markdown) 28.sp else 24.sp,
                             ),
                         ) {
-                            if (content.markdown)
-                                HistoryMarkdown(content.source, compactLists = true)
-                            else Text(content.source)
+                            Text(content.rendered)
                         }
                     }
                 is ArtifactContent.Image ->
