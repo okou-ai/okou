@@ -6,8 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -20,7 +22,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -126,5 +130,28 @@ class ConversationTurnFeedbackTest {
         assertTrue(layout.isLineEllipsized(1))
         compose.onNode(hasText(prompt) and hasClickAction()).performClick()
         compose.runOnIdle { assertEquals(prompt, selected) }
+    }
+
+    @Test
+    fun activeSummaryUsesOneLineAndExposesItsFullLabelAtLargeFontScale() {
+        val summary = "Checking the release schedule, checklist, dependencies, and rollout notes"
+        compose.setContent {
+            val density = Density(LocalDensity.current.density, fontScale = 2f)
+            CompositionLocalProvider(LocalDensity provides density) {
+                OkouTheme { ConversationActivity(summary, Modifier.width(240.dp)) }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(summary).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult,
+        ) {
+            it(layouts)
+        }
+        val layout = layouts.single()
+        assertEquals(1, layout.lineCount)
+        assertTrue(layout.isLineEllipsized(0))
+        assertEquals(13.sp, layout.layoutInput.style.fontSize)
+        assertEquals(20.sp, layout.layoutInput.style.lineHeight)
     }
 }

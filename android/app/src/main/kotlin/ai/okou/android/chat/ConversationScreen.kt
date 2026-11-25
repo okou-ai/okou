@@ -779,21 +779,30 @@ internal fun ConversationRoute(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (jump != null) {
-                        Box(Modifier.fillMaxWidth()) {
+                        val compactJump = window.height < 480
+                        val reportJumpPosition =
+                            stopPlacement?.let { placement ->
+                                DisposableEffect(placement) {
+                                    onDispose { placement.reportJumpBounds(null) }
+                                }
+                                Modifier.onGloballyPositioned {
+                                    placement.reportJumpBounds(it.boundsInRoot())
+                                }
+                            } ?: Modifier
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .padding(
+                                    bottom =
+                                        if (feedbackInConversation || paneFeedbackVisible) 8.dp
+                                        else 4.dp,
+                                    end = if (compactJump) 12.dp else 0.dp,
+                                ),
+                            contentAlignment =
+                                if (compactJump) Alignment.BottomEnd else Alignment.BottomCenter,
+                        ) {
                             ConversationJump(
                                 jump,
-                                modifier =
-                                    Modifier.align(
-                                            if (window.height < 480) Alignment.BottomEnd
-                                            else Alignment.BottomCenter,
-                                        )
-                                        .padding(
-                                            bottom =
-                                                if (feedbackInConversation || paneFeedbackVisible)
-                                                    8.dp
-                                                else 4.dp,
-                                            end = if (window.height < 480) 12.dp else 0.dp,
-                                        ),
+                                modifier = reportJumpPosition,
                                 onClick = {
                                     scope.launch {
                                         position.scrollToItem(0)

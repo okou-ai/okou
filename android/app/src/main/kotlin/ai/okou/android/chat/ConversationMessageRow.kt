@@ -394,7 +394,7 @@ internal fun ConversationActivity(
                 Box(Modifier.size(8.dp).background(color, CircleShape))
             }
         }
-        ConversationMeta(label, Modifier.weight(1f), maxLines = 2)
+        ConversationMeta(label, Modifier.weight(1f), maxLines = 1)
         if (controls?.currentRunId != null && stopPlacement != null) {
             DisposableEffect(stopPlacement) {
                 onDispose { stopPlacement.reportInlineSlot(null) }
