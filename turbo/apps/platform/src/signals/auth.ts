@@ -525,42 +525,48 @@ export const prepareCreatedOrgOnboarding$ = command(
 );
 
 /**
- * Command that monitors the active Clerk organization and reloads
- * the page when it changes.
+ * Rebootstrap the page and its Worker when the active workspace member changes.
  */
 export const watchOrgSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const clerk = await get(clerk$);
     signal.throwIfAborted();
 
-    let prevOrgId = clerk.organization?.id ?? undefined;
+    let prevOrgId = clerk.organization?.id;
+    let prevUserId = prevOrgId ? clerk.user?.id : undefined;
     setPostHogOrganization(prevOrgId);
 
     const unsubscribe = clerk.addListener(() => {
-      if (clerk.user === null) {
-        // Signed out: any organization that follows belongs to a new session
-        // and activates rather than switches.
+      if (clerk.user === null || clerk.session === null) {
         prevOrgId = undefined;
         return;
       }
-      const newOrgId = clerk.organization?.id ?? undefined;
-      // Clerk clears the organization while `setActive()` navigates, and on
-      // mobile it can also clear it during a background token refresh. Keep
-      // the previous concrete org so that restoration is recognized as
-      // unchanged rather than as an org switch.
-      if (!newOrgId || newOrgId === prevOrgId) {
+      const newOrgId = clerk.organization?.id;
+      const userId = clerk.user?.id;
+      // Clerk can clear these resources during a token refresh or setActive().
+      // Only a settled member change needs a fresh document and Worker.
+      if (
+        !newOrgId ||
+        !userId ||
+        (newOrgId === prevOrgId && userId === prevUserId)
+      ) {
         return;
       }
       const needsOnboarding = get(createdOrgToOnboard$) === newOrgId;
       if (needsOnboarding) {
         set(createdOrgToOnboard$, null);
       }
-      // Preserve the sign-in destination on first activation unless workspace
-      // creation explicitly requested onboarding for this organization.
       const isFirstActivation = prevOrgId === undefined;
+      const hadMember = prevUserId !== undefined;
       prevOrgId = newOrgId;
+      prevUserId = userId;
       setPostHogOrganization(newOrgId);
       if (isFirstActivation && !needsOnboarding) {
+        // A document which already disconnected its signed-out member must
+        // bootstrap again. Keep the current sign-in destination.
+        if (hadMember) {
+          location.reload();
+        }
         return;
       }
 

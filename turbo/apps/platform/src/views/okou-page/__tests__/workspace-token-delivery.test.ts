@@ -5,7 +5,7 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
-test("shared-database-browser-002 The connected workspace uses its locally cached default Clerk token for the worker's private read", async () => {
+test("shared-database-browser-002 The connected workspace uses its cached Clerk session token scoped to the worker's workspace", async () => {
   const authorization = context.mocks.deferred<string | null>();
   const release = context.mocks.deferred<void>();
   context.mocks.api(
@@ -19,6 +19,11 @@ test("shared-database-browser-002 The connected workspace uses its locally cache
     },
   );
   const cached = "local-default-session-token";
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    const cachedForWorker =
+      options?.organizationId === "local-group" && !options.skipCache;
+    return Promise.resolve(cachedForWorker ? cached : "page-session-token");
+  });
   const page = await startPage({
     context,
     path: "/workflows",
@@ -33,10 +38,6 @@ test("shared-database-browser-002 The connected workspace uses its locally cache
     sharedWorkerTestTransport: "message-port",
   });
   await expect(authorization.promise).resolves.toBe("Bearer " + cached);
-  expect(mockedClerk.sessionGetToken.mock.calls.length).toBeGreaterThan(0);
-  for (const args of mockedClerk.sessionGetToken.mock.calls) {
-    expect(args[0]).toBeUndefined();
-  }
   release.resolve();
   await page.ready;
   await expect(

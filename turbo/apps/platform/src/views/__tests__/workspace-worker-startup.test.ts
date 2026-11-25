@@ -1,6 +1,8 @@
 import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import asset from "virtual:shared-database-worker";
+import { mockedClerk } from "../../__tests__/mock-auth.ts";
+import type { SharedDatabaseClientMessage } from "../../shared-database/protocol.ts";
 import { startPage } from "../../__tests__/page-helper.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
 
@@ -103,6 +105,54 @@ test("shared-worker-preload-003 A worker preloaded for another workspace stays s
   expect(
     screen.queryByRole("dialog", { name: "Connection interrupted" }),
   ).toBeNull();
+});
+
+test("a worker waiting for a credential loses its tab when the account changes in the same workspace", async () => {
+  const { connections, registered } = browserWorkers();
+  const issuing = context.mocks.deferred<void>();
+  const token = context.mocks.deferred<string>();
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    if (options?.organizationId === "org_default") {
+      issuing.resolve();
+      return token.promise;
+    }
+    return Promise.resolve("page-session");
+  });
+  const opened = await startPage(page);
+  await opened.content;
+  await registered.promise;
+  const remote = connections[0]!.remote;
+  const requestId = crypto.randomUUID();
+  const reply = context.mocks.deferred<string>();
+  const disconnected = context.mocks.deferred<void>();
+  remote.addEventListener(
+    "message",
+    ({ data }: MessageEvent<SharedDatabaseClientMessage>) => {
+      if (
+        (data.type === "token-result" || data.type === "token-error") &&
+        data.requestId === requestId
+      ) {
+        reply.resolve(data.type);
+      }
+      if (data.type === "disconnect") {
+        disconnected.resolve();
+      }
+    },
+    { signal: context.signal },
+  );
+  remote.postMessage({ type: "get-token", requestId });
+  await issuing.promise;
+  const clerk = context.mocks.clerk();
+  clerk.user(
+    { id: "next-member", fullName: "Next member" },
+    { token: "next-session" },
+  );
+  // The SDK resource changes before its notification reaches the tab.
+  token.resolve("pending-session-token");
+  await expect(reply.promise).resolves.toBe("token-error");
+  clerk.stateChanged();
+  await disconnected.promise;
+  expect(location.pathname).toBe("/");
 });
 
 test("shared-worker-preload-002 An early failure on the matching preload reaches the interruption dialog", async () => {
