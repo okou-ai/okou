@@ -1,21 +1,18 @@
 import {
   workflowAutomationCreateRequestSchema,
   type WorkflowAutomationCreateRequest,
-  type WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
 import type {
   OfficialWorkflowAcceptedBlueprint,
-  OfficialWorkflowAcceptedDefinition,
   OfficialWorkflowBlueprintBindings,
   OfficialWorkflowInstallationParameter,
   OfficialWorkflowParameterBinding,
   OfficialWorkflowParameterValue,
   OfficialWorkflowTemplateJsonValue,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { isValidTimeZone, parseScheduledAtTime } from "@okouai/core/timezone";
+import { isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
-import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { iso } from "zod";
@@ -23,17 +20,15 @@ import { iso } from "zod";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { safeSync, settle, settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
   createWorkflowAutomation$,
   type AutomationResult,
   type CreateAutomationInput,
-  type OfficialAutomationEventPreparation,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
-import { calculateNextRun } from "./time-automation";
 import { withMorningBriefCronBinding } from "./official-workflow-owner-schedule";
 import { builtInWorkflow } from "./builtin-workflows";
 
@@ -55,17 +50,6 @@ export interface ResolvedBlueprint {
   readonly createRequest: WorkflowAutomationCreateRequest;
   readonly autonomyBudget: number | undefined;
 }
-
-type OfficialWorkflowBlueprintReconciliationResolution =
-  | {
-      readonly ok: true;
-      readonly resolved: ResolvedBlueprint;
-    }
-  | {
-      readonly ok: false;
-      readonly bindings: readonly OfficialWorkflowParameterBinding[];
-      readonly message: string;
-    };
 
 type ResolveResult =
   | { readonly ok: true; readonly blueprints: readonly ResolvedBlueprint[] }
@@ -337,63 +321,29 @@ export function resolveBlueprint(
   };
 }
 
-/**
- * Resolve one current Blueprint from a prior Installation projection. Values
- * for removed or now-invalid parameter keys are deliberately discarded before
- * current defaults are applied.
- */
-function reconciliationParameterValues(
+/** Resolve persisted bindings with the same defaults the editable copy will use. */
+export function canCopyInstalledBlueprint(
   blueprint: OfficialWorkflowAcceptedBlueprint,
   existing: readonly OfficialWorkflowParameterBinding[],
-): ReadonlyMap<string, OfficialWorkflowParameterValue> {
-  const parameters = new Map(
-    blueprint.parameters.map((parameter) => {
-      return [parameter.key, parameter] as const;
-    }),
-  );
+  timezone: string | null,
+): boolean {
   const values = new Map<string, OfficialWorkflowParameterValue>();
   for (const binding of existing) {
-    const parameter = parameters.get(binding.key);
+    const parameter = blueprint.parameters.find((candidate) => {
+      return candidate.key === binding.key;
+    });
     if (parameter && validParameterValue(parameter, binding.value)) {
       values.set(binding.key, binding.value);
     }
   }
-  return values;
-}
-
-export function resolveOfficialWorkflowBlueprintForReconciliation(
-  blueprint: OfficialWorkflowAcceptedBlueprint,
-  existing: readonly OfficialWorkflowParameterBinding[],
-  defaultTimezone: string | null,
-): OfficialWorkflowBlueprintReconciliationResolution {
-  const parameterValues = reconciliationParameterValues(blueprint, existing);
-
-  const bindings: OfficialWorkflowParameterBinding[] = [];
-  let unresolvedMessage: string | undefined;
-  for (const parameter of blueprint.parameters) {
-    let value = parameterValues.get(parameter.key);
-    if (value === undefined && parameter.default !== undefined) {
-      value = parameter.default;
-    }
-    if (value === undefined) {
-      if (parameter.required && unresolvedMessage === undefined) {
-        unresolvedMessage = `Missing parameter: ${blueprint.key}.${parameter.key}`;
-      }
-      continue;
-    }
-    bindings.push({ key: parameter.key, value });
-  }
-  if (unresolvedMessage !== undefined) {
-    return { ok: false, bindings, message: unresolvedMessage };
-  }
-  const resolved = resolveBlueprint(
+  const bindings = Array.from(values, ([key, value]) => {
+    return { key, value };
+  });
+  return resolveBlueprint(
     blueprint,
     { blueprintKey: blueprint.key, bindings },
-    defaultTimezone,
-  );
-  return resolved.ok
-    ? { ok: true, resolved: resolved.blueprint }
-    : { ok: false, bindings, message: resolved.message };
+    timezone,
+  ).ok;
 }
 
 function resolveAllBlueprints(
@@ -535,10 +485,7 @@ interface InstallOfficialWorkflowArgs {
   readonly blueprints: readonly OfficialWorkflowBlueprintBindings[];
 }
 
-interface ResolvedInstallation {
-  readonly definition: OfficialWorkflowAcceptedDefinition;
-  readonly resolved: Extract<ResolveResult, { readonly ok: true }>;
-}
+type ResolvedInstallation = Extract<ResolveResult, { readonly ok: true }>;
 
 const resolveInstallation$ = command(
   async (
@@ -553,7 +500,7 @@ const resolveInstallation$ = command(
         message: `Official Workflow not found: ${args.definitionName}`,
       };
     }
-    const { definition, revision } = builtin;
+    const { revision } = builtin;
     const [metadata] = await get(db$)
       .select({ timezone: orgMembersMetadata.timezone })
       .from(orgMembersMetadata)
@@ -589,7 +536,7 @@ const resolveInstallation$ = command(
       userTimezone,
     );
     return resolved.ok
-      ? { definition, resolved }
+      ? resolved
       : { kind: "bad-request", message: resolved.message };
   },
 );
@@ -599,7 +546,6 @@ const insertInstallingWorkflow$ = command(
     { set },
     args: {
       readonly installation: InstallOfficialWorkflowArgs;
-      readonly definition: OfficialWorkflowAcceptedDefinition;
       readonly currentTime: Date;
     },
     signal: AbortSignal,
@@ -612,13 +558,13 @@ const insertInstallingWorkflow$ = command(
         .insert(workflows)
         .values({
           orgId: args.installation.orgId,
-          name: args.definition.name,
+          name: args.installation.definitionName,
           visibility: "private",
           instruction: null,
           ownerUserId: args.installation.member.userId,
           displayName: null,
           description: null,
-          officialDefinitionName: args.definition.name,
+          officialDefinitionName: args.installation.definitionName,
           officialInstallationState: "installing",
           createdBy: args.installation.member.userId,
           updatedBy: args.installation.member.userId,
@@ -689,7 +635,10 @@ const activateInstallation$ = command(
       .where(
         and(
           eq(workflows.id, args.workflowId),
-          eq(workflows.officialDefinitionName, args.resolved.definition.name),
+          eq(
+            workflows.officialDefinitionName,
+            args.installation.definitionName,
+          ),
           eq(workflows.officialInstallationState, "installing"),
           eq(workflows.orgId, args.installation.orgId),
           eq(workflows.ownerUserId, args.installation.member.userId),
@@ -725,7 +674,7 @@ const completeInstallation$ = command(
     args: InstallationCompletion,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowInstallResult> => {
-    for (const resolvedBlueprint of args.resolved.resolved.blueprints) {
+    for (const resolvedBlueprint of args.resolved.blueprints) {
       const input: CreateAutomationInput = {
         ...resolvedBlueprint.createRequest,
         orgId: args.installation.orgId,
@@ -736,7 +685,7 @@ const completeInstallation$ = command(
           ? {}
           : { autonomyBudget: resolvedBlueprint.autonomyBudget }),
         officialInstallation: {
-          definitionName: args.resolved.definition.name,
+          definitionName: args.installation.definitionName,
           blueprintKey: resolvedBlueprint.blueprint.key,
           appliedFingerprint: resolvedBlueprint.blueprint.fingerprint,
           parameterBindings: resolvedBlueprint.bindings,
@@ -799,7 +748,6 @@ export const installOfficialWorkflow$ = command(
       insertInstallingWorkflow$,
       {
         installation: args,
-        definition: resolved.definition,
         currentTime,
       },
       signal,
@@ -840,296 +788,3 @@ export const installOfficialWorkflow$ = command(
     return completed.value;
   },
 );
-
-export type OfficialAutomationRow = typeof workflowAutomations.$inferSelect;
-
-export interface OfficialAutomationPatch {
-  readonly kind: "schedule" | "event";
-  readonly eventType: OfficialAutomationRow["eventType"];
-  readonly eventConfig: OfficialAutomationRow["eventConfig"];
-  readonly eventConnectorId: OfficialAutomationRow["eventConnectorId"];
-  readonly scheduleType: OfficialAutomationRow["scheduleType"];
-  readonly cronExpression: string | null;
-  readonly intervalSeconds: number | null;
-  readonly atTime: Date | null;
-  readonly timezone: string;
-  readonly enabled: boolean;
-  readonly nextRunAt: Date | null;
-  readonly autonomyBudget: number;
-  readonly officialAppliedFingerprint: string;
-  readonly officialParameterBindings: OfficialWorkflowParameterBinding[];
-  readonly officialReconciliationStatus: "reconciling";
-  readonly updatedAt: Date;
-}
-
-type OfficialAutomationPatchResult =
-  | { readonly ok: true; readonly patch: OfficialAutomationPatch }
-  | { readonly ok: false; readonly message: string };
-
-function officialPatchMetadata(resolved: ResolvedBlueprint, currentTime: Date) {
-  return {
-    autonomyBudget: resolved.autonomyBudget ?? AUTONOMY_BUDGET_CEILING,
-    officialAppliedFingerprint: resolved.blueprint.fingerprint,
-    officialParameterBindings: [...resolved.bindings],
-    officialReconciliationStatus: "reconciling" as const,
-    updatedAt: currentTime,
-  };
-}
-
-function eventAutomationPatch(
-  automation: OfficialAutomationRow,
-  resolved: ResolvedBlueprint,
-  preparation: OfficialAutomationEventPreparation | undefined,
-  currentTime: Date,
-): OfficialAutomationPatchResult {
-  const request = resolved.createRequest;
-  if ("schedule" in request) {
-    throw new Error("Official Workflow event patch received a schedule");
-  }
-  if (!preparation) {
-    throw new Error("Official Workflow event preparation disappeared");
-  }
-  return {
-    ok: true,
-    patch: {
-      kind: "event",
-      eventType: request.eventType,
-      eventConfig: preparation.eventConfig,
-      eventConnectorId: preparation.eventConnectorId ?? null,
-      scheduleType: null,
-      cronExpression: null,
-      intervalSeconds: null,
-      atTime: null,
-      timezone: "UTC",
-      enabled:
-        automation.officialIntendedEnabled === true || automation.enabled,
-      nextRunAt: null,
-      ...officialPatchMetadata(resolved, currentTime),
-    },
-  };
-}
-
-function cronAutomationPatch(
-  automation: OfficialAutomationRow,
-  resolved: ResolvedBlueprint,
-  schedule: Extract<WorkflowSchedule, { readonly type: "cron" }>,
-  currentTime: Date,
-): OfficialAutomationPatchResult {
-  if (!isValidTimeZone(schedule.timezone)) {
-    return {
-      ok: false,
-      message: `Invalid timezone for Blueprint: ${resolved.blueprint.key}`,
-    };
-  }
-  const calculated = safeSync(() => {
-    return calculateNextRun(
-      schedule.cronExpression,
-      schedule.timezone,
-      currentTime,
-    );
-  });
-  if ("error" in calculated || calculated.ok === null) {
-    return {
-      ok: false,
-      message: `Invalid cron expression for Blueprint: ${resolved.blueprint.key}`,
-    };
-  }
-  return {
-    ok: true,
-    patch: {
-      kind: "schedule",
-      eventType: null,
-      eventConfig: null,
-      eventConnectorId: null,
-      scheduleType: "cron",
-      cronExpression: schedule.cronExpression,
-      intervalSeconds: null,
-      atTime: null,
-      timezone: schedule.timezone,
-      enabled:
-        automation.officialIntendedEnabled === true || automation.enabled,
-      nextRunAt:
-        automation.officialIntendedEnabled === true || automation.enabled
-          ? calculated.ok
-          : null,
-      ...officialPatchMetadata(resolved, currentTime),
-    },
-  };
-}
-
-function onceAutomationPatch(
-  automation: OfficialAutomationRow,
-  resolved: ResolvedBlueprint,
-  schedule: Extract<WorkflowSchedule, { readonly type: "once" }>,
-  currentTime: Date,
-): OfficialAutomationPatchResult {
-  const parsed = parseScheduledAtTime(schedule.atTime, schedule.timezone);
-  if (
-    !parsed.ok ||
-    parsed.date.getTime() <= currentTime.getTime() ||
-    !isValidTimeZone(schedule.timezone)
-  ) {
-    return {
-      ok: false,
-      message: `Invalid one-time schedule for Blueprint: ${resolved.blueprint.key}`,
-    };
-  }
-  return {
-    ok: true,
-    patch: {
-      kind: "schedule",
-      eventType: null,
-      eventConfig: null,
-      eventConnectorId: null,
-      scheduleType: "once",
-      cronExpression: null,
-      intervalSeconds: null,
-      atTime: parsed.date,
-      timezone: schedule.timezone,
-      enabled:
-        automation.officialIntendedEnabled === true || automation.enabled,
-      nextRunAt:
-        automation.officialIntendedEnabled === true || automation.enabled
-          ? parsed.date
-          : null,
-      ...officialPatchMetadata(resolved, currentTime),
-    },
-  };
-}
-
-function loopAutomationPatch(
-  automation: OfficialAutomationRow,
-  resolved: ResolvedBlueprint,
-  schedule: Extract<WorkflowSchedule, { readonly type: "loop" }>,
-  currentTime: Date,
-): OfficialAutomationPatchResult {
-  const nextFromLastRun = automation.lastRunAt
-    ? new Date(automation.lastRunAt.getTime() + schedule.intervalSeconds * 1000)
-    : currentTime;
-  const nextRunAt =
-    nextFromLastRun.getTime() > currentTime.getTime()
-      ? nextFromLastRun
-      : currentTime;
-  return {
-    ok: true,
-    patch: {
-      kind: "schedule",
-      eventType: null,
-      eventConfig: null,
-      eventConnectorId: null,
-      scheduleType: "loop",
-      cronExpression: null,
-      intervalSeconds: schedule.intervalSeconds,
-      atTime: null,
-      timezone: "UTC",
-      enabled:
-        automation.officialIntendedEnabled === true || automation.enabled,
-      nextRunAt:
-        automation.officialIntendedEnabled === true || automation.enabled
-          ? nextRunAt
-          : null,
-      ...officialPatchMetadata(resolved, currentTime),
-    },
-  };
-}
-
-export function buildOfficialAutomationPatch(
-  automation: OfficialAutomationRow,
-  resolved: ResolvedBlueprint,
-  preparation: OfficialAutomationEventPreparation | undefined,
-  currentTime: Date,
-): OfficialAutomationPatchResult {
-  const request = resolved.createRequest;
-  if (!("schedule" in request)) {
-    return eventAutomationPatch(automation, resolved, preparation, currentTime);
-  }
-  if (request.schedule.type === "cron") {
-    return cronAutomationPatch(
-      automation,
-      resolved,
-      request.schedule,
-      currentTime,
-    );
-  }
-  if (request.schedule.type === "once") {
-    return onceAutomationPatch(
-      automation,
-      resolved,
-      request.schedule,
-      currentTime,
-    );
-  }
-  return loopAutomationPatch(
-    automation,
-    resolved,
-    request.schedule,
-    currentTime,
-  );
-}
-
-export function officialAutomationRestorePatch(
-  row: OfficialAutomationRow,
-  nextRunAt: Date | null,
-  currentTime: Date,
-) {
-  return {
-    kind: row.kind,
-    eventType: row.eventType,
-    eventConfig: row.eventConfig,
-    eventConnectorId: row.eventConnectorId,
-    scheduleType: row.scheduleType,
-    cronExpression: row.cronExpression,
-    intervalSeconds: row.intervalSeconds,
-    atTime: row.atTime,
-    timezone: row.timezone,
-    nextRunAt,
-    autonomyBudget: row.autonomyBudget,
-    officialBlueprintKey: row.officialBlueprintKey,
-    officialAppliedFingerprint: row.officialAppliedFingerprint,
-    officialReconciliationStatus: row.officialReconciliationStatus,
-    officialParameterBindings: row.officialParameterBindings,
-    updatedAt: currentTime,
-  };
-}
-
-export function refreshOfficialAutomationPatch(
-  automation: OfficialAutomationRow,
-  patch: OfficialAutomationPatch,
-  currentTime: Date,
-): OfficialAutomationPatch {
-  let nextRunAt: Date | null = null;
-  if (patch.enabled && patch.kind === "schedule") {
-    if (patch.scheduleType === "cron") {
-      if (!patch.cronExpression) {
-        throw new Error("Official cron schedule is incomplete");
-      }
-      nextRunAt = calculateNextRun(
-        patch.cronExpression,
-        patch.timezone,
-        currentTime,
-      );
-      if (!nextRunAt) {
-        throw new Error("Official cron schedule has no next run");
-      }
-    } else if (patch.scheduleType === "once") {
-      if (!patch.atTime) {
-        throw new Error("Official one-time schedule is incomplete");
-      }
-      nextRunAt = patch.atTime;
-    } else if (patch.scheduleType === "loop") {
-      if (patch.intervalSeconds === null) {
-        throw new Error("Official loop schedule is incomplete");
-      }
-      const nextFromLastRun = automation.lastRunAt
-        ? new Date(
-            automation.lastRunAt.getTime() + patch.intervalSeconds * 1000,
-          )
-        : currentTime;
-      nextRunAt =
-        nextFromLastRun.getTime() > currentTime.getTime()
-          ? nextFromLastRun
-          : currentTime;
-    }
-  }
-  return { ...patch, nextRunAt, updatedAt: currentTime };
-}

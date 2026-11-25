@@ -430,6 +430,9 @@ function workflowCreationSource(
       description: sql`${sql.param(v.description, workflows.description)}`
         .mapWith(nullableDriverValueDecoder(workflows.description))
         .as("description"),
+      archivedOfficialSnapshot: sql`NULL::jsonb`
+        .mapWith(nullableDriverValueDecoder(workflows.archivedOfficialSnapshot))
+        .as("archived_official_snapshot"),
       officialDefinitionName: sql`NULL`
         .mapWith(nullableDriverValueDecoder(workflows.officialDefinitionName))
         .as("official_definition_name"),

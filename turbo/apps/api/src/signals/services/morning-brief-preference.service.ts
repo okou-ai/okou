@@ -27,7 +27,8 @@ import {
   installOfficialWorkflow$,
   loadOfficialWorkflowUserTimezone$,
 } from "./official-workflow-installation.service";
-import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
+import { repairMorningBriefSchedule$ } from "./morning-brief-schedule-repair.service";
+import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
   disableWorkflowAutomation$,
   enableWorkflowAutomation$,
@@ -407,17 +408,11 @@ const applyMorningBriefPreference$ = command(
     }
 
     if (args.enabled) {
-      const reconciliation = await set(
-        reconcileOfficialWorkflowInstallation$,
-        {
-          orgId: args.orgId,
-          member: args.member,
-          workflowId: installation.id,
-        },
-        signal,
-      );
+      const owner = { ...identity, workflowId: installation.id };
+      await set(synchronizeOfficialWorkflowThread$, owner, signal);
+      const repaired = await set(repairMorningBriefSchedule$, owner, signal);
       signal.throwIfAborted();
-      if (reconciliation.kind !== "current") {
+      if (!repaired) {
         return conflict(
           "MORNING_BRIEF_STATE_CONFLICT",
           "Morning Brief could not be reconciled. Retry the preference update.",

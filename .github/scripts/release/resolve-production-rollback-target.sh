@@ -199,6 +199,7 @@ readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_d
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
 readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql
+readonly OFFICIAL_WORKFLOW_CATALOG_ARCHIVE_PATH=turbo/packages/db/src/migrations/1636_archive_official_workflow_installations.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -763,6 +764,16 @@ if [[ ! "$official_result_email_storage_contraction_commit" =~ ^[0-9a-f]{40}$ ]]
 fi
 if ! git merge-base --is-ancestor "$official_result_email_storage_contraction_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Official result-email storage contraction: ${official_result_email_storage_contraction_commit}."
+fi
+
+# After the catalog is archived, older API binaries can no longer read historical installations.
+official_catalog_archive_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_WORKFLOW_CATALOG_ARCHIVE_PATH" | sed -n '1p')
+if [[ ! "$official_catalog_archive_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official Workflow catalog archive on main."
+fi
+if ! git merge-base --is-ancestor "$official_catalog_archive_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Official Workflow catalog archive: ${official_catalog_archive_commit}."
 fi
 
 # Physical needs_rebind contraction requires the independently released runtime

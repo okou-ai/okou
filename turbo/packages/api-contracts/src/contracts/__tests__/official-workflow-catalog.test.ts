@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  officialWorkflowCatalogReleasePayloadSchema,
-  officialWorkflowDefinitionRevisionPayloadSchema,
-} from "../official-workflow-catalog";
+import { officialWorkflowDefinitionRevisionPayloadSchema } from "../official-workflow-catalog";
 
 const REVISION = "a".repeat(64);
 const FINGERPRINT = "b".repeat(64);
@@ -36,24 +33,7 @@ function revisionPayload(schemaVersion: number, blueprints: unknown[]) {
   };
 }
 
-function catalogPayload(blueprints: unknown[]) {
-  return {
-    schemaVersion: 4,
-    definitions: [
-      {
-        name: "morning-brief",
-        lifecycle: "active",
-        revision: REVISION,
-        contentBundle: { sha256: "c".repeat(64), archiveBytes: 200 },
-        blueprints,
-        releasedBlueprintKeys: ["daily-delivery"],
-        presentation: { category: "productivity" },
-      },
-    ],
-  };
-}
-
-describe("persisted Official Workflow catalog payloads", () => {
+describe("archived Official Workflow revisions", () => {
   it("reads revisions strictly by their own schema version", () => {
     const v2 = revisionPayload(2, [v2Blueprint]);
     const v3 = revisionPayload(3, [v3Blueprint]);
@@ -71,27 +51,4 @@ describe("persisted Official Workflow catalog payloads", () => {
       false,
     );
   });
-});
-
-describe("bundle-backed Official catalogs", () => {
-  it.each([
-    { lifecycle: "active", blueprint: v3Blueprint },
-    { lifecycle: "retired", blueprint: v2Blueprint },
-  ])(
-    "reads v4 $lifecycle delivery without changing business identity",
-    ({ lifecycle, blueprint }) => {
-      const current = catalogPayload([blueprint]);
-      const original = current.definitions[0];
-      if (!original) {
-        throw new Error("Expected a definition");
-      }
-      const catalog = {
-        ...current,
-        definitions: [{ ...original, lifecycle }],
-      };
-      expect(
-        officialWorkflowCatalogReleasePayloadSchema.parse(catalog),
-      ).toStrictEqual(catalog);
-    },
-  );
 });

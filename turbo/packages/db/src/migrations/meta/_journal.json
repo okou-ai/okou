@@ -3900,6 +3900,13 @@
       "when": 1795629684120,
       "tag": "1635_finish_morning_brief_installation_rename",
       "breakpoints": true
+    },
+    {
+      "idx": 1636,
+      "version": "7",
+      "when": 1795635534065,
+      "tag": "1636_archive_official_workflow_installations",
+      "breakpoints": true
     }
   ]
 }

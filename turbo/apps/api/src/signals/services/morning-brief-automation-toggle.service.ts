@@ -15,7 +15,6 @@ interface MorningBriefToggleInput {
   readonly nextRunAt: Date | null;
   readonly now: Date;
   readonly inheritedAutonomyBudget?: number;
-  readonly reconciliationOwned?: boolean;
 }
 
 function toggleOwner(automation: AutomationRow) {
@@ -90,9 +89,7 @@ export const persistMorningBriefAutomationToggle$ = command(
     `);
     // A data-modifying CTE executes even without a returned enrollment row.
     // Read the actual automation RETURNING values with their schema decoders.
-    const [row] = args.reconciliationOwned
-      ? await update
-      : await db.with(updated, published).select().from(updated);
+    const [row] = await db.with(updated, published).select().from(updated);
     signal.throwIfAborted();
     return row ? { kind: "applied", row } : { kind: "conflict" };
   },

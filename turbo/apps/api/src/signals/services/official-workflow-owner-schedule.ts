@@ -36,7 +36,7 @@ export function officialScheduleOwnerHash(owner: OfficialScheduleOwner) {
  * same instant. The 15-minute shift keeps it at least 15 minutes away from the
  * owner's hourly Proactive Suggestions minute in whole-hour time zones.
  */
-function morningBriefCronExpression(owner: OfficialScheduleOwner) {
+export function morningBriefCronExpression(owner: OfficialScheduleOwner) {
   const minute = 30 + ((officialScheduleOwnerHash(owner) + 15) % 30);
   return `${minute} 6 * * *`;
 }

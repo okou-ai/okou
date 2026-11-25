@@ -18,7 +18,10 @@ import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
 import type { OfficialWorkflowParameterBindings } from "@okouai/db/jsonb-contracts/workflow";
-import type { WorkflowAttachments } from "../jsonb-contracts/workflow";
+import type {
+  WorkflowAttachments,
+  OfficialWorkflowArchivedSnapshot,
+} from "../jsonb-contracts/workflow";
 export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/workflow";
 
 /**
@@ -56,6 +59,9 @@ export const workflows = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),
+    archivedOfficialSnapshot: jsonb(
+      "archived_official_snapshot",
+    ).$type<OfficialWorkflowArchivedSnapshot>(),
     officialDefinitionName: varchar("official_definition_name", { length: 64 }),
     officialInstallationState: varchar("official_installation_state", {
       length: 32,

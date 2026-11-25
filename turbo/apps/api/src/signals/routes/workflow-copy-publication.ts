@@ -1,15 +1,11 @@
 import { settle } from "../utils";
-import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   copySourcePlans,
   requireCopySource,
-  requireCopyDefinition,
-  requireCopyRevision,
   requireCopyVisibility,
-  copyRevisionQuery,
   officialCopyMaterialization,
   copyWebhooksQuery,
   copySourceResult,
@@ -34,7 +30,7 @@ import {
   workflowCopyPublicationSql,
   copyPublicationResultSchema,
 } from "./workflow-copy-atomic-publication";
-import { builtInWorkflow } from "../services/builtin-workflows";
+import { installedOfficialWorkflow } from "../services/builtin-workflows";
 
 export const readWorkflowCopySnapshot$ = command(
   async ({ get }, args: WorkflowCopyInput, signal: AbortSignal) => {
@@ -47,23 +43,9 @@ export const readWorkflowCopySnapshot$ = command(
       if (!source) {
         throw new Error("Workflow copy source observation is missing");
       }
-      let acceptedReleaseId: string | null = null;
-      let revision: OfficialWorkflowAcceptedRevision | null = null;
-      const builtin = builtInWorkflow(p.definitionName);
-      if (builtin) {
-        revision = builtin.revision;
-      } else if (p.official) {
-        const [catalogRow] = await db.select().from(p.catalog);
-        signal.throwIfAborted();
-        if (!catalogRow) {
-          throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
-        }
-        const definition = requireCopyDefinition(catalogRow, p.definitionName);
-        acceptedReleaseId = catalogRow.releaseId;
-        const query = copyRevisionQuery(definition);
-        const [revisionRow] = await db.select().from(query);
-        signal.throwIfAborted();
-        revision = requireCopyRevision(revisionRow);
+      const revision = installedOfficialWorkflow(sourceRow)?.revision;
+      if (p.official && !revision) {
+        throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
       }
       // Official blueprint reads precede visibility; ordinary rows follow it.
       let rows = revision ? await db.select().from(p.automations) : [];
@@ -89,12 +71,9 @@ export const readWorkflowCopySnapshot$ = command(
           automations: rows.map((row) => {
             return { id: row.id, xmin: row.observedXmin };
           }),
-          acceptedReleaseId,
         },
       };
-      const current = copySourceResult(args, visible, m, rows, facts);
-
-      return current;
+      return copySourceResult(args, visible, m, rows, facts);
     })();
     const snapshot = copyTransactionResult(
       await settle(snapshotPromise, signal),

@@ -17,11 +17,7 @@ import {
 import { visibleWorkflowCondition } from "./workflow-visibility";
 import { workflowAttachmentFiles } from "./workflow-attachments.service";
 import { loadWorkflowAutomations$ } from "./workflow-automation.service";
-import {
-  readAcceptedOfficialWorkflowCatalog$,
-  readAcceptedOfficialWorkflowRevision$,
-} from "./official-workflow-catalog-read.service";
-import { builtInWorkflow } from "./builtin-workflows";
+import { installedOfficialWorkflow } from "./builtin-workflows";
 
 function detailFileMetadata(
   workflow: {
@@ -86,37 +82,14 @@ export const workflowDetail$ = command(
     );
     signal.throwIfAborted();
 
-    const builtin = builtInWorkflow(workflow.officialDefinitionName);
-    const acceptedCatalog =
-      !builtin && workflow.officialDefinitionName
-        ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
-        : null;
-    signal.throwIfAborted();
-    const officialDefinition =
-      builtin?.definition ??
-      acceptedCatalog?.payload.definitions.find((definition) => {
-        return definition.name === workflow.officialDefinitionName;
-      }) ??
-      null;
-    const officialRevision =
-      builtin?.revision ??
-      (officialDefinition
-        ? await set(
-            readAcceptedOfficialWorkflowRevision$,
-            {
-              name: officialDefinition.name,
-              revision: officialDefinition.revision,
-            },
-            signal,
-          )
-        : null);
-    signal.throwIfAborted();
+    const official = installedOfficialWorkflow(workflow);
+    const officialRevision = official?.revision;
 
     const baseSummary = workflowSummary({
       workflow,
       member: args.member,
       shadowedBy,
-      officialDefinitionLifecycle: officialDefinition?.lifecycle,
+      officialDefinitionLifecycle: official?.lifecycle,
     });
     const summary = officialRevision
       ? {

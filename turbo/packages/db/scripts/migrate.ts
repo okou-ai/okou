@@ -10,7 +10,9 @@ async function runMigrations() {
 
   const sql = postgres(process.env.DATABASE_URL, { max: 1 });
   try {
-    await applyPendingMigrations(sql);
+    await applyPendingMigrations(sql, {
+      beforeApiPromotion: process.argv.includes("--before-api-promotion"),
+    });
     console.log("Migrations complete");
   } finally {
     await sql.end();

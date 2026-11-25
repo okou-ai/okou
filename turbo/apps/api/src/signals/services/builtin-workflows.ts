@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import type {
-  OfficialWorkflowAcceptedBlueprint,
-  OfficialWorkflowAcceptedDefinition,
-  OfficialWorkflowAcceptedRevision,
+import {
+  officialWorkflowArchivedSnapshotSchema,
+  type OfficialWorkflowArchivedSnapshot,
+  type OfficialWorkflowAcceptedBlueprint,
+  type OfficialWorkflowAcceptedRevision,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
@@ -64,14 +65,11 @@ function scheduledWorkflow(args: {
     fingerprint,
   };
   const revisionId = createHash("sha256").update(prompt).digest("hex");
-  const definition: OfficialWorkflowAcceptedDefinition = {
+  const definition = {
     name,
-    lifecycle: "active",
+    lifecycle: "active" as const,
     revision: revisionId,
     contentBundle,
-    blueprints: [blueprint],
-    releasedBlueprintKeys: [blueprint.key],
-    presentation: { category: "productivity" },
   };
   const revision: OfficialWorkflowAcceptedRevision = {
     definition: {
@@ -150,4 +148,30 @@ export function builtInWorkflowBundleUrl(sha256: string) {
   })
     ? `https://static.vm0.io/workflows/builtin-skills/${sha256}.tar.gz`
     : undefined;
+}
+
+/** Built-ins use deployed code. Historical installations own their last readable snapshot. */
+export function installedOfficialWorkflow(source: {
+  readonly officialDefinitionName: string | null;
+  readonly archivedOfficialSnapshot: OfficialWorkflowArchivedSnapshot | null;
+}) {
+  const builtin = builtInWorkflow(source.officialDefinitionName);
+  if (builtin) {
+    return {
+      lifecycle: builtin.definition.lifecycle,
+      revision: builtin.revision,
+    };
+  }
+  if (source.archivedOfficialSnapshot === null) {
+    return null;
+  }
+  const snapshot = officialWorkflowArchivedSnapshotSchema.parse(
+    source.archivedOfficialSnapshot,
+  );
+  if (snapshot.revision.definition.name !== source.officialDefinitionName) {
+    throw new Error(
+      "Archived Official Workflow does not match its installation",
+    );
+  }
+  return snapshot;
 }

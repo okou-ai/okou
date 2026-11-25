@@ -1,3 +1,4 @@
+import { inactiveProactiveAutomationCondition } from "./proactive-workflow-owner";
 import { deleteOnboardingDraft$ } from "./onboarding-draft.service";
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
@@ -95,14 +96,29 @@ const deleteMemberInitialization$ = command(
     await set(deleteOnboardingDraft$, args);
     signal.throwIfAborted();
     const db = set(writeDb$);
+    // Consume the departed membership's preference and stop its Proactive schedules
+    // together. A retry also disarms schedules left without member metadata.
+    const removed = db.$with("removed_member_preferences").as(
+      db
+        .delete(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.userId, args.userId),
+            eq(orgMembersMetadata.orgId, args.orgId),
+          ),
+        )
+        .returning({ userId: orgMembersMetadata.userId }),
+    );
     await db
-      .delete(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.userId, args.userId),
-          eq(orgMembersMetadata.orgId, args.orgId),
-        ),
-      );
+      .with(removed)
+      .update(workflowAutomations)
+      .set({
+        enabled: false,
+        officialIntendedEnabled: false,
+        nextRunAt: null,
+        updatedAt: nowDate(),
+      })
+      .where(inactiveProactiveAutomationCondition(args, []));
     signal.throwIfAborted();
   },
 );
@@ -134,22 +150,8 @@ export const cleanupOrgMemberResources$ = command(
     );
     await set(cleanupMemberMessageIntegrations$, args, signal);
     const currentTime = nowDate();
-    // Automations execute as their owner. Only the schedule poller gates on
-    // membership, and it does so lazily, at an automation's next due time; event
-    // dispatchers select on `enabled`, `kind` and their own event match, so
-    // nothing disarms those at all. Departure is the authoritative moment, so
-    // both kinds lose their arming here. Disabling rather than deleting keeps
-    // the configuration for a deliberate re-enable or reassignment, and an
-    // explicit enable recomputes the schedule, so the `next_run_at` left behind
-    // cannot fire on its own.
-    //
-    // An official installation is excluded because it does not own its enabled
-    // bit: official reconciliation drives it from `official_intended_enabled`,
-    // and this same cleanup already ends the installation's authority above by
-    // marking the Morning Brief enrollment `departed` and revoking its Official
-    // schedule, collection and delivery ownership. Disabling the row here would
-    // both contend with that reconciler and silently pause the brief of a member
-    // who rejoins.
+    // Ordinary event and schedule automations stop immediately on departure.
+    // Built-ins have separate persisted choices handled below.
     await set(
       disableDepartedMemberAutomations$,
       { ...args, currentTime },
@@ -240,7 +242,6 @@ export const cleanupOrgMemberResources$ = command(
 
     await set(deleteMemberInitialization$, args, signal);
     signal.throwIfAborted();
-
     await db
       .delete(userDisabledPaidTools)
       .where(
