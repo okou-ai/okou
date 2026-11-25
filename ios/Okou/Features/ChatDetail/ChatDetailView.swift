@@ -30,6 +30,8 @@ struct ChatDetailView: View {
   /// The render window and the scroll target, kept in the workspace session's Store.
   @ResolvedValue private var resolvedWindow: ConversationPresentation.Window?
   @ResolvedValue private var resolvedNavigation: ConversationPresentation.Navigation?
+  /// History and read-mark synchronization, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedSync: ConversationPresentation.SyncStatus?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -54,6 +56,7 @@ struct ChatDetailView: View {
     _resolvedRecovery = ResolvedValue(conversation.failureRecoveryActions.recovery)
     _resolvedWindow = ResolvedValue(conversation.window)
     _resolvedNavigation = ResolvedValue(conversation.navigation)
+    _resolvedSync = ResolvedValue(conversation.syncStatus)
   }
 
   /// This render's transcript. The synchronous read only covers a missing first resolution.
@@ -86,7 +89,7 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       sendTransition: scrolling.sendTransition,
-      isLoadingHistory: conversation.isLoading && transcript.history == nil,
+      isLoadingHistory: syncStatus.isLoading && transcript.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: { id in
         scrolling.rowsPresented(firstItemID: id)
@@ -107,7 +110,7 @@ struct ChatDetailView: View {
     )
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
-      if transcript.history == nil && conversation.historySyncError != nil {
+      if transcript.history == nil && syncStatus.historyError != nil {
         OkouEmptyState(
           "Unable to load chat", icon: "message-circle-warning",
           description: Text("Check your connection and try again. Your draft is still here.")
@@ -219,8 +222,8 @@ struct ChatDetailView: View {
         if let issue = delivery.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
-              .disabled(conversation.isLoading)
-            if conversation.historySyncError == nil && history.canStop {
+              .disabled(syncStatus.isLoading)
+            if syncStatus.historyError == nil && history.canStop {
               Button("Stop again") { Task { await conversation.stop() } }
                 .disabled(delivery.isStopping)
             }
@@ -527,6 +530,9 @@ extension ChatDetailView {
   }
   private var navigation: ConversationPresentation.Navigation {
     resolvedNavigation ?? conversation.currentNavigation
+  }
+  private var syncStatus: ConversationPresentation.SyncStatus {
+    resolvedSync ?? conversation.currentSyncStatus
   }
   /// The jump-to-latest control needs a displayed message as well as the reader's position.
   private var showsBottomButton: Bool {
