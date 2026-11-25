@@ -44,12 +44,17 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
   readonly automations: RealtimeInvalidationCommands;
-  readonly artifactCatalog: RealtimeInvalidationCommands;
-  /** A member's artifact changed, for example after a Google Drive sync. */
-  readonly artifacts: RealtimeInvalidationCommands;
 }
 
 interface ChatThreadRealtimeHandlers {
+  readonly onArtifactCatalogChanged$: Command<
+    Promise<boolean> | boolean,
+    [AbortSignal]
+  >;
+  readonly onArtifactsChanged$: Command<
+    Promise<boolean> | boolean,
+    [AbortSignal]
+  >;
   readonly onWorkflowsChanged$: Command<
     Promise<boolean> | boolean,
     [AbortSignal]
@@ -117,6 +122,7 @@ type ChatRealtimeSubscription =
       readonly kind: "command";
       readonly topic: string;
       readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+      readonly runOnSubscribe?: boolean;
     };
 
 export const patchChatThreadDraft$ = command(
@@ -246,9 +252,9 @@ export const subscribeChatThreadRealtime$ = command(
     const ready = createDeferredPromise<void>(signal);
     const subscriptions: ChatRealtimeSubscription[] = [
       {
-        kind: "invalidate",
+        kind: "command",
         topic: chatArtifactCatalogChangedEvent(threadId),
-        invalidations: invalidations.artifactCatalog,
+        loopCommand$: handlers.onArtifactCatalogChanged$,
         // Close the gap between a cached page read and establishing Ably.
         runOnSubscribe: true,
       },
@@ -258,9 +264,9 @@ export const subscribeChatThreadRealtime$ = command(
         invalidations: invalidations.threadDetail,
       },
       {
-        kind: "invalidate",
+        kind: "command",
         topic: artifactChangedTopic,
-        invalidations: invalidations.artifacts,
+        loopCommand$: handlers.onArtifactsChanged$,
       },
       {
         kind: "invalidate",
@@ -312,7 +318,7 @@ export const subscribeChatThreadRealtime$ = command(
         {
           topic: subscription.topic,
           loopCommand$: subscription.loopCommand$,
-          options,
+          options: { ...options, runOnSubscribe: subscription.runOnSubscribe },
         },
         signal,
       );

@@ -53,8 +53,11 @@ open class TestChatService : ChatListService {
     override suspend fun projectDetail(projectId: String): ConfirmedProject =
         error("Unexpected Project lookup")
 
-    override suspend fun renameProject(projectId: String, name: String, eventId: String): Unit =
-        error("Unexpected Project rename")
+    override suspend fun renameProject(
+        projectId: String,
+        name: String,
+        eventId: String,
+    ): ConfirmedProject = error("Unexpected Project rename")
 
     override suspend fun moveThreadToProject(
         threadId: String,

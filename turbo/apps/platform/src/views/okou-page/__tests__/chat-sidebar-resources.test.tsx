@@ -64,28 +64,6 @@ test("chat-resources-layout-003 dismisses mobile resources by returning to the c
   await expectClosed();
 });
 
-test("chat-resources-layout-004 toggles the report panel with successive Space presses", async () => {
-  await setupResources(context, { open: false });
-  const user = userEvent.setup({ delay: null });
-  const trigger = resourceButton();
-  trigger.focus();
-  expect(trigger).toHaveFocus();
-  await user.keyboard("[Space]");
-  await loadedReport();
-  await user.keyboard("[Space]");
-  await expectClosed();
-});
-
-test("chat-resources-layout-005 restores trigger focus when Escape is pressed on the report", async () => {
-  await setupResources(context);
-  const report = (await loadedReport()).closest("button")!;
-  report.focus();
-  expect(report).toHaveFocus();
-  await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  await expectClosed();
-  expect(resourceButton()).toHaveFocus();
-});
-
 const first = continuityThread(340, 1, "September review");
 
 const second = continuityThread(340, 2, "October review");

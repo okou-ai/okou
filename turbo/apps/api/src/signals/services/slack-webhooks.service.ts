@@ -38,9 +38,17 @@ import { removeSlackWorkspaceInstallation$ } from "./slack-workspace-identity.se
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import {
   createSlackClient,
+  replaceSlackEphemeral,
   type SlackClient,
 } from "../external/slack-message-client";
-import { onRejection, safeJsonParse, tapError } from "../utils";
+import { onRejection, safeJsonParse, settle, tapError } from "../utils";
+import { sendEmailOutboxItem$ } from "./email-common.service";
+import {
+  promptSlackArtifactChannelSharing$,
+  slackArtifactShareInteraction,
+  applySlackArtifactChannelSharing$,
+  type SlackArtifactShareInteraction,
+} from "./slack-artifact-channel-sharing.service";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
@@ -1199,7 +1207,84 @@ const scheduleSlackLinkUnfurl$ = command(
         },
       ),
     );
+    const event = shared.data;
+    if (
+      event.user &&
+      event.is_bot_user_member !== false &&
+      event.source !== "composer" &&
+      event.channel !== "COMPOSER" &&
+      !event.is_unfurl_refresh &&
+      !get(request$).header("x-slack-retry-num")
+    ) {
+      waitUntil(
+        tapError(
+          set(
+            promptSlackArtifactChannelSharing$,
+            {
+              workspaceId: payload.team_id,
+              slackUserId: event.user,
+              channelId: event.channel,
+              messageTs: event.message_ts,
+              threadTs: event.thread_ts,
+              urls: event.links.map((link) => {
+                return link.url;
+              }),
+            },
+            get(rootSignal$),
+          ),
+          (error) => {
+            L.error("Error checking Slack artifact sharing", { error });
+          },
+        ),
+      );
+    }
     return textResponse("OK");
+  },
+);
+
+const processSlackArtifactSharingAction$ = command(
+  async (
+    { set },
+    input: SlackArtifactShareInteraction,
+    signal: AbortSignal,
+  ) => {
+    await replaceSlackEphemeral(
+      input.responseUrl,
+      "Updating artifact access…",
+      signal,
+    );
+    const applied = await settle(
+      set(applySlackArtifactChannelSharing$, input, signal),
+      signal,
+    );
+    if (!applied.ok) {
+      await replaceSlackEphemeral(
+        input.responseUrl,
+        "Sharing could not finish. Some access changes may already have completed. Share the link again to check and finish the remaining invitations.",
+        signal,
+      );
+      throw applied.error;
+    }
+    const result = applied.value;
+    await replaceSlackEphemeral(input.responseUrl, result.text, signal);
+    if (result.refresh) {
+      await set(
+        unfurlSlackArtifactLinks$,
+        {
+          workspaceId: result.refresh.workspaceId,
+          event: {
+            type: "link_shared",
+            channel: result.refresh.channelId,
+            message_ts: result.refresh.messageTs,
+            links: [{ url: result.refresh.url }],
+          },
+        },
+        signal,
+      );
+    }
+    for (const outboxId of result.outboxIds) {
+      await set(sendEmailOutboxItem$, outboxId, signal);
+    }
   },
 );
 
@@ -1411,6 +1496,29 @@ export const handleSlackInteractive$ = command(
       return jsonResponse({ error: "Invalid payload" }, 400);
     }
     const payload = parsedPayload as SlackInteractivePayload;
+
+    const artifactSharing = slackArtifactShareInteraction(parsedPayload);
+    if (artifactSharing?.kind === "invalid") {
+      return jsonResponse({
+        response_type: "ephemeral",
+        text: "This sharing action has expired or belongs to another account. Share the link again.",
+      });
+    }
+    if (artifactSharing?.kind === "action") {
+      waitUntil(
+        tapError(
+          set(
+            processSlackArtifactSharingAction$,
+            artifactSharing,
+            get(rootSignal$),
+          ),
+          (error) => {
+            L.error("Error handling Slack artifact sharing", { error });
+          },
+        ),
+      );
+      return emptyResponse();
+    }
 
     const modelRecovery = await set(
       handleSlackModelRecovery$,

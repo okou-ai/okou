@@ -9,7 +9,7 @@ from .model_tokens import (
     MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
-from .sse import SseUsageScanner
+from .sse import SseUsageScanner, resolve_event_name
 
 _ANTHROPIC_MESSAGES_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
 _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS = frozenset(
@@ -131,9 +131,6 @@ class _AnthropicMessagesSseUsageHandler:
         if self._extractor is not None:
             self._extractor.feed(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         extractor = self._extractor
         self._extractor = None
@@ -147,10 +144,8 @@ class _AnthropicMessagesSseUsageHandler:
             else extractor.observed_scalar_for_diagnostics(("type",))
         )
         extractor.reset()
+        event_type = resolve_event_name(event_name, data_type)
         if not result.complete:
-            event_type = event_name
-            if event_type is None and isinstance(data_type, str):
-                event_type = data_type
             if (
                 event_type is not None
                 and event_type in _ANTHROPIC_MESSAGES_USAGE_EVENTS
@@ -160,9 +155,6 @@ class _AnthropicMessagesSseUsageHandler:
                 self._on_parse_error(event_type, result.error)
             return
 
-        event_type = event_name
-        if event_type is None and isinstance(data_type, str):
-            event_type = data_type
         if isinstance(data_type, str) and event_name is not None and data_type != event_name:
             return
 

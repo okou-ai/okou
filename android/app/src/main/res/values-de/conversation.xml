@@ -22,6 +22,11 @@
     <string name="conversation_replies_collapsed">Eingeklappt</string>
     <string name="conversation_work_elapsed">Seit %1$s aktiv</string>
     <string name="conversation_work_total">%1$s gearbeitet</string>
+    <string name="conversation_work_seconds">%1$d s</string>
+    <string name="conversation_work_minutes">%1$d min</string>
+    <string name="conversation_work_hours">%1$d h</string>
+    <string name="conversation_work_minutes_seconds">%1$d min %2$d s</string>
+    <string name="conversation_work_hours_minutes">%1$d h %2$d min</string>
     <string name="conversation_followup_continue">Fortsetzen</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

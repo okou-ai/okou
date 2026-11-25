@@ -1,9 +1,8 @@
 import { createSharePeopleSignals } from "./share-people.ts";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/client/artifact-shares";
-import { artifactShareTargetSchema } from "@okouai/api-contracts/validators/artifact-shares";
 import type {
   ArtifactShareStatus,
   ArtifactShareTarget,
@@ -17,9 +16,8 @@ import {
   isAuthenticatedAttachmentUrl,
   type ArtifactShareIdentity,
 } from "./attachment-resource-url.ts";
-import { pageSignal$ } from "./page-signal.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { onRef, resetSignal, throttleCommand } from "./utils.ts";
+import { resetSignal, throttleCommand } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
 // viewer offers their link instead of an artifact permission control.
@@ -38,10 +36,14 @@ export function isShareableArtifactReference(url: string): boolean {
   );
 }
 
-interface ShareSource {
+export interface ArtifactShareSource {
   readonly url: string;
   readonly copyUrl?: string;
-  readonly artifactShareIdentity?: ArtifactShareIdentity;
+  /** A catalog publication replacing its file needs a fresh permission read. */
+  readonly fileId?: string;
+  readonly artifactShareIdentity$?: Computed<
+    Promise<ArtifactShareIdentity | null>
+  >;
 }
 type Audience = ArtifactShareStatus["audience"];
 
@@ -59,18 +61,25 @@ function ownedShareDetails(
   return { target, status, audience, copyUrl: copyUrl.href } as const;
 }
 
-async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
+async function loadShareDetails(
+  client: ApiClientFactory,
+  source: ArtifactShareSource,
+  identity: ArtifactShareIdentity | undefined,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
   const reference = parseArtifactReference(source.url, location.origin);
   const resolved =
-    source.artifactShareIdentity ??
+    identity ??
     (reference
       ? (
           await accept(
             client(artifactReferencesContract).resolve({
               params: { reference: `${reference.hash}${reference.extension}` },
-              fetchOptions: { cache: "no-store" },
+              fetchOptions: { cache: "no-store", signal },
             }),
             [200],
+            signal,
           )
         ).body
       : null);
@@ -93,8 +102,10 @@ async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
   const result = await accept(
     client(artifactSharesContract).status({
       body: target,
+      fetchOptions: { signal },
     }),
     [200, 404],
+    signal,
   );
   if (result.status === 200) {
     return ownedShareDetails(target, result.body, reference?.fragment ?? "");
@@ -108,9 +119,33 @@ async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
 }
 type ShareDetails = Awaited<ReturnType<typeof loadShareDetails>>;
 
-function createAudienceSignals(source: ShareSource) {
-  const initialRead$ = computed((get) => {
-    return loadShareDetails(get(apiClient$), source);
+function createAudienceSignals(source: ArtifactShareSource) {
+  const request$ = state<
+    | ((
+        client: ApiClientFactory,
+        identity: ArtifactShareIdentity | undefined,
+      ) => Promise<ShareDetails>)
+    | null
+  >(null);
+  const initialRead$ = computed(async (get) => {
+    const request = get(request$);
+    if (!request) {
+      return null;
+    }
+    const identity = source.artifactShareIdentity$
+      ? ((await get(source.artifactShareIdentity$)) ?? undefined)
+      : undefined;
+    return request(get(apiClient$), identity);
+  });
+  const initialize$ = command(({ set }, signal: AbortSignal) => {
+    set(request$, () => {
+      return (
+        client: ApiClientFactory,
+        identity: ArtifactShareIdentity | undefined,
+      ) => {
+        return loadShareDetails(client, source, identity, signal);
+      };
+    });
   });
   // A saved response belongs to the same source and client as its initial read.
   const saved$ = state<{
@@ -124,6 +159,10 @@ function createAudienceSignals(source: ShareSource) {
       ? Promise.resolve(saved.details)
       : initialRead;
   });
+  // The last submitted choice. Views read it only while the save is in
+  // flight, so the control keeps the new choice instead of clearing, and a
+  // failed save falls back to the server value.
+  const pending$ = state<Audience | null>(null);
   // Permission selection comes from server details, not submitted arguments.
   const persist$ = command(
     async ({ get, set }, audience: Audience, signal: AbortSignal) => {
@@ -164,13 +203,18 @@ function createAudienceSignals(source: ShareSource) {
       );
     },
   );
-  return { details$, change$: persist$ };
+  return { details$, pending$, change$: persist$, initialize$ };
 }
 
-function createArtifactShareSession(source: ShareSource) {
-  // The mount owner installs its live signal after this graph is constructed.
+function createArtifactShareSession(source: ArtifactShareSource) {
+  // The preview owner installs its live signal after this graph is constructed.
   const signal$ = state<AbortSignal | null>(null);
-  const { details$, change$: persist$ } = createAudienceSignals(source);
+  const {
+    details$,
+    pending$: pendingAudience$,
+    change$: persist$,
+    initialize$,
+  } = createAudienceSignals(source);
   const open$ = state(false);
   const peopleTarget$ = computed(async (get) => {
     const details = await get(details$);
@@ -178,7 +222,7 @@ function createArtifactShareSession(source: ShareSource) {
       ? { kind: "file" as const, id: details.target.id }
       : null;
   });
-  const people = createSharePeopleSignals(peopleTarget$, open$);
+  const people = createSharePeopleSignals(peopleTarget$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const close$ = command(({ set }) => {
@@ -189,6 +233,7 @@ function createArtifactShareSession(source: ShareSource) {
   });
   const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetOpenSignal$, parentSignal);
+    set(people.open$, signal);
     set(open$, true);
     const details = await get(details$);
     signal.throwIfAborted();
@@ -206,17 +251,25 @@ function createArtifactShareSession(source: ShareSource) {
       await set(linkCopy.copy$, details.copyUrl, signal);
     }
   });
-  const change$ = throttleCommand(
+  const throttledChange$ = throttleCommand(
     command(({ set }, choice: Audience, signal: AbortSignal) => {
       set(linkCopy.clear$);
       return set(persist$, choice, signal);
     }),
     0,
   );
+  // Records the choice before throttling, so a click queued behind an
+  // in-flight save is what the control shows.
+  const change$ = command(({ set }, choice: Audience, signal: AbortSignal) => {
+    set(pendingAudience$, choice);
+    return set(throttledChange$, choice, signal);
+  });
   return {
     source,
+    initialize$,
     signal$,
     details$,
+    pendingAudience$,
     open$,
     close$,
     show$,
@@ -232,57 +285,42 @@ export type ArtifactShareSession = ReturnType<
 >;
 
 function createArtifactShareScope() {
-  const source$ = state<ShareSource | null>(null);
+  const source$ = state<ArtifactShareSource | null>(null);
   const session$ = computed((get) => {
     const source = get(source$);
     return source ? createArtifactShareSession(source) : null;
   });
-  const resetMountSignal$ = resetSignal();
-  const mountRef$ = onRef(
-    command(
-      ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
-        const url = element.dataset.shareUrl;
-        if (!url) {
-          return;
-        }
-        const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
-        signal.throwIfAborted();
-        const target = artifactShareTargetSchema.safeParse({
-          kind: element.dataset.shareTargetKind,
-          id: element.dataset.shareTargetId,
-        });
-        const source = {
-          url,
-          copyUrl: element.dataset.copyUrl,
-          ...(target.success
-            ? {
-                artifactShareIdentity: {
-                  target: target.data,
-                  ...(element.dataset.sharedThreadSnapshot === "true"
-                    ? { sharedThreadSnapshot: true as const }
-                    : {}),
-                },
-              }
-            : {}),
-        };
-        set(source$, source);
-        const session = get(session$)!;
-        set(session.signal$, signal);
-        signal.addEventListener(
-          "abort",
-          () => {
-            if (get(source$) === source) {
-              set(source$, null);
-            }
-          },
-          { once: true },
-        );
-      },
-    ),
+  const resetSession$ = resetSignal();
+  const select$ = command(
+    (
+      { get, set },
+      source: ArtifactShareSource | null,
+      parentSignal: AbortSignal,
+    ) => {
+      parentSignal.throwIfAborted();
+      const signal = set(resetSession$, parentSignal);
+      if (!source || !isShareableArtifactReference(source.url)) {
+        set(source$, null);
+        return;
+      }
+      set(source$, source);
+      const session = get(session$)!;
+      set(session.signal$, signal);
+      set(session.initialize$, signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(source$) === source) {
+            set(source$, null);
+          }
+        },
+        { once: true },
+      );
+    },
   );
   return {
     session$,
-    mountRef$,
+    select$,
   };
 }
 

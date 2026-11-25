@@ -17,7 +17,11 @@
 	@ambiguous expression `{http.request.uri}.matches('(?i)^/runners/[^?]*%(2f|5c|2e)')`
 	route {
 		respond @ambiguous 404
-		reverse_proxy @runner unix//var/lib/vm0-runner/ingress/{re.runner.1}.sock
+		reverse_proxy @runner unix//var/lib/vm0-runner/ingress/{re.runner.1}.sock {
+			# Keep existing streams for the lifetime of this process. Caddy
+			# cancels this timer once the previous handler's last stream closes.
+			stream_close_delay 87600h
+		}
 		respond 404
 	}
 }

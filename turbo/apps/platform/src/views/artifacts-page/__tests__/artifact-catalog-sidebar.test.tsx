@@ -13,7 +13,10 @@ import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { fileArtifactDetail } from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
+import {
+  fileArtifactDetail,
+  hostedSiteArtifactDetail,
+} from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
@@ -141,6 +144,135 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
     expect(sidebar()).toBeNull();
   });
   expect(getButtonByName("Preview Release website")).toBeEnabled();
+});
+
+test("Switching catalog websites cancels the previous domain read and shows the selected site's permissions", async () => {
+  const first = artifact({
+    id: "a0000000-0000-4000-a000-000000000e41",
+    kind: "hosted-site",
+    title: "First website",
+  });
+  const second = artifact({
+    id: "a0000000-0000-4000-a000-000000000e42",
+    kind: "hosted-site",
+    title: "Second website",
+  });
+  const sites = [first, second].map((item, index) => {
+    const slug = index === 0 ? "first-website" : "second-website";
+    return {
+      item,
+      siteId: item.id,
+      publicSlug: slug,
+      url: `https://${slug}.okou.app`,
+      isActive: true,
+    };
+  });
+  const began = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [first, second], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
+    const site = sites.find((site) => {
+      return site.item.id === params.artifactId;
+    })!;
+    return respond(
+      200,
+      hostedSiteArtifactDetail(site.item, {
+        siteId: site.siteId,
+        slug: site.publicSlug,
+        url: site.url,
+      }),
+    );
+  });
+  context.mocks.api(hostContract.siteUrl, ({ params, respond }) => {
+    const site = sites.find((site) => {
+      return site.publicSlug === params.publicSlug;
+    })!;
+    return respond(200, site);
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ params, respond }) => {
+    return respond(200, {
+      siteId: params.siteId,
+      visibility: params.siteId === first.id ? "public" : "private",
+      revision: null,
+    });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ params, respond }) => {
+    return respond(200, {
+      siteId: params.siteId,
+      showBanner: params.siteId === first.id,
+      revision: null,
+    });
+  });
+  context.mocks.api(
+    hostContract.siteDomains,
+    async ({ request, params, respond }) => {
+      if (params.siteId === first.id) {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve();
+          },
+          { once: true },
+        );
+        began.resolve();
+        await aborted.promise;
+      }
+      const site = sites.find((site) => {
+        return site.siteId === params.siteId;
+      })!;
+      return respond(200, {
+        siteId: site.siteId,
+        defaultUrl: site.url,
+        effectiveUrl: site.url,
+        selectedDomainId: null,
+        revision: "00000000-0000-4000-8000-000000000053",
+        allowed: true,
+        domains: [],
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/artifacts?tab=hosted-site",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.HostedSiteCustomDomains]: true },
+  });
+  click(await findArtifactAction(first.title));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact", preview)).toBeVisible();
+  });
+  click(getButtonByName("Share artifact", preview));
+  const firstMenu = await screen.findByRole("dialog", {
+    name: "Share artifact",
+  });
+  expect(
+    within(firstMenu).getByLabelText("Anyone with the link"),
+  ).toBeChecked();
+  click(getButtonByName("Customize URL", firstMenu));
+  await began.promise;
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(firstMenu).not.toBeInTheDocument();
+  });
+
+  click(getButtonByName("Preview Second website"));
+  await aborted.promise;
+  const selectedPreview = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(within(selectedPreview).getByText(second.title)).toBeInTheDocument();
+    expect(getButtonByName("Share artifact", selectedPreview)).toBeVisible();
+  });
+  click(getButtonByName("Share artifact", selectedPreview));
+  const secondMenu = await screen.findByRole("dialog", {
+    name: "Share artifact",
+  });
+  expect(within(secondMenu).getByLabelText("Only me")).toBeChecked();
+  await expect(
+    within(secondMenu).findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.not.toBeChecked();
 });
 
 test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
@@ -397,4 +529,76 @@ test("Reopening a catalog item reads the file selected by its publication update
   await expect(
     within(reopened).findByText("Approved observations from the estuary"),
   ).resolves.toBeVisible();
+});
+
+test("Sharing follows a changed website URL from a publication notification", async () => {
+  const summary = artifact({ title: "Publication audit", kind: "hosted-site" });
+  const siteId = "55000000-0000-4000-8000-000000000031";
+  let slug = "before-audit";
+  const url = () => {
+    return `https://${slug}.okou.app/`;
+  };
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [summary], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(
+      200,
+      hostedSiteArtifactDetail(
+        {
+          ...summary,
+          title:
+            slug === "after-audit"
+              ? "Updated publication audit"
+              : summary.title,
+        },
+        { siteId, slug, url: url() },
+      ),
+    );
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, {
+      siteId,
+      publicSlug: slug,
+      url: url(),
+      isActive: true,
+    });
+  });
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: url(), expiresAt: null });
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
+  await setupPage({ context, path: "/artifacts", host: "app.okou.ai" });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(summary.title));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact", panel)).toBeVisible();
+  });
+  slug = "after-audit";
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: summary.id });
+  });
+  await waitFor(() => {
+    expect(
+      within(screen.getByTestId("artifact-sidebar")).getByText(
+        "Updated publication audit",
+      ),
+    ).toBeInTheDocument();
+  });
+  const current = screen.getByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact", current)).toBeVisible();
+  });
+  click(getButtonByName("Share artifact", current));
+  await expect(
+    screen.findByRole("dialog", { name: "Share artifact" }),
+  ).resolves.toBeInTheDocument();
 });

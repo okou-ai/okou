@@ -23,13 +23,13 @@
     <string name="chat_mark_all_read">すべて既読にする</string>
     <string name="chat_mark_all_read_unconfirmed">一部のチャットが未読のままの可能性があります。</string>
     <string name="chat_mark_all_read_failed">チャットを既読にできませんでした。</string>
-    <string name="chat_mark_all_read_partial_failed">既読にしたチャット: %1$d 件、更新できなかったチャット: %2$d 件</string>
-    <string name="chat_mark_all_read_mixed">既読にしたチャット：%1$d 件。失敗：%2$d 件。未確認：%3$d 件。</string>
+    <string name="chat_mark_all_read_partial_failed">既読にしたチャット: %1$d件、更新できなかったチャット: %2$d件</string>
+    <string name="chat_mark_all_read_mixed">既読にしたチャット：%1$d件。失敗：%2$d件。未確認：%3$d件。</string>
     <plurals name="chat_mark_all_read_partial">
-        <item quantity="other">%2$d 件のチャットのうち %1$d 件を既読にしました。</item>
+        <item quantity="other">%2$d件のチャットのうち %1$d件を既読にしました。</item>
     </plurals>
     <plurals name="chat_mark_all_read_success">
-        <item quantity="other">%1$d 件のチャットを既読にしました。</item>
+        <item quantity="other">%1$d件のチャットを既読にしました。</item>
     </plurals>
     <string name="chat_filter">フィルター</string>
     <string name="chat_back_to_inbox">受信トレイに戻る</string>
@@ -105,7 +105,6 @@
     <string name="chat_row_action_offline_named">「%1$s」を完了できませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_rename_save_failed">保存できませんでした。変更内容は保持されています。</string>
     <string name="chat_rename_check_result">結果を確認</string>
-    <string name="chat_rename_trim_hint">先頭と末尾の空白は自動で削除されます。</string>
     <string name="chat_rename_required">名前を入力してください。</string>
     <string name="chat_rename_checking_result">結果を確認しています…</string>
     <string name="chat_rename_save_unconfirmed">保存結果はまだ確認できていません。</string>

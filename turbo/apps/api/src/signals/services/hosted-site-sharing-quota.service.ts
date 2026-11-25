@@ -11,6 +11,8 @@ export type SharingQuotaRequest = {
 } & (
   | { readonly kind: "search" }
   | { readonly kind: "share"; readonly email: string }
+  | { readonly kind: "channel-share" }
+  | { readonly kind: "channel-recipient"; readonly email: string }
 );
 
 interface Quota {
@@ -32,17 +34,22 @@ function quota(
 }
 
 function quotas(args: SharingQuotaRequest): readonly Quota[] {
-  return args.kind === "search"
-    ? [
-        quota(["search", "user", args.userId], 30, 60_000),
-        quota(["search", "org", args.orgId], 120, 60_000),
-      ]
-    : [
-        quota(["share", "user", args.userId], 10, 60_000),
-        quota(["share", "user-hour", args.userId], 60, 3_600_000),
-        quota(["share", "org", args.orgId], 60, 3_600_000),
-        quota(["share", "recipient", args.orgId, args.email], 3, 3_600_000),
-      ];
+  if (args.kind === "search") {
+    return [
+      quota(["search", "user", args.userId], 30, 60_000),
+      quota(["search", "org", args.orgId], 120, 60_000),
+    ];
+  }
+  const operation = quota(["share", "user", args.userId], 10, 60_000);
+  if (args.kind === "channel-share") {
+    return [operation];
+  }
+  return [
+    ...(args.kind === "share" ? [operation] : []),
+    quota(["share", "user-hour", args.userId], 60, 3_600_000),
+    quota(["share", "org", args.orgId], 60, 3_600_000),
+    quota(["share", "recipient", args.orgId, args.email], 3, 3_600_000),
+  ];
 }
 
 const consumeQuota$ = command(

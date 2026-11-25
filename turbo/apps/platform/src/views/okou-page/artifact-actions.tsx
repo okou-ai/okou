@@ -8,7 +8,6 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { isShareableArtifactReference } from "../../signals/artifact-sharing.ts";
-import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { ArtifactShareMenu } from "./artifact-share-menu.tsx";
 import { HostedSiteShareMenu } from "./hosted-site-share-menu.tsx";
 import {
@@ -164,7 +163,6 @@ export function ArtifactActionTooltip({
 }
 
 export function ArtifactShareButton({
-  artifactShareIdentity$,
   shareUrl,
   surface,
   ariaLabel,
@@ -172,7 +170,6 @@ export function ArtifactShareButton({
   iconSize = 16,
   url,
 }: {
-  artifactShareIdentity$?: AttachmentPreviewSignals["artifactShareIdentity$"];
   shareUrl: string | null | undefined;
   surface: "dialog" | "sidebar";
   ariaLabel?: string;
@@ -194,7 +191,6 @@ export function ArtifactShareButton({
         ariaLabel={label}
         className={className}
         iconSize={iconSize}
-        {...(artifactShareIdentity$ ? { artifactShareIdentity$ } : {})}
       />
     );
   }

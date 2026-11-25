@@ -28,7 +28,11 @@ import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview
 import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
-import { createCrossChatArtifactPreview } from "../chat-page/chat-artifact-preview.ts";
+import {
+  createChatArtifactDeletionIdentity,
+  createCrossChatArtifactPreview,
+} from "../chat-page/chat-artifact-preview.ts";
+import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
 
 // ---------------------------------------------------------------------------
 // Lightbox state — tracks which attachment is open in the global preview UI
@@ -243,6 +247,37 @@ export const crossChatLightboxArtifact = createCrossChatArtifactPreview(
   }),
 );
 
+const lightboxDeletionIdentity$ = createChatArtifactDeletionIdentity(
+  computed((get) => {
+    const preview = get(internalLightboxState$);
+    return preview
+      ? {
+          url: preview.url,
+          threadId: preview.threadId ?? preview.artifact?.threadId,
+          artifactId: preview.artifact?.artifactId,
+        }
+      : undefined;
+  }),
+  crossChatLightboxArtifact,
+);
+
+const selectLightboxSessions$ = command(({ get, set }, signal: AbortSignal) => {
+  const preview = get(internalLightboxState$);
+  if (preview) {
+    set(
+      selectArtifactPreviewSessions$,
+      "dialog",
+      {
+        url: preview.url,
+        shareAvailable: preview.shareAvailable,
+        artifactShareIdentity$: preview.artifactShareIdentity$,
+        deletionIdentity: lightboxDeletionIdentity$,
+      },
+      signal,
+    );
+  }
+});
+
 export const lightboxDialogVisible$ = computed((get) => {
   return get(internalLightboxDialogVisible$);
 });
@@ -367,6 +402,7 @@ export const openImageLightbox$ = command(
       ...preview,
       ownerSignal: previewSignal,
     });
+    set(selectLightboxSessions$, previewSignal);
   },
 );
 
@@ -410,6 +446,7 @@ export const navigateImageLightbox$ = command(
       preview,
       ...preview,
     });
+    set(selectLightboxSessions$, ownerSignal);
   },
 );
 
@@ -446,6 +483,7 @@ export const openDocumentLightbox$ = command(
             value.threadId ?? value.artifact?.threadId,
           ),
         });
+        set(selectLightboxSessions$, ownerSignal);
         return;
       }
       set(internalLightboxState$, {
@@ -456,9 +494,11 @@ export const openDocumentLightbox$ = command(
         preview,
         ...preview,
       });
+      set(selectLightboxSessions$, ownerSignal);
       return;
     }
     set(internalLightboxState$, { ...value, preview, ...preview, ownerSignal });
+    set(selectLightboxSessions$, ownerSignal);
   },
 );
 
@@ -486,6 +526,7 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
         ...preview,
         ...(zipPreview ? { zipPreview } : {}),
       });
+      set(selectLightboxSessions$, ownerSignal);
     },
   );
 }

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.251.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.2...runner-rs-v0.251.3) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share sse event name selection ([#50830](https://github.com/okou-ai/okou/issues/50830)) ([b18b2b4](https://github.com/okou-ai/okou/commit/b18b2b4f298f85a0cbcc30ec54e3cd3ecad8a0b1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.1...runner-rs-v0.251.2) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.0...runner-rs-v0.251.1) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** keep sse data separators in the scanner ([#50778](https://github.com/okou-ai/okou/issues/50778)) ([ac21c1a](https://github.com/okou-ai/okou/commit/ac21c1a4c3fc3421946c7e6c182bc45f2d1dbce9))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.12...runner-rs-v0.251.0) (2026-11-25)
 
 

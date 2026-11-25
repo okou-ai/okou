@@ -6,6 +6,7 @@ disabled_rules:
 opt_in_rules:
   - discarded_notification_center_observer
   - okou_accessor_escape
+  - okou_application_subscription
   - okou_check_after_await
   - okou_discarded_throwing_task
   - okou_global_mutable_state

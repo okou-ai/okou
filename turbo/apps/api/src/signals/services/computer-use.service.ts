@@ -56,6 +56,7 @@ import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility"
 import {
   currentAppStateTransfer$,
   signAppStateUpload,
+  selectAppStateTransfer$,
 } from "./computer-use-app-state-transfer.service";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
@@ -146,6 +147,7 @@ type CreateComputerUseCommandResult =
       readonly status: "created";
       readonly commandId: string;
       readonly commandStatus: "queued";
+      readonly directAppState?: true;
       readonly notifyHosts: readonly ComputerUseCommandNotificationHost[];
     }
   | { readonly status: "no_host" }
@@ -1525,13 +1527,51 @@ export const notifyQueuedComputerUseCommand$ = command(
   },
 );
 
-export const createComputerUseCommand$ = command(
+const availableCommandHosts$ = command(
   async (
     { get, set },
+    params: { readonly orgId: string; readonly userId: string },
+    now: Date,
+    signal: AbortSignal,
+  ) => {
+    const hosts = await get(db$)
+      .select()
+      .from(computerUseHosts)
+      .where(
+        and(
+          eq(computerUseHosts.orgId, params.orgId),
+          eq(computerUseHosts.userId, params.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .orderBy(desc(computerUseHosts.lastSeenAt));
+    signal.throwIfAborted();
+    const availability = await joinAll(
+      hosts.map((host) => {
+        return set(computerUseHostIsOnline$, host, now, signal);
+      }),
+    );
+    signal.throwIfAborted();
+    return {
+      hasHosts: hosts.length > 0,
+      onlineHosts: hosts.filter((_, index) => {
+        return availability[index];
+      }),
+    };
+  },
+);
+
+export const createComputerUseCommand$ = command(
+  async (
+    { set },
     params: {
       readonly orgId: string;
       readonly userId: string;
       readonly runId?: string;
+      readonly appStateRunner?: {
+        readonly runnerId: string;
+        readonly heartbeatGeneration: number;
+      };
       readonly targetHostId?: string;
       readonly kind: ComputerUseCommandKind;
       readonly payload: ComputerUseCommandPayload;
@@ -1557,31 +1597,16 @@ export const createComputerUseCommand$ = command(
     }
     const db = set(writeDb$);
     const now = nowDate();
-    const hosts = await get(db$)
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.orgId, params.orgId),
-          eq(computerUseHosts.userId, params.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .orderBy(desc(computerUseHosts.lastSeenAt));
-    signal.throwIfAborted();
-    if (hosts.length === 0) {
-      return { status: "no_host" };
-    }
-
-    const availability = await joinAll(
-      hosts.map((host) => {
-        return set(computerUseHostIsOnline$, host, now, signal);
-      }),
+    const { hasHosts, onlineHosts } = await set(
+      availableCommandHosts$,
+      params,
+      now,
+      signal,
     );
     signal.throwIfAborted();
-    const onlineHosts = hosts.filter((_, index) => {
-      return availability[index];
-    });
+    if (!hasHosts) {
+      return { status: "no_host" };
+    }
     const payload = commandPayload(params.payload);
     const target = resolveComputerUseCommandTargets({
       onlineHosts,
@@ -1592,10 +1617,23 @@ export const createComputerUseCommand$ = command(
       return target;
     }
 
+    const host = onlineHosts.find((candidate) => {
+      return candidate.id === target.targetHostId;
+    });
+    if (params.kind === "app.state" && params.appStateRunner) {
+      const transfer = await set(
+        selectAppStateTransfer$,
+        params,
+        host,
+        params.appStateRunner,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (transfer) {
+        payload.directAppState = transfer;
+      }
+    }
     if (params.kind.startsWith("shell.")) {
-      const host = onlineHosts.find((candidate) => {
-        return candidate.id === target.targetHostId;
-      });
       const permission = host && shellPermissionId(host);
       if (!permission) {
         return { status: "host_unsupported" };
@@ -1646,6 +1684,7 @@ export const createComputerUseCommand$ = command(
       status: "created",
       commandId: row.id,
       commandStatus: "queued",
+      ...(payload.directAppState ? { directAppState: true as const } : {}),
       notifyHosts: target.notifyHosts,
     };
   },

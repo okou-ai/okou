@@ -403,7 +403,7 @@ class CanonicalWorkspaceSession(
         api.projectDetail(projectId).asConfirmedProject(projectId)
 
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
-        api.renameProject(projectId, name, eventId)
+        api.renameProject(projectId, name, eventId).asConfirmedProject(projectId)
 
     override suspend fun moveThreadToProject(
         threadId: String,

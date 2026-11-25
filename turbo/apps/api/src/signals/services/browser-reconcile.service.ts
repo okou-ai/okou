@@ -31,6 +31,10 @@ import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
+import {
+  authorityStillCurrent,
+  type BrowserPublicAuthority,
+} from "./browser-owner.service";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { joinAll, settleIncludingAbort } from "../utils";
@@ -729,6 +733,90 @@ const stopEmptyBrowser$ = command(
   },
 );
 
+export const stopBrowserForRestart$ = command(
+  async (
+    { set },
+    owner: BrowserPublicAuthority,
+    instanceId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const now = nowDate();
+    // Claim the instance and its windows together. The active-instance FK
+    // rolls back the claim if an in-flight admission wins the race.
+    const stopping = db.$with("restart_stopping").as(
+      db
+        .update(profiles)
+        .set({ status: "stopping", updatedAt: now })
+        .where(
+          and(
+            eq(profiles.orgId, owner.orgId),
+            eq(profiles.userId, owner.userId),
+            eq(profiles.instanceId, instanceId),
+            eq(profiles.status, "active"),
+            authorityStillCurrent(owner),
+          ),
+        )
+        .returning(),
+    );
+    const closing = db.$with("restart_closing").as(
+      db
+        .update(windows)
+        .set({ state: "closing", updatedAt: now })
+        .where(
+          and(
+            eq(windows.instanceId, instanceId),
+            eq(windows.state, "active"),
+            exists(db.select({ id: stopping.id }).from(stopping)),
+          ),
+        )
+        .returning({
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+        }),
+    );
+    const claim = await settleIncludingAbort(
+      db
+        .with(stopping, closing)
+        .select()
+        .from(stopping)
+        .leftJoin(closing, eq(stopping.instanceId, closing.instanceId)),
+    );
+    signal.throwIfAborted();
+    if (!claim.ok) {
+      if (
+        isForeignKeyViolation(
+          claim.error,
+          "browser_chat_sessions_active_instance_fk",
+        )
+      ) {
+        return false;
+      }
+      throw claim.error;
+    }
+    const [first] = claim.value;
+    if (!first) {
+      return false;
+    }
+    const [stopped] = await joinAll([
+      set(stopEmptyBrowser$, first.restart_stopping, signal),
+      joinAll(
+        claim.value.flatMap(({ restart_closing: window }) => {
+          return window
+            ? [
+                publishBrowserSessionChangedSafely(owner.userId, {
+                  threadId: window.chatThreadId,
+                }),
+              ]
+            : [];
+        }),
+      ),
+    ]);
+    signal.throwIfAborted();
+    return stopped;
+  },
+);
+
 const recoverBrowserCreations$ = command(
   async ({ get, set }, owner: Owner | null, signal: AbortSignal) => {
     let errors = 0;
@@ -1000,7 +1088,9 @@ const reconcileBrowserWindows$ = command(
                 eq(windows.chatThreadId, owner.chatThreadId),
               )
             : undefined,
-          inArray(profiles.status, ["active", "stopping"]),
+          // Stopping instances are handled by the HTTP stop below, including
+          // their closing bindings. They do not need working CDP.
+          eq(profiles.status, "active"),
         ),
       )
       .orderBy(windows.updatedAt)

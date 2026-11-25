@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { literal, number, object, string, uuid } from "zod";
+import { literal, number, object, string, unknown, uuid } from "zod";
 import { frame } from "../ssh/file-protocol";
 import { publishComputerUseAppState } from "./output-artifacts";
 
@@ -17,7 +17,21 @@ const eventSchema = object({
 const resultSchema = object({ type: literal("result"), data: literal(true) });
 const envelopeSchema = object({
   commandId: uuid(),
-  result: object({ snapshotId: uuid(), appState: string() }),
+  result: object({
+    snapshotId: uuid(),
+    appState: string(),
+    app: unknown().optional(),
+    appDisplayName: unknown().optional(),
+    bundleId: unknown().optional(),
+    windowId: unknown().optional(),
+    windowTitle: unknown().optional(),
+    windowFrame: unknown().optional(),
+    windowOnCurrentSpace: unknown().optional(),
+    screenshotSource: unknown().optional(),
+    screenshotWidth: unknown().optional(),
+    screenshotHeight: unknown().optional(),
+    screenshotSourceBounds: unknown().optional(),
+  }),
 });
 
 async function* rpcFrames(source: AsyncIterable<unknown>) {
@@ -69,19 +83,20 @@ async function publishVerifiedBundle(
   );
   if (captured !== commandId)
     throw new Error("App state belongs to a different command");
-  const files = await publishComputerUseAppState(
+  const { snapshotId, appState, ...metadata } = result;
+  const paths = await publishComputerUseAppState(
     commandId,
-    result.snapshotId,
-    result.appState,
+    snapshotId,
+    appState,
     buffer.subarray(boundary),
     signal,
   );
-  return { files, digest };
+  return { files: { ...metadata, ...paths }, digest };
 }
 
 interface SavedDelivery {
   readonly digest: Buffer;
-  readonly files: Awaited<ReturnType<typeof publishComputerUseAppState>>;
+  readonly files: Awaited<ReturnType<typeof publishVerifiedBundle>>["files"];
 }
 
 export async function readDirectAppState(

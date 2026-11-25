@@ -447,18 +447,13 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     defer {
       do { try subscription.cancel() } catch { XCTFail("Authorization observer cleanup: \(error)") }
     }
-    // Confirmed account publication uses Observation; watching it must not start a quota request.
-    let accounts = Task { @MainActor in
-      for await _ in Observations({ store.accountRevision }) {
-        notify()
-        if observed { return }
-      }
+    // Confirmed accounts are graph state; watching them must not start a quota request.
+    let accounts = try store.resources.store.watch(store.resources.confirmed) { notify() }
+    defer {
+      do { try accounts.cancel() } catch { XCTFail("Account observer cleanup: \(error)") }
     }
-    defer { accounts.cancel() }
     notify()
     await fulfillment(of: [ready], timeout: 3)
-    accounts.cancel()
-    await accounts.value
     _ = try XCTUnwrap(succeeded() ? true : nil)
   }
 

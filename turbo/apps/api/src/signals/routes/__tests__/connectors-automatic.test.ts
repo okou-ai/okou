@@ -74,13 +74,14 @@ function fixture(
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-async function begin(f: Fixture, connectionId?: string) {
+async function begin(f: Fixture, connectionId?: string, native = false) {
   return await accept(
     automatic().start({
       headers,
       params: { connectorSlug: f.slug },
       body: {
         authMethod: f.methodId,
+        ...(native ? { nativeCallback: "ios-https" as const } : {}),
         account: connectionId
           ? { intent: "reconnect", connectionId }
           : { intent: "add" },
@@ -90,8 +91,8 @@ async function begin(f: Fixture, connectionId?: string) {
   );
 }
 
-async function beginOAuth(f: Fixture, connectionId?: string) {
-  const response = await begin(f, connectionId);
+async function beginOAuth(f: Fixture, connectionId?: string, native = false) {
+  const response = await begin(f, connectionId, native);
   if (response.body.result !== "authorization") {
     throw new Error("Expected authorization handoff");
   }
@@ -126,6 +127,47 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
+  it.each([false, true])(
+    "returns a native Automatic OAuth attempt after consent or refusal (denied=%s)",
+    async (denied) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "cimd",
+        endpoint: f.endpoint,
+      });
+      const started = await beginOAuth(f, undefined, true);
+      expect(started.nativeCallbackUrl).toBe(
+        `https://app.okou.ai/native/connector-authorization?attemptId=${started.oauthAttemptId}`,
+      );
+      const result = denied
+        ? await accept(
+            automatic().callback({
+              query: {
+                state: started.state,
+                error: "access_denied",
+                iss: provider.issuer,
+                responseMode: "json",
+              },
+            }),
+            [200],
+          )
+        : await callback(started.state, provider.issuer);
+      expect(result.body).toMatchObject({
+        status: denied ? "error" : "success",
+        nativeAppReturn: {
+          platform: "ios",
+          attemptId: started.oauthAttemptId,
+          httpsHost: "app.okou.ai",
+        },
+      });
+      expect((await receipt(f, started.oauthAttemptId)).status).toBe(
+        denied ? 404 : 200,
+      );
+      const replay = await callback(started.state, provider.issuer);
+      expect(replay.body.nativeAppReturn).toBeUndefined();
+    },
+  );
+
   it.each(["cimd", "dcr"] as const)(
     "preserves a builtin endpoint query through %s OAuth and account creation",
     async (registration) => {

@@ -27,29 +27,35 @@ function buildVendorKeys(
 }
 
 describe("buildBuiltInModelKeys", () => {
-  it("seeds the fake sentinel key when no OpenRouter key is configured", () => {
-    expect(buildVendorKeys("openrouter", {})).toStrictEqual([
-      {
-        apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
-        label: "dev-seed sentinel",
-        vendor: "openrouter",
-      },
-    ]);
-  });
+  it.each(["openrouter", "openrouter-proactive"])(
+    "seeds the fake sentinel %s key when no OpenRouter key is configured",
+    (vendor) => {
+      expect(buildVendorKeys(vendor, {})).toStrictEqual([
+        {
+          apiKey: DEV_SEED_SENTINEL_MANAGED_MODEL_KEY,
+          label: "dev-seed sentinel",
+          vendor,
+        },
+      ]);
+    },
+  );
 
-  it("builds the OpenRouter built-in model key row", () => {
-    const openRouterKeys = buildVendorKeys("openrouter", {
-      DEV_MODEL_OPENROUTER_KEY: "dev-openrouter-key",
-    });
-
-    expect(openRouterKeys).toStrictEqual([
-      {
-        apiKey: "dev-openrouter-key",
-        label: "dev-seed",
-        vendor: "openrouter",
-      },
-    ]);
-  });
+  it.each(["openrouter", "openrouter-proactive"])(
+    "builds the %s key row from the development OpenRouter key",
+    (vendor) => {
+      expect(
+        buildVendorKeys(vendor, {
+          DEV_MODEL_OPENROUTER_KEY: "dev-openrouter-key",
+        }),
+      ).toStrictEqual([
+        {
+          apiKey: "dev-openrouter-key",
+          label: "dev-seed",
+          vendor,
+        },
+      ]);
+    },
+  );
 });
 
 describe("usage pricing", () => {

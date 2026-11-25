@@ -1568,17 +1568,13 @@ async fn execute_cli_inner(
                                                 pi_rpc_startup_tx.take();
                                                 startup_boundary.discard_remaining();
                                                 active_input_controller.close_terminal();
-                                                if cli_status.is_some() {
+                                                if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                                    error,
+                                                    cli_status.is_some(),
+                                                    termination_deadline.as_mut(),
+                                                ) {
                                                     break Err(error);
                                                 }
-                                                let error_log = error.to_string();
-                                                termination_runtime.begin_control_failure(
-                                                    error,
-                                                    ControlFailure::StdoutIngestionFailed {
-                                                        error: error_log,
-                                                    },
-                                                    termination_deadline.as_mut(),
-                                                );
                                                 continue;
                                             }
                                         }
@@ -1591,17 +1587,13 @@ async fn execute_cli_inner(
                                                     .to_string(),
                                             );
                                             active_input_controller.close_terminal();
-                                            if cli_status.is_some() {
+                                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                                error,
+                                                cli_status.is_some(),
+                                                termination_deadline.as_mut(),
+                                            ) {
                                                 break Err(error);
                                             }
-                                            let error_log = error.to_string();
-                                            termination_runtime.begin_control_failure(
-                                                error,
-                                                ControlFailure::StdoutIngestionFailed {
-                                                    error: error_log,
-                                                },
-                                                termination_deadline.as_mut(),
-                                            );
                                             continue;
                                         }
                                     }
@@ -1621,17 +1613,13 @@ async fn execute_cli_inner(
                                     Err(error) => {
                                         agent_log.write_raw_line(line.as_bytes()).await;
                                         active_input_controller.close_terminal();
-                                        if cli_status.is_some() {
+                                        if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                            error,
+                                            cli_status.is_some(),
+                                            termination_deadline.as_mut(),
+                                        ) {
                                             break Err(error);
                                         }
-                                        let error_log = error.to_string();
-                                        termination_runtime.begin_control_failure(
-                                            error,
-                                            ControlFailure::StdoutIngestionFailed {
-                                                error: error_log,
-                                            },
-                                            termination_deadline.as_mut(),
-                                        );
                                         continue;
                                     }
                                 }
@@ -1669,17 +1657,13 @@ async fn execute_cli_inner(
                                         .to_string(),
                                 );
                                 active_input_controller.close_terminal();
-                                if cli_status.is_some() {
+                                if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                    error,
+                                    cli_status.is_some(),
+                                    termination_deadline.as_mut(),
+                                ) {
                                     break Err(error);
                                 }
-                                let error_log = error.to_string();
-                                termination_runtime.begin_control_failure(
-                                    error,
-                                    ControlFailure::StdoutIngestionFailed {
-                                        error: error_log,
-                                    },
-                                    termination_deadline.as_mut(),
-                                );
                                 continue;
                             };
 
@@ -1826,17 +1810,13 @@ async fn execute_cli_inner(
                             pi_rpc_startup_tx.take();
                             let error = pi_rpc::PiRpcStartupBoundary::malformed_record_error();
                             active_input_controller.close_terminal();
-                            if cli_status.is_some() {
+                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                error,
+                                cli_status.is_some(),
+                                termination_deadline.as_mut(),
+                            ) {
                                 break Err(error);
                             }
-                            let error_log = error.to_string();
-                            termination_runtime.begin_control_failure(
-                                error,
-                                ControlFailure::StdoutIngestionFailed {
-                                    error: error_log,
-                                },
-                                termination_deadline.as_mut(),
-                            );
                         } else {
                             agent_log.write_raw_line(line.as_bytes()).await;
                         }
@@ -1853,17 +1833,13 @@ async fn execute_cli_inner(
                             }
                             pi_rpc_startup_tx.take();
                             let error = pi_rpc::PiRpcStartupBoundary::missing_error();
-                            if cli_status.is_some() {
+                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                error,
+                                cli_status.is_some(),
+                                termination_deadline.as_mut(),
+                            ) {
                                 break Err(error);
                             }
-                            let error_log = error.to_string();
-                            termination_runtime.begin_control_failure(
-                                error,
-                                ControlFailure::StdoutIngestionFailed {
-                                    error: error_log,
-                                },
-                                termination_deadline.as_mut(),
-                            );
                             continue;
                         }
                         if cli_status.is_some() {
@@ -1929,30 +1905,23 @@ async fn execute_cli_inner(
                             }
                         };
 
-                        if cli_status.is_some() {
-                            break Err(error);
+                        if cli_status.is_none() {
+                            try_observe_cli_exit(
+                                &mut child,
+                                &mut cli_status,
+                                &mut cli_exit_at,
+                                &active_input_controller,
+                                &mut termination_runtime,
+                                stdout_closed,
+                                drain_deadline.as_mut(),
+                            )?;
                         }
-                        match try_observe_cli_exit(
-                            &mut child,
-                            &mut cli_status,
-                            &mut cli_exit_at,
-                            &active_input_controller,
-                            &mut termination_runtime,
-                            stdout_closed,
-                            drain_deadline.as_mut(),
-                        )? {
-                            CliExitObservation::NoNewExit => {
-                                let error_log = error.to_string();
-                                termination_runtime.begin_control_failure(
-                                    error,
-                                    ControlFailure::StdoutIngestionFailed {
-                                        error: error_log,
-                                    },
-                                    termination_deadline.as_mut(),
-                                );
-                            }
-                            CliExitObservation::ExitedDrainingStdout
-                            | CliExitObservation::ExitedAndStdoutClosed => break Err(error),
+                        if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                            error,
+                            cli_status.is_some(),
+                            termination_deadline.as_mut(),
+                        ) {
+                            break Err(error);
                         }
                     }
                 }

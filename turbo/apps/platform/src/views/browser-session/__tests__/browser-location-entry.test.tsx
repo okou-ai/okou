@@ -135,8 +135,6 @@ test.each([
     enter,
     "https://www.google.com/search?q=http%3A%2F%2Ffoo._",
   ],
-  ["052", label63 + ".com", enter, "http://" + label63 + ".com/"],
-  ["053", host64, enter, "https://www.google.com/search?q=" + host64],
   [
     "056",
     "例子.中国/季度报告",
@@ -151,7 +149,6 @@ test.each([
     complete,
     "https://www.google.com/search?q=example..com",
   ],
-  ["070", host64, complete, "http://" + host64 + "/"],
   [
     "072",
     "https://example.com/report?q=1#total",
@@ -188,6 +185,21 @@ test.each([
     await arrived(url);
   },
 );
+
+test("browser-address-search-052 / browser-address-search-053 / browser-address-search-070 Enter respects the DNS label limit and Ctrl+Enter opens the longer host", async () => {
+  const { address, arrived } = await openAddress();
+  for (const [text, gesture, url] of [
+    [label63 + ".com", enter, "http://" + label63 + ".com/"],
+    [host64, enter, "https://www.google.com/search?q=" + host64],
+    [host64, complete, "http://" + host64 + "/"],
+  ] as const) {
+    await userEvent.click(address);
+    fireEvent.input(address, { target: { value: text } });
+    expect(address).toHaveValue(text);
+    await userEvent.keyboard(gesture);
+    await arrived(url);
+  }
+});
 
 test("browser-address-search-071 Ctrl+Enter opens the long registered host and the overlength-label variant directly", async () => {
   const { address, arrived } = await openAddress();

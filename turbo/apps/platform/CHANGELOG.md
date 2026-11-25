@@ -13,6 +13,69 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1184.0](https://github.com/okou-ai/okou/compare/app-v0.1183.0...app-v0.1184.0) (2026-11-25)
+
+
+### Features
+
+* guide custom domain setup through verification and activation ([#50730](https://github.com/okou-ai/okou/issues/50730)) ([8846eae](https://github.com/okou-ai/okou/commit/8846eae8a6948dc3177e550be081b39857308062))
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Bug Fixes
+
+* **app:** align project shortcuts and shorten thread menu labels ([#50826](https://github.com/okou-ai/okou/issues/50826)) ([ef31a2c](https://github.com/okou-ai/okou/commit/ef31a2c3b1d219e161bd20b4d7ea31f4b3c59c4d))
+* **app:** bind shared database sync to its workspace member ([#50821](https://github.com/okou-ai/okou/issues/50821)) ([ab8b6ae](https://github.com/okou-ai/okou/commit/ab8b6aee88db92abb636759b2061eb45387fd958))
+* **app:** clarify chat share selection states ([#50793](https://github.com/okou-ai/okou/issues/50793)) ([931369f](https://github.com/okou-ai/okou/commit/931369fd759101a33184564e63c4694418e00fff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.0
+    * @okouai/core bumped to 8.879.0
+    * @okouai/ui bumped to 1.22.19
+
+## [0.1183.0](https://github.com/okou-ai/okou/compare/app-v0.1182.0...app-v0.1183.0) (2026-11-25)
+
+
+### Features
+
+* **app:** ask for the presentation default from send and point to settings ([#50799](https://github.com/okou-ai/okou/issues/50799)) ([c3e0b0d](https://github.com/okou-ai/okou/commit/c3e0b0d16c2f21b10807810f4704566690d1e190))
+* **app:** refine the share popover audience and people layout ([#50788](https://github.com/okou-ai/okou/issues/50788)) ([c279cca](https://github.com/okou-ai/okou/commit/c279cca2c2b2fc8488b6f6e4a1e88f837f3dcaf9))
+
+
+### Bug Fixes
+
+* **billing:** unify feedback surveys and one-time rewards ([#50759](https://github.com/okou-ai/okou/issues/50759)) ([44c32b7](https://github.com/okou-ai/okou/commit/44c32b74189f160fe9d3035465970f9a512a5354))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.127.0
+    * @okouai/core bumped to 8.878.1
+    * @okouai/ui bumped to 1.22.18
+
+## [0.1182.0](https://github.com/okou-ai/okou/compare/app-v0.1181.0...app-v0.1182.0) (2026-11-25)
+
+
+### Features
+
+* **app:** clarify free-plan top-ups and pro upgrades ([#50549](https://github.com/okou-ai/okou/issues/50549)) ([0f067b9](https://github.com/okou-ai/okou/commit/0f067b9d0642dba3e65c809978c30e44c690a7a0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.1
+    * @okouai/connectors bumped to 3.25.0
+    * @okouai/core bumped to 8.878.0
+    * @okouai/ui bumped to 1.22.17
+
 ## [0.1181.0](https://github.com/okou-ai/okou/compare/app-v0.1180.1...app-v0.1181.0) (2026-11-25)
 
 

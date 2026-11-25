@@ -28,7 +28,7 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 const formatKey = FeatureSwitchKey.PresentationOutputFormat;
-const setupTitle = "Choose a default presentation format";
+const setupTitle = "Pick a default format to start";
 const ordinaryAuth = Object.freeze({
   user: Object.freeze({
     id: "presentation-transition-ordinary-user",
@@ -55,6 +55,31 @@ function button(name: string, container: ParentNode = document.body) {
     throw new Error(`Expected button ${name}`);
   }
   return result;
+}
+
+/** The Settings pair of format toggles, and which one is pressed. */
+async function settingsFormats(settings: HTMLElement) {
+  const group = await within(settings).findByRole("group", {
+    name: "Default presentation format",
+  });
+  return {
+    html: button("Web slides", group),
+    pptx: button("PowerPoint", group),
+  };
+}
+
+function expectPressed(
+  formats: { readonly html: HTMLElement; readonly pptx: HTMLElement },
+  format: "html" | "pptx",
+) {
+  expect(formats.html).toHaveAttribute(
+    "aria-pressed",
+    String(format === "html"),
+  );
+  expect(formats.pptx).toHaveAttribute(
+    "aria-pressed",
+    String(format === "pptx"),
+  );
 }
 
 function formatSwitch() {
@@ -268,7 +293,7 @@ async function expectSubmitted(
   );
   await expect(screen.findByText(prompt)).resolves.toBeInTheDocument();
   expect(submission.runs).toStrictEqual([prompt]);
-  expect(screen.queryByRole("dialog", { name: setupTitle })).toBeNull();
+  expect(screen.queryByRole("menu", { name: setupTitle })).toBeNull();
 }
 
 async function optInAndSubmit(format: "pptx" | null) {
@@ -291,8 +316,8 @@ async function optInAndSubmit(format: "pptx" | null) {
 
 test("Lab opt-in refreshes cached OFF preferences before a tagged send with no server default", async () => {
   const { server, submission } = await optInAndSubmit(null);
-  const dialog = await screen.findByRole(
-    "dialog",
+  const menu = await screen.findByRole(
+    "menu",
     { name: setupTitle },
     {
       onTimeout(error) {
@@ -305,12 +330,7 @@ test("Lab opt-in refreshes cached OFF preferences before a tagged send with no s
       },
     },
   );
-  const radios = queryAllByRoleFast("radio", dialog);
-  expect(radios).toHaveLength(2);
-  for (const radio of radios) {
-    expect(radio).toHaveAttribute("aria-checked", "false");
-  }
-  expect(button("Save and generate", dialog)).toBeDisabled();
+  expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(2);
   expect(submission.threads).toStrictEqual([]);
   expect(submission.inputs).toStrictEqual([]);
   expect(submission.runs).toStrictEqual([]);
@@ -346,18 +366,15 @@ test("A confirmed local save does not override a fresh server default after OFF 
     auth: ordinaryAuth,
   });
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  const select = await within(settings).findByRole("combobox", {
-    name: "Default presentation format",
-  });
+  const formats = await settingsFormats(settings);
   await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("HTML");
+    expect(formats.pptx).toBeEnabled();
+    expectPressed(formats, "html");
   });
-  click(select);
-  click(await screen.findByRole("option", { name: "PPTX" }));
+  click(formats.pptx);
   await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("PPTX");
+    expect(formats.pptx).toBeEnabled();
+    expectPressed(formats, "pptx");
   });
   expect(server.preferenceWrites).toStrictEqual([
     { presentationFormat: "pptx" },
@@ -397,22 +414,19 @@ test("A format save crossing an OFF then ON baseline refresh uses the committed 
     auth: ordinaryAuth,
   });
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  const select = await within(settings).findByRole("combobox", {
-    name: "Default presentation format",
-  });
+  const formats = await settingsFormats(settings);
   await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("HTML");
+    expect(formats.pptx).toBeEnabled();
+    expectPressed(formats, "html");
   });
-  click(select);
-  click(await screen.findByRole("option", { name: "PPTX" }));
+  click(formats.pptx);
   await waitFor(() => {
     expect(server.preferenceWrites).toStrictEqual([
       { presentationFormat: "pptx" },
     ]);
-    expect(select).toBeDisabled();
+    expect(formats.pptx).toBeDisabled();
   });
-  expect(select).toHaveTextContent("HTML");
+  expectPressed(formats, "html");
 
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
@@ -430,22 +444,20 @@ test("A format save crossing an OFF then ON baseline refresh uses the committed 
   click(within(accountMenu).getByText("Settings"));
   const reopened = await screen.findByRole("dialog", { name: "Settings" });
   click(button("Chat", reopened));
-  const refreshed = await within(reopened).findByRole("combobox", {
-    name: "Default presentation format",
-  });
+  const refreshed = await settingsFormats(reopened);
   await waitFor(() => {
     expect(server.preferenceReads.slice(readsBeforeReenable)).toContainEqual(
       expect.objectContaining({ presentationFormat: "html" }),
     );
-    expect(refreshed).toBeEnabled();
-    expect(refreshed).toHaveTextContent("HTML");
+    expect(refreshed.pptx).toBeEnabled();
+    expectPressed(refreshed, "html");
   });
 
   // The refresh has read pre-commit HTML; only now let the original POST commit.
   releaseSave.resolve();
   await waitFor(() => {
-    expect(refreshed).toBeEnabled();
-    expect(refreshed).toHaveTextContent("PPTX");
+    expect(refreshed.pptx).toBeEnabled();
+    expectPressed(refreshed, "pptx");
   });
   await user.keyboard("{Escape}");
   await waitFor(() => {

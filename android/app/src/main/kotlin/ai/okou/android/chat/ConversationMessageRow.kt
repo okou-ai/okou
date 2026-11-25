@@ -147,7 +147,7 @@ internal fun ConversationMessageRow(
             }
         message.isReply() ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                ConversationReplyHeader(message)
+                ConversationReplyHeader(message, artifactActions)
                 if (entry.summary != null) {
                     var expanded by rememberEarlierRepliesExpanded()
                     if (findHighlight?.reveal != null) {
@@ -258,7 +258,10 @@ private fun EarlierReplyArtifacts(
 }
 
 @Composable
-internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
+internal fun ConversationReplyHeader(
+    message: HistoryMessage? = null,
+    artifacts: ChatArtifactActions? = null,
+) {
     val colors = MaterialTheme.colorScheme
     var menuMessage by remember { mutableStateOf<HistoryMessage?>(null) }
     val focus = remember { FocusRequester() }
@@ -268,6 +271,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val label = stringResource(R.string.conversation_reply_actions)
+    val imageLabel = stringResource(R.string.artifact_image)
     val copyableReply = message?.takeIf {
         it.blocks.any { block -> block.kind == HistoryBlockKind.Text }
     }
@@ -304,6 +308,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                 Box {
                     IconButton(
                         onClick = openMenu,
+                        shape = RoundedCornerShape(12.dp),
                         modifier =
                             Modifier.size(48.dp).focusRequester(focus).onFocusChanged {
                                 keyboardFocused = it.isFocused
@@ -326,14 +331,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                                     ) {
                                         menuMessage = null
                                         scope.launch {
-                                            val copy =
-                                                withContext(Dispatchers.Default) {
-                                                    selected.blocks
-                                                        .filter { it.kind == HistoryBlockKind.Text }
-                                                        .joinToString("\n\n") {
-                                                            conversationMarkdownForCopy(it.text)
-                                                        }
-                                                }
+                                            val copy = selected.copyText(imageLabel, artifacts)
                                             clipboard.setClipEntry(
                                                 ClipEntry(ClipData.newPlainText(null, copy)),
                                             )
@@ -360,6 +358,28 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
             focus.requestFocus()
         }
     }
+}
+
+private suspend fun HistoryMessage.copyText(
+    imageLabel: String,
+    artifacts: ChatArtifactActions?,
+): String {
+    fun authorizedImages() = artifacts?.images?.authorizedNames(artifacts.threadId).orEmpty()
+
+    val text = blocks.filter { it.kind == HistoryBlockKind.Text }
+    var authorized: Map<String, String>
+    var copy: String
+    do {
+        authorized = authorizedImages()
+        copy =
+            withContext(Dispatchers.Default) {
+                text.joinToString("\n\n") {
+                    conversationMarkdownForCopy(it.text, imageLabel, authorized)
+                }
+            }
+        // An image can lose access while the reply is formatted off the main thread.
+    } while (authorized != authorizedImages())
+    return copy
 }
 
 @Composable

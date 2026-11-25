@@ -21,6 +21,11 @@
     <string name="conversation_replies_collapsed">Diciutkan</string>
     <string name="conversation_work_elapsed">Sudah bekerja %1$s</string>
     <string name="conversation_work_total">Total bekerja %1$s</string>
+    <string name="conversation_work_seconds">%1$d detik</string>
+    <string name="conversation_work_minutes">%1$d menit</string>
+    <string name="conversation_work_hours">%1$d jam</string>
+    <string name="conversation_work_minutes_seconds">%1$d menit %2$d detik</string>
+    <string name="conversation_work_hours_minutes">%1$d jam %2$d menit</string>
     <string name="conversation_followup_continue">Lanjutkan</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

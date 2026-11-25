@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
-import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owner.ts";
+import { listShortcutOwner } from "../../lib/list-shortcut-owner.ts";
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
 import { stepProject$ } from "./project-order.ts";
@@ -14,7 +14,7 @@ export const setupProjectOrderShortcuts$ = command(
     signal: AbortSignal,
   ) => {
     const targetProjectId = (event: KeyboardEvent) => {
-      const owner = projectOrderShortcutOwner(event.target);
+      const owner = listShortcutOwner(event.target);
       return owner
         ? owner.kind === "project"
           ? owner.projectId

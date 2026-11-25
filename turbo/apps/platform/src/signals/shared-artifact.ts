@@ -17,6 +17,8 @@ import {
   type SharedArtifactContent,
 } from "./shared-artifact-page.ts";
 import { SharedArtifactPage } from "../views/shared-artifact-page/shared-artifact-page.tsx";
+import { getArtifactShareScope } from "./artifact-sharing.ts";
+import { artifactPreviewDeletionScope } from "./artifact-deletion.ts";
 
 const sharedArtifactViewer$ = computed((get) => {
   get(pathParams$);
@@ -107,6 +109,27 @@ export const setupSharedArtifact$ = command(
           viewer.diagram.open$,
         )
       : null;
+    set(
+      getArtifactShareScope("viewer").select$,
+      artifact?.publicUrl === null && !artifact.sharedThreadSnapshot
+        ? {
+            url: referenceUrl.href,
+            copyUrl: window.location.href,
+            artifactShareIdentity$: artifact.preview.artifactShareIdentity$,
+          }
+        : null,
+      signal,
+    );
+    set(
+      artifactPreviewDeletionScope("page").select$,
+      artifact && !artifact.sharedThreadSnapshot
+        ? {
+            artifactId: id,
+            sourceKind: "reference",
+          }
+        : null,
+      signal,
+    );
     set(
       updateDocumentTitle$,
       artifact?.filename ??

@@ -1,11 +1,16 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
+import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import { onDomEventFn, onRef } from "../utils.ts";
 import type { ComposerPrimaryAction } from "./composer-signals.ts";
 import type { ComposerTask } from "./composer-task-chips.ts";
 import { presentationOutputFormat$ } from "./presentation-output-format.ts";
 import { updatePresentationFormat$ } from "./settings/presentation-format-preference.ts";
+import { openSettingsDialogAt$ } from "./settings/settings-dialog.ts";
 
 interface PresentationFormatSetupRequest {
   readonly action: ComposerPrimaryAction;
@@ -21,6 +26,55 @@ interface PresentationFormatSetupOptions {
   >;
 }
 
+function savedDefaultMessage(format: PresentationOutputFormat): string {
+  return i18n.t(
+    ($) => {
+      return $.chat.composer.presentationFormatSetup.savedDefault;
+    },
+    {
+      format: i18n.t(($) => {
+        return format === "html"
+          ? $.chat.composer.presentationFormatSetup.htmlLabel
+          : $.chat.composer.presentationFormatSetup.pptxLabel;
+      }),
+    },
+  );
+}
+
+/** The first-use menu opens from the Send button that asked for it. */
+function createSetupAnchorSignals() {
+  const internalAnchor$ = state<HTMLElement | null>(null);
+  const anchor$ = computed((get) => {
+    return get(internalAnchor$);
+  });
+  const setAnchor$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      set(internalAnchor$, element);
+      signal.addEventListener("abort", () => {
+        set(internalAnchor$, null);
+      });
+    }),
+  );
+  return { anchor$, setAnchor$ };
+}
+
+/** The menu is shown once; the toast says where the default now lives. */
+const announceSavedDefault$ = command(
+  ({ get, set }, format: PresentationOutputFormat) => {
+    toast(savedDefaultMessage(format), {
+      ...TEXT_TOAST_ACTION,
+      action: {
+        label: i18n.t(($) => {
+          return $.chat.composer.presentationFormatSetup.openSettings;
+        }),
+        onClick: onDomEventFn(async () => {
+          await set(openSettingsDialogAt$, "chat", get(rootSignal$));
+        }),
+      },
+    });
+  },
+);
+
 export function createPresentationFormatSetupSignals({
   task$,
   primaryAction$,
@@ -30,6 +84,7 @@ export function createPresentationFormatSetupSignals({
   const request$ = state<PresentationFormatSetupRequest | null>(null);
   const selected$ = state<PresentationOutputFormat | null>(null);
   const operation$ = state<Promise<boolean> | null>(null);
+  const { anchor$, setAnchor$ } = createSetupAnchorSignals();
   const confirmation$ = computed((get) => {
     return get(operation$);
   });
@@ -107,6 +162,8 @@ export function createPresentationFormatSetupSignals({
       }
       if (current === null) {
         await set(updatePresentationFormat$, selected, signal);
+        signal.throwIfAborted();
+        set(announceSavedDefault$, selected);
       }
       set(request$, null);
       set(selected$, null);
@@ -138,6 +195,8 @@ export function createPresentationFormatSetupSignals({
   );
   return {
     open$,
+    anchor$,
+    setAnchor$,
     selected$,
     confirmation$,
     select$,

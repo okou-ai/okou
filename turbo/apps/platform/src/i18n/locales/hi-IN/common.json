@@ -509,36 +509,73 @@
     },
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "यह वेबसाइट का CNAME और स्वामित्व TXT कॉन्फ़िगर करता है। नीचे दिए अतिरिक्त प्रमाणपत्र रिकॉर्ड जोड़ें, फिर वापस आकर सत्यापन करें।",
+      "automaticSetup": "वेबसाइट रिकॉर्ड कॉन्फ़िगर करें",
+      "checkBeforeEditing": "DNS बदलने से पहले रिकॉर्ड जाँचने के लिए सत्यापित करें पर क्लिक करें।",
+      "checkFailed": "कार्रवाई आवश्यक",
+      "checkNotChecked": "जाँच नहीं हुई",
+      "checkPassed": "सफल",
+      "checkPending": "प्रतीक्षा में",
       "checks": {
         "certificate": "HTTPS",
         "dns": "DNS connection",
-        "ownership": "Ownership"
+        "ownership": "Ownership",
+        "provider": "डोमेन सक्रियण",
+        "route": "वेबसाइट रूटिंग"
       },
+      "checkUnavailable": "जाँच नहीं हो सकी",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
       "copyFailed": "Could not copy. Select the value to copy it.",
-      "copyRecord": "Copy {{type}} value",
+      "copyRecordName": "{{type}} नाम {{name}} कॉपी करें",
+      "copyRecordValue": "{{type}} मान {{name}} कॉपी करें",
       "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS कॉन्फ़िगर हो गया है",
       "dnsHelp": "Add these records at your DNS provider, then click Verify",
       "domain": "Domain",
+      "findingProvider": "DNS सेटअप विकल्प खोजे जा रहे हैं…",
       "hostnameExample": "www.example.com",
       "httpsReady": "HTTPS ready",
+      "keepTxtValues": "एक ही नाम वाले मौजूदा TXT मान रखें। हर मान को अलग TXT रिकॉर्ड के रूप में जोड़ें।",
       "lastChecked": "Last checked {{time}}",
       "manage": "Manage {{hostname}}",
+      "manualHint": "रिकॉर्ड अपनी DNS सेटिंग में कॉपी करें, फिर वापस आकर सत्यापन करें।",
       "needsSetup": "Finish setup",
+      "noDnsChanges": "आपके DNS रिकॉर्ड मेल खाते हैं। DNS में बदलाव की ज़रूरत नहीं है।",
       "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
+      "openDns": "{{provider}} DNS खोलें",
       "ownDomain": "Enter a domain you own",
+      "recordMatched": "मेल खाता है",
+      "recordName": "नाम",
+      "recordNeedsCheck": "अभी मेल नहीं खाता",
+      "recordValue": "मान",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
       "removeHostname": "Remove {{hostname}}",
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "नीचे दिए गए परिणाम देखें, फिर दोबारा जाँचने के लिए सत्यापित करें पर क्लिक करें।",
+      "reviewDns": "DNS रिकॉर्ड देखें",
+      "saveToEnable": "आपका शेयरिंग पता सहेजें पर क्लिक करने के बाद ही बदलता है।",
+      "setUpDns": "DNS रिकॉर्ड सेट करें",
+      "setupStages": "डोमेन सेटअप के चरण",
+      "sharingAddress": "आपका शेयरिंग पता",
+      "steps": {
+        "dns": "DNS सेटअप",
+        "enable": "सक्रिय करें",
+        "verify": "सत्यापन"
+      },
       "title": "Custom domain",
       "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "डोमेन सत्यापन जाँच",
+      "verificationComplete": "सभी जाँच सफल रहीं। डोमेन सक्रिय करने के लिए जारी रखें।",
+      "verificationDetails": "सत्यापन विवरण",
       "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "सत्यापित रिकॉर्ड ({{total}})",
       "verify": "Verify",
+      "verifyDomain": "डोमेन सत्यापन",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -632,11 +669,10 @@
     "people": {
       "accounts": "मेल खाने वाले कार्यक्षेत्र सदस्य",
       "anyone": "कोई भी",
-      "empty": "अभी किसी और के पास एक्सेस नहीं है।",
-      "hint": "कार्यक्षेत्र से बाहर के व्यक्ति को आमंत्रित करने के लिए उनका पूरा ईमेल दर्ज करें।",
       "invitationProcessed": "साझा करने का आमंत्रण संसाधित किया गया",
       "label": "लोगों के साथ साझा करें",
       "noAccounts": "कोई सदस्य नहीं मिला। आमंत्रित करने के लिए पूरा ईमेल दर्ज करें।",
+      "owner": "स्वामी",
       "placeholder": "नाम या ईमेल पता",
       "remove": "{{email}} का ऐक्सेस हटाएँ",
       "removed": "ऐक्सेस हटाया गया",
@@ -649,7 +685,8 @@
       "viewers": "ऐक्सेस वाले लोग",
       "workspace": "कार्यक्षेत्र",
       "workspaceDescription": "{{organization}} के सदस्य और आमंत्रित लोग",
-      "workspaceDescriptionUnnamed": "कार्यक्षेत्र के सदस्य और आमंत्रित लोग"
+      "workspaceDescriptionUnnamed": "कार्यक्षेत्र के सदस्य और आमंत्रित लोग",
+      "you": "{{name}} (आप)"
     },
     "preview": {
       "audioLabel": "{{filename}} के लिए ऑडियो पूर्वावलोकन",
@@ -1207,7 +1244,10 @@
       "title": "डाउनग्रेड योजना"
     },
     "feedback": {
-      "shareFeedback": "प्रतिक्रिया साझा करें"
+      "otherPlaceholder": "हमें और बताएँ…",
+      "rewardTerms": "हर कार्यक्षेत्र में एक बार · क्रेडिट 30 दिन तक मान्य हैं",
+      "submitFeedback": "फ़ीडबैक भेजें",
+      "thanks": "आपके फ़ीडबैक के लिए धन्यवाद"
     },
     "invoices": {
       "amount": "मात्रा",
@@ -1743,6 +1783,7 @@
       "waiting": "Mastercard Data Connect की प्रतीक्षा हो रही है। वहाँ प्रक्रिया पूरी करें, फिर Chat पर लौटें।"
     },
     "billing": {
+      "addCreditsOrUpgrade": "जारी रखने के लिए $5 से क्रेडिट जोड़ें, या खास सुविधाएँ अनलॉक करने के लिए Pro में अपग्रेड करें।",
       "addCreditsToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए क्रेडिट जोड़ें।",
       "askAdminCredits": "वर्कस्पेस व्यवस्थापक से क्रेडिट जोड़ने के लिए कहें ताकि आप {{assistantName}} के साथ चैट करना जारी रख सकें।",
       "askAdminUpgrade": "किसी वर्कस्पेस व्यवस्थापक से प्रो में अपग्रेड करने के लिए कहें ताकि आप {{assistantName}} के साथ चैट करना जारी रख सकें।",
@@ -1756,7 +1797,6 @@
       "customAmountError": "$1 और $10,000 के बीच दर्ज करें",
       "customDollarAmount": "कस्टम डॉलर राशि",
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
-      "redirecting": "पुनर्निर्देशन...",
       "upgradeToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए प्रो में अपग्रेड करें।",
       "upgradeToPro": "प्रो में अपग्रेड",
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
@@ -1921,6 +1961,7 @@
         "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
+        "presentationPlaceholderWithDefault": "आपका प्रेज़ेंटेशन किस बारे में है? (डिफ़ॉल्ट: {{format}})",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
@@ -1932,12 +1973,14 @@
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
       "presentationFormatSetup": {
-        "description": "हम यह डिफ़ॉल्ट सहेजकर आपकी प्रस्तुति बनाएँगे। आपके अनुरोध में स्पष्ट रूप से बताए गए फ़ॉर्मैट को प्राथमिकता मिलेगी।",
-        "htmlDescription": "ब्राउज़र में साझा करने के लिए उपयुक्त",
-        "pptxDescription": "PowerPoint में संपादन योग्य स्लाइड",
-        "saveAndGenerate": "सहेजें और बनाएँ",
-        "settingsHint": "इसे कभी भी सेटिंग → प्राथमिकताएँ → चैट में बदलें।",
-        "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट चुनें"
+        "htmlDescription": "एक लिंक जो किसी भी ब्राउज़र में खुलता है",
+        "htmlLabel": "वेब स्लाइड",
+        "openSettings": "सेटिंग्स खोलें",
+        "pptxDescription": "एक संपादन योग्य .pptx फ़ाइल",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} अब प्रेज़ेंटेशन के लिए आपका डिफ़ॉल्ट है",
+        "settingsHint": "हर नए प्रेज़ेंटेशन के लिए इस्तेमाल होगा। आप इसे सेटिंग्स में बदल सकते हैं।",
+        "title": "शुरू करने के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें"
       },
       "selectedModelUnavailable": "चयनित मॉडल उपलब्ध नहीं है. भेजने से पहले इसे कॉन्फ़िगर करें.",
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
@@ -2554,11 +2597,10 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "archive": "चैट आर्काइव करें",
+      "archive": "आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{assistantName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
-      "delete": "चैट हटाएं",
       "deleteDescription": "इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।",
       "deleteTitle": "चैट हटाएं?",
       "draft": "मसौदा",
@@ -2569,7 +2611,7 @@
       "markUnread": "अपठित के रूप में चिह्नित करें",
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
-      "mute": "चैट म्यूट करें",
+      "mute": "म्यूट करें",
       "muted": "म्यूट किया गया",
       "newChatWith": "{{assistantName}} के साथ नई चैट",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
@@ -2577,7 +2619,7 @@
       "noUnread": "कोई अपठित चैट नहीं",
       "openChatMenu": "चैट मेनू खोलें",
       "openListMenu": "चैट सूची मेनू खोलें",
-      "pin": "चैट पिन करें",
+      "pin": "पिन करें",
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
@@ -2585,8 +2627,8 @@
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
-      "unmute": "चैट अनम्यूट करें",
-      "unpin": "चैट अनपिन करें",
+      "unmute": "अनम्यूट करें",
+      "unpin": "अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "अपठित"
     },
@@ -5996,11 +6038,12 @@
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
         "presentationFormat": {
-          "description": "नई प्रस्तुतियों के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें",
+          "htmlDescription": "नए प्रेज़ेंटेशन ब्राउज़र में लिंक के रूप में खुलते हैं",
+          "pptxDescription": "नए प्रेज़ेंटेशन संपादन योग्य .pptx फ़ाइल के रूप में मिलते हैं",
           "saveFailed": "डिफ़ॉल्ट फ़ॉर्मैट सहेजा नहीं जा सका। फिर से कोशिश करें।",
           "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट",
-          "unavailable": "उपलब्ध नहीं",
-          "unset": "सेट नहीं है"
+          "unavailable": "आपका डिफ़ॉल्ट फ़ॉर्मैट लोड नहीं हो सका",
+          "unsetDescription": "पहली बार प्रेज़ेंटेशन बनाते समय हम पूछेंगे"
         },
         "sectionTitle": "चैट"
       },

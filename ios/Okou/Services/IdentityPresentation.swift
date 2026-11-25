@@ -1,4 +1,3 @@
-import CCState
 import ChatData
 import Foundation
 import ImageIO
@@ -11,7 +10,6 @@ import UIKit
 final class IdentityPresentation {
   let userID: String
   let cache: IdentityPresentationCache
-  let store = CCState.Store()
   private(set) var workspaces: [WorkspacePresentation] = []
   private(set) var preparedWorkspaceID: String?
   private var images: [String: IdentityImageRead] = [:]
@@ -102,7 +100,7 @@ final class IdentityPresentation {
     {
       images.removeValue(forKey: retired)?.close()
     }
-    let image = IdentityImageRead(entity: entity, cache: cache, store: store)
+    let image = IdentityImageRead(entity: entity, cache: cache)
     images[entity] = image
     return image
   }
@@ -115,70 +113,24 @@ final class IdentityPresentation {
   }
 }
 
-/// The graph owns request sharing/cancellation; image retains the last successful rendering.
+/// One identity image. It owns its request; `image` retains the last successful rendering.
 @MainActor @Observable
 private final class IdentityImageRead {
   private(set) var image: UIImage?
   private let entity: String
   private let cache: IdentityPresentationCache
   private let decoder = IdentityImageDecoder()
-  private let store: CCState.Store
-  private let source = CCState.State<URL?>(nil)
-  private let revision = CCState.State(0)
   private var failed = false
   private var url: URL?
+  /// The URL of the current request. A request is started again only for a new URL or a failure.
+  private var requested: URL??
   private var request: Task<Void, Never>?
   private var closed = false
   private var configured = false
 
-  init(entity: String, cache: IdentityPresentationCache, store: CCState.Store) {
+  init(entity: String, cache: IdentityPresentationCache) {
     self.entity = entity
     self.cache = cache
-    self.store = store
-  }
-
-  @ObservationIgnored private lazy var value = makeValue()
-
-  private func makeValue() -> Computed<Task<Void, Never>> {
-    Computed { [weak self] get, options in
-      guard let self, !closed else { return Task {} }
-      let url = try get(source)
-      _ = try get(revision)
-      failed = false
-      let signal = options.signal
-      let task = Task.immediate { @MainActor [weak self, cache, entity] in
-        guard let self else { return }
-        do {
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          guard !closed, self.url == url else { return }
-          guard let url else {
-            try await cache.removeImages(entity: entity)
-            return
-          }
-          let bytes = try await cache.image(entity: entity, url: url)
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          let decoded = await decoder.image(bytes)
-          try Task.checkCancellation()
-          try signal.checkCancellation()
-          guard !closed, self.url == url else { return }
-          if let decoded {
-            image = decoded
-          } else {
-            failed = true
-            try await cache.removeImages(entity: entity)
-          }
-        } catch is CancellationError {
-        } catch {
-          if !closed, !Task.isCancelled { failed = true }
-          IdentityPresentation.log(error)
-        }
-      }
-      request = task
-      signal.onCancel { task.cancel() }
-      return task
-    }
   }
 
   func configure(_ url: URL?) {
@@ -186,8 +138,9 @@ private final class IdentityImageRead {
     configured = true
     self.url = url
     request?.cancel()
+    request = nil
+    requested = nil
     if url == nil { image = nil }
-    do { try store.set(source, url) } catch { IdentityPresentation.log(error) }
   }
 
   func restore() async {
@@ -201,10 +154,37 @@ private final class IdentityImageRead {
 
   func refresh() {
     guard !closed, configured else { return }
-    do {
-      if failed { try store.set(revision, update: { $0 + 1 }) }
-      request = try store.get(value)
-    } catch { IdentityPresentation.log(error) }
+    if let requested, requested == url, !failed { return }
+    request?.cancel()
+    failed = false
+    requested = .some(url)
+    let url = url
+    request = Task.immediate { @MainActor [weak self, cache, entity, decoder] in
+      guard let self else { return }
+      do {
+        try Task.checkCancellation()
+        guard !closed, self.url == url else { return }
+        guard let url else {
+          try await cache.removeImages(entity: entity)
+          return
+        }
+        let bytes = try await cache.image(entity: entity, url: url)
+        try Task.checkCancellation()
+        let decoded = await decoder.image(bytes)
+        try Task.checkCancellation()
+        guard !closed, self.url == url else { return }
+        if let decoded {
+          image = decoded
+        } else {
+          failed = true
+          try await cache.removeImages(entity: entity)
+        }
+      } catch is CancellationError {
+      } catch {
+        if !closed, !Task.isCancelled { failed = true }
+        IdentityPresentation.log(error)
+      }
+    }
   }
 
   func close() {

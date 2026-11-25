@@ -45,6 +45,14 @@ function verification(ready: boolean): NonNullable<Domain["verification"]> {
     status: ready ? "ready" : "incomplete",
     eligibleForSelection: ready,
     checkedAt: "2026-11-25T00:00:00Z",
+    recordChecks: dnsRecords().map((record) => {
+      return {
+        ...record,
+        ...passed,
+        observedValues: [record.value],
+        checkedAt: "2026-11-25T00:00:00Z",
+      };
+    }),
     validationRecords: ready
       ? []
       : [

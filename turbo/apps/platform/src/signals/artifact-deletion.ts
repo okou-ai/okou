@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { animationFrame } from "signal-timers";
 import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
 import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
@@ -9,9 +9,16 @@ import { accept } from "../lib/accept.ts";
 import { i18n } from "../i18n/index.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { onRef, resetSignal } from "./utils.ts";
-import { pageSignal$ } from "./page-signal.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
 export type ArtifactDeletionSourceKind = "shared-thread" | "reference";
+
+export interface ArtifactDeletionIdentity {
+  readonly artifactId: string;
+  readonly sourceKind?: ArtifactDeletionSourceKind;
+}
+type PreviewDeletionIdentity = Computed<
+  Promise<ArtifactDeletionIdentity | null>
+>;
 
 const internalArtifactCatalogRevision$ = state(0);
 export const artifactCatalogRevision$ = computed((get) => {
@@ -59,30 +66,25 @@ const deleteOwnedArtifact$ = command(
   },
 );
 
-export function createArtifactDeletionSession(
-  artifactId: string,
+function createArtifactDeletionDetails(
+  source: string | PreviewDeletionIdentity,
   surface: "dialog" | "sidebar" | "page" | "catalog-row",
   sourceKind?: ArtifactDeletionSourceKind,
 ) {
-  const detailRequest$ = state<
-    ((createClient: ApiClientFactory) => Promise<ArtifactSummary | null>) | null
-  >(null);
-  const target$ = state<ArtifactSummary | null>(null);
-  const trigger$ = state<HTMLElement | null>(null);
-  const completed$ = state(false);
-  const requestFromSummary$ = command(
-    (
-      { set },
-      target: ArtifactSummary,
-      trigger: HTMLElement,
-      signal: AbortSignal,
-    ) => {
-      signal.throwIfAborted();
-      set(trigger$, trigger);
-      set(completed$, false);
-      set(target$, target);
+  const identity$ = computed(
+    async (get): Promise<ArtifactDeletionIdentity | null> => {
+      return typeof source === "string"
+        ? { artifactId: source, sourceKind }
+        : await get(source);
     },
   );
+  const detailRequest$ = state<
+    | ((
+        createClient: ApiClientFactory,
+        identity: ArtifactDeletionIdentity,
+      ) => Promise<ArtifactSummary | null>)
+    | null
+  >(null);
   // Shared pages carry source resource IDs. Only an owner-scoped catalog read
   // can resolve the identity accepted by deletion, including for public links.
   const detail$ = computed(async (get) => {
@@ -95,16 +97,19 @@ export function createArtifactDeletionSession(
     if (surface === "page" && !get(authenticatedSessionKey$)) {
       return null;
     }
-    return await request(get(apiClient$));
+    const identity = await get(identity$);
+    return identity ? await request(get(apiClient$), identity) : null;
   });
   return {
-    artifactId,
-    sourceKind,
+    identity$,
     detail$,
     initialize$: command(({ set }, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(detailRequest$, () => {
-        return async (createClient: ApiClientFactory) => {
+        return async (
+          createClient: ApiClientFactory,
+          { artifactId, sourceKind }: ArtifactDeletionIdentity,
+        ) => {
           signal.throwIfAborted();
           let catalogId = artifactId;
           if (sourceKind === "reference") {
@@ -138,6 +143,39 @@ export function createArtifactDeletionSession(
         };
       });
     }),
+  };
+}
+
+export function createArtifactDeletionSession(
+  source: string | PreviewDeletionIdentity,
+  surface: "dialog" | "sidebar" | "page" | "catalog-row",
+  sourceKind?: ArtifactDeletionSourceKind,
+) {
+  const { identity$, detail$, initialize$ } = createArtifactDeletionDetails(
+    source,
+    surface,
+    sourceKind,
+  );
+  const target$ = state<ArtifactSummary | null>(null);
+  const trigger$ = state<HTMLElement | null>(null);
+  const completed$ = state(false);
+  const requestFromSummary$ = command(
+    (
+      { set },
+      target: ArtifactSummary,
+      trigger: HTMLElement,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      set(trigger$, trigger);
+      set(completed$, false);
+      set(target$, target);
+    },
+  );
+  return {
+    identity$,
+    detail$,
+    initialize$,
     target$: computed((get) => {
       return get(target$);
     }),
@@ -212,51 +250,49 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
       );
     }),
   );
-  const identity$ = state<{
-    readonly artifactId: string;
-    readonly sourceKind?: ArtifactDeletionSourceKind;
+  const source$ = state<{
+    readonly identity: ArtifactDeletionIdentity | PreviewDeletionIdentity;
   } | null>(null);
   const session$ = computed((get) => {
-    const identity = get(identity$);
-    return identity
+    const source = get(source$);
+    return source
       ? createArtifactDeletionSession(
-          identity.artifactId,
+          "artifactId" in source.identity
+            ? source.identity.artifactId
+            : source.identity,
           surface,
-          identity.sourceKind,
+          "artifactId" in source.identity
+            ? source.identity.sourceKind
+            : undefined,
         )
       : null;
   });
-  const resetMountSignal$ = resetSignal();
-  const mountRef$ = onRef(
-    command(
-      ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
-        const artifactId = element.dataset.artifactId;
-        if (!artifactId) {
-          return;
-        }
-        const sourceKind = element.dataset.sourceKind;
-        if (
-          sourceKind !== undefined &&
-          sourceKind !== "reference" &&
-          sourceKind !== "shared-thread"
-        ) {
-          return;
-        }
-        const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
-        set(identity$, { artifactId, sourceKind });
-        const session = get(session$)!;
-        set(session.initialize$, signal);
-        signal.addEventListener(
-          "abort",
-          () => {
-            if (get(session$) === session) {
-              set(identity$, null);
-            }
-          },
-          { once: true },
-        );
-      },
-    ),
+  const resetSession$ = resetSignal();
+  const select$ = command(
+    (
+      { get, set },
+      identity: ArtifactDeletionIdentity | PreviewDeletionIdentity | null,
+      parentSignal: AbortSignal,
+    ) => {
+      parentSignal.throwIfAborted();
+      const signal = set(resetSession$, parentSignal);
+      const source = identity ? { identity } : null;
+      set(source$, source);
+      if (!source) {
+        return;
+      }
+      const session = get(session$)!;
+      set(session.initialize$, signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(source$) === source) {
+            set(source$, null);
+          }
+        },
+        { once: true },
+      );
+    },
   );
   const requestFromMenu$ = command(
     async ({ get, set }, signal: AbortSignal) => {
@@ -270,7 +306,14 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
   );
   return {
     session$,
-    mountRef$,
+    source$: computed((get) => {
+      return get(source$);
+    }),
+    identity$: computed(async (get) => {
+      const session = get(session$);
+      return session ? await get(session.identity$) : null;
+    }),
+    select$,
     menuTriggerRef$,
     requestFromMenu$,
   };
@@ -279,7 +322,7 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
 export type ArtifactDeletionSession = ReturnType<
   typeof createArtifactDeletionSession
 >;
-// Each preview surface owns its mounted artifact; no URL cache.
+// Each preview surface owns its selected artifact; no URL cache.
 const previewDeletionScopes = Object.freeze({
   dialog: createPreviewDeletionScope("dialog"),
   sidebar: createPreviewDeletionScope("sidebar"),

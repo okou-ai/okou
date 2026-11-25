@@ -22,6 +22,11 @@
     <string name="conversation_replies_collapsed">संक्षिप्त</string>
     <string name="conversation_work_elapsed">%1$s से काम जारी है</string>
     <string name="conversation_work_total">कुल %1$s काम किया</string>
+    <string name="conversation_work_seconds">%1$d से॰</string>
+    <string name="conversation_work_minutes">%1$d मि॰</string>
+    <string name="conversation_work_hours">%1$d घं॰</string>
+    <string name="conversation_work_minutes_seconds">%1$d मि॰ %2$d से॰</string>
+    <string name="conversation_work_hours_minutes">%1$d घं॰ %2$d मि॰</string>
     <string name="conversation_followup_continue">जारी रखें</string>
     <string name="conversation_feedback_pair">%1$s · %2$s</string>
     <plurals name="conversation_reply_steps">

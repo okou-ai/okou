@@ -77,6 +77,20 @@ export const browserContract: ClientDescriptor<typeof OriginalBrowserContract> =
         503: true,
       },
     },
+    restart: {
+      method: "POST",
+      path: "/api/browsers/restart",
+      statuses: {
+        200: true,
+        400: true,
+        401: true,
+        403: true,
+        404: true,
+        409: true,
+        502: true,
+        503: true,
+      },
+    },
     lease: {
       method: "POST",
       path: "/api/browsers/lease",

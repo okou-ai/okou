@@ -138,7 +138,7 @@ test("A title query reveals its conversation age and a nonmatching query shows t
   }
 });
 
-test("org-switcher-002 Workspaces with placeholder logos show only the default texture in the switcher", async () => {
+test("org-switcher-002 Workspaces with placeholder logos show the default texture with their initial in the switcher", async () => {
   await directory(
     context,
     () => {
@@ -150,11 +150,17 @@ test("org-switcher-002 Workspaces with placeholder logos show only the default t
   const current = await within(trigger).findByRole("img", { name: acme.name });
   expect(current).not.toHaveAttribute("src");
   expect(current).toBeEmptyDOMElement();
+  expect(current.dataset.initial).toBe("A");
   const panel = await switchMenu();
-  for (const org of [acme, design, invited]) {
+  for (const [org, initial] of [
+    [acme, "A"],
+    [design, "D"],
+    [invited, "I"],
+  ] as const) {
     const avatar = await within(panel).findByRole("img", { name: org.name });
     expect(avatar).not.toHaveAttribute("src");
     expect(avatar).toBeEmptyDOMElement();
+    expect(avatar.dataset.initial).toBe(initial);
   }
 });
 
