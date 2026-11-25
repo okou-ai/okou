@@ -13,14 +13,14 @@ import {
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
-import { type ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
+import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
   type UpdateSshConnectionRequest,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import { type SshCredentialResponse } from "@okouai/api-contracts/contracts/ssh-credentials";
+import type { SshCredentialResponse } from "@okouai/api-contracts/contracts/ssh-credentials";
 import userEvent from "@testing-library/user-event";
 import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {

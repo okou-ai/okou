@@ -33,7 +33,7 @@ import {
   uploadsContract,
   type UploadCompleteResponse,
 } from "@okouai/api-contracts/contracts/uploads";
-import { type UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { RUN_THREAD_ID, RUN_PATH } from "./chat-run-test-fixtures.ts";

@@ -18,7 +18,7 @@ import {
   clearPassageSelection,
 } from "./chat-capability-test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
-import { type UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   continuityAttachment,
   continuityDraft,

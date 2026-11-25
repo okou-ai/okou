@@ -28,7 +28,7 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import { type ProjectEvent } from "@okouai/api-contracts/validators/projects";
+import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import { mockNow } from "../../../lib/time.ts";
 import {
   continuityThread,

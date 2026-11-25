@@ -22,7 +22,7 @@ import {
   completedEvent,
   promptEvent,
 } from "./chat-run-test-fixtures.ts";
-import { type MockChatEventInput } from "./chat-event-test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import {
   chatThreadDraftContract,

@@ -4,9 +4,9 @@ import {
   findComposer,
   findFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import {
-  type ChatRecommendedFollowup,
-  type UserMessageDocument,
+import type {
+  ChatRecommendedFollowup,
+  UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -26,7 +26,7 @@ import {
   SECOND_ATTACHMENT_THREAD_ID,
   ATTACHMENT_RUN_ID,
 } from "./chat-attachment-test-helpers.ts";
-import { type MockChatEventInput } from "./chat-event-test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   findLink,
   RUN_PATH,

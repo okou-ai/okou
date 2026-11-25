@@ -16,7 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { type SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
+import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import userEvent from "@testing-library/user-event";
 
