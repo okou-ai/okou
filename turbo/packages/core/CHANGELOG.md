@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.878.0](https://github.com/okou-ai/okou/compare/core-v8.877.0...core-v8.878.0) (2026-11-25)
+
+
+### Features
+
+* **connectors:** support linkedin publishing oauth ([#50774](https://github.com/okou-ai/okou/issues/50774)) ([c63a475](https://github.com/okou-ai/okou/commit/c63a475bf35f4f53a6fa2607576001e81ead0834))
+* release project title reveal to all users ([#50781](https://github.com/okou-ai/okou/issues/50781)) ([6a3edf9](https://github.com/okou-ai/okou/commit/6a3edf9760c1205d5bd7368d4f89f562992df3a1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.126.1
+
 ## [8.877.0](https://github.com/okou-ai/okou/compare/core-v8.876.0...core-v8.877.0) (2026-11-25)
 
 
