@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.65.8](https://github.com/okou-ai/okou/compare/ios-v0.65.7...ios-v0.65.8) (2026-11-25)
+
+
+### CI
+
+* **ios:** remove the app review submission workflow ([#50737](https://github.com/okou-ai/okou/issues/50737)) ([dc6de0a](https://github.com/okou-ai/okou/commit/dc6de0af465f9e8b273502f5d6de0d0c8a87b48a))
+
+
+### Refactoring
+
+* **ios:** keep the conversation reading window in the session graph ([#50739](https://github.com/okou-ai/okou/issues/50739)) ([3edf334](https://github.com/okou-ai/okou/commit/3edf334954030f929e51cd046fe7c599eea55dc3))
+* **ios:** keep the sidebar draft marks in the session graph ([#50756](https://github.com/okou-ai/okou/issues/50756)) ([b63a254](https://github.com/okou-ai/okou/commit/b63a254b7e35c1ebbe2b045abb9549b0cb953da5))
+* **ios:** keep the workspace search input in the session graph ([#50750](https://github.com/okou-ai/okou/issues/50750)) ([e466437](https://github.com/okou-ai/okou/commit/e466437b3f09c0597efbbb7fa84bdb569acd57f7))
+
 ## [0.65.7](https://github.com/okou-ai/okou/compare/ios-v0.65.6...ios-v0.65.7) (2026-11-25)
 
 
