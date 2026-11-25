@@ -198,7 +198,7 @@ internal class ChatListProjectCreationRootTest : ChatListRootTestFixture() {
                 """
                     .trimIndent(),
             )
-            reconnectList(app)
+            refreshWorkspaceChats()
             compose.waitUntilDoesNotExist(hasTestTag("create_project_sheet"), 10_000)
             compose.onNodeWithTag("chat_filter_heading").assertTextContains("Archived")
             more.assertIsFocused()

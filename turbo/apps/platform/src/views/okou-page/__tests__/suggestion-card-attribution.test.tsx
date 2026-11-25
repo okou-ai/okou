@@ -16,7 +16,6 @@ import {
   type ChatThreadDraft,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   fill,
@@ -309,17 +308,14 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     },
   };
 }
-const features = {
-  [FeatureSwitchKey.AgentSuggestion]: true,
-} as const;
 // Suggestions live independently of the workspace new-chat draft.
 const suggestionPath = "/for-you";
 const homePath = "/";
 async function openSuggestions(): Promise<void> {
-  await setupPage({ context, path: suggestionPath, featureSwitches: features });
+  await setupPage({ context, path: suggestionPath });
 }
 async function openSuggestionsWithDraft(draft: string): Promise<void> {
-  await setupPage({ context, path: homePath, featureSwitches: features });
+  await setupPage({ context, path: homePath });
   await fill(composer(), draft);
   click(link(suggestionPath));
   await screen.findByRole("article");
@@ -513,7 +509,6 @@ test("A saved suggestion keeps its attribution when the reloaded composer joins 
   await setupPage({
     context: { ...context, signal },
     path: suggestionPath,
-    featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
@@ -540,7 +535,6 @@ test("A saved suggestion keeps its attribution when the reloaded composer joins 
   await setupPage({
     context: reloadedContext,
     path: `/chats/${threadId}`,
-    featureSwitches: features,
   });
   await screen.findByText("Referenced decision");
   await waitFor(() => {
@@ -664,7 +658,7 @@ test("agent-suggestions-021 A custom follow-up retains its editor on failure and
   expect(pool.consumed).toStrictEqual([]);
 });
 async function openForYou(path = "/for-you"): Promise<void> {
-  await setupPage({ context, path, featureSwitches: features });
+  await setupPage({ context, path });
 }
 async function activeForYouCard(title: string): Promise<HTMLElement> {
   return await screen.findByRole("article", { name: title });
@@ -700,7 +694,6 @@ test("A hidden For you page leaves its card unread until the member sees it", as
   await setupPage({
     context,
     path: suggestionPath,
-    featureSwitches: features,
   });
   await activeForYouCard("Review the pending decision");
   click(link("/workflows"));

@@ -4495,7 +4495,6 @@
   },
   "myOkou": {
     "conflict": "Suas instruções salvas foram alteradas em outro lugar. Seu rascunho foi mantido. Revise ou copie antes de recarregar as instruções salvas.",
-    "description": "Suas instruções para o Okou neste espaço de trabalho",
     "discard": "Descartar",
     "draftKept": "Seu rascunho permanece nesta aba ao mudar de página ou espaço de trabalho.",
     "instructions": "Instruções",
@@ -5776,7 +5775,6 @@
           "title": "Preferência"
         },
         "proactiveLearning": {
-          "description": "Escolha como o Okou trabalha de forma proativa.",
           "title": "Proactive"
         },
         "tools": {
@@ -6185,7 +6183,6 @@
         "title": "Resumo matinal"
       },
       "proactiveSuggestions": {
-        "description": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Temporariamente indisponível.",

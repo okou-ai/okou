@@ -66,7 +66,6 @@
     <string name="workflow_notion_child">Notion 子页面已创建</string>
     <string name="workflow_notion_item">Notion 数据库条目已创建</string>
     <string name="workflow_notion_updated">Notion 页面内容已更新</string>
-    <string name="workflow_offline_changes">联网后可保存，修改已保留。</string>
     <string name="workflow_pause">暂停</string>
     <string name="workflow_paused">自动化已暂停</string>
     <string name="workflow_private">仅自己</string>
@@ -103,7 +102,6 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d 项自动化启用</item>
     </plurals>
-    <string name="workflow_draft_network_failed">未能打开新聊天草稿。已有草稿已保留，请检查网络后重试。</string>
     <string name="workflow_rule_change_failed">未能更改此规则。</string>
     <string name="workflow_rule_network_failed">未能更改此规则，请检查网络后重试。</string>
     <string name="workflow_write_conflict">保存时此工作流已更新。你的修改已保留。</string>

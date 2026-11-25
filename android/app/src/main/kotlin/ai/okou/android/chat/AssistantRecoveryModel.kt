@@ -61,7 +61,6 @@ class AssistantRecoveryModel(
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     retryWhenActive: Flow<Boolean> = emptyFlow(),
-    private val online: () -> Boolean = { true },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(FailureRecoveryState())
     val uiState = mutable.asStateFlow()
@@ -118,7 +117,9 @@ class AssistantRecoveryModel(
                 val checkpoint =
                     history.checkpoint(selected.threadId) ?: throw RecoveryUnavailable()
                 val data =
-                    ChatDependencyRetry().read(online = online) {
+                    ChatDependencyRetry().read(
+                        isCurrent = { !closed && authorized() && ticket == revision },
+                    ) {
                         requireCurrent(selected, ticket)
                         resources(selected, checkpoint)
                     }

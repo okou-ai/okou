@@ -4415,7 +4415,6 @@
   },
   "myOkou": {
     "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
-    "description": "このワークスペースでのあなた専用の Okou への指示",
     "discard": "破棄",
     "draftKept": "ページやワークスペースを切り替えても、下書きはこのブラウザータブに保持されます。",
     "instructions": "指示",
@@ -5685,7 +5684,6 @@
           "title": "好み"
         },
         "proactiveLearning": {
-          "description": "Okou が先回りして行う作業を設定します。",
           "title": "Proactive"
         },
         "tools": {
@@ -6090,7 +6088,6 @@
         "title": "モーニングブリーフ"
       },
       "proactiveSuggestions": {
-        "description": "接続済みの情報源を毎時間確認し、ユーザープロフィールを毎日更新して、役立つ次のアクションを提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",

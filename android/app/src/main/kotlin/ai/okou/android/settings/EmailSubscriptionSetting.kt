@@ -85,7 +85,7 @@ private fun EmailSubscriptionSheet(
         modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
         titleInset = 8.dp,
         progress = {
-            if (state.read.refreshing && !state.offline) {
+            if (state.read.refreshing) {
                 ContentReadProgress(
                     R.string.settings_email_refreshing,
                     background = MaterialTheme.colorScheme.surface,

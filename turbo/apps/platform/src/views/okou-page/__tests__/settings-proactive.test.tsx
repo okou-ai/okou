@@ -74,7 +74,6 @@ async function visit(entries: WorkflowAutomationsListEntry[]) {
     path: "/?settings=debug",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
       [FeatureSwitchKey.OkouDebug]: true,
     },
   });
@@ -259,8 +258,8 @@ test("debug-morning-brief-005 The keyboard-triggered brief stays busy until the 
   );
 });
 
-async function settings(rollout: boolean, enabled = false) {
-  let active = enabled;
+async function settings() {
+  let active = false;
   context.mocks.api(feedContract.sources, ({ respond }) => {
     return respond(200, {
       suggestions: active,
@@ -290,14 +289,13 @@ async function settings(rollout: boolean, enabled = false) {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: rollout ? "/?settings=my-okou" : "/?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: rollout },
+    path: "/?settings=my-okou",
   });
   return await screen.findByRole("region", { name: "Proactive" });
 }
 
 test("proactive-learning-settings-001 My Okou offers Morning brief before Suggestions and keeps them independent", async () => {
-  const region = await settings(true);
+  const region = await settings();
   expect(screen.getByRole("heading", { name: "My Okou" })).toBeInTheDocument();
   const morning = await within(region).findByRole("switch", {
     name: "Morning brief",
@@ -319,19 +317,8 @@ test("proactive-learning-settings-001 My Okou offers Morning brief before Sugges
   expect(morning).not.toBeChecked();
 });
 
-test("proactive-learning-settings-002 Morning brief stays available outside the Suggestions rollout", async () => {
-  const region = await settings(false);
-  const morning = await within(region).findByRole("switch", {
-    name: "Morning brief",
-  });
-  await waitFor(() => {
-    expect(morning).toBeEnabled();
-  });
-  expect(within(region).getAllByRole("switch")).toStrictEqual([morning]);
-});
-
 test("proactive-suggestions-settings-001 the member can opt in and save an explicit opt-out independently", async () => {
-  const region = await settings(true);
+  const region = await settings();
   const toggle = await within(region).findByRole("switch", {
     name: "Suggestions",
   });

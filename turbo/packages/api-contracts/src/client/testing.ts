@@ -174,6 +174,7 @@ import {
   computerUseHostsContract as OriginalComputerUseHostsContract,
   computerUseSessionHostsContract as OriginalComputerUseSessionHostsContract,
   computerUseWriteCommandContract as OriginalComputerUseWriteCommandContract,
+  runnerAppStateContract as OriginalRunnerAppStateContract,
 } from "../contracts/computer-use";
 import {
   computerUseAuditEventsContract,
@@ -182,6 +183,7 @@ import {
   computerUseHostsContract,
   computerUseSessionHostsContract,
   computerUseWriteCommandContract,
+  runnerAppStateContract,
 } from "./computer-use";
 import { connectedConnectorsContract as OriginalConnectedConnectorsContract } from "../contracts/connected-connectors";
 import { connectedConnectorsContract } from "./connected-connectors";
@@ -907,6 +909,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [computerUseHostsContract, OriginalComputerUseHostsContract],
   [computerUseSessionHostsContract, OriginalComputerUseSessionHostsContract],
   [computerUseWriteCommandContract, OriginalComputerUseWriteCommandContract],
+  [runnerAppStateContract, OriginalRunnerAppStateContract],
   [connectedConnectorsContract, OriginalConnectedConnectorsContract],
   [connectorAccountsContract, OriginalConnectorAccountsContract],
   [connectorCatalogContract, OriginalConnectorCatalogContract],

@@ -246,33 +246,11 @@ class PersonalInstructionsSettingsTest {
             }
         }
         input.performTextInputSelection(TextRange(5, 8))
-        val chats = compose.runOnIdle {
-            checkNotNull(
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready,
-                )
-                .chats
-        }
-        fun connectivity(online: Boolean) {
-            compose.runOnIdle { app.connectivity.value = online }
-            compose.waitUntil(10_000) {
-                compose.runOnIdle { chats.uiState.value.offline == !online }
-            }
-        }
-        val offlineHint = compose.onNodeWithText("Connect to save your changes.")
-        connectivity(false)
-        save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
-        offlineHint.assertIsDisplayed()
-        connectivity(true)
-        offlineHint.assertDoesNotExist()
         input.assertIsFocused()
         assertEquals(
             TextRange(5, 8),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
         app.fixture.externalEdit("Changed on Web")
         compose.runOnIdle { model.refresh() }
         awaitPhase(InstructionsPhase.Conflict)

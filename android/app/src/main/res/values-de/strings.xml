@@ -88,8 +88,6 @@
     <string name="updates_current">Du verwendest die neueste Version</string>
     <string name="updates_preparing">Vorbereitung…</string>
     <string name="updates_installing">Installation…</string>
-    <string name="updates_connect_to_check">Stelle eine Internetverbindung her, um nach Updates zu suchen.</string>
-    <string name="updates_connect_to_download">Stelle eine Internetverbindung her, um das Update herunterzuladen.</string>
     <string name="updates_check">Nach Updates suchen</string>
     <string name="updates_toolbar">Update</string>
     <string name="updates_download">Update herunterladen</string>
@@ -127,13 +125,10 @@
     <string name="settings_saving">Wird gespeichert…</string>
     <string name="settings_sign_out_title">Abmelden?</string>
     <string name="settings_sign_out_body">Um Okou auf diesem Gerät erneut zu nutzen, melde dich wieder an. Entwürfe bleiben bei diesem Konto.</string>
-    <string name="updates_waiting_to_check">Warten auf Prüfung</string>
     <string name="updates_waiting_to_install">Warte auf Installation</string>
     <string name="updates_retry_download">Download wiederholen</string>
     <string name="updates_retry_check">Erneut prüfen</string>
-    <string name="updates_waiting_to_download">Warten auf Download</string>
     <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
-    <string name="instructions_save_when_online">Stelle eine Verbindung her, um Änderungen zu speichern.</string>
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_utc">Koordinierte Weltzeit</string>
     <string name="settings_timezone_format">%1$s (UTC%2$s)</string>

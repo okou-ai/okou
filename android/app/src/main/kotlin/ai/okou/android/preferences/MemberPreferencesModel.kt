@@ -20,10 +20,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
 enum class PreferenceStatus {
@@ -190,7 +188,6 @@ class MemberPreferencesModel(
     private val service: WorkspaceSession,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    connectivity: Flow<Boolean> = emptyFlow(),
     initialPending: PreferenceChange? = null,
 ) : ViewModel() {
     private val mutable =
@@ -199,35 +196,15 @@ class MemberPreferencesModel(
     private val saveNotice = MutableStateFlow<PreferenceSaveNotice?>(null)
     internal val notices = saveNotice.asStateFlow()
     private var retired = false
-    private var online = true
     private var request: Job? = null
     private var recovery: Job? = null
     private var saveFailures = 0
     private var readFailures = 0
     private var readRequested = false
-    private var settingsVisible = false
     private var needsWriteReadback = false
     private var failedWrite: PreferenceChange? = null
 
     init {
-        viewModelScope.launch {
-            connectivity.collect { connected ->
-                val reconnected = connected && !online
-                online = connected
-                if (!connected) {
-                    recovery?.cancel()
-                    recovery = null
-                } else if (reconnected) {
-                    readFailures = 0
-                    if (mutable.value.pending == null && settingsVisible) readRequested = true
-                    if (
-                        mutable.value.recovering ||
-                            mutable.value.status != PreferenceStatus.SaveFailed
-                    )
-                        synchronize()
-                }
-            }
-        }
         if (mutable.value.pending != null) synchronize()
     }
 
@@ -272,7 +249,7 @@ class MemberPreferencesModel(
         if (!current()) return
         saveNotice.value = null
         if (saveFailures <= finiteReadRetryDelays.size) saveFailures = 0
-        mutable.value = mutable.value.copy(pending = change, recovering = !online)
+        mutable.value = mutable.value.copy(pending = change, recovering = false)
         readRequested = false
         clearRecovery()
         synchronize()
@@ -292,7 +269,6 @@ class MemberPreferencesModel(
     fun refreshFromForeground() = refresh()
 
     internal fun settingsVisibilityChanged(visible: Boolean) {
-        settingsVisible = visible
         if (visible) refresh()
         else if (mutable.value.pending == null) {
             readRequested = false
@@ -303,9 +279,7 @@ class MemberPreferencesModel(
     fun retry() {
         if (!current()) return
         clearRecovery()
-        val state = mutable.value
-        if (state.pending == null) readRequested = true
-        else if (!online) mutable.value = state.copy(recovering = true)
+        if (mutable.value.pending == null) readRequested = true
         synchronize()
     }
 
@@ -317,7 +291,7 @@ class MemberPreferencesModel(
     }
 
     private fun synchronize() {
-        if (!current() || !online || request != null || recovery != null) return
+        if (!current() || request != null || recovery != null) return
         val change = mutable.value.pending
         if (change == null && !readRequested) return
         readRequested = false
@@ -484,7 +458,7 @@ class MemberPreferencesModel(
                     recovering = retry,
                 )
             readRequested = retry
-            if (wait != null && online) scheduleRecovery(wait)
+            if (wait != null) scheduleRecovery(wait)
             return false
         }
         if (
@@ -505,10 +479,10 @@ class MemberPreferencesModel(
         saveFailures = if (wait != null) saveFailures + 1 else finiteReadRetryDelays.size + 1
         if (wait != null) {
             mutable.value = state.copy(status = PreferenceStatus.SaveFailed, recovering = true)
-            if (online) scheduleRecovery(wait)
+            scheduleRecovery(wait)
             return false
         }
-        if (sent != null && online) return true // Last write still needs authoritative readback.
+        if (sent != null) return true // Last write still needs authoritative readback.
         if (state.status != PreferenceStatus.SaveUnconfirmed)
             saveNotice.value = PreferenceSaveNotice.Unconfirmed()
         mutable.value = state.copy(status = PreferenceStatus.SaveUnconfirmed, recovering = false)

@@ -44,7 +44,6 @@ class ProactivePreferencesService internal constructor(private val api: ApiClien
         }
 
     private suspend fun readSuggestions(): ProactivePreference? {
-        if (api.featureSwitches().effectiveSwitches["agentSuggestion"] != true) return null
         return try {
             coroutineScope {
                 val sources = async { api.suggestionFeedSources() }

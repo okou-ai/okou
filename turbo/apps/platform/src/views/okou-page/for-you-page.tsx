@@ -45,8 +45,6 @@ import {
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { proactiveSettingsInMyOkou$ } from "../../signals/proactive-settings.ts";
-import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {
   forYouCover$,
@@ -459,7 +457,6 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
 }
 
 function ForYouHeader() {
-  const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
   const deck = useLastResolved(forYouDeck$);
   const cards = deck?.progressCards ?? [];
@@ -580,7 +577,6 @@ function ForYouHeader() {
             : null}
         </span>
       </div>
-      {proactiveInMyOkou === false && <ForYouSources />}
     </header>
   );
 }

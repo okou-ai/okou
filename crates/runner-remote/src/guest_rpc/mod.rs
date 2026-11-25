@@ -36,6 +36,7 @@ pub struct Runtime {
     pub ssh: Option<Arc<ssh::SshRuntime>>,
     pub vnc: Option<Arc<vnc::VncRuntime>>,
     pub usage: Option<run_usage::Runtime>,
+    pub app_state: Option<crate::app_state::Runtime>,
     connectors: Option<runner_provider::ConnectorRuntimeSyncHandle>,
 }
 
@@ -69,6 +70,7 @@ pub(crate) struct Request {
 
 #[derive(Clone)]
 struct Consumers {
+    app_state: Option<Arc<crate::app_state::Run>>,
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
     usage: Option<Arc<run_usage::Run>>,
@@ -89,6 +91,7 @@ impl Runtime {
             vnc,
             usage,
             connectors: None,
+            app_state: None,
         }
     }
 
@@ -188,6 +191,10 @@ impl Runtime {
             run,
             task_native,
             Consumers {
+                app_state: self
+                    .app_state
+                    .as_ref()
+                    .map(|runtime| runtime.for_run(run, cancel.child_token())),
                 ssh: task_ssh,
                 vnc: task_vnc,
                 usage,
@@ -288,6 +295,7 @@ async fn dispatch(
     consumers: Consumers,
 ) {
     let Consumers {
+        app_state,
         ssh,
         vnc,
         usage,
@@ -404,6 +412,26 @@ async fn dispatch(
                 request,
             })
             .await;
+        } else {
+            scope.error(input, ErrorCode::Unavailable).await;
+        }
+    } else if matches!(
+        request.method.as_str(),
+        "computer.appState.info" | "computer.appState.receive"
+    ) {
+        if let Some(runtime) = app_state {
+            runtime
+                .dispatch(Request {
+                    input,
+                    lease,
+                    run,
+                    started,
+                    deadline: scope.deadline,
+                    cancelled: scope.cancelled,
+                    sandbox_cancelled: scope.sandbox_cancelled,
+                    request,
+                })
+                .await;
         } else {
             scope.error(input, ErrorCode::Unavailable).await;
         }

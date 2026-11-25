@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">वे सदस्यता खाते चुनें जिनका आप “%1$s” में इस्तेमाल करते हैं।</string>
     <string name="settings_accounts_scope_empty">“%1$s” में मॉडल खाते</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_offline">ऑफ़लाइन हैं। खाता बदलने के लिए कनेक्ट करें।</string>
-    <string name="settings_accounts_offline_connect">ऑफ़लाइन हैं। मॉडल खाता जोड़ने के लिए कनेक्ट करें।</string>
     <string name="settings_accounts_unavailable">फ़िलहाल मॉडल खाते नहीं दिखाए जा सकते।</string>
     <string name="settings_accounts_update_failed">मॉडल खाते रीफ़्रेश नहीं हो सके। पिछली जानकारी दिखाई जा रही है।</string>
     <string name="settings_accounts_empty">कोई मॉडल खाता नहीं जुड़ा है</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">क्रेडिट बैलेंस</string>
     <string name="settings_credit_scope">“%1$s” में Okou क्रेडिट</string>
-    <string name="settings_credit_offline">ऑफ़लाइन हैं। पिछला बैलेंस दिखाया जा रहा है।</string>
     <string name="settings_credit_update_failed">रीफ़्रेश नहीं हो सका। पिछला बैलेंस दिखाया जा रहा है।</string>
     <string name="settings_credit_unavailable">फ़िलहाल बैलेंस नहीं दिखाया जा सकता।</string>
     <string name="settings_credit_member">व्यक्तिगत उपयोग पैक</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">दूसरा प्लान चाहिए</string>
     <string name="settings_model_fast">तेज़ मोड</string>
     <string name="settings_model_fast_usage">चालू होने पर, ChatGPT सदस्यता की खपत मानक मोड की तुलना में %1$s गुना होती है</string>
-    <string name="settings_model_load_when_online">फिर से ऑनलाइन होने पर सामग्री लोड होगी।</string>
     <string name="settings_model_save_rolled_back">डिफ़ॉल्ट मॉडल सेव नहीं हो सका। पिछली सेटिंग बहाल कर दी गई है।</string>
     <string name="settings_model_save_unconfirmed">डिफ़ॉल्ट मॉडल सेव होने की पुष्टि अभी नहीं हुई है।</string>
     <string name="settings_model_effort">तर्क का स्तर</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">सक्रिय सेवाएँ</string>
     <string name="settings_proactive_scope">ये सेटिंग “%1$s” पर लागू होती हैं।</string>
     <string name="settings_proactive_loading">सक्रिय सेवाएँ लोड हो रही हैं</string>
-    <string name="settings_proactive_offline">ऑफ़लाइन। यह सेटिंग बदलने के लिए कनेक्ट करें।</string>
     <string name="settings_proactive_needs_timezone">डिलीवरी शेड्यूल करने के लिए समय क्षेत्र चुनें।</string>
     <string name="settings_proactive_read_failed">यह सेटिंग अभी लोड नहीं हो सकी।</string>
     <string name="settings_proactive_refresh_failed">सिंक नहीं हुआ। पिछली पुष्टि की गई सेटिंग दिखाई जा रही है।</string>

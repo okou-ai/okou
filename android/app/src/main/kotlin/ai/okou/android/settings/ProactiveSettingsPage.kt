@@ -132,7 +132,7 @@ internal fun ProactiveSettingsPage(
     fun focusFor(setting: ProactiveSetting) =
         if (focusTarget == setting) Modifier.focusRequester(relatedFocus) else Modifier
     val current by preferences.uiState.collectAsStateWithLifecycle()
-    val canSelect = needsTimezone && morning.online && current.pending?.timezoneToWrite == null
+    val canSelect = needsTimezone && current.pending?.timezoneToWrite == null
     val select: (String) -> Unit = { preferences.selectTimezone(it, missingOnServer = true) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ProactiveDetail(stringResource(R.string.settings_proactive_scope, workspace))
@@ -177,7 +177,7 @@ internal fun ProactiveSettingsPage(
 }
 
 private val ProactiveSettingState.loading: Boolean
-    get() = confirmed == null && online && !readFailed
+    get() = confirmed == null && !readFailed
 
 @Composable
 private fun MorningBriefRow(
@@ -264,7 +264,6 @@ private fun SuggestionsRow(
 
 private fun ProactiveSettingState.detail(default: Int): Int =
     when {
-        !online -> R.string.settings_proactive_offline
         checking != null -> R.string.settings_proactive_save_unconfirmed
         confirmed?.needsTimezone == true -> R.string.settings_proactive_needs_timezone
         readFailed && confirmed == null -> R.string.settings_proactive_read_failed
