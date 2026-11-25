@@ -86,7 +86,8 @@ data class ComposerJournal(
     val newChatConnectorOverrides: List<ChatConnectorOverride> = emptyList(),
     val retainedDraftConnectorOverrides: Map<String, List<ChatConnectorOverride>> = emptyMap(),
     val newChatModel: DraftModelSelection? = null,
-    val retainedDraftModels: Map<String, DraftModelSelection> = emptyMap(),
+    // A recorded null restores server-default inheritance for a rejected new chat.
+    val retainedDraftModels: Map<String, DraftModelSelection?> = emptyMap(),
 )
 
 internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =

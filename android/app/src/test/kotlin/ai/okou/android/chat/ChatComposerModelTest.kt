@@ -582,6 +582,36 @@ internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
     }
 
     @Test
+    fun restoredRejectedDraftKeepsInheritingTheDefault() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use my personal default")
+        val createThread = service.create
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        assertEquals(CanonicalOptional.Absent, service.creates.single().model)
+        val journal = store.load(identity).journal
+        val rejected = journal.retainedDrafts.keys.single()
+        assertTrue(rejected in journal.retainedDraftModels)
+        assertNull(journal.retainedDraftModels[rejected])
+
+        model.editDraftModel(target, DraftModelSelection("gpt-test", fast = true))
+        model.restoreDraft(target, rejected)
+        service.create = createThread
+        model.send(target)
+        runCurrent()
+
+        val restored = service.creates.last()
+        assertEquals(CanonicalOptional.Absent, restored.model)
+        assertEquals(CanonicalOptional.Absent, restored.serviceTier)
+        assertNull(restored.reasoningEffort)
+        assertEquals("Use my personal default", service.requests.single().prompt)
+    }
+
+    @Test
     fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
         val model = create(false, identity)
         model.open(existing)

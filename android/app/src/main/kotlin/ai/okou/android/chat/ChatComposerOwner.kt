@@ -346,8 +346,9 @@ internal class ChatComposerOwner(
                 newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
                 retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
                 newChatModel =
-                    (if (draftKey == "new:") journal.retainedDraftModels[key] else null)
-                        ?: journal.newChatModel,
+                    if (draftKey == "new:" && key in journal.retainedDraftModels)
+                        journal.retainedDraftModels[key]
+                    else journal.newChatModel,
                 retainedDraftModels = journal.retainedDraftModels - key,
                 drafts =
                     journal.drafts +
@@ -1024,17 +1025,14 @@ internal class ChatComposerOwner(
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
                         val choices = latest.connectorOverrides
-                        val draftModel = latest.draftModel
                         replace(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
                                     journal.retainedDrafts + (latest.eventId to latest.send.prompt),
                                 retainedDraftModels =
-                                    if (draftModel == null) journal.retainedDraftModels
-                                    else
-                                        journal.retainedDraftModels +
-                                            (latest.eventId to draftModel),
+                                    journal.retainedDraftModels +
+                                        (latest.eventId to latest.draftModel),
                                 retainedDraftConnectorOverrides =
                                     if (choices.isEmpty()) journal.retainedDraftConnectorOverrides
                                     else
