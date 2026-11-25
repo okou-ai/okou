@@ -56,7 +56,8 @@ final class ConnectorConnectEntryTests: XCTestCase {
         FixtureData.response(request, connected: connected.withLock { $0 }))
     }
     let service = ChatConnectorService(client: fixture.client)
-    let store = ConnectorActionStore(service: service, didContinue: {}, didFail: { _ in })
+    let store = ConnectorActionStore(
+      service: service, graph: makeTestWorkspaceGraph(), didContinue: {}, didFail: { _ in })
     defer { store.close() }
     store.activate(.configuration(target: .builtin("slack"), threadID: nil))
     try await waitForBusinessResult { store.active?.canSubmit == true }
@@ -126,7 +127,8 @@ final class ConnectorConnectEntryTests: XCTestCase {
     }
     let service = ChatConnectorService(client: fixture.client)
     let store = ConnectorActionStore(
-      service: service, didContinue: {}, didFail: { _ in }, pollSleep: clock.sleep)
+      service: service, graph: makeTestWorkspaceGraph(),
+      didContinue: {}, didFail: { _ in }, pollSleep: clock.sleep)
     defer { store.close() }
     let action = ChatConnectorAction.configuration(
       target: .builtin("slack"), threadID: nil, connectionID: FixtureData.accountID)
@@ -194,7 +196,8 @@ final class ConnectorConnectEntryTests: XCTestCase {
       return try XCTUnwrap(FixtureData.response(request, connected: false, grantKind: "auth-code"))
     }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client), didContinue: {}, didFail: { _ in },
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: {}, didFail: { _ in },
       providerApplication: UnavailableProviderApplication(), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("gmail"), threadID: nil))

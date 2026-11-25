@@ -54,7 +54,8 @@ final class ManagedConnectorActionTests: XCTestCase {
       }
     }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client), didContinue: {}, didFail: { _ in })
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: {}, didFail: { _ in })
     defer { store.close() }
     let action: ChatConnectorAction
     if initiallyConnected {

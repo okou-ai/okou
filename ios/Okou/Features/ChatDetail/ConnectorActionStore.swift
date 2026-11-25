@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -90,7 +91,8 @@ final class ConnectorActionStore {
   private let pollSleep: @Sendable (Duration) async throws -> Void
 
   init(
-    service: ChatConnectorService, commands: ChatCommands? = nil, thread: ChatThread? = nil,
+    service: ChatConnectorService, graph: CCState.Store, commands: ChatCommands? = nil,
+    thread: ChatThread? = nil,
     didContinue: @escaping @MainActor () async -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     providerApplication: any ConnectorProviderApplication = SystemConnectorProviderApplication(),
@@ -100,7 +102,7 @@ final class ConnectorActionStore {
   ) {
     self.service = service
     self.providerApplication = providerApplication
-    resources = ConnectorActionResources(service: service, didFail: didFail)
+    resources = ConnectorActionResources(service: service, graph: graph, didFail: didFail)
     self.commands = commands
     self.thread = thread
     self.didContinue = didContinue
