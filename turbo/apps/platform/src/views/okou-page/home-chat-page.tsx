@@ -182,19 +182,17 @@ const GREETING_TOKEN_STEP_MS = 70;
  * The space belongs to the outer span, not to the animated box, so a word's
  * blur cannot smear into its neighbour's gap.
  */
-function GreetingTokens({
-  text,
-  animate,
-  onAnimationComplete,
-}: {
-  text: string;
-  animate: boolean;
-  onAnimationComplete: () => void;
-}) {
+function GreetingTokens({ text }: { text: string }) {
+  const animate = useGet(chatGreetingShouldAnimate$);
+  const onAnimationComplete = useSet(finishChatGreetingEntrance$);
   const words = text.split(" ");
 
   return (
-    <span aria-hidden data-slot="chat-tagline-text">
+    <span
+      aria-hidden
+      data-slot="chat-tagline-text"
+      data-greeting-entering={animate || undefined}
+    >
       {words.map((word, index) => {
         return (
           <span key={`${String(index)}-${word}`}>
@@ -227,21 +225,13 @@ function GreetingTokens({
   );
 }
 
-/**
- * The new-chat page of an Agent, and of a Project. A Project's page is the
- * same page: it keeps the greeting, because the conversation is still with
- * Okou, and the composer's toolbar names the Project the chat starts in.
- */
-export function WorkspaceComposerPage() {
+function WorkspaceGreeting() {
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
 
-  const composerSignals = useGet(workspaceChatComposerSignals$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
-  const animateGreeting = useGet(chatGreetingShouldAnimate$);
-  const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = tagline;
 
   const taglineHeading = (
@@ -250,37 +240,41 @@ export function WorkspaceComposerPage() {
       data-testid="chat-tagline"
       className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
     >
-      <GreetingTokens
-        text={tagline}
-        animate={animateGreeting}
-        onAnimationComplete={finishGreetingEntrance}
-      />
+      <GreetingTokens text={tagline} />
     </h2>
   );
-  const heading =
-    tagline === "" ? null : (
-      <div
-        key={greetingIdentity}
-        data-slot="chat-greeting"
-        data-testid="chat-greeting"
-        className="flex min-w-0 max-w-full flex-1 items-center gap-4"
+  return tagline === "" ? null : (
+    <div
+      key={greetingIdentity}
+      data-slot="chat-greeting"
+      data-testid="chat-greeting"
+      className="group/greeting flex min-w-0 max-w-full flex-1 items-center gap-4"
+    >
+      {/* On the first greeting, the avatar follows the words' entrance marker. */}
+      <span
+        data-slot="chat-greeting-avatar"
+        className="shrink-0 motion-safe:group-has-[[data-greeting-entering]]/greeting:animate-chat-greeting-avatar"
       >
-        {/* The avatar fades in place while the greeting words settle.
-            Only the first greeting in this App lifetime takes the entrance;
-            opening another new chat gets no second one. */}
-        <span
-          data-slot="chat-greeting-avatar"
-          className={cn(
-            "shrink-0",
-            animateGreeting && "motion-safe:animate-chat-greeting-avatar",
-          )}
-        >
-          <MyOkouAvatarButton size={56} />
-        </span>
-        {taglineHeading}
-      </div>
-    );
-  return <CapabilityHomePage signals={composerSignals} heading={heading} />;
+        <MyOkouAvatarButton size={56} />
+      </span>
+      {taglineHeading}
+    </div>
+  );
+}
+
+/**
+ * The new-chat page of an Agent, and of a Project. A Project's page is the
+ * same page: it keeps the greeting, because the conversation is still with
+ * Okou, and the composer's toolbar names the Project the chat starts in.
+ */
+export function WorkspaceComposerPage() {
+  const composerSignals = useGet(workspaceChatComposerSignals$);
+  return (
+    <CapabilityHomePage
+      signals={composerSignals}
+      heading={<WorkspaceGreeting />}
+    />
+  );
 }
 
 export function HomeChatPage({ project = false }: { project?: boolean }) {
