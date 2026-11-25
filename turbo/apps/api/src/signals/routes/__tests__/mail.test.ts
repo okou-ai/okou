@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -1175,38 +1176,30 @@ describe("POST /api/mail/drafts/link", () => {
     expect(draftReads).toBe(0);
   });
 
-  it("keeps Gmail draft read 400s as server failures with finite diagnostics", async () => {
+  it("returns a generic server error when Gmail rejects the draft read", async () => {
     const fixture = await seedGmailMailCardFixture();
+    let draftReads = 0;
     server.use(
       http.get(`${GMAIL_API_BASE}/drafts/${GMAIL_DRAFT_ID}`, () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: 400,
-              status: "INVALID_ARGUMENT",
-              message: "Private provider text",
-              errors: [
-                { reason: "invalid" },
-                { reason: "private-reason@example.invalid" },
-              ],
-            },
-          },
-          { status: 400 },
-        );
+        draftReads += 1;
+        return new HttpResponse(null, { status: 400 });
       }),
     );
 
-    await expect(
-      client({ rethrowErrors: true }).linkDraft({
-        headers: authHeaders(),
-        body: {
-          threadId: fixture.thread.id,
-          gmailDraftId: GMAIL_DRAFT_ID,
-        },
+    const app = createApp({ signal: context.signal, routes: mailRoutes });
+    const response = await app.request(mailContract.linkDraft.path, {
+      method: mailContract.linkDraft.method,
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: fixture.thread.id,
+        gmailDraftId: GMAIL_DRAFT_ID,
       }),
-    ).rejects.toThrow(
-      /^Failed to read Gmail draft \(HTTP 400; reason: invalid, unrecognized\)$/u,
-    );
+    });
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Internal server error",
+    });
+    expect(draftReads).toBe(1);
   });
 
   it("converges simultaneous same-chat links and preserves replay and cross-chat conflict", async () => {
