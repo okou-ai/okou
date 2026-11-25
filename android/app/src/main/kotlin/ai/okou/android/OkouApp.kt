@@ -1705,6 +1705,7 @@ internal fun OkouApp(
                                 val workflowRead =
                                     remember(
                                         workflowState?.catalog,
+                                        workflowState?.catalogRefreshing,
                                         workflowState?.catalogFailure,
                                         searchState.keyword,
                                     ) {

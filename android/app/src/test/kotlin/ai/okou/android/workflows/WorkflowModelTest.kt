@@ -21,6 +21,8 @@ import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
+import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.searchCatalog
 import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -247,6 +249,10 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             model.searchVisibilityChanged(true)
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
+            val matches = model.state.value.searchCatalog("release") as SearchRead.Ready
+            assertTrue(matches.refreshing)
+            assertEquals(listOf(service.summary.id), matches.rows.map { it.id })
+            assertEquals(SearchRead.Loading, model.state.value.searchCatalog("unmatched"))
             assertEquals(2, service.catalogReads)
             assertEquals(1, service.ruleReads)
             assertEquals(1, service.connectionReads)
@@ -259,8 +265,13 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
             assertNull(model.state.value.catalogFailure)
+            assertEquals(matches, model.state.value.searchCatalog("release"))
 
             model.searchVisibilityChanged(false)
+            assertEquals(
+                matches.copy(refreshing = false),
+                model.state.value.searchCatalog("release"),
+            )
             advanceTimeBy(600_000)
             val newCatalog = CompletableDeferred<List<WorkflowSummary>>()
             service.catalogRead = { newCatalog.await() }
@@ -268,10 +279,42 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertNull(model.state.value.catalog)
             assertNull(model.state.value.catalogFailure)
+            assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
             newCatalog.complete(saved)
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
+            assertEquals(
+                SearchRead.Ready(emptyList<Nothing>()),
+                model.state.value.searchCatalog("unmatched"),
+            )
         }
+
+    @Test
+    fun searchReplacesAFailedInitialCatalogWithLoadingOnReconnect() = check { service, model ->
+        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
+        model.connectivityChanged(true)
+        model.searchVisibilityChanged(true)
+        runCurrent()
+
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(SearchRead.Failed, model.state.value.searchCatalog("release"))
+
+        val recovered = CompletableDeferred<List<WorkflowSummary>>()
+        service.catalogRead = { recovered.await() }
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
+        recovered.complete(emptyList())
+        runCurrent()
+        assertEquals(
+            SearchRead.Ready(emptyList<Nothing>()),
+            model.state.value.searchCatalog("release"),
+        )
+    }
 
     @Test
     fun switchingBackShowsCachedDetailAndReadsTheLatestWhileItIsVisible() =
