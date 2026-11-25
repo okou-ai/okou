@@ -48,6 +48,26 @@ function createDomainState(site$: SiteSignal) {
     );
     return result.status === 200 ? result.body : null;
   });
+  const setup$ = computed(async (get) => {
+    const settings = await get(settings$);
+    if (!get(open$) || !get(managedDomainId$) || !settings?.allowed) {
+      return null;
+    }
+    const domain = settings.domains.find((item) => {
+      return item.id === get(managedDomainId$);
+    });
+    if (!domain || domain.removing) {
+      return null;
+    }
+    const response = await accept(
+      get(apiClient$)(hostContract).siteDomainSetup({
+        params: { siteId: settings.siteId, domainId: domain.id },
+        fetchOptions: { cache: "no-store" },
+      }),
+      [200, 402, 404],
+    );
+    return response.status === 200 ? response.body : null;
+  });
   const effectiveUrl$ = computed((get) => {
     return get(saved$)?.effectiveUrl ?? null;
   });
@@ -61,6 +81,7 @@ function createDomainState(site$: SiteSignal) {
     notice$,
     removalConfirmation$,
     settings$,
+    setup$,
     effectiveUrl$,
   };
 }

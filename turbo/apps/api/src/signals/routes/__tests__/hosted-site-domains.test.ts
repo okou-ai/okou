@@ -1,6 +1,11 @@
 import { createDeferredPromise } from "../../utils";
 import { now } from "../../../lib/time";
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  randomUUID,
+  generateKeyPairSync,
+  verify as verifySignature,
+} from "node:crypto";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -67,6 +72,8 @@ async function scenario(paid = true) {
   return { owner, api, prepared, name };
 }
 function domainProvider() {
+  let extraRecords: { txt_name: string; txt_value: string }[] = [];
+  const recordValues = new Map<string, string[]>();
   let txt = "",
     correct = true,
     certificate = "pending",
@@ -86,7 +93,10 @@ function domainProvider() {
     id: string;
     hostname: string;
     status: string;
-    ssl: { status: string };
+    ssl: {
+      status: string;
+      validation_records?: { txt_name: string; txt_value: string }[];
+    };
   } | null = null;
   server.use(
     http.get(
@@ -113,21 +123,38 @@ function domainProvider() {
       const name = url.searchParams.get("name")!;
       const type = url.searchParams.get("type");
       const Answer =
-        type === "TXT"
-          ? [{ name, type: 16, data: JSON.stringify(correct ? txt : "wrong") }]
-          : type === "A"
-            ? [{ name, type: 1, data: "203.0.113.3" }]
-            : type === "AAAA"
-              ? []
-              : mode === "apex"
+        type === "TXT" && recordValues.has(name)
+          ? recordValues.get(name)!.map((value) => {
+              return {
+                name,
+                type: 16,
+                data:
+                  value === "certificate-one"
+                    ? '"certificate-" "one"'
+                    : JSON.stringify(value),
+              };
+            })
+          : type === "TXT"
+            ? [
+                {
+                  name,
+                  type: 16,
+                  data: JSON.stringify(correct ? txt : "wrong"),
+                },
+              ]
+            : type === "A"
+              ? [{ name, type: 1, data: "203.0.113.3" }]
+              : type === "AAAA"
                 ? []
-                : [
-                    {
-                      name,
-                      type: 5,
-                      data: mode === "loop" ? name : "connect.okou.app.",
-                    },
-                  ];
+                : mode === "apex"
+                  ? []
+                  : [
+                      {
+                        name,
+                        type: 5,
+                        data: mode === "loop" ? name : "connect.okou.app.",
+                      },
+                    ];
       return HttpResponse.json({ Status: 0, Answer });
     }),
     http.get(
@@ -136,7 +163,15 @@ function domainProvider() {
         return HttpResponse.json({
           success: true,
           result: provider
-            ? [{ ...provider, ssl: { status: certificate } }]
+            ? [
+                {
+                  ...provider,
+                  ssl: {
+                    status: certificate,
+                    validation_records: extraRecords,
+                  },
+                },
+              ]
             : [],
         });
       },
@@ -165,7 +200,7 @@ function domainProvider() {
           id: randomUUID(),
           hostname: body.hostname,
           status: "active",
-          ssl: { status: certificate },
+          ssl: { status: certificate, validation_records: extraRecords },
         };
         if (createGate) {
           if (!createGate.entered.settled()) {
@@ -187,7 +222,10 @@ function domainProvider() {
         }
         return HttpResponse.json({
           success: true,
-          result: provider && { ...provider, ssl: { status: certificate } },
+          result: provider && {
+            ...provider,
+            ssl: { status: certificate, validation_records: extraRecords },
+          },
         });
       },
     ),
@@ -212,6 +250,12 @@ function domainProvider() {
     ),
   );
   return {
+    extraRecords: (value: typeof extraRecords) => {
+      extraRecords = value;
+    },
+    recordValues: (name: string, values: string[]) => {
+      recordValues.set(name, values);
+    },
     deletes: () => {
       return deletes;
     },
@@ -873,3 +917,354 @@ test("a provider identity mismatch disables selection and never deletes another 
   await accept(removeDomainRequest(fixture, domain), [503]);
   expect(external.deletes()).toBe(0);
 });
+
+test("verifies each additional TXT value independently without treating certificate activation as DNS evidence", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  const name = `_acme-challenge.${domain.hostname}`;
+  external.extraRecords([
+    { txt_name: name, txt_value: "certificate-one" },
+    { txt_name: name, txt_value: "certificate-two" },
+  ]);
+  external.recordValues(name, ["certificate-one"]);
+  const checked = (await accept(verifyDomainRequest(fixture, domain), [200]))
+    .body.domains[0]!;
+  expect(checked.ready).toBeFalsy();
+  expect(checked.verification!.checks.certificate.status).toBe("pending");
+  expect(checked.verification!.recordChecks).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name,
+        value: "certificate-one",
+        status: "passed",
+        observedValues: ["certificate-one"],
+      }),
+      expect.objectContaining({
+        name,
+        value: "certificate-two",
+        status: "pending",
+        observedValues: ["certificate-one"],
+      }),
+    ]),
+  );
+  const read = (
+    await accept(
+      fixture.api.siteDomains({
+        headers,
+        params: { siteId: fixture.prepared.siteId },
+      }),
+      [200],
+    )
+  ).body;
+  expect(read.domains[0]!.verification!.recordChecks).toStrictEqual(
+    checked.verification!.recordChecks,
+  );
+  external.recordValues(name, ["certificate-one", "certificate-two"]);
+  const next = (await accept(verifyDomainRequest(fixture, checked), [200])).body
+    .domains[0]!;
+  expect(
+    next
+      .verification!.recordChecks!.filter((record) => {
+        return record.name === name;
+      })
+      .every((record) => {
+        return record.status === "passed";
+      }),
+  ).toBeTruthy();
+  expect(next.ready).toBeFalsy();
+});
+
+function dnsSetupProvider(
+  kind: "cloudflare" | "vercel",
+  options: { supported?: boolean; publicKey?: string } = {},
+) {
+  const base =
+    kind === "cloudflare"
+      ? "https://api.cloudflare.com/client/v4/dns/domainconnect"
+      : "https://domainconnect.vercel.com";
+  const api =
+    kind === "cloudflare" ? base : "https://vercel.com/api/domain-connect";
+  const ux =
+    kind === "cloudflare"
+      ? "https://dash.cloudflare.com/domainconnect"
+      : "https://vercel.com/domain-connect";
+  server.use(
+    http.get("https://cloudflare-dns.com/dns-query", ({ request }) => {
+      const url = new URL(request.url);
+      const name = url.searchParams.get("name")!;
+      const discovery = name === "_domainconnect.customer-example.net";
+      const key = name === "_test._domainconnect.okou.ai";
+      return HttpResponse.json({
+        Status: 0,
+        Answer: discovery
+          ? [
+              {
+                name,
+                type: kind === "vercel" ? 5 : 16,
+                data:
+                  kind === "vercel"
+                    ? "domainconnect.vercel.com."
+                    : JSON.stringify(base.slice("https://".length)),
+              },
+            ]
+          : key && options.publicKey
+            ? [
+                {
+                  name,
+                  type: 16,
+                  data: JSON.stringify(`p=1,a=RS256,d=${options.publicKey}`),
+                },
+              ]
+            : [],
+      });
+    }),
+    http.get(`${base}/v2/customer-example.net/settings`, () => {
+      return HttpResponse.json({
+        providerId: kind === "cloudflare" ? "cloudflare.com" : "vercel.com",
+        providerName: kind,
+        urlAPI: api,
+        urlSyncUX: ux,
+      });
+    }),
+    http.get(
+      `${api}/v2/domainTemplates/providers/okou.ai/services/hosted-site`,
+      () => {
+        return new HttpResponse(null, {
+          status: options.supported === false ? 404 : 200,
+        });
+      },
+    ),
+  );
+}
+
+test.each(["cloudflare", "vercel"] as const)(
+  "offers a signed %s apply URL only for the owned domain and supported Okou template",
+  async (kind) => {
+    const fixture = await scenario();
+    domainProvider();
+    const domain = (await add(fixture)).domains[0]!;
+    const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    mockEnv(
+      "HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64",
+      keys.privateKey
+        .export({ type: "pkcs8", format: "der" })
+        .toString("base64"),
+    );
+    mockEnv("HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST", "_test");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    dnsSetupProvider(kind, {
+      publicKey: keys.publicKey
+        .export({ type: "spki", format: "der" })
+        .toString("base64"),
+    });
+    const setup = (
+      await accept(
+        fixture.api.siteDomainSetup({
+          headers,
+          params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+        }),
+        [200],
+      )
+    ).body;
+    expect(setup.status).toBe("supported");
+    const url = new URL(setup.automaticUrl!);
+    expect(url.pathname).toContain(
+      "/providers/okou.ai/services/hosted-site/apply",
+    );
+    expect(url.searchParams.get("domain")).toBe("customer-example.net");
+    expect(url.searchParams.get("host")).toBe(
+      domain.hostname.slice(0, -".customer-example.net".length),
+    );
+    expect(url.searchParams.get("target")).toBe("connect.okou.app");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://app.okou.ai/artifacts",
+    );
+    expect([...url.searchParams.keys()].at(-1)).toBe("sig");
+    const signature = url.searchParams.get("sig")!;
+    url.searchParams.delete("sig");
+    url.searchParams.delete("key");
+    expect(
+      verifySignature(
+        "RSA-SHA256",
+        Buffer.from(url.searchParams.toString()),
+        keys.publicKey,
+        Buffer.from(signature, "base64"),
+      ),
+    ).toBeTruthy();
+    const saved = (
+      await accept(
+        fixture.api.siteDomains({
+          headers,
+          params: { siteId: fixture.prepared.siteId },
+        }),
+        [200],
+      )
+    ).body;
+    expect(saved.selectedDomainId).toBeNull();
+    expect(saved.domains[0]!.verification).toBeNull();
+  },
+);
+
+test("keeps manual DNS setup when only other templates are supported", async () => {
+  const fixture = await scenario();
+  domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  dnsSetupProvider("cloudflare", { supported: false });
+  const setup = (
+    await accept(
+      fixture.api.siteDomainSetup({
+        headers,
+        params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(setup).toMatchObject({
+    status: "manual",
+    providerName: "Cloudflare",
+    controlPanelUrl: "https://dash.cloudflare.com/",
+    automaticUrl: null,
+  });
+});
+
+test("never follows an untrusted DNS discovery endpoint", async () => {
+  const fixture = await scenario();
+  domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  server.use(
+    http.get("https://cloudflare-dns.com/dns-query", ({ request }) => {
+      const name = new URL(request.url).searchParams.get("name")!;
+      return HttpResponse.json({
+        Status: 0,
+        Answer: [{ name, type: 16, data: JSON.stringify("127.0.0.1/private") }],
+      });
+    }),
+  );
+  const setup = (
+    await accept(
+      fixture.api.siteDomainSetup({
+        headers,
+        params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(setup.automaticUrl).toBeNull();
+  expect(setup.controlPanelUrl).toBeNull();
+});
+
+test("domain setup is denied when the feature is off and remains scoped to the website owner", async () => {
+  const fixture = await scenario();
+  domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  const other = createBddApi(context).user();
+  await createBddApi(context).readMe(other);
+  const otherDenied = await accept(
+    client(other)(hostContract).siteDomainSetup({
+      headers,
+      params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+    }),
+    [404],
+  );
+  expect(otherDenied.status).toBe(404);
+  await accept(
+    client(fixture.owner)(featureSwitchesContract).update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.HostedSiteCustomDomains]: false } },
+    }),
+    [200],
+  );
+  const disabled = await accept(
+    fixture.api.siteDomainSetup({
+      headers,
+      params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+    }),
+    [403],
+  );
+  expect(disabled.status).toBe(403);
+});
+
+test("a supported template without a published signing key keeps manual setup available", async () => {
+  const fixture = await scenario();
+  domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  mockEnv(
+    "HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64",
+    keys.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64"),
+  );
+  mockEnv("HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST", "_unpublished");
+  dnsSetupProvider("vercel");
+  const setup = (
+    await accept(
+      fixture.api.siteDomainSetup({
+        headers,
+        params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+      }),
+      [200],
+    )
+  ).body;
+  expect(setup).toMatchObject({
+    status: "manual",
+    providerName: "Vercel",
+    automaticUrl: null,
+  });
+});
+
+test("free workspaces cannot request automatic DNS setup", async () => {
+  const fixture = await scenario(false);
+  const denied = await accept(
+    fixture.api.siteDomainSetup({
+      headers,
+      params: { siteId: fixture.prepared.siteId, domainId: randomUUID() },
+    }),
+    [402],
+  );
+  expect(denied.status).toBe(402);
+});
+
+test.each(["untrusted URL", "invalid JSON"])(
+  "keeps manual setup for provider settings with %s",
+  async (failure) => {
+    const fixture = await scenario();
+    domainProvider();
+    const domain = (await add(fixture)).domains[0]!;
+    dnsSetupProvider("vercel");
+    server.use(
+      http.get(
+        "https://domainconnect.vercel.com/v2/customer-example.net/settings",
+        () => {
+          if (failure === "invalid JSON") {
+            return new HttpResponse("not JSON", {
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return HttpResponse.json({
+            providerId: "vercel.com",
+            providerName: "Vercel",
+            urlAPI: "https://untrusted.example/collect",
+            urlSyncUX: "https://vercel.com/domain-connect",
+          });
+        },
+      ),
+    );
+    const setup = (
+      await accept(
+        fixture.api.siteDomainSetup({
+          headers,
+          params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+        }),
+        [200],
+      )
+    ).body;
+    expect(setup).toMatchObject({
+      status: "unavailable",
+      providerName: "Vercel",
+      controlPanelUrl: "https://vercel.com/domains",
+      automaticUrl: null,
+    });
+  },
+);

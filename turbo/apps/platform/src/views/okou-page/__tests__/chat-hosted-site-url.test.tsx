@@ -1,5 +1,8 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import type {
+  hostedDomainSettingsSchema,
+  hostedDomainSetupSchema,
+} from "@okouai/api-contracts/contracts/hosted-site-domains";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -35,7 +38,10 @@ const address = (slug: string) => {
 };
 const deployment = address("dpl-8a4d4487-18c0-44cd-a09d-206056d499b0");
 const siteId = "be311386-caaa-4bfb-a74a-7d694c27c41e";
-async function publishedReport(customDomains = false) {
+async function publishedReport(
+  customDomains = false,
+  setup?: zInfer<typeof hostedDomainSetupSchema>,
+) {
   let slug = original;
   const site = () => {
     return {
@@ -93,6 +99,17 @@ async function publishedReport(customDomains = false) {
         runId: NAVIGATION_ARTIFACT_RUN_ID,
       },
     ],
+  });
+  context.mocks.api(hostContract.siteDomainSetup, ({ respond }) => {
+    return respond(
+      200,
+      setup ?? {
+        providerName: "Cloudflare",
+        controlPanelUrl: "https://dash.cloudflare.com/",
+        automaticUrl: null,
+        status: "manual",
+      },
+    );
   });
   context.mocks.api(hostContract.siteUrl, ({ respond }) => {
     return respond(200, site());
@@ -447,4 +464,185 @@ test("a workspace without an active subscription cannot select an existing verif
   expect(
     getNamedButton("Manage verified.customer-example.net", menu),
   ).toBeEnabled();
+});
+
+test("all five verification checks explain why three passed checks still cannot enable the domain", async () => {
+  const hostname = "www.customer-example.net";
+  const domainId = "00000000-0000-4000-8000-000000000091";
+  const revision = "00000000-0000-4000-8000-000000000092";
+  const checkedAt = "2026-11-25T00:00:00Z";
+  const records = [
+    {
+      type: "TXT" as const,
+      name: `_okou-challenge.${hostname}`,
+      value: "okou-verification=demo",
+    },
+    { type: "CNAME" as const, name: hostname, value: "connect.okou.app" },
+    {
+      type: "TXT" as const,
+      name: `_acme-challenge.${hostname}`,
+      value: "certificate-one",
+    },
+    {
+      type: "TXT" as const,
+      name: `_acme-challenge.${hostname}`,
+      value: "certificate-two",
+    },
+  ];
+  const passed = { status: "passed" as const, message: "Verified" };
+  const settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: address(original),
+    effectiveUrl: address(original),
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [
+      {
+        id: domainId,
+        hostname,
+        revision,
+        ready: false,
+        removing: false,
+        records,
+        verification: {
+          status: "incomplete",
+          eligibleForSelection: false,
+          checkedAt,
+          validationRecords: records.slice(2),
+          checks: {
+            ownership: passed,
+            dns: passed,
+            certificate: passed,
+            provider: {
+              status: "pending",
+              message:
+                "Your domain is still activating. Wait, then click Verify again.",
+            },
+            route: {
+              status: "not_checked",
+              message: "Waiting for domain activation",
+            },
+          },
+          recordChecks: records.map((record, index) => {
+            return {
+              ...record,
+              checkedAt,
+              observedValues:
+                index === 3 ? ["certificate-one"] : [record.value],
+              status: index === 3 ? ("pending" as const) : ("passed" as const),
+              message:
+                index === 3
+                  ? "The record value does not match. Update it at your DNS provider, then click Verify."
+                  : "Record matches",
+            };
+          }),
+        },
+      },
+    ],
+  };
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const preview = await publishedReport(true);
+  const menu = await openHostedSiteShare(preview);
+  click(getNamedButton("Customize URL", menu));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  click(await findNamedButton(`Manage ${hostname}`, menu));
+  await within(menu).findByText("Domain activation");
+  expect(within(menu).getByText("Website routing")).toBeInTheDocument();
+  expect(
+    within(menu).getByText(
+      "Your domain is still activating. Wait, then click Verify again.",
+    ),
+  ).toBeInTheDocument();
+  expect(getNamedButton("Verify", menu)).toBeEnabled();
+  expect(
+    queryAllByRoleFast("button", menu).find((button) => {
+      return button.textContent === "Save";
+    }),
+  ).toBeUndefined();
+  expect(
+    queryAllByRoleFast("button", menu).find((button) => {
+      return (
+        button.getAttribute("aria-label") === `Copy CNAME value ${hostname}`
+      );
+    }),
+  ).toBeUndefined();
+  const name = `_acme-challenge.${hostname}`;
+  click(getNamedButton(`Copy TXT name ${name}`, menu));
+  await waitFor(() => {
+    return expect(clipboard.writes.at(-1)).toBe(name);
+  });
+  click(getNamedButton(`Copy TXT value ${name}`, menu));
+  await waitFor(() => {
+    return expect(clipboard.writes.at(-1)).toBe("certificate-two");
+  });
+  await expect(
+    findNamedLink("Open Cloudflare DNS", menu),
+  ).resolves.toHaveAttribute("href", "https://dash.cloudflare.com/");
+  expect(
+    queryAllByRoleFast("link", menu).find((link) => {
+      return link.textContent?.includes("Configure website records");
+    }),
+  ).toBeUndefined();
+});
+
+test("a supported DNS setup opens provider consent without verifying or saving the hostname", async () => {
+  const hostname = "www.customer-example.net";
+  const domainId = "00000000-0000-4000-8000-000000000093";
+  const revision = "00000000-0000-4000-8000-000000000094";
+  const settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: address(original),
+    effectiveUrl: address(original),
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [
+      {
+        id: domainId,
+        hostname,
+        revision,
+        ready: false,
+        removing: false,
+        records: [],
+        verification: null,
+      },
+    ],
+  };
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  const automaticUrl =
+    "https://vercel.com/domain-connect/v2/domainTemplates/providers/okou.ai/services/hosted-site/apply?domain=customer-example.net&sig=test";
+  const preview = await publishedReport(true, {
+    providerName: "Vercel",
+    controlPanelUrl: "https://vercel.com/domains",
+    automaticUrl,
+    status: "supported",
+  });
+  const menu = await openHostedSiteShare(preview);
+  click(getNamedButton("Customize URL", menu));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  click(await findNamedButton(`Manage ${hostname}`, menu));
+  const link = await findNamedLink("Configure website records", menu);
+  expect(link).toHaveAttribute("href", automaticUrl);
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(
+    within(menu).getByText(
+      "This configures the website CNAME and ownership TXT. Add any extra certificate records below, then return here and click Verify.",
+    ),
+  ).toBeInTheDocument();
+  expect(getNamedButton("Verify", menu)).toBeEnabled();
+  expect(within(menu).getByText("No verification yet")).toBeInTheDocument();
 });

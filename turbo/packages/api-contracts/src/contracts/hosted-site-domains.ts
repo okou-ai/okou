@@ -18,10 +18,26 @@ export const hostedDomainCheckSchema = object({
   status: zEnum(["passed", "pending", "failed", "unavailable", "not_checked"]),
   message: string(),
 });
+export const hostedDomainRecordCheckSchema = object({
+  type: zEnum(["TXT", "CNAME", "A", "AAAA"]),
+  name: string(),
+  value: string(),
+  status: hostedDomainCheckSchema.shape.status,
+  message: string(),
+  observedValues: array(string()),
+  checkedAt: iso.datetime(),
+});
+export const hostedDomainSetupSchema = object({
+  providerName: string().nullable(),
+  controlPanelUrl: string().nullable(),
+  automaticUrl: string().nullable(),
+  status: zEnum(["supported", "manual", "unavailable"]),
+});
 export const hostedDomainVerificationSchema = object({
   status: zEnum(["ready", "incomplete", "unavailable"]),
   eligibleForSelection: boolean().default(false),
   checkedAt: iso.datetime(),
+  recordChecks: array(hostedDomainRecordCheckSchema).optional(),
   validationRecords: array(
     object({
       type: zEnum(["TXT", "CNAME", "A", "AAAA"]),
@@ -103,6 +119,15 @@ export function hostedSiteDomainRoutes() {
       body: object({ expectedRevision: uuid() }),
       responses: { 200: hostedDomainSettingsSchema, ...ownerResponses },
       summary: "Verify a custom hostname once and return all check results",
+    },
+    siteDomainSetup: {
+      method: "GET",
+      path: "/api/host/sites/:siteId/domains/:domainId/setup",
+      pathParams: domainParams,
+      headers: authHeadersSchema,
+      responses: { 200: hostedDomainSetupSchema, ...ownerResponses },
+      summary:
+        "Discover DNS setup options for an owned domain and Okou's template",
     },
     removeSiteDomain: {
       method: "DELETE",

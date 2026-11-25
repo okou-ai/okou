@@ -1,8 +1,6 @@
 import { settle } from "../utils";
 import { command } from "ccstate";
-import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -12,6 +10,7 @@ import {
   addHostedSiteDomain$,
   hostedDomainProbe$,
   readHostedSiteDomains$,
+  readHostedSiteDomainSetup$,
   removeHostedSiteDomain$,
   resolveHostedCustomDomain$,
   selectHostedSiteDomain$,
@@ -19,9 +18,7 @@ import {
 } from "../services/hosted-site-domains.service";
 import type { RouteEntry } from "../route-entry";
 
-async function ownerResponse(
-  operation: Promise<zInfer<typeof hostedDomainSettingsSchema>>,
-) {
+async function ownerResponse<T>(operation: Promise<T>) {
   const result = await settle(operation);
   if (result.ok) {
     return { status: 200 as const, body: result.value };
@@ -43,6 +40,19 @@ const list$ = command(({ get, set }, signal: AbortSignal) => {
       {
         ...get(organizationAuthContext$),
         ...get(pathParamsOf(hostContract.siteDomains)),
+      },
+      signal,
+    ),
+  );
+});
+const setup$ = command(({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  return ownerResponse(
+    set(
+      readHostedSiteDomainSetup$,
+      {
+        ...get(organizationAuthContext$),
+        ...get(pathParamsOf(hostContract.siteDomainSetup)),
       },
       signal,
     ),
@@ -156,6 +166,10 @@ const ownerAuth = {
 } as const;
 export const hostedSiteDomainRoutes: readonly RouteEntry[] = [
   { route: hostContract.siteDomains, handler: authRoute(ownerAuth, list$) },
+  {
+    route: hostContract.siteDomainSetup,
+    handler: authRoute(ownerAuth, setup$),
+  },
   { route: hostContract.addSiteDomain, handler: authRoute(ownerAuth, add$) },
   {
     route: hostContract.verifySiteDomain,

@@ -4,7 +4,10 @@ import {
 } from "./hosted-domain-request";
 import { joinAll } from "../utils";
 import { array, number, object, string, type infer as zInfer } from "zod";
-import type { hostedDomainCheckSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import type {
+  hostedDomainRecordCheckSchema,
+  hostedDomainCheckSchema,
+} from "@okouai/api-contracts/contracts/hosted-site-domains";
 
 type Check = zInfer<typeof hostedDomainCheckSchema>;
 const answerSchema = object({
@@ -13,7 +16,11 @@ const answerSchema = object({
     object({ name: string(), type: number(), data: string() }),
   ).optional(),
 });
-async function query(name: string, type: string, signal: AbortSignal) {
+export async function queryHostedDomainDns(
+  name: string,
+  type: string,
+  signal: AbortSignal,
+) {
   const url = new URL("https://cloudflare-dns.com/dns-query");
   url.search = new URLSearchParams({ name, type }).toString();
   const result = answerSchema.parse(
@@ -38,7 +45,7 @@ export async function verifyDomainOwnership(
   signal: AbortSignal,
 ): Promise<Check> {
   const name = `_okou-challenge.${hostname}`;
-  const result = await query(name, "TXT", signal);
+  const result = await queryHostedDomainDns(name, "TXT", signal);
   const values = (result.Answer ?? [])
     .filter((answer) => {
       return answer.type === 16 && normalize(answer.name) === name;
@@ -77,7 +84,7 @@ export async function verifyDomainRouting(
       };
     }
     seen.add(current);
-    const result = await query(current, "CNAME", signal);
+    const result = await queryHostedDomainDns(current, "CNAME", signal);
     const cnames = result.Answer?.filter((answer) => {
       return answer.type === 5 && normalize(answer.name) === current;
     });
@@ -98,8 +105,8 @@ export async function verifyDomainRouting(
   }
   if (apexAddresses.length) {
     const [a, aaaa] = await joinAll([
-      query(hostname, "A", signal),
-      query(hostname, "AAAA", signal),
+      queryHostedDomainDns(hostname, "A", signal),
+      queryHostedDomainDns(hostname, "AAAA", signal),
     ]);
     const addresses = [...(a.Answer ?? []), ...(aaaa.Answer ?? [])]
       .filter((answer) => {
@@ -121,5 +128,51 @@ export async function verifyDomainRouting(
     status: "pending",
     message:
       "Point your domain to the provided CNAME target. For a root domain, use supported flattening or the allocated Apex Proxying addresses.",
+  };
+}
+
+/** TXT chunks in one RR are concatenated; separate RRs remain separate values. */
+export function hostedDomainTxtValues(data: string): string {
+  return Array.from(data.matchAll(/"((?:[^"\\]|\\.)*)"/gu), (match) => {
+    return JSON.parse(`"${match[1]}"`) as string;
+  }).join("");
+}
+
+export async function verifyHostedDomainRecord(
+  record: {
+    readonly type: "TXT" | "CNAME" | "A" | "AAAA";
+    readonly name: string;
+    readonly value: string;
+  },
+  checkedAt: string,
+  signal: AbortSignal,
+): Promise<zInfer<typeof hostedDomainRecordCheckSchema>> {
+  const result = await queryHostedDomainDns(record.name, record.type, signal);
+  const type = { TXT: 16, CNAME: 5, A: 1, AAAA: 28 }[record.type];
+  const values = (result.Answer ?? [])
+    .filter((answer) => {
+      return (
+        answer.type === type &&
+        normalize(answer.name) === normalize(record.name)
+      );
+    })
+    .map((answer) => {
+      return record.type === "TXT"
+        ? hostedDomainTxtValues(answer.data)
+        : normalize(answer.data);
+    });
+  const expected =
+    record.type === "TXT" ? record.value : normalize(record.value);
+  const matched = values.includes(expected);
+  return {
+    ...record,
+    checkedAt,
+    observedValues: values,
+    status: matched ? "passed" : "pending",
+    message: matched
+      ? "Record matches"
+      : values.length
+        ? "The record value does not match. Update it at your DNS provider, then click Verify."
+        : "Record not found yet. Add it at your DNS provider, allow DNS to update, then click Verify.",
   };
 }

@@ -1,5 +1,6 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
-import { Check, Copy, Loader2 } from "lucide-react";
+import { Collapsible } from "@base-ui/react/collapsible";
+import { Check, Copy, Loader2, ChevronDown, ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -121,6 +122,107 @@ function NewDomainForm({ session, operations }: DomainPanelProps) {
     </form>
   );
 }
+function DomainRecord({
+  session,
+  record,
+  domain,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly record: Domain["records"][number];
+  readonly domain: Domain;
+}) {
+  const { t } = useTranslation();
+  const copy = useSet(session.domains.copy$);
+  const signal = useGet(session.signal$);
+  const checked = domain.verification?.recordChecks?.find((check) => {
+    return (
+      check.type === record.type &&
+      check.name === record.name &&
+      check.value === record.value
+    );
+  });
+  const passed = checked?.status === "passed";
+  if (!signal) {
+    return null;
+  }
+  return (
+    <Collapsible.Root
+      defaultOpen={!passed}
+      className="border-b border-border last:border-b-0"
+    >
+      <Collapsible.Trigger className="flex w-full items-center gap-2 p-3 text-left text-xs hover:bg-muted/50">
+        {passed ? (
+          <Check size={14} className="shrink-0 text-green-600" />
+        ) : (
+          <span aria-hidden="true">○</span>
+        )}
+        <span className="font-medium">{record.type}</span>
+        <span className="min-w-0 flex-1 break-all">{record.name}</span>
+        <span className="shrink-0 text-muted-foreground">
+          {passed
+            ? t(($) => {
+                return $.artifacts.customDomain.recordMatched;
+              })
+            : t(($) => {
+                return $.artifacts.customDomain.recordNeedsCheck;
+              })}
+        </span>
+        <ChevronDown size={12} className="shrink-0" />
+      </Collapsible.Trigger>
+      <Collapsible.Panel className="space-y-2 px-3 pb-3">
+        {(["name", "value"] as const).map((field) => {
+          return (
+            <div key={field} className="flex items-start gap-2">
+              <span className="w-10 shrink-0 pt-1 text-xs text-muted-foreground">
+                {field === "name"
+                  ? t(($) => {
+                      return $.artifacts.customDomain.recordName;
+                    })
+                  : t(($) => {
+                      return $.artifacts.customDomain.recordValue;
+                    })}
+              </span>
+              <code className="min-w-0 flex-1 break-all pt-1 text-xs">
+                {record[field]}
+              </code>
+              <IconButton
+                aria-label={
+                  field === "name"
+                    ? t(
+                        ($) => {
+                          return $.artifacts.customDomain.copyRecordName;
+                        },
+                        {
+                          type: record.type,
+                          name: record.name,
+                        },
+                      )
+                    : t(
+                        ($) => {
+                          return $.artifacts.customDomain.copyRecordValue;
+                        },
+                        {
+                          type: record.type,
+                          name: record.name,
+                        },
+                      )
+                }
+                onClick={() => {
+                  detach(copy(record[field], signal), Reason.DomCallback);
+                }}
+              >
+                <Copy size={14} />
+              </IconButton>
+            </div>
+          );
+        })}
+        {checked && !passed && (
+          <p className="text-xs text-muted-foreground">{checked.message}</p>
+        )}
+      </Collapsible.Panel>
+    </Collapsible.Root>
+  );
+}
 function DomainRecords({
   session,
   domain,
@@ -129,45 +231,25 @@ function DomainRecords({
   readonly domain: Domain;
 }) {
   const { t } = useTranslation();
-  const copy = useSet(session.domains.copy$);
-  const signal = useGet(session.signal$);
-  if (!signal) {
-    return null;
-  }
   return (
     <>
-      {" "}
-      <div className="overflow-hidden rounded-xl border border-border">
+      <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
         {domain.records.map((record) => {
+          const passed = domain.verification?.recordChecks?.some((check) => {
+            return (
+              check.type === record.type &&
+              check.name === record.name &&
+              check.value === record.value &&
+              check.status === "passed"
+            );
+          });
           return (
-            <div
-              key={`${record.type}-${record.name}-${record.value}`}
-              className="grid grid-cols-[3rem_minmax(0,1fr)_2rem] items-center gap-2 border-b border-border p-3 last:border-b-0"
-            >
-              <span className="row-span-2 text-xs font-medium">
-                {record.type}
-              </span>
-              <code className="min-w-0 break-all text-xs">{record.name}</code>
-              <IconButton
-                className="row-span-2"
-                aria-label={t(
-                  ($) => {
-                    return $.artifacts.customDomain.copyRecord;
-                  },
-                  {
-                    type: record.type,
-                  },
-                )}
-                onClick={() => {
-                  detach(copy(record.value, signal), Reason.DomCallback);
-                }}
-              >
-                <Copy size={14} />
-              </IconButton>
-              <code className="col-start-2 min-w-0 break-all text-xs text-muted-foreground">
-                {record.value}
-              </code>
-            </div>
+            <DomainRecord
+              key={`${record.type}-${record.name}-${record.value}-${Boolean(passed)}`}
+              session={session}
+              domain={domain}
+              record={record}
+            />
           );
         })}
       </div>
@@ -177,6 +259,89 @@ function DomainRecords({
         })}
       </p>
     </>
+  );
+}
+function DomainSetup({
+  session,
+}: {
+  readonly session: HostedSiteShareSession;
+}) {
+  const { t } = useTranslation();
+  const setup = useLoadable(session.domains.setup$);
+  return (
+    <div className="mb-3 min-h-16 text-xs">
+      {setup.state === "loading" ? (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 size={12} className="animate-spin" />
+          {t(($) => {
+            return $.artifacts.customDomain.findingProvider;
+          })}
+        </p>
+      ) : setup.state === "hasData" && setup.data ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {setup.data.automaticUrl && (
+              <Button
+                size="sm"
+                nativeButton={false}
+                variant="outline"
+                render={
+                  <a
+                    href={setup.data.automaticUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
+              >
+                {t(($) => {
+                  return $.artifacts.customDomain.automaticSetup;
+                })}
+                <ExternalLink size={12} />
+              </Button>
+            )}
+            {setup.data.controlPanelUrl && (
+              <Button
+                size="sm"
+                nativeButton={false}
+                variant="quiet"
+                render={
+                  <a
+                    href={setup.data.controlPanelUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
+              >
+                {t(
+                  ($) => {
+                    return $.artifacts.customDomain.openDns;
+                  },
+                  {
+                    provider: setup.data.providerName,
+                  },
+                )}
+                <ExternalLink size={12} />
+              </Button>
+            )}
+          </div>
+          <p className="mt-2 text-muted-foreground">
+            {setup.data.automaticUrl
+              ? t(($) => {
+                  return $.artifacts.customDomain.automaticHint;
+                })
+              : t(($) => {
+                  return $.artifacts.customDomain.manualHint;
+                })}
+          </p>
+        </>
+      ) : (
+        <p className="text-muted-foreground">
+          {t(($) => {
+            return $.artifacts.customDomain.manualHint;
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 function DomainStatus({
@@ -194,6 +359,12 @@ function DomainStatus({
     dns: t(($) => {
       return $.artifacts.customDomain.checks.dns;
     }),
+    provider: t(($) => {
+      return $.artifacts.customDomain.checks.provider;
+    }),
+    route: t(($) => {
+      return $.artifacts.customDomain.checks.route;
+    }),
     certificate: t(($) => {
       return $.artifacts.customDomain.checks.certificate;
     }),
@@ -201,44 +372,73 @@ function DomainStatus({
   return (
     <>
       {" "}
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs text-muted-foreground">
-        {(["ownership", "dns", "certificate"] as const).map((check) => {
+      <ul
+        className="mt-3 space-y-2 text-xs text-muted-foreground"
+        aria-label={t(($) => {
+          return $.artifacts.customDomain.verificationChecks;
+        })}
+      >
+        {(
+          ["ownership", "dns", "provider", "certificate", "route"] as const
+        ).map((name) => {
+          const check = domain.verification?.checks[name];
           return (
-            <span key={check} className="flex items-center gap-1">
-              {domain.verification?.checks[check].status === "passed" ? (
-                <Check size={12} className="text-green-600" />
-              ) : (
-                <span aria-hidden="true">○</span>
-              )}
-              {labels[check]}
-            </span>
+            <li key={name}>
+              <div className="flex items-center gap-2">
+                {check?.status === "passed" ? (
+                  <Check size={12} className="text-green-600" />
+                ) : (
+                  <span aria-hidden="true">○</span>
+                )}
+                <span>{labels[name]}</span>
+                <span className="ml-auto">
+                  {check?.status === "passed"
+                    ? t(($) => {
+                        return $.artifacts.customDomain.checkPassed;
+                      })
+                    : check?.status === "unavailable"
+                      ? t(($) => {
+                          return $.artifacts.customDomain.checkUnavailable;
+                        })
+                      : check?.status === "failed"
+                        ? t(($) => {
+                            return $.artifacts.customDomain.checkFailed;
+                          })
+                        : check?.status === "pending"
+                          ? t(($) => {
+                              return $.artifacts.customDomain.checkPending;
+                            })
+                          : t(($) => {
+                              return $.artifacts.customDomain.checkNotChecked;
+                            })}
+                </span>
+              </div>
+              {check &&
+                check.status !== "passed" &&
+                check.status !== "not_checked" && (
+                  <p className="mt-1 pl-5">{check.message}</p>
+                )}
+            </li>
           );
         })}
-      </div>
+      </ul>
       <p className="mt-3 min-h-10 text-xs text-muted-foreground" role="status">
         {notice ??
           (domain.removing
             ? t(($) => {
                 return $.artifacts.customDomain.removing;
               })
-            : domain.verification?.status === "unavailable"
-              ? Object.values(domain.verification.checks).find((check) => {
-                  return check.status === "unavailable";
-                })?.message
-              : domain.ready
+            : domain.ready
+              ? t(($) => {
+                  return $.artifacts.customDomain.verified;
+                })
+              : domain.verification
                 ? t(($) => {
-                    return $.artifacts.customDomain.verified;
+                    return $.artifacts.customDomain.verificationPending;
                   })
-                : domain.verification
-                  ? Object.values(domain.verification.checks).find((check) => {
-                      return (
-                        check.status !== "passed" &&
-                        check.status !== "not_checked"
-                      );
-                    })?.message
-                  : t(($) => {
-                      return $.artifacts.customDomain.notChecked;
-                    }))}
+                : t(($) => {
+                    return $.artifacts.customDomain.notChecked;
+                  }))}
       </p>
       <p className="min-h-5 text-xs text-muted-foreground">
         {domain.verification
@@ -406,6 +606,7 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
 
       {domain ? (
         <>
+          <DomainSetup session={session} />
           <DomainRecords session={session} domain={domain} />
           <DomainStatus
             domain={domain}

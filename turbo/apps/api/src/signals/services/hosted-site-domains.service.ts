@@ -33,6 +33,7 @@ import { isUniqueViolation } from "../../lib/pg-errors";
 import { db$, writeDb$ } from "../external/db";
 import {
   verifyDomainOwnership,
+  verifyHostedDomainRecord,
   verifyDomainRouting,
 } from "../external/hosted-domain-dns";
 import {
@@ -45,6 +46,7 @@ import {
 } from "../external/hosted-domain-provider";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
+import { discoverHostedDomainSetup } from "../external/hosted-domain-setup";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 interface Owner {
@@ -222,6 +224,79 @@ const ensureSettings$ = command(
     signal.throwIfAborted();
   },
 );
+function domainRecords(domain: Domain) {
+  return [
+    {
+      type: "TXT" as const,
+      name: `_okou-challenge.${domain.hostname}`,
+      value: `okou-verification=${domain.challenge}`,
+    },
+    ...(hostedSiteApexHostname(domain.hostname) &&
+    env("HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES")
+      ? env("HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES")!
+          .split(",")
+          .map((value) => {
+            return value.trim();
+          })
+          .filter(Boolean)
+          .map((value) => {
+            return {
+              type: value.includes(":") ? ("AAAA" as const) : ("A" as const),
+              name: domain.hostname,
+              value,
+            };
+          })
+      : [
+          {
+            type: "CNAME" as const,
+            name: domain.hostname,
+            value: target(),
+          },
+        ]),
+    ...(domain.verification?.validationRecords ?? []),
+  ];
+}
+
+export const readHostedSiteDomainSetup$ = command(
+  async (
+    { get, set },
+    args: SiteArgs & { readonly domainId: string },
+    signal: AbortSignal,
+  ) => {
+    const site = await set(ownedSite$, args, signal);
+    signal.throwIfAborted();
+    await set(requirePublished$, site, signal);
+    signal.throwIfAborted();
+    await set(requireCapability$, args, signal);
+    signal.throwIfAborted();
+    const [domain] = await get(db$)
+      .select()
+      .from(hostedSiteDomains)
+      .where(
+        and(
+          eq(hostedSiteDomains.siteId, args.siteId),
+          eq(hostedSiteDomains.id, args.domainId),
+          isNull(hostedSiteDomains.revokedAt),
+          isNull(hostedSiteDomains.releasedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!domain) {
+      throw new HostedDomainError(
+        404,
+        "NOT_FOUND",
+        "Connected domain not found",
+      );
+    }
+    return discoverHostedDomainSetup(
+      domain.hostname,
+      domainRecords(domain),
+      signal,
+    );
+  },
+);
+
 export const readHostedSiteDomains$ = command(
   async (
     { get, set },
@@ -274,38 +349,7 @@ export const readHostedSiteDomains$ = command(
           ready: hostedDomainReady(domain),
           removing: domain.revokedAt !== null,
           verification: domain.verification,
-          records: [
-            {
-              type: "TXT" as const,
-              name: `_okou-challenge.${domain.hostname}`,
-              value: `okou-verification=${domain.challenge}`,
-            },
-            ...(hostedSiteApexHostname(domain.hostname) &&
-            env("HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES")
-              ? env("HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES")!
-                  .split(",")
-                  .map((value) => {
-                    return value.trim();
-                  })
-                  .filter(Boolean)
-                  .map((value) => {
-                    return {
-                      type: value.includes(":")
-                        ? ("AAAA" as const)
-                        : ("A" as const),
-                      name: domain.hostname,
-                      value,
-                    };
-                  })
-              : [
-                  {
-                    type: "CNAME" as const,
-                    name: domain.hostname,
-                    value: target(),
-                  },
-                ]),
-            ...(domain.verification?.validationRecords ?? []),
-          ],
+          records: domainRecords(domain),
         };
       }),
     };
@@ -823,6 +867,28 @@ export const verifyHostedSiteDomain$ = command(
     if (!attempt.ok) {
       applyHostedDomainVerificationFailure(verification, attempt.error);
     }
+    const records = domainRecords({ ...domain, verification });
+    verification.recordChecks = await Promise.all(
+      records.map(async (record) => {
+        const checked = await settleIncludingAbort(
+          verifyHostedDomainRecord(record, verification.checkedAt, bounded),
+        );
+        signal.throwIfAborted();
+        if (checked.ok) {
+          return checked.value;
+        }
+        if (!(checked.error instanceof HostedDomainDependencyError)) {
+          throw checked.error;
+        }
+        return {
+          ...record,
+          checkedAt: verification.checkedAt,
+          observedValues: [],
+          status: "unavailable" as const,
+          message: "We could not check this record. Click Verify to try again.",
+        };
+      }),
+    );
     signal.throwIfAborted();
     await set(persistHostedDomainVerification$, domain, verification, signal);
     signal.throwIfAborted();

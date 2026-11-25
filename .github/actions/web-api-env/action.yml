@@ -321,6 +321,8 @@ runs:
           # Optional until the default-off custom-domain feature is provisioned.
           # Both API runtimes consume this same resolved environment file.
           for hosted_domain_key in \
+            HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64 \
+            HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST \
             HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN \
             HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID \
             HOSTED_SITE_CUSTOM_DOMAIN_TARGET \
