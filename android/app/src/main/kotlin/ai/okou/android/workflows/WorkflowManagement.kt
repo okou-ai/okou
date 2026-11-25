@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
@@ -23,7 +24,7 @@ import ai.okou.android.chat.chatTime
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.preferences.TimezoneSelectionSheet
 import ai.okou.android.preferences.timezoneLabel
-import ai.okou.android.state.rememberWorkflowFieldInput
+import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchFocusOutline
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
@@ -44,8 +45,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,7 +60,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -74,11 +75,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -91,6 +97,8 @@ import java.text.NumberFormat
 import java.util.Date
 import java.util.TimeZone
 import kotlin.math.ceil
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 
 @Composable
 internal fun WorkflowRuleRow(
@@ -343,15 +351,17 @@ internal fun workflowTimestamp(time: String, timezone: String): String {
 @Composable
 internal fun WorkflowEditor(
     detail: WorkflowDetail,
-    editor: WorkflowEdit,
+    editing: WorkflowEditSession,
     state: WorkflowState,
     model: WorkflowModel,
     wide: Boolean,
+    discarding: Boolean,
     onCancel: () -> Unit,
     onViewConnection: ((String) -> Unit)?,
     restoreConnectionFocus: Boolean,
     onConnectionFocusRestored: () -> Unit,
 ) {
+    val editor = editing.draft
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
     val available = !state.writing && detail.canEdit(editor)
@@ -375,6 +385,21 @@ internal fun WorkflowEditor(
     var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
     val restoreSaveFocus =
         !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
+    val inputGuard =
+        remember(model, editing) {
+            InputTransformation { if (!model.canEdit(editing)) revertAllChanges() }
+        }
+    val fieldFocus =
+        remember(editing, discarding) {
+            WorkflowFieldFocus(editing, discarding, restoreConnectionFocus)
+        }
+    val issue = state.issue
+    if (issue?.rejectedDraft != null) {
+        LaunchedEffect(model, editing, issue) {
+            snapshotFlow { editing.draft }.first { it != issue.rejectedDraft }
+            model.clearRejectedEdit(editing, issue)
+        }
+    }
     LaunchedEffect(showConnectionAction, saveEnabled, restoreConnectionFocus) {
         if (restoreConnectionFocus && !state.writing) {
             val target =
@@ -414,16 +439,15 @@ internal fun WorkflowEditor(
                 if (activeRule != null)
                     WorkflowSecondary(detail.displayName ?: detail.name, small = true)
             }
-            when (editor) {
-                is WorkflowEdit.Instructions -> {
-                    val value = editor.value
+            when (editing) {
+                is WorkflowEditSession.Instructions -> {
+                    val value = editing.draft.value
                     WorkflowField(
                         R.string.workflow_name,
-                        model,
-                        editor,
+                        editing.title,
                         available,
-                        read = { it.value.title },
-                        update = { edit, text -> edit.copy(value = edit.value.copy(title = text)) },
+                        inputGuard,
+                        fieldFocus,
                         validation =
                             workflowValidation(
                                 value.title,
@@ -433,30 +457,25 @@ internal fun WorkflowEditor(
                     )
                     WorkflowField(
                         R.string.workflow_purpose,
-                        model,
-                        editor,
+                        editing.purpose,
                         available,
-                        read = { it.value.purpose },
-                        update = { edit, text ->
-                            edit.copy(value = edit.value.copy(purpose = text))
-                        },
+                        inputGuard,
+                        fieldFocus,
                         validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
                     )
                     WorkflowField(
                         R.string.workflow_instructions_heading,
-                        model,
-                        editor,
+                        editing.instruction,
                         available,
-                        read = { it.value.instruction },
-                        update = { edit, text ->
-                            edit.copy(value = edit.value.copy(instruction = text))
-                        },
+                        inputGuard,
+                        fieldFocus,
                         singleLine = false,
                         validation =
                             workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
                     )
                 }
-                is WorkflowEdit.Rule -> WorkflowRuleFields(editor, available, model)
+                is WorkflowEditSession.Rule ->
+                    WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
             }
         }
         WorkflowDivider()
@@ -467,7 +486,7 @@ internal fun WorkflowEditor(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            when (state.issue?.failure) {
+            when (issue?.failure) {
                 WorkflowWriteFailure.UncertainCreate ->
                     WorkflowNotice(R.string.workflow_create_uncertain)
                 WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
@@ -506,19 +525,37 @@ internal fun WorkflowEditor(
                         enabled = !state.writing && onViewConnection != null,
                     )
                 }
-                WorkflowAction(
-                    stringResource(R.string.workflow_save),
+                val saveLabel = stringResource(R.string.workflow_save)
+                val savingLabel = stringResource(R.string.settings_saving)
+                val pendingSemantics =
+                    if (state.writing)
+                        Modifier.clearAndSetSemantics {
+                            contentDescription = saveLabel
+                            stateDescription = savingLabel
+                            role = Role.Button
+                            liveRegion = LiveRegionMode.Polite
+                            disabled()
+                        }
+                    else Modifier
+                OkouActionButton(
+                    if (state.writing) savingLabel else saveLabel,
                     onClick = {
-                        restoreSaveFocusAfterWrite = saveFocused
-                        model.save(editor)
+                        if (model.canEdit(editing)) {
+                            restoreSaveFocusAfterWrite = saveFocused
+                            model.save(editing.draft)
+                        }
                     },
-                    primary = true,
                     enabled = saveEnabled,
-                    pendingStatus = R.string.settings_saving.takeIf { state.writing },
+                    layoutLabels = listOf(saveLabel, savingLabel),
                     modifier =
                         Modifier.focusRequester(saveFocus)
                             .onFocusChanged { saveFocused = it.isFocused }
-                            .testTag("workflow_save"),
+                            .updateFocusOutline(
+                                MaterialTheme.shapes.medium,
+                                MaterialTheme.colorScheme.background,
+                            )
+                            .testTag("workflow_save")
+                            .then(pendingSemantics),
                 )
             }
         }
@@ -542,12 +579,17 @@ internal fun WorkflowState.connectionReadFeedback(): Int? =
 
 @Composable
 private fun WorkflowRuleFields(
-    editor: WorkflowEdit.Rule,
+    editing: WorkflowEditSession.Rule,
     enabled: Boolean,
     model: WorkflowModel,
+    inputGuard: InputTransformation,
+    fieldFocus: WorkflowFieldFocus,
 ) {
+    val editor = editing.draft
     val fields = editor.value
-    val editFields = { next: RuleFields -> model.edit(editor.copy(value = next)) }
+    fun editFields(change: (RuleFields) -> RuleFields) {
+        model.editRuleOptions(editing) { it.copy(value = change(it.value)) }
+    }
     if (editor.id == null) {
         val mode =
             if (fields.trigger == EditableTrigger.Schedule) TriggerMode.Schedule
@@ -570,15 +612,16 @@ private fun WorkflowRuleFields(
             enabled = enabled,
         ) {
             if (it == mode) return@WorkspaceFilterRow
-            when (it) {
-                TriggerMode.Schedule ->
-                    model.edit(
-                        editor.copy(
-                            value = fields.copy(trigger = EditableTrigger.Schedule),
-                            lastEventSource = fields.trigger,
-                        ),
-                    )
-                TriggerMode.Event -> editFields(fields.copy(trigger = editor.lastEventSource))
+            model.editRuleOptions(editing) { rule ->
+                when (it) {
+                    TriggerMode.Schedule ->
+                        rule.copy(
+                            value = rule.value.copy(trigger = EditableTrigger.Schedule),
+                            lastEventSource = rule.value.trigger,
+                        )
+                    TriggerMode.Event ->
+                        rule.copy(value = rule.value.copy(trigger = rule.lastEventSource))
+                }
             }
         }
         if (mode == TriggerMode.Event) {
@@ -588,8 +631,8 @@ private fun WorkflowRuleFields(
                 sources.map { stringResource(it.eventLabel) },
                 sources.indexOf(fields.trigger),
                 enabled,
-            ) {
-                editFields(fields.copy(trigger = sources[it]))
+            ) { chosen ->
+                editFields { it.copy(trigger = sources[chosen]) }
             }
         }
     }
@@ -605,36 +648,35 @@ private fun WorkflowRuleFields(
                 frequency,
                 if (fields.weekdays) 0 else 1,
                 enabled,
-            ) {
-                editFields(fields.copy(weekdays = it == 0))
+            ) { chosen ->
+                editFields { it.copy(weekdays = chosen == 0) }
             }
             WorkflowField(
                 R.string.workflow_time,
-                model,
-                editor,
+                editing.time,
                 enabled,
-                read = { it.value.time },
-                update = { edit, text -> edit.copy(value = edit.value.copy(time = text)) },
+                inputGuard,
+                fieldFocus,
             )
-            WorkflowTimezone(fields.timezone, enabled) { editFields(fields.copy(timezone = it)) }
+            WorkflowTimezone(fields.timezone, enabled) { timezone ->
+                editFields { it.copy(timezone = timezone) }
+            }
         }
         EditableTrigger.Gmail ->
             WorkflowField(
                 R.string.workflow_match_subject,
-                model,
-                editor,
+                editing.subject,
                 enabled,
-                read = { it.value.subject },
-                update = { edit, text -> edit.copy(value = edit.value.copy(subject = text)) },
+                inputGuard,
+                fieldFocus,
             )
         EditableTrigger.Calendar ->
             WorkflowField(
                 R.string.workflow_calendar_id,
-                model,
-                editor,
+                editing.calendarId,
                 enabled,
-                read = { it.value.calendarId },
-                update = { edit, text -> edit.copy(value = edit.value.copy(calendarId = text)) },
+                inputGuard,
+                fieldFocus,
                 validation =
                     workflowValidation(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
             )
@@ -686,39 +728,45 @@ private fun workflowValidation(
     return WorkflowValidation(lengthMessage, requiredMessage, errorMessage)
 }
 
+private class WorkflowFieldFocus(
+    private val editing: WorkflowEditSession,
+    val discarding: Boolean,
+    returningFromConnection: Boolean,
+) {
+    // Take a new restore target on reattachment or after dismissing the discard dialog.
+    private var pending =
+        editing.fieldSelection.takeUnless { discarding || returningFromConnection }
+
+    fun restore(input: TextFieldState, requester: FocusRequester) {
+        val retained = pending?.takeIf { it.field === input } ?: return
+        if (requester.requestFocus()) {
+            input.edit {
+                selection =
+                    TextRange(
+                        retained.range.start.coerceAtMost(length),
+                        retained.range.end.coerceAtMost(length),
+                    )
+            }
+            pending = null
+        }
+    }
+
+    fun rememberSelection(input: TextFieldState, range: TextRange) {
+        editing.rememberSelection(input, range)
+    }
+}
+
 @Composable
-private inline fun <reified T : WorkflowEdit> WorkflowField(
+private fun WorkflowField(
     label: Int,
-    model: WorkflowModel,
-    editor: T,
+    input: TextFieldState,
     enabled: Boolean,
-    crossinline read: (T) -> String,
-    crossinline update: (T, String) -> T,
+    inputGuard: InputTransformation,
+    fieldFocus: WorkflowFieldFocus,
     singleLine: Boolean = true,
     validation: WorkflowValidation? = null,
 ) {
     val title = stringResource(label)
-    val value = read(editor)
-    val input = rememberWorkflowFieldInput(value, label)
-    val renderedValue by rememberUpdatedState(value)
-    LaunchedEffect(model, input) {
-        var lastSynchronizedText = value
-        snapshotFlow { input.text.toString() to renderedValue }
-            .collect {
-                val current = model.state.value.editor as? T ?: return@collect
-                val draftText = read(current)
-                val nativeText = input.text.toString()
-                // Resolve the latest draft before forwarding input or applying a model update.
-                // An older composition can still be rendering a previously forwarded edit.
-                if (nativeText != lastSynchronizedText) {
-                    lastSynchronizedText = nativeText
-                    if (draftText != nativeText) model.edit(update(current, nativeText))
-                } else if (draftText != nativeText) {
-                    lastSynchronizedText = draftText
-                    input.setTextAndPlaceCursorAtEnd(draftText)
-                }
-            }
-    }
     val colors = MaterialTheme.colorScheme
     val baseHeight = if (singleLine) OutlinedTextFieldDefaults.MinHeight else 112.dp
     val errorMessage = validation?.errorMessage
@@ -726,6 +774,8 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
         WorkflowFieldLabel(title)
         Spacer(Modifier.height(OkouFormLayout.LabelGap))
         BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val requester = remember { FocusRequester() }
+            var focused by remember { mutableStateOf(false) }
             val supportStyle =
                 MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
             val minimumHeight =
@@ -736,9 +786,12 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
                 else workflowSupportingHeight(validation, supportStyle, constraints.maxWidth)
             OutlinedTextField(
                 state = input,
+                inputTransformation = inputGuard,
                 modifier =
                     Modifier.fillMaxWidth()
                         .heightIn(min = minimumHeight + supportHeight)
+                        .focusRequester(requester)
+                        .onFocusChanged { focused = it.isFocused }
                         .semantics {
                             contentDescription = title
                             if (errorMessage != null) error(errorMessage)
@@ -778,6 +831,13 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
                         }
                     },
             )
+            LaunchedEffect(input, fieldFocus) {
+                if (fieldFocus.discarding) return@LaunchedEffect
+                fieldFocus.restore(input, requester)
+                snapshotFlow { if (focused) input.selection else null }
+                    .filterNotNull()
+                    .collect { fieldFocus.rememberSelection(input, it) }
+            }
         }
     }
 }

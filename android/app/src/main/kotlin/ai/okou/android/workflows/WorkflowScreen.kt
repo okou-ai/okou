@@ -158,20 +158,21 @@ internal fun WorkflowScreen(
     val wide = listWidth != null
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val editor = state.editor
+    val editing = state.editing
     val detail = state.detail?.takeIf { it.id == route.id }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
-    var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
+    var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val draftFocusAction = route.draftReturn?.action
-    val canNavigate = editor == null && !state.writing
+    val canNavigate = editing == null && !state.writing
     fun exitEditor() {
-        if (state.writing) return
-        if (editor?.changed == true) discard = true else model.edit(null)
+        val current = model.state.value
+        if (current.writing || current.editing !== editing) return
+        if (editing?.draft?.changed == true) discard = true else model.edit(null)
     }
     fun back() {
         when {
-            editor != null -> exitEditor()
+            editing != null -> exitEditor()
             state.writing -> Unit
             route.id != null && !wide && !directEntry && !handoffPending -> {
                 restoreRow = route.id
@@ -181,7 +182,7 @@ internal fun WorkflowScreen(
         }
     }
     BackHandler(onBack = ::back)
-    if (discard && editor?.changed == true && detail != null) {
+    if (discard && editing?.draft?.changed == true && detail != null) {
         OkouConfirmationDialog(
             title = stringResource(R.string.workflow_discard_title),
             confirm = stringResource(R.string.workflow_discard),
@@ -189,7 +190,7 @@ internal fun WorkflowScreen(
             onDismiss = { discard = false },
             onConfirm = {
                 discard = false
-                model.edit(null)
+                if (model.state.value.editing === editing) model.edit(null)
             },
         ) {
             Text(
@@ -217,7 +218,7 @@ internal fun WorkflowScreen(
                         Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
                             .fillMaxHeight()
                     else Modifier.weight(1f).fillMaxHeight(),
-                onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
+                onBack = { if (editing != null) exitEditor() else if (!state.writing) onClose() },
                 onCreate = onCreate,
                 restoreCreateFocus =
                     !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
@@ -245,9 +246,9 @@ internal fun WorkflowScreen(
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (wide || route.id != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                if (!wide || editor != null)
+                if (!wide || editing != null)
                     WorkflowToolbar(
-                        if (editor != null) stringResource(R.string.workflow_edit)
+                        if (editing != null) stringResource(R.string.workflow_edit)
                         else stringResource(R.string.workspace_workflows),
                         ::back,
                     )
@@ -257,14 +258,15 @@ internal fun WorkflowScreen(
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
-                    editor != null ->
+                    editing != null ->
                         WorkflowEditor(
                             detail,
-                            editor,
+                            editing,
                             state,
                             model,
                             wide,
-                            ::exitEditor,
+                            discarding = discard,
+                            onCancel = ::exitEditor,
                             onViewConnection =
                                 onViewConnection?.let { open -> { slug -> open(slug, null) } },
                             restoreConnectionFocus =
