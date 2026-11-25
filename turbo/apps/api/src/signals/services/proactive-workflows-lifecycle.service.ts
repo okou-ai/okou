@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
+import { isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import {
   officialWorkflowAutomationIdentities,
@@ -36,7 +37,6 @@ import {
   PROACTIVE_WORKFLOW_DEFINITIONS,
   RETIRED_PROACTIVE_DEFINITION_NAMES,
 } from "./proactive-workflow-definitions";
-import { resolveBlueprint } from "./official-workflow-installation.service";
 import { calculateNextRun } from "./time-automation";
 import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
 import {
@@ -63,29 +63,14 @@ function proactiveSchedule(
     throw new Error(`Missing built-in Workflow: ${source.name}`);
   }
   const { blueprint, definition } = builtin;
-  const bindings = [
-    {
-      key: "cron",
-      value:
-        kind === "learning"
-          ? proactiveNightlyCron(owner)
-          : `${ownerMinute(owner)} * * * *`,
-    },
-  ];
-  const resolved = resolveBlueprint(
-    blueprint,
-    { blueprintKey: blueprint.key, bindings },
-    timezone,
-  );
-  if (
-    !resolved.ok ||
-    resolved.blueprint.createRequest.kind !== "schedule" ||
-    resolved.blueprint.createRequest.schedule.type !== "cron"
-  ) {
-    throw new Error("Proactive workflows require a cron Blueprint");
+  if (!isValidTimeZone(timezone)) {
+    throw new Error("Proactive schedules require a valid timezone");
   }
-  const schedule = resolved.blueprint.createRequest.schedule;
-  return { definition, blueprint, bindings, schedule };
+  const cron =
+    kind === "learning"
+      ? proactiveNightlyCron(owner)
+      : `${ownerMinute(owner)} * * * *`;
+  return { definition, blueprint, cron };
 }
 
 const synchronizeProactiveSchedule$ = command(
@@ -204,9 +189,11 @@ export const ensureProactiveWorkflows$ = command(
       if (timezone === null) {
         continue;
       }
-      const schedule = proactiveSchedule(owner, kind, timezone);
-      const { definition, blueprint, bindings } = schedule;
-      const cron = schedule.schedule.cronExpression;
+      const { definition, blueprint, cron } = proactiveSchedule(
+        owner,
+        kind,
+        timezone,
+      );
       const at = nowDate();
       const next = calculateNextRun(cron, timezone, at);
       await database.execute(sql`
@@ -230,8 +217,8 @@ export const ensureProactiveWorkflows$ = command(
         INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
           timezone, enabled, next_run_at, official_blueprint_key, official_applied_fingerprint,
           official_reconciliation_status, official_parameter_bindings, official_intended_enabled)
-        SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', ${schedule.schedule.type}, ${cron}, NULL, ${timezone}, true, ${next},
-          ${blueprint.key}, ${blueprint.fingerprint}, 'current', ${JSON.stringify(bindings)}::jsonb, true FROM installed
+        SELECT ${owner.orgId}, id, ${owner.userId}, 'schedule', 'cron', ${cron}, NULL, ${timezone}, true, ${next},
+          ${blueprint.key}, ${blueprint.fingerprint}, 'current', jsonb_build_array(jsonb_build_object('key', 'cron', 'value', ${cron}::text)), true FROM installed
         ON CONFLICT (workflow_id, official_blueprint_key) WHERE official_blueprint_key IS NOT NULL DO NOTHING
         RETURNING id, workflow_id
       ), existing_or_created AS (

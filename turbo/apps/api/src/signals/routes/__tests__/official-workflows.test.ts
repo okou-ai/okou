@@ -466,6 +466,52 @@ describe("Proactive Suggestions preference", () => {
 });
 
 describe("Morning Brief preference", () => {
+  it("shares one schedule across simultaneous first opt-ins and later toggles", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    const headers = authHeaders(actor);
+    const preferences = morningBriefPreferenceClient();
+    const setEnabled = (enabled: boolean) => {
+      return accept(preferences.update({ headers, body: { enabled } }), [200]);
+    };
+    await Promise.all([setEnabled(true), setEnabled(true)]);
+    const installed = await listMorningBriefInstallations(actor);
+    expect(installed).toHaveLength(1);
+    const [workflow] = installed;
+    if (!workflow) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    const listSchedules = () => {
+      return accept(
+        automationClient().list({
+          headers,
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+    };
+    const first = await listSchedules();
+    expect(first.body).toHaveLength(1);
+    const [schedule] = first.body;
+    if (!schedule) {
+      throw new Error("Expected the Morning Brief schedule");
+    }
+    expect(schedule).toMatchObject({
+      kind: "schedule",
+      enabled: true,
+      chatThreadId: null,
+      schedule: { type: "cron", timezone: "Asia/Shanghai" },
+    });
+    await setEnabled(false);
+    expect((await listSchedules()).body).toMatchObject([
+      { id: schedule.id, enabled: false },
+    ]);
+    await setEnabled(true);
+    expect((await listSchedules()).body).toMatchObject([
+      { id: schedule.id, enabled: true, chatThreadId: null },
+    ]);
+  });
+
   it("preserves enable intent while timezone is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
     const timezoneHeaders = authHeaders(missingTimezone.actor);

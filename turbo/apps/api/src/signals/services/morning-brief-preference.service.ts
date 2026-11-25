@@ -1,11 +1,9 @@
 import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   type MorningBriefPreferenceErrorCode,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { isValidTimeZone } from "@okouai/core/timezone";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
@@ -24,9 +22,9 @@ import {
 import { completeMorningBriefEnrollment$ } from "./morning-brief-enrollment-completion.service";
 import { db$ } from "../external/db";
 import {
-  installOfficialWorkflow$,
-  loadOfficialWorkflowUserTimezone$,
-} from "./official-workflow-installation.service";
+  installMorningBrief$,
+  loadMorningBriefTimezone$,
+} from "./morning-brief-installation.service";
 import { repairMorningBriefSchedule$ } from "./morning-brief-schedule-repair.service";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
@@ -76,26 +74,6 @@ function morningBriefOwner(
   return { orgId: args.orgId, userId: args.member.userId };
 }
 
-const loadUnavailableReason$ = command(
-  async (
-    { set },
-    args: MorningBriefPreferenceArgs,
-    signal: AbortSignal,
-  ): Promise<MorningBriefPreferenceResponse["unavailableReason"]> => {
-    const owner = morningBriefOwner(args);
-    const timezone = await set(
-      loadOfficialWorkflowUserTimezone$,
-      owner,
-      signal,
-    );
-    if (timezone === null || !isValidTimeZone(timezone)) {
-      return "missing-timezone";
-    }
-
-    return null;
-  },
-);
-
 const loadPendingPreference$ = command(
   async (
     { set },
@@ -103,7 +81,11 @@ const loadPendingPreference$ = command(
     enrollment: typeof morningBriefEnrollments.$inferSelect | undefined,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const unavailableReason = await set(loadUnavailableReason$, args, signal);
+    const timezone = await set(
+      loadMorningBriefTimezone$,
+      morningBriefOwner(args),
+      signal,
+    );
     return {
       kind: "ok",
       preference: {
@@ -116,7 +98,7 @@ const loadPendingPreference$ = command(
               ? "error"
               : "preparing"
             : "paused",
-        unavailableReason,
+        unavailableReason: timezone === null ? "missing-timezone" : null,
       },
     };
   },
@@ -237,130 +219,67 @@ const loadMorningBriefAutomationId$ = command(
   },
 );
 
-const createMorningBriefFromPreference$ = command(
+/** Apply a choice recorded before the first installation became visible. */
+const settleMorningBriefChoice$ = command(
   async (
     { set },
     args: MorningBriefPreferenceMutationArgs,
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
-    const identity = morningBriefOwner(args);
-    if (!args.enabled) {
-      return await set(loadInstalledPreference$, args, signal);
-    }
-    const unavailableReason = await set(loadUnavailableReason$, args, signal);
+    const owner = morningBriefOwner(args);
+    const state = await set(loadMorningBriefState$, owner, signal);
     signal.throwIfAborted();
-    if (unavailableReason !== null) {
-      return await set(loadInstalledPreference$, args, signal);
-    }
-    const installed = await set(
-      installOfficialWorkflow$,
-      {
-        orgId: args.orgId,
-        member: args.member,
-        definitionName: MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-        blueprints: [
-          {
-            blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-            bindings: [],
-          },
-        ],
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (installed.kind !== "ok") {
-      const state = await set(loadMorningBriefState$, identity, signal);
-      signal.throwIfAborted();
-      const raced = await set(projectInstalledPreference$, args, state, signal);
-      signal.throwIfAborted();
-      // No lock serializes concurrent requests: an installation another
-      // request is still committing reports the recorded choice as preparing;
-      // that installer completes it from the durable choice.
-      return raced.kind === "ok" &&
-        (raced.workflowId !== undefined || state.kind === "pending")
-        ? raced
-        : conflict(
-            "MORNING_BRIEF_STATE_CONFLICT",
-            "Morning Brief could not be installed. Retry the preference update.",
-          );
-    }
-    await set(
-      completeMorningBriefEnrollment$,
-      identity,
-      installed.workflowId,
-      signal,
-    );
-    signal.throwIfAborted();
-    const synchronized = await set(
-      synchronizeMorningBriefTimezone$,
-      args,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (synchronized === "conflict") {
-      return conflict(
-        "MORNING_BRIEF_STATE_CONFLICT",
-        MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
+    if (state.kind !== "installed") {
+      const current = await set(
+        projectInstalledPreference$,
+        args,
+        state,
+        signal,
       );
+      if (
+        args.enabled &&
+        state.kind === "absent" &&
+        current.kind === "ok" &&
+        current.preference.enabled &&
+        current.preference.unavailableReason === null
+      ) {
+        // A timezone was saved between the installation attempt and this read.
+        return conflict(
+          "MORNING_BRIEF_STATE_CONFLICT",
+          MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
+        );
+      }
+      return current;
     }
-    return await set(loadInstalledPreference$, args, signal);
-  },
-);
-
-/**
- * Re-read after recording a choice made while no installation was ready.
- *
- * No lock spans the preference operation. Another explicit enable request may
- * have committed its installation after this request read ownership. Whichever of the
- * two commits second observes the other: here, an installed brief whose
- * automation disagrees with the still-current choice is toggled through the
- * conditional automation writer.
- */
-const convergeRacedMorningBriefInstallation$ = command(
-  async (
-    { set },
-    args: MorningBriefPreferenceMutationArgs,
-    recorded: MorningBriefPreferenceResult & { readonly workflowId?: string },
-    signal: AbortSignal,
-  ): Promise<MorningBriefPreferenceResult> => {
-    const current = await set(loadInstalledPreference$, args, signal);
-    signal.throwIfAborted();
-    if (
-      current.kind !== "ok" ||
-      current.workflowId === undefined ||
-      current.preference.enabled === args.enabled
-    ) {
-      return recorded;
+    if (state.automation.intendedEnabled === args.enabled) {
+      if (args.enabled && state.enrollment?.state === "pending") {
+        await set(
+          completeMorningBriefEnrollment$,
+          owner,
+          state.installation.id,
+          signal,
+        );
+      }
+      return await set(projectInstalledPreference$, args, state, signal);
     }
-    const enrollment = await set(
-      loadMorningBriefEnrollment$,
-      morningBriefOwner(args),
-      signal,
-    );
+    // A later opt-in, cancellation or membership change owns its own update.
+    const enrollment = await set(loadMorningBriefEnrollment$, owner, signal);
     signal.throwIfAborted();
-    // Converge only toward the durable choice this request recorded; a later
-    // choice or membership change owns convergence toward itself.
     const stillChosen = args.enabled
       ? enrollment?.state === "pending" || enrollment?.state === "completed"
       : enrollment?.state === "cancelled";
-    if (!stillChosen) {
-      return recorded;
+    if (stillChosen) {
+      await set(
+        args.enabled ? enableWorkflowAutomation$ : disableWorkflowAutomation$,
+        {
+          orgId: args.orgId,
+          member: args.member,
+          automationId: state.automation.id,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
     }
-    const automationId = await set(
-      loadMorningBriefAutomationId$,
-      current.workflowId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (automationId === null) {
-      return current;
-    }
-    await set(
-      args.enabled ? enableWorkflowAutomation$ : disableWorkflowAutomation$,
-      { orgId: args.orgId, member: args.member, automationId },
-      signal,
-    );
-    signal.throwIfAborted();
     return await set(loadInstalledPreference$, args, signal);
   },
 );
@@ -379,32 +298,28 @@ const applyMorningBriefPreference$ = command(
     );
     signal.throwIfAborted();
 
-    if (!installation) {
+    if (installation?.installationState !== "installed") {
       await set(recordMorningBriefChoice$, identity, args.enabled, signal);
       signal.throwIfAborted();
-      const created = await set(
-        createMorningBriefFromPreference$,
-        args,
-        signal,
-      );
-      signal.throwIfAborted();
-      return await set(
-        convergeRacedMorningBriefInstallation$,
-        args,
-        created,
-        signal,
-      );
-    }
-
-    if (installation.installationState !== "installed") {
-      await set(recordMorningBriefChoice$, identity, args.enabled, signal);
-      signal.throwIfAborted();
-      return await set(
-        convergeRacedMorningBriefInstallation$,
-        args,
-        await set(loadInstalledPreference$, args, signal),
-        signal,
-      );
+      if (
+        !installation &&
+        args.enabled &&
+        (await set(installMorningBrief$, identity, signal))
+      ) {
+        const timezone = await set(
+          synchronizeMorningBriefTimezone$,
+          args,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (timezone === "conflict") {
+          return conflict(
+            "MORNING_BRIEF_STATE_CONFLICT",
+            MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
+          );
+        }
+      }
+      return await set(settleMorningBriefChoice$, args, signal);
     }
 
     if (args.enabled) {

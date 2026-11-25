@@ -9,7 +9,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
-import { canCopyInstalledBlueprint } from "../services/official-workflow-installation.service";
+import { canCopyInstalledBlueprint } from "./workflow-copy-blueprint";
 import type {
   WorkflowRow,
   WorkflowMember,

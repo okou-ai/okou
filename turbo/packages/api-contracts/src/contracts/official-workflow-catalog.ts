@@ -28,12 +28,10 @@ export {
   officialWorkflowParameterKeySchema,
   officialWorkflowParameterValueSchema,
   officialWorkflowParameterBindingSchema,
-  officialWorkflowBlueprintBindingsSchema,
 } from "./official-workflow-bindings";
 export type {
   OfficialWorkflowParameterValue,
   OfficialWorkflowParameterBinding,
-  OfficialWorkflowBlueprintBindings,
 } from "./official-workflow-bindings";
 
 export const officialWorkflowLifecycleSchema = zEnum(["active", "retired"]);

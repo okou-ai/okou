@@ -119,7 +119,6 @@ export const loadVisibleWorkflowById$ = command(
       readonly orgId: string;
       readonly member: WorkflowMember;
       readonly workflowId: string;
-      readonly includeInstallingOfficial?: boolean;
     },
     signal: AbortSignal,
   ): Promise<(VisibleWorkflow & { readonly observedXmin: string }) | null> => {
@@ -133,15 +132,7 @@ export const loadVisibleWorkflowById$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          args.includeInstallingOfficial
-            ? or(
-                visibleWorkflowCondition(args.member.userId),
-                and(
-                  eq(workflows.ownerUserId, args.member.userId),
-                  eq(workflows.officialInstallationState, "installing"),
-                ),
-              )
-            : visibleWorkflowCondition(args.member.userId),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
