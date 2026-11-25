@@ -24,7 +24,7 @@ use runner_types::ids::RunId;
 
 use super::{
     super::{Configuration, Control, Failure, Work, provisioning::Provider},
-    fixture::bounded,
+    fixture::{at_native_cleanup_deadline, bounded},
 };
 use crate::ssh::FailureReason;
 use crate::tailscale::tests::fixture::Cache;
@@ -320,7 +320,7 @@ async fn cancelled_or_timed_out_cleanup_waiters_cannot_release_the_four_owned_no
     waiter.abort();
     assert!(waiter.await.unwrap_err().is_cancelled());
     assert_eq!(
-        bounded(registration.shutdown_native()).await,
+        at_native_cleanup_deadline(registration.shutdown_native()).await,
         Err(Failure::CleanupTimedOut)
     );
     let replacement = cache.register(RunId::new_v4());

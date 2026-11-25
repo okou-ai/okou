@@ -1,6 +1,6 @@
 {
-  "id": "a954f6cb-ba0b-46d7-bec5-c34a38ee9e3e",
-  "prevId": "7f614252-9112-4f26-b3a7-c9d641ea7c0b",
+  "id": "25b767b5-7a26-407f-b1a5-f764dbe6fd6b",
+  "prevId": "8c6f54e7-2658-4d25-b9ab-8ace29b5b32a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9788,6 +9788,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "remote_device_id": {
+          "name": "remote_device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "session_id": {
           "name": "session_id",
           "type": "text",
@@ -9876,6 +9882,21 @@
         }
       },
       "indexes": {
+        "idx_computer_use_hosts_remote_device": {
+          "name": "idx_computer_use_hosts_remote_device",
+          "columns": [
+            {
+              "expression": "remote_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_computer_use_hosts_active_installation": {
           "name": "idx_computer_use_hosts_active_installation",
           "columns": [
@@ -9926,7 +9947,25 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "computer_use_hosts_remote_device_owner_fk": {
+          "name": "computer_use_hosts_remote_device_owner_fk",
+          "tableFrom": "computer_use_hosts",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -11476,92 +11515,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connectors_builtin_external_identity": {
-          "name": "idx_connectors_builtin_external_identity",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connector_slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "(CASE WHEN \"connector_slug\" = 'aws' THEN substring(\"external_username\" from '[(]([^()]+)[)]$') WHEN \"connector_slug\" IN ('notion', 'slack', 'hubspot') AND \"external_issuer\" = '' THEN NULL ELSE '' END)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"connectors\".\"connector_slug\" IS NOT NULL AND \"connectors\".\"external_id\" IS NOT NULL AND \"connectors\".\"external_id\" <> ''",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_connectors_custom_external_identity": {
-          "name": "idx_connectors_custom_external_identity",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "custom_connector_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"connectors\".\"custom_connector_id\" IS NOT NULL AND \"connectors\".\"external_id\" IS NOT NULL AND \"connectors\".\"external_id\" <> ''",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -25385,6 +25338,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "remote_device_id": {
+          "name": "remote_device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "os_version": {
           "name": "os_version",
           "type": "text",
@@ -25420,6 +25379,21 @@
         }
       },
       "indexes": {
+        "idx_phone_use_devices_remote_device": {
+          "name": "idx_phone_use_devices_remote_device",
+          "columns": [
+            {
+              "expression": "remote_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "phone_use_device_installation": {
           "name": "phone_use_device_installation",
           "columns": [
@@ -25448,7 +25422,25 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "phone_use_devices_remote_device_owner_fk": {
+          "name": "phone_use_devices_remote_device_owner_fk",
+          "tableFrom": "phone_use_devices",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -26520,6 +26512,101 @@
         "chk_registry_resource_head_id": {
           "name": "chk_registry_resource_head_id",
           "value": "\"registry_resource_heads\".\"resource_id\" ~ '^template:(html-ppt|pptx)-[a-z0-9]+(-[a-z0-9]+)*-runbook$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.remote_devices": {
+      "name": "remote_devices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_allowed": {
+          "name": "access_allowed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "access_expires_at": {
+          "name": "access_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_remote_devices_owner": {
+          "name": "idx_remote_devices_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_remote_devices_id_owner": {
+          "name": "uq_remote_devices_id_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_remote_devices_access_expiry": {
+          "name": "chk_remote_devices_access_expiry",
+          "value": "\"remote_devices\".\"access_allowed\" OR \"remote_devices\".\"access_expires_at\" IS NULL"
         }
       },
       "isRLSEnabled": false
@@ -28806,6 +28893,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "remote_device_id": {
+          "name": "remote_device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "host": {
           "name": "host",
           "type": "varchar(253)",
@@ -28891,6 +28984,21 @@
         }
       },
       "indexes": {
+        "idx_ssh_connections_remote_device": {
+          "name": "idx_ssh_connections_remote_device",
+          "columns": [
+            {
+              "expression": "remote_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_ssh_connections_tailscale": {
           "name": "idx_ssh_connections_tailscale",
           "columns": [
@@ -28989,6 +29097,23 @@
         }
       },
       "foreignKeys": {
+        "ssh_connections_remote_device_owner_fk": {
+          "name": "ssh_connections_remote_device_owner_fk",
+          "tableFrom": "ssh_connections",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "ssh_connections_cloudflare_access_org_fk": {
           "name": "ssh_connections_cloudflare_access_org_fk",
           "tableFrom": "ssh_connections",
@@ -34966,6 +35091,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "remote_device_id": {
+          "name": "remote_device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "host": {
           "name": "host",
           "type": "varchar(253)",
@@ -35148,6 +35279,21 @@
         }
       },
       "indexes": {
+        "idx_vnc_connections_remote_device": {
+          "name": "idx_vnc_connections_remote_device",
+          "columns": [
+            {
+              "expression": "remote_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_vnc_connections_cloudflare": {
           "name": "idx_vnc_connections_cloudflare",
           "columns": [
@@ -35330,6 +35476,23 @@
         }
       },
       "foreignKeys": {
+        "vnc_connections_remote_device_owner_fk": {
+          "name": "vnc_connections_remote_device_owner_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "remote_devices",
+          "columnsFrom": [
+            "remote_device_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "vnc_connections_cloudflare_org_fk": {
           "name": "vnc_connections_cloudflare_org_fk",
           "tableFrom": "vnc_connections",

@@ -1,3 +1,4 @@
+import { publishRemoteChannelDevice } from "./remote-device-publication";
 import { command } from "ccstate";
 import { readNetworkConfig } from "./network-config-binding";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
@@ -546,6 +547,11 @@ const commitSshConnectionCreationAttempt$ = command(
         )
         .returning({ ...connectionSelection }),
     );
+    const device = publishRemoteChannelDevice(
+      db,
+      written,
+      args.body.displayName,
+    );
     const complete =
       sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
         pgIntegerDecoder,
@@ -563,6 +569,7 @@ const commitSshConnectionCreationAttempt$ = command(
         ...(access === undefined ? [] : [access]),
         ...(tailscale === undefined ? [] : [tailscale]),
         written,
+        device,
       )
       .select({
         existing: { ...reads.current._.selectedFields },

@@ -529,7 +529,6 @@ final class ComposerDraftStore {
         lifecycleTasks.track(task)
       }
     }
-    editor.mentionSource = nil
     signals.close()
     debounceTask?.cancel()
     syncTask?.cancel()

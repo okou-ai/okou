@@ -1,3 +1,4 @@
+import CCState
 import CCStateSwiftUI
 import ChatData
 import SwiftUI
@@ -112,23 +113,48 @@ private struct ConversationRunUsageLabel: View {
 struct ConversationRunUsageDetails: View {
   let usage: ConversationRunUsageStore
   let runID: String
-  let catalog: ModelCatalog?
+  /// The workspace's shared model catalog read, or nil without model metadata.
+  let catalog: Computed<Task<ModelCatalog, Error>>?
   let retry: () -> Void
 
   var body: some View {
     StoreProvider(usage.store) {
-      RunUsageResource(runID: runID, usage: usage) { resource in
-        if let resource {
-          RunUsageValue(resource: resource) { state in
-            ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
-          }
-          .id(ObjectIdentifier(resource))
-        } else {
-          ConversationRunUsageDetailsContent(state: .loading, catalog: catalog, retry: retry)
-        }
+      if let catalog {
+        RunUsageCatalog(catalog: catalog, content: details)
+      } else {
+        details(nil)
       }
     }
   }
+
+  private func details(_ catalog: ModelCatalog?) -> some View {
+    RunUsageResource(runID: runID, usage: usage) { resource in
+      if let resource {
+        RunUsageValue(resource: resource) { state in
+          ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
+        }
+        .id(ObjectIdentifier(resource))
+      } else {
+        ConversationRunUsageDetailsContent(state: .loading, catalog: catalog, retry: retry)
+      }
+    }
+  }
+}
+
+/// Model names come from the shared catalog read; usage stays readable while it loads or fails.
+private struct RunUsageCatalog<Content: View>: View {
+  @ResolvedValue private var catalog: ModelCatalog?
+  let content: (ModelCatalog?) -> Content
+
+  init(
+    catalog: Computed<Task<ModelCatalog, Error>>,
+    @ViewBuilder content: @escaping (ModelCatalog?) -> Content
+  ) {
+    _catalog = ResolvedValue(task: catalog, keepLast: true)
+    self.content = content
+  }
+
+  var body: some View { content(catalog) }
 }
 
 private struct ConversationRunUsageDetailsContent: View {

@@ -1,15 +1,18 @@
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { remoteDevices } from "@okouai/db/schema/remote-device";
+import { phoneUseDevices } from "@okouai/db/schema/phone-use";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq, exists } from "drizzle-orm";
+import { and, eq, exists, notExists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 
 type RemoteErasureScope =
   | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
@@ -32,6 +35,33 @@ function boundCustomConnectorErasureCondition(orgId: string) {
             eq(orgCustomConnectorCloudflareBindings.orgId, orgId),
           ),
         ),
+    ),
+  );
+}
+
+function eraseEmptyRemoteDevices(db: Db, scope: RemoteErasureScope) {
+  // Native installations have their own retention lifecycle. Keep their
+  // device links while erasing records with no surviving channels.
+  const linkedChannels = [
+    computerUseHosts,
+    phoneUseDevices,
+    sshConnections,
+    vncConnections,
+  ];
+  return db.delete(remoteDevices).where(
+    and(
+      scope.kind === "user" ? undefined : eq(remoteDevices.orgId, scope.orgId),
+      scope.kind === "organization"
+        ? undefined
+        : eq(remoteDevices.userId, scope.userId),
+      ...linkedChannels.map((channel) => {
+        return notExists(
+          db
+            .select({ id: channel.id })
+            .from(channel)
+            .where(eq(channel.remoteDeviceId, remoteDevices.id)),
+        );
+      }),
     ),
   );
 }
@@ -160,6 +190,8 @@ export const eraseRemoteOwnerData$ = command(
               ),
         ),
       );
+    signal.throwIfAborted();
+    await eraseEmptyRemoteDevices(db, scope);
     signal.throwIfAborted();
   },
 );

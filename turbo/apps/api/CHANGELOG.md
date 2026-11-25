@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.128.1](https://github.com/okou-ai/okou/compare/api-v2.128.0...api-v2.128.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **host:** preserve owner previews of legacy public sites ([#50847](https://github.com/okou-ai/okou/issues/50847)) ([7efbeb2](https://github.com/okou-ai/okou/commit/7efbeb25b7bc21caafc2b6bb72a23a1a5bc944bd)) [#50841](https://github.com/okou-ai/okou/issues/50841)
+* **ios:** return all connector oauth attempts to the app ([#50773](https://github.com/okou-ai/okou/issues/50773)) ([e683a88](https://github.com/okou-ai/okou/commit/e683a886bb389afe4671e7eca49a100d485137eb))
+
+
+### Performance Improvements
+
+* **api:** tune Runner dispatch keep-alive and send timings ([#50839](https://github.com/okou-ai/okou/issues/50839)) ([3afe539](https://github.com/okou-ai/okou/commit/3afe53917b9429a9fc549179d8f325020d923c4d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.1
+    * @okouai/core bumped to 8.879.1
+    * @okouai/db bumped to 2.68.4
+    * @okouai/pi-agent-runtime bumped to 1.52.75
+
 ## [2.128.0](https://github.com/okou-ai/okou/compare/api-v2.127.0...api-v2.128.0) (2026-11-25)
 
 

@@ -318,7 +318,7 @@ fi
 # a duplicate authorization after its indexes exist. Keep the separately deployed
 # preparation eligible by resolving its merged main history, not activation.
 if ! connector_identity_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1633_connector_identity_writer_preparation.sql | sed -n '1p') ||
+  origin/main -- turbo/packages/db/src/migrations/1634_connector_identity_writer_preparation.sql | sed -n '1p') ||
   [[ ! "$connector_identity_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the merged Connector identity writer preparation on main."
 fi

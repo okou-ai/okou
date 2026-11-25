@@ -187,13 +187,13 @@ struct ChatDetailView: View {
     .sheet(item: $usageDetails) { selection in
       ConversationRunUsageDetails(
         usage: conversation.runUsage, runID: selection.id,
-        catalog: conversation.modelSelection?.models.usageCatalog,
+        catalog: conversation.modelSelection?.models.catalog,
         retry: { conversation.runUsage.retry(selection.id) }
       )
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
       .okouSheetBackground()
-      .task { await conversation.modelSelection?.models.loadUsageCatalog() }
+      .task { await conversation.modelSelection?.models.loadCatalog() }
     }
     .connectorAuthorization(store: conversation.connectorActions)
     .alert(

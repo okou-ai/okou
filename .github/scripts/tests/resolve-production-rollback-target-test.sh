@@ -395,7 +395,7 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1633_connector_identity_writer_preparation.sql* ]]; then
+    if [[ "$*" == *1634_connector_identity_writer_preparation.sql* ]]; then
       [ "${MOCK_CONNECTOR_IDENTITY_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT-c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3}"
       exit 0
@@ -778,7 +778,7 @@ done
 run_resolver "${tmp_dir}/connector-identity-exact.output" \
   "MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT=${target_commit}" >"${tmp_dir}/connector-identity-exact.log"
 grep -Fxq "target_commit=${target_commit}" "${tmp_dir}/connector-identity-exact.output" || fail "exact identity preparation must remain eligible"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1633_connector_identity_writer_preparation.sql" "${tmp_dir}/boundaries.log" || fail "identity floor must use the preparation's first-parent main history"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1634_connector_identity_writer_preparation.sql" "${tmp_dir}/boundaries.log" || fail "identity floor must use the preparation's first-parent main history"
 grep -Fxq "git merge-base --is-ancestor ${target_commit} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "exact preparation must be checked against the requested target"
 
 # Staff activation must not select an API or Runner without the separately
