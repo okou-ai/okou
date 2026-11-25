@@ -25,6 +25,8 @@ struct ChatDetailView: View {
   @ResolvedValue private var resolvedTranscript: ConversationProjection.Value?
   /// Send, Stop and failure state, kept in the workspace session's Store.
   @ResolvedValue private var resolvedDelivery: ConversationStore.Delivery?
+  /// Whether a failure recovery is running, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedRecovery: ConversationFailureRecovery.Recovery?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -46,6 +48,7 @@ struct ChatDetailView: View {
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
     _resolvedTranscript = ResolvedValue(conversation.transcript)
     _resolvedDelivery = ResolvedValue(conversation.delivery)
+    _resolvedRecovery = ResolvedValue(conversation.failureRecoveryActions.recovery)
   }
 
   /// This render's transcript. The synchronous read only covers a missing first resolution.
@@ -56,6 +59,9 @@ struct ChatDetailView: View {
   /// This render's delivery state, with the same fallback as the transcript.
   private var delivery: ConversationStore.Delivery {
     resolvedDelivery ?? conversation.currentDelivery
+  }
+  private var isRecoveringFailure: Bool {
+    (resolvedRecovery ?? conversation.failureRecoveryActions.currentRecovery).isRecovering
   }
   private var rows: [ConversationCollectionRow] {
     ConversationRowProjection(
@@ -223,7 +229,7 @@ struct ChatDetailView: View {
         } else {
           ChatComposerView(
             isBusy: delivery.isSending || delivery.isStopping
-              || conversation.isRecoveringFailure,
+              || isRecoveringFailure,
             showsProgress: false, canStop: history.canStop, needsUpgrade: delivery.needsUpgrade,
             error: delivery.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),

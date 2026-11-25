@@ -9,7 +9,7 @@ import Observation
 final class ConversationStore {
   var failureRecoveryActions: ConversationFailureRecovery { failureRecovery }
   @ObservationIgnored private lazy var failureRecovery = ConversationFailureRecovery(
-    conversation: self, commands: commands, lifecycleTasks: lifecycleTasks,
+    conversation: self, commands: commands, graph: graph, lifecycleTasks: lifecycleTasks,
     detailOwner: { [weak self] in self?.detailOwner },
     refresh: { [weak self] in
       guard let self else { return }

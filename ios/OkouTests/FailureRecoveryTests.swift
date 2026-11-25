@@ -41,7 +41,7 @@ final class FailureRecoveryTests: XCTestCase {
       gate.open()
       await recovery.value
     }
-    try await waitForBusinessResult { conversation.isRecoveringFailure }
+    try await waitForBusinessResult(watching: conversation) { conversation.isRecoveringFailure }
     gate.open()
     await sending.value
     await recovery.value
