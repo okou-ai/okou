@@ -25,6 +25,7 @@ internal class ChatRowMutationOwner(
         val connectionFailed: Boolean,
         val alreadySatisfied: Boolean,
         val recoverByTarget: Boolean,
+        val renameAcknowledged: Boolean,
     )
 
     class Confirmation(val failure: ChatRowActionFailure?, val ownWriteConfirmed: Boolean)
@@ -78,6 +79,7 @@ internal class ChatRowMutationOwner(
         var targetMissing = false
         var connectionFailed = false
         var alreadySatisfied = false
+        var renameAcknowledged = false
         val retries = if (optimistic && action.recoversInBackground) ChatWriteRetries() else null
         try {
             requireCurrent()
@@ -90,8 +92,14 @@ internal class ChatRowMutationOwner(
             for (edit in edits.asReversed()) {
                 requireCurrent()
                 submittedCount++
-                if (retries == null) write(edit)
-                else
+                if (retries == null) {
+                    write(edit)
+                    if (action == ChatRowAction.Rename) {
+                        requireCurrent()
+                        renameAcknowledged = true
+                        if (projection.acknowledgeRename(edit)) publishRows()
+                    }
+                } else
                     retries.run { retrying ->
                         requireCurrent()
                         if (retrying && projection.settleConfirmedTargets(listOf(edit))) {
@@ -121,6 +129,7 @@ internal class ChatRowMutationOwner(
             connectionFailed,
             alreadySatisfied,
             retries != null,
+            renameAcknowledged,
         )
     }
 
@@ -160,6 +169,7 @@ internal class ChatRowMutationOwner(
         // Even when a response is lost, the original event ID can confirm the write.
         awaitListRead(needsRead)
         requireCurrent()
+        if (submission.renameAcknowledged) return Confirmation(null, true)
         if (missingDeleteTarget != null) {
             // A concurrent deletion can make the requested result canonical after a 404.
             return Confirmation(

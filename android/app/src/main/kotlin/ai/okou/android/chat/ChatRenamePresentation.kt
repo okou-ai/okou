@@ -105,7 +105,8 @@ class WorkspaceNamePresentation : ViewModel() {
     ) {
         val thread =
             list.confirmedThreads.firstOrNull { it.id == id && it.hidden != true } ?: return
-        open(WorkspaceRenameTarget.Chat(id, fromConversation), thread.title.orEmpty(), restoreFocus)
+        val title = (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty()
+        open(WorkspaceRenameTarget.Chat(id, fromConversation), title, restoreFocus)
     }
 
     internal fun openProject(id: String, restoreFocus: Boolean, list: ChatListUiState) {

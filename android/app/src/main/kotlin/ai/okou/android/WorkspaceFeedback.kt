@@ -445,7 +445,8 @@ private fun WorkspaceRenameForm(
                 }
             RenameListItemSheet(
                 editor = editor,
-                confirmedName = thread.title.orEmpty(),
+                confirmedName =
+                    (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty(),
                 titleRes = R.string.chat_rename,
                 labelRes = R.string.chat_title_field,
                 enabled =

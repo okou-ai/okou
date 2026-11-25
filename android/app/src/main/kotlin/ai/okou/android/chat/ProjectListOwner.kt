@@ -94,6 +94,7 @@ internal class ProjectListOwner(
     private var confirmedProjects: ConfirmedProjects? = null
     private var createRequest: CreateRequest? = null
     private val createReceipts = mutableMapOf<String, ConfirmedProject>()
+    private val renameReceipts = mutableMapOf<String, ProjectRenameReceipt>()
     private var projectRename: ProjectRename? = null
     private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
     private val retryableProjectDeletes = mutableMapOf<String, String>()
@@ -116,6 +117,12 @@ internal class ProjectListOwner(
         val name: String,
         val eventId: String,
         val connectionFailed: Boolean = false,
+    )
+
+    private data class ProjectRenameReceipt(
+        val eventId: String,
+        val baseline: ConfirmedProject,
+        val confirmed: ConfirmedProject,
     )
 
     init {
@@ -302,7 +309,7 @@ internal class ProjectListOwner(
         val name = input.trim()
         if (
             name.length !in 1..ProjectNameLimit ||
-                confirmedRows().none { it.id == id && it.name.trim() != name }
+                state.rows.none { it.id == id && it.name.trim() != name }
         )
             return false
         if (retryableProjectRenames[id]?.connectionFailed == false) return false
@@ -433,11 +440,11 @@ internal class ProjectListOwner(
             snapshot.copy(
                 creation = settledCreation,
                 rows =
-                    if (pending == null) rows
+                    if (renameReceipts.isEmpty()) rows
                     else
-                        rows.map { project ->
-                            if (project.id == pending.id) project.copy(name = pending.name)
-                            else project
+                        rows.map { row ->
+                            val receipt = renameReceipts[row.id]
+                            if (receipt == null) row else row.copy(name = receipt.confirmed.name)
                         },
                 renamingId = pending?.id,
                 unconfirmedRenames = retryableProjectRenames.keys.toSet(),
@@ -450,8 +457,8 @@ internal class ProjectListOwner(
 
     private fun submitProjectRename(rename: ProjectRename): Boolean {
         val snapshot = state
-        if (!current() || !snapshot.canRename || confirmedRows().none { it.id == rename.id })
-            return false
+        if (!current() || !snapshot.canRename) return false
+        val baseline = confirmedRows().firstOrNull { it.id == rename.id } ?: return false
         val uncertainAttempt =
             retryableProjectRenames[rename.id]?.let {
                 it.eventId == rename.eventId && !it.connectionFailed
@@ -467,7 +474,24 @@ internal class ProjectListOwner(
             var rejected = false
             try {
                 try {
-                    service.renameProject(rename.id, rename.name, rename.eventId)
+                    val receipt = service.renameProject(rename.id, rename.name, rename.eventId)
+                    requireCurrent()
+                    if (receipt.name == rename.name) {
+                        val latest = confirmedRows().firstOrNull { it.id == rename.id }
+                        if (
+                            latest != null &&
+                                !hasProjectReceipt(rename.eventId) &&
+                                (latest == baseline ||
+                                    chatTimestamp(latest.updatedAt) <
+                                        chatTimestamp(receipt.updatedAt))
+                        ) {
+                            renameReceipts[rename.id] =
+                                ProjectRenameReceipt(rename.eventId, latest, receipt)
+                        }
+                        publishProjects(state)
+                        refreshAfterWrite()
+                        return@launch
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -563,6 +587,18 @@ internal class ProjectListOwner(
                         selected.rows.mapTo(affected) { it.id }
                         selected.checkpoint.archive.projects.mapTo(affected) { it.id }
                         createReceipts.keys.removeAll(affected)
+                    }
+                    if (renameReceipts.isNotEmpty()) {
+                        val rows = selected.rows.associateBy { it.id }
+                        renameReceipts.entries.removeAll { (id, receipt) ->
+                            val row = rows[id] ?: createReceipts[id]
+                            row == null ||
+                                hasProjectReceipt(receipt.eventId) ||
+                                hasProjectReceipt(receipt.eventId, candidate.checkpoint) ||
+                                (row != receipt.baseline &&
+                                    chatTimestamp(row.updatedAt) >=
+                                        chatTimestamp(receipt.confirmed.updatedAt))
+                        }
                     }
                     if (retryableProjectDeletes.isNotEmpty()) {
                         val ids = selected.rows.mapTo(hashSetOf()) { it.id }

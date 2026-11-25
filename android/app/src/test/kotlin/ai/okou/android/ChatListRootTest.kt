@@ -3834,7 +3834,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun projectRenameShowsOptimisticallyAndRetriesTheSameEvent() {
+    fun projectRenameRetainsTheConfirmedNameAndRetriesTheSameEvent() {
         val app = compose.activity.application as ChatListApplication
         val pending = CountDownLatch(1)
         val writes = CopyOnWriteArrayList<String>()
@@ -3856,10 +3856,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                         pending.await()
                         MockResponse().setResponseCode(503)
                     }
-                    2 ->
-                        jsonResponse(
-                            """{"id":"$CHAT_PROJECT","name":"Field notes","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}""",
-                        )
+                    2 -> MockResponse().setResponseCode(503)
                     else -> {
                         committed.set(eventId)
                         MockResponse().setResponseCode(503)
@@ -3901,6 +3898,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
             editor.assertTextContains("  Field notes  ")
             compose.onNodeWithText(app.getString(R.string.settings_saving)).assertIsNotEnabled()
+            assertEquals("Research", currentList()?.projects?.single()?.name)
         } finally {
             pending.countDown()
         }

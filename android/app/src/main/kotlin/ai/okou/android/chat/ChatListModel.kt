@@ -1229,7 +1229,11 @@ class ChatListModel(
                     } else {
                         confirmation = null
                         submission =
-                            rowMutations.submit(action, edits, optimistic = undoRequest == null) {
+                            rowMutations.submit(
+                                action,
+                                edits,
+                                optimistic = undoRequest == null && action != ChatRowAction.Rename,
+                            ) {
                                 // Acknowledge replies that arrived while this chat was muted.
                                 markReadWithReceipt(threadId)
                             }

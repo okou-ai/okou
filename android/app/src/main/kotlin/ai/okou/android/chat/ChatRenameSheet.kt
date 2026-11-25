@@ -77,14 +77,13 @@ internal fun RenameListItemSheet(
     val readOnly = unconfirmed || status == RenameStatus.Saving
     val form = renameForm(input.text, baseline, confirmedName, enabled && !readOnly, null)
     val name = form.name
-    val confirmed = submitted != null && submitted == confirmedName && !readOnly
-    LaunchedEffect(confirmed, submitted) {
-        if (
-            confirmed &&
-                editor.submitted == submitted &&
-                normalizedRenameName(input.text) == submitted
-        )
-            saved()
+    val confirmed = submitted != null && submitted == confirmedName
+    if (confirmed && normalizedRenameName(input.text) == submitted) {
+        LaunchedEffect(submitted) {
+            if (editor.submitted == submitted && normalizedRenameName(input.text) == submitted)
+                saved()
+        }
+        return
     }
 
     val hint = if (projectName) null else stringResource(R.string.chat_rename_trim_hint)

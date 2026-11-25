@@ -13,12 +13,23 @@ internal class ChatListProjection {
         val edit: ChatRowEdit,
         private val optimistic: Boolean,
         var waitingForTargetChange: Boolean,
+        private var renameBaseline: Pair<String?, String?>?,
     ) {
         var unconfirmed = false
         var confirmedMembershipChanged = false
+        var renameAcknowledged = false
 
-        val optimisticEdit: ChatRowEdit?
-            get() = edit.takeIf { optimistic && !(unconfirmed && confirmedMembershipChanged) }
+        val visibleEdit: ChatRowEdit?
+            get() = edit.takeIf {
+                renameAcknowledged || optimistic && !(unconfirmed && confirmedMembershipChanged)
+            }
+
+        fun keepsRenameBaseline(row: ConfirmedChat?): Boolean =
+            row != null && row.hidden != true && (row.title to row.renamedAt) == renameBaseline
+
+        fun advanceRenameBaseline(row: ConfirmedChat) {
+            renameBaseline = row.title to row.renamedAt
+        }
 
         val canRecoverByTarget: Boolean
             get() = optimistic && edit.action.recoversInBackground
@@ -55,10 +66,10 @@ internal class ChatListProjection {
     }
 
     fun rows(): ReplayedChats {
-        val optimisticEdits =
-            if (rowEdits.isEmpty()) emptyList() else rowEdits.mapNotNull { it.optimisticEdit }
+        val visibleEdits =
+            if (rowEdits.isEmpty()) emptyList() else rowEdits.mapNotNull { it.visibleEdit }
         val recentThreads = outgoingActivity.values.toList().asReversed().map { it.threadId }
-        return confirmedRows.withLocalChanges(optimisticEdits, recentThreads)
+        return confirmedRows.withLocalChanges(visibleEdits, recentThreads)
     }
 
     fun addEdits(edits: List<ChatRowEdit>, optimistic: Boolean = true) {
@@ -74,8 +85,24 @@ internal class ChatListProjection {
                             confirmedRows.byRecency.any {
                                 it.id == edit.threadId && edit.matchesRecoveryTarget(it)
                             }
-                    PendingRowEdit(edit, optimistic, targetAlreadyMatches)
+                    val renameBaseline =
+                        if (edit.action == ChatRowAction.Rename)
+                            confirmedRows.threads
+                                .firstOrNull { it.id == edit.threadId }
+                                ?.let {
+                                    it.title to it.renamedAt
+                                }
+                        else null
+                    PendingRowEdit(edit, optimistic, targetAlreadyMatches, renameBaseline)
                 }
+    }
+
+    fun acknowledgeRename(edit: ChatRowEdit): Boolean {
+        val pending = rowEdits.firstOrNull { it.edit == edit } ?: return false
+        val row = confirmedRows.threads.firstOrNull { it.id == edit.threadId }
+        if (!pending.keepsRenameBaseline(row)) return false
+        pending.renameAcknowledged = true
+        return true
     }
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
@@ -251,7 +278,7 @@ internal class ChatListProjection {
                     }
                 }
             }
-            settleRowEdits(observed, discarded)
+            settleRowEdits(observed, discarded + supersededRenames(rows, observed))
             val settledThreads = mutableSetOf<String>()
             for ((id, attempt) in outgoingActivity.entries.toList().asReversed()) {
                 if (id in observed || completedAttempts[id] === attempt)
@@ -263,6 +290,26 @@ internal class ChatListProjection {
         return checkpointChanged ||
             rowEdits !== editsBefore ||
             outgoingActivity.size != activityCount
+    }
+
+    private fun supersededRenames(rows: ReplayedChats, observed: Set<String>): Set<String> {
+        if (rowEdits.none { it.renameAcknowledged }) return emptySet()
+        val byId = rows.threads.associateBy { it.id }
+        val observedRenames = mutableMapOf<String, ChatRowEdit>()
+        return buildSet {
+            for (pending in rowEdits) {
+                val edit = pending.edit
+                if (edit.action != ChatRowAction.Rename) continue
+                val row = byId[edit.threadId]
+                val predecessor = observedRenames[edit.threadId]
+                // A late feed receipt for an earlier local write must not replace a newer rename.
+                if (row != null && predecessor != null && row.title == predecessor.value)
+                    pending.advanceRenameBaseline(row)
+                if (!pending.renameAcknowledged) continue
+                if (edit.eventId in observed) observedRenames[edit.threadId] = edit
+                else if (!pending.keepsRenameBaseline(row)) add(edit.eventId)
+            }
+        }
     }
 
     private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
