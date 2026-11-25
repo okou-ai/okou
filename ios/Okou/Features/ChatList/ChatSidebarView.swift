@@ -20,6 +20,8 @@ struct ChatSidebarView: View {
   @ResolvedValue private var searchPresented: Bool?
   /// Project actions and disclosure, kept in the workspace session's Store.
   @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
+  /// The confirmed chats, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedThreads: [ChatThread]?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -40,6 +42,7 @@ struct ChatSidebarView: View {
     _presentation = LoadableValue(store.sidebar.presentation)
     _searchPresented = ResolvedValue(store.search.presented)
     _resolvedProjects = ResolvedValue(store.projects.presentation)
+    _resolvedThreads = ResolvedValue(store.list.threadsValue)
   }
 
   private struct ProjectEditor {
@@ -241,7 +244,10 @@ struct ChatSidebarView: View {
     ChatSidebarHeader(
       store: store, authentication: authentication, workspaceID: workspaceID,
       headerHeight: headerHeight, isScrolled: isScrolled, accountError: $accountError,
-      threadFilter: threadFilter, close: close, newProject: { showEditor(creationEditor) })
+      threadFilter: threadFilter,
+      hasUnreadChats: (resolvedThreads ?? store.list.threads).contains {
+        !$0.isMuted && $0.indicator == .unread
+      }, close: close, newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.

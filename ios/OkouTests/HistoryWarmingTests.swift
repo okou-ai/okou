@@ -87,15 +87,21 @@ final class HistoryWarmingTests: XCTestCase {
 
     fixture.state.title.withLock { $0 = "Renamed over realtime" }
     try fixture.server.notify("threadListChanged", channel: fixture.workspaceChannel)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) {
       fixture.workspace.list.threads.first?.title == "Renamed over realtime"
     }
     fixture.state.unread.withLock { $0 = true }
     try fixture.server.notify("chatIndicatorsChanged", channel: fixture.workspaceChannel)
-    try await waitForBusinessResult { fixture.workspace.list.threads.first?.indicator == .unread }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { fixture.workspace.list.threads.first?.indicator == .unread }
     fixture.state.unread.withLock { $0 = false }
     try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.workspaceChannel)
-    try await waitForBusinessResult { fixture.workspace.list.threads.first?.indicator == nil }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { fixture.workspace.list.threads.first?.indicator == nil }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(cursors.withLock { $0 }, [0])
 

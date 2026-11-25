@@ -652,7 +652,9 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
     remote.withLock { $0 = "active" }
     try fixture.server.attached(fixture.channel)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) {
       fixture.workspace.list.threads.first?.indicator == .active
     }
     XCTAssertEqual(

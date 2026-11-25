@@ -25,19 +25,16 @@ final class ThreadListStore {
     advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
+  /// The confirmed chats, kept in the workspace session's Store. Views read it through
+  /// CCStateSwiftUI; `threads` serves owner logic, actions and tests.
   let threadsValue: Computed<[ChatThread]>
 
   private(set) var threads: [ChatThread] {
-    get {
-      access(keyPath: \.threads)
-      return confirmed(threadsValue)
-    }
+    get { confirmed(threadsValue) }
     set {
       guard newValue != confirmed(threadsValue) else { return }
-      withMutation(keyPath: \.threads) {
-        do { try stateStore.set(replaceThreads, newValue) } catch {
-          preconditionFailure("Cannot publish confirmed threads: \(error)")
-        }
+      do { try stateStore.set(replaceThreads, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed threads: \(error)")
       }
     }
   }

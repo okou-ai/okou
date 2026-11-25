@@ -164,7 +164,9 @@ final class ChatThreadPinTests: XCTestCase {
       fixture.releaseAll()
       await unpin.value
     }
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: store.list.threadsValue, in: store.graph
+    ) {
       store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt == nil
     }
     store.close()
