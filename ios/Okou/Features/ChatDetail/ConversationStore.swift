@@ -620,4 +620,7 @@ extension ConversationStore {
   /// not resolved.
   var currentWindow: ConversationPresentation.Window { reading.currentWindow }
   var currentNavigation: ConversationPresentation.Navigation { reading.currentNavigation }
+  /// History and read-mark synchronization, kept in the workspace session's Store.
+  var syncStatus: Computed<ConversationPresentation.SyncStatus> { reading.syncStatus }
+  var currentSyncStatus: ConversationPresentation.SyncStatus { reading.currentSyncStatus }
 }

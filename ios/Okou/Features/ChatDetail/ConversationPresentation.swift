@@ -84,6 +84,8 @@ final class ConversationPresentation {
       return Navigation(readingMessageID: reading.position?.messageID, request: reading.request)
     }
     loadsEarlier = Computed { get in try get(readingState).isLoadingEarlier }
+    let syncState = syncState
+    syncStatus = Computed { get in try get(syncState) }
   }
   private func reconcileProjection() { didReconcileProjection() }
   func waitForRefresh() async {
@@ -104,11 +106,25 @@ final class ConversationPresentation {
   @ObservationIgnored let loadsEarlier: Computed<Bool>
   @ObservationIgnored private let readingState = CCState.State(Reading())
   private(set) var detailOwner: UUID?
-  private(set) var readSyncError: String?
-  private(set) var historySyncError: String?
+  /// History and read-mark synchronization, kept in the workspace session's Store.
+  /// ChatDetailView and the chat list's sync status read `syncStatus` through CCStateSwiftUI.
+  @ObservationIgnored let syncStatus: Computed<SyncStatus>
+  @ObservationIgnored private let syncState = CCState.State(SyncStatus())
+  private(set) var readSyncError: String? {
+    get { currentSyncStatus.readError }
+    set { updateSync { $0.readError = newValue } }
+  }
+  private(set) var historySyncError: String? {
+    get { currentSyncStatus.historyError }
+    set { updateSync { $0.historyError = newValue } }
+  }
   private var refreshAgain = false
-  private var refreshTask: Task<Void, Never>?
-  private var readTask: Task<Void, Never>?
+  @ObservationIgnored private var refreshTask: Task<Void, Never>? {
+    didSet { updateSync { $0.isRefreshing = refreshTask != nil } }
+  }
+  @ObservationIgnored private var readTask: Task<Void, Never>? {
+    didSet { updateSync { $0.isMarkingRead = readTask != nil } }
+  }
   private var readAgain = false
   private var refreshGeneration = UUID()
   private var expansionTask: Task<Void, Never>?
@@ -117,7 +133,7 @@ final class ConversationPresentation {
   private var suppressAutomaticRead = false
   private var manualUnreadThrough: Date?
   private var locallyReadThrough: Date?
-  var isLoading: Bool { refreshTask != nil || readTask != nil }
+  var isLoading: Bool { currentSyncStatus.isLoading }
 
   func restoreCached() async {
     guard let thread = conversation?.thread else { return }
@@ -501,6 +517,37 @@ extension ConversationPresentation {
   private var currentReading: Reading {
     do { return try projection.store.get(readingState) } catch {
       preconditionFailure("Cannot read the conversation reading graph: \(error)")
+    }
+  }
+
+  /// History and read-mark synchronization: whether either is in flight, and their last errors.
+  struct SyncStatus: Equatable {
+    var isRefreshing = false
+    var isMarkingRead = false
+    var historyError: String?
+    var readError: String?
+
+    var isLoading: Bool { isRefreshing || isMarkingRead }
+    /// The error the chat list's sync status reports.
+    var error: String? { historyError ?? readError }
+  }
+
+  /// The answer for a reader without a conversation.
+  static let idleSync = Computed { _ in SyncStatus() }
+
+  var currentSyncStatus: SyncStatus {
+    do { return try projection.store.get(syncState) } catch {
+      preconditionFailure("Cannot read the conversation sync status: \(error)")
+    }
+  }
+
+  fileprivate func updateSync(_ mutation: (inout SyncStatus) -> Void) {
+    let previous = currentSyncStatus
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try projection.store.set(syncState, next) } catch {
+      preconditionFailure("Cannot update the conversation sync status: \(error)")
     }
   }
 

@@ -106,11 +106,17 @@ final class WorkspaceStore {
   var connectionStatus: RealtimeConnectionStatus { synchronization.connectionStatus }
 
   var synchronizationState: ChatSynchronizationState? {
+    synchronizationState(selected: selectedConversation?.currentSyncStatus)
+  }
+
+  /// The chat list's sync status, given the selected chat's synchronization, which the banner
+  /// resolves from the session graph.
+  func synchronizationState(
+    selected: ConversationPresentation.SyncStatus?
+  ) -> ChatSynchronizationState? {
     guard !closed else { return nil }
-    if selectedConversation?.isLoading == true { return .updating }
-    if list.syncError != nil
-      || selectedConversation?.syncError != nil
-    {
+    if selected?.isLoading == true { return .updating }
+    if list.syncError != nil || selected?.error != nil {
       return .updateFailed
     }
     guard realtime != nil else { return nil }
