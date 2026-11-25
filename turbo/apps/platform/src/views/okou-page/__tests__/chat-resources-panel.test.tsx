@@ -1,4 +1,4 @@
-import { screen, within, waitFor } from "@testing-library/react";
+import { fireEvent, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -143,4 +143,39 @@ test("chat-resources-navigation-003 keeps the edited title focused when the adja
   await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
   expect(location.pathname).toBe("/chats/" + first.id);
   expect(title).toHaveFocus();
+});
+
+test("chat-resources-004 Desktop pointer presents the closed trigger label before opening the artifacts dialog", async () => {
+  await setupResources(context, {
+    open: false,
+    mock() {
+      context.mocks.browser.matchMedia((query) => {
+        return /(?:min-width|pointer: fine|hover: hover)/.test(query);
+      });
+    },
+  });
+  const trigger = resourceButton();
+  const user = userEvent.setup({ delay: null });
+  await waitFor(() => {
+    expect(trigger).toBeEnabled();
+  });
+  await user.hover(trigger);
+  fireEvent.pointerMove(trigger, {
+    pointerType: "mouse",
+    clientX: 28,
+    clientY: 18,
+  });
+  const label = await waitFor(() => {
+    const tip = document.querySelector('[data-slot="tooltip-content"]');
+    expect(tip).toBeVisible();
+    expect(tip).toHaveTextContent("Artifacts and chats");
+    return tip;
+  });
+  click(trigger);
+  await expect(
+    screen.findByRole("dialog", { name: "Artifacts and chats" }),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    return expect(label).not.toBeVisible();
+  });
 });
