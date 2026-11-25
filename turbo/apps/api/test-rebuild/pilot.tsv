@@ -322,11 +322,11 @@ messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.tes
 messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-007	rewritten	67.0	
 messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-008	rewritten	80.0	
 messaging	src/signals/routes/__tests__/integrations-teams-installation-owner.test.ts	integrations-teams-installation-owner-011	rewritten	63.0	
-non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-001	planned		
-non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	planned		
-non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	planned		
-non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-011	planned		
-non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-014	planned		
+non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-001	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime
+non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime
+non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime
+non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-011	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime
+non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-014	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	planned		
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-002	planned		
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	planned		
