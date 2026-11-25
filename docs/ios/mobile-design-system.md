@@ -626,7 +626,10 @@ height rather than forcing the editor to move with the candidate count.
 `hasImage` is true; the SDK also supplies generated image URLs, which must not
 be mistaken for custom uploads. Without a custom image, use the exact eight
 Web textures selected by FNV-1a of the workspace ID over UTF-16.
-Default artwork stays the same across themes and clients. Workspace marks are
+Default artwork stays the same across themes and clients, except that Web also
+draws the workspace initial from `core/src/workspace-logo.ts` (`letter`,
+`workspaceInitial`) on the texture; native clients show the texture alone until
+they port it (owner: tongx-blip; native release timing). Workspace marks are
 rounded squares, with a radius of one quarter of their size; people remain a
 separate avatar family. Use the shared logo in workspace chrome, selection,
 and settings. The compact native workspace mark is 32 pt.
