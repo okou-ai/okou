@@ -6,7 +6,7 @@ import { ArtifactCatalogPage } from "../../views/artifacts-page/artifact-catalog
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { setAblyInvalidationLoop$ } from "../realtime.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
 import { historyState$, searchParams$ } from "../route.ts";
@@ -25,6 +25,12 @@ import {
   artifactCatalogSidebar,
   artifactLibraryEnabled$,
 } from "./artifact-catalog-instance.ts";
+
+const onArtifactsChanged$ = command(async ({ set }, signal: AbortSignal) => {
+  set(reloadArtifactCatalog$);
+  await set(artifactCatalogSidebar.refreshSharing$, signal);
+  return false;
+});
 
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -50,8 +56,8 @@ export const setupArtifactsPage$ = command(
     );
     // A synced artifact shows its Google Drive state on its catalog row.
     set(
-      setAblyInvalidationLoop$,
-      { topic: artifactChangedTopic, invalidations: [reloadArtifactCatalog$] },
+      setAblyLoop$,
+      { topic: artifactChangedTopic, loopCommand$: onArtifactsChanged$ },
       signal,
     );
     if (artifactId) {

@@ -3028,6 +3028,28 @@ const onWorkflowsChanged$ = command(
   },
 );
 
+function createArtifactRealtimeHandlers(
+  messages: RunTrackingDeps["messages"],
+  reloadArtifacts$: RunTrackingDeps["reloadArtifacts$"],
+) {
+  const onArtifactCatalogChanged$ = command(
+    async ({ set }, signal: AbortSignal) => {
+      set(reloadArtifacts$);
+      set(messages.sidebar.artifactCatalog.reload$);
+      set(messages.refreshArtifactPreviews$);
+      await set(messages.sidebar.refreshSharing$, signal);
+      return false;
+    },
+  );
+  const onArtifactsChanged$ = command(async ({ set }, signal: AbortSignal) => {
+    set(messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$);
+    set(messages.refreshArtifactPreviews$);
+    await set(messages.sidebar.refreshSharing$, signal);
+    return false;
+  });
+  return { onArtifactCatalogChanged$, onArtifactsChanged$ };
+}
+
 function createRunTracking({
   threadId,
   messages,
@@ -3043,6 +3065,10 @@ function createRunTracking({
     catchUpChatEvents$: messages.catchUp$,
     cancellationRecovery,
   });
+  const artifactHandlers = createArtifactRealtimeHandlers(
+    messages,
+    reloadArtifacts$,
+  );
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ start", { threadId });
@@ -3058,15 +3084,6 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [
-              reloadArtifacts$,
-              messages.sidebar.artifactCatalog.reload$,
-              messages.refreshArtifactPreviews$,
-            ],
-            artifacts: [
-              messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
-              messages.refreshArtifactPreviews$,
-            ],
             threadDetail: [
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
@@ -3076,6 +3093,7 @@ function createRunTracking({
             ],
           },
           handlers: {
+            ...artifactHandlers,
             onWorkflowsChanged$,
             onSubscribed$,
           },

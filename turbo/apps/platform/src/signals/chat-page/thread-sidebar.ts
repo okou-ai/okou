@@ -16,8 +16,8 @@ import {
 
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import {
-  artifactDetailPreview,
   createCatalogArtifactPreviewSignals,
+  createCatalogSharingRefresh$,
 } from "../artifacts-page/artifact-catalog-preview.ts";
 import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 import {
@@ -274,6 +274,7 @@ export interface ThreadSidebarSignals {
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
+  readonly refreshSharing$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactImageUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
@@ -375,29 +376,19 @@ function createOpenCatalogArtifactCommand(
   publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
   artifactCatalog: ArtifactCatalogViewSignals,
   contentReady$: Computed<Promise<void>>,
+  refreshSharing$: Command<Promise<void>, [AbortSignal]>,
 ) {
   return command(
-    async (
-      { get, set },
-      artifactId: string,
-      signal: AbortSignal,
-    ): Promise<void> => {
+    async ({ set }, artifactId: string, signal: AbortSignal): Promise<void> => {
       const sessionSignal = set(startSession$, signal);
       set(artifactCatalog.selectArtifact$, artifactId);
       set(publishTarget$, {
         type: "artifact",
         source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
       });
-      const detail = await get(artifactCatalog.selectedArtifactDetail$);
+      await set(refreshSharing$, sessionSignal);
       signal.throwIfAborted();
       sessionSignal.throwIfAborted();
-      if (detail) {
-        set(
-          getHostedSiteShareScope("sidebar").select$,
-          artifactDetailPreview(detail).url,
-          sessionSignal,
-        );
-      }
       const selectedPreview = await set(
         artifactCatalog.ensureSelectedArtifactPreview$,
         artifactId,
@@ -507,6 +498,16 @@ export function createThreadSidebarSignals(
   artifactCatalog: ArtifactCatalogViewSignals,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<NonMailThreadSidebarTarget | null>(null);
+  const readCatalogOwner$ = command(({ get }) => {
+    const target = get(internalTarget$);
+    return target?.type === "artifact" && target.source.kind === "catalog"
+      ? target.source.ownerSignal
+      : undefined;
+  });
+  const refreshSharing$ = createCatalogSharingRefresh$(
+    artifactCatalog,
+    readCatalogOwner$,
+  );
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
@@ -551,6 +552,7 @@ export function createThreadSidebarSignals(
     publishTarget$,
     artifactCatalog,
     preview.contentReady$,
+    refreshSharing$,
   );
 
   const openAttachment$ = createOpenAttachmentCommand(
@@ -578,6 +580,7 @@ export function createThreadSidebarSignals(
     open$,
     openCatalogArtifact$,
     openAttachment$,
+    refreshSharing$,
     close$: command(({ set }) => {
       set(dismiss$);
       set(closeThreadMailLocation$, threadId);

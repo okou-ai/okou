@@ -1,5 +1,5 @@
 import type { ArtifactDetail } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { computed } from "ccstate";
+import { command, computed, type Command } from "ccstate";
 import type { ArtifactCatalogViewSignals } from "./create-artifact-catalog-signals.ts";
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
@@ -15,6 +15,7 @@ import {
   classifyChatAttachment,
   type BodyPreviewKind,
 } from "../chat-page/parse-body-blocks.ts";
+import { getHostedSiteShareScope } from "../hosted-site-sharing.ts";
 
 interface ArtifactDetailPreview {
   readonly kind: BodyPreviewKind;
@@ -22,6 +23,29 @@ interface ArtifactDetailPreview {
   readonly filename: string;
   readonly contentType: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
+}
+
+/** Opening and publication notifications select the same preview-owned session. */
+export function createCatalogSharingRefresh$(
+  catalog: ArtifactCatalogViewSignals,
+  readOwner$: Command<AbortSignal | undefined, []>,
+) {
+  const sharing = getHostedSiteShareScope("sidebar");
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    const ownerSignal = set(readOwner$);
+    if (!ownerSignal || ownerSignal.aborted) {
+      return;
+    }
+    const detail = await get(catalog.selectedArtifactDetail$);
+    signal.throwIfAborted();
+    if (!detail || ownerSignal.aborted || set(readOwner$) !== ownerSignal) {
+      return;
+    }
+    const url = artifactDetailPreview(detail).url;
+    if (get(sharing.session$)?.sourceUrl !== url) {
+      set(sharing.select$, url, ownerSignal);
+    }
+  });
 }
 
 /** Resource and text graphs shared by the page and thread catalog sidebars. */

@@ -530,3 +530,75 @@ test("Reopening a catalog item reads the file selected by its publication update
     within(reopened).findByText("Approved observations from the estuary"),
   ).resolves.toBeVisible();
 });
+
+test("Sharing follows a changed website URL from a publication notification", async () => {
+  const summary = artifact({ title: "Publication audit", kind: "hosted-site" });
+  const siteId = "55000000-0000-4000-8000-000000000031";
+  let slug = "before-audit";
+  const url = () => {
+    return `https://${slug}.okou.app/`;
+  };
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [summary], nextCursor: null });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(
+      200,
+      hostedSiteArtifactDetail(
+        {
+          ...summary,
+          title:
+            slug === "after-audit"
+              ? "Updated publication audit"
+              : summary.title,
+        },
+        { siteId, slug, url: url() },
+      ),
+    );
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, {
+      siteId,
+      publicSlug: slug,
+      url: url(),
+      isActive: true,
+    });
+  });
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: url(), expiresAt: null });
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
+  await setupPage({ context, path: "/artifacts", host: "app.okou.ai" });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(summary.title));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact", panel)).toBeVisible();
+  });
+  slug = "after-audit";
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: summary.id });
+  });
+  await waitFor(() => {
+    expect(
+      within(screen.getByTestId("artifact-sidebar")).getByText(
+        "Updated publication audit",
+      ),
+    ).toBeInTheDocument();
+  });
+  const current = screen.getByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(getButtonByName("Share artifact", current)).toBeVisible();
+  });
+  click(getButtonByName("Share artifact", current));
+  await expect(
+    screen.findByRole("dialog", { name: "Share artifact" }),
+  ).resolves.toBeInTheDocument();
+});
