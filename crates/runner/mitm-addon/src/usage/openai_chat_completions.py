@@ -307,9 +307,6 @@ class _OpenAIChatCompletionsSseUsageHandler:
             self._using_extractor = True
             self._extractor.feed(chunk[remaining:])
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         if not self._using_extractor:
             event_data = bytes(self._event_data)
