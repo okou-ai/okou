@@ -78,12 +78,14 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
 import java.util.TimeZone
+import kotlin.math.ceil
 
 @Composable
 internal fun WorkflowRuleRow(
@@ -695,7 +697,7 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
     }
     val colors = MaterialTheme.colorScheme
     val lineHeight = 16.sp
-    val supportHeight = with(LocalDensity.current) { lineHeight.toDp() }
+    val supportHeight = with(LocalDensity.current) { ceil(lineHeight.toPx()).toDp() }
     Column {
         WorkflowFieldLabel(title)
         Spacer(Modifier.height(OkouFormLayout.LabelGap))
@@ -741,6 +743,12 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
                         MaterialTheme.typography.bodySmall.copy(
                             fontSize = 12.sp,
                             lineHeight = lineHeight,
+                            lineHeightStyle =
+                                LineHeightStyle(
+                                    LineHeightStyle.Alignment.Center,
+                                    LineHeightStyle.Trim.None,
+                                    LineHeightStyle.Mode.Tight,
+                                ),
                         ),
                 )
             },
