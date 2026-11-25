@@ -264,10 +264,9 @@ struct ConnectorAuthorizationSheet: View {
             } header: {
               Text(methodSectionTitle).okouSectionHeader()
             }
-          } else if flow.status.custom != nil, flow.status.custom?.usesBrowserAuthorization != true
-          {
+          } else if let custom = flow.status.custom, !custom.usesBrowserAuthorization {
             Section {
-              ForEach(flow.status.custom?.fields ?? []) { field in
+              ForEach(custom.fields) { field in
                 credential(field.label, key: field.key, secret: field.kind == "secret")
                   .disabled(flow.busy || flow.waiting)
                 if let description = field.description { Text(description).font(.okou(.footnote)) }
