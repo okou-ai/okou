@@ -182,6 +182,7 @@ internal class DefaultModelSettings(
     private var presented = false
     private var foreground = false
     private var destination: SettingsDestination? = null
+    private var composerOptionsVisible = false
     private var preferenceRead: Job? = null
     private var catalogRead: Job? = null
     private var saving: Job? = null
@@ -214,6 +215,12 @@ internal class DefaultModelSettings(
         if (foreground == active) return
         foreground = active
         if (active && readbackBlocked) resumeReadback()
+        synchronizeReads()
+    }
+
+    fun showComposerOptions(visible: Boolean) {
+        if (composerOptionsVisible == visible) return
+        composerOptionsVisible = visible
         synchronizeReads()
     }
 
@@ -286,7 +293,8 @@ internal class DefaultModelSettings(
 
         val catalogVisible =
             active &&
-                (destination == SettingsDestination.Overview ||
+                (composerOptionsVisible ||
+                    destination == SettingsDestination.Overview ||
                     destination == SettingsDestination.Instructions)
         if (!catalogVisible) {
             catalogRead?.cancel()

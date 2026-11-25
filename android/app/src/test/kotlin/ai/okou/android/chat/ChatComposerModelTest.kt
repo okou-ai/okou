@@ -496,6 +496,35 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
     @Test
+    fun explicitAutoSurvivesRejectedCreationAndDraftRestore() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use Auto for this draft")
+        val selection = DraftModelSelection(null)
+        model.editDraftModel(target, selection)
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        val request = service.creates.single()
+        assertEquals(CanonicalOptional.Present(null), request.model)
+        assertEquals(CanonicalOptional.Present(null), request.serviceTier)
+        assertNull(request.reasoningEffort)
+        assertTrue(service.requests.isEmpty())
+
+        val rejected = store.load(identity).journal
+        assertNull(rejected.newChatModel)
+        model.restoreDraft(target, rejected.retainedDrafts.keys.single())
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+        assertEquals("Use Auto for this draft", model.uiState.value.entry(target).text)
+    }
+
+    @Test
     fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
         val model = create(false, identity)
         model.open(existing)

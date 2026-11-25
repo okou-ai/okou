@@ -84,6 +84,8 @@ data class ComposerJournal(
     val retainedDrafts: Map<String, String> = emptyMap(),
     val newChatConnectorOverrides: List<ChatConnectorOverride> = emptyList(),
     val retainedDraftConnectorOverrides: Map<String, List<ChatConnectorOverride>> = emptyMap(),
+    val newChatModel: DraftModelSelection? = null,
+    val retainedDraftModels: Map<String, DraftModelSelection> = emptyMap(),
 )
 
 internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
@@ -190,6 +192,12 @@ data class ComposerState(
         key in failed && journal?.entries?.get(key)?.pending?.awaitingConnectorSetup == true
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
+
+    internal fun canEditDraftModel(target: ComposerTarget) =
+        journal != null &&
+            target.threadId == null &&
+            draftKey(target) == "new:" &&
+            entry(target).pending == null
 
     internal fun messagesFor(threadId: String): List<ComposerMessagePreview> = buildList {
         receiptMessages.values.filterTo(this) { it.threadId == threadId }

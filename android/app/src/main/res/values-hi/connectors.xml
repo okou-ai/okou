@@ -106,6 +106,7 @@
     </plurals>
     <string name="chat_options_title">चैट के विकल्प</string>
     <string name="chat_options_settings">बातचीत की सेटिंग</string>
+    <string name="chat_options_model">मॉडल</string>
     <string name="chat_connector_scope">यह इस चैट पर लागू होता है। शुरुआत में वर्कस्पेस के डिफ़ॉल्ट खातों का उपयोग होता है।</string>
     <string name="chat_connector_empty">इस वर्कस्पेस में कोई खाता कनेक्ट नहीं है।</string>
     <string name="chat_connector_manage">कनेक्टर प्रबंधित करें</string>

@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVari
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
+import ai.okou.android.settings.DefaultModelOptions
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
@@ -344,6 +345,10 @@ internal class ChatComposerOwner(
                 retainedDrafts = journal.retainedDrafts - key,
                 newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
                 retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
+                newChatModel =
+                    (if (draftKey == "new:") journal.retainedDraftModels[key] else null)
+                        ?: journal.newChatModel,
+                retainedDraftModels = journal.retainedDraftModels - key,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -606,7 +611,23 @@ internal class ChatComposerOwner(
         }
     }
 
-    fun send(connection: Connection, target: ComposerTarget) {
+    fun editDraftModel(
+        connection: Connection,
+        target: ComposerTarget,
+        selection: DraftModelSelection,
+    ) {
+        val state = mutable.value
+        val journal = state.journal ?: return
+        if (
+            !connection.current() ||
+                !state.canEditDraftModel(target) ||
+                journal.newChatModel == selection
+        )
+            return
+        replace(journal.copy(newChatModel = selection))
+    }
+
+    fun send(connection: Connection, target: ComposerTarget, options: DefaultModelOptions? = null) {
         if (!mutable.value.canSend(target) || !connection.current()) return
         val op = begin(connection, target.key) ?: return
         val journal = checkNotNull(mutable.value.journal)
@@ -619,10 +640,13 @@ internal class ChatComposerOwner(
                 threadId,
                 if (target.threadId == null)
                     CreateThreadRequest(
-                        projectId = target.projectId,
-                        clientThreadId = threadId,
-                        eventId = UUID.randomUUID().toString(),
-                    )
+                            projectId = target.projectId,
+                            clientThreadId = threadId,
+                            eventId = UUID.randomUUID().toString(),
+                        )
+                        .let { request ->
+                            journal.newChatModel?.applyTo(request, options) ?: request
+                        }
                 else null,
                 SendRequestVariant1(
                     prompt = entry.text,
@@ -655,6 +679,7 @@ internal class ChatComposerOwner(
                         (op.key to entry.copy(text = "", pending = pending, receipt = null)),
                 newChatConnectorOverrides =
                     if (pending.create != null) emptyList() else journal.newChatConnectorOverrides,
+                newChatModel = journal.newChatModel.takeIf { pending.create == null },
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -997,11 +1022,17 @@ internal class ChatComposerOwner(
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
                         val choices = latest.connectorOverrides
+                        val draftModel = latest.create?.explicitDraftModel()
                         replace(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
                                     journal.retainedDrafts + (latest.eventId to latest.send.prompt),
+                                retainedDraftModels =
+                                    if (draftModel == null) journal.retainedDraftModels
+                                    else
+                                        journal.retainedDraftModels +
+                                            (latest.eventId to draftModel),
                                 retainedDraftConnectorOverrides =
                                     if (choices.isEmpty()) journal.retainedDraftConnectorOverrides
                                     else

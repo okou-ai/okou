@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -60,6 +61,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -171,17 +173,53 @@ private fun DefaultModelSheet(
     onFeedbackInOverlay: (Boolean) -> Unit,
     dismiss: () -> Unit,
 ) {
+    ModelPickerSheet(
+        title = title,
+        choices = state.options?.choices.orEmpty(),
+        selectedId = state.selected?.id,
+        effort = state.effort,
+        fast = state.fast,
+        catalogUnavailable = state.catalogUnavailable,
+        select = model::select,
+        selectEffort = model::effort,
+        selectFast = model::fast,
+        dismiss = dismiss,
+        footer = {
+            val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+            DisposableEffect(Unit) {
+                routeFeedback(true)
+                onDispose { routeFeedback(false) }
+            }
+            WorkspaceFeedbackHost(snackbar, Modifier.padding(top = 8.dp))
+        },
+    )
+}
+
+@Composable
+internal fun ModelPickerSheet(
+    title: String,
+    choices: List<DefaultModelChoice>,
+    selectedId: String?,
+    effort: ModelEffort?,
+    fast: Boolean,
+    select: (String?) -> Unit,
+    selectEffort: (ModelEffort) -> Unit,
+    selectFast: (Boolean) -> Unit,
+    dismiss: () -> Unit,
+    catalogUnavailable: Boolean = false,
+    footer: @Composable () -> Unit = {},
+) {
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
-    val size = if (fullScreen) Modifier.fillMaxHeight() else Modifier.animateContentSize()
-    val selected = state.selected
+    val selected = choices.firstOrNull { it.id == selectedId }
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
-        val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
-        DisposableEffect(Unit) {
-            routeFeedback(true)
-            onDispose { routeFeedback(false) }
-        }
+        val size =
+            if (fullScreen) Modifier.fillMaxHeight()
+            else
+                Modifier.animateContentSize(
+                    alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
+                )
         val initialModel = remember { selected?.takeIf { it.canSelect }?.id }
         val reveal = remember { BringIntoViewRequester() }
         val focus = remember { FocusRequester() }
@@ -199,12 +237,13 @@ private fun DefaultModelSheet(
         }
         Column(
             Modifier.fillMaxWidth()
+                .testTag("model-picker")
                 .then(size)
                 .padding(settingsPanelContentPadding(compactHeight = fullScreen))
                 .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = dismiss) {
+                IconButton(onClick = dismiss, modifier = Modifier.size(48.dp)) {
                     androidx.compose.material3.Icon(
                         androidx.compose.ui.res.painterResource(R.drawable.ic_arrow_back),
                         stringResource(R.string.back),
@@ -225,22 +264,21 @@ private fun DefaultModelSheet(
                 Modifier.weight(1f, fill = false).verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (state.catalogUnavailable)
+                if (catalogUnavailable)
                     Text(
                         stringResource(R.string.chat_list_first_load_failed),
                         Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                val choices = state.options?.choices.orEmpty()
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     ModelOption(
                         stringResource(R.string.settings_auto_model),
-                        selected = selected == null,
+                        selected = selectedId == null,
                         enabled = true,
                         supportingText = stringResource(R.string.settings_auto_model_detail),
                         modifier = if (initialModel == null) initialRow else Modifier,
-                        onClick = { model.select(null) },
+                        onClick = { select(null) },
                     )
                     for (choice in choices) {
                         key(choice.id) {
@@ -252,7 +290,7 @@ private fun DefaultModelSheet(
                                     if (choice.canSelect) null
                                     else stringResource(R.string.settings_model_plan_restricted),
                                 modifier = if (choice.id == initialModel) initialRow else Modifier,
-                                onClick = { model.select(choice.id) },
+                                onClick = { select(choice.id) },
                             )
                         }
                     }
@@ -265,7 +303,7 @@ private fun DefaultModelSheet(
                         HorizontalDivider()
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             if (choice.efforts.isNotEmpty()) {
-                                EffortMenu(choice.efforts, state.effort, model::effort)
+                                EffortMenu(choice.efforts, effort, selectEffort)
                             }
                             choice.fastMultiplier?.let { multiplier ->
                                 val value =
@@ -276,8 +314,8 @@ private fun DefaultModelSheet(
                                 SettingsSwitchRow(
                                     stringResource(R.string.settings_model_fast),
                                     leading = {},
-                                    checked = state.fast,
-                                    onCheckedChange = model::fast,
+                                    checked = fast,
+                                    onCheckedChange = selectFast,
                                     supportingText =
                                         stringResource(R.string.settings_model_fast_usage, value),
                                 )
@@ -285,7 +323,7 @@ private fun DefaultModelSheet(
                         }
                     }
             }
-            WorkspaceFeedbackHost(snackbar, Modifier.padding(top = 8.dp))
+            footer()
         }
     }
 }

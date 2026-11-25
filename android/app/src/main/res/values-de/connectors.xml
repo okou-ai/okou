@@ -106,6 +106,7 @@
     </plurals>
     <string name="chat_options_title">Chatoptionen</string>
     <string name="chat_options_settings">Unterhaltungseinstellungen</string>
+    <string name="chat_options_model">Modell</string>
     <string name="chat_connector_scope">Gilt für diesen Chat. Zunächst gelten die Standardkonten des Arbeitsbereichs.</string>
     <string name="chat_connector_empty">In diesem Arbeitsbereich sind keine Konten verbunden.</string>
     <string name="chat_connector_manage">Konnektoren verwalten</string>

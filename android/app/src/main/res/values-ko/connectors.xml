@@ -102,6 +102,7 @@
     </plurals>
     <string name="chat_options_title">채팅 옵션</string>
     <string name="chat_options_settings">대화 설정</string>
+    <string name="chat_options_model">모델</string>
     <string name="chat_connector_scope">이 채팅에 적용됩니다. 처음에는 워크스페이스의 기본 계정이 사용됩니다.</string>
     <string name="chat_connector_empty">이 워크스페이스에 연결된 계정이 없습니다.</string>
     <string name="chat_connector_manage">커넥터 관리</string>
