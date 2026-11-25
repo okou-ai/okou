@@ -1230,6 +1230,12 @@
       "teamWarning": "Seu acesso Team permanece ativo até o fim do período de cobrança atual. Depois disso, este workspace passará para {{plan}}.",
       "title": "Fazer downgrade do plano"
     },
+    "feedback": {
+      "otherPlaceholder": "Conte-nos mais…",
+      "rewardTerms": "Uma vez por espaço de trabalho · Créditos válidos por 30 dias",
+      "submitFeedback": "Enviar feedback",
+      "thanks": "Obrigado pelo feedback"
+    },
     "invoices": {
       "amount": "Valor",
       "date": "Data",

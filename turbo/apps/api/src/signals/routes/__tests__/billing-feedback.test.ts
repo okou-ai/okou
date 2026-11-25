@@ -13,6 +13,7 @@ import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const SECRET = "posthog-survey-destination-test-secret-12345678";
@@ -58,7 +59,11 @@ async function offer(actor: ApiTestUser) {
     .body;
 }
 
-function completedResponse(actor: ApiTestUser, token: string | null) {
+function completedResponse(
+  actor: ApiTestUser,
+  token: string | null,
+  surveyId: string = BILLING_FEEDBACK_SURVEYS.credits_exhausted,
+) {
   if (!actor.orgId || !token) {
     throw new Error("Expected an eligible organization feedback offer");
   }
@@ -66,7 +71,7 @@ function completedResponse(actor: ApiTestUser, token: string | null) {
     event: "survey sent" as const,
     distinct_id: actor.userId,
     properties: {
-      $survey_id: BILLING_FEEDBACK_SURVEYS.credits_exhausted,
+      $survey_id: surveyId,
       $survey_completed: true,
       org_id: actor.orgId,
       billing_feedback_reward_token: token,
@@ -79,34 +84,41 @@ beforeEach(() => {
   context.mocks.ably.publish.mockResolvedValue(undefined);
 });
 
-test("settles a completed PostHog response once and expires the bonus after 30 days", async () => {
-  const actor = createBddApi(context).user();
-  const at = now();
-  mockNow(at);
-  const eligible = await offer(actor);
-  expect(eligible.rewardCredits).toBe(200);
-  const body = completedResponse(actor, eligible.token);
-  const before = await balance();
-  const result = await accept(
-    destination().reward({ headers: destinationHeaders, body }),
-    [200],
-  );
-  expect(result.body.rewardCredits).toBe(200);
-  await expect(balance()).resolves.toBe(before + 200);
-  const repeated = await accept(
-    destination().reward({ headers: destinationHeaders, body }),
-    [200],
-  );
-  expect(repeated.body.rewardCredits).toBe(0);
-  await expect(offer(actor)).resolves.toStrictEqual({
-    rewardCredits: 0,
-    token: null,
-  });
-  mockNow(at + 30 * 24 * 60 * 60 * 1000);
-  await expect(balance()).resolves.toBe(before);
-});
+test.each(Object.values(BILLING_FEEDBACK_SURVEYS))(
+  "settles survey %s once and expires the bonus after 30 days",
+  async (surveyId) => {
+    const actor = createBddApi(context).user();
+    const at = now();
+    mockNow(at);
+    const eligible = await offer(actor);
+    expect(eligible.rewardCredits).toBe(200);
+    const body = completedResponse(actor, eligible.token, surveyId);
+    const before = await balance();
+    const result = await accept(
+      destination().reward({ headers: destinationHeaders, body }),
+      [200],
+    );
+    expect(result.body.rewardCredits).toBe(200);
+    await expect(balance()).resolves.toBe(before + 200);
+    const repeated = await accept(
+      destination().reward({ headers: destinationHeaders, body }),
+      [200],
+    );
+    expect(repeated.body.rewardCredits).toBe(0);
+    await expect(offer(actor)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
+    mockNow(at + 30 * 24 * 60 * 60 * 1000);
+    await expect(balance()).resolves.toBe(before);
+    await expect(offer(actor)).resolves.toStrictEqual({
+      rewardCredits: 0,
+      token: null,
+    });
+  },
+);
 
-test("deduplicates concurrent completed submissions from two billing admins in one organization", async () => {
+test("deduplicates different surveys submitted concurrently by two admins in one organization", async () => {
   const bdd = createBddApi(context);
   const first = bdd.user();
   const second = bdd.user({ orgId: first.orgId });
@@ -118,11 +130,19 @@ test("deduplicates concurrent completed submissions from two billing admins in o
   const outcomes = await Promise.all([
     destination().reward({
       headers: destinationHeaders,
-      body: completedResponse(first, firstOffer.token),
+      body: completedResponse(
+        first,
+        firstOffer.token,
+        BILLING_FEEDBACK_SURVEYS.upgrade_dismissed,
+      ),
     }),
     destination().reward({
       headers: destinationHeaders,
-      body: completedResponse(second, secondOffer.token),
+      body: completedResponse(
+        second,
+        secondOffer.token,
+        BILLING_FEEDBACK_SURVEYS.checkout_canceled,
+      ),
     }),
   ]);
   expect(
@@ -137,6 +157,14 @@ test("deduplicates concurrent completed submissions from two billing admins in o
         return a - b;
       }),
   ).toStrictEqual([0, 200]);
+  const thirdSurvey = await accept(
+    destination().reward({
+      headers: destinationHeaders,
+      body: completedResponse(first, firstOffer.token),
+    }),
+    [200],
+  );
+  expect(thirdSurvey.body.rewardCredits).toBe(0);
   signIn(first);
   const firstBalance = await balance();
   signIn(second);
@@ -173,20 +201,13 @@ test("rejects direct browser claims and a reward offer reused for another identi
   await expect(balance()).resolves.toBe(0);
 });
 
-test("does not reward partial responses or either abandonment questionnaire", async () => {
+test("does not reward partial responses or unrelated surveys", async () => {
   const actor = createBddApi(context).user();
   const eligible = await offer(actor);
   const body = completedResponse(actor, eligible.token);
   for (const properties of [
     { ...body.properties, $survey_completed: false },
-    {
-      ...body.properties,
-      $survey_id: BILLING_FEEDBACK_SURVEYS.upgrade_dismissed,
-    },
-    {
-      ...body.properties,
-      $survey_id: BILLING_FEEDBACK_SURVEYS.checkout_canceled,
-    },
+    { ...body.properties, $survey_id: "unrelated-survey" },
   ]) {
     const result = await accept(
       destination().reward({
@@ -269,4 +290,54 @@ test("withholds reward offers until trusted PostHog settlement is configured", a
     rewardCredits: 0,
     token: null,
   });
+});
+
+test("rewards a free workspace that still has credits after canceling checkout", async () => {
+  const bdd = createBddApi(context);
+  const actor = bdd.user();
+  await bdd.completeOnboarding(actor);
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureStripeWebhookSecret();
+  webhooks.acceptNextStripeWebhookEvent({
+    id: `evt_feedback_${actor.userId}`,
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: `cs_feedback_${actor.userId}`,
+        invoice: null,
+        subscription: null,
+        customer: null,
+        metadata: {
+          purpose: "credit_purchase",
+          orgId: actor.orgId,
+          creditsAmountMode: "amount_total",
+        },
+        amount_total: 100,
+        payment_status: "paid",
+      },
+    },
+  });
+  await webhooks.requestStripeWebhook(
+    "{}",
+    { "stripe-signature": "valid-signature" },
+    [200],
+  );
+  const billing = await createRunsApi(context).readBillingStatus(actor);
+  expect(billing.credits).toBeGreaterThan(0);
+  const eligible = await offer(actor);
+  expect(eligible.rewardCredits).toBe(200);
+  const before = await balance();
+  const result = await accept(
+    destination().reward({
+      headers: destinationHeaders,
+      body: completedResponse(
+        actor,
+        eligible.token,
+        BILLING_FEEDBACK_SURVEYS.checkout_canceled,
+      ),
+    }),
+    [200],
+  );
+  expect(result.body.rewardCredits).toBe(200);
+  await expect(balance()).resolves.toBe(before + 200);
 });

@@ -1202,6 +1202,12 @@
       "teamWarning": "Akses Team Anda tetap aktif hingga akhir periode tagihan saat ini. Setelah itu, ruang kerja ini akan berpindah ke {{plan}}.",
       "title": "Turunkan paket"
     },
+    "feedback": {
+      "otherPlaceholder": "Ceritakan lebih lanjut…",
+      "rewardTerms": "Sekali per ruang kerja · Kredit berlaku 30 hari",
+      "submitFeedback": "Kirim masukan",
+      "thanks": "Terima kasih atas masukannya"
+    },
     "invoices": {
       "amount": "Jumlah",
       "date": "Tanggal",

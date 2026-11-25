@@ -1230,6 +1230,12 @@
       "teamWarning": "Votre accès Équipe reste actif jusqu'à la fin de la période de facturation en cours. Après cela, cet espace de travail passe à {{plan}}.",
       "title": "Rétrograder le plan"
     },
+    "feedback": {
+      "otherPlaceholder": "Dites-nous en plus…",
+      "rewardTerms": "Une fois par espace de travail · Crédits valables 30 jours",
+      "submitFeedback": "Envoyer les commentaires",
+      "thanks": "Merci pour vos commentaires"
+    },
     "invoices": {
       "amount": "Montant",
       "date": "Date",

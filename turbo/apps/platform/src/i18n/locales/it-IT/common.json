@@ -1230,6 +1230,12 @@
       "teamWarning": "L'accesso al team rimane attivo fino al termine del periodo di fatturazione corrente. Successivamente, questa area di lavoro verrà spostata in {{plan}}.",
       "title": "Piano di downgrade"
     },
+    "feedback": {
+      "otherPlaceholder": "Dicci di più…",
+      "rewardTerms": "Una volta per spazio di lavoro · Crediti validi 30 giorni",
+      "submitFeedback": "Invia feedback",
+      "thanks": "Grazie per il tuo feedback"
+    },
     "invoices": {
       "amount": "Importo",
       "date": "Data",

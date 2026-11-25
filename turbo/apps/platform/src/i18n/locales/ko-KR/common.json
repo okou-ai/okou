@@ -1202,6 +1202,12 @@
       "teamWarning": "Team 액세스는 현재 청구 기간 종료 시까지 유지됩니다. 이후 이 워크스페이스는 {{plan}}으로 전환됩니다.",
       "title": "플랜 다운그레이드"
     },
+    "feedback": {
+      "otherPlaceholder": "자세히 알려 주세요…",
+      "rewardTerms": "워크스페이스당 한 번 · 크레딧은 30일간 유효",
+      "submitFeedback": "피드백 제출",
+      "thanks": "피드백 감사합니다"
+    },
     "invoices": {
       "amount": "금액",
       "date": "날짜",

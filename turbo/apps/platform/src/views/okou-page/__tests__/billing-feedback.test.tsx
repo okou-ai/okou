@@ -1,14 +1,18 @@
 import {
   billingStatusContract,
+  billingFeedbackRewardContract,
   billingUsagePackCatalogContract,
   billingUsagePackCheckoutContract,
   billingUsagePackManagementContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
+import { initPostHog } from "../../../lib/posthog.ts";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -17,6 +21,7 @@ import {
   billingPlanCapabilities,
   defaultBillingStatus,
 } from "../../../mocks/handlers/api-billing.ts";
+
 vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
 });
@@ -48,6 +53,9 @@ function freeBilling() {
 }
 
 function prepareBilling(paid = false) {
+  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
+    return respond(200, { rewardCredits: 200, token: "signed-offer-from-api" });
+  });
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       ...freeBilling(),
@@ -79,6 +87,12 @@ function prepareBilling(paid = false) {
   return context.mocks.posthog();
 }
 
+function surveyImpressions(telemetry: ReturnType<typeof prepareBilling>) {
+  return telemetry.events.filter((event) => {
+    return event.name === "survey shown";
+  });
+}
+
 async function openPlans() {
   const card = (await screen.findByText("Get Pro")).closest("button");
   if (!card) {
@@ -95,13 +109,14 @@ test("closing the upgrade dialog asks its independent PostHog question and recor
   click(within(plans).getByLabelText("Close"));
   await waitFor(() => {
     expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
+      surveyImpressions(telemetry).map((display) => {
+        return display.properties?.$survey_id;
       }),
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.upgrade_dismissed]);
   });
-  expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
+  expect(surveyImpressions(telemetry)[0]?.properties).toMatchObject({
     billing_feedback_kind: "upgrade_dismissed",
+    billing_feedback_reward_token: "signed-offer-from-api",
     org_id: expect.any(String),
     billing_attempt_id: expect.any(String),
   });
@@ -125,18 +140,19 @@ test("closing the upgrade dialog asks its independent PostHog question and recor
   ]);
 });
 
-test("a Stripe cancellation uses its own survey without promising a reward", async () => {
+test("a Stripe cancellation includes the same signed reward offer", async () => {
   const telemetry = prepareBilling();
   await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
   await waitFor(() => {
     expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
+      surveyImpressions(telemetry).map((display) => {
+        return display.properties?.$survey_id;
       }),
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
-  expect(telemetry.surveyDisplays[0]?.options?.properties).toMatchObject({
+  expect(surveyImpressions(telemetry)[0]?.properties).toMatchObject({
     billing_feedback_kind: "checkout_canceled",
+    billing_feedback_reward_token: "signed-offer-from-api",
     org_id: expect.any(String),
   });
   expect(
@@ -161,13 +177,13 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
       }),
     ).toBeTruthy();
   });
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
 
   click(within(plans).getByLabelText("Close"));
   await waitFor(() => {
     expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
+      surveyImpressions(telemetry).map((display) => {
+        return display.properties?.$survey_id;
       }),
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
@@ -224,7 +240,7 @@ test("a completed in-app upgrade closes the funnel without an abandonment questi
       }),
     ).toBeTruthy();
   });
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
 });
 
 test("a paid user returning from Stripe is excluded from the feedback popover", async () => {
@@ -236,7 +252,7 @@ test("a paid user returning from Stripe is excluded from the feedback popover", 
       return event.name === "billing_checkout_canceled";
     }),
   ).toBeTruthy();
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
 });
 
 test("a paused PostHog questionnaire stays hidden after its app trigger", async () => {
@@ -246,7 +262,7 @@ test("a paused PostHog questionnaire stays hidden after its app trigger", async 
   await waitFor(() => {
     expect(telemetry.surveyQueries).toStrictEqual([true]);
   });
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
 });
 
 test("a Stripe return waits for PostHog targeting flags before asking the question", async () => {
@@ -254,12 +270,12 @@ test("a Stripe return waits for PostHog targeting flags before asking the questi
   const flags = telemetry.deferFeatureFlags();
   await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
   await flags.subscribed;
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
   flags.resolve();
   await waitFor(() => {
     expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
+      surveyImpressions(telemetry).map((display) => {
+        return display.properties?.$survey_id;
       }),
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
@@ -272,16 +288,138 @@ test("a cached targeting result is retried when identified-user flags arrive", a
   await waitFor(() => {
     expect(telemetry.surveyQueries).toStrictEqual([true]);
   });
-  expect(telemetry.surveyDisplays).toStrictEqual([]);
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
   telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   telemetry.refreshFeatureFlags();
   await waitFor(() => {
     expect(
-      telemetry.surveyDisplays.map((display) => {
-        return display.id;
+      surveyImpressions(telemetry).map((display) => {
+        return display.properties?.$survey_id;
       }),
     ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
   });
   telemetry.refreshFeatureFlags();
-  expect(telemetry.surveyDisplays).toHaveLength(1);
+  expect(surveyImpressions(telemetry)).toHaveLength(1);
+});
+
+test("seeing checkout feedback prevents a later upgrade prompt even without a response", async () => {
+  const telemetry = prepareBilling();
+  initPostHog();
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  await waitFor(() => {
+    expect(surveyImpressions(telemetry)).toHaveLength(1);
+  });
+  const feedback = await screen.findByRole("dialog", {
+    name: "What stopped you from completing your purchase?",
+  });
+  click(within(feedback).getByLabelText("Close"));
+  const plans = await openPlans();
+  click(within(plans).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(plans).not.toBeInTheDocument();
+  });
+  telemetry.refreshFeatureFlags();
+  expect(
+    surveyImpressions(telemetry).map((display) => {
+      return display.properties?.$survey_id;
+    }),
+  ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
+});
+
+test("an already rewarded workspace is not offered another rewarded survey", async () => {
+  const telemetry = prepareBilling();
+  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
+    return respond(200, { rewardCredits: 0, token: null });
+  });
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  const plans = await openPlans();
+  click(within(plans).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(plans).not.toBeInTheDocument();
+  });
+  expect(surveyImpressions(telemetry)).toStrictEqual([]);
+});
+
+test("a grouped selection submits a completed PostHog response with the signed reward offer only once", async () => {
+  const telemetry = prepareBilling();
+  initPostHog();
+  await setupPage({ context, path: "/?billing=canceled", host: "app.okou.ai" });
+  const feedback = await screen.findByRole("dialog", {
+    name: "What stopped you from completing your purchase?",
+  });
+  const submit = button("Submit feedback", feedback);
+  expect(submit).toBeDisabled();
+  await userEvent.click(
+    within(feedback).getByLabelText("It's too expensive", {
+      selector: '[role="radio"]',
+    }),
+  );
+  await userEvent.keyboard("{ArrowDown}");
+  expect(
+    within(feedback).getByLabelText("I want to try it more first", {
+      selector: '[role="radio"]',
+    }),
+  ).toBeChecked();
+  expect(submit).toBeEnabled();
+  click(submit);
+  await screen.findByRole("dialog", { name: "Thank you for your feedback!" });
+  const sent = telemetry.events.filter((event) => {
+    return event.name === "survey sent";
+  });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]?.properties).toMatchObject({
+    $survey_id: BILLING_FEEDBACK_SURVEYS.checkout_canceled,
+    $survey_completed: true,
+    $survey_submission_id: expect.any(String),
+    $survey_response: "I want to try it more first",
+    [`$survey_response_${BILLING_FEEDBACK_SURVEYS.checkout_canceled}-question`]:
+      "I want to try it more first",
+    $survey_questions: [
+      {
+        id: `${BILLING_FEEDBACK_SURVEYS.checkout_canceled}-question`,
+        question: "What stopped you from completing your purchase?",
+        response: "I want to try it more first",
+      },
+    ],
+    billing_feedback_reward_token: "signed-offer-from-api",
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(feedback).not.toBeInTheDocument();
+  });
+});
+
+test("translated other feedback requires text and sends the localized answer", async () => {
+  const telemetry = prepareBilling();
+  await setupPage({
+    context,
+    path: "/?billing=canceled",
+    host: "app.okou.ai",
+    locale: "zh-Hans",
+  });
+  const feedback = await screen.findByRole("dialog", {
+    name: "是什么让你没有完成购买？",
+  });
+  click(
+    within(feedback).getByLabelText("其他原因", { selector: '[role="radio"]' }),
+  );
+  const submit = button("Submit feedback", feedback);
+  expect(submit).toBeDisabled();
+  await fill(
+    within(feedback).getByRole("textbox", { name: "其他原因" }),
+    "需要更多试用时间",
+  );
+  expect(submit).toBeEnabled();
+  click(submit);
+  await waitFor(() => {
+    expect(
+      telemetry.events.find((event) => {
+        return event.name === "survey sent";
+      })?.properties,
+    ).toMatchObject({
+      $survey_language: "zh-cn",
+      $survey_response: "需要更多试用时间",
+      $survey_completed: true,
+    });
+  });
 });

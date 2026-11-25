@@ -1230,6 +1230,12 @@
       "teamWarning": "El acceso de tu equipo permanece activo hasta que termine el periodo de facturación actual. Después de eso, este espacio de trabajo se traslada a {{plan}}.",
       "title": "Cambiar a un plan inferior"
     },
+    "feedback": {
+      "otherPlaceholder": "Cuéntanos más…",
+      "rewardTerms": "Una vez por espacio de trabajo · Los créditos caducan en 30 días",
+      "submitFeedback": "Enviar comentarios",
+      "thanks": "Gracias por tus comentarios"
+    },
     "invoices": {
       "amount": "Cantidad",
       "date": "Fecha",

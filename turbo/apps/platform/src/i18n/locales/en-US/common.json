@@ -1206,6 +1206,12 @@
       "teamWarning": "Your Team access remains active until the current billing period ends. After that, this workspace moves to {{plan}}.",
       "title": "Downgrade plan"
     },
+    "feedback": {
+      "otherPlaceholder": "Tell us more…",
+      "rewardTerms": "Once per workspace · Credits expire in 30 days",
+      "submitFeedback": "Submit feedback",
+      "thanks": "Thanks for your feedback"
+    },
     "invoices": {
       "amount": "Amount",
       "date": "Date",

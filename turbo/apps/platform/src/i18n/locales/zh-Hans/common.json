@@ -1202,6 +1202,12 @@
       "teamWarning": "你的 Team 权益会持续到当前账单周期结束，之后这个工作区会变成{{plan}}。",
       "title": "降级套餐"
     },
+    "feedback": {
+      "otherPlaceholder": "可以多说一点…",
+      "rewardTerms": "每个工作区仅一次 · 积分有效期 30 天",
+      "submitFeedback": "提交反馈",
+      "thanks": "感谢你的反馈"
+    },
     "invoices": {
       "amount": "金额",
       "date": "日期",

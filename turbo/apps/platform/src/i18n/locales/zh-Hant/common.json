@@ -1202,6 +1202,12 @@
       "teamWarning": "你的 Team 權益會持續到當前帳單週期結束，之後這個工作區會變成{{plan}}。",
       "title": "降級套餐"
     },
+    "feedback": {
+      "otherPlaceholder": "可以多說一點…",
+      "rewardTerms": "每個工作區僅一次 · 積分有效期 30 天",
+      "submitFeedback": "提交回饋",
+      "thanks": "感謝你的回饋"
+    },
     "invoices": {
       "amount": "金額",
       "date": "日期",
