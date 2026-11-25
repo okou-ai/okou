@@ -36,7 +36,6 @@
     <string name="connector_rename">Rinomina</string>
     <string name="connector_rename_title">Rinomina account</string>
     <string name="connector_account_name">Nome account</string>
-    <string name="connector_rename_hint">Gli spazi iniziali e finali vengono rimossi. Massimo %1$d caratteri.</string>
     <string name="connector_rename_required">Inserisci un nome per l’account.</string>
     <string name="connector_rename_too_long">Il nome dell’account può contenere al massimo %1$d caratteri.</string>
     <string name="connector_disconnect">Disconnetti account</string>

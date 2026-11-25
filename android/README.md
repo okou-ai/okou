@@ -49,12 +49,16 @@ until data arrives. A window joining an ongoing refresh shares the open editor's
 current text. A refresh updates the saved value and preserves any edited text and
 selection. The latest confirmed value determines whether Save is available and
 what to restore on discard. Discard still requires confirmation.
+The Material 3 text field keeps raw Markdown and native selection together.
+Output styling leaves the document and its offsets intact.
 Saving keeps the panel and its edit visible with a disabled saving action until
-the request settles. An explicit save uses the latest confirmed version. A
-definitive stale-version rejection reads back the latest value and retries once
-with that version if the text differs. Clearing the field and saving clears
-Instructions. A lost save response reads the server back. An unresolved attempt
-stays frozen until that read or an explicit retry with the same version resolves it.
+the request settles. The panel closes after the save is confirmed, and save
+feedback stays in the operation area. An explicit save uses the latest confirmed
+version. A definitive stale-version rejection reads back the latest value and
+retries once with that version if the text differs. Clearing the field and saving
+clears Instructions. A lost save response reads the server back. An unresolved
+attempt stays frozen until that read or an explicit retry with the same version
+resolves it.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request
