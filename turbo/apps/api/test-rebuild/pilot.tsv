@@ -50,10 +50,10 @@ artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	pla
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-003	planned		
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-005	planned		
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-008	planned		
-artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-002	planned		
-artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-004	planned		
+artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-002	rewritten	98.7	
+artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-004	rewritten	142.4	
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-006	planned		
-artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-007	planned		
+artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-007	rewritten	116.8	
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-008	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-001	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-004	planned		
