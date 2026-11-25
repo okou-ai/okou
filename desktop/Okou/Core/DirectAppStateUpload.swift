@@ -14,13 +14,13 @@ struct DirectAppStateBundle: Sendable {
       let snapshotId = fields["snapshotId"]?.string, UUID(uuidString: snapshotId) != nil,
       fields["appState"]?.string != nil,
       let image = fields.removeValue(forKey: "screenshot")?.string, image.hasPrefix(prefix)
-    else { throw DesktopFailure("transfer_failed", "The window capture is incomplete") }
+    else { throw DesktopFailure("screen_recording_unavailable", "The window capture is incomplete") }
     guard image.utf8.count <= prefix.count + 4 * ((maxBytes + 2) / 3) else {
       throw DesktopFailure("result_too_large", "The window capture exceeds the transfer size limit")
     }
     guard let png = Data(base64Encoded: String(image.dropFirst(prefix.count))),
       png.starts(with: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    else { throw DesktopFailure("transfer_failed", "The window capture has an invalid PNG") }
+    else { throw DesktopFailure("screen_recording_unavailable", "The window capture has an invalid PNG") }
     let envelope = try JSONEncoder().encode(
       JSONValue.object(["commandId": .string(commandId), "result": .object(fields)]))
     guard envelope.count + png.count + 4 <= maxBytes else {
@@ -99,7 +99,7 @@ final class DirectAppStateUpload: NSObject, URLSessionTaskDelegate, Sendable {
               .dnsLookupFailed, .cannotFindHost].contains(error.code)
             else {
               try Task.checkCancellation()
-              throw DesktopFailure("transfer_failed", "Could not connect to the assigned Runner")
+              throw DesktopFailure("window_unavailable", "Could not connect to the assigned Runner")
             }
           }
           try await Task.sleep(for: backoff)
@@ -127,19 +127,19 @@ final class DirectAppStateUpload: NSObject, URLSessionTaskDelegate, Sendable {
     if !checkReceipt { request.httpBody = bundle.data }
     let (stream, response) = try await session.bytes(for: request, delegate: self)
     guard let response = response as? HTTPURLResponse else {
-      throw DesktopFailure("transfer_failed", "Invalid response from the assigned Runner")
+      throw DesktopFailure("invalid_arguments", "Invalid response from the assigned Runner")
     }
     switch response.statusCode {
     case 200:
       var receipt = Data()
       for try await byte in stream {
         guard receipt.count < 64 else {
-          throw DesktopFailure("transfer_failed", "The sandbox returned an invalid receipt")
+          throw DesktopFailure("invalid_arguments", "The sandbox returned an invalid receipt")
         }
         receipt.append(byte)
       }
       guard receipt == Data(bundle.digest.utf8) else {
-        throw DesktopFailure("transfer_failed", "The sandbox receipt does not match this capture")
+        throw DesktopFailure("invalid_arguments", "The sandbox receipt does not match this capture")
       }
       return .received
     case 204 where checkReceipt: return .missing
@@ -148,7 +148,7 @@ final class DirectAppStateUpload: NSObject, URLSessionTaskDelegate, Sendable {
     case 401, 403, 404, 410:
       throw DesktopFailure("permission_denied", "This command no longer has a Runner upload grant")
     default:
-      throw DesktopFailure("transfer_failed", "The assigned Runner rejected the capture (HTTP \(response.statusCode))")
+      throw DesktopFailure("window_unavailable", "The assigned Runner rejected the capture (HTTP \(response.statusCode))")
     }
   }
 }

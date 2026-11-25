@@ -73,7 +73,7 @@ final class CommandExecutorSnapshotTests: XCTestCase {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [AppStateUploadProtocol.self]
     let executor = try makeExecutor(uploadConfiguration: configuration)
-    for (host, code) in [("retired.runner.example", "permission_denied"), ("invalid.runner.example", "transfer_failed")] {
+    for (host, code) in [("retired.runner.example", "permission_denied"), ("invalid.runner.example", "invalid_arguments")] {
       let command = UUID().uuidString.lowercased()
       let result = await directCapture(executor, command: command, host: host)
       XCTAssertEqual(result["error"]["code"].string, code)

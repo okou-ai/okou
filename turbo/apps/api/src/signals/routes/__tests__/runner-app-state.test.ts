@@ -41,7 +41,8 @@ test("requires official Runner authentication and a current direct command", asy
 test("only the assigned Runner and claimed Mac can deliver an opted-in capture", async () => {
   const owner = createPublicComputerUseScenario(context);
   const api = owner.computerUse;
-  const actor = owner.user({ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" });
+  const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+  const actor = { ...owner.user({ orgId }), orgId };
   const capabilities = ["app.state", DIRECT_APP_STATE_CAPABILITY];
   const mac = await api.startComputerUseHost(actor, {
     supportedCapabilities: capabilities,
@@ -50,6 +51,7 @@ test("only the assigned Runner and claimed Mac can deliver an opted-in capture",
   const { runnerId, heartbeatGeneration } = createRunsApi(
     context,
   ).dispatchedRun(run.runId);
+  const storage = api.installComputerUseS3Fake();
   const receiver = { runnerId, heartbeatGeneration };
   const auth = { bearer: run.token };
   const request = {
@@ -83,7 +85,7 @@ test("only the assigned Runner and claimed Mac can deliver an opted-in capture",
   await toggle(true);
   const direct = await api.createComputerUseReadCommand(auth, request);
   expect(direct.directAppState).toBeTruthy();
-  const check = (identity = receiver) => {
+  const check = (identity = receiver, commandId = direct.commandId) => {
     return owner.run(() => {
       return setupApp({ context, routes: runnerAppStateRoutes })(
         runnerAppStateContract,
@@ -91,7 +93,7 @@ test("only the assigned Runner and claimed Mac can deliver an opted-in capture",
         headers: {
           authorization: `Bearer vm0_official_${env("OFFICIAL_RUNNER_SECRET")}`,
         },
-        params: { runId: run.runId, commandId: direct.commandId },
+        params: { runId: run.runId, commandId },
         body: identity,
       });
     });
@@ -131,6 +133,18 @@ test("only the assigned Runner and claimed Mac can deliver an opted-in capture",
     [200],
   );
   expect(status.body).not.toHaveProperty("appStateUpload");
-  await api.stopComputerUseHost(mac.connection);
+  const receipt = { snapshotId: randomUUID(), sha256: "a".repeat(64) };
+  await api.completeComputerUseCommandWith(mac.connection, direct.commandId, {
+    status: "succeeded",
+    result: receipt,
+  });
+  const completed = await api.readComputerUseCommand(auth, direct.commandId);
+  expect(completed.result).toStrictEqual(receipt);
+  expect(storage.puts).toHaveLength(0);
   expect((await check()).status).toBe(404);
+  await toggle(true);
+  const retired = await api.createComputerUseReadCommand(auth, request);
+  expect((await check(receiver, retired.commandId)).status).toBe(200);
+  await api.stopComputerUseHost(mac.connection);
+  expect((await check(receiver, retired.commandId)).status).toBe(404);
 });

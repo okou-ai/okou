@@ -545,7 +545,6 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
         public static let commandTimeout = Self(rawValue: "command_timeout")
         public static let invalidArguments = Self(rawValue: "invalid_arguments")
         public static let resultTooLarge = Self(rawValue: "result_too_large")
-        public static let transferFailed = Self(rawValue: "transfer_failed")
         public static let shellUnavailable = Self(rawValue: "shell_unavailable")
         public static let shellBusy = Self(rawValue: "shell_busy")
 
@@ -566,7 +565,6 @@ public enum ComputerUseCommandClaim: Codable, Equatable, Sendable {
           .commandTimeout,
           .invalidArguments,
           .resultTooLarge,
-          .transferFailed,
           .shellUnavailable,
           .shellBusy,
         ]
