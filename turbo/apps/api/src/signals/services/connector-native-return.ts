@@ -1,4 +1,4 @@
-import type { StoredBuiltinOAuthState } from "../services/connector-oauth-state.service";
+import type { StoredBuiltinOAuthState } from "./connector-oauth-state.service";
 import {
   connectorNativeAppReturnUrl,
   connectorNativeHttpsReturnHostSchema,
@@ -9,33 +9,12 @@ import { env } from "../../lib/env";
 // Keep provider context and registered redirect URIs unchanged. The random state
 // remains opaque to providers and can still be consumed by an older API.
 const IOS_HTTPS_STATE_PREFIX = "ios-https-v1:";
-const IOS_HTTPS_CONNECTORS = Object.freeze([
-  "gmail",
-  "google-docs",
-  "google-drive",
-  "google-sheets",
-  "google-calendar",
-  "google-ads",
-  "google-analytics",
-  "google-cloud",
-  "google-contacts",
-  "google-forms",
-  "google-maps",
-  "google-meet",
-  "google-play",
-  "google-search-console",
-  "youtube",
-  "github",
-  "notion",
-]);
 
 export function connectorHttpsReturnState(args: {
   readonly state: string;
-  readonly connectorSlug: string;
   readonly nativeCallback: "ios-https" | undefined;
 }): string {
   return args.nativeCallback === "ios-https" &&
-    IOS_HTTPS_CONNECTORS.includes(args.connectorSlug) &&
     connectorHttpsReturnHost() !== undefined
     ? `${IOS_HTTPS_STATE_PREFIX}${args.state}`
     : args.state;
@@ -65,12 +44,10 @@ export function connectorHttpsCallbackUrl(
 
 /** Only a claimed, unexpired state may opt a callback into a native return. */
 export function connectorHttpsReturn(
-  state: StoredBuiltinOAuthState,
+  state: Pick<StoredBuiltinOAuthState, "id" | "state">,
 ): ConnectorNativeAppReturn | undefined {
   const httpsHost = connectorHttpsReturnHost();
-  return IOS_HTTPS_CONNECTORS.includes(state.connectorSlug) &&
-    state.state.startsWith(IOS_HTTPS_STATE_PREFIX) &&
-    httpsHost
+  return state.state.startsWith(IOS_HTTPS_STATE_PREFIX) && httpsHost
     ? { platform: "ios", attemptId: state.id, httpsHost }
     : undefined;
 }

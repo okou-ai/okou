@@ -1,3 +1,4 @@
+import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
 import { command } from "ccstate";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -120,6 +121,7 @@ const startBuiltinAutomaticInner$ = command(
         userId: auth.userId,
         resolved,
         account: body.data.account,
+        nativeCallback: body.data.nativeCallback,
         redirectUri: builtinConnectorAutomaticOAuthRedirectUri(request),
         cimdClientId: okouMcpOAuthClientMetadata(request).client_id,
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(
@@ -140,6 +142,7 @@ const startBuiltinAutomaticInner$ = command(
           result: "authorization" as const,
           authorizationUrl: result.authorizationUrl,
           oauthAttemptId: result.oauthAttemptId,
+          nativeCallbackUrl: result.nativeCallbackUrl,
           connectionId:
             body.data.account.intent === "reconnect"
               ? body.data.account.connectionId
@@ -190,7 +193,11 @@ const completeBuiltinAutomatic$ = command(
     if (completed.kind === "error") {
       return {
         connectorSlug: completed.connectorSlug ?? "automatic",
-        result: { status: "error", message: failureMessage(completed.reason) },
+        result: {
+          status: "error",
+          message: failureMessage(completed.reason),
+          nativeAppReturn: completed.nativeAppReturn,
+        },
       };
     }
     await set(
@@ -211,7 +218,11 @@ const completeBuiltinAutomatic$ = command(
     );
     return {
       connectorSlug: completed.connectorSlug,
-      result: { status: "success", username: null },
+      result: {
+        status: "success",
+        username: null,
+        nativeAppReturn: completed.nativeAppReturn,
+      },
     };
   },
 );
@@ -222,8 +233,14 @@ const callbackBuiltinAutomatic$ = command(
     const completed = await set(completeBuiltinAutomatic$, signal);
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
+    set(setResHeader$, "Referrer-Policy", "no-referrer");
     if (query.responseMode === "json") {
       return { status: 200 as const, body: completed.result };
+    }
+    if (completed.result.nativeAppReturn) {
+      return connectorOAuthRedirectResponse(
+        connectorNativeAppReturnUrl(completed.result.nativeAppReturn),
+      );
     }
     const target = new URL(
       `/connectors/${encodeURIComponent(completed.connectorSlug)}/callback/${completed.result.status}`,
