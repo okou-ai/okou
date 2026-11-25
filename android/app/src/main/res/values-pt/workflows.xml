@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Todos os dias às %1$s</string>
     <string name="workflow_discard">Descartar</string>
     <string name="workflow_discard_title">Descartar as alterações não salvas?</string>
+    <string name="workflow_discard_detail">As alterações não salvas em “%1$s” neste dispositivo serão descartadas.</string>
     <string name="workflow_draft_unavailable">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado.</string>
     <string name="workflow_edit">Editar</string>
     <string name="workflow_edit_automation">Editar automação</string>

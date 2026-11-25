@@ -15,7 +15,8 @@
     <string name="workflow_daily">每天</string>
     <string name="workflow_daily_schedule">每天 %1$s</string>
     <string name="workflow_discard">放弃修改</string>
-    <string name="workflow_discard_title">放弃未保存的修改？</string>
+    <string name="workflow_discard_title">放弃修改？</string>
+    <string name="workflow_discard_detail">你在这台设备上对「%1$s」尚未保存的修改将被丢弃。</string>
     <string name="workflow_draft_unavailable">未能打开新聊天草稿。已有草稿已保留。</string>
     <string name="workflow_edit">编辑</string>
     <string name="workflow_edit_automation">编辑自动化</string>
