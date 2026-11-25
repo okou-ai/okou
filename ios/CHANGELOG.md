@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.5](https://github.com/okou-ai/okou/compare/ios-v0.66.4...ios-v0.66.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** display chat time elements in the device locale ([#50904](https://github.com/okou-ai/okou/issues/50904)) ([377b31f](https://github.com/okou-ai/okou/commit/377b31f32803a708edefe0d55d8f7b9101a53526))
+
 ## [0.66.4](https://github.com/okou-ai/okou/compare/ios-v0.66.3...ios-v0.66.4) (2026-11-25)
 
 
