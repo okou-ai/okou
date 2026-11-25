@@ -7,15 +7,13 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use futures_util::SinkExt;
 use tokio::time::Instant;
-use tokio_tungstenite::tungstenite;
 
 use super::auth::exchange_token;
 use super::endpoint::build_ws_url;
 use super::errors::{channel_detached_message, protocol_error_message};
 use super::handshake::{
-    AttachOutcome, encode_attach_for_channel, wait_for_attach_outcome, wait_for_connected,
+    AttachOutcome, send_pending_attach, wait_for_attach_outcome, wait_for_connected,
 };
 use super::session::SessionState;
 use super::transport::{TransportCloseTracker, WsTransport, connect_pending};
@@ -165,16 +163,14 @@ pub(super) async fn attempt_reconnect(
         } else {
             tracing::info!("Fresh connect, attaching channel");
         }
-        let data = encode_attach_for_channel(
+        send_pending_attach(
+            &mut transport,
             p.channel,
             p.channel_params,
             p.session.channel_serial(),
             p.session.attach_mode(),
-        )?;
-        transport
-            .write_mut()?
-            .send(tungstenite::Message::Binary(data.into()))
-            .await?;
+        )
+        .await?;
 
         let new_token = if use_pending_token {
             tokens
@@ -213,16 +209,14 @@ pub(super) async fn attempt_reconnect(
                         message = %protocol_error_message(err.message),
                         "Channel attach was superseded while re-attaching after reconnect; retrying attach",
                     );
-                    let data = encode_attach_for_channel(
+                    send_pending_attach(
+                        &mut transport,
                         p.channel,
                         p.channel_params,
                         p.session.channel_serial(),
                         p.session.attach_mode(),
-                    )?;
-                    transport
-                        .write_mut()?
-                        .send(tungstenite::Message::Binary(data.into()))
-                        .await?;
+                    )
+                    .await?;
                 }
                 outcome => return Ok::<_, Error>(outcome),
             }
