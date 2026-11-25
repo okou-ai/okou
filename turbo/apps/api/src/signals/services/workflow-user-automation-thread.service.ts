@@ -38,6 +38,7 @@ import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
+import { builtInWorkflow } from "./builtin-workflows";
 
 const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
   Partial<Record<string, Readonly<Record<UserLocale, string>>>>
@@ -78,11 +79,16 @@ const officialWorkflowThreadPresentation$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((candidate) => {
-      return candidate.name === args.definitionName;
-    });
-    if (!catalog || !definition) {
+    const builtin = builtInWorkflow(args.definitionName);
+    const catalog = builtin
+      ? null
+      : await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition =
+      builtin?.definition ??
+      catalog?.payload.definitions.find((candidate) => {
+        return candidate.name === args.definitionName;
+      });
+    if (!definition) {
       throw new OfficialWorkflowRunAdmissionError();
     }
     const locale = userLocaleSchema.parse(args.locale ?? "en-US");
@@ -96,11 +102,13 @@ const officialWorkflowThreadPresentation$ = command(
     if (localized) {
       title = localized;
     } else {
-      const revision = await set(
-        readAcceptedOfficialWorkflowRevision$,
-        { name: definition.name, revision: definition.revision },
-        signal,
-      );
+      const revision =
+        builtin?.revision ??
+        (await set(
+          readAcceptedOfficialWorkflowRevision$,
+          { name: definition.name, revision: definition.revision },
+          signal,
+        ));
       title = revision?.definition.workflow.displayName ?? title;
     }
     return {

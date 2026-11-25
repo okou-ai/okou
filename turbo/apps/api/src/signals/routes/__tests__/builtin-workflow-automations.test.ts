@@ -5,10 +5,7 @@ import {
   type SuggestionContent,
 } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
-import {
-  cronExecuteWorkflowAutomationsContract,
-  cronOfficialWorkflowCatalogContract,
-} from "@okouai/api-contracts/contracts/cron";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { expect, test } from "vitest";
@@ -19,7 +16,6 @@ import {
   workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
-  type WorkflowFileEntry,
   type WorkflowAutomationSummary,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
@@ -44,12 +40,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 
 const context = testContext();
 // The API test baseline's managed key for platform-paid Official Runs.
@@ -312,14 +306,10 @@ async function saveFeedback(
   };
 }
 
-async function prepareForeignFeedback(
-  definitionName: string,
-  failUpload: boolean,
-) {
+async function prepareForeignFeedback(definitionName: string) {
   if (
-    (definitionName !== "agent-suggestions" &&
-      definitionName !== "proactive-learning") ||
-    failUpload
+    definitionName !== "agent-suggestions" &&
+    definitionName !== "proactive-learning"
   ) {
     return;
   }
@@ -480,7 +470,7 @@ async function expectSuggestionFeedbackLifecycle(
             return accept(
               app(cronExecuteWorkflowAutomationsContract).execute({
                 headers: {
-                  authorization: "Bearer official-workflow-catalog-cron-secret",
+                  authorization: "Bearer workflow-automation-cron-secret",
                 },
               }),
               [200],
@@ -581,7 +571,7 @@ async function expectSuggestionFeedbackLifecycle(
   });
 }
 
-async function expectPublishedMorningBriefRecovery(
+async function expectMorningBriefRecovery(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   automationId: string,
   workflowId: string,
@@ -623,7 +613,7 @@ async function expectPublishedMorningBriefRecovery(
         await accept(
           app(cronExecuteWorkflowAutomationsContract).execute({
             headers: {
-              authorization: "Bearer official-workflow-catalog-cron-secret",
+              authorization: "Bearer workflow-automation-cron-secret",
             },
           }),
           [200],
@@ -721,23 +711,6 @@ function expectScopeGuidance(
   }
 }
 
-function expectPublishingReference(
-  files: ReadonlyMap<string, Buffer>,
-  fileContents: readonly WorkflowFileEntry[] | null,
-  learning: boolean,
-) {
-  if (learning) {
-    return;
-  }
-  const reference = fileContents?.find((file) => {
-    return file.path === "references/suggestions.md";
-  });
-  if (!reference) {
-    throw new Error("Expected the suggestion publishing reference");
-  }
-  expect(files.get(reference.path)?.toString()).toBe(reference.content);
-}
-
 function expectLearningSchedule(automation: WorkflowAutomationSummary) {
   if (automation.kind !== "schedule" || automation.schedule.type !== "cron") {
     throw new Error("Expected the Learning cron schedule");
@@ -745,19 +718,6 @@ function expectLearningSchedule(automation: WorkflowAutomationSummary) {
   expect(automation.schedule.cronExpression.split(" ")[1]).toBe("2");
   expect(automation.schedule.timezone).toBe("Asia/Shanghai");
 }
-
-test("requires authentication to publish the Official Workflow catalog", async () => {
-  mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
-  const app = setupApp({
-    context,
-    routes: cronOfficialWorkflowCatalogRoutes,
-  });
-  const unauthorized = await accept(
-    app(cronOfficialWorkflowCatalogContract).sync({}),
-    [401],
-  );
-  expect(unauthorized.status).toBe(401);
-});
 
 function isProactiveProfileWorkflow(workflow: WorkflowSummary) {
   return (
@@ -815,11 +775,10 @@ async function expectSharedProactiveSchedules(
 }
 
 const scenarios = [
-  { kind: "suggestions", failUpload: false, suggestionsEnabled: true },
-  { kind: "suggestions", failUpload: true, suggestionsEnabled: true },
-  { kind: "learning", failUpload: false, suggestionsEnabled: true },
-  { kind: "morning-brief", failUpload: false, suggestionsEnabled: true },
-  { kind: "morning-brief", failUpload: false, suggestionsEnabled: false },
+  { kind: "suggestions", suggestionsEnabled: true },
+  { kind: "learning", suggestionsEnabled: true },
+  { kind: "morning-brief", suggestionsEnabled: true },
+  { kind: "morning-brief", suggestionsEnabled: false },
 ].map((scenario) => {
   const learning = scenario.kind === "learning";
   const morningBrief = scenario.kind === "morning-brief";
@@ -882,12 +841,11 @@ function expectWorkflowInstructions(
 }
 
 test.each(scenarios)(
-  "publishes the $kind catalog idempotently (upload failure: $failUpload, suggestions: $suggestionsEnabled)",
+  "runs the built-in $kind with its instructions in the user prompt (Suggestions enabled: $suggestionsEnabled)",
   // The Suggestions case creates 101 distinct action receipts through the real
   // API and inspects an additional scheduled Run to verify truncated context.
   { timeout: 15_000 },
   async ({
-    failUpload,
     learning,
     curatesMorningBrief,
     curatesSuggestions,
@@ -895,12 +853,11 @@ test.each(scenarios)(
     heading,
     preferenceContract,
   }) => {
-    mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
+    mockEnv("CRON_SECRET", "workflow-automation-cron-secret");
     const app = await setupApp({
       context,
       isolatePg: true,
       routes: [
-        ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
         ...morningBriefPreferenceRoutes,
@@ -908,57 +865,15 @@ test.each(scenarios)(
         ...workflowsRoutes,
       ],
     });
-    const peerOrgId = await prepareForeignFeedback(definitionName, failUpload);
+    const peerOrgId = await prepareForeignFeedback(definitionName);
     const fixture = createChatEventsFixture(context);
     const owned = await publicChatActor(context, {
       actor: peerOrgId ? fixture.bdd.user({ orgId: peerOrgId }) : undefined,
     });
-    const s3 = installWorkflowVolumeS3Fixture(context);
+    installWorkflowVolumeS3Fixture(context);
     const cronHeaders = {
-      authorization: "Bearer official-workflow-catalog-cron-secret",
+      authorization: "Bearer workflow-automation-cron-secret",
     };
-    if (failUpload) {
-      context.mocks.s3.send.mockRejectedValueOnce(
-        new Error("S3 publication unavailable"),
-      );
-      const rejected = await owned.run(() => {
-        return accept(
-          app(cronOfficialWorkflowCatalogContract).sync({
-            headers: cronHeaders,
-          }),
-          [200],
-        );
-      });
-      expect(rejected.body).toMatchObject({
-        outcome: "rejected",
-        releaseId: null,
-        diagnostics: [{ code: "artifact-preparation-failed" }],
-      });
-    }
-    const published = await owned.run(() => {
-      return accept(
-        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
-        [200],
-      );
-    });
-    expect(published.body).toMatchObject({
-      outcome: "accepted",
-      diagnostics: [],
-    });
-    const repeated = await owned.run(() => {
-      return accept(
-        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
-        [200],
-      );
-    });
-    expect(repeated.body).toStrictEqual({
-      outcome: "unchanged",
-      releaseId: published.body.releaseId,
-      diagnostics: [],
-    });
-    if (failUpload) {
-      return;
-    }
     const actor = owned.actor;
     const orgId = actor.orgId;
     if (!orgId) {
@@ -1021,13 +936,8 @@ test.each(scenarios)(
         [200],
       );
     });
-    expect(detail.body.instruction).toContain(heading);
-    expectWorkflowInstructions(
-      detail.body.instruction,
-      definitionName,
-      learning,
-    );
-    expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
+    expect(detail.body.instruction).toBe("");
+    expect(detail.body.fileContents).toStrictEqual([]);
     const automations = await owned.run(() => {
       return accept(
         app(workflowAutomationsContract).list({
@@ -1111,10 +1021,16 @@ test.each(scenarios)(
       });
     }
     const bundle = officialWorkflowBundle(execution, definitionName);
-    const files = readExecutionContentBundle(s3.objects, bundle);
-    expect(files.get("SKILL.md")?.toString()).toContain(heading);
-    expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
-    expectPublishingReference(files, detail.body.fileContents, learning);
+    expect(bundle.downloadUrl).toBe(
+      `https://static.vm0.io/workflows/builtin-skills/${bundle.sha256}.tar.gz`,
+    );
+    expect(execution.prompt).toContain(heading);
+    expectWorkflowInstructions(execution.prompt, definitionName, learning);
+    if (!learning) {
+      expect(execution.prompt).toContain(
+        "# Suggestion source and publishing reference",
+      );
+    }
     await withMockNowForTest(dispatchedAt, async () => {
       await owned.run(() => {
         return fixture.failChatRun(
@@ -1133,16 +1049,31 @@ test.each(scenarios)(
       );
     }
     if (definitionName === "morning-brief") {
-      await expectPublishedMorningBriefRecovery(
-        owned,
-        automation.id,
-        workflow.id,
-      );
+      await expectMorningBriefRecovery(owned, automation.id, workflow.id);
     }
     await failActiveOfficialRuns(owned, workflows.body, (item) => {
       return item.id !== selectedWorkflowId && isProactiveProfileWorkflow(item);
     });
     await expectSharedProactiveSchedules(owned, workflows.body, false);
+    if (learning) {
+      await owned.run(async () => {
+        const client = app(workflowsDetailContract);
+        const copy = await accept(
+          client.copy({
+            headers,
+            params: { workflowId: workflow.id },
+            body: {},
+          }),
+          [201],
+        );
+        expect(copy.body.official).toBeNull();
+        const detail = await accept(
+          client.get({ headers, params: { workflowId: copy.body.id } }),
+          [200],
+        );
+        expect(detail.body.instruction).toContain(heading);
+      });
+    }
   },
 );
 
@@ -1163,12 +1094,11 @@ test.each(activityScenarios)(
   "serves $schedules only within seven days of the owner's manual Run",
   { timeout: 15_000 },
   async ({ definitionNames, preferenceContract }) => {
-    mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
+    mockEnv("CRON_SECRET", "workflow-automation-cron-secret");
     const app = await setupApp({
       context,
       isolatePg: true,
       routes: [
-        ...cronOfficialWorkflowCatalogRoutes,
         ...cronExecuteWorkflowAutomationsRoutes,
         ...proactiveSuggestionsRoutes,
         ...morningBriefPreferenceRoutes,
@@ -1180,14 +1110,8 @@ test.each(activityScenarios)(
     const owned = await publicChatActor(context);
     installWorkflowVolumeS3Fixture(context);
     const cronHeaders = {
-      authorization: "Bearer official-workflow-catalog-cron-secret",
+      authorization: "Bearer workflow-automation-cron-secret",
     };
-    await owned.run(() => {
-      return accept(
-        app(cronOfficialWorkflowCatalogContract).sync({ headers: cronHeaders }),
-        [200],
-      );
-    });
     const { actor } = owned;
     await owned.run(() => {
       return fixture.bdd.completeOnboarding(actor, {

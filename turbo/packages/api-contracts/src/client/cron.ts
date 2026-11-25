@@ -13,7 +13,6 @@ import type {
   cronDrainEmailOutboxContract as OriginalCronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract as OriginalCronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract as OriginalCronMonitorChatEventQueueContract,
-  cronOfficialWorkflowCatalogContract as OriginalCronOfficialWorkflowCatalogContract,
   cronProcessBackgroundJobsContract as OriginalCronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract as OriginalCronProcessUsageEventsContract,
   cronProjectChatEventSearchContract as OriginalCronProjectChatEventSearchContract,
@@ -174,19 +173,6 @@ export const cronMonitorChatEventQueueContract: ClientDescriptor<
       200: true,
       401: true,
       500: true,
-    },
-  },
-};
-
-export const cronOfficialWorkflowCatalogContract: ClientDescriptor<
-  typeof OriginalCronOfficialWorkflowCatalogContract
-> = {
-  sync: {
-    method: "GET",
-    path: "/api/cron/sync-official-workflow-catalog",
-    statuses: {
-      200: true,
-      401: true,
     },
   },
 };

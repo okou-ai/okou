@@ -26,6 +26,7 @@ import {
   prepareNotionPageContentUpdatedEventConfigForPersist$,
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-preparation.service";
+import { builtInWorkflow } from "./builtin-workflows";
 import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import { waitUntil } from "../context/wait-until";
 import {
@@ -1245,10 +1246,13 @@ export const listWorkspaceWorkflowAutomations$ = command(
       .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
     signal.throwIfAborted();
 
-    const hasOfficialWorkflow = rows.some((row) => {
-      return row.workflow.officialDefinitionName !== null;
+    const hasHistoricalDefinition = rows.some((row) => {
+      return (
+        row.workflow.officialDefinitionName !== null &&
+        !builtInWorkflow(row.workflow.officialDefinitionName)
+      );
     });
-    const acceptedCatalog = hasOfficialWorkflow
+    const acceptedCatalog = hasHistoricalDefinition
       ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
       : null;
     signal.throwIfAborted();
@@ -1277,9 +1281,12 @@ export const listWorkspaceWorkflowAutomations$ = command(
             workflow: row.workflow,
             member: args.member,
             officialDefinitionLifecycle: row.workflow.officialDefinitionName
-              ? (officialLifecycleByName.get(
+              ? (builtInWorkflow(row.workflow.officialDefinitionName)
+                  ?.definition.lifecycle ??
+                officialLifecycleByName.get(
                   row.workflow.officialDefinitionName,
-                ) ?? "unavailable")
+                ) ??
+                "unavailable")
               : undefined,
           }),
           automation,

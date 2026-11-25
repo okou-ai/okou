@@ -42,6 +42,7 @@ import {
   acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
 } from "./official-workflow-catalog-read.service";
+import { builtInWorkflow } from "./builtin-workflows";
 
 interface Owner {
   readonly orgId: string;
@@ -112,6 +113,7 @@ const feedAutomationDescriptions$ = command(
     const rows = await get(db$)
       .select({
         id: workflows.id,
+        definitionName: workflows.officialDefinitionName,
         description: sql`coalesce(
           ${officialWorkflowDefinitionRevisions.payload}->'workflow'->>'description',
           ${workflows.description}
@@ -146,8 +148,12 @@ const feedAutomationDescriptions$ = command(
       );
     signal.throwIfAborted();
     return new Map(
-      rows.map(({ id, description }) => {
-        return [id, description] as const;
+      rows.map(({ id, description, definitionName }) => {
+        return [
+          id,
+          builtInWorkflow(definitionName)?.revision.definition.workflow
+            .description ?? description,
+        ] as const;
       }),
     );
   },

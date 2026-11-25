@@ -13,15 +13,11 @@ import type {
   OfficialWorkflowTemplateJsonValue,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { isValidTimeZone, parseScheduledAtTime } from "@okouai/core/timezone";
-import {
-  officialWorkflowCatalogState,
-  officialWorkflowCatalogReleases,
-} from "@okouai/db/schema/official-workflow-catalog";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, exists, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { iso } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -31,13 +27,6 @@ import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { AUTONOMY_BUDGET_CEILING } from "../autonomy-budget-limit";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
-  acceptedCatalogFromRow,
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-  readAcceptedOfficialWorkflowCatalog$,
-  readAcceptedOfficialWorkflowRevision$,
-  type AcceptedOfficialWorkflowCatalog,
-} from "./official-workflow-catalog-read.service";
-import {
   createWorkflowAutomation$,
   type AutomationResult,
   type CreateAutomationInput,
@@ -46,6 +35,7 @@ import {
 import type { WorkflowMember } from "./workflow-data.service";
 import { calculateNextRun } from "./time-automation";
 import { withMorningBriefCronBinding } from "./official-workflow-owner-schedule";
+import { builtInWorkflow } from "./builtin-workflows";
 
 const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
 
@@ -538,32 +528,6 @@ const recoverOrRejectExistingInstallation$ = command(
   },
 );
 
-function sameAcceptedDefinition(
-  expectedReleaseId: string,
-  expected: OfficialWorkflowAcceptedDefinition,
-  current: AcceptedOfficialWorkflowCatalog | null,
-): boolean {
-  if (!current || current.releaseId !== expectedReleaseId) {
-    return false;
-  }
-  const definition = current.payload.definitions.find((entry) => {
-    return entry.name === expected.name;
-  });
-  return (
-    definition?.lifecycle === expected.lifecycle &&
-    definition.revision === expected.revision &&
-    definition.blueprints.length === expected.blueprints.length &&
-    definition.blueprints.every((blueprint, index) => {
-      const accepted = expected.blueprints[index];
-      return (
-        accepted !== undefined &&
-        blueprint.key === accepted.key &&
-        blueprint.fingerprint === accepted.fingerprint
-      );
-    })
-  );
-}
-
 interface InstallOfficialWorkflowArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -572,41 +536,24 @@ interface InstallOfficialWorkflowArgs {
 }
 
 interface ResolvedInstallation {
-  readonly catalog: AcceptedOfficialWorkflowCatalog;
   readonly definition: OfficialWorkflowAcceptedDefinition;
   readonly resolved: Extract<ResolveResult, { readonly ok: true }>;
 }
 
 const resolveInstallation$ = command(
   async (
-    { get, set },
+    { get },
     args: InstallOfficialWorkflowArgs,
     signal: AbortSignal,
   ): Promise<ResolvedInstallation | OfficialWorkflowFailure> => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((entry) => {
-      return entry.name === args.definitionName;
-    });
-    if (!catalog || !definition) {
+    const builtin = builtInWorkflow(args.definitionName);
+    if (!builtin || builtin.definition.name !== args.definitionName) {
       return {
         kind: "not-found",
         message: `Official Workflow not found: ${args.definitionName}`,
       };
     }
-    if (definition.lifecycle !== "active") {
-      return {
-        kind: "conflict",
-        message: `Official Workflow is retired: ${args.definitionName}`,
-      };
-    }
-    const revision = await set(
-      readAcceptedOfficialWorkflowRevision$,
-      { name: definition.name, revision: definition.revision },
-      signal,
-    );
-    if (!revision) {
-      throw new Error("Accepted Official Workflow revision is missing");
-    }
+    const { definition, revision } = builtin;
     const [metadata] = await get(db$)
       .select({ timezone: orgMembersMetadata.timezone })
       .from(orgMembersMetadata)
@@ -642,7 +589,7 @@ const resolveInstallation$ = command(
       userTimezone,
     );
     return resolved.ok
-      ? { catalog, definition, resolved }
+      ? { definition, resolved }
       : { kind: "bad-request", message: resolved.message };
   },
 );
@@ -736,83 +683,21 @@ const activateInstallation$ = command(
   async ({ set }, args: InstallationCompletion, signal: AbortSignal) => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const [catalogRow] = await db
-      .select({
-        releaseId: officialWorkflowCatalogState.acceptedReleaseId,
-        payload: officialWorkflowCatalogReleases.payload,
-        hiddenThreadDefinitionNames:
-          officialWorkflowCatalogReleases.hiddenThreadDefinitionNames,
-      })
-      .from(officialWorkflowCatalogState)
-      .innerJoin(
-        officialWorkflowCatalogReleases,
-        eq(
-          officialWorkflowCatalogReleases.id,
-          officialWorkflowCatalogState.acceptedReleaseId,
-        ),
-      )
+    const [installed] = await db
+      .update(workflows)
+      .set({ officialInstallationState: "installed", updatedAt: nowDate() })
       .where(
-        eq(
-          officialWorkflowCatalogState.authority,
-          OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+        and(
+          eq(workflows.id, args.workflowId),
+          eq(workflows.officialDefinitionName, args.resolved.definition.name),
+          eq(workflows.officialInstallationState, "installing"),
+          eq(workflows.orgId, args.installation.orgId),
+          eq(workflows.ownerUserId, args.installation.member.userId),
         ),
       )
-      .limit(1);
+      .returning({ id: workflows.id });
     signal.throwIfAborted();
-    if (
-      !sameAcceptedDefinition(
-        args.resolved.catalog.releaseId,
-        args.resolved.definition,
-        acceptedCatalogFromRow(catalogRow),
-      )
-    ) {
-      return "stale" as const;
-    }
-
-    // Hold the accepted catalog release through activation of this member’s installation.
-    const catalog = db.$with("activation_catalog").as(
-      db
-        .select({ authority: officialWorkflowCatalogState.authority })
-        .from(officialWorkflowCatalogState)
-        .where(
-          and(
-            eq(
-              officialWorkflowCatalogState.authority,
-              OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-            ),
-            eq(
-              officialWorkflowCatalogState.acceptedReleaseId,
-              args.resolved.catalog.releaseId,
-            ),
-          ),
-        )
-        .for("share"),
-    );
-    const installed = db.$with("activated_installation").as(
-      db
-        .update(workflows)
-        .set({ officialInstallationState: "installed", updatedAt: nowDate() })
-        .where(
-          and(
-            eq(workflows.id, args.workflowId),
-            eq(workflows.officialInstallationState, "installing"),
-            eq(workflows.orgId, args.installation.orgId),
-            eq(workflows.ownerUserId, args.installation.member.userId),
-            exists(db.select({ authority: catalog.authority }).from(catalog)),
-          ),
-        )
-        .returning({ id: workflows.id }),
-    );
-    const [activation] = await db
-      .with(catalog, installed)
-      .select({ installedId: installed.id })
-      .from(catalog)
-      .leftJoin(installed, sql`true`);
-    signal.throwIfAborted();
-    if (!activation) {
-      return "stale" as const;
-    }
-    return activation.installedId ? ("installed" as const) : ("lost" as const);
+    return installed !== undefined;
   },
 );
 const cleanupInstallation$ = command(
@@ -870,18 +755,7 @@ const completeInstallation$ = command(
     }
     const activation = await set(activateInstallation$, args, signal);
     signal.throwIfAborted();
-    if (activation === "stale") {
-      await set(
-        cleanupInstallation$,
-        { orgId: args.installation.orgId, workflowId: args.workflowId },
-        signal,
-      );
-      return {
-        kind: "conflict",
-        message: "Official Workflow changed during installation; retry",
-      };
-    }
-    if (activation === "lost") {
+    if (!activation) {
       await set(
         cleanupInstallation$,
         { orgId: args.installation.orgId, workflowId: args.workflowId },
