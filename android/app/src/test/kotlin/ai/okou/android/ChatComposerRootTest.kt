@@ -32,6 +32,7 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -155,7 +156,9 @@ class ChatComposerRootTest {
             val modelRow = compose.onNodeWithTag("chat-options-model")
             compose.waitUntil(8_000) {
                 compose
-                    .onAllNodes(hasTestTag("chat-options-model") and hasText("GPT 5.6 Sol"))
+                    .onAllNodes(
+                        hasTestTag("chat-options-model") and hasText("GPT 5.6 Sol") and isEnabled(),
+                    )
                     .fetchSemanticsNodes()
                     .isNotEmpty()
             }
@@ -197,6 +200,26 @@ class ChatComposerRootTest {
         assertEquals("high", request["reasoningEffort"]?.jsonPrimitive?.content)
         assertEquals("priority", request["serviceTier"]?.jsonPrimitive?.content)
         assertTrue(app.modelFixture.writes.isEmpty())
+    }
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun switchingToAutoHidesModelEntryWhenNamedModelsAreUnavailable() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.modelFixture.planRestricted = true
+        compose.onNodeWithText("New chat").performClick()
+        compose.onNodeWithTag("chat-options-button").performClick()
+        val model = hasTestTag("chat-options-model") and isEnabled()
+        compose.waitUntil(8_000) { compose.onAllNodes(model).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(model).assertTextContains("GPT 5.6 Sol").performClick()
+        compose.onNodeWithText("GPT 5.6 Sol").assertIsNotEnabled().assertIsSelected()
+        compose.onNodeWithText("Auto").performClick().assertIsSelected()
+        compose
+            .onNode(hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")))
+            .performClick()
+        compose.onNodeWithTag("chat-options-model").assertDoesNotExist()
+        compose.onNodeWithText("Chat options").assertIsDisplayed()
     }
 
     private fun messageText(eventId: String, text: String) =

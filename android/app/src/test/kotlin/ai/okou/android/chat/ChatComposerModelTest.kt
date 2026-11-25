@@ -8,6 +8,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.CreateThreadRequestReasoningEffort
 import ai.okou.android.api.generated.CreatedThread
 import ai.okou.android.api.generated.CreatedThreadServiceTier
 import ai.okou.android.api.generated.SendRequestVariant1
@@ -502,7 +503,8 @@ internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
         model.open(target)
         runCurrent()
         model.edit(target, "Use Auto for this draft")
-        val selection = DraftModelSelection(null)
+        val selection =
+            DraftModelSelection(null, mapOf("gpt-test" to CreateThreadRequestReasoningEffort.HIGH))
         model.editDraftModel(target, selection)
         runCurrent()
         assertEquals(selection, store.load(identity).journal.newChatModel)

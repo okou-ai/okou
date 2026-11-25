@@ -634,6 +634,7 @@ internal class ChatComposerOwner(
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
+        val draftModel = journal.newChatModel.takeIf { target.threadId == null }
         val pending =
             PendingText(
                 eventId,
@@ -645,7 +646,7 @@ internal class ChatComposerOwner(
                             eventId = UUID.randomUUID().toString(),
                         )
                         .let { request ->
-                            journal.newChatModel?.applyTo(request, options) ?: request
+                            draftModel?.applyTo(request, options) ?: request
                         }
                 else null,
                 SendRequestVariant1(
@@ -669,6 +670,7 @@ internal class ChatComposerOwner(
                 connectorOverrides =
                     if (target.threadId == null) journal.newChatConnectorOverrides else emptyList(),
                 started = store.sendClock.markNow(),
+                draftModel = draftModel,
             )
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
@@ -1022,7 +1024,7 @@ internal class ChatComposerOwner(
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
                         val choices = latest.connectorOverrides
-                        val draftModel = latest.create?.explicitDraftModel()
+                        val draftModel = latest.draftModel
                         replace(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),

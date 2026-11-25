@@ -63,14 +63,3 @@ internal fun DraftModelSelection.applyTo(
         reasoningEffort = effort,
     )
 }
-
-internal fun CreateThreadRequest.explicitDraftModel(): DraftModelSelection? {
-    val explicit = model as? CanonicalOptional.Present ?: return null
-    val id = explicit.value
-    return DraftModelSelection(
-        id,
-        if (id != null && reasoningEffort != null) mapOf(id to reasoningEffort) else emptyMap(),
-        (serviceTier as? CanonicalOptional.Present)?.value ==
-            CreateThreadRequestServiceTier.PRIORITY,
-    )
-}

@@ -20,6 +20,7 @@ data class PendingText(
     val stage: TextStage,
     @Transient val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
     @Transient val started: TimeMark? = null,
+    @Transient val draftModel: DraftModelSelection? = null,
 )
 
 internal val PendingText.awaitingConnectorSetup: Boolean

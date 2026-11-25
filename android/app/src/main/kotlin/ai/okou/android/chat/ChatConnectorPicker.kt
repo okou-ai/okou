@@ -119,7 +119,10 @@ internal fun ChatConnectorOptionsButton(
         modelState != null &&
             (catalog == null || selectedId != null || catalog.choices.any { it.canSelect })
     val modelEnabled =
-        catalog != null && modelState.record != null && composerState.canEditDraftModel(target)
+        showModel &&
+            catalog != null &&
+            modelState.record != null &&
+            composerState.canEditDraftModel(target)
 
     LaunchedEffect(page, restoreTrigger) {
         if (page == ComposerOptionsPage.Closed && restoreTrigger) {
