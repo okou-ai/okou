@@ -12,10 +12,7 @@ struct ComposerConnectorDetail: View {
   }
 
   private var isAuthorizing: Bool {
-    guard let flow = store.authorization.active,
-      flow.status.target == .builtin(connector.slug)
-    else { return false }
-    return flow.busy || flow.waiting || flow.checking
+    store.authorization.isAuthorizing(target: .builtin(connector.slug))
   }
 
   var body: some View {

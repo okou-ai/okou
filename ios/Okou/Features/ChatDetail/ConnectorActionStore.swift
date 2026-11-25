@@ -112,6 +112,10 @@ final class ConnectorActionStore {
     _ = await resources.read(action).result(refresh: true)
   }
   func refreshKnown() async { await resources.refreshKnown() }
+  func isAuthorizing(target: ChatConnectorTarget) -> Bool {
+    guard let flow = active, flow.status.target == target else { return false }
+    return flow.busy || flow.waiting || flow.checking
+  }
   func activate(_ action: ChatConnectorAction) {
     guard !closed, active == nil else { return }
     activationError = nil
