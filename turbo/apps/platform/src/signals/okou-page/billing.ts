@@ -743,6 +743,7 @@ export const startUsagePackCheckout$ = command(
       [200],
     );
     signal.throwIfAborted();
+    set(capturePaidOnboardingCheckoutCreated$, "paywall");
     if (!("url" in result.body) && result.body.status === "preview") {
       set(internalSubscriptionPurchasePreview$, {
         purchaseType: "usage_pack",
@@ -757,6 +758,7 @@ export const startUsagePackCheckout$ = command(
         "Usage pack checkout returned an unexpected confirmation",
       );
     }
+    set(capturePaidOnboardingRedirectToStripe$, "paywall");
     signal.throwIfAborted();
     set(markBillingCheckoutStarted$, "usage_pack");
     if (newTab) {
@@ -798,6 +800,7 @@ export const confirmSubscriptionPurchase$ = command(
           );
     signal.throwIfAborted();
     if ("url" in response.body) {
+      set(capturePaidOnboardingRedirectToStripe$, "paywall");
       set(markBillingCheckoutStarted$, state.purchaseType);
       signal.throwIfAborted();
       if (state.newTab) {
