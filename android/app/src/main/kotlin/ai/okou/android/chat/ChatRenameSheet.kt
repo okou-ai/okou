@@ -9,7 +9,6 @@ import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.renameForm
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -69,13 +68,15 @@ internal fun RenameListItemSheet(
     save: (String) -> Boolean,
     projectName: Boolean = false,
 ) {
-    val baseline = editor.baseline
     val input = editor.field.input
     val submitted = editor.submitted
     val checking = status == RenameStatus.Checking
     val unconfirmed = checking || status == RenameStatus.Unconfirmed
     val readOnly = unconfirmed || status == RenameStatus.Saving
-    val form = renameForm(input.text, baseline, confirmedName, enabled && !readOnly, null)
+    LaunchedEffect(editor, confirmedName, readOnly) {
+        if (!readOnly) editor.draft.receive(confirmedName)
+    }
+    val form = editor.draft.form(confirmedName, enabled && !readOnly, null)
     val name = form.name
     val confirmed = submitted != null && submitted == confirmedName && !readOnly
     LaunchedEffect(confirmed, submitted) {

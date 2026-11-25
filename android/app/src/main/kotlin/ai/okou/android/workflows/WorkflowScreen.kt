@@ -181,7 +181,7 @@ internal fun WorkflowScreen(
         }
     }
     BackHandler(onBack = ::back)
-    if (discard && editor?.changed == true && detail != null) {
+    if (discard && editor != null && detail != null) {
         OkouConfirmationDialog(
             title = stringResource(R.string.workflow_discard_title),
             confirm = stringResource(R.string.workflow_discard),
