@@ -148,9 +148,7 @@ final class PermissionBatchStore {
     guard let reviewed = reviewed ?? snapshot, canConfirm(reviewing: reviewed), operation == nil,
       !Task.isCancelled
     else { return }
-    update {
-      $0.snapshot = reviewed
-      $0.snapshotRevision += 1
+    record(reviewed) {
       $0.isBusy = true
       $0.isSaving = !reviewed.allAllowed
       $0.isContinuing = reviewed.allAllowed
@@ -163,11 +161,7 @@ final class PermissionBatchStore {
       guard let self else { return }
       defer {
         if self.generation == generation {
-          update {
-            $0.isBusy = false
-            $0.isSaving = false
-            $0.isContinuing = false
-          }
+          finishAttempt()
           operation = nil
           read.invalidate()
         }
@@ -195,11 +189,7 @@ final class PermissionBatchStore {
         }
         try Task.checkCancellation()
         guard !closed, self.generation == generation else { return }
-        update {
-          $0.snapshot = verified
-          $0.snapshotRevision += 1
-          $0.isSaving = false
-        }
+        record(verified) { $0.isSaving = false }
         if needsContinuation, let prompt = action.callbackPrompt {
           update { $0.isContinuing = true }
           var delivered = false
@@ -242,11 +232,7 @@ final class PermissionBatchStore {
           let readback = try await commands.batchPermissions.load(action)
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }
-          update {
-            $0.snapshot = readback
-            $0.snapshotRevision += 1
-            $0.requiresReadback = false
-          }
+          record(readback) { $0.requiresReadback = false }
         } catch is CancellationError {
         } catch {
           // Keep the reviewed list, but require a successful read before another write.
@@ -277,6 +263,25 @@ final class PermissionBatchStore {
   func close() {
     closed = true
     deactivate()
+  }
+
+  /// Records a reviewed or confirmed list together with the rest of the same transition.
+  private func record(
+    _ snapshot: ChatPermissionBatchSnapshot, _ mutation: (inout Presentation) -> Void = { _ in }
+  ) {
+    update {
+      $0.snapshot = snapshot
+      $0.snapshotRevision += 1
+      mutation(&$0)
+    }
+  }
+
+  private func finishAttempt() {
+    update {
+      $0.isBusy = false
+      $0.isSaving = false
+      $0.isContinuing = false
+    }
   }
 
   // The card's state is a synchronous in-process value; replacing it cannot fail.
