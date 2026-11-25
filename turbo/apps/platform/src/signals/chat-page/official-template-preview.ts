@@ -17,6 +17,7 @@ const welcomePreviewContentTypes: Readonly<Record<string, string | undefined>> =
     [MY_OKOU_WELCOME_THREAD_ASSETS.personalInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowInstructionsUrl]: "image/png",
     [MY_OKOU_WELCOME_THREAD_ASSETS.workflowSharingUrl]: "image/png",
+    "https://welcome-my-okou-20261125.okou.app": "text/html",
     // Keep image paths from the earlier refresh as images in saved messages.
     "https://welcome-my-okou-20261125.okou.app/assets/campaign-visual-b41da7d23fb9.jpg":
       "image/jpeg",

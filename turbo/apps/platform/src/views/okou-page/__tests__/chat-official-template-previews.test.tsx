@@ -104,17 +104,24 @@ test("chat-official-template-previews-001 the saved launch deck shows its origin
   });
 });
 
-test("chat-official-template-previews-005 an isolated deployment opens the English My Okou guide inside a frame", async () => {
-  await setupPage({
-    context,
-    host: "isolated-app.example.org",
-    path: welcomeConversation(
-      "[My Okou quick start (English)](" + current.myOkouQuickStartUrl + ")",
-    ),
-  });
-  click(await screen.findByText("My Okou quick start (English)"));
-  await expect(findFrame(current.myOkouQuickStartUrl)).resolves.toBeVisible();
-});
+test.each([
+  ["chat-official-template-previews-005", current.myOkouQuickStartUrl],
+  [
+    "chat-official-template-previews-012",
+    "https://welcome-my-okou-20261125.okou.app",
+  ],
+] as const)(
+  "%s an isolated deployment opens the English My Okou guide inside a frame",
+  async (_id, url) => {
+    await setupPage({
+      context,
+      host: "isolated-app.example.org",
+      path: welcomeConversation("[My Okou quick start (English)](" + url + ")"),
+    });
+    click(await screen.findByText("My Okou quick start (English)"));
+    await expect(findFrame(url)).resolves.toBeVisible();
+  },
+);
 
 test.each([
   ["chat-official-template-previews-006", true],
