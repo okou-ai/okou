@@ -365,6 +365,53 @@ class SavedUiStateTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h300dp")
+    fun searchKeepsItsScrollOffsetWhenTheResultBelowAMovingHeadingDisappears() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val artifacts =
+            List(4) { index ->
+                SearchArtifactHit("file-$index", "Release file $index", ArtifactKind.File)
+            }
+        var artifactRead by mutableStateOf(SearchRead.Ready(artifacts.take(3)))
+        var chats by mutableStateOf(emptyList<ConfirmedChat>())
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = chats),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote =
+                        WorkspaceSearchResults(
+                            keyword = "Release",
+                            messages = SearchRead.Ready(emptyList()),
+                            artifacts = artifactRead,
+                        ),
+                    onOpenArtifact = {},
+                )
+            }
+        }
+        compose.runOnIdle { search.position.requestScrollToItem(0, 8) }
+        compose.onNodeWithText("Release file 0").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals("group:Artifacts", search.savedAnchor()?.key)
+            assertEquals(8, search.position.firstVisibleItemScrollOffset)
+            artifactRead = SearchRead.Ready(artifacts.drop(1))
+            chats = listOf(searchResult("chat", "Release chat"))
+        }
+
+        compose.onNodeWithText("Release chat").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(0, search.position.firstVisibleItemIndex)
+            assertEquals(8, search.position.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
     fun artifactSearchUsesFixedDelayedProgressWhileKeepingLoadedRows() {
         val search =
             ChatSearchState(TextFieldValue("Release"), type = WorkspaceSearchType.Artifacts)
