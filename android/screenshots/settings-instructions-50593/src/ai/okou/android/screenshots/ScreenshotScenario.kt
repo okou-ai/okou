@@ -356,7 +356,11 @@ class ScreenshotScenario {
                     3_000,
                 ) == true,
             )
-            assertEquals(beforeFailureEditor, editor(expectedText = finalText).visibleBounds)
+            val visibleEditor = editor(expectedText = finalText).visibleBounds
+            // Accessibility clips visible bounds behind the transient Snackbar.
+            assertEquals(beforeFailureEditor.left, visibleEditor.left)
+            assertEquals(beforeFailureEditor.top, visibleEditor.top)
+            assertEquals(beforeFailureEditor.right, visibleEditor.right)
             assertActionPosition(beforeFailureSave, text(saveLabel))
             fixture.rejectRead = false
             scenario.onActivity { model.refresh() }
@@ -364,6 +368,16 @@ class ScreenshotScenario {
                 !it.busy && it.read == InstructionsRead.Ready
             }
             assertTrue(device.wait(Until.gone(By.text(app.getString(R.string.instructions_refresh_failed))), 5_000))
+            assertTrue(
+                "The editor recovers its full visible bounds after the overlay",
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice): Boolean =
+                            editor(expectedText = finalText).visibleBounds == beforeFailureEditor
+                    },
+                    5_000,
+                ) == true,
+            )
             val savePosition = actionPosition(control(R.string.instructions_save))
             val cancelPosition = actionPosition(control(R.string.settings_cancel))
             click(R.string.instructions_save)
