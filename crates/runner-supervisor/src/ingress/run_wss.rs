@@ -37,7 +37,6 @@ const MAX_MESSAGE_BYTES: usize = 256;
 const GENERATION_HEADER: &str = "x-okou-runner-heartbeat-generation";
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct FirstFrame {
     ticket: String,
 }

@@ -117,7 +117,10 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
         .0,
         404
     );
-    let mut ws = connect_authenticated(&socket, &run_path, first.clone()).await;
+    let mut frame: Value = serde_json::from_str(first.to_text().unwrap()).unwrap();
+    frame["extra"] = json!(true);
+    let mut ws =
+        connect_authenticated(&socket, &run_path, Message::Text(frame.to_string().into())).await;
     ws.send(Message::Ping(Bytes::from_static(b"ping")))
         .await
         .unwrap();

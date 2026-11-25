@@ -57,8 +57,9 @@ hostname to request a ticket. The Runner keeps only the ticket digest in memory.
 
 Clients call `POST /api/runs/<runId>/wss/bootstrap` with user authentication. The
 API returns `wssUrl`, `ticket` and `expiresAt`. Connect to `wssUrl` and send
-`{"ticket":"<ticket>"}` as the first text message. The Runner consumes the
-30-second, one-use ticket for the Run in the URL and replies `{"type":"auth.ok"}`.
+`{"ticket":"<ticket>"}` as the first text message. The Runner ignores additional
+fields in that message. It consumes the 30-second, one-use ticket for the Run in
+the URL and replies `{"type":"auth.ok"}`.
 The admission deadline is five seconds. Established channels support WebSocket
 Ping/Pong and close when the local Run ends or is cancelled. Reconnecting
 requires a new bootstrap.
