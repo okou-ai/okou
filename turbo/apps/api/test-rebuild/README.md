@@ -135,3 +135,18 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `me-model-providers-upsert-014` | Retrying a transient 503 with the same idempotency key consumes once. |
 | `credit-low-balance-alert-003` | Followed debit and membership helper to the actual PUT. Empty directory results clear both roles, producing 503 and no-store for both CLI identities. |
 | `runtime-credit-balance-001` | Auth is leased while balance is positive. Both forms of billable access are rejected at zero, and nonbillable auth still succeeds. |
+| `internal-callbacks-discord-027` | The guild thread fan-out includes history and eight distinct provider reads. |
+| `internal-callbacks-discord-028` | The DM variant reads two resources and does not fetch history. |
+| `internal-callbacks-discord-029` | A provider failure returns 500 and leaves the pending history available to steer. |
+| `internal-callbacks-discord-032` | Confirmed the same recovery behavior at a distinct provider read failure. |
+| `internal-callbacks-discord-039` | An uncertain 429 reply is not retried. |
+| `internal-callbacks-discord-050` | Typing uses backoff after rate limiting, distinct from reply delivery. |
+| `internal-callbacks-discord-053` | Binding revocation stops typing even when provider reads would reuse a warm result. |
+| `chat-events-shared-queue-004` | Human forwarding keeps source IDs and a single Current User block and works independently of handoff budget. |
+| `chat-events-shared-queue-005` | The helper and request body confirm rejection of forged client source metadata. |
+| `chat-events-bootstrap-prefetch-007` | The execution preserves captured identity and uses Memory published during predecessor overlap. |
+| `connector-check-006` | Missing and contradictory AWS context share an unknown-endpoint response. Only missing context receives the insufficient header. |
+| `connector-check-014` | The public Run credential resolves the replacement default across reconnect, preserving the shared deny. |
+| `subscription-credit-balances-002` | Unknown credit amount keeps the finite marker and preserves reset credits and five-hour quota. |
+| `node-server-004` | Replacement can bind before the original process’s remaining background cleanup finishes. |
+| `onboarding-recommendations-003` | A connection revoked during reading is listed as unavailable; the request keeps capability labels and omits revoked facts and raw secrets. |
