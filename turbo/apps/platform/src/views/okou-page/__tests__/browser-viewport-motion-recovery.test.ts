@@ -1,4 +1,10 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -41,9 +47,10 @@ function tabs() {
 }
 async function admission(n: number, selected: string) {
   await waitFor(() => {
-    expect(tabs()).toHaveLength(n);
+    const visibleTabs = queryAllByRoleFast("tab");
+    expect(visibleTabs).toHaveLength(n);
     expect(
-      queryAllByRoleFast("tab").find((tab) => {
+      visibleTabs.find((tab) => {
         return (
           (tab.getAttribute("aria-label") ?? tab.textContent?.trim()) ===
           selected
@@ -100,7 +107,6 @@ function nativeTransitions() {
 test("chat-navigation-browser-016 Resizing during a disconnected viewer takes effect on recovery before the tab row widens", async () => {
   const retry = context.mocks.deferred<{ open(): void }>();
   let disconnected = false;
-  const resize = nativeGeometry(800);
   const { open, cdp } = await openBrowserChat(context, "live", false, {
     many: true,
     onConnecting: (_url, socket) => {
@@ -109,8 +115,24 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
       }
     },
   });
+  const resize = nativeGeometry(800);
+  const readyInput = () => {
+    return waitFor(() => {
+      const surface = document.querySelector<HTMLElement>(
+        "[data-browser-surface]",
+      );
+      if (!surface) {
+        throw new Error("Waiting for the browser viewer surface");
+      }
+      const input = within(surface).getByRole("textbox", {
+        name: "Remote browser input",
+      });
+      expect(input).toBeEnabled();
+      return input;
+    });
+  };
   click(open);
-  const field = await remoteBrowserInput();
+  const field = await readyInput();
   await admission(12, "Example");
   disconnected = true;
   cdp.setAutoOpen(false);
@@ -121,7 +143,7 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
   resize(240, 916);
   const replacement = await retry.promise;
   replacement.open();
-  await remoteBrowserInput();
+  await readyInput();
   await admission(3, "Example");
   await waitFor(() => {
     return expect(cdp.requests).toContainEqual(
