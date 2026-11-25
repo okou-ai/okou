@@ -62,4 +62,6 @@
     <string name="chat_resources_wechat">微信</string>
     <string name="chat_resources_feishu">飛書</string>
     <string name="chat_resources_messages">訊息</string>
+    <string name="artifact_preview_loading">正在載入預覽</string>
+    <string name="artifact_image_unavailable">圖片無法使用</string>
 </resources>

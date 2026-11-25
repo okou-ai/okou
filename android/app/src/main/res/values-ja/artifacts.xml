@@ -62,4 +62,6 @@
     <string name="chat_resources_wechat">WeChat</string>
     <string name="chat_resources_feishu">Feishu</string>
     <string name="chat_resources_messages">メッセージ</string>
+    <string name="artifact_preview_loading">プレビューを読み込み中…</string>
+    <string name="artifact_image_unavailable">画像を利用できません</string>
 </resources>

@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.contentReadStaleDelayMillis
@@ -27,9 +28,6 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-internal const val ArtifactRetryDelayMillis = 3_000L
-private const val ArtifactRetryLimit = 2
-
 internal enum class ArtifactProblem {
     Denied,
     Missing,
@@ -46,6 +44,9 @@ internal data class ArtifactPreviewState(
     val content: ArtifactContent? = null,
     val problem: ArtifactProblem? = null,
 ) {
+    val isImage: Boolean
+        get() = item?.kind == ArtifactKind.Image || id.startsWith(ExternalImagePreviewPrefix)
+
     val isHosted: Boolean
         get() =
             info?.resource !is ArtifactResource.File &&
@@ -808,9 +809,11 @@ internal constructor(
                         item = item.takeUnless { revoked && externalImage },
                         info = info.takeUnless { revoked && !detailAuthorized },
                         content = content.takeIf { hasReadableContent && !discardContent },
-                        access = access.takeUnless { revoked && !fileAccessAuthorized },
+                        access =
+                            access.takeUnless { revoked && (!fileAccessAuthorized || isImage) },
                         problem =
-                            if (revoked && fileAccessAuthorized) ArtifactProblem.Unavailable
+                            if (revoked && fileAccessAuthorized && !isImage)
+                                ArtifactProblem.Unavailable
                             else errorType,
                     )
                 }
@@ -865,9 +868,10 @@ private suspend fun <T> retryArtifactOperation(
     canRetry: () -> Boolean = { true },
     operation: suspend (remainingRetries: Int) -> T,
 ): T {
-    repeat(ArtifactRetryLimit) { usedRetries ->
+    repeat(finiteReadRetryDelays.size) { usedRetries ->
+        val remainingRetries = finiteReadRetryDelays.size - usedRetries
         try {
-            return operation(ArtifactRetryLimit - usedRetries)
+            return operation(remainingRetries)
         } catch (error: Exception) {
             if (
                 error is CancellationException ||
@@ -876,17 +880,20 @@ private suspend fun <T> retryArtifactOperation(
             ) {
                 throw error
             }
-            val serverWait = (error as? ApiFailure.Http)?.retryAfterSeconds ?: 0L
             delay(
-                maxOf(
-                    ArtifactRetryDelayMillis,
-                    serverWait.coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000,
+                artifactRetryDelayMillis(
+                    remainingRetries,
+                    (error as? ApiFailure.Http)?.retryAfterSeconds,
                 ),
             )
         }
     }
     return operation(0)
 }
+
+internal fun artifactRetryDelayMillis(remainingRetries: Int, retryAfterSeconds: Long?): Long =
+    retryAfterSeconds?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000)
+        ?: finiteReadRetryDelays[finiteReadRetryDelays.size - remainingRetries]
 
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
     copy(access = access?.copy(save = null, previewOnly = true))
