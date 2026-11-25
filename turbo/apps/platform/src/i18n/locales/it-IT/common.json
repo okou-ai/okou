@@ -1231,7 +1231,11 @@
       "title": "Piano di downgrade"
     },
     "feedback": {
-      "shareFeedback": "Condividi feedback"
+      "otherPlaceholder": "Dicci di più…",
+      "rewardTerms": "Una volta per spazio di lavoro · Crediti validi 30 giorni",
+      "shareFeedback": "Condividi feedback",
+      "submitFeedback": "Invia feedback",
+      "thanks": "Grazie per il tuo feedback"
     },
     "invoices": {
       "amount": "Importo",

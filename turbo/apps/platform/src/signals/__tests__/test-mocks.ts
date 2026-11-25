@@ -236,10 +236,6 @@ interface PostHogMock {
   };
   readonly setActiveSurveyIds: (ids: readonly string[]) => void;
   readonly surveyQueries: boolean[];
-  readonly surveyDisplays: {
-    readonly id: string;
-    readonly options: Parameters<typeof posthog.displaySurvey>[1];
-  }[];
   readonly events: PostHogEvent[];
   readonly identifications: PostHogIdentification[];
   readonly initializations: PostHogInitialization[];
@@ -897,10 +893,6 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
   );
   const surveyQueries: boolean[] = [];
   const events: PostHogEvent[] = [];
-  const surveyDisplays: {
-    readonly id: string;
-    readonly options: Parameters<typeof posthog.displaySurvey>[1];
-  }[] = [];
   const identifications: PostHogIdentification[] = [];
   const initializations: PostHogInitialization[] = [];
   const capture = vi
@@ -978,8 +970,37 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
             id,
             name: id,
             type: "api",
-            questions: [],
-            appearance: null,
+            questions: [
+              {
+                id: `${id}-question`,
+                type: "single_choice",
+                question:
+                  id === BILLING_FEEDBACK_SURVEYS.credits_exhausted
+                    ? "What's stopping you from upgrading today?"
+                    : id === BILLING_FEEDBACK_SURVEYS.upgrade_dismissed
+                      ? "What stopped you from upgrading today?"
+                      : "What stopped you from completing your purchase?",
+                description:
+                  "Share your feedback to receive 200 credits, once per workspace.",
+                choices: [
+                  "It's too expensive",
+                  "I want to try it more first",
+                  "Something else",
+                ],
+                hasOpenChoice: true,
+                translations: {
+                  "zh-cn": {
+                    question: "是什么让你没有完成购买？",
+                    description: "完成反馈可获得 200 积分。",
+                    choices: ["价格太高", "想再多试用一下", "其他原因"],
+                  },
+                },
+              },
+            ],
+            appearance: {
+              thankYouMessageHeader: "Thank you for your feedback!",
+              thankYouMessageCloseButtonText: "Close",
+            },
             conditions: null,
             feature_flag_keys: null,
             linked_flag_key: null,
@@ -993,22 +1014,11 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
         }),
       );
     });
-  const displaySurvey = vi
-    .spyOn(posthog, "displaySurvey")
-    .mockImplementation((id, options) => {
-      surveyDisplays.push({ id, options });
-      posthog.capture("survey shown", { $survey_id: id });
-    });
-  const cancelSurvey = vi
-    .spyOn(posthog, "cancelPendingSurvey")
-    .mockImplementation(() => {});
   restoreOnAbort(signal, () => {
     onFeatureFlags.mockRestore();
     setConfig.mockRestore();
     surveysLoaded.mockRestore();
     matchingSurveys.mockRestore();
-    displaySurvey.mockRestore();
-    cancelSurvey.mockRestore();
     capture.mockRestore();
     identify.mockRestore();
     init.mockRestore();
@@ -1031,7 +1041,6 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     events,
     identifications,
     initializations,
-    surveyDisplays,
     surveyQueries,
     deferFeatureFlags: () => {
       featureFlagsReady = false;
