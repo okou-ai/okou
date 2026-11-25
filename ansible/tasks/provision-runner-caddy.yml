@@ -1,6 +1,7 @@
 - name: Provision dedicated Runner Caddy service
   vars:
     runner_caddy_version: "2.11.9"
+    runner_caddy_previous: "{{ runner_caddy_applied.content | default('e30=') | b64decode | from_json }}"
     runner_caddy_archives:
       x86_64:
         arch: amd64
@@ -114,6 +115,38 @@
         group: okou-runner-caddy
         mode: "0710"
 
+    - name: Preserve the confirmed Caddyfile before publication
+      when: not ansible_check_mode
+      block:
+        - name: Fingerprint the Caddyfile before replacing it
+          ansible.builtin.stat:
+            path: /etc/okou-runner-caddy/Caddyfile
+            checksum_algorithm: sha256
+          register: runner_caddy_before
+
+        - name: Check for the last applied deployment record
+          ansible.builtin.stat:
+            path: /etc/okou-runner-caddy/applied-state.json
+          register: runner_caddy_receipt
+
+        - name: Read the last applied Caddy deployment
+          ansible.builtin.slurp:
+            src: /etc/okou-runner-caddy/applied-state.json
+          when: runner_caddy_receipt.stat.exists
+          register: runner_caddy_applied
+
+        - name: Save the current source when its hash matches the receipt
+          ansible.builtin.copy:
+            src: /etc/okou-runner-caddy/Caddyfile
+            dest: /etc/okou-runner-caddy/Caddyfile.applied
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0600"
+          when:
+            - runner_caddy_before.stat.exists
+            - runner_caddy_before.stat.checksum == runner_caddy_previous.get('config')
+
     - name: Validate and install static Runner Caddyfile
       ansible.builtin.template:
         src: ../templates/runner-caddy.Caddyfile.j2
@@ -146,7 +179,6 @@
           gid: "{{ runner_caddy_user.group }}"
           groups: "{{ runner_caddy_user.groups }}"
           invocation: "{{ runner_caddy_invocation.stdout }}"
-        runner_caddy_previous: "{{ runner_caddy_applied.content | default('e30=') | b64decode | from_json }}"
         runner_caddy_config_pending: "{{ runner_caddy_config.changed or runner_caddy_previous.get('config') != runner_caddy_activation_state.config }}"
         runner_caddy_runtime_pending: >-
           {{ (not runner_caddy_previous and (runner_caddy_unit.changed or runner_caddy_binary.changed or runner_caddy_user.changed))
@@ -164,14 +196,7 @@
             - "/usr/local/lib/okou-runner-caddy/{{ runner_caddy_version }}/caddy"
             - /etc/okou-runner-caddy/Caddyfile
             - /etc/systemd/system/okou-runner-caddy.service
-            - /etc/okou-runner-caddy/applied-state.json
           register: runner_caddy_deployment_files
-
-        - name: Read the last applied Caddy deployment
-          ansible.builtin.slurp:
-            src: /etc/okou-runner-caddy/applied-state.json
-          when: runner_caddy_deployment_files.results[3].stat.exists
-          register: runner_caddy_applied
 
         - name: Inspect current Caddy service invocation
           ansible.builtin.command:
@@ -218,6 +243,32 @@
             - not runner_caddy_runtime_pending
             - runner_caddy_config_pending or runner_caddy_previous.get('invocation') != runner_caddy_invocation.stdout
           register: runner_caddy_reload
+          failed_when: runner_caddy_reload.rc | default(1) not in [0, 3]
+
+        - name: Restore the confirmed source after Caddy rejects the update
+          when: runner_caddy_reload.rc | default(0) == 3
+          block:
+            - name: Verify the saved source against the last applied hash
+              ansible.builtin.stat:
+                path: /etc/okou-runner-caddy/Caddyfile.applied
+                checksum_algorithm: sha256
+              register: runner_caddy_saved_source
+
+            - name: Restore the last confirmed Caddyfile for future starts
+              ansible.builtin.copy:
+                src: /etc/okou-runner-caddy/Caddyfile.applied
+                dest: /etc/okou-runner-caddy/Caddyfile
+                remote_src: true
+                owner: root
+                group: okou-runner-caddy
+                mode: "0640"
+              when:
+                - runner_caddy_saved_source.stat.exists
+                - runner_caddy_saved_source.stat.checksum == runner_caddy_previous.get('config')
+
+            - name: Fail provisioning after rejected Caddy configuration
+              ansible.builtin.fail:
+                msg: "{{ runner_caddy_reload.stdout }}"
 
         - name: Verify the ready Caddy service invocation
           ansible.builtin.command:
@@ -243,6 +294,15 @@
               - --quiet
               - okou-runner-caddy.service
           changed_when: false
+
+        - name: Save the confirmed Caddyfile for future reloads
+          ansible.builtin.copy:
+            src: /etc/okou-runner-caddy/Caddyfile
+            dest: /etc/okou-runner-caddy/Caddyfile.applied
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0600"
 
         - name: Record the successfully applied Caddy deployment
           ansible.builtin.copy:

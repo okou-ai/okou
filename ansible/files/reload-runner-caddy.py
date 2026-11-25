@@ -8,6 +8,10 @@ import time
 from pathlib import Path
 
 
+class CaddyRejectedReload(RuntimeError):
+    """The current process reported that it kept the previous configuration."""
+
+
 def output(*args):
     return subprocess.check_output(args, text=True, timeout=5)
 
@@ -74,7 +78,13 @@ def reload_caddy(unit, config, digest, expected_invocation):
             ):
                 continue
             if event.get("msg") == "failed to reload config from file":
-                raise RuntimeError(f"Caddy rejected the reload: {event.get('error')}")
+                verify_config()
+                status = service_status(unit)
+                if (status["InvocationID"], status["MainPID"]) != (invocation, pid):
+                    raise RuntimeError("Caddy invocation or PID changed during reload")
+                raise CaddyRejectedReload(
+                    f"Caddy rejected the reload: {event.get('error')}"
+                )
             if event.get("msg") == "successfully reloaded config from file":
                 acknowledged = True
         if acknowledged:
@@ -96,6 +106,9 @@ def reload_caddy(unit, config, digest, expected_invocation):
 if __name__ == "__main__":
     try:
         reload_caddy(*sys.argv[1:])
+    except CaddyRejectedReload as error:
+        print(error)
+        sys.exit(3)
     except (
         OSError,
         ValueError,
