@@ -177,10 +177,11 @@
             }
           }
           // A prompt's text takes the glass's vibrancy, so it stays legible on a plain page and
-          // over a picture alike.
+          // over a picture alike. Over a picture the glass is veiled, so it doesn't turn the
+          // picture's colour.
           VStack(spacing: OkouSpace.md) {
             OkouGlassPrompt("What do you have in mind?")
-            OkouGlassPrompt("What do you have in mind?")
+            OkouGlassPrompt("What do you have in mind?", on: .scene)
               .padding(OkouSpace.lg)
               .background {
                 Image("ForYouCover").resizable().scaledToFill()
