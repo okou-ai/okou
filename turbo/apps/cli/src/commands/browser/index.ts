@@ -39,7 +39,6 @@ import { launchWindowProxy } from "./proxy/launch";
 import {
   browserTabCommand,
   DEFAULT_AGENT_BROWSER_SESSION,
-  parseAgentSession,
 } from "./browser-tab";
 const BROWSER_INPUT_TARGET_MAX_LENGTH = 2048;
 const BROWSER_ACTION_NEXT_STEP =
@@ -78,12 +77,6 @@ type BrowserInputFieldOption = zInfer<typeof browserInputFieldOptionSchema>;
 
 interface NewOptions {
   readonly name: string;
-  readonly agentSession?: string;
-  readonly json?: boolean;
-}
-
-interface ConnectionOptions {
-  readonly agentSession?: string;
   readonly json?: boolean;
 }
 
@@ -92,7 +85,6 @@ interface OutputOptions {
 }
 
 interface InputRequestOptions extends OutputOptions {
-  readonly agentSession?: string;
   readonly title?: string;
   readonly reason?: string;
   readonly callbackPrompt?: string;
@@ -376,10 +368,10 @@ function renderBrowser(browser: BrowserSession): void {
 
 async function connectResponse(
   response: BrowserConnection,
-  options: ConnectionOptions,
+  options: OutputOptions,
   loginGuidance: string | undefined,
 ): Promise<void> {
-  const sessionName = options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION;
+  const sessionName = DEFAULT_AGENT_BROWSER_SESSION;
   const proxy = await launchWindowProxy({
     cdpUrl: response.cdpUrl,
     runtimeId: response.extension.runtimeId,
@@ -414,17 +406,11 @@ const useCommand = new Command()
   .description(
     "Create, reuse, or resume this thread's browser, attach it to agent-browser, and extend its lease",
   )
-  .addOption(
-    new Option(
-      "--agent-session <name>",
-      "Named agent-browser session",
-    ).argParser(parseAgentSession),
-  )
   .option("--json", "Print machine-readable output without connection secrets")
   .action(
-    withErrorHandler(async (options: ConnectionOptions) => {
+    withErrorHandler(async (options: OutputOptions) => {
       const loginGuidance = await getConnectedEmailLoginGuidance(
-        options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+        DEFAULT_AGENT_BROWSER_SESSION,
       );
       await connectResponse(await useBrowser(), options, loginGuidance);
     }),
@@ -453,15 +439,9 @@ const restartCommand = new Command()
   .description(
     "Restart an unresponsive shared Browser instance and reconnect this chat. This interrupts all chats using your Browser in this workspace.",
   )
-  .addOption(
-    new Option(
-      "--agent-session <name>",
-      "Named agent-browser session",
-    ).argParser(parseAgentSession),
-  )
   .option("--json", "Print machine-readable output without connection secrets")
   .action(
-    withErrorHandler(async (options: ConnectionOptions) => {
+    withErrorHandler(async (options: OutputOptions) => {
       const current = await getCurrentBrowser();
       if (current.status !== "active") {
         throw new Error(
@@ -484,12 +464,6 @@ const newCommand = new Command()
   .name("new")
   .description("Open this chat's named Browser and attach it to agent-browser")
   .addOption(new Option("--name <name>", "Browser name").default("browser"))
-  .addOption(
-    new Option(
-      "--agent-session <name>",
-      "Named agent-browser session",
-    ).argParser(parseAgentSession),
-  )
   .option("--json", "Print machine-readable output without connection secrets")
   .action(
     withErrorHandler(async (options: NewOptions) => {
@@ -497,7 +471,7 @@ const newCommand = new Command()
         name: options.name,
       });
       const loginGuidance = await getConnectedEmailLoginGuidance(
-        options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+        DEFAULT_AGENT_BROWSER_SESSION,
       );
       await connectResponse(
         await createBrowser(request),
@@ -551,9 +525,6 @@ const inputRequestCommand = new Command()
     collectInputField,
     [] as string[],
   )
-  .addOption(
-    new Option("--agent-session <name>", "Attached agent-browser session"),
-  )
   .option("--json", "Print machine-readable output")
   .action(
     withErrorHandler(async (options: InputRequestOptions) => {
@@ -576,14 +547,6 @@ const inputRequestCommand = new Command()
           `--reason must be 1-${BROWSER_USER_ACTION_MAX_REASON_LENGTH} characters`,
         );
       }
-      if (
-        options.agentSession !== undefined &&
-        !/^[a-zA-Z0-9_-]{1,64}$/u.test(options.agentSession)
-      ) {
-        throw invalidRequest(
-          "--agent-session must contain 1-64 letters, numbers, underscores, or hyphens",
-        );
-      }
       const callbackPrompt = options.callbackPrompt ?? "";
       if (
         callbackPrompt.trim().length === 0 ||
@@ -599,12 +562,10 @@ const inputRequestCommand = new Command()
           field.fieldKind,
         );
       })
-        ? await getConnectedEmailLoginGuidance(
-            options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
-          )
+        ? await getConnectedEmailLoginGuidance(DEFAULT_AGENT_BROWSER_SESSION)
         : undefined;
       const captured = await captureBrowserInputTargets(
-        options.agentSession ?? DEFAULT_AGENT_BROWSER_SESSION,
+        DEFAULT_AGENT_BROWSER_SESSION,
         fields.map((field) => {
           return field.target;
         }),

@@ -421,8 +421,6 @@ describe("okou browser command", () => {
         "node",
         "cli",
         "use",
-        "--agent-session",
-        "booking-browser",
         ...(json ? ["--json"] : []),
       ]);
 
@@ -436,7 +434,7 @@ describe("okou browser command", () => {
         expect(guidance).toContain(`${slug} ("work@example.test")`);
         expect(guidance).toContain("Ask whether the user wants to sign in");
         expect(guidance).toContain(
-          "agent-browser --session booking-browser eval --stdin",
+          "agent-browser --session okou-browser eval --stdin",
         );
       } else {
         expect(output).not.toContain("Connected-email login:");
@@ -554,35 +552,6 @@ describe("okou browser command", () => {
 
     expect(help).toContain(
       `agent-browser --session ${agentBrowserSession} open`,
-    );
-  });
-
-  it("attaches to an explicitly named agent-browser session", async () => {
-    server.use(
-      http.post("http://localhost:3000/api/browsers/use", () => {
-        return HttpResponse.json(
-          {
-            browser: browser("active"),
-            cdpUrl: CDP_URL,
-            extension: EXTENSION,
-          },
-          { status: 200 },
-        );
-      }),
-    );
-
-    await browserCommand.parseAsync([
-      "node",
-      "cli",
-      "use",
-      "--agent-session",
-      "booking-browser",
-    ]);
-
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      "agent-browser",
-      ["--session", "booking-browser", "--no-pin-tab", "connect", PROXY_URL],
-      { stdio: "ignore", timeout: 30_000 },
     );
   });
 
@@ -710,8 +679,6 @@ describe("okou browser command", () => {
       "tab",
       "select",
       "t2",
-      "--agent-session",
-      "booking-browser",
       "--json",
     ]);
 
@@ -720,8 +687,8 @@ describe("okou browser command", () => {
         return call[1];
       }),
     ).toStrictEqual([
-      ["--session", "booking-browser", "tab", "t2"],
-      ["--session", "booking-browser", "tab", "list", "--json"],
+      ["--session", "okou-browser", "tab", "t2"],
+      ["--session", "okou-browser", "tab", "list", "--json"],
     ]);
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(JSON.parse(output)).toStrictEqual({
@@ -776,12 +743,10 @@ describe("okou browser command", () => {
     ]);
   });
 
-  it("does not echo invalid tab IDs or session names in command errors", async () => {
+  it("does not echo invalid tab IDs in command errors", async () => {
     const secret = "synthetic-private-param";
     const invalidArguments = [
       ["tab", "select", `https://accounts.example.test/?code=${secret}`],
-      ["tab", "list", "--agent-session", `${secret}@`],
-      ["tab", "select", "t1", "--agent-session", `${secret}@`],
     ];
     for (const args of invalidArguments) {
       consoleError.mockClear();
