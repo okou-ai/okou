@@ -9,9 +9,6 @@ private typealias FixtureData = ConnectorHTTPFixtures
 
 private let githubAuthorizationCatalog = """
   {"connector":{"slug":"github","label":"GitHub","description":"Review repositories","connectNotice":null,"authMethods":[
-    {"id":"api-token","label":"API token","grantKind":"manual","manualFields":[
-      {"id":"token","label":"API token","required":true,"inputType":"password"}
-    ],"startOptions":[]},
     {"id":"oauth","label":"OAuth","grantKind":"auth-code","manualFields":[],"startOptions":[]}
   ]}}
   """

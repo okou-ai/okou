@@ -217,7 +217,10 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
         } footer: {
-          if flow.action.isMemberApproval {
+          if let account = flow.status.account, flow.methodID != account.authMethod {
+            Text("Connecting with this method replaces this account’s current authorization.")
+              .okouSectionNote()
+          } else if flow.action.isMemberApproval {
             Text("Allow across your chats. Select this account here.")
               .okouSectionNote()
           } else {

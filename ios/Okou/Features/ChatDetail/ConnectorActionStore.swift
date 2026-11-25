@@ -34,10 +34,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
   var availableMethods: [ChatConnectorMethod] {
-    status.builtin?.authMethods.filter {
-      $0.grantKind != "managed"
-        && (status.account == nil || $0.id == status.account?.authMethod)
-    } ?? []
+    status.builtin?.authMethods.filter { $0.grantKind != "managed" } ?? []
   }
   var supportsProviderApplication: Bool {
     status.target == .builtin("strava") && method?.id == "oauth"
