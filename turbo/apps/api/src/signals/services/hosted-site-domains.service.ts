@@ -850,6 +850,7 @@ export const verifyHostedSiteDomain$ = command(
       status: "incomplete",
       eligibleForSelection: false,
       checkedAt: started.toISOString(),
+      recordChecks: [],
       validationRecords: domain.verification?.validationRecords ?? [],
       checks: {
         ownership: notChecked(),

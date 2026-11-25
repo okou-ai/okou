@@ -37,7 +37,7 @@ export const hostedDomainVerificationSchema = object({
   status: zEnum(["ready", "incomplete", "unavailable"]),
   eligibleForSelection: boolean().default(false),
   checkedAt: iso.datetime(),
-  recordChecks: array(hostedDomainRecordCheckSchema).optional(),
+  recordChecks: array(hostedDomainRecordCheckSchema),
   validationRecords: array(
     object({
       type: zEnum(["TXT", "CNAME", "A", "AAAA"]),

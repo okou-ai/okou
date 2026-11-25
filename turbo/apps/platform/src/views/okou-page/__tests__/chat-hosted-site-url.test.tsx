@@ -703,197 +703,181 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
   });
 });
 
-test.each(["current", "legacy"] as const)(
-  "unavailable %s verification stays in the verification stage until DNS changes are confirmed",
-  async (version) => {
-    const hostname = "retry.customer-example.net";
-    const domainId = "00000000-0000-4000-8000-000000000095";
-    const revision = "00000000-0000-4000-8000-000000000096";
-    const checkedAt = "2026-11-25T00:00:00Z";
-    const unavailable = {
-      status: "unavailable" as const,
-      message: "DNS lookup unavailable. Try Verify again.",
-    };
-    const passed = { status: "passed" as const, message: "Verified" };
-    const records = [
+test("unavailable verification stays in the verification stage until DNS changes are confirmed", async () => {
+  const hostname = "retry.customer-example.net";
+  const domainId = "00000000-0000-4000-8000-000000000095";
+  const revision = "00000000-0000-4000-8000-000000000096";
+  const checkedAt = "2026-11-25T00:00:00Z";
+  const unavailable = {
+    status: "unavailable" as const,
+    message: "DNS lookup unavailable. Try Verify again.",
+  };
+  const passed = { status: "passed" as const, message: "Verified" };
+  const records = [
+    {
+      type: "TXT" as const,
+      name: `_okou-challenge.${hostname}`,
+      value: "okou-verification=retry",
+    },
+    { type: "CNAME" as const, name: hostname, value: "connect.okou.app" },
+  ];
+  let settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: address(original),
+    effectiveUrl: address(original),
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [
       {
-        type: "TXT" as const,
-        name: `_okou-challenge.${hostname}`,
-        value: "okou-verification=retry",
-      },
-      { type: "CNAME" as const, name: hostname, value: "connect.okou.app" },
-    ];
-    let settings: zInfer<typeof hostedDomainSettingsSchema> = {
-      siteId,
-      defaultUrl: address(original),
-      effectiveUrl: address(original),
-      selectedDomainId: null,
-      revision,
-      allowed: true,
-      domains: [
-        {
-          id: domainId,
-          hostname,
-          revision,
-          ready: false,
-          removing: false,
-          records,
-          verification: {
-            status: "unavailable",
-            eligibleForSelection: false,
-            checkedAt,
-            validationRecords: [],
-            recordChecks:
-              version === "current"
-                ? records.map((record) => {
-                    return {
-                      ...record,
-                      ...unavailable,
-                      observedValues: [],
-                      checkedAt,
-                    };
-                  })
-                : undefined,
-            checks: {
-              ownership: unavailable,
-              dns: unavailable,
-              provider: unavailable,
-              certificate: unavailable,
-              route: unavailable,
-            },
+        id: domainId,
+        hostname,
+        revision,
+        ready: false,
+        removing: false,
+        records,
+        verification: {
+          status: "unavailable",
+          eligibleForSelection: false,
+          checkedAt,
+          validationRecords: [],
+          recordChecks: records.map((record) => {
+            return {
+              ...record,
+              ...unavailable,
+              observedValues: [],
+              checkedAt,
+            };
+          }),
+          checks: {
+            ownership: unavailable,
+            dns: unavailable,
+            provider: unavailable,
+            certificate: unavailable,
+            route: unavailable,
           },
         },
-      ],
-    };
-    context.mocks.api(hostContract.siteDomains, ({ respond }) => {
-      return respond(200, settings);
-    });
-    context.mocks.api(hostContract.verifySiteDomain, ({ respond }) => {
-      const certificate = {
-        type: "TXT" as const,
-        name: `_acme-challenge.${hostname}`,
-        value: "new-certificate-value",
-      };
-      settings = {
-        ...settings,
-        domains: settings.domains.map((domain) => {
-          return {
-            ...domain,
-            records: [...records, certificate],
-            verification: {
-              status: "incomplete",
-              eligibleForSelection: false,
-              checkedAt,
-              validationRecords: [certificate],
-              recordChecks:
-                version === "current"
-                  ? [
-                      ...records.map((record) => {
-                        return {
-                          ...record,
-                          ...passed,
-                          observedValues: [record.value],
-                          checkedAt,
-                        };
-                      }),
-                      {
-                        ...certificate,
-                        status: "pending",
-                        message:
-                          "Add the certificate TXT value, then click Verify.",
-                        observedValues: [],
-                        checkedAt,
-                      },
-                    ]
-                  : undefined,
-              checks: {
-                ownership: passed,
-                dns: passed,
-                provider: passed,
-                certificate: {
-                  status: "pending",
-                  message: "Certificate TXT required",
-                },
-                route: { status: "not_checked", message: "Waiting for HTTPS" },
-              },
-            },
-          };
-        }),
-      };
-      return respond(200, settings);
-    });
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    const preview = await publishedReport(true, {
-      providerName: "Cloudflare",
-      controlPanelUrl: "https://dash.cloudflare.com/",
-      automaticUrl: "https://dash.cloudflare.com/domain-connect?sig=fixture",
-      status: "supported",
-    });
-    const menu = await openHostedSiteShare(preview);
-    click(getNamedButton("Customize URL", menu));
-    click(
-      await waitFor(() => {
-        return tabNamed("Custom domain", menu);
-      }),
-    );
-    click(await findNamedButton(`Manage ${hostname}`, menu));
-    await within(menu).findByRole("heading", { name: "Domain verification" });
-    expect(getNamedButton("Verification", menu)).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
-    expect(getNamedButton("DNS setup", menu)).not.toHaveAttribute(
-      "aria-description",
-    );
-    expect(getNamedButton("Enable", menu)).toBeDisabled();
-    click(getNamedButton("DNS setup", menu));
-    await within(menu).findByRole("heading", { name: "Review DNS records" });
-    expect(
-      within(menu).getByText(
-        "Click Verify to check the records before changing DNS.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(menu).getByText("okou-verification=retry"),
-    ).toBeInTheDocument();
-    click(getNamedButton("Continue", menu));
-    click(await findNamedButton("Verify", menu));
-    await within(menu).findByText("new-certificate-value");
-    expect(getNamedButton("DNS setup", menu)).toHaveAttribute(
-      "aria-current",
-      "step",
-    );
-    const verifiedGroups = queryAllByRoleFast("button", menu).filter(
-      (button) => {
-        return button.textContent === "Verified records (2)";
       },
-    );
-    expect(
-      verifiedGroups.map((button) => {
-        return button.getAttribute("aria-expanded");
+    ],
+  };
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  context.mocks.api(hostContract.verifySiteDomain, ({ respond }) => {
+    const certificate = {
+      type: "TXT" as const,
+      name: `_acme-challenge.${hostname}`,
+      value: "new-certificate-value",
+    };
+    settings = {
+      ...settings,
+      domains: settings.domains.map((domain) => {
+        return {
+          ...domain,
+          records: [...records, certificate],
+          verification: {
+            status: "incomplete",
+            eligibleForSelection: false,
+            checkedAt,
+            validationRecords: [certificate],
+            recordChecks: [
+              ...records.map((record) => {
+                return {
+                  ...record,
+                  ...passed,
+                  observedValues: [record.value],
+                  checkedAt,
+                };
+              }),
+              {
+                ...certificate,
+                status: "pending",
+                message: "Add the certificate TXT value, then click Verify.",
+                observedValues: [],
+                checkedAt,
+              },
+            ],
+            checks: {
+              ownership: passed,
+              dns: passed,
+              provider: passed,
+              certificate: {
+                status: "pending",
+                message: "Certificate TXT required",
+              },
+              route: { status: "not_checked", message: "Waiting for HTTPS" },
+            },
+          },
+        };
       }),
-    ).toStrictEqual(version === "current" ? ["false"] : []);
-    expect(within(menu).queryAllByText("Not checked")).toHaveLength(
-      version === "current" ? 0 : 3,
-    );
-    await findNamedLink("Open Cloudflare DNS", menu);
-    expect(
-      queryAllByRoleFast("link", menu).find((link) => {
-        return link.textContent?.includes("Configure website records");
-      }),
-    ).toBeUndefined();
-    click(getNamedButton("Cancel", menu));
-    await within(menu).findByRole("radiogroup", { name: "Connected domains" });
-    click(getNamedButton("Cancel", menu));
+    };
+    return respond(200, settings);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const preview = await publishedReport(true, {
+    providerName: "Cloudflare",
+    controlPanelUrl: "https://dash.cloudflare.com/",
+    automaticUrl: "https://dash.cloudflare.com/domain-connect?sig=fixture",
+    status: "supported",
+  });
+  const menu = await openHostedSiteShare(preview);
+  click(getNamedButton("Customize URL", menu));
+  click(
     await waitFor(() => {
-      expect(getNamedButton("Copy link", menu)).toBeEnabled();
-    });
-    click(getNamedButton("Copy link", menu));
-    await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe(address(original));
-    });
-  },
-);
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  click(await findNamedButton(`Manage ${hostname}`, menu));
+  await within(menu).findByRole("heading", { name: "Domain verification" });
+  expect(getNamedButton("Verification", menu)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  expect(getNamedButton("DNS setup", menu)).not.toHaveAttribute(
+    "aria-description",
+  );
+  expect(getNamedButton("Enable", menu)).toBeDisabled();
+  click(getNamedButton("DNS setup", menu));
+  await within(menu).findByRole("heading", { name: "Review DNS records" });
+  expect(
+    within(menu).getByText(
+      "Click Verify to check the records before changing DNS.",
+    ),
+  ).toBeInTheDocument();
+  expect(within(menu).getByText("okou-verification=retry")).toBeInTheDocument();
+  click(getNamedButton("Continue", menu));
+  click(await findNamedButton("Verify", menu));
+  await within(menu).findByText("new-certificate-value");
+  expect(getNamedButton("DNS setup", menu)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  const verifiedGroups = queryAllByRoleFast("button", menu).filter((button) => {
+    return button.textContent === "Verified records (2)";
+  });
+  expect(
+    verifiedGroups.map((button) => {
+      return button.getAttribute("aria-expanded");
+    }),
+  ).toStrictEqual(["false"]);
+  expect(within(menu).queryAllByText("Not checked")).toHaveLength(0);
+  await findNamedLink("Open Cloudflare DNS", menu);
+  expect(
+    queryAllByRoleFast("link", menu).find((link) => {
+      return link.textContent?.includes("Configure website records");
+    }),
+  ).toBeUndefined();
+  click(getNamedButton("Cancel", menu));
+  await within(menu).findByRole("radiogroup", { name: "Connected domains" });
+  click(getNamedButton("Cancel", menu));
+  await waitFor(() => {
+    expect(getNamedButton("Copy link", menu)).toBeEnabled();
+  });
+  click(getNamedButton("Copy link", menu));
+  await waitFor(() => {
+    expect(clipboard.writes.at(-1)).toBe(address(original));
+  });
+});
 
 test("a supported DNS setup opens provider consent without verifying or saving the hostname", async () => {
   const hostname = "www.customer-example.net";
