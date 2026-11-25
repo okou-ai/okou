@@ -22,16 +22,16 @@ account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	p
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	planned		
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-001	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-002	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-006	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-007	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-008	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-012	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-013	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-014	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-018	planned		
-account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-019	planned		
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-001	rewritten	81.8	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-002	rewritten	124.5	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-006	rewritten	102.2	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-007	rewritten	72.3	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-008	rewritten	63.1	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-012	rewritten	67.2	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-013	rewritten	45.8	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-014	rewritten	51.8	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-018	rewritten	83.2	
+account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-019	rewritten	30.6	
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-002	planned		
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-003	planned		
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-004	planned		
