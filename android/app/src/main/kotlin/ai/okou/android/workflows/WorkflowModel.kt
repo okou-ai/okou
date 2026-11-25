@@ -10,6 +10,7 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntry
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.state.WorkflowTab
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
@@ -17,7 +18,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -665,19 +665,11 @@ internal constructor(
         publishFailure: (WorkflowReadFailure) -> Unit,
         attempt: suspend () -> Throwable?,
     ) {
-        for (index in 0..WORKFLOW_READ_RETRIES) {
-            if (!authorized()) return
-            val error = attempt() ?: return
-            val retryAfter = error.retryAfterMillis()
-            if (retryAfter == null || index == WORKFLOW_READ_RETRIES) {
-                publishFailure(
-                    if (error is ApiFailure.Network) WorkflowReadFailure.Network
-                    else WorkflowReadFailure.RefreshFailed,
-                )
-                return
-            }
-            delay(maxOf(WORKFLOW_READ_RETRY_DELAY_MILLIS, retryAfter))
-        }
+        val error = retryBoundedRead(canRead = authorized, attempt = attempt) ?: return
+        publishFailure(
+            if (error is ApiFailure.Network) WorkflowReadFailure.Network
+            else WorkflowReadFailure.RefreshFailed,
+        )
     }
 
     internal fun edit(value: WorkflowEdit?) {
@@ -1051,9 +1043,6 @@ private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
     }
 }
 
-private const val WORKFLOW_READ_RETRIES = 2
-private const val WORKFLOW_READ_RETRY_DELAY_MILLIS = 3_000L
-
 private fun Throwable?.denied() =
     this is ApiFailure.Unauthenticated ||
         this is ApiFailure.Http && (status == 401 || status == 403)
@@ -1064,14 +1053,4 @@ private fun Exception.toggleOutcomeUnknown(): Boolean =
         is ApiFailure.IncompatibleResponse -> true
         is ApiFailure.Http -> status == 408 || status in 500..599
         else -> false
-    }
-
-private fun Throwable.retryAfterMillis(): Long? =
-    when (this) {
-        is ApiFailure.Network -> 0L
-        is ApiFailure.Http ->
-            if (status == 408 || status == 429 || status in 500..599)
-                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
-            else null
-        else -> null
     }
