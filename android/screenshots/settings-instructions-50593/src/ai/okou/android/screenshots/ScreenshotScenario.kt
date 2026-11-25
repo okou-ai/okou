@@ -22,6 +22,7 @@ import ai.okou.android.openChatListSettings
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityWindowInfo
@@ -318,7 +319,34 @@ class ScreenshotScenario {
             awaitState("Warm failure leaves the draft editable") {
                 !it.busy && it.read == InstructionsRead.RefreshFailed && it.canSave
             }
-            text(app.getString(R.string.instructions_refresh_failed))
+            val snackbar =
+                text(app.getString(R.string.instructions_refresh_failed)).visibleBounds
+            assertTrue(
+                "The snackbar's inverse surface is painted before capture",
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice): Boolean {
+                            val frame = takeScreenshot()
+                            val pixels =
+                                if (frame.config == Bitmap.Config.HARDWARE) {
+                                    checkNotNull(frame.copy(Bitmap.Config.ARGB_8888, false))
+                                } else frame
+                            return try {
+                                Color.luminance(
+                                    pixels.getPixel(
+                                        snackbar.left - (4 * density).toInt(),
+                                        snackbar.centerY(),
+                                    ),
+                                ) < 0.25f
+                            } finally {
+                                if (pixels !== frame) pixels.recycle()
+                                frame.recycle()
+                            }
+                        }
+                    },
+                    3_000,
+                ) == true,
+            )
             assertEquals(beforeFailureEditor, editor(expectedText = finalText).visibleBounds)
             assertActionPosition(beforeFailureSave, text(saveLabel))
             ScreenshotCapture.capture("11-warm-refresh-failed.png")
