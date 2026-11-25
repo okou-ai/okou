@@ -1,0 +1,27 @@
+# Experiment only. Remove before this draft is ready for review or merge.
+name: Test App Three-Minute Experiment
+on:
+  push:
+    branches: [ethan/test-app-three-minute-r1]
+permissions:
+  contents: read
+env:
+  npm_config_audit: "false"
+jobs:
+  test-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261116
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Test App
+        working-directory: turbo
+        # v8 coverage adds about 20% to every shard. Pull request iterations
+        # only need pass/fail; the merge queue still reports coverage for every
+        # change that lands.
+        run: pnpm vitest run --project=@okouai/app --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
