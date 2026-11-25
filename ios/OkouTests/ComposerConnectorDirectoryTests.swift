@@ -246,6 +246,19 @@ final class ComposerConnectorDirectoryTests: XCTestCase {
     XCTAssertThrowsError(try resources.store.get(resources.catalog))
   }
 
+  func testComposerResourcesKeepTheirValuesInTheComposerStore() throws {
+    let fixture = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
+    let composer = makeComposer(fixture)
+    defer { composer.close() }
+    composer.openDirectory()
+    let directory = try XCTUnwrap(composer.directory)
+    let permissions = try XCTUnwrap(composer.openPermissions(slug: "slack", label: "Slack"))
+    // Their views resolve the composer's snapshot under each resource's provider.
+    XCTAssertTrue(composer.resources?.store === composer.graph)
+    XCTAssertTrue(directory.store === composer.graph)
+    XCTAssertTrue(permissions.store === composer.graph)
+  }
+
   private func makeResources(_ fixture: ChatHTTPFixture) -> ComposerConnectorDirectoryResources {
     ComposerConnectorDirectoryResources(
       service: ChatComposerAccess(client: fixture.client), graph: makeTestWorkspaceGraph(),

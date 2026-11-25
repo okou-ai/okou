@@ -23,9 +23,13 @@ final class ComposerConnectorStore {
     fileprivate(set) var threadAccess: ChatThreadRemoteAccess?
     fileprivate(set) var currentComputerAccess: ChatComputerAccess?
     fileprivate(set) var vncConnections: [ChatVncConnection] = []
+    /// Distinguishes composers whose snapshots reach the same revision.
+    fileprivate let origin = UUID()
     fileprivate var revision = 0
 
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.revision == rhs.revision }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.origin == rhs.origin && lhs.revision == rhs.revision
+    }
 
     /// A chat's own hosts, or the workspace's before the chat exists.
     func hosts(_ protocol: ChatRemoteProtocol) -> [ChatRemoteHost] {
@@ -328,7 +332,9 @@ final class ComposerConnectorStore {
       pendingOptions.initialConnectorAccessOverrides.append(
         ChatConnectorAccessOverride(target: target, connectionId: connectionID, enabled: enabled))
     }
-    publish { updatePendingAccess(target: target, in: &$0) }
+    if connectors.contains(where: { $0.target == target }) {
+      publish { updatePendingAccess(target: target, in: &$0) }
+    }
     await refresh()
   }
 
