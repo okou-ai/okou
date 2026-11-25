@@ -87,6 +87,20 @@ export async function leaseBrowser(): Promise<BrowserSession> {
   handleError(result, "Failed to extend the managed browser lease");
 }
 
+export async function restartBrowserInstance(
+  instanceId: string,
+): Promise<void> {
+  const result = await (
+    await client()
+  ).restart({ headers: {}, body: { instanceId } });
+  if (result.status !== 200) {
+    handleError(
+      result,
+      "Failed to stop the shared Browser instance for restart",
+    );
+  }
+}
+
 export async function getCurrentBrowser(): Promise<BrowserSession> {
   const result = await (await client()).current({ headers: {} });
   if (result.status === 200) {

@@ -237,16 +237,15 @@ final class ConnectorActionStore {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let webURL = try browserURL(result.authorizationUrl)
       try ConnectorProviderAuthorization.validateCallback(result)
-      let appURL =
-        nativeAppAuthorization
-        ? try ConnectorProviderAuthorization.appURL(
-          receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL) : nil
+      let appURL = try ConnectorProviderAuthorization.appURL(
+        receipt: result, target: current.target, methodID: flow.methodID, webURL: webURL)
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
       if let appURL {
         // A refused/canceled authorization is not a failed launch. Only a
         // definitive OS launch failure permits the same attempt's web fallback.
-        let opened = await providerApplication.open(appURL)
+        let opened = await providerApplication.open(
+          appURL, universalLinksOnly: appURL.scheme == "https")
         try check(flow)
         flow.usesProviderApplication = opened
         flow.browserURL = opened ? nil : webURL

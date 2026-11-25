@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
@@ -6,11 +7,20 @@ struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
   @State private var membershipThread: ChatThread?
+  /// The confirmed chats, kept in the workspace session's Store.
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, threadID: String) {
+    self.store = store
+    self.threadID = threadID
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
 
   var body: some View {
-    if store.list.threads.contains(where: { $0.id == threadID }) {
+    if let thread = (threads ?? store.list.threads).first(where: { $0.id == threadID }) {
+      // A changed chat rebuilds the menu, since the control receives it as a value.
       ChatThreadMoreControl(
-        store: store, threadID: threadID, moveToProject: { membershipThread = $0 }
+        store: store, thread: thread, moveToProject: { membershipThread = $0 }
       )
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
       .chatProjectMembershipPicker(workspace: store, thread: $membershipThread)
@@ -20,7 +30,7 @@ struct ChatThreadMoreButton: View {
 
 private struct ChatThreadMoreControl: UIViewRepresentable {
   let store: WorkspaceStore
-  let threadID: String
+  let thread: ChatThread
   let moveToProject: (ChatThread) -> Void
 
   func makeUIView(context: Context) -> UIButton {
@@ -38,11 +48,9 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
   }
 
   func updateUIView(_ button: UIButton, context: Context) {
-    let list = store.list
-    guard let thread = list.threads.first(where: { $0.id == threadID }) else { return }
     let pinned = thread.pinnedAt != nil
     let menu = ChatThreadMenu(
-      workspace: store, threadID: threadID, moveToProject: moveToProject
+      workspace: store, threadID: thread.id, moveToProject: moveToProject
     ).uiMenu()
     button.menu = menu
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }

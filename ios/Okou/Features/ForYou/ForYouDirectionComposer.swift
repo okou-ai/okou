@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -29,6 +30,19 @@ struct ForYouDirectionComposer: View {
   let card: ForYouCard
   let suggestion: ForYouSuggestion
   let workspace: WorkspaceStore
+  /// The confirmed chats for mentions, kept in the workspace session's Store.
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(
+    direction: ForYouDirection, card: ForYouCard, suggestion: ForYouSuggestion,
+    workspace: WorkspaceStore
+  ) {
+    self.direction = direction
+    self.card = card
+    self.suggestion = suggestion
+    self.workspace = workspace
+    _threads = ResolvedValue(workspace.list.threadsValue)
+  }
 
   var body: some View {
     let composer = direction.composer
@@ -43,7 +57,7 @@ struct ForYouDirectionComposer: View {
         attachmentURL: workspace.webURL, draftState: composer,
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,
-        mentionSource: ComposerMentionSource(threads: workspace.list.threads),
+        mentionSource: ComposerMentionSource(threads: threads ?? workspace.list.threads),
         workflowSource: workspace.composerWorkflows, writesDirection: true,
         placeholder: String(localized: "What do you have in mind?")
       )

@@ -44,18 +44,13 @@ private val connectorIconInversion =
     )
 
 @Composable
-internal fun ConnectorIcon(
-    icon: ConnectorBrandIcon?,
-    large: Boolean,
-    modifier: Modifier = Modifier,
-) {
+internal fun ConnectorIcon(icon: ConnectorBrandIcon?) {
     Box(
-        modifier
-            .size(if (large) 48.dp else 40.dp)
+        Modifier.size(48.dp)
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        ConnectorMark(icon, if (large) 24.dp else 20.dp)
+        ConnectorMark(icon, 24.dp)
     }
 }
 

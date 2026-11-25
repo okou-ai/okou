@@ -5,6 +5,7 @@ import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
@@ -53,7 +54,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -84,7 +84,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -157,6 +156,7 @@ internal fun WorkflowScreen(
 ) {
     val wide = listWidth != null
     val focus = LocalFocusManager.current
+    val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val editor = state.editor
     val detail = state.detail?.takeIf { it.id == route.id }
@@ -233,7 +233,7 @@ internal fun WorkflowScreen(
                     }
                 },
                 onSelect = {
-                    focus.clearFocus()
+                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     if (it != route.id)
                         changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
@@ -675,70 +675,50 @@ private fun WorkflowRow(
             onRestored()
         }
     }
-    val shape = RoundedCornerShape(8.dp)
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onBackground
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .clip(shape)
-            .background(if (selected) colors.secondaryContainer else colors.background)
-            .focusRequester(requester)
-            .updateFocusOutline(shape, colors.onBackground)
-            .selectable(selected, enabled = enabled, role = Role.Button, onClick = onSelect)
-            .testTag("workflow_row_${item.id}")
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            Modifier.size(40.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
+    WorkspaceToolDirectoryRow(
+        title = item.displayName ?: item.name,
+        selected = selected,
+        onClick = onSelect,
+        modifier = Modifier.focusRequester(requester).testTag("workflow_row_${item.id}"),
+        enabled = enabled,
+        leading = {
             Icon(painterResource(glyph), null, Modifier.size(20.dp), tint = colors.onBackground)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                item.displayName ?: item.name,
-                style = workflowBodyStyle(),
-                fontWeight = FontWeight.SemiBold,
-                color = foreground,
-            )
-            item.description
-                ?.takeIf { it.isNotBlank() }
-                ?.let {
-                    Text(
-                        it,
-                        color = colors.onSurfaceVariant,
-                        style = workflowSmallStyle(),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            val enabledCount = rules.orEmpty().count { it.enabled }
-            val status =
-                when {
-                    rules.orEmpty().any { it.needsConnection(connections) } ->
-                        stringResource(R.string.workflow_needs_connection) to colors.error
-                    enabledCount > 0 ->
-                        pluralStringResource(
-                            R.plurals.workflow_enabled_count,
-                            enabledCount,
-                            enabledCount,
-                        ) to LocalActivityStatusColor.current
-                    !rules.isNullOrEmpty() ->
-                        stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
-                    else -> null
-                }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                WorkflowSecondary(listOfNotNull(scope, trigger).joinToString(" · "), small = true)
-                status?.let { WorkflowStatus(it.first, it.second) }
+        },
+    ) { supportingColor ->
+        item.description
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                Text(
+                    it,
+                    color = supportingColor,
+                    style = workflowSmallStyle(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+        val enabledCount = rules.orEmpty().count { it.enabled }
+        val status =
+            when {
+                rules.orEmpty().any { it.needsConnection(connections) } ->
+                    stringResource(R.string.workflow_needs_connection) to colors.error
+                enabledCount > 0 ->
+                    pluralStringResource(
+                        R.plurals.workflow_enabled_count,
+                        enabledCount,
+                        enabledCount,
+                    ) to LocalActivityStatusColor.current
+                !rules.isNullOrEmpty() ->
+                    stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
+                else -> null
+            }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                listOfNotNull(scope, trigger).joinToString(" · "),
+                color = supportingColor,
+                style = workflowSmallStyle(),
+            )
+            status?.let { WorkflowStatus(it.first, it.second, supportingColor) }
         }
-        Icon(
-            painterResource(R.drawable.ic_chevron_right),
-            null,
-            Modifier.align(Alignment.CenterVertically).size(18.dp),
-            tint = foreground,
-        )
     }
 }
 
@@ -1343,7 +1323,11 @@ internal fun WorkflowNotice(label: Int, padding: PaddingValues = PaddingValues(v
 }
 
 @Composable
-internal fun WorkflowStatus(label: String, color: androidx.compose.ui.graphics.Color) {
+internal fun WorkflowStatus(
+    label: String,
+    color: Color,
+    textColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1352,7 +1336,7 @@ internal fun WorkflowStatus(label: String, color: androidx.compose.ui.graphics.C
         Text(
             label,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
         )
     }
 }
