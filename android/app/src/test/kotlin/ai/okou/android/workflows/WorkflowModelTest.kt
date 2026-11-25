@@ -430,7 +430,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         advanceTimeBy(1)
         runCurrent()
         assertEquals(2, service.catalogReads)
-        advanceTimeBy(2_999)
+        advanceTimeBy(999)
         runCurrent()
         assertEquals(2, service.catalogReads)
         assertNull(model.state.value.catalogFailure)
