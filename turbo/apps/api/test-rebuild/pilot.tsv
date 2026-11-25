@@ -689,21 +689,21 @@ webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-018	planned		extension after sandbox reset
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-019	planned		extension after sandbox reset
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-001	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-002	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-003	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-005	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-006	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-007	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-008	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-010	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-013	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-014	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-018	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-024	planned		extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-001	rewritten	128.0	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-002	rewritten	30.1	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-003	rewritten	6.3	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-005	rewritten	55.3	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-006	rewritten	28.8	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-007	rewritten	21.0	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-008	rewritten	7.6	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-010	rewritten	9.9	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-013	rewritten	34.8	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-014	rewritten	42.5	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-018	rewritten	74.5	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-024	rewritten	32.4	extension after sandbox reset
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	planned		extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	rewritten	6.0	extension after sandbox reset
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	skipped		slow-setup: needs 52 real uploads through the session cap; measured 2554 ms per test
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-001	rewritten	137.4	extension after sandbox reset
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-002	rewritten	98.8	extension after sandbox reset
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-003	rewritten	79.2	extension after sandbox reset
