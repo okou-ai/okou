@@ -1,24 +1,32 @@
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
   onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
+import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { billingStatusRoutes } from "../billing-status";
+import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingDraftRoutes } from "../onboarding-draft";
 import { onboardingStatusRoutes } from "../onboarding-status";
+import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { runModelsRoutes } from "../run-models";
 
 const context = testContext();
@@ -49,6 +57,12 @@ function runModelsClient() {
 function billingStatusClient() {
   return setupApp({ context, routes: billingStatusRoutes })(
     billingStatusContract,
+  );
+}
+
+function suggestionsClient() {
+  return setupApp({ context, routes: proactiveSuggestionsRoutes })(
+    proactiveSuggestionsContract,
   );
 }
 
@@ -330,6 +344,137 @@ describe("member source-first onboarding", () => {
 });
 
 describe("POST /api/onboarding/complete", () => {
+  it("starts Suggestions for each new account when that person finishes onboarding", async () => {
+    const catalog = await setupApp({
+      context,
+      routes: cronOfficialWorkflowCatalogRoutes,
+      isolatePg: true,
+    });
+    installWorkflowVolumeS3Fixture(context);
+    await accept(
+      catalog(cronOfficialWorkflowCatalogContract).sync({
+        headers: { authorization: "Bearer test-cron-secret" },
+      }),
+      [200],
+    );
+    const admin = orgActor();
+    const member = memberOf(admin);
+    const people = [admin, member];
+    mockClerkUsers(
+      context,
+      people.map(({ userId }) => {
+        return { id: userId, createdAt: now() };
+      }),
+    );
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: people.map((actor) => {
+          return {
+            id: `membership-${actor.userId}`,
+            organization: { id: actor.orgId },
+            publicUserData: { userId: actor.userId },
+            role: actor.role,
+          };
+        }),
+      },
+    );
+    const preferences = suggestionsClient();
+    const headers = authHeaders();
+    for (const person of people) {
+      mocks.clerk.session(person.userId, person.orgId, person.role);
+      expect(
+        (await accept(preferences.get({ headers }), [200])).body.enabled,
+      ).toBeFalsy();
+      await completeAs(person, { body: { timezone: "Asia/Shanghai" } });
+      expect(
+        (await accept(preferences.get({ headers }), [200])).body,
+      ).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+    }
+    await accept(
+      preferences.updateWithFeed({ headers, body: { enabled: false } }),
+      [200],
+    );
+    await completeAs(member);
+    expect(
+      (await accept(preferences.get({ headers }), [200])).body.enabled,
+    ).toBeFalsy();
+  });
+
+  it("keeps a pre-rollout account paused when it joins a new workspace", async () => {
+    const member = orgActor("org:member");
+    mockClerkUsers(context, [
+      { id: member.userId, createdAt: Date.parse("2020-01-01T00:00:00Z") },
+    ]);
+    await completeAs(member);
+    const preference = await accept(
+      suggestionsClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({ enabled: false, status: "paused" });
+  });
+
+  it("preserves a new account's opt-out made before onboarding", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    mockClerkUsers(context, [{ id: actor.userId, createdAt: now() }]);
+    const preferences = suggestionsClient();
+    const headers = authHeaders();
+    await accept(
+      preferences.updateWithFeed({ headers, body: { enabled: false } }),
+      [200],
+    );
+    await completeAs(actor);
+    expect(
+      (await accept(preferences.get({ headers }), [200])).body.enabled,
+    ).toBeFalsy();
+  });
+
+  it("leaves Suggestions paused if the feature was unavailable during onboarding", async () => {
+    const actor = orgActor();
+    mockClerkUsers(context, [{ id: actor.userId, createdAt: now() }]);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
+    await completeAs(actor);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+    });
+    const preference = await accept(
+      suggestionsClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body.enabled).toBeFalsy();
+  });
+
+  it("can retry onboarding after Clerk temporarily fails to return the account", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    context.mocks.clerk.users.getUser.mockRejectedValueOnce(
+      new Error("Clerk is unavailable"),
+    );
+    const onboarding = setupApp({
+      context,
+      routes: onboardingCompleteRoutes,
+      rethrowErrors: true,
+    })(onboardingCompleteContract);
+    await expect(
+      onboarding.complete({ headers: authHeaders(), body: {} }),
+    ).rejects.toThrow("Clerk is unavailable");
+    await expect(statusAs(actor)).resolves.toMatchObject({
+      needsOnboarding: true,
+    });
+    mockClerkUsers(context, [{ id: actor.userId, createdAt: now() }]);
+    await completeAs(actor);
+    const preference = await accept(
+      suggestionsClient().get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(preference.body.enabled).toBeTruthy();
+  });
+
   it("publishes the free Plan on completion and keeps it on replay", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
