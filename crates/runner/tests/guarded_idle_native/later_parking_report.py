@@ -54,14 +54,14 @@ def validate(directory):
         directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid later parking witness",
     )
-    identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     runners, paths, operations, reuse_keys = set(), set(), set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered later parking phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         report.validate_witness_clock_order(
             [terminal[3], *events, terminal[-1]], "later parking changed terminal phase ordering")
         if report.witness_identity_changed(events, identity):

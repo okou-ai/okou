@@ -54,7 +54,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered returned Guest phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(output["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("returned Guest lost original identity")
         custody.validate_ordered_clocks([

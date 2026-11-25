@@ -193,6 +193,11 @@ def witness_identity(event):
     return event["sandbox_id"], event["backing_generation"]
 
 
+def original_resource_ids(case_results):
+    """Seed an independent replay set with both IDs from every verified case."""
+    return {value for case in case_results.values() for value in witness_identity(case)}
+
+
 def witness_identity_changed(events, identity):
     """Stop at the first witness with a different original identity."""
     return any(witness_identity(event) != identity for event in events)

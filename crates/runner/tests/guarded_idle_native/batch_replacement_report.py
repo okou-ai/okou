@@ -42,7 +42,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         directory / 'stdout.log', PREFIX, cases,
         invalid_message="invalid replacement witness",
     )
-    identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     operations, runners, paths = set(), set(), set()
     zero = dict.fromkeys(COUNTS, 0) | {"closed": False}
     for case, events in witnesses.items():
@@ -50,7 +50,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered replacement phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("replacement changed the original physical owner")
         report.validate_terminal_witness_clock_order(

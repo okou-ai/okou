@@ -29,7 +29,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered actual create phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("actual create lost original generation")
         custody.validate_ordered_clocks([
