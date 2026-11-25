@@ -8,6 +8,46 @@ use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
 
 #[tokio::test]
+async fn memory_proof_is_available_only_with_its_published_home_generation() {
+    let fixture = super::super::tests::support::Fixture::new().await;
+    let key = "thread:proved-memory";
+    let mut publication = fixture
+        .context(
+            key,
+            b"first home",
+            "2026-11-25T00:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    publication.memory_mount = Some(MemoryMount {
+        storage_id: "member-memory".into(),
+        path: "/home/user/.codex/memories".into(),
+    });
+    publication.bind_memory_proof([42; 32]);
+    assert_eq!(
+        publication.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(publication);
+    let mut selected = fixture.lease(key).await;
+    let proof = selected.previous_memory().unwrap();
+    assert_eq!(proof.digest, [42; 32]);
+    assert_eq!(proof.storage_id, "member-memory");
+    assert_eq!(proof.mount_path, "/home/user/.codex/memories");
+    selected.discard_cached_image();
+    assert!(selected.previous_memory().is_none());
+    drop(selected);
+
+    fixture
+        .commit(key, b"second home", "2026-11-25T01:00:00Z")
+        .await;
+    let selected = fixture.lease(key).await;
+    assert!(selected.is_cache_hit());
+    assert!(selected.previous_memory().is_none());
+}
+
+#[tokio::test]
 async fn last_custody_release_precedes_reporting_even_after_owner_transitions() {
     let local = CapturedEvents::default();
     let _subscriber = tracing::subscriber::set_default(

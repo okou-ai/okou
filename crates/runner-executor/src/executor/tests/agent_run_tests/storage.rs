@@ -5,6 +5,7 @@ use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootP
 use guest_contracts::{storage_files, storage_manifest::Manifest};
 use sandbox::{ExecResult, SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::MockLifecycleGate;
+use sha2::{Digest, Sha256};
 
 use super::support::{
     assert_failed_action_error_once, assert_no_action, assert_successful_action_once,
@@ -47,6 +48,162 @@ fn extracted_archive() -> Vec<u8> {
         .append_data(&mut header, "file", &b"content"[..])
         .unwrap();
     builder.into_inner().unwrap().finish().unwrap()
+}
+
+fn memory_archive(memory_id: &str, note: &[u8]) -> (Vec<u8>, String, [u8; 32]) {
+    use guest_contracts::{memory_tree, storage_content_hash::compute_content_hash};
+
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut tar = tar::Builder::new(encoder);
+    let mut tree = std::collections::BTreeMap::new();
+    for (name, content) in [
+        ("unchanged.bin", vec![0; 1024 * 1024]),
+        ("note.md", note.to_vec()),
+    ] {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_mtime(1234);
+        tar.append_data(&mut header, name, content.as_slice())
+            .unwrap();
+        tree.insert(
+            name.to_owned(),
+            memory_tree::FileState {
+                sha256: Sha256::digest(&content).into(),
+                mode: 0o644,
+                mtime: 1234,
+            },
+        );
+    }
+    let hashes: Vec<_> = tree
+        .iter()
+        .map(|(path, file)| (path.as_str(), hex::encode(file.sha256)))
+        .collect();
+    let version = compute_content_hash(
+        memory_id,
+        hashes.iter().map(|(path, hash)| (*path, hash.as_str())),
+    );
+    (
+        tar.into_inner().unwrap().finish().unwrap(),
+        version,
+        memory_tree::digest(&tree),
+    )
+}
+
+#[tokio::test]
+async fn failed_memory_delta_uses_authoritative_full_restore_before_spawning() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let owner = "member-memory";
+    let mount = "/home/user/.codex/memories";
+    let (parent, parent_version_id, digest) = memory_archive(owner, b"prior note");
+    let (target, target_version, _) = memory_archive(owner, b"current note");
+    for (version, bytes) in [(&parent_version_id, &parent), (&target_version, &target)] {
+        let cache = config.home.storage_cache_dir("memory", version);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("archive.tar.gz"), bytes).unwrap();
+    }
+    let (report_tx, mut reports) = tokio::sync::mpsc::unbounded_channel();
+    let reporter = runner_storage::SandboxOpReporter::new(move |_| {
+        let _ = report_tx.send(());
+        std::future::ready(())
+    });
+    let url = "http://127.0.0.1:9/must-use-local-archive.tar.gz";
+    config.background_fill.warm_committed_memory(
+        config.home.clone(),
+        &target_version,
+        url,
+        target.len() as u64,
+        Some(runner_storage::memory_delta::MemoryDeltaBase {
+            memory_id: owner.into(),
+            parent_version_id: parent_version_id.clone(),
+        }),
+        reporter,
+    );
+    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, reports.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut context = minimal_context();
+    let mut target = api_artifact("memory", mount, owner, &target_version, url);
+    target.missing_root_policy = Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion);
+    context.storage_manifest = Some(StorageManifest {
+        artifacts: vec![target],
+        storages: vec![],
+    });
+    let previous = StorageFingerprints {
+        artifacts: HashMap::from([(
+            mount.into(),
+            StorageFingerprint::new("memory", parent_version_id),
+        )]),
+        storages: HashMap::new(),
+    };
+    let proof = crate::home_image_cache::HomeMemoryProof {
+        mount_path: mount.into(),
+        storage_id: owner.into(),
+        digest,
+    };
+    let mut telemetry = test_telemetry(&config, &context);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let mut controls = RunControls::new(cancel.clone(), None);
+    controls.prepared_storage = crate::executor::sandbox_run::prepare_storage(
+        &context,
+        Some(&previous),
+        Some(&proof),
+        &config,
+        &cancel,
+        &mut telemetry,
+    )
+    .await
+    .unwrap();
+    assert!(
+        controls
+            .prepared_storage
+            .as_ref()
+            .unwrap()
+            .memory_delta
+            .is_some()
+    );
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_storage_manifest_result(Ok(ExecResult::new(1, Vec::new(), Vec::new())));
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    run_in_sandbox(
+        sandbox.as_ref(),
+        &context,
+        &config,
+        RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Home,
+            restore_guest_state: false,
+            reuse_result: SandboxReuseResult::Reused,
+            home_reuse_result: runner_types::types::HomeReuseResult::Reused,
+            prev_storage: Some(&previous),
+        },
+        &mut telemetry,
+        controls,
+    )
+    .await
+    .unwrap();
+
+    let calls = overrides.storage_manifest_calls();
+    let (manifest, _) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+    let delta: Manifest = serde_json::from_slice(manifest).unwrap();
+    assert_eq!(
+        delta.artifacts[0].archive_url.as_deref(),
+        Some(storage_files::MEMORY_DELTA_URL)
+    );
+    assert!(calls[1..].iter().any(|call| {
+        let manifest = storage_files::split_input(&call.manifest_json)
+            .map_or(call.manifest_json.as_slice(), |(json, _)| json);
+        let full: Manifest = serde_json::from_slice(manifest).unwrap();
+        full.cleanup_paths == [mount]
+            && full
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.vas_version_id.as_deref() == Some(&target_version))
+    }));
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    config.background_fill.shutdown().await;
 }
 
 #[tokio::test]

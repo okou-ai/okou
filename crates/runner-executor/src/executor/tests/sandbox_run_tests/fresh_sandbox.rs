@@ -603,11 +603,17 @@ async fn cancelled_storage_preparation_releases_pinned_files_without_retirement(
     });
     let cancel = CancellationToken::new();
     let mut telemetry = test_telemetry(&config, &ctx);
-    let prepared =
-        crate::executor::sandbox_run::prepare_storage(&ctx, None, &config, &cancel, &mut telemetry)
-            .await
-            .unwrap()
-            .unwrap();
+    let prepared = crate::executor::sandbox_run::prepare_storage(
+        &ctx,
+        None,
+        None,
+        &config,
+        &cancel,
+        &mut telemetry,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     let mut cloned_plan = prepared.plan.clone();
     let files = cloned_plan.take_decoded();
     assert_eq!(files.len(), 1);

@@ -152,6 +152,7 @@ async fn run_preparation(pressure: &str, terminal: bool) -> TestResult<Output> {
                 current_runtime_dir: request.current_runtime_dir,
                 retained_runtime_dir: request.retained_runtime_dir,
                 generation: "74b68da0-6e0a-4adc-a68e-65a04c4885c4".into(),
+                memory_mount: None,
             },
         )?
     } else {

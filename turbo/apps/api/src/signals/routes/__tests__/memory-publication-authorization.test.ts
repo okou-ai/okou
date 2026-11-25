@@ -63,6 +63,25 @@ describe("Memory publication authorization", () => {
       if (!archive) {
         throw new Error("Expected the completed Run's Memory archive");
       }
+      expect(archive.deltaBase).toBeUndefined();
+      const lineage = await accept(
+        archives.read({
+          headers: hostHeaders,
+          query: { includeDeltaBase: "true" },
+        }),
+        [200],
+      );
+      expect(lineage.body.archive?.deltaBase).toStrictEqual({
+        memoryId: writer.memory.storageId,
+        parentVersionId: writer.memory.versionId,
+      });
+      await accept(
+        archives.read({
+          headers: writer.headers,
+          query: { includeDeltaBase: "true" },
+        }),
+        [401],
+      );
       const response = await fetch(archive.archiveUrl);
       expect(response.ok).toBeTruthy();
       expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(expected);

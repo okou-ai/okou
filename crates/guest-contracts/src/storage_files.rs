@@ -28,6 +28,8 @@ pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
 pub const PACKED_BATCH_START_URL: &str = "decoded://batch";
 /// Archive source marker on the remaining mounts of a packed decoded batch.
 pub const PACKED_BATCH_FILE_URL: &str = "decoded://";
+/// Local source marker for one verified Member Memory delta.
+pub const MEMORY_DELTA_URL: &str = "decoded://memory-delta";
 /// Manifest limit within binary input; generic exec stdin is unchanged.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Maximum complete binary helper input.

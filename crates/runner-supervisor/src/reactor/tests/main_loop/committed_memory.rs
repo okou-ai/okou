@@ -57,7 +57,7 @@ async fn run_memory_lookup_case(lookup_response: Option<LookupResponse>) {
             let request = read_http_request(&mut socket).await.unwrap();
             let request_line = request.lines().next().unwrap();
             let response = if request_line
-                .starts_with("GET /api/webhooks/run/storages/memory-archive ")
+                .starts_with("GET /api/webhooks/run/storages/memory-archive?includeDeltaBase=true ")
             {
                 assert!(request.lines().any(|line| {
                     line.split_once(':').is_some_and(|(name, value)| {

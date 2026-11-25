@@ -6,7 +6,6 @@ use super::{
     CreateSnapshotRequest, FileEntry, SnapshotPublication, SnapshotResult, create_archive_bundle,
     create_snapshot,
 };
-use crate::content_hash::compute_content_hash;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use api_contracts::generated::constants::storages::{
@@ -14,6 +13,7 @@ use api_contracts::generated::constants::storages::{
 };
 use api_contracts::generated::types::webhooks::agent::storages::prepare::ResponseMemoryMerge;
 use flate2::read::MultiGzDecoder;
+use guest_contracts::storage_content_hash::compute_content_hash;
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
 use serde::Deserialize;

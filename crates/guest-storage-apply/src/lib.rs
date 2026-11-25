@@ -69,6 +69,7 @@ mod http_failure;
 pub mod input_telemetry;
 mod instructions;
 mod manifest;
+mod memory_delta;
 mod packed_files;
 mod plan;
 mod quarantine;
@@ -208,6 +209,15 @@ fn run_manifest_with_files_in_runtime(
     files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
     runtime_dir: Option<&Path>,
 ) -> bool {
+    if memory_delta::is_memory_delta(&manifest) {
+        return match memory_delta::apply(&manifest, &files) {
+            Ok(()) => true,
+            Err(error) => {
+                log_error!(LOG_TAG, "Memory delta failed: {error}");
+                false
+            }
+        };
+    }
     if manifest
         .archive_readiness
         .as_ref()

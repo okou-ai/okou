@@ -16,7 +16,7 @@ pub(super) fn reclamation_deadline() -> tokio::time::Instant {
     tokio::time::Instant::now() + sandbox::HOME_DRIVE_RECLAIM_OBSERVATION
 }
 
-pub(super) struct Fixture {
+pub(in crate::home_image_cache) struct Fixture {
     pub dir: tempfile::TempDir,
     pub paths: RunnerPaths,
     pub cache: HomeImageCache,

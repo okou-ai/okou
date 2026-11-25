@@ -450,6 +450,7 @@ pub(super) async fn execute_new_sandbox(
 pub(super) async fn prepare_storage(
     context: &ExecutionContext,
     previous_storage: Option<&StorageFingerprints>,
+    previous_memory: Option<&crate::home_image_cache::HomeMemoryProof>,
     config: &ExecutorConfig,
     cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
@@ -459,6 +460,24 @@ pub(super) async fn prepare_storage(
     let apply_started = Instant::now();
     let result: RunnerResult<Option<PreparedStorage>> = async {
         let mut plan = build_storage_plan(manifest, previous_storage)?;
+        let memory_delta = previous_memory.and_then(|proof| {
+            let memory = manifest.member_memory()?;
+            if memory.vas_storage_id != proof.storage_id || memory.mount_path != proof.mount_path {
+                return None;
+            }
+            let delta = config.background_fill.ready_memory_delta(
+                &proof.storage_id,
+                &memory.vas_version_id,
+                &proof.digest,
+            )?;
+            if !plan.take_isolated_memory_replacement(&memory.mount_path) {
+                return None;
+            }
+            Some(crate::storage_cache::PreparedMemoryDelta {
+                mount_path: memory.mount_path.clone(),
+                delta,
+            })
+        });
         let delivery = crate::storage_cache::prepare_fresh_archive_delivery(
             &mut plan,
             &config.home,
@@ -468,7 +487,11 @@ pub(super) async fn prepare_storage(
             Some(&config.decoded_cache),
         )
         .await?;
-        Ok(Some(PreparedStorage { plan, delivery }))
+        Ok(Some(PreparedStorage {
+            plan,
+            delivery,
+            memory_delta,
+        }))
     }
     .await;
     if let Err(error) = &result {
@@ -557,6 +580,9 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         home_image
             .as_ref()
             .and_then(HomeImageLease::previous_storage),
+        home_image
+            .as_ref()
+            .and_then(HomeImageLease::previous_memory),
         config,
         &controls.cancel,
         telemetry,
@@ -753,7 +779,9 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     "home image cache hit failed during sandbox preparation; retrying with fresh home image"
                 );
                 home_image = None;
-                match prepare_storage(context, None, config, &controls.cancel, telemetry).await {
+                match prepare_storage(context, None, None, config, &controls.cancel, telemetry)
+                    .await
+                {
                     Ok(prepared_storage) => controls.prepared_storage = prepared_storage,
                     Err(error) => {
                         if let Some(replacement) = dns_replacement.take() {

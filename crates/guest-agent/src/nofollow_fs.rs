@@ -83,6 +83,10 @@ struct RemovalPolicy<'a> {
 
 #[cfg(target_os = "linux")]
 impl Dir {
+    pub(crate) fn as_file(&self) -> &File {
+        &self.0
+    }
+
     pub(crate) fn open(path: &Path) -> io::Result<Self> {
         OpenOptions::new()
             .read(true)

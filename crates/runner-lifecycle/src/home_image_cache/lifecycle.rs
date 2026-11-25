@@ -23,7 +23,7 @@ use super::fs::{
 };
 use super::metadata::{
     HomeCacheMetadata, HomeCacheScopeClassification, HomeCacheState as HomeCacheEntryState,
-    HomeTrust,
+    HomeImageFileIdentity, HomeTrust,
 };
 use super::path_safety::{
     filter_storage_fingerprints_for_home, is_safe_guest_working_dir,
@@ -53,6 +53,20 @@ const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
 // custody. This is an initial retention policy, not a deadline for started
 // transfer or durable I/O.
 const HOME_IMAGE_PUBLICATION_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_HOME_MEMORY_PROOFS: usize = 2048;
+
+/// Actual plain-file contents observed in a specific retired Home.
+pub struct HomeMemoryProof {
+    pub mount_path: String,
+    pub storage_id: String,
+    pub digest: [u8; 32],
+}
+
+pub(super) struct HomeMemoryProofEntry {
+    generation: String,
+    image: HomeImageFileIdentity,
+    proof: Arc<HomeMemoryProof>,
+}
 
 pub struct HomeImageLease {
     cache: HomeImageCache,
@@ -69,6 +83,8 @@ pub struct HomeImageLease {
     result: HomeCacheCheckoutResult,
     previous_storage: Option<StorageFingerprints>,
     history_proof: Option<HomeCacheHistoryProofBinding>,
+    previous_memory: Option<Arc<HomeMemoryProof>>,
+    memory_mount: Option<MemoryMount>,
     pub(super) source_pin: Option<super::fs::PinnedImage>,
     selected_commit_pin: Option<super::fs::PinnedImage>,
     entry_lock: Option<HomeEntryLock>,
@@ -93,7 +109,14 @@ pub struct HomeImagePromotionContext {
     storage_fingerprints: StorageFingerprints,
     restored_session_identity: Option<crate::restored_session_identity::RestoredSessionIdentity>,
     history_proof: Option<HomeCacheHistoryProofBinding>,
+    memory_mount: Option<MemoryMount>,
+    memory_proof: Option<Arc<HomeMemoryProof>>,
     publication: Arc<tokio::sync::Mutex<publication::PublicationProgress>>,
+}
+
+struct MemoryMount {
+    path: String,
+    storage_id: String,
 }
 
 pub struct HomeImagePromotionIdentityFailure {
@@ -121,6 +144,7 @@ struct HomeImagePromotionInput<'a> {
     completed_at: &'a str,
     storage_fingerprints: &'a StorageFingerprints,
     history_proof: Option<&'a HomeCacheHistoryProofBinding>,
+    memory_proof: Option<&'a Arc<HomeMemoryProof>>,
 }
 
 struct HomeImagePromotionTarget {
@@ -329,6 +353,8 @@ impl HomeImageLease {
             result: state.result,
             previous_storage: state.previous_storage,
             history_proof: state.history_proof,
+            previous_memory: None,
+            memory_mount: None,
             source_pin: None,
             selected_commit_pin: None,
             entry_lock: state.entry_lock,
@@ -338,6 +364,40 @@ impl HomeImageLease {
 }
 
 impl HomeImageCache {
+    fn memory_proof(
+        &self,
+        generation: &str,
+        image: HomeImageFileIdentity,
+    ) -> Option<Arc<HomeMemoryProof>> {
+        self.inner
+            .memory_proofs
+            .try_lock()
+            .ok()?
+            .iter()
+            .rev()
+            .find(|entry| entry.generation == generation && entry.image == image)
+            .map(|entry| Arc::clone(&entry.proof))
+    }
+
+    fn remember_memory_proof(
+        &self,
+        generation: String,
+        image: HomeImageFileIdentity,
+        proof: Arc<HomeMemoryProof>,
+    ) {
+        let Ok(mut entries) = self.inner.memory_proofs.lock() else {
+            return;
+        };
+        if entries.len() == MAX_HOME_MEMORY_PROOFS {
+            entries.pop_front();
+        }
+        entries.push_back(HomeMemoryProofEntry {
+            generation,
+            image,
+            proof,
+        });
+    }
+
     pub(crate) fn observe_home(&self, observation: HomeObservation) {
         self.observe_home_with_local_details(observation, Default::default());
     }
@@ -901,6 +961,10 @@ impl HomeImageCache {
                     None,
                 );
                 lease.history_proof = binding;
+                if let Some(source) = lease.source_identity() {
+                    lease.previous_memory =
+                        self.memory_proof(source.image_generation, expected_image);
+                }
                 lease.source_pin = pin.ok();
                 // Pin the selecting commit too: handoff may revoke only this
                 // exact file, after all fallible executor preparation succeeds.
@@ -1345,12 +1409,25 @@ impl HomeImageLease {
         self.history_proof.as_ref()
     }
 
+    /// Evidence is available only for the pinned published image, never live reuse.
+    pub fn previous_memory(&self) -> Option<&HomeMemoryProof> {
+        self.previous_memory.as_deref()
+    }
+
+    pub fn set_memory_mount(&mut self, artifact: &runner_types::storage_manifest::ArtifactEntry) {
+        self.memory_mount = Some(MemoryMount {
+            path: artifact.mount_path.clone(),
+            storage_id: artifact.vas_storage_id.clone(),
+        });
+    }
+
     /// Invalidate all image-dependent candidates when preparation chooses a pristine retry.
     pub fn discard_cached_image(&mut self) {
         self.source_image = None;
         self.source_pin = None;
         self.selected_commit_pin = None;
         self.history_proof = None;
+        self.previous_memory = None;
         self.previous_storage = None;
         self.result = HomeCacheCheckoutResult::Miss;
     }
@@ -1486,6 +1563,8 @@ impl HomeImageLease {
             storage_fingerprints,
             restored_session_identity: restored_session_identity.cloned(),
             history_proof: None,
+            memory_mount: self.memory_mount,
+            memory_proof: None,
             publication: Arc::new(tokio::sync::Mutex::new(
                 publication::PublicationProgress::default(),
             )),
@@ -1557,6 +1636,22 @@ impl HomeImagePromotionContext {
 
     pub fn terminal_status(&self) -> HomeCacheTerminalStatus {
         self.terminal_status
+    }
+
+    pub(crate) fn memory_mount(&self) -> Option<&str> {
+        (self.terminal_status == HomeCacheTerminalStatus::Success)
+            .then(|| self.memory_mount.as_ref().map(|mount| mount.path.as_str()))
+            .flatten()
+    }
+
+    pub(crate) fn bind_memory_proof(&mut self, digest: [u8; 32]) {
+        if let Some(mount) = self.memory_mount.take() {
+            self.memory_proof = Some(Arc::new(HomeMemoryProof {
+                mount_path: mount.path,
+                storage_id: mount.storage_id,
+                digest,
+            }));
+        }
     }
 
     pub fn sandbox_id(&self) -> sandbox::SandboxId {
@@ -1777,6 +1872,8 @@ impl HomeImagePromotionContext {
             storage_fingerprints,
             restored_session_identity: _,
             history_proof: _,
+            memory_mount: _,
+            memory_proof: _,
             publication: _,
         } = self;
         if let Some(entry_lock) = entry_lock.as_mut() {

@@ -213,14 +213,21 @@ pub fn prepare_for_cache_from_stdin() -> Result<
     request
         .validate()
         .map_err(|_| invalid_path("invalid publication generation"))?;
-    prepare(
+    let mut report = prepare(
         &ReusePreparationRequest {
             current_runtime_dir: request.current_runtime_dir,
             retained_runtime_dir: request.retained_runtime_dir,
         },
         RuntimeRetention::TerminalCache,
         Some(&request.generation),
-    )
+    )?;
+    #[cfg(target_os = "linux")]
+    if report.cleanup.home.home_rejection_reason().is_none()
+        && let Some(mount) = request.memory_mount.as_deref()
+    {
+        report.memory_digest = crate::memory_tree::capture(mount).ok();
+    }
+    Ok(report)
 }
 
 fn prepare_from_stdin_with_retention(
@@ -387,6 +394,7 @@ fn prepare(
                 removed_entries,
             },
             history_proof,
+            memory_digest: None,
         },
     )
 }

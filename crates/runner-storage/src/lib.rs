@@ -4,6 +4,7 @@ mod archive_connection_attempt;
 mod archive_size_mismatch;
 pub mod cache_gc;
 mod error;
+pub mod memory_delta;
 mod object_download_policy;
 pub mod r2_cache;
 pub mod r2_download;

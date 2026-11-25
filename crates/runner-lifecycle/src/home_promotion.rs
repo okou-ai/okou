@@ -73,7 +73,15 @@ pub async fn prepare_home_image_from_active_sandbox(
             HomeObservationOutcome::Failed
         });
         mounted.map_err(|failure| failure.error)?;
-        if !prepare_terminal_cache_runtime(sandbox, &mut promotion).await? {
+        // The host-memory reclaimer owns an already retired idle VM. On-demand
+        // retirement, normal Run completion, and startup never scan Memory.
+        if !prepare_terminal_cache_runtime_inner(
+            sandbox,
+            &mut promotion,
+            reason == "host_memory_pressure",
+        )
+        .await?
+        {
             return Ok(false);
         }
         let timing = promotion.start_timing(HomePhase::TerminalFreeze);
@@ -146,6 +154,14 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     sandbox: &dyn Sandbox,
     promotion: &mut HomeImagePromotionContext,
 ) -> crate::error::LifecycleResult<bool> {
+    prepare_terminal_cache_runtime_inner(sandbox, promotion, false).await
+}
+
+async fn prepare_terminal_cache_runtime_inner(
+    sandbox: &dyn Sandbox,
+    promotion: &mut HomeImagePromotionContext,
+    inspect_memory: bool,
+) -> crate::error::LifecycleResult<bool> {
     let timing = promotion.start_timing(HomePhase::TerminalPreparation);
     let current_runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(
         CANONICAL_GUEST_HOME_DIR,
@@ -163,6 +179,11 @@ pub(crate) async fn prepare_terminal_cache_runtime(
         current_runtime_dir,
         retained_runtime_dir,
         generation: generation.clone(),
+        memory_mount: if inspect_memory {
+            promotion.memory_mount().map(str::to_owned)
+        } else {
+            None
+        },
     };
     request
         .validate()
@@ -225,6 +246,11 @@ pub(crate) async fn prepare_terminal_cache_runtime(
     // Clear a previous candidate even on an ordinary history miss. This setter
     // validates the publication generation before storing optional evidence.
     promotion.set_home_history_proof(report.history_proof)?;
+    if request.memory_mount.is_some()
+        && let Some(digest) = report.memory_digest
+    {
+        promotion.bind_memory_proof(digest);
+    }
     timing.finish(HomeObservationOutcome::Completed);
     Ok(true)
 }

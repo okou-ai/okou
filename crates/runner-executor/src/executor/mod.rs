@@ -539,6 +539,19 @@ impl ExecuteOutcome {
         inputs.storages.extend(self.storage_fingerprints.storages);
         inputs.artifacts.extend(self.storage_fingerprints.artifacts);
         self.storage_fingerprints = inputs;
+        if self.failure.is_none()
+            && let Some(lease) = self.home_image.as_mut()
+            && let Some(memory) = context
+                .storage_manifest
+                .as_ref()
+                .and_then(|manifest| manifest.member_memory())
+            && memory.empty != Some(true)
+            && memory
+                .archive_size
+                .is_some_and(|size| size >= runner_storage::memory_delta::MIN_ARCHIVE_BYTES)
+        {
+            lease.set_memory_mount(memory);
+        }
         self
     }
 }

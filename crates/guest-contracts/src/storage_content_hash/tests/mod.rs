@@ -1,4 +1,4 @@
-use super::*;
+use super::compute_content_hash;
 use serde::Deserialize;
 
 const CONTENT_HASH_CONTRACT: &str = include_str!(

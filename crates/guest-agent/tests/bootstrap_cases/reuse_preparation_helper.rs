@@ -1440,6 +1440,7 @@ async fn run_cache_helper(
                 current_runtime_dir: request.current_runtime_dir.clone(),
                 retained_runtime_dir: request.retained_runtime_dir.clone(),
                 generation: "74b68da0-6e0a-4adc-a68e-65a04c4885c4".into(),
+                memory_mount: None,
             },
         )?,
         REUSE_PREPARATION_HELPER_TIMEOUT,

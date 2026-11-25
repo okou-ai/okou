@@ -24,6 +24,7 @@ pub fn add_healthy_cache_preparation_matcher(overrides: &sandbox_mock::MockSandb
             &guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
                 cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
                 history_proof: None,
+                memory_digest: None,
             },
         )
         .unwrap(),

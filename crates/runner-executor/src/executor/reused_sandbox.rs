@@ -45,6 +45,9 @@ pub(super) async fn execute_reused_sandbox(
     let prepared_storage = prepare_storage(
         context,
         start.prev_storage,
+        run.home_image
+            .as_ref()
+            .and_then(HomeImageLease::previous_memory),
         config,
         &inputs.controls.cancel,
         telemetry,

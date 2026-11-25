@@ -104,6 +104,9 @@ pub struct TerminalHomeCachePreparationRequest {
     pub retained_runtime_dir: Option<String>,
     /// Publication generation owned by the host image context.
     pub generation: String,
+    /// Optional Memory mount to inspect after terminal cleanup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_mount: Option<String>,
 }
 
 impl TerminalHomeCachePreparationRequest {
@@ -124,6 +127,9 @@ pub struct TerminalHomeCachePreparationReport {
     pub cleanup: ReusePreparationReport,
     /// None is an advisory history miss, never a cleanup bypass.
     pub history_proof: Option<HomeCacheHistoryProofBinding>,
+    /// A digest of the canonical regular-file projection, if observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_digest: Option<[u8; 32]>,
 }
 
 /// At-consumption verifier input captured from the current request and launch.

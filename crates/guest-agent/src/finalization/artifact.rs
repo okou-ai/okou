@@ -10,7 +10,6 @@
 
 use super::LOG_TAG;
 use crate::artifact as vas;
-use crate::content_hash;
 use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
@@ -18,6 +17,7 @@ use api_contracts::generated::types::{
     runners::storage::ArtifactEntryMissingRootPolicy, webhooks::agent::complete,
 };
 use futures_util::stream::{self, FuturesUnordered, StreamExt};
+use guest_contracts::storage_content_hash::compute_content_hash;
 use guest_telemetry::log_info;
 use guest_telemetry::telemetry::record_sandbox_op;
 
@@ -78,7 +78,7 @@ async fn build_artifact_snapshot_plan(
 
 fn compute_artifact_content_hash(entry: &env::ArtifactEnv, files: &[vas::FileEntry]) -> String {
     let content_hash_start = std::time::Instant::now();
-    let content_hash = content_hash::compute_content_hash(
+    let content_hash = compute_content_hash(
         &entry.storage_id,
         files
             .iter()

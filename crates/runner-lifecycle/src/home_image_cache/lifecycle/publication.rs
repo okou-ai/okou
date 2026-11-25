@@ -55,6 +55,7 @@ struct PublicationRequest {
     completed_at: String,
     storage_fingerprints: StorageFingerprints,
     history_proof: Option<HomeCacheHistoryProofBinding>,
+    memory_proof: Option<Arc<HomeMemoryProof>>,
 }
 
 impl PublicationRequest {
@@ -72,6 +73,7 @@ impl PublicationRequest {
             completed_at: &self.completed_at,
             storage_fingerprints: &self.storage_fingerprints,
             history_proof: self.history_proof.as_ref(),
+            memory_proof: self.memory_proof.as_ref(),
         }
     }
 }
@@ -119,6 +121,7 @@ impl HomeImagePromotionContext {
             completed_at: self.completed_at.clone(),
             storage_fingerprints: self.storage_fingerprints.clone(),
             history_proof: self.history_proof.clone(),
+            memory_proof: self.memory_proof.clone(),
         };
         let cache = self.cache.clone();
         self.cache
@@ -593,6 +596,14 @@ impl HomeImageCache {
             }
             // A successful directory sync, including reconciliation, grants cleanup authority.
             progress.committed = true;
+            if let (Some(proof), Some(metadata)) = (input.memory_proof, progress.metadata.as_ref())
+            {
+                self.remember_memory_proof(
+                    generation.clone(),
+                    metadata.current_image,
+                    Arc::clone(proof),
+                );
+            }
             self.retire_publication_sources(&input, progress, &candidate, source.identity())
                 .await;
             // Close transferred/source descriptors while holding IO admission,

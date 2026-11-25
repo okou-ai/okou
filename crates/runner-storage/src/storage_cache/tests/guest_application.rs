@@ -136,7 +136,11 @@ async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() 
             let sandbox = sandbox.clone();
             let home = home.clone();
             async move {
-                let mut prepared = PreparedStorage { plan, delivery };
+                let mut prepared = PreparedStorage {
+                    plan,
+                    delivery,
+                    memory_delta: None,
+                };
                 let result = populate_cache_for_guest(
                     &mut prepared,
                     sandbox.as_ref(),
@@ -398,7 +402,11 @@ async fn saturated_cold_failure_cancels_delivery_during_a_cached_write() {
     let task = tokio::spawn({
         let sandbox = Arc::clone(&sandbox);
         async move {
-            let mut prepared = PreparedStorage { plan, delivery };
+            let mut prepared = PreparedStorage {
+                plan,
+                delivery,
+                memory_delta: None,
+            };
             let result = populate_cache_for_guest(
                 &mut prepared,
                 sandbox.as_ref(),
@@ -559,7 +567,11 @@ async fn assert_ready_input_lifecycle(split: bool) {
             .unwrap()
             .unwrap();
         server.headers.send(()).unwrap();
-        let mut prepared = PreparedStorage { plan, delivery };
+        let mut prepared = PreparedStorage {
+            plan,
+            delivery,
+            memory_delta: None,
+        };
         assert_eq!(
             prepared.plan.decoded_mount_count(),
             if split { 3 } else { 0 }

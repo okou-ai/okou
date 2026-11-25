@@ -659,6 +659,46 @@ impl StoragePlan {
             || !self.artifacts.is_empty()
     }
 
+    /// Remove an isolated Memory replacement from ordinary preparation while
+    /// its ready delta owns that mount. An apply failure rebuilds the
+    /// ordinary plan from the original inputs and fingerprints.
+    pub fn take_isolated_memory_replacement(&mut self, mount: &str) -> bool {
+        let Some(index) = self.artifacts.iter().position(|entry| {
+            entry.mount_path == mount && matches!(entry.action, ArtifactAction::Download { .. })
+        }) else {
+            return false;
+        };
+        let root = Path::new(mount);
+        let conflicts = |path: &str| {
+            let path = normalize_path(Path::new(path));
+            !path.is_absolute() || path.starts_with(root) || root.starts_with(path)
+        };
+        if !self.cleanup_paths.iter().any(|path| path == mount)
+            || self
+                .cleanup_paths
+                .iter()
+                .any(|path| path != mount && conflicts(path))
+            || self
+                .artifacts
+                .iter()
+                .enumerate()
+                .any(|(other, entry)| other != index && conflicts(&entry.mount_path))
+            || self
+                .storages
+                .iter()
+                .any(|entry| conflicts(&entry.mount_path))
+            || self
+                .instruction_cleanups
+                .iter()
+                .any(|entry| conflicts(&entry.mount_path))
+        {
+            return false;
+        }
+        self.artifacts.remove(index);
+        self.cleanup_paths.retain(|path| path != mount);
+        true
+    }
+
     pub fn reused_entries(&self) -> usize {
         self.reused_entries
     }

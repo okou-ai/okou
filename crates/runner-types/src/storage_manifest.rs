@@ -22,6 +22,21 @@ pub struct StorageManifest {
     pub artifacts: Vec<ArtifactEntry>,
 }
 
+impl StorageManifest {
+    pub fn member_memory(&self) -> Option<&ArtifactEntry> {
+        let mut matches = self.artifacts.iter().filter(|artifact| {
+            artifact.vas_storage_name == "memory"
+                && !artifact.vas_storage_id.is_empty()
+                && artifact.missing_root_policy
+                    == Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion)
+                && guest_contracts::memory_tree::mount_relative_to_home(&artifact.mount_path)
+                    .is_some()
+        });
+        let memory = matches.next()?;
+        matches.next().is_none().then_some(memory)
+    }
+}
+
 pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
     let name = [
         "/home/user/.claude/skills/",

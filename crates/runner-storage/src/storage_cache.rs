@@ -722,6 +722,12 @@ struct FreshArchiveClassification {
 pub struct PreparedStorage {
     pub plan: StoragePlan,
     pub delivery: FreshArchiveDelivery,
+    pub memory_delta: Option<PreparedMemoryDelta>,
+}
+
+pub struct PreparedMemoryDelta {
+    pub mount_path: String,
+    pub delta: std::sync::Arc<crate::memory_delta::MemoryDelta>,
 }
 
 impl Drop for FreshArchiveDelivery {

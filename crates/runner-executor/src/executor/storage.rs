@@ -393,6 +393,60 @@ fn empty_storage_manifest() -> Manifest {
     }
 }
 
+pub(super) async fn apply_memory_delta(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    prepared: &crate::storage_cache::PreparedMemoryDelta,
+) -> RunnerResult<bool> {
+    let mut manifest = empty_storage_manifest();
+    manifest.cleanup_paths = prepared
+        .delta
+        .remove
+        .iter()
+        .map(|path| format!("{}/{path}", prepared.mount_path))
+        .collect();
+    manifest
+        .artifacts
+        .push(guest_contracts::storage_manifest::ArtifactEntry {
+            mount_path: prepared.mount_path.clone(),
+            archive_url: Some(storage_files::MEMORY_DELTA_URL.to_string()),
+            empty: false,
+            cached: false,
+            vas_storage_name: Some("memory".to_owned()),
+            vas_storage_id: Some(prepared.delta.memory_id.clone()),
+            vas_version_id: Some(prepared.delta.target_version.clone()),
+            missing_root_policy: None,
+        });
+    let bytes = manifest_json(&manifest).and_then(|json| {
+        if prepared.delta.files.is_empty() {
+            Ok(json)
+        } else {
+            storage_files::encode_input(
+                &json,
+                &[(prepared.mount_path.as_str(), &prepared.delta.files)],
+            )
+            .map_err(|error| RunnerError::Internal(format!("encode Memory delta: {error}")))
+        }
+    });
+    let Ok(bytes) = bytes else {
+        // The input could not be prepared, so no Guest resource has changed.
+        return Ok(false);
+    };
+    let run_id = context.run_id.to_string();
+    let runtime_dir = guest_runtime_dir(context.run_id)?;
+    let result = sandbox
+        .apply_storage_manifest(&StorageManifestRequest {
+            manifest_json: &bytes,
+            run_id: &run_id,
+            runtime_dir: &runtime_dir,
+            timeout: DEFAULT_EXEC_TIMEOUT,
+        })
+        .await?;
+    // A returned result owns a settled operation. A transport error has no
+    // such guarantee and must propagate without another mutation in this VM.
+    Ok(helper_exec_succeeded(&result))
+}
+
 fn storage_inputs(
     mut manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],

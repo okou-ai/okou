@@ -20,6 +20,7 @@ async fn committed_memory_download_leaves_foreground_writer_available() {
             version,
             &server.url,
             content.len() as u64,
+            None,
             reporter,
         );
         tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
@@ -87,6 +88,7 @@ async fn committed_memory_warming_skips_invalid_size_and_resident_versions() {
         "resident",
         &url,
         body.len() as u64,
+        None,
         reporter.clone(),
     );
     let skipped = tokio::time::timeout(Duration::from_secs(5), observations.recv())
@@ -99,6 +101,7 @@ async fn committed_memory_warming_skips_invalid_size_and_resident_versions() {
         "mismatched",
         &url,
         body.len() as u64 + 1,
+        None,
         reporter,
     );
     let unavailable = tokio::time::timeout(Duration::from_secs(5), observations.recv())

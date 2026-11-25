@@ -10,7 +10,7 @@ import { command } from "ccstate";
 import { and, eq, gt, ne } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { verifyFirewallToken } from "../auth/tokens";
-import { authorization$, setResHeader$ } from "../context/hono";
+import { authorization$, rawQuery$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
 import type { RouteEntry } from "../route-entry";
@@ -38,6 +38,8 @@ const readPublishedMemoryArchive$ = command(
         versionId: memoryVersions.id,
         archiveSize: memoryVersions.archiveSize,
         objectPrefix: memoryVersions.objectPrefix,
+        memoryId: memberMemories.id,
+        parentVersionId: memoryVersionLineage.parentVersionId,
       })
       .from(memberMemories)
       .innerJoin(memoryVersions, memberMemoryRevisionCondition)
@@ -82,6 +84,15 @@ const readPublishedMemoryArchive$ = command(
           versionId: archive.versionId,
           archiveSize: archive.archiveSize,
           archiveUrl,
+          // Older Runners strictly deserialize the original response.
+          ...(get(rawQuery$).includeDeltaBase === "true"
+            ? {
+                deltaBase: {
+                  memoryId: archive.memoryId,
+                  parentVersionId: archive.parentVersionId,
+                },
+              }
+            : {}),
         },
       },
     };

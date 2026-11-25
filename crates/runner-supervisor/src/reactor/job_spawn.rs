@@ -502,6 +502,7 @@ async fn warm_committed_memory(
             routes::webhooks::run::storages::memory_archive::READ,
             firewall_token,
         )
+        .query(&[("includeDeltaBase", "true")])
         .timeout(Duration::from_secs(2))
         .send("committed-memory-archive")
         .await
@@ -525,6 +526,12 @@ async fn warm_committed_memory(
             &archive.version_id,
             &archive.archive_url,
             archive.archive_size,
+            archive
+                .delta_base
+                .map(|base| runner_storage::memory_delta::MemoryDeltaBase {
+                    memory_id: base.memory_id,
+                    parent_version_id: base.parent_version_id,
+                }),
             reporter,
         );
     }

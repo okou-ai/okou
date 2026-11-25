@@ -1595,6 +1595,19 @@ async fn prepare_guest_storage(
     let planning_started = Instant::now();
 
     let result: RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> = async {
+        if let Some(delta) = prepared_storage.as_mut().and_then(|prepared| prepared.memory_delta.take()) {
+            let started = Instant::now();
+            let applied = super::storage::apply_memory_delta(sandbox, context, &delta).await;
+            let reason = match applied {
+                Ok(true) => None,
+                Ok(false) => Some("full_restore_fallback"),
+                Err(_) => Some("guest_operation_failed"),
+            };
+            telemetry.record("runner_memory_delta_apply", started.elapsed(), reason.is_none(), reason);
+            if !applied? && let Some(mut prepared) = prepared_storage.take() {
+                prepared.delivery.cancel_and_drain(telemetry).await;
+            }
+        }
         if let Some(prepared) = prepared_storage.as_mut() {
             record_storage_plan_state(
                 &prepared.plan,

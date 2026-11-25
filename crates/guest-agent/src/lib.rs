@@ -198,7 +198,6 @@ mod codex_auth;
 mod codex_failure;
 pub mod complete;
 mod constants;
-mod content_hash;
 pub mod control;
 pub mod disk_cleanup;
 pub mod env;
@@ -275,3 +274,5 @@ pub(crate) fn lock_system_log_test_state() -> tokio::sync::MutexGuard<'static, (
 pub(crate) async fn lock_system_log_test_state_async() -> tokio::sync::MutexGuard<'static, ()> {
     SYSTEM_LOG_TEST_MUTEX.lock().await
 }
+#[cfg(target_os = "linux")]
+mod memory_tree;

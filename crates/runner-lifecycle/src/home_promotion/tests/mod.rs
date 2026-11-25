@@ -14,6 +14,7 @@ fn terminal_report() -> TerminalHomeCachePreparationReport {
     TerminalHomeCachePreparationReport {
         cleanup: crate::idle_reuse_preparation::healthy_reuse_preparation_report(),
         history_proof: None,
+        memory_digest: None,
     }
 }
 

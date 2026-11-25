@@ -14,14 +14,18 @@ use tokio_util::task::TaskTracker;
 use tracing::warn;
 
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
+use crate::memory_delta::{
+    MIN_ARCHIVE_BYTES, MemoryDelta, MemoryDeltaBase, ReadyMemoryDeltas, build_memory_delta,
+};
 use crate::storage_plan::ArchiveHandle;
 #[cfg(test)]
 use crate::telemetry::StorageTelemetry;
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 use super::{
-    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, cache_target_from_entry,
-    decoded, process_group_background_fill, warm_committed_memory_archive,
+    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, DownloadBody,
+    cache_target_from_entry, decoded, process_group_background_fill, read_cached_archive,
+    warm_committed_memory_archive,
 };
 
 /// Maximum number of cache-fill groups that may be active across the runner.
@@ -79,7 +83,7 @@ pub(super) enum BackgroundFillAction {
     /// An archive hit observed during preparation; it may be evicted before execution.
     WarmDecoded(decoded::DecodedCache),
     /// Optional post-Run download with no writer held during HTTP.
-    WarmCommittedMemory,
+    WarmCommittedMemory(Option<MemoryDeltaBase>),
     RetireArchive(decoded::DecodedCache),
 }
 
@@ -121,6 +125,8 @@ pub(super) struct BackgroundFillCoordinatorInner {
     shutdown: CancellationToken,
     pub(super) classifiers: TaskTracker,
     classification_slot: Arc<Semaphore>,
+    memory_deltas: Arc<ReadyMemoryDeltas>,
+    memory_delta_build_slot: Arc<Semaphore>,
 }
 
 pub(super) struct BackgroundFillCoordinatorLifecycle {
@@ -165,6 +171,7 @@ impl StorageCacheBackgroundFillCoordinator {
         version_id: &str,
         archive_url: &str,
         archive_size: u64,
+        delta_base: Option<MemoryDeltaBase>,
         reporter: SandboxOpReporter,
     ) {
         if archive_size == 0 || archive_size > CACHE_MAX_SIZE {
@@ -190,9 +197,24 @@ impl StorageCacheBackgroundFillCoordinator {
             group,
             home,
             reporter,
-            BackgroundFillAction::WarmCommittedMemory,
+            BackgroundFillAction::WarmCommittedMemory(
+                delta_base.filter(|_| archive_size >= MIN_ARCHIVE_BYTES),
+            ),
             false,
         );
+    }
+
+    /// A miss, including contention with publication, leaves normal restore available.
+    pub fn ready_memory_delta(
+        &self,
+        memory_id: &str,
+        target: &str,
+        base_digest: &[u8; 32],
+    ) -> Option<Arc<MemoryDelta>> {
+        self.lifecycle
+            .inner
+            .memory_deltas
+            .ready(memory_id, target, base_digest)
     }
 
     pub(super) fn new_with_limits(
@@ -212,6 +234,8 @@ impl StorageCacheBackgroundFillCoordinator {
         })?;
         let (commands, receiver) = mpsc::channel(queue_capacity);
         let inner = Arc::new(BackgroundFillCoordinatorInner {
+            memory_deltas: Arc::default(),
+            memory_delta_build_slot: Arc::new(Semaphore::new(1)),
             state: Mutex::new(BackgroundFillAdmissionState {
                 entries: HashMap::new(),
                 pending: VecDeque::new(),
@@ -294,7 +318,7 @@ impl StorageCacheBackgroundFillCoordinator {
                         next @ BackgroundFillAction::Fill(_),
                     )
                     | (
-                        current @ BackgroundFillAction::WarmCommittedMemory,
+                        current @ BackgroundFillAction::WarmCommittedMemory(_),
                         next @ BackgroundFillAction::Fill(_),
                     ) => {
                         *current = next;
@@ -563,8 +587,18 @@ async fn run_background_fill_supervisor(
             };
             let worker_key = work.key.clone();
             let http = inner.http.clone();
+            let builder = matches!(
+                &work.action,
+                BackgroundFillAction::WarmCommittedMemory(Some(_))
+            )
+            .then(|| {
+                (
+                    Arc::clone(&inner.memory_deltas),
+                    Arc::clone(&inner.memory_delta_build_slot),
+                )
+            });
             workers.spawn(async move {
-                match std::panic::AssertUnwindSafe(run_background_fill_work(work, http))
+                match std::panic::AssertUnwindSafe(run_background_fill_work(work, http, builder))
                     .catch_unwind()
                     .await
                 {
@@ -736,11 +770,11 @@ fn cancel_queued_background_fills(
 async fn run_background_fill_work(
     work: BackgroundFillWork,
     http: Client,
+    builder: Option<(Arc<ReadyMemoryDeltas>, Arc<Semaphore>)>,
 ) -> BackgroundFillWorkerResult {
     let started_at = Instant::now();
-    let committed_memory = matches!(&work.action, BackgroundFillAction::WarmCommittedMemory);
     let outcome = async {
-        if committed_memory {
+        if matches!(&work.action, BackgroundFillAction::WarmCommittedMemory(_)) {
             return warm_committed_memory_archive(&work.group, &http, &work.home).await;
         }
         if let BackgroundFillAction::RetireArchive(cache) = &work.action {
@@ -770,7 +804,9 @@ async fn run_background_fill_work(
     }
     .await;
     let report = match outcome {
-        Ok(outcome @ BackgroundFillOutcome::Filled { .. }) if committed_memory => {
+        Ok(outcome @ BackgroundFillOutcome::Filled { .. })
+            if matches!(&work.action, BackgroundFillAction::WarmCommittedMemory(_)) =>
+        {
             let mut report = BackgroundFillReport::from_outcome(outcome, started_at.elapsed());
             report.outcome.action_type = "storage_cache_committed_memory_warm_published";
             report
@@ -781,10 +817,53 @@ async fn run_background_fill_work(
             BackgroundFillReport::failed(started_at.elapsed())
         }
     };
+    if let (Some((deltas, slot)), BackgroundFillAction::WarmCommittedMemory(Some(base))) =
+        (builder, work.action)
+        && let Ok(permit) = slot.try_acquire_owned()
+    {
+        let started = Instant::now();
+        let version = work.key.1.clone();
+        let built = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            prepare_committed_memory_delta(&work.home, &version, &base)
+        })
+        .await;
+        if let Ok(Some(delta)) = built {
+            deltas.insert(delta);
+            tracing::debug!(
+                duration_ms = started.elapsed().as_millis(),
+                "prebuilt Memory delta"
+            );
+        }
+    }
     BackgroundFillWorkerResult {
         key: work.key,
         report,
     }
+}
+
+fn prepare_committed_memory_delta(
+    home: &HomePaths,
+    target_version: &str,
+    base: &MemoryDeltaBase,
+) -> Option<MemoryDelta> {
+    let path = |version| {
+        home.storage_cache_dir("memory", version)
+            .join("archive.tar.gz")
+    };
+    let DownloadBody::Complete(target) =
+        read_cached_archive(&path(target_version), None, CACHE_MAX_SIZE).ok()?
+    else {
+        return None;
+    };
+    let DownloadBody::Complete(parent) =
+        read_cached_archive(&path(&base.parent_version_id), None, CACHE_MAX_SIZE).ok()?
+    else {
+        return None;
+    };
+    build_memory_delta(base, target_version, &parent, &target)
+        .ok()
+        .flatten()
 }
 
 fn handle_background_fill_worker_result(
@@ -1055,7 +1134,7 @@ async fn run_background_fill_groups(
                 home,
                 action,
             };
-            run_background_fill_work(work, http).await.report
+            run_background_fill_work(work, http, None).await.report
         });
     }
 

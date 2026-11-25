@@ -179,7 +179,11 @@ async fn assert_incremental_staging(warm: bool, failure: &str) {
         let home = home.clone();
         let sandbox = sandbox.clone();
         async move {
-            let mut prepared = PreparedStorage { plan, delivery };
+            let mut prepared = PreparedStorage {
+                plan,
+                delivery,
+                memory_delta: None,
+            };
             let result = populate_cache_for_guest(
                 &mut prepared,
                 sandbox.as_ref(),

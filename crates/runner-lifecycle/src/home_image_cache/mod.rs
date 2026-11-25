@@ -13,7 +13,7 @@
 use crate::error::{LifecycleError, LifecycleResult};
 use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_storage::SandboxOpReporter;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
@@ -50,7 +50,7 @@ pub use gc_pressure::{HomeCacheReclaimOutcome, HomeCacheReclaimStatus};
 pub use inventory::{HomeCacheInventory, HomeCacheKeyUpdates};
 pub use lifecycle::{
     HomeImageLease, HomeImagePromotionContext, HomeImagePromotionIdentityFailure,
-    HomeImagePromotionOutcome, cap_held_home_states,
+    HomeImagePromotionOutcome, HomeMemoryProof, cap_held_home_states,
 };
 use pressure::PressureReclamation;
 pub use runner_host::paths::HomeImageCacheKey;
@@ -183,6 +183,7 @@ struct HomeImageCacheInner {
     lock_dir: PathBuf,
     cache_scope: String,
     entry_lock_owners: Mutex<HashMap<String, HomeCacheLockRegistration>>,
+    memory_proofs: Mutex<VecDeque<lifecycle::HomeMemoryProofEntry>>,
     publication_admission: Semaphore,
     checkout_io: TaskTracker,
     selection_releases: SelectionReleases,
@@ -261,6 +262,7 @@ impl HomeImageCache {
                 lock_dir,
                 cache_scope: scope.to_owned(),
                 entry_lock_owners: Mutex::new(HashMap::new()),
+                memory_proofs: Mutex::default(),
                 publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
                 checkout_io: TaskTracker::new(),
                 selection_releases: SelectionReleases::default(),

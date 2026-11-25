@@ -41,7 +41,7 @@ impl<'a> SortableContentHashEntry<'a> {
 ///
 /// JS default string sorting compares UTF-16 code units. Rust must mirror that
 /// rule exactly, then still hash the selected formatted entries as UTF-8 bytes.
-pub(crate) fn compute_content_hash<'a, I>(storage_id: &str, files: I) -> String
+pub fn compute_content_hash<'a, I>(storage_id: &str, files: I) -> String
 where
     I: IntoIterator<Item = (&'a str, &'a str)>,
 {
