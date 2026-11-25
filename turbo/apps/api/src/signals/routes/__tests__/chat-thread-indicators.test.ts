@@ -336,11 +336,9 @@ describe("GET /api/indicators", () => {
     await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
   });
 
-  it("keeps the 50 most recent active threads independent of unread state", async () => {
+  it("keeps the most recent active threads independent of unread state", async () => {
     await prepareChatRuntime();
-    // Every send must start a Run (runs, not waiting inputs, feed the active
-    // indicator), so lift the organization concurrency limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    mockEnv("CHAT_INDICATOR_ACTIVE_LIMIT", "2");
     const actor = bdd.user();
     await prepareEntitledMember(actor);
 
@@ -355,22 +353,18 @@ describe("GET /api/indicators", () => {
     await chat.markThreadUnread(actor, older.threadId);
     await indicatorCredentials.executionInput(actor, restarted.runId);
 
-    const recent: Record<string, string> = {};
-    for (let index = 0; index < 50; index += 1) {
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          prompt: `Later active indicator ${index}`,
-          model: INDICATOR_TEST_MODEL,
-        },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected the chat send to be accepted");
-      }
-      recent[sent.body.threadId] = "active";
-    }
-    await flushWaitUntilForTest();
+    const newer = await chat.sendAndLaunch(actor, {
+      prompt: "Newer active Run",
+      model: INDICATOR_TEST_MODEL,
+    });
+    const newest = await chat.sendAndLaunch(actor, {
+      prompt: "Newest active Run",
+      model: INDICATOR_TEST_MODEL,
+    });
+    const recent = {
+      [newer.threadId]: "active",
+      [newest.threadId]: "active",
+    };
     await seedMembership(actor);
 
     const headers = {
@@ -402,5 +396,5 @@ describe("GET /api/indicators", () => {
     await expect(readIndependentIndicators()).resolves.toStrictEqual(
       indicators.body,
     );
-  }, 180_000);
+  });
 });

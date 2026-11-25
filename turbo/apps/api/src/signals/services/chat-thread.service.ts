@@ -73,6 +73,7 @@ import {
 } from "../../lib/db-raw-rows";
 import { chatThreadInitializationCtes } from "./chat-thread-initialization-plan";
 import { now, nowDate, nowDateSql } from "../../lib/time";
+import { env } from "../../lib/env";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { inferMimetype } from "./chat-event-shared.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
@@ -286,7 +287,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
-const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 /** Unread candidates read per request: the newest threads within the lookback. */
 export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
@@ -385,7 +385,7 @@ function createIndicatorRows(args: IndicatorScope) {
         )
         .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
-        .limit(INDICATOR_ACTIVE_LIMIT);
+        .limit(env("CHAT_INDICATOR_ACTIVE_LIMIT"));
     },
   );
   const unreadRows$ = computed(
