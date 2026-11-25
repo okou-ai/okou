@@ -193,8 +193,17 @@ function sanitizeAxiomNetworkEvent(event: unknown): NetworkLogEntry | null {
   if (timestamp === undefined) {
     return null;
   }
+  // Axiom flattens ordinary JSON objects into dotted fields.
+  const flattenedRouting = omitUndefined({
+    generation_id: stringValue(event["openrouter.generation_id"]),
+    model: stringValue(event["openrouter.model"]),
+    provider: stringValue(event["openrouter.provider"]),
+    attempts: event["openrouter.attempts"] ?? undefined,
+    attempts_incomplete: booleanValue(event["openrouter.attempts_incomplete"]),
+  });
   const routing = networkLogEntrySchema.shape.openrouter.safeParse(
-    event.openrouter,
+    event.openrouter ??
+      (Object.keys(flattenedRouting).length > 0 ? flattenedRouting : undefined),
   );
 
   // [NETWORK_LOG_FIELDS] — keep this projection exhaustive against the

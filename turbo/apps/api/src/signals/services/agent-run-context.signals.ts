@@ -55,7 +55,6 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import { buildAgentRunVariables } from "./agent-run-variables";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
@@ -1002,30 +1001,12 @@ function createConnectorContext(
     };
   });
   const permissionPolicies$ = computed(async (get) => {
-    const [grants, { scope }, catalog] = await Promise.all([
-      get(permissionGrants$),
-      get(connectorSelection$),
-      get(catalog$),
-    ]);
-    const stored = permissionGrantsToFirewallPolicies(
+    const grants = await get(permissionGrants$);
+    return permissionGrantsToFirewallPolicies(
       grants.map(({ connectorSlug, permission, action }) => {
         return { connectorSlug, permission, action };
       }),
     );
-    if (
-      scope.allowedConnectorSlugs.length === 0 &&
-      scope.allowedCustomConnectorIds.length === 0
-    ) {
-      return stored;
-    }
-    if (!catalog) {
-      throw new Error("Scoped connector catalog is missing from bootstrap");
-    }
-    return await expandConnectorServerFirewallPolicies({
-      catalog: catalog.serverFirewalls,
-      stored,
-      connectorSlugs: [...scope.allowedConnectorSlugs],
-    });
   });
   return {
     threadConnectorSources$,

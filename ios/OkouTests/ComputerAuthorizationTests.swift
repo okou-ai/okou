@@ -647,7 +647,7 @@ private final class ComputerAuthorizationFixture: Sendable {
       updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ComputerAuthorizationStore(
       action: action, thread: thread, commands: commands, sync: sync,
-      didFail: { _ in }, didContinue: {})
+      graph: makeTestWorkspaceGraph(), didFail: { _ in }, didContinue: {})
   }
 
   @MainActor func action(

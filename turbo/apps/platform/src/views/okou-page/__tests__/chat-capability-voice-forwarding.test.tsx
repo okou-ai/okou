@@ -1,282 +1,98 @@
-import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  cleanup,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse } from "msw";
-import { openDB } from "idb";
-import { expect, vi, describe, beforeEach, it, test } from "vitest";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  createTestRuntime,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { resetSignal } from "../../../signals/utils.ts";
+import { expect, test } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
   createChatCapabilityHelpers,
-  RUN_PATH,
   selectPassage,
 } from "./chat-capability-test-helpers.ts";
-import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import {
-  findEnabledButton,
-  NEW_CHAT_PATH,
-  queryButton,
-} from "./chat-run-test-fixtures.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { RUN_PATH } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
-// A replacement app has fresh app/worker stores under the same document owner.
-const refreshedContext = createTestRuntime(context);
 
-test("Fork opens a quoted personal chat composer and preserves the source draft on dismissal", async () => {
-  installVoiceBoundaries();
+const passage = "launch plan has three careful stages";
+async function startFork(actions: boolean) {
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation(passage, "Unrelated revision feedback"),
+  });
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: actions },
   });
-  const originalComposer = await screen.findByRole("textbox", {
-    name: "Message",
-  });
-  await selectPassage("launch plan has three careful stages");
-  const fork = await findEnabledButton("Fork");
-  expect(fork).toHaveAttribute("aria-keyshortcuts", "f");
-  click(fork);
-  const dialog = await screen.findByRole("dialog", { name: "Okou" });
+  const original = await findComposerEditor();
+  await fill(original, "Unfinished source notes");
+  await screen.findByText(passage);
+  await selectPassage(passage);
+  return { original };
+}
+
+async function openForwardSuggestions(actions = false) {
+  const { original } = await startFork(actions);
+  click(await findFastControl("button", /^Fork/i));
+  const dialog = await screen.findByRole("dialog");
   const editor = await within(dialog).findByRole("textbox", {
     name: "Message",
   });
-  expect(
-    within(dialog).getByText("launch plan has three careful stages"),
-  ).toBeInTheDocument();
-  await fill(editor, "Follow up on this passage");
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-  expect(editor).toHaveTextContent("Follow up on this passage");
-  click(await findEnabledButton("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-});
-
-function releasePageDom() {
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-}
-
-function installVoiceBoundaries() {
-  installCapabilityChat({
-    events: completedConversation("The launch plan has three careful stages."),
-    selectedModel: null,
-  });
-  context.mocks.data.availableRunModels([]);
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: true, count: 0, limit: 60 });
-  });
-  context.mocks.api(composerDraftContract.get, ({ respond }) => {
-    return respond(200, textContinuityDraft("Keep the existing notes."));
-  });
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, textContinuityDraft("Keep the existing notes."));
-  });
-}
-
-async function openForkComposer() {
-  await selectPassage("launch plan has three careful stages");
-  click(await findEnabledButton("Fork"));
-  const dialog = await screen.findByRole("dialog", { name: "Okou" });
-  await within(dialog).findByRole("textbox", { name: "Message" });
-  return dialog;
-}
-
-async function uploadedAudio(request: Request) {
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    throw new Error("Expected recorded audio");
-  }
-  return await file.arrayBuffer();
-}
-
-async function prepareForkSuggestions() {
-  installVoiceBoundaries();
-  context.mocks.browser.matchMedia((query) => {
-    return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
-  });
-  const originalComposer = await screen.findByRole("textbox", {
-    name: "Message",
-  });
-  const dialog = await openForkComposer();
-  const editor = within(dialog).getByRole("textbox", {
-    name: "Message",
-  });
-  await fill(editor, "Fork draft /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const schedule = queryAllByRoleFast("button", menu).find((candidate) => {
-    return candidate.textContent?.trim().startsWith("Schedule");
-  });
-  if (!schedule) {
-    throw new Error("Expected the Schedule action");
-  }
-  expect(menu).toHaveAttribute("data-side", "top");
   const user = userEvent.setup({ delay: null });
-  return { originalComposer, dialog, editor, menu, schedule, user };
+  const tail = editor.querySelector<HTMLElement>(
+    "[data-feedback-note] p:last-child",
+  );
+  if (!tail) {
+    throw new Error("The selected passage has no editable note");
+  }
+  await user.click(tail);
+  const range = document.createRange();
+  range.selectNodeContents(tail);
+  range.collapse(false);
+  const sel = window.getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  await user.keyboard("Forward draft /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  return { editor, dialog, original, menu, user };
 }
-
-test("Keep Fork suggestions isolated during preview navigation", async () => {
-  const { originalComposer, dialog, editor, menu, schedule, user } =
-    await prepareForkSuggestions();
-  await user.keyboard("{ArrowUp}{ArrowUp}");
-  expect(schedule).toHaveAttribute("data-active", "true");
-  await user.keyboard("{ArrowRight}");
-  const pane = within(menu).getByRole("region", { name: "Schedule" });
-  const everyMorning = queryAllByRoleFast("button", pane).find((candidate) => {
-    return candidate.textContent?.trim().startsWith("Every morning");
-  });
-  expect(everyMorning).toHaveAttribute("data-active", "true");
-  expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Fork draft /");
+function expectForwardDraft(
+  editor: HTMLElement,
+  dialog: HTMLElement,
+  original: HTMLElement,
+) {
+  expect(editor).toHaveTextContent("Forward draft /");
   expect(editor).toHaveFocus();
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-});
-
-test("Keep Fork suggestions isolated during IME composition", async () => {
-  const { originalComposer, dialog, editor, menu } =
-    await prepareForkSuggestions();
-  fireEvent.compositionStart(editor, { data: "中文" });
-  fireEvent.keyDown(editor, {
-    key: "Enter",
-    isComposing: true,
-    keyCode: 229,
-  });
+  expect(dialog).toBeInTheDocument();
+  expect(original).toHaveTextContent("Unfinished source notes");
+}
+test("chat-capability-voice-forwarding-003 composing Enter leaves the selected passage dialog and slash menu intact", async () => {
+  const { editor, dialog, original, menu } = await openForwardSuggestions();
+  fireEvent.compositionStart(editor);
+  fireEvent.keyDown(editor, { key: "Enter", keyCode: 229, isComposing: true });
   expect(menu).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Fork draft /");
-  fireEvent.compositionEnd(editor, { data: "中文" });
-  expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Fork draft /");
-  expect(editor).toHaveFocus();
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+  fireEvent.compositionEnd(editor, { data: "" });
+  expectForwardDraft(editor, dialog, original);
 });
-
-test("Keep Fork suggestions isolated during dismissal", async () => {
-  const { originalComposer, dialog, editor, user } =
-    await prepareForkSuggestions();
+test("chat-capability-voice-forwarding-004 Escape closes suggestions inside the selected passage composer", async () => {
+  const { editor, dialog, original, menu, user } =
+    await openForwardSuggestions();
   await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(menu).not.toBeInTheDocument();
   });
-  expect(dialog).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Fork draft /");
-  expect(editor).toHaveFocus();
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+  expectForwardDraft(editor, dialog, original);
 });
 
-describe("reuse an unfinished agent recording in the Fork dialog without replacing it", () => {
-  async function prepareRecording() {
-    const resetInitialPage$ = resetSignal();
-    const initialPageSignal = context.store.set(
-      resetInitialPage$,
-      context.signal,
-    );
-    installVoiceBoundaries();
-    const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-    context.mocks.browser.voiceInput({
-      rms: 0.12,
-      onPcmCapture: capture.resolve,
-      finalPcmSamples: new Float32Array(0),
-    });
-    const uploads: ArrayBuffer[] = [];
-    context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-      return HttpResponse.json({ text: "Original recording." });
-    });
-    context.mocks.http.post(
-      "*/api/voice-io/transcribe/segment",
-      async ({ request }) => {
-        uploads.push(await uploadedAudio(request));
-        return HttpResponse.json({
-          transcript: "original",
-          language: "en-US",
-        });
-      },
-    );
-    await setupPage({
-      locale: "en-US",
-      context: { ...context, signal: initialPageSignal },
-      path: NEW_CHAT_PATH,
-    });
-    click(await findEnabledButton("Voice input"));
-    const emit = await capture.promise;
-    emit(new Float32Array(4096).fill(0.25));
-    await waitFor(async () => {
-      const database = await openDB("okou-voice-drafts");
-      const recordings: unknown[] = await database.getAll("drafts");
-      database.close();
-      expect(recordings).toHaveLength(1);
-      expect(recordings[0]).toMatchObject({ sampleCount: 4096, chunkCount: 1 });
-    });
-    return { resetInitialPage$, uploads };
-  }
-  let preparedRecording: Awaited<ReturnType<typeof prepareRecording>>;
-  beforeEach(async () => {
-    preparedRecording = await prepareRecording();
-  });
-
-  async function openRestoredRecording() {
-    const { resetInitialPage$ } = preparedRecording;
-    context.store.set(resetInitialPage$);
-    releasePageDom();
-    await setupPage({
-      locale: "en-US",
-      context: refreshedContext,
-      path: RUN_PATH,
-    });
-    const originalComposer = await waitFor(() => {
-      const composer = document.querySelector<HTMLElement>(
-        '[role="textbox"][aria-label="Message"]',
-      );
-      expect(composer).toBeInTheDocument();
-      if (!composer) {
-        throw new Error("Expected the restored message composer");
-      }
-      return composer;
-    });
-    expect(originalComposer).toHaveAccessibleName("Message");
-    const dialog = await openForkComposer();
-    await findEnabledButton("Use recording", dialog);
-    return { dialog, originalComposer };
-  }
-  it("uses the saved recording in the Fork dialog without changing the original composer", async () => {
-    const { uploads } = preparedRecording;
-    const { dialog, originalComposer } = await openRestoredRecording();
-    expect(queryButton("Voice input", dialog)).toBeNull();
-    click(await findEnabledButton("Use recording", dialog));
-    await findEnabledButton("Voice input", dialog);
-    expect(
-      within(dialog).getByRole("textbox", { name: "Message" }),
-    ).toHaveTextContent("Original recording.");
-    expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-    expect(uploads).toHaveLength(1);
-  });
+test("chat-capability-voice-forwarding-002 previewing Schedule keeps focus and both independent drafts", async () => {
+  const { editor, original, dialog, menu, user } =
+    await openForwardSuggestions(true);
+  const schedule = await findFastControl("button", /^Schedule/, menu);
+  await user.hover(schedule);
+  await expect(
+    within(menu).findByRole("region", { name: "Schedule" }),
+  ).resolves.toBeVisible();
+  expectForwardDraft(editor, dialog, original);
 });

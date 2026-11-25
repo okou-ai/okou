@@ -1,145 +1,89 @@
-import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
+import { screen, within } from "@testing-library/react";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  findAction,
+  getAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import {
   mockOnboardingConnectorCatalog,
   onboardingSourceItem,
 } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-
-function action(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-async function chooseIndustry(name: string): Promise<void> {
-  const label = (await screen.findByText(name)).closest("label");
-  if (!label) {
-    throw new Error(`Expected industry choice "${name}"`);
-  }
-  const [radio] = queryAllByRoleFast("radio", label);
-  if (!radio) {
-    throw new Error(`Expected industry radio "${name}"`);
-  }
-  click(radio);
-  await waitFor(() => {
-    return expect(action("Continue")).toBeEnabled();
-  });
-  click(action("Continue"));
-}
-
-function catalog(includeDrive = true): void {
+test("onboarding-source-outcome-001 switching industries replaces the Drive brief with Ads results while both sources are disconnected", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
   mockOnboardingConnectorCatalog(context, [
-    ...(includeDrive
-      ? [
-          onboardingSourceItem({
-            slug: "google-drive",
-            label: "Google Drive",
-            description: "Manage Drive files",
-            hasAccount: false,
-          }),
-        ]
-      : []),
+    onboardingSourceItem({
+      slug: "google-drive",
+      label: "Google Drive",
+      description: "Browse documents",
+      hasAccount: false,
+    }),
     onboardingSourceItem({
       slug: "google-ads",
       label: "Google Ads",
-      description: "Review ad performance",
-      hasAccount: false,
-    }),
-    onboardingSourceItem({
-      slug: "gmail",
-      label: "Gmail",
-      description: "Manage email",
+      description: "Review advertising",
       hasAccount: false,
     }),
   ]);
-}
-
-test("changing the selected industry updates its outcome without connecting a source", async () => {
-  catalog();
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
+  await setupPage({ context, path: "/onboarding" });
+  click(await screen.findByText("Design & creative"));
+  click(await findAction("button", "Continue"));
+  const brief = await screen.findByRole("figure", {
+    name: /Creative brief prepared from Google Drive/i,
   });
-  await chooseIndustry("Design & creative");
-
-  const creative = await screen.findByRole("figure", {
-    name: /Illustrative Creative brief prepared from Google Drive/u,
+  expect(within(brief).getByText("Client brief")).toBeVisible();
+  expect(within(brief).getByText("Refill skincare launch")).toBeVisible();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  click(await findAction("button", "Back"));
+  click(await screen.findByText("Marketing & content"));
+  click(await findAction("button", "Continue"));
+  const report = await screen.findByRole("figure", {
+    name: /Campaign summary prepared from Google Ads/i,
   });
+  expect(within(report).getByText("ROAS")).toBeVisible();
+  expect(within(report).getByText("4.1×")).toBeVisible();
   expect(
-    within(creative).getByText("Refill skincare launch"),
-  ).toBeInTheDocument();
-  expect(within(creative).getByText("Client brief")).toBeInTheDocument();
-  expect(action("Continue")).toBeDisabled();
-
-  click(action("Back"));
-  await chooseIndustry("Marketing & content");
-  const campaign = await screen.findByRole("figure", {
-    name: /Illustrative Campaign summary prepared from Google Ads/u,
-  });
-  expect(within(campaign).getByText("ROAS")).toBeInTheDocument();
+    screen.queryByRole("figure", {
+      name: /Creative brief prepared from Google Drive/i,
+    }),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText("Refill skincare launch")).not.toBeInTheDocument();
-  expect(action("Continue")).toBeDisabled();
+  expect(getAction("button", "Continue")).toBeDisabled();
 });
-
-test("an unavailable featured source does not advertise an outcome for that source", async () => {
-  catalog(false);
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-  await chooseIndustry("Design & creative");
-  await expect(
-    screen.findByRole("heading", { name: "Connect a work tool" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("figure")).not.toBeInTheDocument();
-  expect(screen.getByText("Gmail")).toBeInTheDocument();
-  expect(action("Continue")).toBeDisabled();
-});
-
-test("a phone can expand the example while the connection requirement stays in place", async () => {
-  catalog();
+test("onboarding-source-outcome-003 a phone opens the Drive example while the connection is still required", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === "(width < 640px)";
   });
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
   });
-  await chooseIndustry("Design & creative");
-  const summary = await screen.findByText("See an example of what you can get");
-  expect(summary.closest("details")).not.toHaveAttribute("open");
-  click(summary);
-  await waitFor(() => {
-    return expect(summary.closest("details")).toHaveAttribute("open");
-  });
+  mockOnboardingConnectorCatalog(context, [
+    onboardingSourceItem({
+      slug: "google-drive",
+      label: "Google Drive",
+      description: "Read shared briefs",
+      hasAccount: false,
+    }),
+  ]);
+  await setupPage({ context, path: "/onboarding" });
+  click(await screen.findByText(/Design & creative|^Design$/));
+  click(await findAction("button", "Continue"));
+  const toggle = await screen.findByText("See an example of what you can get");
+  expect(toggle.closest("details")).not.toHaveAttribute("open");
+  click(toggle);
+  expect(toggle.closest("details")).toHaveAttribute("open");
   await expect(
     screen.findByRole("figure", {
-      name: /Illustrative Creative brief prepared from Google Drive/u,
+      name: /Creative brief prepared from Google Drive/i,
     }),
-  ).resolves.toBeInTheDocument();
-  expect(action("Continue")).toBeDisabled();
-  expect(screen.getByText("Permissions and privacy")).toBeInTheDocument();
+  ).resolves.toBeVisible();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  expect(screen.getByText("Permissions and privacy")).toBeVisible();
 });

@@ -19,6 +19,7 @@ import { clerk$ } from "./auth.ts";
 import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { accept } from "../lib/accept.ts";
+import { now } from "../lib/time.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
@@ -190,9 +191,15 @@ function createAttachmentPresignedToken$(
   });
 }
 
+/** File previews retain their selected version when the catalog changes. */
+export function shouldRefreshArtifactPreview(kind: string): boolean {
+  return !["markdown", "text", "json", "csv", "pdf", "file"].includes(kind);
+}
+
 interface AttachmentPreviewOptions {
   readonly contentType?: string;
   readonly resolvedToken?: AttachmentPresignedToken;
+  readonly refreshOnArtifactChange?: boolean;
   readonly thumbnailSize?: {
     readonly width: number;
     readonly height?: number;
@@ -207,6 +214,7 @@ export function createAttachmentPreviewSignals(
   const {
     contentType,
     resolvedToken,
+    refreshOnArtifactChange = true,
     thumbnailSize = { width: 800, height: 720 },
   } = options;
   const url = publicAttachmentUrl(inputUrl);
@@ -216,12 +224,51 @@ export function createAttachmentPreviewSignals(
       return version + 1;
     });
   });
+  const refreshOnArtifactChange$ = command(({ set }) => {
+    if (refreshOnArtifactChange) {
+      set(refresh$);
+    }
+  });
   const presignedToken$ = resolvedToken
     ? computed(() => {
         return Promise.resolve(resolvedToken);
       })
     : createAttachmentPresignedToken$(url, refreshVersion$);
+  const refreshOnOpen$ = command(
+    async (
+      { get, set },
+      content$: Computed<Promise<unknown>> | undefined,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      if (refreshOnArtifactChange) {
+        return;
+      }
+      const [resolution] = await Promise.allSettled([get(presignedToken$)]);
+      signal.throwIfAborted();
+      const expiresAt =
+        resolution.status === "fulfilled" ? resolution.value?.expiresAt : null;
+      // Preserve successful previews; deliberate reopening can retry failures.
+      if (
+        resolution.status === "rejected" ||
+        (expiresAt !== null &&
+          expiresAt !== undefined &&
+          Date.parse(expiresAt) <= now())
+      ) {
+        set(refresh$);
+        return;
+      }
+      if (content$) {
+        const [content] = await Promise.allSettled([get(content$)]);
+        signal.throwIfAborted();
+        if (content.status === "rejected") {
+          set(refresh$);
+        }
+      }
+    },
+  );
   const resourceUrl$ = computed(async (get) => {
+    get(refreshVersion$);
     return currentHostedSiteUrl(
       (await get(presignedToken$))?.token ?? url,
       get(hostedSiteUrlChanges$),
@@ -280,6 +327,8 @@ export function createAttachmentPreviewSignals(
   });
   return {
     refresh$,
+    refreshOnArtifactChange$,
+    refreshOnOpen$,
     linkUrl$: resourceUrl$,
     presignedToken$,
     resourceUrl$,
@@ -297,6 +346,7 @@ export type AttachmentPreviewSignals = ReturnType<
 interface AttachmentPreviewSource {
   readonly url: string;
   readonly contentType?: string;
+  readonly refreshOnArtifactChange?: boolean;
   readonly preview?: AttachmentPreviewSignals;
 }
 
@@ -312,12 +362,13 @@ export function attachmentPreviewSignalsFor(
     source.preview ??
     createAttachmentPreviewSignals(source.url, {
       contentType: source.contentType,
+      refreshOnArtifactChange: source.refreshOnArtifactChange,
     })
   );
 }
 
 interface AttachmentPreviewRegistry {
-  /** Invalidate retained graphs so existing consumers resolve fresh resources. */
+  /** Refresh mutable previews without reloading retained file versions. */
   readonly refresh$: Command<void, []>;
   /** Get or create the one preview graph owned for a canonical resource URL. */
   readonly register$: Command<
@@ -345,6 +396,7 @@ export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
       const preview = attachmentPreviewSignalsFor({
         url,
         contentType: source.contentType,
+        refreshOnArtifactChange: source.refreshOnArtifactChange,
         ...(source.preview ? { preview: source.preview } : {}),
       });
       const next = new Map(previews);
@@ -355,7 +407,7 @@ export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
   );
   const refresh$ = command(({ get, set }) => {
     for (const preview of get(internalPreviewsByUrl$).values()) {
-      set(preview.refresh$);
+      set(preview.refreshOnArtifactChange$);
     }
   });
   return { register$, refresh$ };

@@ -1,0 +1,54 @@
+{
+  "attempts": [
+    {
+      "id": "c2441075-c365-41d1-9cc7-26af6fa55d74",
+      "stateHash": "a0db545936fb6651d1dfa5b3ea52d130d50807e8a2ccb273c39a0ed1429d0f0f",
+      "intent": "reconnect",
+      "connectionId": "2d01af74-4158-481d-b08f-bd6a20bd53d1"
+    }
+  ],
+  "assets": [
+    {
+      "id": "batch101-doc",
+      "metadata": {
+        "name": "shipping-note",
+        "mimeType": "application/vnd.google-apps.document",
+        "parents": [
+          "drive-artifact-thread-folder"
+        ],
+        "appProperties": {
+          "vm0Artifact": "true",
+          "vm0ThreadId": "706317b6-fbfa-48e9-b884-cd0654606839",
+          "vm0RunId": "40d838f1-0e34-4278-ade6-5cc0bcc60c77",
+          "vm0FileId": "b62b0186-f7e0-4844-97da-009ad4790a8e",
+          "okouArtifactId": "a52d2020-254a-4397-b04c-6b8bc5483966"
+        }
+      },
+      "body": "Pickup at pier three",
+      "account": "2d01af74-4158-481d-b08f-bd6a20bd53d1",
+      "repaired": true,
+      "sourceType": "text/plain"
+    },
+    {
+      "id": "batch101-source",
+      "metadata": {
+        "name": "shipping-note.txt",
+        "mimeType": "text/plain",
+        "parents": [
+          "drive-artifact-thread-folder"
+        ],
+        "appProperties": {
+          "vm0Artifact": "true",
+          "vm0ThreadId": "706317b6-fbfa-48e9-b884-cd0654606839",
+          "vm0RunId": "40d838f1-0e34-4278-ade6-5cc0bcc60c77",
+          "vm0FileId": "b62b0186-f7e0-4844-97da-009ad4790a8e",
+          "okouArtifactId": "a52d2020-254a-4397-b04c-6b8bc5483966"
+        }
+      },
+      "body": "Pickup at pier three",
+      "account": "2d01af74-4158-481d-b08f-bd6a20bd53d1",
+      "repaired": true,
+      "sourceType": "text/plain"
+    }
+  ]
+}

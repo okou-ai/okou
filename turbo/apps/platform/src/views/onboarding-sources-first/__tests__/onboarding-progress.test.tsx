@@ -1,330 +1,162 @@
-import {
-  onboardingCompleteContract,
-  onboardingDraftContract,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { test, expect, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
+import { onboardingDraftContract } from "@okouai/api-contracts/contracts/onboarding";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  getAction,
+  findAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import {
   connectedGmailSource,
   mockOnboardingConnectorCatalog,
 } from "./onboarding-catalog-test-helpers.ts";
-
 const context = testContext();
-const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-const stepStorage = localStorageSignals("onboarding:sources-first-step");
-// A fresh app receives browser storage from its previous lifetime, including
-// foreign or invalid progress that cannot be created through the current UI.
-function seedProgress(
-  step: string,
-  identity = { orgId: "org_default", userId: "test-user-123" },
-): void {
-  context.store.set(stepStorage.set$, JSON.stringify({ ...identity, step }));
-  context.store.set(
-    draftStorage.set$,
-    JSON.stringify({
-      version: 2,
-      ...identity,
-      industry: "marketing",
-      experienced: false,
-      provider: null,
-      startingPromptDraft: "Draft my launch plan",
-      startingPromptKey: "marketing:gmail",
-      recommendationJobId: null,
-      recommendationStartedAt: null,
-    }),
+const stepKey = "okou_onboarding:sources-first-step";
+const draftKey = "okou_onboarding:sources-first-draft";
+const identity = { userId: "test-user-123", orgId: "org_default" } as const;
+function answers(text: string) {
+  return {
+    industry: "marketing" as const,
+    experienced: false,
+    provider: null,
+    startingPromptDraft: text,
+    startingPromptKey: "edited",
+    startingPromptOutput: null,
+    recommendationJobId: null,
+    recommendationStartedAt: null,
+  };
+}
+function browserDraft(step: string, text = "", orgId: string = identity.orgId) {
+  const member = { ...identity, orgId };
+  const browser = new Storage();
+  vi.stubGlobal("localStorage", browser);
+  browser.setItem(stepKey, JSON.stringify({ ...member, step }));
+  browser.setItem(
+    draftKey,
+    JSON.stringify({ ...member, version: 2, ...answers(text) }),
   );
+  return browser;
 }
-
-function getButtonByName(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-test.each([ROUTES.home, ROUTES.onboarding])(
-  "Reopening %s resumes the saved step and still allows Back",
-  async (path) => {
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-    mockOnboardingConnectorCatalog(context, []);
-    seedProgress("sources");
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      path: `${path}?redeemCode=LAUNCH50`,
-    });
-
-    await screen.findByRole("heading", { name: "Connect a work tool" });
-    expect(pathname()).toBe(ROUTES.onboardingSources);
-    expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
-
-    click(getButtonByName("Back"));
-
-    await screen.findByRole("heading", {
-      name: "What kind of work do you do?",
-    });
-    expect(pathname()).toBe(ROUTES.onboarding);
-    expect(getButtonByName("Continue")).toBeEnabled();
-
-    click(getButtonByName("Continue"));
-
-    await screen.findByRole("heading", { name: "Connect a work tool" });
-  },
-);
-
-test("A clean browser resumes the server draft and its saved step", async () => {
+function newcomer() {
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  mockOnboardingConnectorCatalog(context, []);
+}
+test("onboarding-progress-001 resuming sources keeps redemption through a trip back to the work question", async () => {
+  newcomer();
+  browserDraft("sources");
+  await setupPage({ context, path: "/?redeemCode=RESUME" });
+  await screen.findByRole("heading", { name: "Connect a work tool" });
+  expect(new URL(location.href).searchParams.get("redeemCode")).toBe("RESUME");
+  click(getAction("button", "Back"));
+  await screen.findByRole("heading", { name: "What kind of work do you do?" });
+  click(await findAction("button", "Continue"));
+  await expect(
+    screen.findByRole("heading", { name: "Connect a work tool" }),
+  ).resolves.toBeVisible();
+  expect(new URL(location.href).searchParams.get("redeemCode")).toBe("RESUME");
+});
+test("onboarding-progress-003 a clean browser restores the task saved on another device", async () => {
+  newcomer();
+  const text = "Restore this task from my other device";
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
     return respond(200, {
       draft: {
-        revision: "f0000000-0000-4000-a000-000000000001",
+        revision: crypto.randomUUID(),
         step: "ready",
-        answers: {
-          industry: "marketing",
-          experienced: false,
-          provider: null,
-          startingPromptDraft: "Restore this task from my other device",
-          startingPromptKey: "marketing:gmail",
-          startingPromptOutput: null,
-          recommendationJobId: null,
-          recommendationStartedAt: null,
-        },
+        answers: answers(text),
       },
     });
   });
-
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
-  await screen.findByRole("heading", { name: "Let’s start your first task" });
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Restore this task from my other device",
-  );
+  await setupPage({ context, path: "/onboarding" });
+  await expect(
+    screen.findByRole("heading", { name: /start your first task/i }),
+  ).resolves.toBeVisible();
+  expect(screen.getByLabelText("Your first task")).toHaveValue(text);
+  expect(location.pathname).toBe("/onboarding/ready");
 });
-
-test("The first server save imports both browser draft keys before clearing them", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("ready");
+test("onboarding-progress-004 acknowledged migration clears both browser records and preserves the edited launch plan", async () => {
+  newcomer();
+  const text = "Draft my launch plan";
+  const browser = browserDraft("ready", text);
+  const held = context.mocks.deferred<unknown>();
+  const release = context.mocks.deferred<void>();
   context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
     return respond(200, { draft: null });
   });
-  const writes: unknown[] = [];
-  context.mocks.api(onboardingDraftContract.save, ({ body, respond }) => {
-    writes.push(body);
-    return respond(200, { revision: "f0000000-0000-4000-a000-000000000001" });
+  context.mocks.api(onboardingDraftContract.save, async ({ body, respond }) => {
+    if (!held.settled()) {
+      held.resolve(body);
+    }
+    await release.promise;
+    return respond(200, { revision: crypto.randomUUID() });
   });
-
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboarding });
-  await screen.findByRole("heading", { name: "Let’s start your first task" });
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
-  await waitFor(() => {
-    expect(context.store.get(draftStorage.get$)).toBeNull();
-    expect(context.store.get(stepStorage.get$)).toBeNull();
-  });
-  expect(writes).toMatchObject([
-    {
+  try {
+    await setupPage({ context, path: "/onboarding" });
+    await expect(
+      screen.findByLabelText("Your first task"),
+    ).resolves.toHaveValue(text);
+    await expect(held.promise).resolves.toMatchObject({
       step: "ready",
       revision: null,
-      answers: { startingPromptDraft: "Draft my launch plan" },
-    },
-  ]);
-});
-
-test("Another member's saved task and step survive editing on a shared browser", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Onboarding draft is unavailable" },
+      answers: { startingPromptDraft: text },
     });
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("sources", { orgId: "org_default", userId: "previous-member" });
-  const previousTask = context.store.set(draftStorage.readFresh$);
-  const previousStep = context.store.set(stepStorage.readFresh$);
-
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboardingReady });
-  const input = await screen.findByRole("textbox", { name: "Your first task" });
-  await fill(input, "Summarize this week's work");
-
-  expect(input).toHaveValue("Summarize this week's work");
-  expect(context.store.set(draftStorage.readFresh$)).toBe(previousTask);
-  expect(context.store.set(stepStorage.readFresh$)).toBe(previousStep);
-});
-
-test("An explicit step URL takes precedence over saved progress", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("ready");
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingSources,
-  });
-
-  await screen.findByRole("heading", { name: "Connect a work tool" });
-  expect(pathname()).toBe(ROUTES.onboardingSources);
-});
-
-test("Resuming a later step preserves progress without a connected source", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  mockOnboardingConnectorCatalog(context, []);
-  seedProgress("ready");
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  await screen.findByRole("heading", {
-    name: "Let’s start your first task",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
-  expect(getButtonByName("Start my first task")).toBeEnabled();
-});
-
-test.each([
-  { step: "team", isAdmin: false },
-  { step: "team", isAdmin: true },
-  { step: "skills", isAdmin: true },
-])(
-  "A saved $step step must belong to the current flow",
-  async ({ step, isAdmin }) => {
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-      isAdmin,
-    });
-    mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
-    seedProgress(step);
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      path: ROUTES.onboarding,
-    });
-
-    await screen.findByRole("heading", {
-      name: "How would you like to start with Okou?",
-    });
-    expect(pathname()).toBe(ROUTES.onboardingExperience);
-  },
-);
-
-test.each([
-  { orgId: "org_other", userId: "test-user-123", step: "sources" },
-  { orgId: "org_default", userId: "another-user", step: "sources" },
-  { orgId: "org_default", userId: "test-user-123", step: "unknown-step" },
-])(
-  "Unusable progress starts at the first step: %j",
-  async ({ step, ...identity }) => {
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-    seedProgress(step, identity);
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      path: ROUTES.onboarding,
-    });
-
-    await screen.findByRole("heading", {
-      name: "What kind of work do you do?",
-    });
-    expect(pathname()).toBe(ROUTES.onboarding);
-  },
-);
-
-test.each([ROUTES.home, ROUTES.onboarding])(
-  "Reopening %s after server-side completion opens chat instead of saved progress",
-  async (path) => {
-    seedProgress("ready");
-
-    await setupPage({ context, path });
-
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-test("A failed completion keeps the ready step and edited request available for retry", async () => {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
-  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
-  seedProgress("ready");
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Could not finish onboarding",
-      },
-    });
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  await screen.findByRole("heading", {
-    name: "Let’s start your first task",
-  });
-  click(getButtonByName("Start my first task"));
-
-  await screen.findByText("Could not finish onboarding");
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
+    expect(browser.getItem(stepKey)).not.toBeNull();
+    expect(browser.getItem(draftKey)).not.toBeNull();
+  } finally {
+    release.resolve();
+  }
   await waitFor(() => {
-    expect(getButtonByName("Start my first task")).toBeEnabled();
+    expect(browser.getItem(draftKey)).toBeNull();
+    expect(browser.getItem(stepKey)).toBeNull();
   });
+});
+test("onboarding-progress-006 an explicit work-tool URL overrides the saved ready step", async () => {
+  newcomer();
+  browserDraft("ready", "Draft my launch plan");
+  await setupPage({ context, path: "/onboarding/sources" });
+  await expect(
+    screen.findByRole("heading", { name: "Connect a work tool" }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/onboarding/sources");
+});
+test("onboarding-progress-008 the invited Gmail member resumes at experience from a legacy team bookmark", async () => {
+  context.mocks.data.onboardingStatus({
+    isAdmin: false,
+    needsOnboarding: true,
+    onboardingComplete: true,
+  });
+  browserDraft("team");
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
+  await setupPage({ context, path: "/onboarding" });
+  await expect(
+    screen.findByRole("heading", {
+      name: "How would you like to start with Okou?",
+    }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/onboarding/experience");
+});
+test("onboarding-progress-011 another workspace's progress cannot choose the member's starting step", async () => {
+  newcomer();
+  browserDraft("ready", "Other workspace task", "org_other");
+  await setupPage({ context, path: "/onboarding" });
+  await expect(
+    screen.findByRole("heading", { name: "What kind of work do you do?" }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/onboarding");
+});
+test("onboarding-progress-014 completed onboarding opens the Home composer despite stored ready progress", async () => {
+  browserDraft("ready", "Draft my launch plan");
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: false,
+    onboardingComplete: true,
+  });
+  await setupPage({ context, path: "/" });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
 });

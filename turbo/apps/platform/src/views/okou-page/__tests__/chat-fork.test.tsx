@@ -1,218 +1,276 @@
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { changeChatIndicators } from "../../../mocks/mock-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
-  mockChatThreadSnapshotResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import {
-  completedConversation,
-  createChatCapabilityHelpers,
-  FIRST_CAPABILITY_RUN_ID,
+  findEnabledButton,
   RUN_PATH,
   RUN_THREAD_ID,
+} from "./chat-run-test-fixtures.ts";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { fireEvent, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  FIRST_CAPABILITY_RUN_ID,
+  completedConversation,
+  createChatCapabilityHelpers,
   selectPassage,
-  waitForSend,
   type CapturedChatSend,
 } from "./chat-capability-test-helpers.ts";
-import { findEnabledButton } from "./chat-run-test-fixtures.ts";
-import { continuityThread } from "./chat-continuity-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import {
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
-const PASSAGE = "launch plan has three careful stages";
-const PROJECT_ID = "30000000-0000-4000-8000-000000000071";
 
-function installProjectConversation(projectId: string | null) {
-  installCapabilityChat({
-    events: completedConversation(`The ${PASSAGE}.`),
+const passage = "launch plan has three careful stages";
+async function startFork() {
+  const sent = context.mocks.deferred<CapturedChatSend>();
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation(passage, "Unrelated revision feedback"),
+    onSend: sent.resolve,
   });
-  const source = {
-    ...continuityThread(331, 1, "Launch planning"),
-    id: RUN_THREAD_ID,
-
-    projectId,
-  };
-  const threads = [source];
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(
-      200,
-      mockChatThreadSnapshotResponse(context, {
-        chatThreads: threads,
-        latestEventId: RUN_THREAD_ID,
-        latestSeqId: 1,
-      }),
-    );
-  });
-  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      projects: [
-        {
-          id: PROJECT_ID,
-          name: "Launch",
-          createdAt: source.createdAt,
-          updatedAt: source.updatedAt,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: 1,
-    });
-  });
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-    const thread = {
-      ...source,
-      id: body.clientThreadId ?? crypto.randomUUID(),
-      title: null,
-      projectId: body.projectId ?? null,
-    };
-    threads.push(thread);
-    return respond(201, {
-      id: thread.id,
-      title: thread.title,
-      createdAt: thread.createdAt,
-      selectedModel: body.model ?? null,
-      serviceTier: null,
-      projectId: thread.projectId,
-    });
-  });
+  await setupPage({ context, path: RUN_PATH });
+  const original = await findComposerEditor();
+  await fill(original, "Unfinished source notes");
+  await screen.findByText(passage);
+  await selectPassage(passage);
+  return { sent, original };
 }
 
-test.each([
-  {
-    name: "Fork keeps the source project",
-    sourceProjectId: PROJECT_ID,
-    expectedProjectId: PROJECT_ID,
-  },
-  {
-    name: "Fork keeps an unassigned source outside projects",
-    sourceProjectId: null,
-    expectedProjectId: null,
-  },
-])("$name", async ({ sourceProjectId, expectedProjectId }) => {
-  installProjectConversation(sourceProjectId);
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  const originalComposer = await screen.findByRole("textbox", {
-    name: "Message",
-  });
-  const notifications = screen.getByRole("region", {
-    name: /^Notifications\b/,
-  });
-  await fill(originalComposer, "Keep my unfinished notes");
-  if (sourceProjectId) {
-    const toggle = await findEnabledButton("Show or hide chats in Launch");
-    if (toggle.getAttribute("aria-expanded") === "false") {
-      click(toggle);
-    }
-  }
-  await waitFor(() => {
-    expect(
-      document.querySelector(
-        `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
-      ),
-    ).toBeInTheDocument();
-  });
-  await selectPassage(PASSAGE);
-  click(await findEnabledButton("Fork"));
-  const dialog = await screen.findByRole("dialog", { name: "Okou" });
-  await fill(
-    await within(dialog).findByRole("textbox", { name: "Add a message" }),
-    "Explore another launch plan",
-  );
-  click(await findEnabledButton("Send", dialog));
-
-  await within(notifications).findByText("New chat created");
-  const newThread = await waitFor(() => {
-    const link = document.querySelector<HTMLElement>(
-      `[data-sidebar-chat-thread-id]:not([data-sidebar-chat-thread-id="${RUN_THREAD_ID}"])`,
-    );
-    expect(link).toBeInTheDocument();
-    return link!;
-  });
-  expect(
-    newThread.closest<HTMLElement>("[data-project-row-id]")?.dataset
-      .projectRowId ?? null,
-  ).toBe(expectedProjectId);
-  const sourceThread = document.querySelector<HTMLElement>(
-    `[data-sidebar-chat-thread-id="${RUN_THREAD_ID}"]`,
-  );
-  expect(sourceThread).toBeInTheDocument();
-  expect(
-    sourceThread?.closest<HTMLElement>("[data-project-row-id]")?.dataset
-      .projectRowId ?? null,
-  ).toBe(sourceProjectId);
-  expect(location.pathname).toBe(RUN_PATH);
-  expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
-});
-
-test("F opens a Fork composer carrying the captured selection", async () => {
-  installCapabilityChat({
-    events: completedConversation(`The ${PASSAGE}.`),
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  await selectPassage(PASSAGE);
-
-  fireEvent.keyDown(document, { key: "f" });
-
-  const dialog = await screen.findByRole("dialog", { name: "Okou" });
+test("chat-fork-004 F opens a new draft with the highlighted source passage", async () => {
+  await startFork();
+  await userEvent.keyboard("f");
+  const dialog = await screen.findByRole("dialog");
   const editor = await within(dialog).findByRole("textbox", {
     name: "Message",
   });
-  expect(within(dialog).getByText(PASSAGE)).toBeInTheDocument();
-  await fill(editor, "Focus on the launch risks");
-  expect(editor).toHaveTextContent("Focus on the launch risks");
+  expect(dialog).toHaveTextContent(passage);
+  await fill(editor, "Focus on the launch risks.");
+  expect(editor).toHaveTextContent("Focus on the launch risks.");
 });
-
-test("Fork sends the selected passage and its source to a new personal chat", async () => {
-  const sends: CapturedChatSend[] = [];
-  installCapabilityChat({
-    events: completedConversation(`The ${PASSAGE}.`, "An unrelated answer."),
-    onSend(send) {
-      sends.push(send);
-    },
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  const originalComposer = await screen.findByRole("textbox", {
+test("chat-fork-006 a fork sends only the selected feedback and its source run to the new conversation", async () => {
+  const { sent, original } = await startFork();
+  click(await findFastControl("button", /^Fork/i));
+  const dialog = await screen.findByRole("dialog");
+  const editor = await within(dialog).findByRole("textbox", {
     name: "Message",
   });
-  const notifications = screen.getByRole("region", {
-    name: /^Notifications\b/,
-  });
-  await fill(originalComposer, "Keep my unfinished notes");
-  await selectPassage(PASSAGE);
-  click(await findEnabledButton("Fork"));
-  const dialog = await screen.findByRole("dialog", { name: "Okou" });
-  const note = await within(dialog).findByRole("textbox", {
-    name: "Add a message",
-  });
-  const user = userEvent.setup({ delay: null });
-  await user.type(note, "Explore the risks in a separate conversation");
-
-  click(await findEnabledButton("Send", dialog));
-
-  await within(notifications).findByText("New chat created");
-  const send = await waitForSend(sends, 1);
-  expect(send.threadId).toStrictEqual(expect.any(String));
-  expect(send.threadId).not.toBe(RUN_THREAD_ID);
-  expect(send.sourceRunId).toBe(FIRST_CAPABILITY_RUN_ID);
-  expect(send.userMessage?.parts).toStrictEqual(
+  const note = editor.querySelector<HTMLElement>(
+    "[data-feedback-note] p:last-child",
+  );
+  if (!note) {
+    throw new Error("The fork note has no editable paragraph");
+  }
+  await userEvent.click(note);
+  const range = document.createRange();
+  range.selectNodeContents(note);
+  range.collapse(false);
+  const selection = window.getSelection()!;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  await userEvent.keyboard("Explore the risks in a separate conversation.");
+  click(await findFastControl("button", "Send", dialog));
+  const body = await sent.promise;
+  expect(body.sourceRunId).toBe(FIRST_CAPABILITY_RUN_ID);
+  const destination = body.threadId ?? body.clientThreadId;
+  expect(destination).toStrictEqual(expect.any(String));
+  expect(destination).not.toBe(RUN_THREAD_ID);
+  expect(body.userMessage?.parts).toStrictEqual(
     expect.arrayContaining([
-      expect.objectContaining({ type: "feedback", quote: PASSAGE }),
+      expect.objectContaining({
+        type: "feedback",
+        quote: passage,
+        note: expect.arrayContaining([
+          {
+            type: "text",
+            text: "Explore the risks in a separate conversation.",
+          },
+        ]),
+      }),
     ]),
   );
-  expect(send.prompt).toContain("Explore the risks in a separate conversation");
-  expect(send.prompt).not.toContain("An unrelated answer.");
-  expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
+  expect(JSON.stringify(body.userMessage)).toContain(passage);
+  expect(JSON.stringify(body.userMessage)).not.toContain(
+    "Unrelated revision feedback",
+  );
+  expect(original).toHaveTextContent("Unfinished source notes");
 });
+
+test("chat-fork-001 forking into Launch keeps the original project and draft in view", async () => {
+  const project = {
+    id: "af000000-0000-4000-a000-000000078102",
+    name: "Launch",
+    createdAt: "2026-09-01T10:00:00Z",
+    updatedAt: "2026-09-01T10:00:00Z",
+  };
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation(passage),
+  });
+  const source = {
+    ...chatListThread(780, "Source launch plan"),
+    projectId: project.id,
+    id: RUN_THREAD_ID,
+  };
+  installChatListStream(context, { caseId: 780, snapshot: [source] });
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: [project],
+      latestEventId: null,
+      latestSeqId: 0,
+    });
+  });
+  const created = context.mocks.deferred<unknown>();
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    created.resolve(body);
+    return respond(201, {
+      id: body.clientThreadId!,
+      projectId: body.projectId,
+      title: null,
+      createdAt: "2026-09-01T12:00:00Z",
+      selectedModel: null,
+      serviceTier: null,
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  const original = await findComposerEditor();
+  await fill(original, "Keep my launch notes");
+  await screen.findByText(passage);
+  await selectPassage(passage);
+  await userEvent.keyboard("f");
+  const dialog = await screen.findByRole("dialog");
+  const editor = await within(dialog).findByRole("textbox", {
+    name: "Message",
+  });
+  click(editor);
+  await userEvent.keyboard("Explore another launch plan.");
+  click(await findFastControl("button", "Send", dialog));
+  await expect(created.promise).resolves.toMatchObject({
+    projectId: project.id,
+  });
+  await screen.findByText("New chat created");
+  expect(location.pathname).toBe(RUN_PATH);
+  expect(original).toHaveTextContent("Keep my launch notes");
+  await expect(screen.findByText("Launch")).resolves.toBeInTheDocument();
+  const group = document.querySelector(
+    '[data-project-children-id="' + project.id + '"]',
+  );
+  expect(group?.querySelector('a[href="' + RUN_PATH + '"]')).toHaveTextContent(
+    "Source launch plan",
+  );
+});
+
+test.each(["post first", "read first"] as const)(
+  "A fork keeps its source notes and announces the new chat while both services are pending (%s)",
+  async (order) => {
+    const POST = context.mocks.deferred<void>(),
+      read = context.mocks.deferred<void>();
+    const started = context.mocks.deferred<string>(),
+      begun = context.mocks.deferred<void>();
+    const accepted = context.mocks.deferred<{ prompt?: string }>();
+    const appliedRead = context.mocks.deferred<void>();
+    const parse = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const body: unknown = await parse.call(this);
+      if (
+        this.status === 200 &&
+        read.settled() &&
+        this.url &&
+        new URL(this.url).pathname === chatThreadsContract.indicators.path &&
+        !appliedRead.settled()
+      ) {
+        appliedRead.resolve();
+      }
+      return body;
+    });
+    let listening = false;
+    const quote = "Three signed stages of the release";
+    mockChatLifecycle(context, {
+      threadId: RUN_THREAD_ID,
+      chatEvents: completedConversation(quote, "An unrelated comment"),
+      onRunCreate(body) {
+        accepted.resolve(body);
+      },
+      sendGate: async (body) => {
+        if (!started.settled()) {
+          started.resolve(body.prompt ?? "");
+        }
+        await POST.promise;
+      },
+    });
+    context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
+      if (listening) {
+        if (!begun.settled()) {
+          begun.resolve();
+        }
+        await read.promise;
+      }
+      return respond(200, { threads: {}, unreadAt: {} });
+    });
+    try {
+      await setupPage({ context, path: RUN_PATH });
+      const source = await findComposerEditor();
+      await fill(source, "Keep the existing notes.");
+      await screen.findByText(quote);
+      listening = true;
+      changeChatIndicators();
+      await begun.promise;
+      await selectPassage(quote);
+      click(await findFastControl("button", /^Fork/i));
+      const dialog = await screen.findByRole("dialog");
+      const textbox = await within(dialog).findByRole("textbox", {
+        name: "Message",
+      });
+      const note = textbox.querySelector<HTMLElement>(
+        "[data-feedback-note] p:last-child",
+      )!;
+      await userEvent.click(note);
+      const cursor = window.getSelection();
+      cursor?.collapse(note, note.childNodes.length);
+      await userEvent.keyboard("Review these stages with the team");
+      click(await findEnabledButton("Send", dialog));
+      const pendingMessage = await started.promise;
+      await screen.findByText("New chat created");
+      expect(dialog).not.toBeInTheDocument();
+      expect(source.textContent).toBe("Keep the existing notes.");
+      expect(POST.settled() || read.settled()).toBeFalsy();
+      expect(pendingMessage).toContain(quote);
+      expect(pendingMessage).toContain("Review these stages with the team");
+      if (order === "post first") {
+        POST.resolve();
+        await accepted.promise;
+      } else {
+        read.resolve();
+        await appliedRead.promise;
+      }
+      expect(accepted.settled()).toBe(order === "post first");
+      expect(appliedRead.settled()).toBe(order === "read first");
+      if (!POST.settled()) {
+        POST.resolve();
+      }
+      if (!read.settled()) {
+        read.resolve();
+      }
+      await appliedRead.promise;
+      const request = await accepted.promise;
+      expect(request.prompt).toContain(quote);
+      expect(request.prompt).toContain("Review these stages with the team");
+      expect(source).toHaveTextContent("Keep the existing notes.");
+    } finally {
+      if (!POST.settled()) {
+        POST.resolve();
+      }
+      if (!read.settled()) {
+        read.resolve();
+      }
+    }
+  },
+);

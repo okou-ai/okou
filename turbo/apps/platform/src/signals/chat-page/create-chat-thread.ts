@@ -2487,12 +2487,12 @@ function createChatThreadMessagePipeline({
       if (target?.type !== "artifact" || target.source.kind !== "attachment") {
         return;
       }
-      const refresh$ = target.source.ref.refresh$;
+      const refresh$ = target.source.ref.refreshOnArtifactChange$;
       // Raw URLs own a graph outside the card registry; shared card refs
       // were already invalidated above.
       if (
         !get(resources.artifactCardSignals.values$).some((card) => {
-          return card.refresh$ === refresh$;
+          return card.refreshOnArtifactChange$ === refresh$;
         })
       ) {
         set(refresh$);

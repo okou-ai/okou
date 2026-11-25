@@ -31,10 +31,8 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
     cases = CASES if cases is None else cases
     result, collector, terminals = report._validate_cases(directory, cases, report.PHASES)
     policy = supplied_policy(collector, result, policy_key)
-    witnesses = {case: [] for case in cases}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in cases,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, cases,
         invalid_message="invalid batch ABA witness",
     )
     runners, paths = set(), set()
@@ -116,9 +114,10 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
         entered = clock(tail.get("kernel_io_entered_ns"), terminal[3]["monotonic_ns"], events[5]["monotonic_ns"])
         foreground.observer(tail.get("observer"), entered, events[5]["monotonic_ns"])
         third = foreground.heartbeat(tail.get("heartbeat"), 3, tail["observer"]["completed_ns"], events[5]["monotonic_ns"])
-        if first != second or first != third or first in runners:
-            raise ValueError("batch ABA heartbeat identity changed or replayed")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second, third), runners,
+            "batch ABA heartbeat identity changed or replayed",
+        )
         coverage(tail.get("coverage"), policy, False)
         exact(tail, {"recovery_started_ns": started, "kernel_io_entered_ns": entered, "kernel_io_entered": True,
             "receiver_polled_pending": True, "original_exit_confirmed": True,

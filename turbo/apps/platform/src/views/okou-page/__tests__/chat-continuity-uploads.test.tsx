@@ -1,705 +1,365 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { CLIENT_TYPE_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { expect, test, vi } from "vitest";
-
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import { fastButton } from "./chat-list-test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Expected the composer file input");
-  }
-  return input;
-}
-
-async function messageComposer(): Promise<HTMLElement> {
-  return await screen.findByRole("textbox", { name: "Message" });
-}
-
-function composerDropTarget(): HTMLElement {
-  const target = document.querySelector<HTMLElement>(
-    "[data-slot='chat-composer-card']",
+async function uploader(host?: string) {
+  await setupPage({ context, path: RUN_PATH, host });
+  await findComposerEditor();
+  const picker = document.querySelector<HTMLInputElement>(
+    "input[type=file][multiple]",
   );
-  if (!target) {
-    throw new Error("Expected the composer drop target");
+  if (!picker) {
+    throw new Error("File picker unavailable");
   }
-  return target;
+  return picker;
 }
-
-function uploadId(caseId: number, slot: number): string {
-  return `f8000000-0000-4000-a000-${(caseId * 100 + slot)
-    .toString()
-    .padStart(12, "0")}`;
-}
-
-function uploadUrl(caseId: number, filename: string): string {
-  return `https://uploads.vm7.test/${caseId}/${encodeURIComponent(filename)}`;
-}
-
-function captureStorageTransfers(): XMLHttpRequestUpload[] {
-  const uploads: XMLHttpRequestUpload[] = [];
-  const addListener = XMLHttpRequestUpload.prototype.addEventListener;
-  // MSW wraps upload targets in a proxy whose dispatchEvent is a no-op.
-  vi.spyOn(
-    XMLHttpRequestUpload.prototype,
-    "addEventListener",
-  ).mockImplementation(function (
-    this: XMLHttpRequestUpload,
-    type,
-    listener,
-    options,
-  ) {
-    if (type === "progress") {
-      uploads.push(this);
-    }
-    addListener.call(this, type, listener, options);
-  });
-  return uploads;
-}
-
-function reportSentBytes(
-  upload: XMLHttpRequestUpload,
-  loaded: number,
-  total: number,
-): void {
-  act(() => {
-    upload.dispatchEvent(
-      new ProgressEvent("progress", { loaded, total, lengthComputable: true }),
-    );
-  });
-}
-
-function installSimpleUploads(
-  caseId: number,
-  captured: Map<string, string>,
-): void {
-  let requestIndex = 0;
+const origin = "https://storage.example.test";
+const metadata = (
+  file: { filename: string; contentType: string; size: number },
+  id: string,
+) => {
+  return {
+    id,
+    ...file,
+    url: "http://localhost/api/web/file-url?file_id=" + id,
+  };
+};
+test("chat-continuity-uploads-001 each file uses its own MIME type and storage receives no credentials", async () => {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  const types = new Map<string, string>(),
+    requests = new Map<string, Request>();
   context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
-    requestIndex += 1;
-    captured.set(body.filename, body.contentType);
+    types.set(body.filename, body.contentType);
     return respond(200, {
-      id: uploadId(caseId, requestIndex),
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url: `https://cdn.vm7.io/chat-continuity/${caseId}/${encodeURIComponent(body.filename)}`,
-      uploadUrl: uploadUrl(caseId, body.filename),
+      ...metadata(body, body.filename),
+      uploadUrl: origin + "/" + body.filename,
       uploadHeaders: {},
     });
   });
-}
-
-function sentFilenames(
-  parts: readonly {
-    readonly type: string;
-    readonly filenameSnapshot?: string;
-  }[],
-): string[] {
-  return parts.flatMap((part) => {
-    return part.type === "file" && part.filenameSnapshot
-      ? [part.filenameSnapshot]
-      : [];
-  });
-}
-
-async function setupAttachmentInputMethods() {
-  const thread = continuityThread(9, 1, "Attachment input methods");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 9,
-    threads: [thread],
-  });
-  const contentTypes = new Map<string, string>();
-  const transferCredentials: {
-    cookie: string | null;
-    authorization: string | null;
-    clientType: string | null;
-    previewBypass: string | null;
-  }[] = [];
-  installSimpleUploads(9, contentTypes);
-  context.mocks.http.put("https://uploads.vm7.test/9/*", ({ request }) => {
-    transferCredentials.push({
-      cookie: request.headers.get("Cookie"),
-      authorization: request.headers.get("Authorization"),
-      clientType: request.headers.get(CLIENT_TYPE_HEADER),
-      previewBypass: request.headers.get("X-Vercel-Protection-Bypass"),
-    });
+  context.mocks.http.put(origin + "/:name", ({ request }) => {
+    requests.set(new URL(request.url).pathname.slice(1), request);
     return new HttpResponse(null, { status: 200 });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  await messageComposer();
-  return { contentTypes, transferCredentials };
-}
-
-test("Attach supported files with the file picker", async () => {
-  const { contentTypes, transferCredentials } =
-    await setupAttachmentInputMethods();
-  const ordinary = new File(["# Notes"], "release-notes.md");
-  const uncommon = new File(["custom"], "sample.uncommon");
-  await userEvent.upload(composerFileInput(), [ordinary, uncommon]);
-  await waitFor(() => {
-    expect(fastButton("Remove release-notes.md")).toBeVisible();
-    expect(fastButton("Remove sample.uncommon")).toBeVisible();
-  });
-  expect(contentTypes.get("release-notes.md")).toBe("text/markdown");
-  expect(contentTypes.get("sample.uncommon")).toBe("application/octet-stream");
-  expect(transferCredentials).toStrictEqual([
-    {
-      cookie: null,
-      authorization: null,
-      clientType: null,
-      previewBypass: null,
-    },
-    {
-      cookie: null,
-      authorization: null,
-      clientType: null,
-      previewBypass: null,
-    },
-  ]);
-});
-
-test("Accept supported drops and reject an oversized dropped file", async () => {
-  const { contentTypes } = await setupAttachmentInputMethods();
-  const dropped = new File(["drop"], "dropped.txt", { type: "text/plain" });
-  const oversized = new File(["too large"], "archive.iso", {
-    type: "application/octet-stream",
-  });
-  Object.defineProperty(oversized, "size", {
-    configurable: true,
-    value: 5 * 1024 * 1024 * 1024 + 1,
-  });
-  fireEvent.drop(composerDropTarget(), {
-    dataTransfer: { types: ["Files"], files: [dropped, oversized] },
-  });
-
-  await expect(
-    screen.findByText("archive.iso exceeds the 5 GB limit"),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(fastButton("Remove dropped.txt")).toBeVisible();
-  });
-  expect(contentTypes.get("dropped.txt")).toBe("text/plain");
-  expect(contentTypes.has("archive.iso")).toBeFalsy();
-});
-
-test("Complete uploads returned as absolute private Artifact URLs", async () => {
-  const thread = continuityThread(14, 1, "Absolute private upload");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 14,
-    threads: [thread],
-  });
-  const id = uploadId(14, 1);
-  const artifactUrl = "http://localhost/artifacts/abc123def4.txt";
-  const completedIds: string[] = [];
-  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
-    return respond(200, {
-      id,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url: artifactUrl,
-      uploadUrl: uploadUrl(14, body.filename),
-      uploadHeaders: {},
-    });
   });
   context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
-    completedIds.push(body.id);
-    return respond(200, {
-      id,
-      filename: "private.txt",
-      contentType: "text/plain",
-      size: 7,
-      url: artifactUrl,
-    });
+    return respond(
+      200,
+      metadata(
+        { filename: body.id, contentType: types.get(body.id)!, size: 4 },
+        body.id,
+      ),
+    );
   });
-  context.mocks.http.put(uploadUrl(14, "private.txt"), () => {
-    return new HttpResponse(null, { status: 200 });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  await messageComposer();
-  await userEvent.upload(
-    composerFileInput(),
-    new File(["private"], "private.txt", { type: "text/plain" }),
-  );
-  await waitFor(() => {
-    expect(fastButton("Remove private.txt")).toBeVisible();
-  });
-  expect(completedIds).toStrictEqual([id]);
-});
-
-test("Keep successful attachments after another upload fails", async () => {
-  const thread = continuityThread(11, 1, "Partial upload result");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 11,
-    threads: [thread],
-  });
-  installSimpleUploads(11, new Map());
-  context.mocks.http.put(uploadUrl(11, "ready.txt"), () => {
-    return new HttpResponse(null, { status: 200 });
-  });
-  context.mocks.http.put(uploadUrl(11, "failed.txt"), () => {
-    return new HttpResponse(null, { status: 503 });
-  });
-  let deliveredAttachments: string[] = [];
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    if (body.userMessage === undefined) {
-      throw new Error("Expected a user message send");
-    }
-    deliveredAttachments = sentFilenames(body.userMessage.parts);
-    return respond(201, {
-      threadId: body.threadId ?? thread.id,
-      createdAt: "2026-08-11T04:00:00.000Z",
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  const composer = await messageComposer();
-  await userEvent.type(composer, "Send the file that succeeded");
-  await userEvent.upload(composerFileInput(), [
-    new File(["good"], "ready.txt", { type: "text/plain" }),
-    new File(["bad"], "failed.txt", { type: "text/plain" }),
+  const picker = await uploader();
+  await userEvent.upload(picker, [
+    new File(["note"], "plan.md"),
+    new File(["data"], "plot.xx76"),
   ]);
-
-  await waitFor(() => {
-    expect(fastButton("Remove ready.txt")).toBeInTheDocument();
-    expect(fastButton("Send")).toBeEnabled();
-  });
-  expect(screen.queryByText("failed.txt")).not.toBeInTheDocument();
-  await expect(
-    screen.findByText("Failed to upload failed.txt."),
-  ).resolves.toBeInTheDocument();
-  await userEvent.click(fastButton("Send"));
-  await waitFor(() => {
-    expect(deliveredAttachments).toStrictEqual(["ready.txt"]);
-  });
+  for (const [name, mime] of [
+    ["plan.md", "text/markdown"],
+    ["plot.xx76", "application/octet-stream"],
+  ]) {
+    await findFastControl("button", "Remove " + name);
+    expect(types.get(name)).toBe(mime);
+    const request = requests.get(name)!;
+    expect(request.credentials).not.toBe("include");
+    for (const header of [
+      "cookie",
+      "authorization",
+      "x-client-type",
+      "x-vercel-protection-bypass",
+    ]) {
+      expect(request.headers.has(header)).toBeFalsy();
+    }
+  }
 });
-
-const PART_BYTES = 5 * 1024 * 1024;
-
-test("Show byte progress while a single PUT is still transferring", async () => {
-  const thread = continuityThread(38, 1, "Single upload progress");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 38,
-    threads: [thread],
+test("chat-continuity-uploads-004 after a storage failure only the ready file accompanies the sent message", async () => {
+  const sent = context.mocks.deferred<unknown>();
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    onSendRequest: (b) => {
+      return sent.resolve(b);
+    },
   });
-  const id = uploadId(38, 1);
-  const url = "http://localhost/artifacts/abc123def4.bin";
-  const transferStarted = createDeferredPromise<void>(context.signal);
-  const transferred = createDeferredPromise<void>(context.signal);
-  const finalized = createDeferredPromise<void>(context.signal);
+  const records = new Map<string, ReturnType<typeof metadata>>();
   context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
-    expect(body.multipart).toBeUndefined();
+    const file = metadata(body, crypto.randomUUID());
+    records.set(file.id, file);
     return respond(200, {
-      id,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url,
-      uploadUrl: uploadUrl(38, body.filename),
+      ...file,
+      uploadUrl: origin + "/" + body.filename,
       uploadHeaders: {},
     });
   });
-  context.mocks.http.put(uploadUrl(38, "single.bin"), async () => {
-    transferStarted.resolve();
-    await transferred.promise;
+  context.mocks.http.put(origin + "/ready.txt", () => {
     return new HttpResponse(null, { status: 200 });
   });
-  context.mocks.api(uploadsContract.complete, async ({ respond }) => {
-    await finalized.promise;
-    return respond(200, {
-      id,
-      filename: "single.bin",
-      contentType: "application/octet-stream",
-      size: 4 * 1024 * 1024,
-      url,
-    });
+  context.mocks.http.put(origin + "/failed.txt", () => {
+    return new HttpResponse(null, { status: 503 });
   });
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    return respond(200, records.get(body.id)!);
   });
-  await messageComposer();
-  const requests = captureStorageTransfers();
-  const bytes = 4 * 1024 * 1024;
+  const picker = await uploader();
+  await fill(await findComposerEditor(), "Ship the ready file");
   await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(bytes)], "single.bin"),
+    picker,
+    ["ready", "failed"].map((n) => {
+      return new File([n], n + ".txt", { type: "text/plain" });
+    }),
   );
-  await transferStarted.promise;
-  const progress = await screen.findByRole("progressbar", {
-    name: "Loading single.bin",
-  });
-  expect(progress).toHaveAttribute("aria-valuenow", "0");
-  expect(requests).toHaveLength(1);
-  for (const percent of [25, 50, 75]) {
-    reportSentBytes(requests[0]!, (bytes * percent) / 100, bytes);
-    await waitFor(() => {
-      expect(progress).toHaveAttribute("aria-valuenow", String(percent));
+  await screen.findByText("Failed to upload failed.txt.");
+  expect(screen.getAllByText("Failed to upload failed.txt.")).toHaveLength(1);
+  await findFastControl("button", "Remove ready.txt");
+  expect(queryFastControl("button", "Remove failed.txt")).toBeNull();
+  click(await findFastControl("button", "Send"));
+  const body = await sent.promise;
+  expect(JSON.stringify(body)).toContain("ready.txt");
+  expect(JSON.stringify(body)).not.toContain("failed.txt");
+});
+test("chat-continuity-uploads-013 a file exactly at the limit starts uploading and can be cancelled", async () => {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  const prepared = context.mocks.deferred<number>();
+  const held = context.mocks.deferred<void>();
+  context.mocks.api(uploadsContract.prepare, async ({ body, respond }) => {
+    prepared.resolve(body.size);
+    await held.promise;
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Unused" },
     });
-  }
-  transferred.resolve();
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "99");
   });
-  finalized.resolve();
+  const recording = new File(["a"], "recording.webm", { type: "video/webm" });
+  Object.defineProperty(recording, "size", { value: 5 * 1024 ** 3 });
+  await userEvent.upload(await uploader(), recording);
+  const cancel = await findFastControl(
+    "button",
+    "Cancel upload recording.webm",
+  );
+  await expect(screen.findByRole("progressbar")).resolves.toBeInTheDocument();
+  await expect(prepared.promise).resolves.toBe(5 * 1024 ** 3);
+  click(cancel);
   await waitFor(() => {
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(fastButton("Remove single.bin")).toBeInTheDocument();
+    return expect(cancel).not.toBeInTheDocument();
   });
+  held.resolve();
 });
 
-async function setupMultipartUpload(
-  caseId: number,
-  complete: () => Promise<void> = async () => {},
-) {
-  const thread = continuityThread(caseId, 1, "Large attachment upload");
-  const workspace = installContinuityWorkspace(context, {
-    caseId,
-    threads: [thread],
+async function multipartRecording(missing = false) {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  const block = 5 * 1024 * 1024,
+    id = crypto.randomUUID(),
+    filename = "review.webm",
+    size = 4 * block + 1;
+  const meta = metadata({ filename, contentType: "video/webm", size }, id);
+  const transfers = Array.from({ length: 5 }, () => {
+    return {
+      started: context.mocks.deferred<number>(),
+      release: context.mocks.deferred<void>(),
+      cancelled: context.mocks.deferred<void>(),
+    };
   });
-  const id = uploadId(caseId, 1);
-  const url = `https://cdn.vm7.io/uploads/${caseId}/recording.mp4`;
-  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
-    expect(body.multipart).toBeTruthy();
+  const finalizing = context.mocks.deferred<void>(),
+    completed = context.mocks.deferred<void>();
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
     return respond(200, {
-      id,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url,
+      ...meta,
       multipart: {
-        uploadId: `multipart-${caseId}`,
-        partSize: PART_BYTES,
-        parts: Array.from(
-          { length: Math.ceil(body.size / PART_BYTES) },
-          (_, index) => {
-            return {
-              partNumber: index + 1,
-              uploadUrl: `https://uploads.vm7.test/${caseId}/part-${index + 1}`,
-            };
-          },
-        ),
+        uploadId: "review-session",
+        partSize: block,
+        parts: transfers.map((_, i) => {
+          return {
+            partNumber: i + 1,
+            uploadUrl: origin + "/part/" + String(i + 1),
+          };
+        }),
       },
     });
   });
   context.mocks.api(uploadsContract.completeMultipart, async ({ respond }) => {
-    await complete();
-    return respond(200, { id, url });
+    finalizing.resolve();
+    await completed.promise;
+    if (missing) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Multipart upload not found" },
+      });
+    }
+    return respond(200, { id, url: meta.url });
   });
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  await messageComposer();
-}
-
-test("Bound concurrent parts and show byte progress until finalization succeeds", async () => {
-  const completed = createDeferredPromise<void>(context.signal);
-  await setupMultipartUpload(31, () => {
-    return completed.promise;
-  });
-  const parts = new Map<
-    number,
-    ReturnType<typeof createDeferredPromise<void>>
-  >();
-  const lengths = new Map<number, number>();
-  context.mocks.http.put(
-    "https://uploads.vm7.test/31/part-:part",
-    async ({ request, params, signal }) => {
-      const part = Number(params.part);
-      lengths.set(part, (await request.arrayBuffer()).byteLength);
-      const transferred = createDeferredPromise<void>(signal);
-      parts.set(part, transferred);
-      await transferred.promise;
-      return new HttpResponse(null, { status: 200 });
-    },
-  );
-  const requests = captureStorageTransfers();
-  await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(4 * PART_BYTES + 1)], "recording.mp4", {
-      type: "video/mp4",
-    }),
-  );
-  const progress = await screen.findByRole("progressbar", {
-    name: "Loading recording.mp4",
-  });
-  await waitFor(() => {
-    expect(parts.size).toBe(4);
-  });
-  expect(progress).toHaveAttribute("aria-valuenow", "0");
-  reportSentBytes(requests[0]!, PART_BYTES / 2, PART_BYTES);
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "12");
-  });
-  parts.get(2)?.resolve();
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "37");
-    expect(parts.size).toBe(5);
-  });
-  for (const [number, part] of parts) {
-    if (number !== 2) {
-      part.resolve();
+  const partRequests = new Map<string, EventTarget>();
+  class StoragePart extends EventTarget {
+    readonly upload = new EventTarget();
+    status = 0;
+    private url = "";
+    private cancelled = false;
+    open(method: string, url: string) {
+      if (method !== "PUT" || !url.startsWith(origin + "/part/")) {
+        throw new Error("Unexpected storage destination " + url);
+      }
+      this.url = url;
+      partRequests.set(url, this.upload);
+    }
+    readonly headers = new Headers();
+    setRequestHeader(name: string, value: string) {
+      this.headers.set(name, value);
+    }
+    async send(body: Blob) {
+      const transfer =
+        transfers[Number(new URL(this.url).pathname.split("/").at(-1)) - 1]!;
+      transfer.started.resolve(body.size);
+      await transfer.release.promise;
+      if (!this.cancelled) {
+        this.status = 200;
+        this.dispatchEvent(new Event("load"));
+      }
+    }
+    abort() {
+      this.cancelled = true;
+      transfers[
+        Number(new URL(this.url).pathname.split("/").at(-1)) - 1
+      ]!.cancelled.resolve();
+      this.dispatchEvent(new Event("abort"));
     }
   }
+  vi.stubGlobal("XMLHttpRequest", StoragePart);
+  await userEvent.upload(
+    await uploader(),
+    new File([new Uint8Array(size)], filename, { type: "video/webm" }),
+  );
+  return { transfers, partRequests, finalizing, completed, block };
+}
+test("chat-continuity-uploads-006 progress tracks uploaded bytes and waits at 99 until finalization", async () => {
+  const { transfers, partRequests, block, completed, finalizing } =
+    await multipartRecording();
+  await Promise.all(
+    transfers.slice(0, 4).map((t) => {
+      return t.started.promise;
+    }),
+  );
+  expect(transfers[4]!.started.settled()).toBeFalsy();
+  const bar = await screen.findByRole("progressbar");
+  partRequests.get(origin + "/part/1")!.dispatchEvent(
+    new ProgressEvent("progress", {
+      loaded: block / 2,
+      total: block,
+      lengthComputable: true,
+    }),
+  );
   await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "99");
+    return expect(bar).toHaveAttribute("aria-valuenow", "12");
   });
-  expect(lengths.get(5)).toBe(1);
+  transfers[1]!.release.resolve();
+  await expect(transfers[4]!.started.promise).resolves.toBe(1);
+  await waitFor(() => {
+    return expect(bar).toHaveAttribute("aria-valuenow", "37");
+  });
+  for (const t of transfers) {
+    if (!t.release.settled()) {
+      t.release.resolve();
+    }
+  }
+  await finalizing.promise;
+  expect(bar).toHaveAttribute("aria-valuenow", "99");
   completed.resolve();
-  await waitFor(() => {
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
-  });
+  await findFastControl("button", "Remove review.webm");
+  expect(bar).not.toBeInTheDocument();
 });
-
-test("Preserve partial byte progress across a retry without double counting", async () => {
-  await setupMultipartUpload(39);
-  const firstFailed = createDeferredPromise<void>(context.signal);
-  const retryTransferred = createDeferredPromise<void>(context.signal);
-  const otherTransferred = createDeferredPromise<void>(context.signal);
-  const attempts = new Map<string, number>();
-  context.mocks.http.put(
-    "https://uploads.vm7.test/39/part-:part",
-    async ({ params }) => {
-      const part = String(params.part);
-      const attempt = (attempts.get(part) ?? 0) + 1;
-      attempts.set(part, attempt);
-      if (part === "1" && attempt === 1) {
-        await firstFailed.promise;
-        return HttpResponse.error();
-      }
-      await (part === "1"
-        ? retryTransferred.promise
-        : otherTransferred.promise);
-      return new HttpResponse(null, { status: 200 });
-    },
-  );
-  const requests = captureStorageTransfers();
-  await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(2 * PART_BYTES)], "recording.mp4", {
-      type: "video/mp4",
+test("chat-continuity-uploads-014 cancelling four active parts leaves the fifth part queued", async () => {
+  const { transfers } = await multipartRecording();
+  await Promise.all(
+    transfers.slice(0, 4).map((t) => {
+      return t.started.promise;
     }),
   );
+  expect(transfers[4]!.started.settled()).toBeFalsy();
+  const progress = await screen.findByRole("progressbar");
+  click(await findFastControl("button", "Cancel upload review.webm"));
   await waitFor(() => {
-    expect(attempts.size).toBe(2);
+    return expect(progress).not.toBeInTheDocument();
   });
-  const progress = await screen.findByRole("progressbar", {
-    name: "Loading recording.mp4",
-  });
-  reportSentBytes(requests[0]!, 2 * 1024 * 1024, PART_BYTES);
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "20");
-  });
-  firstFailed.resolve();
-  await waitFor(() => {
-    expect(attempts.get("1")).toBe(2);
-    expect(requests).toHaveLength(3);
-  });
-  reportSentBytes(requests[2]!, 1024 * 1024, PART_BYTES);
-  expect(progress).toHaveAttribute("aria-valuenow", "20");
-  reportSentBytes(requests[2]!, 3 * 1024 * 1024, PART_BYTES);
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "30");
-  });
-  retryTransferred.resolve();
-  await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "50");
-  });
-  otherTransferred.resolve();
-  await waitFor(() => {
-    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
-  expect(attempts.get("2")).toBe(1);
-});
-
-test("Retry transient part failures without retransferring successful parts", async () => {
-  await setupMultipartUpload(32);
-  const attempts = new Map<string, number>();
-  context.mocks.http.put(
-    "https://uploads.vm7.test/32/part-:part",
-    ({ params }) => {
-      const part = String(params.part);
-      const attempt = (attempts.get(part) ?? 0) + 1;
-      attempts.set(part, attempt);
-      if (part === "1" && attempt < 3) {
-        return attempt === 1
-          ? new HttpResponse(null, { status: 503 })
-          : HttpResponse.error();
-      }
-      return new HttpResponse(null, { status: 200 });
-    },
-  );
-  await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(PART_BYTES + 1)], "recording.mp4", {
-      type: "video/mp4",
+  await Promise.all(
+    transfers.slice(0, 4).map((t) => {
+      return t.cancelled.promise;
     }),
   );
-  await waitFor(() => {
-    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
-  expect(attempts.get("1")).toBe(3);
-  expect(attempts.get("2")).toBe(1);
-  expect(
-    screen.queryByText("Failed to upload recording.mp4."),
-  ).not.toBeInTheDocument();
+  expect(transfers[4]!.started.settled()).toBeFalsy();
+  expect(screen.queryByText(/failed to upload/i)).toBeNull();
+  for (const t of transfers) {
+    if (!t.release.settled()) {
+      t.release.resolve();
+    }
+  }
 });
 
-test.each([
-  { status: 503, expectedAttempts: 5 },
-  { status: 403, expectedAttempts: 1 },
-])(
-  "Show one failure toast after storage returns $status",
-  async ({ status, expectedAttempts }) => {
-    await setupMultipartUpload(33);
-    let attempts = 0;
-    context.mocks.http.put("https://uploads.vm7.test/33/*", () => {
-      attempts += 1;
-      return new HttpResponse(null, { status });
-    });
-    await userEvent.upload(
-      composerFileInput(),
-      new File([new Uint8Array(PART_BYTES)], "recording.mp4", {
-        type: "video/mp4",
-      }),
-    );
-    await expect(
-      screen.findByText("Failed to upload recording.mp4."),
-    ).resolves.toBeInTheDocument();
-    expect(attempts).toBe(expectedAttempts);
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  },
-);
-
-test("Report a finalization failure once without replaying completion", async () => {
-  await setupMultipartUpload(35);
-  let completions = 0;
-  context.mocks.api(uploadsContract.completeMultipart, ({ respond }) => {
-    completions += 1;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Multipart upload not found" },
+test("A completed private upload remains removable in the chat composer", async () => {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  const id = crypto.randomUUID();
+  const file = {
+    ...metadata(
+      { filename: "private.txt", contentType: "text/plain", size: 6 },
+      id,
+    ),
+    url: "https://app.okou.ai/artifacts/" + id.replaceAll("-", "") + ".txt",
+  };
+  const finalized = context.mocks.deferred<string>();
+  const complete = context.mocks.deferred<void>();
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+    return respond(200, {
+      ...file,
+      uploadUrl: origin + "/private",
+      uploadHeaders: {},
     });
   });
-  context.mocks.http.put("https://uploads.vm7.test/35/*", () => {
+  context.mocks.http.put(origin + "/private", () => {
     return new HttpResponse(null, { status: 200 });
   });
-  await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(PART_BYTES)], "recording.mp4", {
-      type: "video/mp4",
-    }),
-  );
-  await expect(
-    screen.findByText("Multipart upload not found"),
-  ).resolves.toBeInTheDocument();
-  expect(completions).toBe(1);
-  expect(
-    screen.queryByText("Failed to upload recording.mp4."),
-  ).not.toBeInTheDocument();
-});
-
-test("Keep unauthorized upload preparation quiet", async () => {
-  await setupMultipartUpload(37);
-  const rejected = createDeferredPromise<void>(context.signal);
-  context.mocks.api(uploadsContract.prepare, async ({ respond }) => {
-    await rejected.promise;
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
-    });
+  context.mocks.api(uploadsContract.complete, async ({ body, respond }) => {
+    if (!finalized.settled()) {
+      finalized.resolve(body.id);
+    }
+    await complete.promise;
+    return respond(200, file);
   });
   await userEvent.upload(
-    composerFileInput(),
-    new File(["unauthorized"], "unauthorized.txt", { type: "text/plain" }),
+    await uploader("app.okou.ai"),
+    new File(["secret"], file.filename, { type: "text/plain" }),
   );
-  await expect(
-    screen.findByRole("progressbar", { name: "Loading unauthorized.txt" }),
-  ).resolves.toBeInTheDocument();
-  rejected.resolve();
+  await expect(finalized.promise).resolves.toBe(id);
+  await fill(await findComposerEditor(), "Summarize the private note");
+  complete.resolve();
+  const remove = await findFastControl("button", "Remove private.txt");
+  click(remove);
   await waitFor(() => {
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(remove).not.toBeInTheDocument();
   });
-  expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
-  expect(
-    screen.queryByText("Failed to upload unauthorized.txt."),
-  ).not.toBeInTheDocument();
+  await expect(findComposerEditor()).resolves.toHaveTextContent(
+    "Summarize the private note",
+  );
 });
 
-test("Accept the 5 GiB picker boundary before starting the transfer", async () => {
-  await setupMultipartUpload(36);
-  const sizes: number[] = [];
-  context.mocks.api(uploadsContract.prepare, ({ body, signal }) => {
-    sizes.push(body.size);
-    return createDeferredPromise<never>(signal).promise;
-  });
-  const file = new File(["sparse fixture"], "long-recording.mp4", {
-    type: "video/mp4",
-  });
-  Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 * 1024 });
-  await userEvent.upload(composerFileInput(), file);
-  await expect(
-    screen.findByRole("progressbar", { name: "Loading long-recording.mp4" }),
-  ).resolves.toBeInTheDocument();
-  expect(sizes).toStrictEqual([5 * 1024 * 1024 * 1024]);
-  await userEvent.click(fastButton("Cancel upload long-recording.mp4"));
-});
-
-test("Cancel active parts without a failure toast or starting queued parts", async () => {
-  await setupMultipartUpload(34);
-  let started = 0;
-  context.mocks.http.put("https://uploads.vm7.test/34/*", ({ signal }) => {
-    started += 1;
-    return createDeferredPromise<never>(signal).promise;
-  });
-  await userEvent.upload(
-    composerFileInput(),
-    new File([new Uint8Array(4 * PART_BYTES + 1)], "recording.mp4", {
-      type: "video/mp4",
-    }),
-  );
-  await waitFor(() => {
-    expect(started).toBe(4);
-  });
-  await userEvent.click(fastButton("Cancel upload recording.mp4"));
-  await waitFor(() => {
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
-  expect(started).toBe(4);
-  expect(
-    screen.queryByText("Failed to upload recording.mp4."),
-  ).not.toBeInTheDocument();
+test("chat-continuity-uploads-011 The recording shows the storage finalization error after its parts have transferred", async () => {
+  const upload = await multipartRecording(true);
+  for (const transfer of upload.transfers) {
+    transfer.release.resolve();
+  }
+  await upload.finalizing.promise;
+  expect(screen.queryByText("Multipart upload not found")).toBeNull();
+  const message = await findComposerEditor();
+  await fill(message, "Keep this recording draft");
+  upload.completed.resolve();
+  await screen.findByText("Multipart upload not found");
+  expect(screen.getAllByText("Multipart upload not found")).toHaveLength(1);
+  expect(screen.queryByText(/failed to upload/i)).toBeNull();
+  expect(message).toHaveTextContent("Keep this recording draft");
 });

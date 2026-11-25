@@ -211,6 +211,7 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
                 style =
                     MaterialTheme.typography.labelMedium.copy(
                         fontSize = minOf(12f, maxTextSize.value).sp,
+                        fontWeight = FontWeight.Bold,
                         letterSpacing = 0.sp,
                         fontFeatureSettings = "tnum",
                     ),
@@ -516,15 +517,18 @@ private fun RequiredUpdateScreen(
                     title =
                         stringResource(
                             when {
+                                requiresNewerAndroid && shortTitle ->
+                                    R.string.updates_required_incompatible_short
                                 requiresNewerAndroid -> R.string.updates_required_incompatible
                                 shortTitle -> R.string.updates_required_short
                                 else -> R.string.updates_required
                             },
                         ),
                     compact = compact,
+                    shortTitle = shortTitle,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
-                Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+                Spacer(Modifier.height(8.dp))
                 UpdateAction(
                     state,
                     check,
@@ -543,6 +547,7 @@ private fun RequiredUpdateContent(
     state: UpdateUiState,
     title: String,
     compact: Boolean,
+    shortTitle: Boolean,
     modifier: Modifier,
 ) {
     val groupSpacing = entrySpacing(compact)
@@ -604,7 +609,7 @@ private fun RequiredUpdateContent(
                         textAlign = TextAlign.Center,
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(if (shortTitle) 12.dp else 16.dp))
                 FlowRow(
                     horizontalArrangement =
                         Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
@@ -744,9 +749,13 @@ private fun UpdateAction(
 ) {
     val transfer = state.transfer
     val colors = MaterialTheme.colorScheme
-    val shape = if (state.required) ButtonDefaults.shape else RoundedCornerShape(12.dp)
+    val useEntryActionStyle = state.required && transfer !is UpdateTransfer.Downloading
+    val shape = if (useEntryActionStyle) ButtonDefaults.shape else RoundedCornerShape(12.dp)
     val foreground = if (state.required) colors.onPrimary else colors.inverseOnSurface
     val background = if (state.required) colors.primary else colors.inverseSurface
+    val contentPadding =
+        if (useEntryActionStyle) PaddingValues(16.dp, updateActionVerticalPadding)
+        else updateActionPadding
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
     val waitingForCheck =
         state.check == UpdateCheck.Waiting && !state.canInstall && !state.canDownload
@@ -797,7 +806,7 @@ private fun UpdateAction(
         ) {
             Text(
                 progress,
-                modifier = Modifier.padding(updateActionPadding),
+                modifier = Modifier.padding(contentPadding),
                 color = if (checking) colors.onSurfaceVariant else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
@@ -851,7 +860,7 @@ private fun UpdateAction(
         enabled = enabled,
         modifier = controlModifier.focusable(enabled = !enabled),
         shape = shape,
-        contentPadding = updateActionPadding,
+        contentPadding = contentPadding,
         colors =
             ButtonDefaults.buttonColors(
                 containerColor = background,
@@ -994,6 +1003,7 @@ internal fun Modifier.updateFocusOutline(
     shape: Shape,
     color: Color,
     keyboardOnly: Boolean = false,
+    outlineInset: Dp = 2.dp,
 ): Modifier {
     val focused = remember { mutableStateOf(false) }
     val showOutline = !keyboardOnly || LocalInputModeManager.current.inputMode == InputMode.Keyboard
@@ -1002,7 +1012,7 @@ internal fun Modifier.updateFocusOutline(
             drawContent()
             if (focused.value && showOutline) {
                 val width = 2.dp.toPx()
-                inset(width) {
+                inset(outlineInset.toPx()) {
                     drawOutline(
                         shape.createOutline(size, layoutDirection, this),
                         color,

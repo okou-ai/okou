@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.50](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.49...guest-storage-apply-v0.32.50) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** read ahead dense artifacts in wide local batches ([#50582](https://github.com/okou-ai/okou/issues/50582)) ([ba2b4ad](https://github.com/okou-ai/okou/commit/ba2b4ad71c6cb4c7269c95fbaff06f035eda234a))
+
+## [0.32.49](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.48...guest-storage-apply-v0.32.49) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner:** compact decoded storage apply manifests ([#50508](https://github.com/okou-ai/okou/issues/50508)) ([65487f7](https://github.com/okou-ai/okou/commit/65487f765b77fdb941a715f238660dc3add05f81))
+
 ## [0.32.48](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.47...guest-storage-apply-v0.32.48) (2026-11-24)
 
 ## [0.32.47](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.46...guest-storage-apply-v0.32.47) (2026-11-24)

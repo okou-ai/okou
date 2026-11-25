@@ -41,7 +41,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         status: "active",
         canBuyConcurrency: false,
         concurrencyPurchaseReviewAvailable: false,
-        canBuyCredits: false,
+        canBuyCredits: true,
         autoRechargeAllowed: false,
         restrictedBuiltInModels: true,
         workflowWebhookAutomationAllowed: false,

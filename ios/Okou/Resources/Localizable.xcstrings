@@ -1,6 +1,43 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Allow across your chats. Select this account here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Für alle deine Chats zulassen. Dieses Konto hier auswählen." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Permite el acceso en todos tus chats. Selecciona esta cuenta aquí." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Autoriser dans toutes vos discussions. Sélectionner ce compte ici." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "अपनी सभी चैट में अनुमति दें। यहाँ यह खाता चुनें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Izinkan di semua chat Anda. Pilih akun ini di sini." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Consenti in tutte le tue chat. Seleziona questo account qui." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "すべてのチャットで許可し、このチャットでこのアカウントを選択します。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "모든 채팅에서 허용하고 이 채팅에서 이 계정을 선택합니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Permita em todos os seus chats. Selecione esta conta aqui." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "允许在你的所有聊天中使用，并在此聊天中选择此账号。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "允許在你的所有聊天中使用，並在此聊天中選擇此帳號。" }
+        }
+      }
+    },
     "%lldd": {
       "localizations": {
         "de": {
@@ -19678,6 +19715,117 @@
         }
       }
     },
+    "Draft in %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Entwurf in %@" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Borrador en %@" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Brouillon dans %@" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "%@ में ड्राफ़्ट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Draf di %@" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Bozza in %@" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "%@ で下書き" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "%@에서 초안 작성" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Rascunho em %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "在 %@ 中起草" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "在 %@ 中起草" }
+        }
+      }
+    },
+    "Draft in the existing chat": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Entwurf im bestehenden Chat" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Borrador en el chat existente" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Brouillon dans le chat existant" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "मौजूदा चैट में ड्राफ़्ट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Draf di obrolan yang ada" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Bozza nella chat esistente" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "既存のチャットで下書き" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "기존 채팅에서 초안 작성" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Rascunho no chat existente" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "在现有对话中起草" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "在現有對話中起草" }
+        }
+      }
+    },
+    "Opening draft…": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Entwurf wird geöffnet…" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abriendo borrador…" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouverture du brouillon…" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ड्राफ़्ट खुल रहा है…" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Membuka draf…" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apertura bozza…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "下書きを開いています…" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "초안 여는 중…" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abrindo rascunho…" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在打开草稿…" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在打開草稿…" }
+        }
+      }
+    },
     "Sending…": {
       "localizations": {
         "de": {
@@ -20427,43 +20575,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "顯示完整郵件" }
-        }
-      }
-    },
-    "Show more": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Mehr anzeigen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Mostrar más" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Afficher plus" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "और दिखाएँ" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tampilkan lebih banyak" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Mostra di più" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "さらに表示" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "더 보기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Mostrar mais" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "展开" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "顯示更多" }
         }
       }
     },

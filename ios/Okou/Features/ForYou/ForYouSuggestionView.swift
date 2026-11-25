@@ -15,25 +15,15 @@ struct ForYouSuggestionView: View {
   var isContext = false
   let openSource: (String) -> Void
   let choose: (ForYouOption) -> Void
-  @State private var showsWholeReason = false
-  @State private var wholeReasonHeight: CGFloat = 0
-  @State private var shownReasonHeight: CGFloat = 0
-  /// The source and title above the reason.
-  @State private var leadHeight: CGFloat = 0
-  /// One line of the reason's type, and two, for how tall each further line is.
-  @State private var oneLine: CGFloat = 0
-  @State private var twoLines: CGFloat = 0
-  /// A long reason shows its first lines until it is opened, so a dense card keeps its
-  /// directions in view: as many as the card has room for, or these when the room isn't known.
-  private static let reasonLines = 3
   /// A direction's description keeps two lines, so two directions stay in view under a dense
   /// reason on a smaller phone.
   private static let descriptionLines = 2
   /// The card is a reading surface: a Title 3 heading over Body text, with Subheadline for
   /// secondary lines (docs/ios/mobile-design-system.md#type-roles).
   private static let labelFont = Font.okou(.body).weight(.medium)
-  /// The room between directions: enough that each reads as its own button.
-  private static let directionGap = OkouSpace.ten
+  /// The room between directions: enough that each reads as its own button, little enough that
+  /// the card keeps its room for the reason.
+  private static let directionGap = OkouSpace.sm
 
   private var source: (id: String, title: String)? {
     let target = suggestion.options.compactMap(\.threadId).first
@@ -45,17 +35,10 @@ struct ForYouSuggestionView: View {
   }
 
   var body: some View {
-    ForYouCardLayout(height: height, spacing: OkouSpace.xl, showsActions: !isContext) { room in
+    ForYouCardLayout(height: height, spacing: OkouSpace.xl, showsActions: !isContext) {
       VStack(alignment: .leading, spacing: OkouSpace.sm) {
         lead
-          .onGeometryChange(for: CGFloat.self) {
-            $0.size.height
-          } action: {
-            leadHeight = $0
-          }
-        // While a direction is written the room moves with the keyboard, so the reason keeps
-        // its first lines rather than reflowing as the keyboard rises.
-        if !suggestion.rationale.isEmpty { reason(lines: reasonLines(in: isContext ? nil : room)) }
+        if !suggestion.rationale.isEmpty { reason }
       }
     } actions: {
       VStack(spacing: Self.directionGap) {
@@ -93,101 +76,21 @@ struct ForYouSuggestionView: View {
     }
   }
 
-  /// As many lines of the reason as fit in the heading's room under the source and title, and at
-  /// least one, so the closed card never has to scroll and its Show more always shows; three when
-  /// the room isn't known. Only an opened reason scrolls, above the directions.
-  private func reasonLines(in room: CGFloat?) -> Int {
-    let nextLine = twoLines - oneLine
-    guard let room, leadHeight > 0, oneLine > 0, nextLine > 0 else { return Self.reasonLines }
-    let space = room - leadHeight - OkouSpace.sm - oneLine
-    guard space > 0 else { return 1 }
-    return 1 + Int((space / nextLine).rounded(.down))
+  /// Why Okou suggests it, whole. The card keeps one height, so a reason longer than its room
+  /// scrolls there above the directions rather than opening behind a Show more that could only
+  /// make it scroll.
+  private var reason: some View {
+    Text(suggestion.rationale).font(.okou(.body))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
-  /// Why Okou suggests it: its first lines, ending in Show more when they do not hold all of it,
-  /// so a long reason costs no extra row; the reason itself opens too. Once open, Show less
-  /// follows it. VoiceOver always reads the whole reason.
-  private func reason(lines: Int) -> some View {
-    let clipped = wholeReasonHeight > shownReasonHeight + OkouSpace.one
-    return VStack(alignment: .leading, spacing: 0) {
-      Text(suggestion.rationale).font(.okou(.body))
-        .foregroundStyle(OkouColor.mutedForeground)
-        .lineLimit(showsWholeReason ? nil : lines)
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) {
-          $0.size.height
-        } action: {
-          shownReasonHeight = $0
-        }
-        // The whole reason, laid out unseen at the same width, tells whether the lines shown
-        // hold all of it; one line and two tell how many lines the room holds.
-        .background(alignment: .top) {
-          ZStack(alignment: .top) {
-            Text(suggestion.rationale).font(.okou(.body))
-              .fixedSize(horizontal: false, vertical: true)
-              .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
-              } action: {
-                wholeReasonHeight = $0
-              }
-            Text(verbatim: "A").font(.okou(.body))
-              .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
-              } action: {
-                oneLine = $0
-              }
-            Text(verbatim: "A\nA").font(.okou(.body)).fixedSize()
-              .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
-              } action: {
-                twoLines = $0
-              }
-          }
-          .hidden()
-        }
-        .overlay(alignment: .bottomTrailing) {
-          if clipped && !showsWholeReason {
-            reasonToggle("Show more")
-              // The last line fades into the card under it, so the words never collide.
-              .padding(.leading, OkouSpace.hero + OkouSpace.lg)
-              .background {
-                LinearGradient(
-                  stops: [
-                    .init(color: OkouColor.card.opacity(0), location: 0),
-                    .init(color: OkouColor.card, location: 0.4)
-                  ], startPoint: .leading, endPoint: .trailing)
-              }
-          }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-          if clipped && !showsWholeReason { toggleReason() }
-        }
-      if showsWholeReason {
-        reasonToggle("Show less")
-          .frame(minHeight: OkouControl.inlineActionHeight)
-      }
-    }
-  }
-
-  private func reasonToggle(_ title: LocalizedStringKey) -> some View {
-    Button(title, action: toggleReason)
-      .buttonStyle(.plain)
-      .font(.okou(.body).weight(.semibold)).foregroundStyle(OkouColor.foreground)
-      .contentShape(Rectangle().inset(by: -OkouSpace.ten))
-      .accessibilityHidden(true)
-  }
-
-  private func toggleReason() {
-    withAnimation(OkouMotion.transition) { showsWholeReason.toggle() }
-  }
-
-  /// A direction says what choosing it does before it is chosen: one that sends carries the
-  /// composer's amber send mark, one that only prepares a draft leads on to its chat (the
-  /// outcome is the mark's meaning and VoiceOver's hint). Its mark sits beside the label, so
-  /// the description takes the button's full width. Each is a raised button on the card, as the
-  /// web draws its options, and the one being chosen turns its mark into progress until the
-  /// choice settles.
+  /// A direction says what choosing it does before it is chosen, in a short line above its label:
+  /// one that sends says so in amber, one that only prepares a draft names the chat it drafts in.
+  /// There is no mark beside the text, so the label and description keep the button's whole
+  /// width. Each is a white button on the card's grey ground, as the web draws its options, and
+  /// the one being chosen shows its progress in that line and along its foot until the choice
+  /// settles.
   private func optionButton(_ option: ForYouOption) -> some View {
     let sends = option.threadId == nil
     let isPending = pendingOptionID == option.id
@@ -195,29 +98,26 @@ struct ForYouSuggestionView: View {
       choose(option)
     } label: {
       VStack(alignment: .leading, spacing: OkouSpace.six) {
-        HStack(alignment: .firstTextBaseline, spacing: OkouSpace.md) {
-          Text(option.label).font(Self.labelFont)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          // The mark centres on the label's first line without making the row taller, so the
-          // row keeps the same room above the label as below the description, and the mark
-          // sits about as far from the row's top as from its side.
-          OkouLineIcon(font: Self.labelFont, width: OkouControl.addControl) {
-            ForYouOptionMark(sends: sends, isPending: isPending)
-          }
-        }
+        ForYouOptionAction(
+          sends: sends, chat: option.threadId.flatMap(threadTitle), isPending: isPending)
+        Text(option.label).font(Self.labelFont)
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
         if !option.description.isEmpty {
           Text(option.description).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
             .lineLimit(Self.descriptionLines)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       .multilineTextAlignment(.leading)
-      .padding(.leading, OkouSpace.lg).padding(.trailing, OkouSpace.md)
-      .padding(.vertical, OkouSpace.lg)
+      .padding(OkouSpace.lg)
       .frame(minHeight: OkouControl.minimumTarget)
+      .overlay(alignment: .bottom) {
+        if isPending { ForYouOptionProgress(sends: sends).transition(.opacity) }
+      }
+      // The progress line follows the button's rounded foot.
+      .clipShape(RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous))
     }
     .buttonStyle(ForYouOptionButtonStyle(isPending: isPending))
     .accessibilityHint(
@@ -250,7 +150,7 @@ struct ForYouAutomationView: View {
   }
 
   var body: some View {
-    ForYouCardLayout(height: height, spacing: OkouSpace.lg) { _ in
+    ForYouCardLayout(height: height, spacing: OkouSpace.lg) {
       heading
     } actions: {
       // A card's actions are compact, side by side; Enable is its one commitment.
@@ -333,13 +233,12 @@ enum ForYouCardInset {
 /// heading less than a third of the card, as at the largest text sizes, heading and actions
 /// scroll as one from the title. Without its actions, as while a direction is written, the
 /// heading takes its own height up to the one given and runs out through the card's bottom edge
-/// past it. Without a height the card takes its own. The heading hears the room it has for
-/// itself, when it is known, so a reason can show as much of itself as fits.
+/// past it. Without a height the card takes its own.
 struct ForYouCardLayout<Heading: View, Actions: View>: View {
   let height: CGFloat?
   let spacing: CGFloat
   let showsActions: Bool
-  let heading: (CGFloat?) -> Heading
+  let heading: Heading
   let actions: Actions
   @State private var headingHeight: CGFloat = 0
   @State private var actionsHeight: CGFloat = 0
@@ -353,12 +252,12 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
 
   init(
     height: CGFloat?, spacing: CGFloat, showsActions: Bool = true,
-    @ViewBuilder heading: @escaping (CGFloat?) -> Heading, @ViewBuilder actions: () -> Actions
+    @ViewBuilder heading: () -> Heading, @ViewBuilder actions: () -> Actions
   ) {
     self.height = height
     self.spacing = spacing
     self.showsActions = showsActions
-    self.heading = heading
+    self.heading = heading()
     self.actions = actions()
   }
 
@@ -370,7 +269,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
           below: pinsActions
             ? 0 : showsActions ? ForYouCardInset.bottom : ForYouCardInset.textBottom
         ) {
-          measuredHeading(headingRoom(within: height, pinsActions: pinsActions))
+          measuredHeading
           if showsActions && !pinsActions {
             measuredActions.padding(.top, spacing).transition(.opacity)
           }
@@ -384,19 +283,10 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
       .animation(reduceMotion ? nil : OkouMotion.transition, value: headingHeight)
     } else {
       VStack(alignment: .leading, spacing: spacing) {
-        measuredHeading(nil)
+        measuredHeading
         if showsActions { measuredActions.transition(.opacity) }
       }
     }
-  }
-
-  /// The room the heading has for itself: the height given less the actions that stay put under
-  /// it, or all of it without them. Unknown until the actions are measured, and when heading
-  /// and actions scroll as one.
-  private func headingRoom(within height: CGFloat, pinsActions: Bool) -> CGFloat? {
-    guard showsActions else { return height }
-    guard pinsActions, actionsHeight > 0 else { return nil }
-    return height - actionsHeight - spacing
   }
 
   /// Scrolls its content within the card. It reaches past the content by the card's insets on
@@ -421,8 +311,8 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     .defaultScrollAnchor(.top, for: .sizeChanges)
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
     .scrollIndicatorsFlash(onAppear: true)
-    // An opened reason that now runs past the room flashes the indicator too, so it reads as
-    // something to scroll rather than as cut text.
+    // A heading that comes to run past its room (a direction opening, the text size changing)
+    // flashes the indicator too, so it reads as something to scroll rather than as cut text.
     .scrollIndicatorsFlash(trigger: hasMoreBelow)
     .onScrollGeometryChange(for: Bool.self) { geometry in
       geometry.contentOffset.y + geometry.containerSize.height
@@ -461,8 +351,8 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     showsActions || headingHeight == 0 ? height : min(height, headingHeight)
   }
 
-  private func measuredHeading(_ room: CGFloat?) -> some View {
-    heading(room).frame(maxWidth: .infinity, alignment: .leading)
+  private var measuredHeading: some View {
+    heading.frame(maxWidth: .infinity, alignment: .leading)
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
       } action: {
@@ -480,26 +370,79 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   }
 }
 
-/// The mark at a direction's trailing edge: the composer's amber send for one that sends now, a
-/// quiet arrow for one that opens a draft, and progress while the choice is under way.
-private struct ForYouOptionMark: View {
+/// What choosing a direction does, as a short line above its label: an amber dot and "Send to
+/// a new chat" for one that sends now, a quiet dot and the chat's name for one that drafts, and
+/// progress with "Sending…" while the choice is under way. VoiceOver hears it as the button's
+/// hint instead.
+private struct ForYouOptionAction: View {
   let sends: Bool
+  /// The chat a draft opens in, when its title is known.
+  let chat: String?
   let isPending: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  private static let dot: CGFloat = 6
+
+  /// Amber that reads as text: a deep stop on white, a light one at night.
+  static let sendInk = Color(
+    uiColor: UIColor { traits in
+      UIColor(traits.userInterfaceStyle == .dark ? OkouColor.primary200 : OkouColor.primary700)
+        .resolvedColor(with: traits)
+    })
+
+  private var text: LocalizedStringKey {
+    if isPending { return sends ? "Sending…" : "Opening draft…" }
+    if sends { return "Send to a new chat" }
+    if let chat { return "Draft in \(chat)" }
+    return "Draft in the existing chat"
+  }
 
   var body: some View {
-    ZStack {
-      if isPending {
-        ProgressView().controlSize(.small)
-          .tint(sends ? OkouColor.primaryForeground : OkouColor.mutedForeground)
-      } else {
-        OkouIcon(sends ? "arrow-up" : "arrow-right", size: OkouIconSize.inline)
+    HStack(spacing: OkouSpace.six) {
+      ZStack {
+        if isPending {
+          ProgressView().controlSize(.mini).scaleEffect(0.7).transition(.opacity)
+        } else {
+          Circle().frame(width: Self.dot, height: Self.dot).transition(.opacity)
+        }
       }
+      .frame(width: OkouSpace.ten, height: OkouSpace.ten)
+      .animation(reduceMotion ? nil : OkouMotion.press, value: isPending)
+      // The words switch at once; fading one phrase into the other overlaps them.
+      Text(text).lineLimit(1)
     }
-    .transition(.opacity)
-    .foregroundStyle(sends ? OkouColor.primaryForeground : OkouColor.foreground)
-    .frame(width: OkouControl.addControl, height: OkouControl.addControl)
-    .background(sends ? OkouColor.primary : OkouColor.stateHover, in: Circle())
-    .animation(OkouMotion.press, value: isPending)
+    .font(.okou(.caption).weight(.semibold))
+    .textCase(.uppercase)
+    .tracking(0.5)
+    .foregroundStyle(sends ? Self.sendInk : OkouColor.mutedForeground)
+    .tint(sends ? Self.sendInk : OkouColor.mutedForeground)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A thin line that runs along a chosen direction's foot while its choice is under way: amber
+/// for one that sends, grey for one that drafts. Under Reduce Motion it holds still.
+private struct ForYouOptionProgress: View {
+  let sends: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var travels = false
+  private static let height: CGFloat = 2
+  private static let share: CGFloat = 0.4
+
+  var body: some View {
+    GeometryReader { proxy in
+      let width = proxy.size.width * Self.share
+      Capsule()
+        .fill(sends ? OkouColor.primary : OkouColor.controlBorder)
+        .frame(width: reduceMotion ? proxy.size.width : width, height: Self.height)
+        .offset(x: reduceMotion ? 0 : (travels ? proxy.size.width : -width))
+        .opacity(reduceMotion ? 0.6 : 1)
+    }
+    .frame(height: Self.height)
+    .clipShape(Rectangle())
+    .onAppear {
+      guard !reduceMotion else { return }
+      withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: false)) { travels = true }
+    }
     .accessibilityHidden(true)
   }
 }
@@ -516,16 +459,17 @@ private struct ForYouOptionButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
     let pressed = configuration.isPressed
+    // The fill, its pressed state and the hairline all lie under the label, so the mark on the
+    // corner covers the border instead of letting it run through.
     configuration.label
-      .background(OkouColor.card, in: shape)
-      .overlay {
-        shape.fill(pressed ? OkouColor.statePressed : .clear).allowsHitTesting(false)
-      }
-      .overlay {
-        shape.strokeBorder(
-          pressed ? OkouColor.controlBorder : OkouColor.border, lineWidth: OkouSpace.hairline
-        )
-        .allowsHitTesting(false)
+      .background {
+        shape.fill(OkouColor.card)
+          .overlay { shape.fill(pressed ? OkouColor.statePressed : .clear) }
+          .overlay {
+            shape.strokeBorder(
+              pressed ? OkouColor.controlBorder : OkouColor.border, lineWidth: OkouSpace.hairline)
+          }
+          .allowsHitTesting(false)
       }
       .contentShape(shape)
       .scaleEffect(pressed && !reduceMotion ? Self.pressedScale : 1)

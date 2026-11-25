@@ -506,6 +506,40 @@
       "kindIcon": "Artefak {{kind}}",
       "loading": "Memuat artefak"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Batal",
       "delete": "Hapus",
@@ -1891,6 +1925,14 @@
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
+      "presentationFormatSetup": {
+        "description": "Kami akan menyimpan default ini, lalu membuat presentasi Anda. Format yang diminta secara eksplisit tetap diutamakan.",
+        "htmlDescription": "Cocok untuk dibagikan di browser",
+        "pptxDescription": "Slide yang dapat diedit di PowerPoint",
+        "saveAndGenerate": "Simpan dan buat",
+        "settingsHint": "Ubah kapan saja di Pengaturan → Preferensi → Chat.",
+        "title": "Pilih format presentasi default"
+      },
       "selectedModelUnavailable": "Model yang dipilih tidak tersedia. Konfigurasikan sebelum mengirim.",
       "selectedModelUnavailableToast": "Model yang dipilih tidak tersedia",
       "selectModel": "Pilih model",
@@ -1962,8 +2004,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Akun konektor",
       "actionFailed": "Tidak dapat beralih akun.",
+      "allowForHour": "Izinkan selama 1 jam",
       "customConnector": "Konektor khusus",
       "loadFailed": "Akun konektor ini tidak dapat dimuat.",
+      "memberScope": "Izinkan di semua chat Anda. Pilih akun ini di sini.",
       "reconnectRequired": "Perlu menghubungkan kembali. Proses berikutnya mungkin menggunakan cadangan yang ada.",
       "selected": "Beralih ke {{account}}",
       "switch": "Beralih",
@@ -5720,6 +5764,16 @@
       "actions": {
         "resetUsage": "Reset penggunaan"
       },
+      "antigravity": {
+        "check": "Periksa login",
+        "error": "Periksa lingkungan login yang ditetapkan untuk Anda, lalu coba lagi.",
+        "expired": "Sesi login telah berakhir. Hubungkan kembali akun Anda.",
+        "openTerminal": "Buka terminal login Google",
+        "terminal": "Jalankan perintah ini di terminal Anda dan login dengan akun Google AI pribadi Anda.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Minta administrator menetapkan terminal login untuk Anda.",
+        "verify": "Perintah ini menggunakan kuota langganan Anda untuk mengirim masing-masing satu permintaan ke Neon, Carbon, dan Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Kode otorisasi",
@@ -5919,6 +5973,13 @@
           "title": "Model default"
         },
         "description": "Pilih default untuk chat baru dan cara pesan dikirim.",
+        "presentationFormat": {
+          "description": "Pilih format default untuk presentasi baru",
+          "saveFailed": "Tidak dapat menyimpan format default. Coba lagi.",
+          "title": "Format presentasi default",
+          "unavailable": "Tidak tersedia",
+          "unset": "Belum diatur"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

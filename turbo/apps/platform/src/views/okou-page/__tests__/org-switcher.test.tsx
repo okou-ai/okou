@@ -1,361 +1,190 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
+import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
+import { action } from "./workspace-billing-fixtures.ts";
+import { screen, within, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
+import {
+  directory,
+  switchButton,
+  switchMenu,
+  design,
+  acme,
+  invited,
+} from "./switcher-directory-fixture.ts";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import userEvent from "@testing-library/user-event";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const context = testContext();
 
-function buttonByText(text: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-  });
-  if (!button) {
-    throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
-function buttonByLabel(label: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
-  }
-  return button;
-}
-
-function menuItemByText(text: string): HTMLElement {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-  });
-  if (!item) {
-    throw new Error(`${text} menu item not found`);
-  }
-  return item;
-}
-
-test("Join an invited workspace from the workspace switcher", async () => {
-  const acceptDeferred = context.mocks.deferred<void>();
-  const pendingInvitations = [
-    {
-      id: "invitation_1",
-      publicOrganizationData: {
-        id: "org_invited",
-        name: "Invited Org",
-        imageUrl: "https://cdn.okou.test/orgs/invited.png",
-        hasImage: true,
-      },
-      accept: async () => {
-        await acceptDeferred.promise;
-        pendingInvitations.length = 0;
-      },
-    },
-  ];
-
-  context.mocks.data.org({
-    id: "org_current",
-    name: "Acme",
-    role: "admin",
-  });
-
-  await setupPage({
+test("org-switcher-002 Workspaces with placeholder logos show only the default texture in the switcher", async () => {
+  await directory(
     context,
-    path: "/",
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      organization: {
-        activeOrg: {
-          id: "org_current",
-          name: "Acme",
-          slug: "acme",
-          imageUrl: "https://cdn.okou.test/orgs/acme.png",
-          hasImage: true,
-        },
-        memberships: [
-          {
-            id: "membership_current",
-            organization: {
-              id: "org_current",
-              name: "Acme",
-              imageUrl: "https://cdn.okou.test/orgs/acme.png",
-            },
-          },
-          {
-            id: "membership_design",
-            organization: {
-              id: "org_design",
-              name: "Design Org",
-              imageUrl: "https://cdn.okou.test/orgs/design.png",
-              hasImage: true,
-            },
-          },
-        ],
-        pendingInvitations,
-      },
+    () => {
+      return Promise.resolve();
     },
-  });
-
-  const orgSwitcher = await waitFor(() => {
-    const switcher = buttonByLabel("Switch workspace");
-    expect(
-      within(switcher).getByTestId("pending-invitations-badge"),
-    ).toBeInTheDocument();
-    return switcher;
-  });
-
-  click(orgSwitcher);
-
-  await waitFor(() => {
-    expect(screen.getByText("Design Org")).toBeInTheDocument();
-    expect(screen.getByText("Invited Org")).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Design Org" })).toHaveAttribute(
-      "src",
-      "https://cdn.okou.test/orgs/design.png",
-    );
-    expect(screen.getByRole("img", { name: "Invited Org" })).toHaveAttribute(
-      "src",
-      "https://cdn.okou.test/orgs/invited.png",
-    );
-  });
-
-  click(buttonByText("Join"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Joining…")).toBeInTheDocument();
-  });
-
-  acceptDeferred.resolve();
-
-  await waitFor(() => {
-    expect(screen.queryByText("Invited Org")).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("pending-invitations-badge"),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Design Org")).toBeInTheDocument();
-  });
-
-  click(menuItemByText("Design Org"));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
+    false,
+  );
+  const trigger = await switchButton();
+  const current = await within(trigger).findByRole("img", { name: acme.name });
+  expect(current).not.toHaveAttribute("src");
+  expect(current).toBeEmptyDOMElement();
+  const panel = await switchMenu();
+  for (const org of [acme, design, invited]) {
+    const avatar = await within(panel).findByRole("img", { name: org.name });
+    expect(avatar).not.toHaveAttribute("src");
+    expect(avatar).toBeEmptyDOMElement();
+  }
 });
 
-test("Show only the default texture for workspaces that never uploaded a logo", async () => {
-  // Clerk fills `imageUrl` with a generated placeholder for every organization,
-  // so only `hasImage` says whether a logo was uploaded.
-  const clerkPlaceholder = "https://img.clerk.test/default-organization.png";
-
-  context.mocks.data.org({
-    id: "org_current",
-    name: "workspace-3e46915f",
-    role: "admin",
-  });
-
-  await setupPage({
-    context,
-    path: "/",
-    auth: {
-      user: { id: "test-user-123", fullName: "Test User" },
-      organization: {
-        activeOrg: {
-          id: "org_current",
-          name: "workspace-3e46915f",
-          imageUrl: clerkPlaceholder,
-          hasImage: false,
-        },
-        memberships: [
-          {
-            id: "membership_current",
-            organization: {
-              id: "org_current",
-              name: "workspace-3e46915f",
-              imageUrl: clerkPlaceholder,
-              hasImage: false,
-            },
-          },
-          {
-            id: "membership_design",
-            organization: {
-              id: "org_design",
-              name: "Design Org",
-              imageUrl: clerkPlaceholder,
-              hasImage: false,
-            },
-          },
-        ],
-        pendingInvitations: [
-          {
-            id: "invitation_1",
-            publicOrganizationData: {
-              id: "org_invited",
-              name: "Invited Org",
-              imageUrl: clerkPlaceholder,
-              hasImage: false,
-            },
-          },
-        ],
-      },
-    },
-  });
-
-  const orgSwitcher = await waitFor(() => {
-    return buttonByLabel("Switch workspace");
-  });
-
-  click(orgSwitcher);
-
-  const menu = await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(within(menu).getByText("Invited Org")).toBeInTheDocument();
-  });
-  for (const name of ["workspace-3e46915f", "Design Org", "Invited Org"]) {
-    const logo = within(menu).getByRole("img", { name });
-    expect(logo).not.toHaveAttribute("src");
-    expect(logo).toBeEmptyDOMElement();
-  }
-  expect(
-    within(orgSwitcher).getByRole("img", { name: "workspace-3e46915f" }),
-  ).not.toHaveAttribute("src");
-});
-
-test("Creating a workspace opens onboarding after activating its organization", async () => {
-  const clerk = context.mocks.clerk();
-  mockedClerk.setActive.mockImplementation(() => {
-    clerk.organization({
-      activeOrg: { id: "new-org-id", name: "New workspace" },
+test("org-switcher-001 Join an invitation, then choose the existing Design membership", async () => {
+  context.mocks.api(orgMembersContract.members, ({ request, respond }) => {
+    const org = [acme, design, invited].find((entry) => {
+      return request.headers.get("authorization") === "Bearer " + entry.id;
     });
-    clerk.stateChanged();
+    if (!org) {
+      throw new Error("Roster request missing workspace identity");
+    }
+    const email = org.id + "@directory.example";
+    return respond(200, {
+      name: org.name,
+      role: "admin",
+      createdAt: "2026-01-01T00:00:00Z",
+      members: [
+        {
+          userId: org.id + "-member",
+          firstName: org.name,
+          lastName: "Editor",
+          email,
+          imageUrl: "",
+          role: "member",
+          joinedAt: "2026-02-01T00:00:00Z",
+        },
+      ],
+    });
+  });
+  const acceptance = createDeferredPromise<void>(context.signal);
+  await directory(context, () => {
+    return acceptance.promise;
+  });
+  const trigger = await switchButton();
+  await expect(
+    within(trigger).findByTestId("pending-invitations-badge"),
+  ).resolves.toBeInTheDocument();
+  const panel = await switchMenu();
+  await expect(
+    within(panel).findByRole("img", { name: invited.name }),
+  ).resolves.toHaveAttribute("src", invited.imageUrl);
+  click(within(panel).getByText("Join"));
+  await expect(within(panel).findByText("Joining…")).resolves.toBeDisabled();
+  acceptance.resolve();
+  await waitFor(() => {
+    return expect(
+      within(trigger).getByRole("img", { name: invited.name }),
+    ).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    return expect(
+      within(trigger).queryByTestId("pending-invitations-badge"),
+    ).toBeNull();
+  });
+  const options = within(panel).getByTestId("org-switcher-options-scroll");
+  expect(within(options).queryByText(invited.name)).toBeNull();
+  click(within(options).getByText(design.name));
+  await waitFor(() => {
+    return expect(
+      within(trigger).getByRole("img", { name: design.name }),
+    ).toBeInTheDocument();
+  });
+  expect(panel).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
+  const rail = screen.getByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Taylor"));
+  const account = await screen.findByRole("menu");
+  click(within(account).getByText("Settings"));
+  const settings = await screen.findByRole("dialog");
+  click(await action("People", settings));
+  await expect(
+    within(settings).findByText("org_design@directory.example"),
+  ).resolves.toBeInTheDocument();
+  expect(within(settings).queryByText("org_acme@directory.example")).toBeNull();
+});
+
+async function workflows() {
+  const rail = screen.getByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Workflows"));
+  await waitFor(() => {
+    return expect(window.location.pathname).toBe("/workflows");
+  });
+}
+
+test("org-switcher-actions-003 Invitation completion on Workflows clears the badge without activating the invited workspace", async () => {
+  const gate = createDeferredPromise<void>(context.signal);
+  await directory(context, () => {
+    return gate.promise;
+  });
+  const first = await switchMenu();
+  click(await within(first).findByText("Join"));
+  await expect(within(first).findByText("Joining…")).resolves.toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(first).not.toBeInTheDocument();
+  });
+  await workflows();
+  const trigger = await switchButton();
+  expect(
+    within(trigger).getByTestId("pending-invitations-badge"),
+  ).toBeInTheDocument();
+  gate.resolve();
+  await waitFor(() => {
+    return expect(
+      within(trigger).queryByTestId("pending-invitations-badge"),
+    ).toBeNull();
+  });
+  expect(
+    within(trigger).getByRole("img", { name: acme.name }),
+  ).toBeInTheDocument();
+  const menu = await switchMenu();
+  expect(within(menu).getByText("Design Org")).toBeInTheDocument();
+  expect(within(menu).queryByText(invited.name)).toBeNull();
+  expect(mockedClerk.setActive).not.toHaveBeenCalled();
+  expect(window.location.pathname).toBe("/workflows");
+});
+
+test("org-switcher-actions-001 Committed creation consumes the quota after its originating page has closed", async () => {
+  let created = 0;
+  const completion = createDeferredPromise<void>(context.signal);
+  const started = createDeferredPromise<void>(context.signal);
+  context.mocks.api(orgContract.createdCount, ({ respond }) => {
+    return respond(200, { createdOrganizationsCount: created });
+  });
+  mockedClerk.createOrganization.mockImplementation(async () => {
+    started.resolve();
+    await completion.promise;
+    created = 1;
+    return { id: "org_fresh" };
+  });
+  await directory(context, () => {
     return Promise.resolve();
   });
-  context.mocks.api(orgContract.createdCount, ({ respond }) => {
-    return respond(200, { createdOrganizationsCount: 0 });
-  });
-  context.mocks.data.org({
-    id: "org_current",
-    name: "Solo",
-    role: "admin",
-    createdBy: "other-user-456",
-  });
-
-  await setupPage({
-    context,
-    path: "/",
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-        createOrganizationEnabled: true,
-        createOrganizationsLimit: 1,
-      },
-      organization: {
-        activeOrg: {
-          id: "org_current",
-          name: "Solo",
-          slug: "solo",
-        },
-        memberships: [
-          {
-            id: "membership_current",
-            organization: {
-              id: "org_current",
-              name: "Solo",
-            },
-          },
-        ],
-      },
-    },
-  });
-
-  const orgSwitcher = await waitFor(() => {
-    return buttonByLabel("Switch workspace");
-  });
-
-  click(orgSwitcher);
-
+  const menu = await switchMenu();
+  click(await within(menu).findByText("Create workspace"));
+  await started.promise;
   await waitFor(() => {
-    expect(screen.getByText("Create workspace")).toBeInTheDocument();
+    expect(menu).not.toBeInTheDocument();
   });
-
-  click(screen.getByText("Create workspace"));
-
+  await workflows();
+  const options = await switchMenu();
+  await expect(
+    within(options).findByText("Create workspace"),
+  ).resolves.toBeInTheDocument();
+  completion.resolve();
   await waitFor(() => {
-    expect(location.pathname).toBe("/onboarding");
+    return expect(within(options).queryByText("Create workspace")).toBeNull();
   });
-  expect(mockedClerk.createOrganization).toHaveBeenCalledWith({
-    name: expect.stringMatching(/^workspace-/u),
-    slug: expect.stringMatching(/^workspace-/u),
-  });
-  expect(mockedClerk.setActive).toHaveBeenCalledWith({
-    organization: "new-org-id",
-  });
-});
-
-test("Hide workspace creation after the user reaches the limit", async () => {
-  context.mocks.api(orgContract.createdCount, ({ respond }) => {
-    return respond(200, { createdOrganizationsCount: 1 });
-  });
-  context.mocks.data.org({
-    id: "org_current",
-    name: "Shared",
-    role: "admin",
-    createdBy: "other-user-456",
-  });
-
-  await setupPage({
-    context,
-    path: "/",
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-        createOrganizationEnabled: true,
-        createOrganizationsLimit: 1,
-      },
-      organization: {
-        activeOrg: {
-          id: "org_current",
-          name: "Shared",
-          slug: "shared",
-        },
-        memberships: [
-          {
-            id: "membership_current",
-            organization: {
-              id: "org_current",
-              name: "Shared",
-            },
-          },
-          {
-            id: "membership_owned",
-            organization: {
-              id: "org_owned",
-              name: "Owned",
-            },
-          },
-        ],
-      },
-    },
-  });
-
-  const orgSwitcher = await waitFor(() => {
-    return buttonByLabel("Switch workspace");
-  });
-
-  click(orgSwitcher);
-
-  await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(screen.queryByText("Create workspace")).not.toBeInTheDocument();
-  });
+  expect(within(options).getByText(acme.name)).toBeInTheDocument();
+  expect(mockedClerk.setActive).not.toHaveBeenCalled();
+  expect(window.location.pathname).toBe("/workflows");
 });

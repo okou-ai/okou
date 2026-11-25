@@ -1,242 +1,233 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { screen, within, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   completedConversation,
-  feedbackItems,
-  feedbackNotes,
-  findButton,
-  quoteSelectedPassage,
-  readyChat,
-  RUN_PATH,
-  selectAcrossPassages,
   selectPassage,
-  waitForSend,
-  type CapturedChatSend,
-  createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
-import { findEnabledButton } from "./chat-run-test-fixtures.ts";
-import { buttonByLabel } from "./chat-lifecycle-test-helpers.ts";
+import {
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+  RUN_PATH,
+  assistantEvent,
+  completedEvent,
+  promptEvent,
+  RUN_THREAD_ID,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
-const FIRST_PASSAGE = "The launch plan has three careful stages.";
-const SECOND_PASSAGE = "The unrelated answer covers a separate decision.";
-
-function queryToolbarButton(name: string): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button").find((button) => {
-      return (
-        button.getAttribute("aria-keyshortcuts") !== null &&
-        button.textContent?.replace(/\s+/gu, " ").trim().startsWith(name)
-      );
-    }) ?? null
-  );
-}
-
-function feedbackParts(document: UserMessageDocument | undefined) {
-  return (
-    document?.parts.filter((part) => {
-      return part.type === "feedback";
-    }) ?? []
-  );
-}
-
-test("Offer passage actions only for a valid assistant selection", async () => {
-  installCapabilityChat({
-    events: completedConversation(FIRST_PASSAGE, SECOND_PASSAGE),
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const firstResponse = await screen.findByText(FIRST_PASSAGE);
-  expect(firstResponse).toBeVisible();
-
-  await selectPassage("launch plan has three careful stages");
-
-  expect(queryToolbarButton("Copy")).toBeVisible();
-  expect(queryToolbarButton("Quote")).toBeVisible();
-  expect(queryToolbarButton("Fork")).toBeVisible();
-
-  await selectAcrossPassages("launch plan", "separate decision");
-
-  expect(queryToolbarButton("Copy")).not.toBeInTheDocument();
-  expect(queryToolbarButton("Quote")).not.toBeInTheDocument();
-  expect(queryToolbarButton("Fork")).not.toBeInTheDocument();
-
-  await selectPassage("launch plan has three careful stages");
-  fireEvent.keyDown(document, { key: "q" });
-
-  const comment = await screen.findByRole("textbox", {
-    name: "Ask or comment on this quote",
-  });
-  expect(comment).toBeVisible();
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveFocus();
-  expect(feedbackItems()[0]).toHaveTextContent(
-    "launch plan has three careful stages",
-  );
-});
-
-test("Combine inline feedback with the rest of a message draft", async () => {
-  const sends: CapturedChatSend[] = [];
-  const file = new File(["review evidence"], "review-notes.txt", {
-    type: "text/plain",
+test("chat-capability-feedback-002 sending a quoted comment preserves the existing text and attachment", async () => {
+  const file = "review-notes.txt",
+    passage = "Inspect the staged delivery.",
+    note = "Mention the alternate route.",
+    message = "Here is my review.";
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: completedConversation(passage),
+    onSendRequest(body) {
+      sent.resolve(body.userMessage);
+    },
   });
   context.mocks.upload.success({
-    id: "feedback-review-notes",
-    filename: file.name,
-    contentType: file.type,
-    size: file.size,
-    url: "https://cdn.vm7.io/feedback/review-notes.txt",
+    id: "review-file",
+    filename: file,
+    contentType: "text/plain",
+    size: 6,
+    url: "https://cdn.vm7.io/review-notes.txt",
   });
-  installCapabilityChat({
-    events: completedConversation(FIRST_PASSAGE),
-    onSend(send) {
-      sends.push(send);
-    },
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await screen.findByText(passage);
   const user = userEvent.setup({ delay: null });
-  await user.click(composer);
-  await user.type(composer, "Keep the rollout concise.");
-  await selectPassage("launch plan has three careful stages");
-  const comment = await quoteSelectedPassage();
-  await user.type(comment, "Explain why each stage matters.");
-
-  expect(composer).toHaveTextContent("Keep the rollout concise.");
-  expect(feedbackItems()[0]).toHaveTextContent(
-    "launch plan has three careful stages",
+  await user.type(await screen.findByLabelText("Message"), message);
+  await user.upload(
+    await screen.findByLabelText("Attach", { selector: "input" }),
+    new File(["review"], file, { type: "text/plain" }),
   );
-  expect(comment).toHaveTextContent("Explain why each stage matters.");
-
-  const fileInput = document.querySelector<HTMLInputElement>(
-    '[data-chat-composer] input[type="file"]',
+  await screen.findByText(file);
+  await selectPassage(passage);
+  click(await findButton("Quote"));
+  await user.type(
+    await screen.findByRole("textbox", {
+      name: "Ask or comment on this quote",
+    }),
+    note,
   );
-  if (!fileInput) {
-    throw new Error("Composer file input was not available");
-  }
-  await userEvent.setup().upload(fileInput, file);
-  const uploadedFile = await screen.findByText("review-notes.txt");
-  expect(uploadedFile).toBeVisible();
-
-  click(await findButton("Send"));
-
-  const sent = await waitForSend(sends, 1);
-  expect(sent.userMessage?.parts).toStrictEqual(
+  click(await findEnabledButton("Send"));
+  const submission = await sent.promise;
+  expect(
+    submission?.parts
+      .filter((part) => {
+        return part.type === "text";
+      })
+      .map((part) => {
+        return part.text.trim();
+      }),
+  ).toContain(message);
+  expect(submission?.parts).toStrictEqual(
     expect.arrayContaining([
-      { type: "text", text: "Keep the rollout concise." },
+      expect.objectContaining({
+        type: "file",
+        fileId: "review-file",
+        filenameSnapshot: file,
+      }),
       expect.objectContaining({
         type: "feedback",
-        quote: "launch plan has three careful stages",
-        note: [{ type: "text", text: "Explain why each stage matters." }],
+        quote: passage,
+        note: [{ type: "text", text: note }],
       }),
-      {
-        type: "file",
-        fileId: "feedback-review-notes",
-        filenameSnapshot: "review-notes.txt",
-        contentType: "text/plain",
-      },
     ]),
   );
+  await screen.findByText(note);
 });
 
-test("Edit or remove a quoted feedback item", async () => {
-  installCapabilityChat({ events: completedConversation(FIRST_PASSAGE) });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const user = userEvent.setup({ delay: null });
-  await user.click(composer);
-  await user.type(composer, "Keep this ordinary draft text.");
-  await selectPassage("launch plan has three careful stages");
-  let comment = await quoteSelectedPassage();
-
-  expect(comment).toHaveAccessibleName("Ask or comment on this quote");
-  await user.type(comment, "Make the stages shorter.");
-  expect(comment).toHaveTextContent("Make the stages shorter.");
-
-  await user.keyboard("{Backspace}".repeat("Make the stages shorter.".length));
-  comment = screen.getByRole("textbox", {
+test("chat-capability-feedback-submission-001 sending a quoted correction clears the editor and posts it to this chat", async () => {
+  const runId = crypto.randomUUID(),
+    passage = "Inspect the east loading dock",
+    comment = "Please use the west loading dock.";
+  const unavailable = "retired-dispatch-model";
+  const submission = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest(body) {
+      if ((body.threadId ?? body.clientThreadId) === RUN_THREAD_ID) {
+        submission.resolve(body.userMessage);
+      }
+    },
+    selectedModel: unavailable,
+    chatEvents: [
+      promptEvent({
+        id: runId,
+        runId,
+        seqId: 1,
+        text: "Check the dispatch instructions",
+      }),
+      assistantEvent({
+        id: crypto.randomUUID(),
+        runId,
+        seqId: 2,
+        text: passage,
+      }),
+      completedEvent({ id: crypto.randomUUID(), runId, seqId: 3 }),
+    ],
+  });
+  context.mocks.data.userModelPreference({
+    selectedModel: unavailable,
+    serviceTier: null,
+    modelSettings: {},
+    selectedImageModel: null,
+    updatedAt: null,
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const source = await screen.findByText(passage);
+  const transcript = source.closest<HTMLElement>("[data-message-container]")!;
+  await selectPassage(passage);
+  click(await findButton("Quote"));
+  const note = await screen.findByRole("textbox", {
     name: "Ask or comment on this quote",
   });
-  expect(comment).not.toHaveTextContent("Make the stages shorter.");
-  expect(feedbackItems()[0]).toHaveTextContent(
-    "launch plan has three careful stages",
-  );
-
-  await user.type(comment, "Show the owner for every stage.");
-  expect(comment).toHaveTextContent("Show the owner for every stage.");
-
-  click(await findButton("Remove feedback"));
-
-  await waitFor(() => {
-    expect(feedbackItems()).toHaveLength(0);
+  // The note shares a contenteditable with the quote. Select-all would replace both.
+  await userEvent.setup({ delay: null }).type(note, comment);
+  click(await findEnabledButton("Send"));
+  const document = await submission.promise;
+  const feedback = document?.parts.find((part) => {
+    return part.type === "feedback";
   });
-  expect(composer).toHaveTextContent("Keep this ordinary draft text.");
+  expect(feedback?.quote).toBe(passage);
+  expect(feedback?.note).toStrictEqual([{ type: "text", text: comment }]);
+  const posted = await within(transcript).findByText(comment);
+  const row = posted.closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+  expect(row).toBeInTheDocument();
+  expect(row).toHaveTextContent(passage);
+  expect(posted).toBeVisible();
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("textbox", { name: "Ask or comment on this quote" }),
+    ).toBeNull();
+  });
 });
 
-async function openMultipleQuoteFeedback() {
-  const sends: CapturedChatSend[] = [];
-  installCapabilityChat({
-    events: completedConversation(`${FIRST_PASSAGE}\n\n${SECOND_PASSAGE}`),
-    onSend(send) {
-      sends.push(send);
+test("chat-capability-mail-feedback-001 sending a draft quote keeps its mail source and comment together", async () => {
+  const id = crypto.randomUUID(),
+    run = crypto.randomUUID(),
+    url = "https://app.okou.ai/mail/drafts/" + id;
+  const passage = "launch review to Monday morning",
+    comment = "Rewrite this as a clear scheduling request";
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest(body) {
+      if ((body.threadId ?? body.clientThreadId) === RUN_THREAD_ID) {
+        sent.resolve(body.userMessage);
+      }
     },
+    chatEvents: [
+      promptEvent({
+        id: run,
+        runId: run,
+        seqId: 1,
+        text: "Prepare the launch email",
+      }),
+      assistantEvent({
+        id: crypto.randomUUID(),
+        runId: run,
+        seqId: 2,
+        text: url,
+      }),
+      completedEvent({ id: crypto.randomUUID(), runId: run, seqId: 3 }),
+    ],
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  return sends;
-}
-
-test("Edit and send independent notes on multiple quoted passages", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sends = await openMultipleQuoteFeedback();
-  await selectPassage("launch plan has three careful stages");
-  await user.type(await quoteSelectedPassage(), "Add an owner to this stage.");
-  await selectPassage("unrelated answer covers a separate decision");
-  await quoteSelectedPassage();
-  const notes = feedbackNotes();
-
-  expect(notes).toHaveLength(2);
-  expect(notes[0]).toHaveTextContent("Add an owner to this stage.");
-  await user.type(notes[1]!, "Temporary second comment.");
-  await user.keyboard("{Backspace}".repeat("Temporary second comment.".length));
-  await user.type(notes[1]!, "Acknowledge the separate decision.");
-  expect(notes[0]).toHaveTextContent("Add an owner to this stage.");
-
-  await findEnabledButton("Send");
-  click(buttonByLabel("Send"));
-
-  const commented = await waitForSend(sends, 1);
-  expect(feedbackParts(commented.userMessage)).toMatchObject([
-    {
-      quote: "launch plan has three careful stages",
-      note: [{ type: "text", text: "Add an owner to this stage." }],
-    },
-    {
-      quote: "unrelated answer covers a separate decision",
-      note: [{ type: "text", text: "Acknowledge the separate decision." }],
-    },
-  ]);
-
-  await expect(findEnabledButton("Stop")).resolves.toBeVisible();
-  expect(feedbackItems()).toHaveLength(0);
+  context.mocks.api(mailContract.getDraft, ({ respond }) => {
+    return respond(200, {
+      mailDraftId: id,
+      mailDraftUrl: url,
+      mailDraft: {
+        provider: "gmail",
+        gmailDraftId: "draft-launch",
+        gmailThreadId: "launch-thread",
+        gmailMessageId: "draft-message",
+        version: 3,
+        from: "dispatch@example.org",
+        to: ["team@example.org"],
+        cc: [],
+        bcc: [],
+        subject: "Proposed launch review",
+        body: "Move the " + passage + ".",
+        references: [],
+        status: "draft",
+        detailAvailable: true,
+        createdAt: "2026-09-01T12:00:00Z",
+        updatedAt: "2026-09-01T12:00:00Z",
+        attachments: [],
+      },
+    });
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  click(await screen.findByText("Proposed launch review"));
+  await screen.findByText("Move the " + passage + ".");
+  await selectPassage(passage);
+  click(await findButton("Quote"));
+  const editor = await screen.findByRole("textbox", {
+    name: "Ask or comment on this quote",
+  });
+  await userEvent.setup({ delay: null }).type(editor, comment);
+  click(await findEnabledButton("Send"));
+  const feedback = (await sent.promise)?.parts.find((p) => {
+    return p.type === "feedback";
+  });
+  expect(feedback).toMatchObject({
+    quote: passage,
+    note: [{ type: "text", text: comment }],
+    source: { type: "mail", id, status: "draft" },
+  });
+  const posted = await screen.findByText(comment);
+  const row = posted.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  )!;
+  expect(
+    within(row).getByText("Quoted from an email draft"),
+  ).toBeInTheDocument();
 });

@@ -13,6 +13,140 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1180.0](https://github.com/okou-ai/okou/compare/app-v0.1179.2...app-v0.1180.0) (2026-11-25)
+
+
+### Features
+
+* **core:** enable suggestions for everyone ([#50721](https://github.com/okou-ai/okou/issues/50721)) ([9f4acb1](https://github.com/okou-ai/okou/commit/9f4acb11dc613e04f11a2b69efc5a634a84b3f30))
+* roll out content-aware document output to everyone ([#50706](https://github.com/okou-ai/okou/issues/50706)) ([d7d26cd](https://github.com/okou-ai/okou/commit/d7d26cd3922157848f7adf6d631a2c02f3d3a8fb))
+* toggle project archive with a keyboard shortcut ([#50693](https://github.com/okou-ai/okou/issues/50693)) ([a6c307c](https://github.com/okou-ai/okou/commit/a6c307c8070ce7cc9d8dcfc0dfb632666ae6bbd6))
+
+
+### Refactoring
+
+* remove workflow recency sync feature switch ([#50708](https://github.com/okou-ai/okou/issues/50708)) ([edc8bb9](https://github.com/okou-ai/okou/commit/edc8bb96bba57f6e4390bfa3a8905924d1b4b88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.876.0
+    * @okouai/ui bumped to 1.22.15
+
+## [0.1179.2](https://github.com/okou-ai/okou/compare/app-v0.1179.1...app-v0.1179.2) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.875.0
+    * @okouai/ui bumped to 1.22.14
+
+## [0.1179.1](https://github.com/okou-ai/okou/compare/app-v0.1179.0...app-v0.1179.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **lab:** show internal feature switches by key ([#50652](https://github.com/okou-ai/okou/issues/50652)) ([7261e03](https://github.com/okou-ai/okou/commit/7261e0395625c2600a56cde976f625ba4bfd3668))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.125.0
+    * @okouai/connectors bumped to 3.24.0
+    * @okouai/core bumped to 8.874.0
+    * @okouai/ui bumped to 1.22.13
+
+## [0.1179.0](https://github.com/okou-ai/okou/compare/app-v0.1178.0...app-v0.1179.0) (2026-11-24)
+
+
+### Features
+
+* add first-use presentation format setup ([#50150](https://github.com/okou-ai/okou/issues/50150)) ([0e802ee](https://github.com/okou-ai/okou/commit/0e802ee6b10be62579cc7a5e40f3fc21182a0b15))
+
+
+### Bug Fixes
+
+* **platform:** make project archive and restore optimistic ([#50475](https://github.com/okou-ai/okou/issues/50475)) ([b67b156](https://github.com/okou-ai/okou/commit/b67b1568a19ad0bdddcd9e3941e3cc11d229722c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.873.0
+    * @okouai/ui bumped to 1.22.12
+
+## [0.1178.0](https://github.com/okou-ai/okou/compare/app-v0.1177.0...app-v0.1178.0) (2026-11-24)
+
+
+### Features
+
+* add subscription-gated custom domains for hosted sites ([#50462](https://github.com/okou-ai/okou/issues/50462)) ([a898459](https://github.com/okou-ai/okou/commit/a8984599f91d9596a3721b0c6d8fa67274c9f985))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.124.0
+    * @okouai/core bumped to 8.872.0
+    * @okouai/ui bumped to 1.22.11
+
+## [0.1177.0](https://github.com/okou-ai/okou/compare/app-v0.1176.1...app-v0.1177.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.123.0
+    * @okouai/core bumped to 8.871.0
+    * @okouai/ui bumped to 1.22.10
+
+## [0.1176.1](https://github.com/okou-ai/okou/compare/app-v0.1176.0...app-v0.1176.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* hide billing feedback entry when survey is unavailable ([#50564](https://github.com/okou-ai/okou/issues/50564)) ([815ec15](https://github.com/okou-ai/okou/commit/815ec15ee790fd3d198ca6e349ac09db3ae90099))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.122.0
+    * @okouai/core bumped to 8.870.2
+    * @okouai/ui bumped to 1.22.9
+
+## [0.1176.0](https://github.com/okou-ai/okou/compare/app-v0.1175.2...app-v0.1176.0) (2026-11-24)
+
+
+### Features
+
+* add member-wide connector account approval ([#50516](https://github.com/okou-ai/okou/issues/50516)) ([ff76d52](https://github.com/okou-ai/okou/commit/ff76d52e21a55cd8f3e34a513e7e5fcfd8ab1e1b))
+* **billing:** allow free workspaces to buy credits ([#50532](https://github.com/okou-ai/okou/issues/50532)) ([f79cdfd](https://github.com/okou-ai/okou/commit/f79cdfde1673397bf7716c1411dd68e8c3020875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.121.0
+    * @okouai/core bumped to 8.870.1
+    * @okouai/ui bumped to 1.22.8
+
 ## [0.1175.2](https://github.com/okou-ai/okou/compare/app-v0.1175.1...app-v0.1175.2) (2026-11-24)
 
 

@@ -28,6 +28,7 @@
     <string name="artifact_empty">Aún no hay artefactos</string>
     <string name="artifact_empty_type">No hay artefactos de este tipo</string>
     <string name="artifact_no_matches">No hay artefactos que coincidan</string>
+    <string name="artifact_clear_keyword">Borrar búsqueda</string>
     <string name="artifact_show_all">Mostrar todo</string>
     <string name="artifact_catalog_load_failed">No se pueden cargar los artefactos en este momento</string>
     <string name="artifact_catalog_refresh_failed">No se puede actualizar en este momento. Se muestran los artefactos cargados.</string>
@@ -49,6 +50,7 @@
     <string name="artifact_open_website">Abrir en el navegador</string>
     <string name="artifact_browser_unavailable">No se pudo abrir el navegador</string>
     <string name="artifact_play_media">Reproducción multimedia</string>
+    <string name="artifact_play">Reproducir</string>
     <string name="artifact_catalog_access_denied">No tienes acceso a este catálogo de artefactos</string>
     <string name="artifact_catalog_missing">Este catálogo de artefactos ya no está disponible</string>
     <string name="chat_resources_related">Chats relacionados</string>

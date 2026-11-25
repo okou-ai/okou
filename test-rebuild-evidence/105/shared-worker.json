@@ -1,0 +1,1476 @@
+{
+  "014": {
+    "two-window chat": {
+      "stages": [
+        {
+          "stage": "both ready",
+          "title": 1,
+          "receipts": 73
+        },
+        {
+          "stage": "both read turn 17",
+          "title": 1,
+          "receipts": 90
+        },
+        {
+          "stage": "resume",
+          "title": 1,
+          "receipts": 92
+        },
+        {
+          "stage": "reconnect",
+          "title": 1,
+          "receipts": 93
+        },
+        {
+          "stage": "survivor read turn 18",
+          "title": 1,
+          "receipts": 98
+        },
+        {
+          "stage": "both closed",
+          "title": null,
+          "receipts": 101
+        }
+      ],
+      "receiver": [
+        {
+          "index": 9,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 10,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 11,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 16,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 18,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 19,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 20,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "getStartedRewardsChanged"
+        },
+        {
+          "index": 21,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "slack:changed"
+        },
+        {
+          "index": 22,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "connectorPermissionUpdated"
+        },
+        {
+          "index": 23,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "billing:changed"
+        },
+        {
+          "index": 24,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "userPreferenceChanged"
+        },
+        {
+          "index": 25,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "runModelsChanged"
+        },
+        {
+          "index": 26,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "vnc:observations-changed"
+        },
+        {
+          "index": 28,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "cloudflare-access:changed"
+        },
+        {
+          "index": 29,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "tailscale:changed"
+        },
+        {
+          "index": 30,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "*"
+        },
+        {
+          "index": 31,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatIndicatorsChanged"
+        },
+        {
+          "index": 32,
+          "op": "subscribe",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatThreadReadCursorUpdated"
+        },
+        {
+          "index": 33,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "computerUseHostsChanged"
+        },
+        {
+          "index": 34,
+          "op": "subscribe",
+          "name": "org:fixture",
+          "topic": "runQueueChanged"
+        },
+        {
+          "index": 35,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "billing:changed"
+        },
+        {
+          "index": 44,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "browserSessionChanged"
+        },
+        {
+          "index": 45,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatArtifactCatalogChanged:thread"
+        },
+        {
+          "index": 46,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 47,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "artifact:changed"
+        },
+        {
+          "index": 48,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 49,
+          "op": "subscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadWorkflowsChanged:thread"
+        },
+        {
+          "index": 83,
+          "op": "catchUp",
+          "status": 200
+        },
+        {
+          "index": 96,
+          "op": "catchUp",
+          "status": 200
+        }
+      ]
+    },
+    "account balance control": {
+      "stages": [],
+      "blocker": "locator.waitFor: Timeout 4000ms exceeded. Call log:",
+      "receiver": [
+        {
+          "index": 16,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 22,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 31,
+          "op": "indicators",
+          "alias": "A"
+        }
+      ]
+    }
+  },
+  "015": {
+    "organization and independent shelf": {
+      "stages": [
+        {
+          "label": "initial shelf",
+          "index": 33,
+          "card": 0
+        },
+        {
+          "label": "unrelated organization",
+          "index": 81,
+          "card": 0
+        },
+        {
+          "label": "addressed organization",
+          "index": 84,
+          "card": false
+        },
+        {
+          "label": "second Router fresh published shelf",
+          "index": 134,
+          "card": true,
+          "first": 0
+        },
+        {
+          "label": "second organization notification",
+          "index": 139,
+          "card": false
+        }
+      ],
+      "receiver": [
+        {
+          "index": 28,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 34,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 35,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 36,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 47,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 81,
+          "op": "delivery-1",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        },
+        {
+          "index": 124,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 133,
+          "op": "catalog",
+          "published": true
+        },
+        {
+          "index": 134,
+          "op": "delivery-1",
+          "name": "org:fixture",
+          "topic": "presentationTemplatesChanged"
+        }
+      ]
+    }
+  },
+  "020": {
+    "held and healthy identity sources": {
+      "stages": [
+        {
+          "label": "both tabs show turn 16",
+          "index": 118
+        },
+        {
+          "label": "identity sources addressed",
+          "index": 123,
+          "both": true
+        },
+        {
+          "label": "while A unresolved",
+          "index": 133
+        },
+        {
+          "label": "both providers settled or disconnected",
+          "index": 137
+        },
+        {
+          "label": "healthy control receives 17",
+          "index": 143
+        }
+      ],
+      "receiver": [
+        {
+          "index": 16,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 22,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 31,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 118,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 119,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 120,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 121,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 122,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 123,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 124,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 125,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 126,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 127,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 128,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 129,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 130,
+          "op": "indicators",
+          "alias": "B"
+        },
+        {
+          "index": 131,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 132,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 133,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 134,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 135,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 136,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 143,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 150,
+          "op": "catchUp",
+          "status": 200
+        }
+      ]
+    },
+    "fresh B sidebar": {
+      "stages": [
+        {
+          "label": "both tabs show turn 16",
+          "index": 116
+        },
+        {
+          "label": "Side survey",
+          "index": 156
+        },
+        {
+          "label": "fresh Router observes update while A remains held",
+          "since": 116,
+          "beforeEvent": 156,
+          "events": 170
+        }
+      ],
+      "receiver": [
+        {
+          "index": 16,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 22,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 48,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 122,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 123,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 124,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 125,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 126,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 127,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 128,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 129,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 130,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 131,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 132,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 133,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 134,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 135,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 136,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 137,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 138,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 139,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 140,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 141,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 142,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 143,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 144,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 145,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 146,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 147,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 148,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 149,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 150,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 151,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 152,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 153,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 154,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 155,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 156,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 157,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 158,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 159,
+          "op": "delivery-2",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatIndicatorsChanged"
+        },
+        {
+          "index": 160,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 161,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 163,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 164,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 165,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 166,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 167,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 168,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 169,
+          "op": "indicators",
+          "alias": "B"
+        },
+        {
+          "index": 170,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 171,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        }
+      ]
+    }
+  },
+  "022": {
+    "A closes before B replies": {
+      "stages": [
+        {
+          "label": "both tabs show turn 16",
+          "index": 120
+        },
+        {
+          "label": "B shows confirmed unread while A still withheld",
+          "index": 136
+        }
+      ],
+      "proof": {
+        "heldAt": 120,
+        "closedBeforeRelease": 124,
+        "deliveredBeforeReleasingA": 136,
+        "label": "Side survey\nUnread"
+      },
+      "receiver": [
+        {
+          "index": 18,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 22,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 31,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 120,
+          "op": "asked",
+          "alias": "B",
+          "mode": "hold"
+        },
+        {
+          "index": 121,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        },
+        {
+          "index": 122,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 123,
+          "op": "delivery-2",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatIndicatorsChanged"
+        },
+        {
+          "index": 124,
+          "op": "settled",
+          "alias": "B",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 125,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 126,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 127,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 128,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 129,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 130,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 131,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 132,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 133,
+          "op": "indicators",
+          "alias": "B"
+        },
+        {
+          "index": 134,
+          "op": "asked",
+          "alias": "B",
+          "mode": "healthy"
+        },
+        {
+          "index": 135,
+          "op": "settled",
+          "alias": "B",
+          "mode": "healthy",
+          "status": 200
+        },
+        {
+          "index": 136,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        },
+        {
+          "index": 137,
+          "op": "asked",
+          "alias": "A",
+          "mode": "hold"
+        }
+      ]
+    }
+  },
+  "023": {
+    "all identity sources fail": {
+      "stages": [
+        {
+          "label": "both tabs show turn 16",
+          "index": 119
+        },
+        {
+          "label": "identity sources addressed",
+          "index": 126,
+          "both": true
+        },
+        {
+          "label": "both providers settled or disconnected",
+          "index": 127
+        },
+        {
+          "label": "healthy control receives 17",
+          "index": 157
+        }
+      ],
+      "receiver": [
+        {
+          "index": 19,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 48,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 121,
+          "op": "asked",
+          "alias": "A",
+          "mode": "fail"
+        },
+        {
+          "index": 122,
+          "op": "settled",
+          "alias": "A",
+          "mode": "fail",
+          "status": 503
+        },
+        {
+          "index": 123,
+          "op": "asked",
+          "alias": "A",
+          "mode": "fail"
+        },
+        {
+          "index": 124,
+          "op": "settled",
+          "alias": "A",
+          "mode": "fail",
+          "status": 503
+        },
+        {
+          "index": 125,
+          "op": "asked",
+          "alias": "B",
+          "mode": "hold-fail"
+        },
+        {
+          "index": 126,
+          "op": "settled",
+          "alias": "B",
+          "mode": "hold-fail",
+          "status": 503
+        },
+        {
+          "index": 133,
+          "op": "indicators",
+          "alias": "B"
+        },
+        {
+          "index": 150,
+          "op": "catchUp",
+          "status": 200
+        },
+        {
+          "index": 157,
+          "op": "indicators",
+          "alias": "A"
+        }
+      ]
+    }
+  },
+  "027": {
+    "offline empty conversation": {
+      "stages": [
+        {
+          "label": "both tabs show turn 16",
+          "index": 122
+        },
+        {
+          "label": "offline survivor selects empty conversation",
+          "index": 181,
+          "route": true,
+          "discovery": false,
+          "turn16": false
+        },
+        {
+          "label": "same survivor receives 17",
+          "index": 210
+        }
+      ],
+      "receiver": [
+        {
+          "index": 16,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 20,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 21,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 22,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 35,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 122,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 161,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatArtifactCatalogChanged:thread"
+        },
+        {
+          "index": 162,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 163,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 164,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadWorkflowsChanged:thread"
+        },
+        {
+          "index": 181,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatArtifactCatalogChanged:thread"
+        },
+        {
+          "index": 182,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadDetailChanged:thread"
+        },
+        {
+          "index": 183,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadAutomationsChanged:thread"
+        },
+        {
+          "index": 184,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "chatThreadWorkflowsChanged:thread"
+        },
+        {
+          "index": 191,
+          "op": "delivery-1",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 192,
+          "op": "delivery-0",
+          "name": "user:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 193,
+          "op": "delivery-0",
+          "name": "org:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 194,
+          "op": "delivery-0",
+          "name": "user-org-foreground:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 203,
+          "op": "catchUp",
+          "status": 200
+        }
+      ]
+    }
+  },
+  "034": {
+    "fresh offline transcript": {
+      "stages": [
+        {
+          "label": "Primary survey\nUnread",
+          "index": 79
+        },
+        {
+          "label": "healthy catch-up while target unopened",
+          "index": 83
+        },
+        {
+          "label": "first read offline",
+          "index": 84
+        }
+      ],
+      "proof": {
+        "unreadDuringFailure": "Primary survey\nUnread",
+        "offlineRows": [
+          17,
+          18
+        ],
+        "firstVisit": true
+      },
+      "initialLabel": "Primary survey\nUnread",
+      "receiver": [
+        {
+          "index": 28,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 32,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 33,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 34,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 43,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 75,
+          "op": "delivery-1",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 78,
+          "op": "catchUp",
+          "status": 500
+        },
+        {
+          "index": 79,
+          "op": "delivery-1",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 82,
+          "op": "catchUp",
+          "status": 200
+        },
+        {
+          "index": 83,
+          "op": "unsubscribe",
+          "name": "user:fixture",
+          "topic": "agentphone:changed"
+        },
+        {
+          "index": 84,
+          "op": "settled",
+          "alias": "A",
+          "mode": "hold",
+          "status": 200
+        }
+      ]
+    }
+  },
+  "038": {
+    "failed attach and fresh registration": {
+      "stages": [
+        {
+          "label": "two Routers on org pending attach",
+          "index": 75,
+          "held": true
+        },
+        {
+          "label": "failed attach released",
+          "index": 76
+        },
+        {
+          "label": "fresh acquisition receives 17",
+          "index": 197
+        }
+      ],
+      "receiver": [
+        {
+          "index": 28,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 32,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 33,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 34,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 41,
+          "op": "asked",
+          "alias": "attach",
+          "mode": "hold-fail"
+        },
+        {
+          "index": 42,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 75,
+          "op": "settled",
+          "alias": "attach",
+          "mode": "hold-fail",
+          "status": 503
+        },
+        {
+          "index": 103,
+          "op": "balance",
+          "alias": "B",
+          "credits": 10000
+        },
+        {
+          "index": 120,
+          "op": "balance",
+          "alias": "A",
+          "credits": 10000
+        },
+        {
+          "index": 124,
+          "op": "attach",
+          "name": "user-org:fixture:fixture"
+        },
+        {
+          "index": 125,
+          "op": "attach",
+          "name": "user:fixture"
+        },
+        {
+          "index": 126,
+          "op": "attach",
+          "name": "org:fixture"
+        },
+        {
+          "index": 148,
+          "op": "indicators",
+          "alias": "A"
+        },
+        {
+          "index": 188,
+          "op": "delivery-1",
+          "name": "user-org:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 189,
+          "op": "delivery-0",
+          "name": "user:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 190,
+          "op": "delivery-0",
+          "name": "org:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 191,
+          "op": "delivery-0",
+          "name": "user-org-foreground:fixture:fixture",
+          "topic": "chatThreadMessageCreated:thread"
+        },
+        {
+          "index": 196,
+          "op": "catchUp",
+          "status": 200
+        }
+      ]
+    }
+  }
+}

@@ -170,6 +170,7 @@ pub(super) fn configure_env(values: &mut Vec<(String, String)>) {
                 | "GOOGLE_GEMINI_BASE_URL"
                 | "GOOGLE_APPLICATION_CREDENTIALS"
                 | "GOOGLE_GENAI_USE_VERTEXAI"
+                | "AGY_ADC_AUTH"
                 | "AGY_CLI_DISABLE_AUTO_UPDATE"
         )
     });

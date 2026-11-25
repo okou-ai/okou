@@ -1,12 +1,10 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts/client/workflows";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state, type Computed } from "ccstate";
 import { array, string, uuid } from "zod";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { rootVersion$ } from "../root-signal.ts";
 import { jsonParseOr } from "../utils.ts";
@@ -81,15 +79,6 @@ const recentWorkflowOwner$ = computed(async (get) => {
   };
 });
 
-// Reloading unrelated switches must not reset the session's readiness or queue.
-const enabledRecentWorkflowOwner$ = computed(async (get) => {
-  const switches = await get(featureSwitches$);
-  if (!switches[FeatureSwitchKey.WorkflowRecencySync]) {
-    return null;
-  }
-  return await get(recentWorkflowOwner$);
-});
-
 type RecentWorkflowOwner = Awaited<
   ReturnType<typeof recentWorkflowOwner$.read>
 >;
@@ -102,7 +91,7 @@ const isActiveRecentWorkflowOwner$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     owner.assertCurrent();
-    const current = await get(enabledRecentWorkflowOwner$);
+    const current = await get(recentWorkflowOwner$);
     signal.throwIfAborted();
     owner.assertCurrent();
     return current === owner;
@@ -186,11 +175,9 @@ const initializeRecentWorkflows$ = command(
 /** Optional root-owned bootstrap; consumers share this one initial request. */
 export const setupRecentWorkflowSync$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const owner = await get(enabledRecentWorkflowOwner$);
+    const owner = await get(recentWorkflowOwner$);
     signal.throwIfAborted();
-    if (owner) {
-      await set(initializeRecentWorkflows$, owner, signal);
-    }
+    await set(initializeRecentWorkflows$, owner, signal);
   },
 );
 
@@ -202,15 +189,10 @@ export function createRecentWorkflowIds(
     if (!range) {
       return [];
     }
-    const [owner, enabledOwner] = await Promise.all([
-      get(recentWorkflowOwner$),
-      get(enabledRecentWorkflowOwner$),
-    ]);
-    if (enabledOwner === owner) {
-      // Optional sync errors retain the browser cache, not an invented empty
-      // server result. Bootstrap owns and reports the original rejection.
-      await Promise.allSettled([get(owner.readiness$)]);
-    }
+    const owner = await get(recentWorkflowOwner$);
+    // Optional sync errors retain the browser cache, not an invented empty
+    // server result. Bootstrap owns and reports the original rejection.
+    await Promise.allSettled([get(owner.readiness$)]);
     owner.assertCurrent();
     // Each query owns a read-only snapshot. Fresh storage signals deliberately
     // do not subscribe to writes, so an open query/IME never changes its order.
@@ -306,10 +288,7 @@ export const recordRecentWorkflowUse$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const [owner, enabledOwner] = await Promise.all([
-      get(recentWorkflowOwner$),
-      get(enabledRecentWorkflowOwner$),
-    ]);
+    const owner = await get(recentWorkflowOwner$);
     signal.throwIfAborted();
     if (
       use.sessionKey !== get(authenticatedSessionKey$) ||
@@ -319,10 +298,7 @@ export const recordRecentWorkflowUse$ = command(
     }
     const { workflowIds } = use;
     owner.assertCurrent();
-    const readiness =
-      enabledOwner === owner
-        ? set(initializeRecentWorkflows$, owner, signal)
-        : undefined;
+    const readiness = set(initializeRecentWorkflows$, owner, signal);
     const revision = get(owner.revision$) + 1;
     set(owner.revision$, revision);
     set(
@@ -335,9 +311,6 @@ export const recordRecentWorkflowUse$ = command(
       ]),
     );
     set(recentWorkflowStorage.clear$);
-    if (!readiness) {
-      return;
-    }
     const write = set(
       persistRecentWorkflowUse$,
       owner,

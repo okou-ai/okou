@@ -1,11 +1,14 @@
 import { currentLocale } from "../i18n/index.ts";
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { billingFeedbackRewardContract } from "@okouai/api-contracts/client/billing";
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import { accept } from "../lib/accept.ts";
-import { displayBillingFeedbackSurvey } from "../lib/posthog.ts";
+import {
+  displayBillingFeedbackSurvey,
+  watchBillingFeedbackSurvey,
+} from "../lib/posthog.ts";
 import { apiClient$ } from "./api-client.ts";
-import { authenticatedIdentity$ } from "./auth.ts";
+import { authenticatedIdentity$, authenticatedSessionKey$ } from "./auth.ts";
 import {
   consumeBillingFeedback$,
   pendingBillingFeedback$,
@@ -19,6 +22,30 @@ import { settingsDialogSessionActive$ } from "./okou-page/settings/settings-dial
 import { isOrgAdmin$ } from "./org.ts";
 import { searchParams$ } from "./route.ts";
 import { resetSignal } from "./utils.ts";
+
+const creditsFeedbackSurveyMatch$ = state<{
+  readonly sessionKey: string | null;
+  readonly available: boolean;
+} | null>(null);
+
+export const creditsFeedbackSurveyAvailable$ = computed((get) => {
+  const match = get(creditsFeedbackSurveyMatch$);
+  return match?.sessionKey === get(authenticatedSessionKey$) && match.available;
+});
+
+export const watchCreditsFeedbackSurvey$ = command(
+  ({ get, set }, signal: AbortSignal) => {
+    const sessionKey = get(authenticatedSessionKey$);
+    set(creditsFeedbackSurveyMatch$, null);
+    watchBillingFeedbackSurvey(
+      BILLING_FEEDBACK_SURVEYS.credits_exhausted,
+      (available) => {
+        set(creditsFeedbackSurveyMatch$, { sessionKey, available });
+      },
+      signal,
+    );
+  },
+);
 
 export const billingFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);

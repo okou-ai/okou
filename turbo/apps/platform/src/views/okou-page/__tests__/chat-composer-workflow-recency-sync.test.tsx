@@ -1,13 +1,10 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   cleanup,
   fireEvent,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -36,9 +33,6 @@ const nextPage = createTestRuntime(context);
 const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 const THREAD_ID = "b0000000-0000-4000-a000-000000000921";
-const features = Object.freeze({
-  [FeatureSwitchKey.WorkflowRecencySync]: true,
-});
 const alphabet = Object.freeze([
   "alpha",
   "beta",
@@ -156,18 +150,10 @@ async function openMenu(editor: HTMLElement) {
   });
 }
 
-async function openPage(
-  page: TestContext = context,
-  enabled = true,
-  labEnabled = false,
-) {
+async function openPage(page: TestContext = context) {
   await setupPage({
     context: page,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.WorkflowRecencySync]: enabled,
-      [FeatureSwitchKey.Lab]: labEnabled,
-    },
   });
   return await findComposerEditor();
 }
@@ -195,87 +181,18 @@ async function sendWorkflow(editor: HTMLElement, name: string) {
   });
 }
 
-async function setSyncInLab(enabled: boolean) {
-  let switches: Record<string, boolean> = {
-    [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.WorkflowRecencySync]: !enabled,
-  };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  click(button("Test User"));
-  const lab = queryAllByRoleFast("menuitem").find((item) => {
-    return item.textContent?.trim() === "Lab";
-  });
-  if (!lab) {
-    throw new Error("Lab menu item not found");
-  }
-  click(lab);
-  await screen.findByRole("heading", { name: "Lab" });
-  const row = screen.getByText("Workflow recency sync").closest("li");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Workflow recency switch row not found");
-  }
-  const control = within(row).getByRole("switch");
-  expect(control).toHaveAttribute("aria-checked", String(!enabled));
-  click(control);
-  await waitFor(() => {
-    expect(control).toHaveAttribute("aria-checked", String(enabled));
-  });
-  act(() => {
-    window.history.back();
-  });
-  return await findComposerEditor();
-}
-
-test("Disabling initialized sync keeps canonical history and browser-only uses", async () => {
-  const id = installWorkflows();
-  mockCache({ "okou_recent-workflows": [id("delta")] });
-  mockRemote([id("echo")]);
-  let editor = await openPage(firstPage, true, true);
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("echo"));
-
-  editor = await setSyncInLab(false);
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("echo"));
-  await sendWorkflow(editor, "zulu");
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
-});
-
-test("Enabling sync does not replay browser-only uses to the server", async () => {
-  const id = installWorkflows();
-  mockCache({
-    "okou_recent-workflows:org_default:test-user-123": [id("echo")],
-  });
-  mockRemote([id("echo")]);
-  let editor = await openPage(firstPage, false, true);
-  await sendWorkflow(editor, "zulu");
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
-
-  editor = await setSyncInLab(true);
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
-  disposeFirstPage();
-
-  editor = await openPage(nextPage);
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("echo"));
-});
-
-test("A fresh browser-only page reads only the current workspace's saved history", async () => {
+test("A failed sync reads only the current workspace's saved history", async () => {
   const id = installWorkflows();
   mockCache({
     "okou_recent-workflows:org_default:test-user-123": [id("echo")],
     "okou_recent-workflows:another-workspace:test-user-123": [id("zulu")],
   });
-  const editor = await openPage(context, false);
+  context.mocks.api(workflowsCollectionContract.recent, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Recency unavailable" },
+    });
+  });
+  const editor = await openPage();
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("echo"));
   act(() => {
@@ -290,74 +207,7 @@ test("A fresh browser-only page reads only the current workspace's saved history
   expect(workflowNames()).toStrictEqual(ordered("zulu"));
 });
 
-test("Re-enabling sync cannot apply an older read over an accepted browser-only use", async () => {
-  installWorkflows();
-  mockCache({});
-  const reading = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(workflowsCollectionContract.recent, async ({ respond }) => {
-    reading.resolve();
-    await response.promise;
-    return respond(200, { workflowIds: [] });
-  });
-  await openPage(context, true, true);
-  await reading.promise;
-  let editor = await setSyncInLab(false);
-  await sendWorkflow(editor, "zulu");
-  editor = await setSyncInLab(true);
-  response.resolve();
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu"));
-});
-
-test("Disabling sync in Lab preserves browser-only history when an earlier read finishes", async () => {
-  const id = installWorkflows();
-  mockCache({ "okou_recent-workflows": [id("zulu")] });
-  const reading = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(workflowsCollectionContract.recent, async ({ respond }) => {
-    reading.resolve();
-    await response.promise;
-    return respond(200, { workflowIds: [] });
-  });
-  await openPage(context, true, true);
-  await reading.promise;
-  const editor = await setSyncInLab(false);
-  await act(async () => {
-    response.resolve();
-    await response.promise;
-  });
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu"));
-});
-
-test("Disabling sync in Lab preserves new browser-only uses when an earlier write finishes", async () => {
-  const id = installWorkflows();
-  mockRemote([id("echo")]);
-  const writing = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(
-    workflowsCollectionContract.recordRecentUse,
-    async ({ body, respond }) => {
-      writing.resolve();
-      await response.promise;
-      return respond(200, { workflowIds: [...body.workflowIds, id("echo")] });
-    },
-  );
-  let editor = await openPage(context, true, true);
-  await sendWorkflow(editor, "delta");
-  await writing.promise;
-  editor = await setSyncInLab(false);
-  await sendWorkflow(editor, "zulu");
-  await act(async () => {
-    response.resolve();
-    await response.promise;
-  });
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu", "delta", "echo"));
-});
-
-test("Enabling sync in Lab keeps the first accepted use ahead of its initial baseline when persistence fails", async () => {
+test("The first accepted use stays ahead of its initial baseline when persistence fails", async () => {
   const id = installWorkflows();
   mockCache({});
   const reading = context.mocks.deferred<void>();
@@ -380,8 +230,7 @@ test("Enabling sync in Lab keeps the first accepted use ahead of its initial bas
       });
     },
   );
-  await openPage(context, false, true);
-  const editor = await setSyncInLab(true);
+  const editor = await openPage();
   await sendWorkflow(editor, "zulu");
   await reading.promise;
   response.resolve();
@@ -438,15 +287,10 @@ test("A null history imports normalized legacy IDs and displays the canonical im
       return respond(200, { workflowIds: [id("echo")] });
     },
   );
-  const editor = await openPage(context, true, true);
+  const editor = await openPage();
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("echo"));
   expect(imports).toStrictEqual([[id("zulu"), id("echo")]]);
-
-  // Disabling remote synchronization keeps this identity's canonical cache.
-  const offlineEditor = await setSyncInLab(false);
-  await openMenu(offlineEditor);
-  expect(workflowNames()).toStrictEqual(ordered("echo"));
 });
 
 test("A fresh empty browser leaves null available for a later legacy import", async () => {
@@ -479,9 +323,8 @@ test("A failed read retains local history and does not authorize a legacy import
   expect(workflowNames()).toStrictEqual(ordered("zulu"));
   disposeFirstPage();
 
-  // If failure had been treated as null + successful import, the compatibility
-  // key would have been cleared and this existing OFF path would lose its order.
-  const localEditor = await openPage(nextPage, false);
+  // A failed read on a fresh page must still preserve the browser history.
+  const localEditor = await openPage(nextPage);
   await openMenu(localEditor);
   expect(workflowNames()).toStrictEqual(ordered("zulu"));
 });
@@ -659,7 +502,6 @@ test("A late read from a disposed session cannot overwrite the current session's
       user: { id: "test-user-123", fullName: "Test User" },
       session: { token: "another-session-token", id: "another-session" },
     },
-    featureSwitches: features,
   });
   const editor = await findComposerEditor();
   await openMenu(editor);

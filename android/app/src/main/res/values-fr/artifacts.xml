@@ -28,6 +28,7 @@
     <string name="artifact_empty">Aucun artefact pour le moment</string>
     <string name="artifact_empty_type">Aucun artefact de ce type</string>
     <string name="artifact_no_matches">Aucun artefact correspondant</string>
+    <string name="artifact_clear_keyword">Effacer la recherche</string>
     <string name="artifact_show_all">Tout afficher</string>
     <string name="artifact_catalog_load_failed">Chargement des artefacts temporairement indisponible</string>
     <string name="artifact_catalog_refresh_failed">Mise à jour temporairement indisponible. Les artefacts déjà chargés restent visibles.</string>
@@ -49,6 +50,7 @@
     <string name="artifact_open_website">Ouvrir dans le navigateur</string>
     <string name="artifact_browser_unavailable">Impossible d’ouvrir le navigateur</string>
     <string name="artifact_play_media">Lecture multimédia</string>
+    <string name="artifact_play">Lire</string>
     <string name="artifact_catalog_access_denied">Vous n’avez pas accès à ce catalogue d’artefacts</string>
     <string name="artifact_catalog_missing">Ce catalogue d’artefacts n’est plus disponible</string>
     <string name="chat_resources_related">Conversations associées</string>

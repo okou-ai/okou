@@ -1,346 +1,287 @@
-import { voiceIoPolishSegmentsRequestSchema } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
-import { openDB, type DBSchema } from "idb";
+import { openDB } from "idb";
+import { VOICE_IO_POLISH_MAX_SEGMENTS } from "@okouai/api-contracts/validators/voice-io-polish";
+import { chatListAuth } from "./chat-list-test-helpers.ts";
+import {
+  voiceIoPolishSegmentsRequestSchema,
+  voiceIoPolishSegmentsContract,
+} from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-import type { VoiceDraftRecordingRecord } from "../../../signals/external/voice-draft-store.ts";
-import { resetSignal } from "../../../signals/utils.ts";
-import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
-import {
-  createChatRunFixtures,
-  findEnabledButton,
-  queryButton,
-  RUN_PATH,
-} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-// Preserve independent replacement app/worker graphs without reinstalling HTML.
-const secondContext = createTestRuntime(context);
-interface RecordingDatabase extends DBSchema {
-  drafts: {
-    key: string;
-    value: VoiceDraftRecordingRecord;
-  };
-}
+const QUEUED_SAMPLES = 4096;
+const FINAL_SAMPLES = 1024;
+const QUEUED_LEVEL = 0.25;
+const FINAL_LEVEL = 0.5;
 
-async function savedRecording() {
-  const database = await openDB<RecordingDatabase>("okou-voice-drafts");
-  const recordings = await database.getAll("drafts");
-  database.close();
-  return recordings[0] ?? null;
-}
-
-function releasePageDom() {
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-}
-
-function installVoiceBoundaries() {
-  installRunChat({ selectedModel: null });
-  context.mocks.data.availableRunModels([]);
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: true, count: 0, limit: 60 });
+function queryControl(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((button) => {
+    return (
+      (button.getAttribute("aria-label") ?? button.textContent?.trim()) === name
+    );
   });
 }
 
-async function uploadedAudio(request: Request): Promise<ArrayBuffer> {
-  const form = await request.formData();
-  const file = form.get("file");
-  if (!(file instanceof File)) {
-    throw new Error("Expected recorded audio");
-  }
-  return await file.arrayBuffer();
+async function findEnabledControl(name: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const control = queryControl(name);
+    expect(control).toBeEnabled();
+    return control as HTMLElement;
+  });
 }
 
-function owningComposer(control: HTMLElement): HTMLElement {
-  const composer = control.closest("[data-chat-composer]");
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error("Expected a voice control inside the chat composer");
-  }
-  return composer;
-}
-
-test("Use committed PCM as a normal recording draft after reload", async () => {
-  const resetFirstPage$ = resetSignal();
-  const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
-  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-  context.mocks.browser.voiceInput({
-    rms: 0.12,
-    onPcmCapture: capture.resolve,
-    finalPcmSamples: new Float32Array(0),
-  });
-  installVoiceBoundaries();
-  const uploads: ArrayBuffer[] = [];
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "Recovered audio." });
-  });
-  context.mocks.http.post(
-    "*/api/voice-io/transcribe/segment",
-    async ({ request }) => {
-      uploads.push(await uploadedAudio(request));
-      return HttpResponse.json({
-        transcript: "recovered",
-
-        language: "en-US",
+/** The 16-bit PCM samples of an uploaded WAV file, as unit-range values. */
+async function wavSamples(file: File): Promise<number[]> {
+  const view = new DataView(await file.arrayBuffer());
+  let offset = 12;
+  while (offset + 8 <= view.byteLength) {
+    const chunk = String.fromCharCode(
+      ...[0, 1, 2, 3].map((index) => {
+        return view.getUint8(offset + index);
+      }),
+    );
+    const size = view.getUint32(offset + 4, true);
+    if (chunk === "data") {
+      return Array.from({ length: size / 2 }, (_, index) => {
+        return view.getInt16(offset + 8 + index * 2, true) / 32_768;
       });
-    },
-  );
-  await setupPage({
-    locale: "en-US",
-    context: { ...context, signal: firstPageSignal },
-    path: RUN_PATH,
-  });
-  const voiceInput = await findEnabledButton("Voice input");
-  const firstComposer = owningComposer(voiceInput);
-  click(voiceInput);
-  const emit = await capture.promise;
-  emit(new Float32Array(4096).fill(0.25));
-  await waitFor(async () => {
-    await expect(savedRecording()).resolves.toMatchObject({
-      sampleCount: 4096,
-      chunkCount: 1,
-    });
-  });
-  await findEnabledButton("Stop recording", firstComposer);
-
-  context.store.set(resetFirstPage$);
-  releasePageDom();
-  await setupPage({
-    locale: "en-US",
-    context: secondContext,
-    path: RUN_PATH,
-  });
-
-  const useRecording = await findEnabledButton("Use recording");
-  const restoredComposer = owningComposer(useRecording);
-  expect(queryButton("Stop recording")).toBeNull();
-  click(useRecording);
-  await findEnabledButton("Voice input", restoredComposer);
-  expect(
-    within(restoredComposer).getByRole("textbox", { name: "Message" }),
-  ).toHaveTextContent("Recovered audio.");
-  expect(uploads).toHaveLength(1);
-  const samples = decodeVoiceDraftPcmWav(uploads[0]!);
-  expect(samples).toHaveLength(4096);
-  expect(samples?.at(-1)).toBeCloseTo(0.25, 4);
-});
+    }
+    offset += 8 + size;
+  }
+  throw new Error("The uploaded audio has no data chunk");
+}
 
 test("Include the final worklet chunk before transcribing", async () => {
-  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-  const upload = context.mocks.deferred<ArrayBuffer>();
+  const microphone: { emit?: (samples: Float32Array) => void } = {};
   context.mocks.browser.voiceInput({
-    rms: 0.12,
-    onPcmCapture: capture.resolve,
-    finalPcmSamples: new Float32Array(1024).fill(-0.75),
+    rms: 0.2,
+    onPcmCapture(emit) {
+      microphone.emit = emit;
+    },
+    finalPcmSamples: new Float32Array(FINAL_SAMPLES).fill(FINAL_LEVEL),
   });
-  installVoiceBoundaries();
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "Complete recording." });
-  });
+  // The latest audio the transcription service received.
+  const transcription: { upload?: File } = {};
   context.mocks.http.post(
-    "*/api/voice-io/transcribe/segment",
+    `*${voiceIoTranscribeContract.segment.path}`,
     async ({ request }) => {
-      upload.resolve(await uploadedAudio(request));
+      const file = (await request.formData()).get("file");
+      if (file instanceof File) {
+        transcription.upload = file;
+      }
       return HttpResponse.json({
-        transcript: "complete",
-
-        language: "en-US",
+        transcript: "Ship the build",
+        language: "en",
       });
     },
   );
-  await setupPage({ context, path: RUN_PATH });
-  click(await findEnabledButton("Voice input"));
-  const emit = await capture.promise;
-  emit(new Float32Array(4096).fill(0.25));
-  // Stop immediately: it must drain both queued writes and the final chunk.
-  click(await findEnabledButton("Stop recording"));
-  const samples = decodeVoiceDraftPcmWav(await upload.promise);
-  expect(samples).toHaveLength(5120);
-  expect(samples?.[4095]).toBeCloseTo(0.25, 4);
-  expect(samples?.[4096]).toBeCloseTo(-0.75, 4);
-  expect(samples?.at(-1)).toBeCloseTo(-0.75, 4);
-  await findEnabledButton("Voice input");
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ respond }) => {
+    return respond(200, { text: "Ship the build." });
+  });
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  const emit = await waitFor(() => {
+    if (!microphone.emit) {
+      throw new Error("Expected the microphone to capture audio");
+    }
+    return microphone.emit;
+  });
+
+  act(() => {
+    emit(new Float32Array(QUEUED_SAMPLES).fill(QUEUED_LEVEL));
+  });
+  click(await findEnabledControl("Stop recording"));
+
+  await expect(
+    screen.findByText("Ship the build."),
+  ).resolves.toBeInTheDocument();
+  await findEnabledControl("Voice input");
+  const upload = transcription.upload;
+  if (!upload) {
+    throw new Error("Expected the recording to be transcribed");
+  }
+  const samples = await wavSamples(upload);
+  expect(samples).toHaveLength(QUEUED_SAMPLES + FINAL_SAMPLES);
+  expect(new Set(samples.slice(0, QUEUED_SAMPLES))).toStrictEqual(
+    new Set([QUEUED_LEVEL]),
+  );
+  expect(new Set(samples.slice(QUEUED_SAMPLES))).toStrictEqual(
+    new Set([FINAL_LEVEL]),
+  );
 });
 
-test("Use the completed transcript retained in a recording draft after reload", async () => {
-  const resetFirstPage$ = resetSignal();
-  const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installVoiceBoundaries();
-  let transcribed = false;
-  let polishAvailable = false;
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    if (transcribed) {
-      return HttpResponse.json(
-        {
-          error: {
-            code: "UNEXPECTED_RETRANSCRIPTION",
-            message: "Completed audio must not be uploaded again",
-          },
-        },
-        { status: 502 },
-      );
-    }
-    transcribed = true;
-    return HttpResponse.json({
-      transcript: "Keep this saved speech.",
-      language: "en",
-    });
+test("A restored two-part recording uses both saved transcripts while the transcriber has different text", async () => {
+  const total = 2;
+  const labels = Array.from({ length: total }, (_, index) => {
+    return "word" + String(index + 1);
+  });
+
+  let accepting = false;
+  const firstPolish = context.mocks.deferred<void>();
+  const rate = 16_000;
+  const windowStep = 13 * rate;
+  const microphone = new Float32Array((total - 1) * windowStep + 3 * rate);
+  for (let index = 0; index < microphone.length; index++) {
+    microphone[index] = index % 2 ? 0.4 : -0.4;
+  }
+  context.mocks.browser.voiceInput({
+    rms: 0.3,
+    vadProbability: 0.95,
+    finalPcmSamples: microphone,
   });
   context.mocks.http.post(
-    "*/api/voice-io/polish/segments",
+    "*" + voiceIoTranscribeContract.segment.path,
     async ({ request }) => {
-      await expect(request.json()).resolves.toMatchObject({
-        segments: ["Keep this saved speech."],
+      const file = (await request.formData()).get("file");
+      if (!(file instanceof File)) {
+        throw new Error("Missing audio segment");
+      }
+      const start = Number(/(\d+)\.wav$/.exec(file.name)?.[1]);
+      return HttpResponse.json({
+        transcript: accepting ? "retranscribed" : labels[start / windowStep],
+        language: "en",
       });
-      return polishAvailable
-        ? HttpResponse.json({ text: "Keep this saved speech." })
-        : HttpResponse.json(
-            {
-              error: {
-                code: "PROVIDER_UNAVAILABLE",
-                message: "Editing is busy",
-              },
-            },
-            { status: 503 },
-          );
     },
   );
-  await setupPage({
-    context: { ...context, signal: firstPageSignal },
-    path: RUN_PATH,
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    if (!accepting) {
+      firstPolish.resolve();
+      return respond(503, {
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Polishing is offline",
+        },
+      });
+    }
+    return respond(200, { text: body.segments.join(" | ") });
   });
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Remove voice draft");
-  await expect(
-    screen.findByText("Editing is busy", { exact: false }),
-  ).resolves.toBeInTheDocument();
-  context.store.set(resetFirstPage$);
-  releasePageDom();
-  polishAvailable = true;
-  await setupPage({ context: secondContext, path: RUN_PATH });
-  click(await findEnabledButton("Use recording"));
+  const original = createTestRuntime(context);
+  await setupPage({ context: original, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  click(await findEnabledControl("Stop recording"));
+  await firstPolish.promise;
   await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Keep this saved speech.",
-    );
+    expect(queryControl("Use recording")).toBeDefined();
   });
+  cleanup();
+  original.dispose();
+  accepting = true;
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Use recording"));
+  const result = labels.join(" | ");
+  await expect(screen.findByText(result)).resolves.toBeInTheDocument();
 });
 
-test.each([
-  [128, 1],
-  [129, 2],
-  [277, 3],
-])(
-  "Restore %i completed segments with %i transcripts per polish item",
-  async (segmentCount, groupSize) => {
-    const resetFirstPage$ = resetSignal();
-    const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
-    context.mocks.browser.voiceInput({ rms: 0.12 });
-    installVoiceBoundaries();
-    let uploads = 0;
-    context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-      uploads += 1;
-      return HttpResponse.json({ transcript: "Saved speech.", language: "en" });
-    });
-    const transcripts = Array.from({ length: segmentCount }, (_, index) => {
-      return `Part ${index + 1}: keep every  word.`;
-    });
-    const fullText = transcripts.join(" ");
-    let restored = false;
-    let available = false;
-    const requests: unknown[] = [];
-    context.mocks.http.post(
-      "*/api/voice-io/polish/segments",
-      async ({ request }) => {
-        if (restored) {
-          requests.push(await request.json());
-        }
-        return available
-          ? HttpResponse.json({ text: fullText })
-          : HttpResponse.json(
-              {
-                error: {
-                  code: "PROVIDER_UNAVAILABLE",
-                  message: "Editing is busy",
-                },
-              },
-              { status: 503 },
-            );
-      },
-    );
-    await setupPage({
-      context: { ...context, signal: firstPageSignal },
-      path: RUN_PATH,
-    });
-    click(await findEnabledButton("Voice input"));
-    click(await findEnabledButton("Stop recording"));
-    await findEnabledButton("Remove voice draft");
-    context.store.set(resetFirstPage$);
-    releasePageDom();
+test("A reopened recording that lacks a completed transcript uses the recovered transcriber", async () => {
+  context.mocks.browser.voiceInput({
+    rms: 0.45,
+    vadProbability: 0.99,
+    finalPcmSamples: new Float32Array(4096).fill(0.4),
+  });
+  let restored = false;
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    return restored
+      ? HttpResponse.json({
+          transcript: "Recovered from audio",
+          language: "en",
+        })
+      : HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Transcription unavailable",
+            },
+          },
+          { status: 503 },
+        );
+  });
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    return respond(200, { text: body.segments.join(" ") });
+  });
+  const first = createTestRuntime(context);
+  await setupPage({ context: first, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  click(await findEnabledControl("Stop recording"));
+  await waitFor(() => {
+    expect(queryControl("Use recording")).toBeDefined();
+  });
+  cleanup();
+  first.dispose();
+  restored = true;
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Use recording"));
+  await expect(
+    screen.findByText("Recovered from audio"),
+  ).resolves.toBeInTheDocument();
+});
 
-    // Restore long-recording metadata without allocating an hour of PCM.
-    const database = await openDB<RecordingDatabase>("okou-voice-drafts");
-    const key = (await database.getAllKeys("drafts"))[0];
-    if (!key) {
-      throw new Error("Expected a saved recording key");
-    }
-    const recording = await database.get("drafts", key);
-    if (!recording?.progress) {
-      throw new Error("Expected completed transcription progress");
-    }
-    const sampleCount = Math.min(3600, 15 + (segmentCount - 1) * 13) * 16_000;
-    const segments = transcripts.map((transcript, index) => {
-      return {
-        startSample: index * 13 * 16_000,
-        endSample: Math.min(sampleCount, (15 + index * 13) * 16_000),
-        final: index === segmentCount - 1,
-        transcript,
-      };
-    });
-    await database.put(
-      "drafts",
+test("A saved recording longer than one polish request restores the entire transcript to the message editor", async () => {
+  context.mocks.browser.voiceInput({ rms: 0.2 });
+  const words = Array.from({ length: VOICE_IO_POLISH_MAX_SEGMENTS }, (_, i) => {
+    return "observation-" + String(i + 1);
+  });
+  words.push("end of the field notes");
+  const database = await openDB("okou-voice-drafts", 2, {
+    upgrade(db) {
+      db.createObjectStore("drafts");
+      db.createObjectStore("chunks");
+    },
+  });
+  const key = JSON.stringify([
+    "chat-list-user-917",
+    "chat-list-org-917",
+    "new-chat",
+  ]);
+  const id = crypto.randomUUID();
+  const segments = words.map((transcript, index) => {
+    return {
+      startSample: index * 32,
+      endSample: (index + 1) * 32,
+      final: index + 1 === words.length,
+      transcript,
+    };
+  });
+  try {
+    const samples = new Float32Array(words.length * 32);
+    const tx = database.transaction(["drafts", "chunks"], "readwrite");
+    await tx.objectStore("chunks").put(samples.buffer, [key, id, 0]);
+    await tx.objectStore("drafts").put(
       {
-        ...recording,
-        sampleCount,
-        progress: { ...recording.progress, segments },
+        id,
+        sampleCount: samples.length,
+        chunkCount: 1,
+        progress: { revision: 1, context: {}, segments },
       },
       key,
     );
+    await tx.done;
+  } finally {
     database.close();
-    restored = true;
-    available = true;
-    await setupPage({ context: secondContext, path: RUN_PATH });
-    click(await findEnabledButton("Use recording"));
-    await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
-        fullText,
-      );
-    });
-    const bodies = requests.map((body) => {
-      return voiceIoPolishSegmentsRequestSchema.parse(body);
-    });
-    const expectedSegments = Array.from(
-      { length: Math.ceil(segmentCount / groupSize) },
-      (_, index) => {
-        return transcripts
-          .slice(index * groupSize, (index + 1) * groupSize)
-          .join(" ");
-      },
+  }
+  const polish = context.mocks.deferred<void>();
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    const { segments } = voiceIoPolishSegmentsRequestSchema.parse(body);
+    polish.resolve();
+    return respond(200, { text: segments.join(" ") });
+  });
+  await setupPage({ context, auth: chatListAuth(917), path: "/" });
+  click(await findEnabledControl("Use recording"));
+  await polish.promise;
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+      words.join(" "),
     );
-    expect(requests).toStrictEqual(bodies);
-    expect(bodies).toStrictEqual([{ segments: expectedSegments }]);
-    expect(uploads).toBe(1);
-  },
-);
+  });
+});

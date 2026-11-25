@@ -10,10 +10,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import type { PresentationTemplateItem } from "@okouai/core";
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { expect } from "vitest";
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 import {
@@ -27,7 +26,6 @@ import {
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
@@ -118,33 +116,6 @@ export async function expectInlineTemplateInComposer(
       }),
     ).toContain(title);
   });
-}
-
-export async function selectTemplate(
-  template: PresentationTemplateItem,
-): Promise<void> {
-  await clickComposerAddMenuItem("Create");
-  const types = await screen.findByRole("radiogroup", { name: "Create" });
-  const presentation = queryAllByRoleFast("radio", types).find((candidate) => {
-    return candidate.textContent?.trim() === "Presentation";
-  });
-  if (!presentation) {
-    throw new Error("Expected Presentation creation type");
-  }
-  if (presentation.getAttribute("aria-checked") !== "true") {
-    click(presentation);
-  }
-  const shelf = await screen.findByRole("group", {
-    name: "Presentation templates",
-  });
-  const cover = queryAllByRoleFast("button", shelf).find((candidate) => {
-    return candidate.textContent?.trim() === template.title;
-  });
-  if (!cover) {
-    throw new Error(`Expected presentation recommendation ${template.title}`);
-  }
-  click(cover);
-  await expectInlineTemplateInComposer(template.title);
 }
 
 // The slash-workflow composer renders a TipTap contenteditable instead of a

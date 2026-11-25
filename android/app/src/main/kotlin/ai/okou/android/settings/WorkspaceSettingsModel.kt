@@ -7,6 +7,7 @@ import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
 import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.contentReadStaleDelayMillis
 import ai.okou.android.state.SettingsDestination
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -53,8 +54,8 @@ internal data class SettingsRead<T>(
 }
 
 internal fun SettingsRead<*>.isStale(nowMillis: Long): Boolean {
-    val age = nowMillis - (readAt ?: return false)
-    return age < 0 || age > 10 * 60_000L
+    val confirmedAt = readAt ?: return false
+    return confirmedAt > nowMillis || contentReadStaleDelayMillis(confirmedAt, nowMillis) == 0L
 }
 
 internal const val settingsReadAttempts = 3

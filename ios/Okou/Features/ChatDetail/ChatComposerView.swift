@@ -28,7 +28,7 @@ struct ChatComposerView: View {
   /// the input as its context, so the input stays open; the card's own files are not the
   /// member's content; and the page sets the input's width.
   var writesDirection = false
-  var placeholder: String?
+  var placeholder = String(localized: "Message Okou")
   var recommendedFollowup: String?
   var showsTrailingFeedbackInput = true
   var project: ChatProject?
@@ -63,8 +63,6 @@ private struct ChatComposerContent: View {
   private var workflowSource: ComposerWorkflowSource? { configuration.workflowSource }
   private var sendTransition: ConversationSendTransition? { configuration.sendTransition }
   private var writesDirection: Bool { configuration.writesDirection }
-  private var placeholder: String? { configuration.placeholder }
-  private var recommendedFollowup: String? { configuration.recommendedFollowup }
   private var showsTrailingFeedbackInput: Bool { configuration.showsTrailingFeedbackInput }
   private var project: ChatProject? { configuration.project }
   private var removeProject: (() -> Void)? { configuration.removeProject }
@@ -141,14 +139,12 @@ private struct ChatComposerContent: View {
   private var usesFollowupPlaceholder: Bool {
     modelSelection?.models.usesFollowupPlaceholder == true
   }
-  private var resolvedPlaceholder: String {
-    placeholder ?? (usesFollowupPlaceholder ? "" : String(localized: "Message Okou"))
-  }
   private var visibleFollowup: String? {
     guard usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,
-      current.canSend
+      current.canSend, let followup = configuration.recommendedFollowup,
+      !followup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
-    return recommendedFollowup
+    return followup
   }
 
   var body: some View {
@@ -234,29 +230,26 @@ private struct ChatComposerContent: View {
       VStack(alignment: .trailing, spacing: 0) {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
+        let followup = visibleFollowup
         OkouComposerSurface(isExpanded: expandsInput) {
-          VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            let followup = visibleFollowup
-            HStack(spacing: OkouSpace.xs) {
-              textInput(id: inputID, followup: followup)
-                .accessibilityIdentifier("message-input")
-              if let followup {
-                Button {
-                  draftState.editor.acceptFollowup(followup)
-                } label: {
-                  Text("OK")
-                    .font(.okou(.footnote).weight(.medium))
-                    .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
-                    .background(OkouColor.muted, in: Capsule())
-                    .frame(minWidth: actionSize, minHeight: actionSize)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Use this suggestion")
-                .accessibilityValue(Text(verbatim: followup))
-                .accessibilityIdentifier("accept-followup")
-              }
+          textInput(id: inputID, followup: followup)
+            .accessibilityIdentifier("message-input")
+        } inlineAction: {
+          if let followup {
+            Button {
+              draftState.editor.acceptFollowup(followup)
+            } label: {
+              Text("OK")
+                .font(.okou(.footnote).weight(.medium))
+                .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
+                .background(OkouColor.muted, in: Capsule())
+                .frame(minWidth: actionSize, minHeight: actionSize)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Use this suggestion")
+            .accessibilityValue(Text(verbatim: followup))
+            .accessibilityIdentifier("accept-followup")
           }
         } leading: {
           HStack(spacing: 0) {
@@ -401,7 +394,7 @@ private struct ChatComposerContent: View {
     ChatFeedbackComposer(
       state: draftState, presentation: current, inputID: inputID,
       isFocused: $isFocused,
-      acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+      acceptsImages: !isBusy && !needsUpgrade, placeholder: configuration.placeholder,
       followup: followup,
       showsTrailingParagraph: showsTrailingFeedbackInput,
       expanded: showsEditingLayout

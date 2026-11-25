@@ -1,27 +1,13 @@
 import { vi, type Mock } from "vitest";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  queryAllByRoleFast,
-  setupPage as baseSetupPage,
-} from "../../../__tests__/page-helper.ts";
+import { setupPage as baseSetupPage } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 export function setupPage(
   options: Parameters<typeof baseSetupPage>[0],
 ): Promise<void> {
   return baseSetupPage(options);
-}
-
-export function computerUsePermissions() {
-  return {
-    accessibility: true,
-    screenRecording: true,
-    automation: {
-      chrome: { status: "unknown" as const, updatedAt: null, reason: null },
-      safari: { status: "unknown" as const, updatedAt: null, reason: null },
-    },
-  };
 }
 
 interface PushBrowserMock {
@@ -37,55 +23,6 @@ interface TestServiceWorkerRegistration {
 interface TestServiceWorkerContainer {
   readonly addEventListener: ServiceWorkerContainer["addEventListener"];
   readonly register: () => Promise<TestServiceWorkerRegistration>;
-}
-
-export function buttonByText(
-  text: string,
-  container?: ParentNode,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === text;
-  });
-  if (!button) {
-    throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
-export function buttonByLabel(label: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
-  }
-  return button;
-}
-
-export function chatScrollContainer(): HTMLElement {
-  const element = document.querySelector("[data-scroll-container]");
-  if (!(element instanceof HTMLElement)) {
-    throw new Error("Chat scroll container not found");
-  }
-  return element;
-}
-
-export function chatComposerTextarea(): HTMLElement {
-  const element = document.querySelector(
-    '[data-chat-composer] [contenteditable="true"]',
-  );
-  if (!(element instanceof HTMLElement)) {
-    throw new Error("Chat composer input not found");
-  }
-  return element;
-}
-
-export function activeElementIsInside(element: HTMLElement): boolean {
-  return (
-    document.activeElement === element ||
-    (document.activeElement instanceof Node &&
-      element.contains(document.activeElement))
-  );
 }
 
 export function createChatLifecycleHelpers(context: TestContext) {

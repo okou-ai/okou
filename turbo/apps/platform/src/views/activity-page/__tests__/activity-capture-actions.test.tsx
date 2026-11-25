@@ -1,7 +1,6 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -12,96 +11,112 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const requestUrl = "https://example.com/capture-preview";
+const URL = "https://api.reports.test/v1/exports";
 
-function captureFile(capture: Partial<NetworkLogEntry>): File {
-  const entry: NetworkLogEntry = {
-    timestamp: "2026-09-23T06:00:00Z",
-    type: "http",
-    action: "ALLOW",
-    method: "POST",
-    url: requestUrl,
-    status: 200,
-    ...capture,
-  };
-  return new File(
-    [
-      JSON.stringify({
-        meta: { displayName: "Captured request", status: "completed" },
-        events: [],
-        networkLogs: [entry],
-      }),
+function capturedLog(): File {
+  const log = {
+    meta: {
+      id: "d0000000-0000-4000-a000-000000000f61",
+      displayName: "Export reports",
+      framework: "claude-code",
+      status: "completed",
+      createdAt: "2026-11-20T07:00:00.000Z",
+      startedAt: "2026-11-20T07:00:01.000Z",
+      completedAt: "2026-11-20T07:00:11.000Z",
+    },
+    events: [],
+    networkLogs: [
+      {
+        timestamp: "2026-11-20T07:00:05.000Z",
+        type: "http",
+        method: "POST",
+        url: URL,
+        host: "api.reports.test",
+        status: 201,
+        latency_ms: 95,
+        request_headers: { "x-request-id": "req-61" },
+        request_headers_truncated: false,
+        request_body: '{"format":"csv"}',
+        response_headers: { "x-export-id": "exp-61" },
+        response_headers_truncated: false,
+        response_body: '{"id":"exp-61"}',
+      },
     ],
-    "captured-request.json",
-    { type: "application/json" },
-  );
-}
-
-async function openCapture(
-  user: ReturnType<typeof userEvent.setup>,
-  capture: Partial<NetworkLogEntry>,
-) {
-  await setupPage({
-    context,
-    path: "/activities/inspect?tab=network",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  };
+  return new File([JSON.stringify(log)], "export-reports.json", {
+    type: "application/json",
   });
-  await user.upload(screen.getByLabelText("Upload JSON"), captureFile(capture));
-  const request = await screen.findByText(requestUrl);
-  click(request);
 }
 
-function captureSection(title: string) {
-  const summary = screen.getByText(title).closest("summary");
+/** The capture section a heading starts, and the copy action beside it. */
+function captureSection(title: string): {
+  readonly details: HTMLDetailsElement;
+  readonly copy: HTMLElement;
+} {
+  const summary = [...document.querySelectorAll("summary")].find((item) => {
+    return item.textContent?.startsWith(title);
+  });
   const details = summary?.closest("details");
-  const section = details?.parentElement;
-  if (!summary || !details || !section) {
-    throw new Error(`Expected capture disclosure: ${title}`);
+  // The copy action sits beside the disclosure, outside its content.
+  const copy = details?.parentElement?.querySelector<HTMLElement>(
+    ':scope > button[aria-label="Copy to clipboard"]',
+  );
+  if (!details || !copy) {
+    throw new Error(`Expected the ${title} capture section`);
   }
-  return { summary, details, section };
+  return { details, copy };
 }
 
 test("Copy each capture section without opening its disclosure", async () => {
-  const user = userEvent.setup();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  await openCapture(user, {
-    request_headers: { "Content-Type": "application/json" },
-    response_headers: { "Content-Type": "text/plain" },
-    request_body: '{"message":"request capture"}',
-    response_body: '{"message":"response capture"}',
+  await setupPage({
+    context,
+    path: "/activities/inspect",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
-  const sections = [
-    [
-      "Request Headers (1)",
-      "application/json",
-      "Content-Type: application/json",
-    ],
-    ["Response Headers (1)", "text/plain", "Content-Type: text/plain"],
-    [
-      "Request Body",
-      '{"message":"request capture"}',
-      '{"message":"request capture"}',
-    ],
-    [
-      "Response Body",
-      '{"message":"response capture"}',
-      '{"message":"response capture"}',
-    ],
-  ] as const;
-  for (const [title, contentText, copiedText] of sections) {
-    const { details, section } = captureSection(title);
-    const copy = queryAllByRoleFast("button", section).find((button) => {
-      return button.getAttribute("aria-label") === "Copy to clipboard";
+  await expect(
+    screen.findByRole("heading", { name: "No log loaded" }),
+  ).resolves.toBeInTheDocument();
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  await userEvent.upload(input as HTMLInputElement, capturedLog());
+  const network = await waitFor(() => {
+    const found = queryAllByRoleFast("tab").find((tab) => {
+      return tab.textContent?.trim() === "Network";
     });
-    if (!copy) {
-      throw new Error(`Expected the ${title} copy action`);
+    if (!found) {
+      throw new Error("Expected the Network tab");
     }
-    const content = within(details).getByText(contentText);
-    expect(content).not.toBeVisible();
-    click(copy);
-    await waitFor(() => {
-      expect(clipboard.writes.at(-1)).toBe(copiedText);
+    return found;
+  });
+  await userEvent.click(network);
+  const request = await waitFor(() => {
+    const found = queryAllByRoleFast("button").find((button) => {
+      return button.getAttribute("aria-label") === URL;
     });
-    expect(content).not.toBeVisible();
+    if (!found) {
+      throw new Error("Expected the captured request");
+    }
+    return found;
+  });
+  click(request);
+  await waitFor(() => {
+    expect(request).toHaveAttribute("aria-expanded", "true");
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+
+  for (const [title, copied] of [
+    ["Request Headers", "x-request-id: req-61"],
+    ["Response Headers", "x-export-id: exp-61"],
+    ["Request Body", '{"format":"csv"}'],
+    ["Response Body", '{"id":"exp-61"}'],
+  ] as const) {
+    const section = captureSection(title);
+    expect(section.details.open).toBeFalsy();
+
+    click(section.copy);
+
+    await waitFor(() => {
+      expect(clipboard.writes.at(-1)).toBe(copied);
+    });
+    expect(section.details.open).toBeFalsy();
   }
 });

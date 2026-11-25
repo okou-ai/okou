@@ -5,6 +5,7 @@ import re
 
 from mitmproxy import http
 
+import openai_responses_events
 from http_header_syntax import single_header_value
 from usage.sse import SseUsageScanner
 
@@ -19,6 +20,14 @@ _MAX_ATTEMPTS = 32
 _MAX_LABEL_UTF16_BYTES = 256
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
+_ROUTING_SSE_EVENTS = (
+    None,
+    openai_responses_events.SERVER_CREATED_EVENT,
+    openai_responses_events.SERVER_COMPLETED_EVENT,
+    openai_responses_events.SERVER_INCOMPLETE_EVENT,
+    openai_responses_events.SERVER_FAILED_EVENT,
+    openai_responses_events.SERVER_ERROR_EVENT,
+)
 
 
 def enable(flow: http.HTTPFlow) -> None:
@@ -88,14 +97,7 @@ class RoutingObservation:
         return SseUsageScanner(self, capture_data_without_event=True)
 
     def should_capture_event(self, event_name: str | None) -> bool:
-        return event_name in (
-            None,
-            "response.created",
-            "response.completed",
-            "response.incomplete",
-            "response.failed",
-            "error",
-        )
+        return event_name in _ROUTING_SSE_EVENTS
 
     def on_event_start(self, event_name: str | None) -> None:
         self.on_event_discard(None)

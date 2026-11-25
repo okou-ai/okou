@@ -3,9 +3,12 @@ package ai.okou.android.instructions
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.state.rememberSettingsFlag
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +22,10 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
@@ -49,7 +53,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,7 +60,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 @Composable
@@ -86,7 +88,8 @@ internal fun PersonalInstructionsSettings(
         onDispose { lifecycle.removeObserver(observer) }
     }
     var closeAfterSave by rememberSettingsFlag()
-    var confirmDiscard by rememberSettingsFlag()
+    var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
+    var reloadDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
     var offlineSave by rememberSettingsFlag()
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
@@ -119,6 +122,27 @@ internal fun PersonalInstructionsSettings(
             rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
         else null
     val canSubmit = state.canSave || state.canRetrySave
+    val saving = state.phase == InstructionsPhase.Saving
+    fun confirmDismiss(): Boolean {
+        val current = model.uiState.value
+        if (current.phase == InstructionsPhase.Saving) return false
+        val draft = current.draft
+        if (draft != null && !draft.attempted) {
+            if (discardDraft == null && reloadDraft == null) discardDraft = draft
+            return false
+        }
+        return true
+    }
+    fun requestDismiss() {
+        if (confirmDismiss()) dismiss()
+    }
+    BackHandler {
+        when {
+            discardDraft != null -> discardDraft = null
+            reloadDraft != null -> reloadDraft = null
+            else -> requestDismiss()
+        }
+    }
     fun save() {
         if (offline) {
             offlineSave = true
@@ -129,7 +153,10 @@ internal fun PersonalInstructionsSettings(
     }
     SettingsSheet(
         title,
-        dismiss,
+        ::requestDismiss,
+        dismissible = !saving,
+        confirmDismiss = if (saving || state.draft?.attempted == false) ::confirmDismiss else null,
+        fullScreenInShortWindow = true,
         actions = {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -157,24 +184,14 @@ internal fun PersonalInstructionsSettings(
                 ) {
                     InstructionsAction(
                         R.string.settings_cancel,
-                        {
-                            if (state.canEdit && state.draft != null) confirmDiscard = true
-                            else dismiss()
-                        },
-                        true,
+                        ::requestDismiss,
+                        !saving,
                     )
-                    val saving =
-                        if (state.phase == InstructionsPhase.Saving)
-                            stringResource(R.string.settings_saving)
-                        else null
                     Button(
                         onClick = ::save,
                         enabled = canSubmit,
                         shape = RoundedCornerShape(12.dp),
-                        modifier =
-                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).semantics {
-                                if (saving != null) stateDescription = saving
-                            },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         colors =
                             ButtonDefaults.buttonColors(
@@ -186,8 +203,11 @@ internal fun PersonalInstructionsSettings(
                     ) {
                         Text(
                             stringResource(
-                                if (state.canRetrySave) R.string.instructions_retry_save
-                                else R.string.instructions_save,
+                                when {
+                                    saving -> R.string.settings_saving
+                                    state.canRetrySave -> R.string.instructions_retry_save
+                                    else -> R.string.instructions_save
+                                },
                             ),
                             style =
                                 MaterialTheme.typography.labelLarge.copy(
@@ -227,7 +247,14 @@ internal fun PersonalInstructionsSettings(
                         keyboard.hide()
                     }
                 }
-                OutlinedTextField(
+                val interactions = remember { MutableInteractionSource() }
+                val colors = MaterialTheme.colorScheme
+                val fieldColors =
+                    OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
+                val textStyle = MaterialTheme.typography.bodyLarge
+                val markdown = rememberInstructionsMarkdown(editing.value.text)
+                // Keep native selection and IME composition with custom padding.
+                BasicTextField(
                     value = editing.value,
                     onValueChange = { value ->
                         if (value.text != state.content) closeAfterSave = false
@@ -249,14 +276,38 @@ internal fun PersonalInstructionsSettings(
                             }
                             .testTag("instructions_editor")
                             .semantics { contentDescription = title },
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                    visualTransformation = rememberInstructionsMarkdown(editing.value.text),
-                    shape = RoundedCornerShape(12.dp),
-                    placeholder = { Text(stringResource(R.string.instructions_placeholder)) },
+                    textStyle = textStyle.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.primary),
+                    visualTransformation = markdown,
+                    interactionSource = interactions,
+                    decorationBox = { inner ->
+                        OutlinedTextFieldDefaults.DecorationBox(
+                            value = editing.value.text,
+                            innerTextField = inner,
+                            enabled = true,
+                            singleLine = false,
+                            visualTransformation = markdown,
+                            interactionSource = interactions,
+                            isError = false,
+                            placeholder = {
+                                Text(
+                                    stringResource(R.string.instructions_placeholder),
+                                    style = textStyle,
+                                )
+                            },
+                            colors = fieldColors,
+                            contentPadding = PaddingValues(12.dp),
+                            container = {
+                                OutlinedTextFieldDefaults.Container(
+                                    enabled = true,
+                                    isError = false,
+                                    interactionSource = interactions,
+                                    colors = fieldColors,
+                                    shape = RoundedCornerShape(12.dp),
+                                )
+                            },
+                        )
+                    },
                     minLines = 3,
                     maxLines = 8,
                     readOnly = !state.canEdit,
@@ -266,11 +317,7 @@ internal fun PersonalInstructionsSettings(
                 editing == null &&
                     state.phase in setOf(InstructionsPhase.Idle, InstructionsPhase.Loading)
             if (loading && !offline) {
-                var showSkeleton by remember { mutableStateOf(false) }
-                LaunchedEffect(Unit) {
-                    delay(100)
-                    showSkeleton = true
-                }
+                val showSkeleton = rememberContentReadSkeleton()
                 val label = stringResource(R.string.instructions_loading)
                 Box(
                     Modifier.fillMaxWidth()
@@ -307,20 +354,17 @@ internal fun PersonalInstructionsSettings(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            val canReload = state.conflicting && state.canEdit
             val checkSavedVersion =
-                state.phase == InstructionsPhase.Failed ||
-                    state.phase == InstructionsPhase.Uncertain
-            if (
-                state.phase == InstructionsPhase.Conflict || checkSavedVersion || state.localFailure
-            ) {
+                !canReload &&
+                    (state.phase == InstructionsPhase.Failed ||
+                        state.phase == InstructionsPhase.Uncertain)
+            if (canReload || checkSavedVersion || state.localFailure) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.phase == InstructionsPhase.Conflict)
+                    if (canReload)
                         InstructionsAction(
                             R.string.instructions_reload,
-                            {
-                                closeAfterSave = false
-                                model.discard()
-                            },
+                            { reloadDraft = state.draft },
                             !offline,
                         )
                     if (checkSavedVersion)
@@ -331,19 +375,34 @@ internal fun PersonalInstructionsSettings(
             }
         }
     }
-    if (confirmDiscard) {
+    discardDraft?.let { draft ->
         OkouConfirmationDialog(
-            onDismiss = { confirmDiscard = false },
+            onDismiss = { discardDraft = null },
             title = stringResource(R.string.instructions_discard),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
-                closeAfterSave = false
-                confirmDiscard = false
-                model.discard()
-                dismiss()
+                discardDraft = null
+                if (model.discardEdits(draft)) {
+                    closeAfterSave = false
+                    dismiss()
+                }
             },
         ) {
             Text(stringResource(R.string.instructions_unsaved))
+        }
+    }
+    reloadDraft?.let { draft ->
+        OkouConfirmationDialog(
+            onDismiss = { reloadDraft = null },
+            title = stringResource(R.string.instructions_reload),
+            confirm = stringResource(R.string.instructions_discard),
+            onConfirm = {
+                closeAfterSave = false
+                reloadDraft = null
+                model.reloadLatest(draft)
+            },
+        ) {
+            Text(stringResource(R.string.instructions_conflict))
         }
     }
 }

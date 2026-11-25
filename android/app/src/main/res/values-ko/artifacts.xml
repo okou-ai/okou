@@ -28,6 +28,7 @@
     <string name="artifact_empty">아직 결과물이 없습니다</string>
     <string name="artifact_empty_type">이 유형의 결과물이 없습니다</string>
     <string name="artifact_no_matches">일치하는 결과물이 없습니다</string>
+    <string name="artifact_clear_keyword">검색어 지우기</string>
     <string name="artifact_show_all">모두 보기</string>
     <string name="artifact_catalog_load_failed">일시적으로 결과물을 불러올 수 없습니다</string>
     <string name="artifact_catalog_refresh_failed">일시적으로 업데이트할 수 없습니다. 불러온 결과물을 표시합니다.</string>
@@ -49,6 +50,7 @@
     <string name="artifact_open_website">브라우저에서 열기</string>
     <string name="artifact_browser_unavailable">브라우저를 열지 못했습니다</string>
     <string name="artifact_play_media">미디어 재생</string>
+    <string name="artifact_play">재생</string>
     <string name="artifact_catalog_access_denied">이 결과물 카탈로그에 액세스할 권한이 없습니다</string>
     <string name="artifact_catalog_missing">이 결과물 카탈로그는 더 이상 사용할 수 없습니다</string>
     <string name="chat_resources_related">관련 채팅</string>

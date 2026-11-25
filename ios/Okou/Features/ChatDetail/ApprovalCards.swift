@@ -1,12 +1,15 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
 
 /// Owns the native approval cards of one conversation, keyed by the request they show, so a
-/// recycled transcript row finds its loaded state instead of fetching it again.
+/// recycled transcript row finds its loaded state instead of fetching it again. Every card
+/// keeps its graph values in the workspace session Store.
 @MainActor
 final class ApprovalCardRegistry {
   private let client: APIClient
+  private let graph: CCState.Store
   private let didContinue: @MainActor () async -> Void
   private final class WeakMailDraft {
     weak var value: MailDraftCardStore?
@@ -64,13 +67,14 @@ final class ApprovalCardRegistry {
   private var closed = false
 
   init(
-    thread: ChatThread, commands: ChatCommands, sync: ChatSync,
+    thread: ChatThread, commands: ChatCommands, sync: ChatSync, graph: CCState.Store,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
     self.thread = thread
     self.commands = commands
     self.sync = sync
+    self.graph = graph
     self.didFail = didFail
     self.client = commands.approvalClient
     self.didContinue = didContinue
@@ -85,7 +89,7 @@ final class ApprovalCardRegistry {
     }
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     let store = MailDraftCardStore(
-      id: id, client: client, didFail: didFail,
+      id: id, client: client, graph: graph, didFail: didFail,
       didBeginMutation: { [weak self] card in self?.mailOperations[id] = card })
     if closed {
       store.close()
@@ -106,7 +110,7 @@ final class ApprovalCardRegistry {
     }
     liveComputers = liveComputers.filter { $0.value.value != nil }
     let store = ComputerAuthorizationStore(
-      action: action, thread: thread, commands: commands, sync: sync,
+      action: action, thread: thread, commands: commands, sync: sync, graph: graph,
       didFail: didFail, didContinue: didContinue,
       didRetainInteraction: { [weak self] card in self?.computerInteractions[action] = card })
     if closed {
@@ -128,7 +132,7 @@ final class ApprovalCardRegistry {
     }
     liveSSH = liveSSH.filter { $0.value.value != nil }
     let store = SSHAuthorizationStore(
-      action: action, threadID: thread.id, client: client, didFail: didFail,
+      action: action, threadID: thread.id, client: client, graph: graph, didFail: didFail,
       didContinue: didContinue,
       didRetainInteraction: { [weak self] card in self?.sshInteractions[id] = card })
     if closed {

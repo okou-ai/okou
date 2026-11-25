@@ -691,6 +691,79 @@ export function captureBillingFunnelEvent(
   });
 }
 
+/** Use the SDK's display rules for both the entry point and the popover. */
+export function watchBillingFeedbackSurvey(
+  surveyId: string,
+  onAvailability: (available: boolean) => void,
+  signal: AbortSignal,
+): void {
+  if (signal.aborted) {
+    return;
+  }
+  runPostHog(() => {
+    let queryInFlight = false;
+    let surveysReady = false;
+    let flagsReady = false;
+    const requestWhenReady = () => {
+      if (signal.aborted || queryInFlight || !surveysReady || !flagsReady) {
+        return;
+      }
+      queryInFlight = true;
+      posthog.getActiveMatchingSurveys((surveys) => {
+        queryInFlight = false;
+        if (signal.aborted) {
+          return;
+        }
+        onAvailability(
+          surveysReady &&
+            flagsReady &&
+            surveys.some((survey) => {
+              return survey.id === surveyId;
+            }),
+        );
+      }, true);
+    };
+    const unsubscribeSurveys = posthog.onSurveysLoaded((_surveys, context) => {
+      surveysReady = context?.isLoaded === true;
+      if (!surveysReady) {
+        onAvailability(false);
+      }
+      requestWhenReady();
+    });
+    // A Stripe return can first see cached anonymous flags, then identified flags.
+    const unsubscribeFlags = posthog.onFeatureFlags(
+      (_flags, _variants, context) => {
+        flagsReady = context?.errorsLoading !== true;
+        if (!flagsReady) {
+          onAvailability(false);
+        }
+        requestWhenReady();
+      },
+    );
+    const unsubscribeEvents = posthog.on(
+      "eventCaptured",
+      (event: CaptureResult) => {
+        if (
+          event.event === "survey shown" ||
+          event.event === "survey sent" ||
+          event.event === "survey dismissed"
+        ) {
+          requestWhenReady();
+        }
+      },
+    );
+    signal.addEventListener(
+      "abort",
+      () => {
+        unsubscribeSurveys();
+        unsubscribeFlags();
+        unsubscribeEvents();
+      },
+      { once: true },
+    );
+  });
+}
+
 /** Fetch current targeting and launch state; the SDK owns rendering and lifecycle events. */
 export function displayBillingFeedbackSurvey(
   surveyId: string,
@@ -714,31 +787,10 @@ export function displayBillingFeedbackSurvey(
       );
     };
     let requested = false;
-    let queryInFlight = false;
-    let surveysReady = false;
-    let flagsReady = false;
-    const requestWhenReady = () => {
-      if (
-        signal.aborted ||
-        requested ||
-        alreadySeen() ||
-        queryInFlight ||
-        !surveysReady ||
-        !flagsReady
-      ) {
-        return;
-      }
-      queryInFlight = true;
-      posthog.getActiveMatchingSurveys((surveys) => {
-        queryInFlight = false;
-        if (
-          signal.aborted ||
-          requested ||
-          alreadySeen() ||
-          !surveys.some((survey) => {
-            return survey.id === surveyId;
-          })
-        ) {
+    watchBillingFeedbackSurvey(
+      surveyId,
+      (available) => {
+        if (!available || requested || alreadySeen()) {
           return;
         }
         requested = true;
@@ -748,27 +800,17 @@ export function displayBillingFeedbackSurvey(
           ignoreDelay: false,
           properties,
         });
-      }, true);
-    };
-    const unsubscribeSurveys = posthog.onSurveysLoaded((_surveys, context) => {
-      surveysReady = context?.isLoaded === true;
-      requestWhenReady();
-    });
-    // A Stripe return can first see cached anonymous flags, then identified flags.
-    const unsubscribeFlags = posthog.onFeatureFlags(
-      (_flags, _variants, context) => {
-        flagsReady = context?.errorsLoading !== true;
-        requestWhenReady();
       },
+      signal,
     );
     signal.addEventListener(
       "abort",
       () => {
-        unsubscribeSurveys();
-        unsubscribeFlags();
         posthog.cancelPendingSurvey(surveyId);
       },
-      { once: true },
+      {
+        once: true,
+      },
     );
   });
 }

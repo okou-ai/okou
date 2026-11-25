@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,8 @@ enum class HistoryReadState {
     Confirmed,
     Failed,
 }
+
+internal data class RunActivityText(val runId: String, val text: String)
 
 /** One visible visit, not a workspace cache or a second history synchronizer. */
 class ConversationReadSession
@@ -34,6 +37,10 @@ internal constructor(
     private val scope = CoroutineScope(parent.coroutineContext + Job(parent.coroutineContext[Job]))
     private val mutable = MutableStateFlow(HistoryReadState.Idle)
     val readState = mutable.asStateFlow()
+    private val activity = MutableStateFlow<RunActivityText?>(null)
+    internal val activityText = activity.asStateFlow()
+    private var activityRunId: String? = null
+    private var activityRequest: Job? = null
     private var closed = false
     private var automaticRead = true
     private var displayed: HistoryConfirmation? = null
@@ -59,6 +66,33 @@ internal constructor(
 
     internal fun stopAutomaticRead() {
         automaticRead = false
+    }
+
+    internal fun showRunActivity(runId: String?) {
+        if (!current() || runId == activityRunId) return
+        activityRunId = runId
+        activityRequest?.cancel()
+        activity.value = null
+        activityRequest = runId?.let { target ->
+            scope.launch {
+                while (true) {
+                    requireCurrent()
+                    val text =
+                        try {
+                            service.summarizeRunActivity(threadId, target)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            requireCurrent()
+                            onFailure(error)
+                            null
+                        }
+                    requireCurrent()
+                    activity.value = text?.let { RunActivityText(target, it) }
+                    delay(15_000L)
+                }
+            }
+        }
     }
 
     private fun markDisplayedRead() {

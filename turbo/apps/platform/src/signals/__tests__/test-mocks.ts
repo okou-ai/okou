@@ -423,7 +423,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           url: string,
           peer: BrowserWebSocketPeer,
         ) => string | null,
-        options?: { readonly autoOpen?: boolean },
+        options?: BrowserWebSocketOptions,
       ): ReturnType<typeof mockBrowserWebSocket> => {
         return mockBrowserWebSocket(getSignal(), respond, options);
       },
@@ -1656,7 +1656,12 @@ function mockImageDimensions(
 export interface BrowserWebSocketPeer {
   readonly id: number;
   readonly url: string;
-  receive(data: string): void;
+  receive(data: string, onRead?: () => void): void;
+}
+
+interface BrowserWebSocketOptions {
+  readonly autoOpen?: boolean;
+  readonly onConnecting?: (url: string, socket: { open(): void }) => void;
 }
 
 function mockBrowserWebSocket(
@@ -1666,7 +1671,7 @@ function mockBrowserWebSocket(
     url: string,
     peer: BrowserWebSocketPeer,
   ) => string | null,
-  options: { readonly autoOpen?: boolean } = {},
+  options: BrowserWebSocketOptions = {},
 ) {
   const sockets = new Set<TestWebSocket>();
   let connectionCount = 0;
@@ -1683,6 +1688,7 @@ function mockBrowserWebSocket(
       connectionCount += 1;
       this.id = connectionCount;
       sockets.add(this);
+      options.onConnecting?.(url, this);
       if (options.autoOpen !== false) {
         queueMicrotask(() => {
           this.open();
@@ -1708,9 +1714,18 @@ function mockBrowserWebSocket(
       });
     }
 
-    receive(data: string): void {
+    receive(data: string, onRead?: () => void): void {
       if (this.readyState === TestWebSocket.OPEN) {
-        this.dispatchEvent(new MessageEvent("message", { data }));
+        const incoming = new MessageEvent("message", { data });
+        if (onRead) {
+          Object.defineProperty(incoming, "data", {
+            get() {
+              onRead();
+              return data;
+            },
+          });
+        }
+        this.dispatchEvent(incoming);
       }
     }
 

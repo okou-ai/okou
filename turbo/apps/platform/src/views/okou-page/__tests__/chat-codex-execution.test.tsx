@@ -1,160 +1,125 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { act, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
-import { buildRunModel } from "./chat-model-builders.ts";
-import {
-  closeModelPanel,
-  openModelPanel,
-} from "./chat-model-panel-test-helpers.ts";
-import {
-  findButton,
-  NEW_CHAT_PATH,
-  RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
-import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { accountModels } from "./chat-account-model-fixture.ts";
+import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-const MODEL = "gpt-6.1-sol";
-
-function configureModel(): void {
-  installConnectedPersonalSubscriptions(context);
-  context.mocks.data.availableRunModels([buildRunModel({ model: MODEL })]);
-}
-
+const sol = "gpt-6.1-sol";
 test.each([
-  { enabled: false, effort: "Max" },
-  { enabled: true, effort: "Ultra" },
-])(
-  "shows catalog-supported $effort for a saved Ultra preference when Codex execution is $enabled",
-  async ({ enabled, effort }) => {
-    installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });
-    configureModel();
+  ["001", false],
+  ["004", true],
+] as const)(
+  "chat-codex-execution-%s the saved Ultra effort falls back to the maximum available to this execution route",
+  async (_id, codex) => {
+    const { rows } = accountModels(context, [sol], null);
+    if (codex) {
+      context.mocks.data.availableRunModels(
+        rows.map((row) => {
+          return {
+            ...row,
+            subscriptionOptions: {
+              ...row.subscriptionOptions!,
+              efforts: ["low", "medium", "high", "xhigh", "max"],
+            },
+          };
+        }),
+      );
+    }
+    mockChatLifecycle(context, {
+      threadId: RUN_THREAD_ID,
+      selectedModel: sol,
+      reasoningEffort: "ultra",
+    });
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.CodexExecution]: enabled },
+      featureSwitches: { [FeatureSwitchKey.CodexExecution]: codex },
     });
-    const panel = await openModelPanel(`GPT 6.1 Sol, ${effort}`);
-    expect(
-      within(panel).getByRole("slider", { name: "Effort" }),
-    ).toHaveAttribute("aria-valuetext", effort);
+    const panel = await openModelPanel("GPT 6.1 Sol, Max");
+    const slider = within(panel).getByRole("slider");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
+    expect(within(panel).queryByText("Ultra")).toBeNull();
+    slider.focus();
+    await userEvent.keyboard("{End}");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   },
 );
 
-test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot use", async () => {
-  installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });
-  configureModel();
-  let switches: Record<string, boolean> = {
-    [FeatureSwitchKey.CodexExecution]: false,
-    [FeatureSwitchKey.Lab]: true,
-  };
+test("chat-codex-execution-003 returning from Lab restores the saved Ultra effort when Codex becomes available", async () => {
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    selectedModel: sol,
+    reasoningEffort: "ultra",
+  });
+  const { rows } = accountModels(context, [sol], sol);
+  context.mocks.data.availableRunModels(
+    rows.map((row) => {
+      return {
+        ...row,
+        subscriptionOptions: {
+          ...row.subscriptionOptions!,
+          efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+        },
+      };
+    }),
+  );
+  let codexEnabled = false;
+  function savedLabSettings() {
+    const switches = {
+      [FeatureSwitchKey.Lab]: true,
+      [FeatureSwitchKey.CodexExecution]: codexEnabled,
+    };
+    return { switches, effectiveSwitches: switches };
+  }
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches, effectiveSwitches: switches });
+    return respond(200, savedLabSettings());
   });
   context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  await setupPage({ context, path: RUN_PATH });
-  await expect(findButton("GPT 6.1 Sol, Max")).resolves.toBeInTheDocument();
-
-  click(await findButton("Test User"));
-  click(await screen.findByText("Lab"));
-  const maintainer = getFeatureSwitchMetadata()[
-    FeatureSwitchKey.CodexExecution
-  ].maintainer.replace(/@.*$/u, "");
-  const maintainerFilter = await screen.findByText(maintainer);
-  click(maintainerFilter);
-  expect(maintainerFilter.closest("button")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  const row = (await screen.findByText("Codex execution (test only)")).closest(
-    "li",
-  );
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Codex execution test switch row was not found");
-  }
-  const toggle = within(row).getByRole("switch");
-  expect(toggle).not.toBeChecked();
-  click(toggle);
-  await waitFor(() => {
-    expect(toggle).toBeChecked();
-  });
-  click(await screen.findByText("Run conversation"));
-  await expect(findButton("GPT 6.1 Sol, Ultra")).resolves.toBeInTheDocument();
-});
-
-test("does not expand the catalog's efforts when Codex execution is enabled", async () => {
-  installRunChat({ selectedModel: MODEL, reasoningEffort: "ultra" });
-  configureModel();
-  const catalog = createMockModelCatalog();
-  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...catalog,
-      routes: catalog.routes.map((route) => {
-        return route.model === MODEL
-          ? {
-              ...route,
-              efforts: route.efforts.filter((effort) => {
-                return effort !== "ultra";
-              }),
-            }
-          : route;
-      }),
-    });
+    codexEnabled =
+      body.switches[FeatureSwitchKey.CodexExecution] ?? codexEnabled;
+    return respond(200, savedLabSettings());
   });
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
-  });
-  const panel = await openModelPanel("GPT 6.1 Sol, Max");
-  expect(within(panel).getByRole("slider", { name: "Effort" })).toHaveAttribute(
-    "aria-valuetext",
-    "Max",
-  );
-  expect(within(panel).queryByText("Ultra")).not.toBeInTheDocument();
-});
-
-test("sends a new Codex chat with the catalog-supported Ultra effort selected in the model panel", async () => {
-  const user = userEvent.setup({ delay: null });
-  const creates: { model?: string | null; reasoningEffort?: string }[] = [];
-  installRunChat({
-    selectedModel: MODEL,
-    onThreadCreate: (body) => {
-      creates.push(body);
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Lab workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
     },
   });
-  configureModel();
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
+  await screen.findByLabelText("GPT 6.1 Sol, Max");
+  click(await findFastControl("button", "Test User"));
+  click(await screen.findByText("Lab", { selector: '[role="menuitem"] *' }));
+  const control = await screen.findByRole("switch", {
+    name: (name) => {
+      return name.startsWith(FeatureSwitchKey.CodexExecution);
+    },
   });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const panel = await openModelPanel("GPT 6.1 Sol, Max");
-  within(panel).getByRole("slider", { name: "Effort" }).focus();
-  await user.keyboard("{End}");
-  await expect(findButton("GPT 6.1 Sol, Ultra")).resolves.toBeInTheDocument();
-  await closeModelPanel();
-  await user.click(composer);
-  await fillComposer(composer, "Run this through Codex at Ultra effort");
-  click(await findButton("Send"));
+  expect(control).not.toBeChecked();
+  click(control);
   await waitFor(() => {
-    expect(creates).toContainEqual(
-      expect.objectContaining({ model: MODEL, reasoningEffort: "ultra" }),
-    );
+    expect(control).toBeChecked();
   });
+  act(() => {
+    history.back();
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(RUN_PATH);
+  });
+  await screen.findByLabelText("GPT 6.1 Sol, Ultra");
 });

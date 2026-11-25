@@ -1,204 +1,250 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
+import { threadLinkByTitle } from "./sidebar-test-helpers.tsx";
+import { mockNow } from "../../../lib/time.ts";
+import { changeChatIndicators } from "../../../mocks/mock-helpers.ts";
 import {
   chatThreadMarkReadContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { test, expect, vi } from "vitest";
 import {
-  findButton,
+  startPage,
+  setupPage,
+  click,
+  fill,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import {
   findEnabledButton,
-  promptEvent,
+  RUN_THREAD_ID,
   RUN_PATH,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-test.each(["pending", "unauthorized"] as const)(
-  "Send in an existing conversation while unread indicators are %s",
-  async (status) => {
-    const indicatorsRequested = context.mocks.deferred<void>();
-    const indicatorsResponse = context.mocks.deferred<void>();
-    const runStarted = context.mocks.deferred<void>();
-    let refreshing = false;
-    const lifecycle = installRunChat({
-      onRunCreate: () => {
-        runStarted.resolve();
+function timeline() {
+  const delivered: string[] = [];
+  const lifecycle = mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    threadTitle: "Release room",
+    chatEvents: [
+      {
+        role: "assistant",
+        content: "The last review ended",
+        runId: "99100000-0000-4000-a000-000000000001",
+        createdAt: "2026-08-11T18:00:00Z",
       },
+    ],
+    onRunCreate(body) {
+      if (body.prompt) {
+        delivered.push(body.prompt);
+      }
+    },
+  });
+  return { lifecycle, delivered };
+}
+async function send(text: string) {
+  const editor = await findComposerEditor();
+  await fill(editor, text);
+  click(await findEnabledButton("Send"));
+  return editor;
+}
+test("chat-send-read-status-005 an unauthorized mark on a completed review leaves its composer available for the next request", async () => {
+  const { delivered } = timeline(),
+    answered = context.mocks.deferred<string>();
+  context.mocks.api(
+    chatThreadMarkReadContract.markRead,
+    ({ params, respond }) => {
+      if (!answered.settled()) {
+        answered.resolve(params.id);
+      }
+      return respond(401, {
+        error: { code: "UNAUTHORIZED", message: "Read status denied" },
+      });
+    },
+  );
+  const page = await startPage({ context, path: RUN_PATH });
+  await expect(page.ready).rejects.toMatchObject({ status: 401 });
+  await screen.findByText("The last review ended");
+  await expect(answered.promise).resolves.toBe(RUN_THREAD_ID);
+  const text = "Review the deployment risks",
+    editor = await send(text);
+  await waitFor(() => {
+    expect(delivered).toContain(text);
+    expect(editor.textContent).toBe("");
+  });
+});
+
+test.each([
+  ["chat-send-read-status-002", "delivered"],
+  ["Withheld control", "withheld"],
+] as const)(
+  "%s A conversation accepts both messages while an unauthorized indicator response is %s",
+  async (_case, schedule) => {
+    const { lifecycle, delivered } = timeline();
+    const requested = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const received = context.mocks.deferred<void>();
+    let monitor = false;
+    const parse = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const body: unknown = await parse.call(this);
+      if (
+        this.status === 401 &&
+        new URL(this.url).pathname === chatThreadsContract.indicators.path &&
+        !received.settled()
+      ) {
+        received.resolve();
+      }
+      return body;
     });
     context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
-      if (refreshing) {
-        if (!indicatorsRequested.settled()) {
-          indicatorsRequested.resolve();
-        }
-        await indicatorsResponse.promise;
-        if (status === "unauthorized") {
-          return respond(401, {
-            error: { code: "UNAUTHORIZED", message: "Unauthorized" },
-          });
-        }
+      if (!monitor) {
+        return respond(200, { threads: {}, unreadAt: {} });
       }
-      return respond(200, { threads: {}, unreadAt: {} });
+      if (!requested.settled()) {
+        requested.resolve();
+      }
+      await release.promise;
+      return respond(401, {
+        error: { code: "UNAUTHORIZED", message: "Indicator refresh denied" },
+      });
     });
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      sharedWorkerTestTransport: "message-port",
-    });
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-
-    refreshing = true;
-    context.mocks.ably.trigger("chatIndicatorsChanged");
-    await indicatorsRequested.promise;
-    await fill(composer, "Continue the release review");
-    click(await findEnabledButton("Send"));
-    await expect(
-      screen.findByText("Continue the release review"),
-    ).resolves.toBeInTheDocument();
-    if (status === "unauthorized") {
-      indicatorsResponse.resolve();
-    }
-
-    await runStarted.promise;
-    lifecycle.setRunOutput("The agent received the release review.");
-    await expect(
-      screen.findByText("The agent received the release review."),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "",
-    );
-    expect(indicatorsResponse.settled()).toBe(status === "unauthorized");
-    await findEnabledButton("Stop");
-    await fill(
-      screen.getByRole("textbox", { name: "Message" }),
-      "Check the rollback plan next",
-    );
-    const sendButton = await findButton("Send");
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText("The last review ended");
+    monitor = true;
+    changeChatIndicators();
+    await requested.promise;
+    const first = "Continue the release review";
+    const editor = await send(first);
+    await screen.findByText(first, { selector: "[data-role=user] *" });
     await waitFor(() => {
-      expect(sendButton).toHaveProperty("disabled", status === "pending");
+      return expect(delivered).toContain(first);
     });
-    if (status === "pending") {
-      indicatorsResponse.resolve();
+    if (schedule === "delivered") {
+      release.resolve();
+      await received.promise;
     }
-    await findEnabledButton("Send");
+    lifecycle.completeRun("The release window is clear.");
+    await screen.findByText("The release window is clear.");
+    expect(editor.textContent).toBe("");
+    const follow = "Record the remaining checks";
+    await fill(editor, follow);
+    await waitFor(() => {
+      return expect(editor.textContent).toBe(follow);
+    });
+    expect(received.settled()).toBe(schedule === "delivered");
+    expect(delivered).toStrictEqual([first]);
+    if (!release.settled()) {
+      release.resolve();
+    }
+    await received.promise;
+    click(await findEnabledButton("Send"));
+    await waitFor(() => {
+      return expect(delivered).toStrictEqual([first, follow]);
+    });
+    await screen.findByText(follow, { selector: "[data-role=user] *" });
   },
 );
 
-test("Unread refresh failure ends submission without cancelling the pending POST", async () => {
-  const indicatorsRequested = context.mocks.deferred<void>();
-  const indicatorsResponse = context.mocks.deferred<void>();
-  const sendRequested = context.mocks.deferred<void>();
-  const sendResponse = context.mocks.deferred<void>();
-  const runStarted = context.mocks.deferred<void>();
-  let refreshing = false;
-  const lifecycle = installRunChat({
-    sendGate: sendResponse.promise,
-    onSendRequest: () => {
-      sendRequested.resolve();
-    },
-    onRunCreate: () => {
-      runStarted.resolve();
-    },
-  });
-  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
-    if (refreshing) {
-      if (!indicatorsRequested.settled()) {
-        indicatorsRequested.resolve();
-      }
-      await indicatorsResponse.promise;
-      return respond(401, {
-        error: { code: "UNAUTHORIZED", message: "Unauthorized" },
-      });
-    }
-    return respond(200, { threads: {}, unreadAt: {} });
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    sharedWorkerTestTransport: "message-port",
-  });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  refreshing = true;
-  context.mocks.ably.trigger("chatIndicatorsChanged");
-  await indicatorsRequested.promise;
-  await fill(composer, "Review the release while read status refreshes");
-  click(await findEnabledButton("Send"));
-  await expect(
-    screen.findByText("Review the release while read status refreshes"),
-  ).resolves.toBeInTheDocument();
-  await sendRequested.promise;
-  await fill(composer, "Keep the follow-up ready");
-  await expect(findButton("Send")).resolves.toBeDisabled();
-
-  indicatorsResponse.resolve();
-  await findEnabledButton("Send");
-  expect(sendResponse.settled()).toBeFalsy();
-  expect(composer).toHaveTextContent("Keep the follow-up ready");
-
-  sendResponse.resolve();
-  await runStarted.promise;
-  lifecycle.setRunOutput("The submitted review still reached the agent.");
-  await expect(
-    screen.findByText("The submitted review still reached the agent."),
-  ).resolves.toBeInTheDocument();
-  expect(composer).toHaveTextContent("Keep the follow-up ready");
-});
-
-test("A failed read mark does not prevent sending to the agent", async () => {
-  const runStarted = context.mocks.deferred<void>();
-  const readMarkRequested = context.mocks.deferred<void>();
-  const previousRunId = "d0000000-0000-4000-a000-000000000802";
-  const lifecycle = installRunChat({
-    activeRunIds: [previousRunId],
+test("Reading a newer completed run clears its unread state even while the sidebar has an older update", async () => {
+  const thread = "Harbor review";
+  const follow = crypto.randomUUID();
+  const listStamp = "2026-03-10T00:06:00.000Z";
+  const initialRead = "2026-03-10T00:06:30.000Z";
+  const finished = "2026-03-10T00:07:00.000Z";
+  let terminal = initialRead;
+  let read: string | null = null;
+  let published = listStamp;
+  mockNow(new Date(finished), context.signal);
+  const service = mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    threadTitle: thread,
+    activeRunIds: [follow],
     chatEvents: [
-      promptEvent({
-        id: "previous-review-prompt",
-        runId: previousRunId,
-        seqId: 1,
-        text: "Prepare the release review",
-      }),
+      {
+        role: "user",
+        content: "Review the harbor",
+        runId: follow,
+        createdAt: listStamp,
+      },
     ],
-    onRunCreate: () => {
-      runStarted.resolve();
-    },
   });
-  context.mocks.api(chatThreadMarkReadContract.markRead, ({ respond }) => {
-    if (!readMarkRequested.settled()) {
-      readMarkRequested.resolve();
+  const witness = chatListThread(19, "Pilot dispatch");
+  service.setThreadList([
+    { ...chatListThread(18, thread), id: RUN_THREAD_ID },
+    witness,
+  ]);
+  const first = context.mocks.deferred<void>();
+  const caughtUp = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
+  const parse = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const body: unknown = await parse.call(this);
+    if (
+      this.status === 200 &&
+      this.url &&
+      new URL(this.url).pathname === chatThreadsContract.indicators.path &&
+      !received.settled()
+    ) {
+      const result =
+        chatThreadsContract.indicators.responses[200].safeParse(body);
+      if (result.success && result.data.threads[witness.id] === "unread") {
+        received.resolve();
+      }
     }
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+    return body;
+  });
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    const unread = read === null || read < published;
+    return respond(200, {
+      threads: {
+        ...(unread ? { [RUN_THREAD_ID]: "unread" as const } : {}),
+        ...(published === finished ? { [witness.id]: "unread" as const } : {}),
+      },
+      unreadAt: {
+        [RUN_THREAD_ID]: published,
+        ...(published === finished ? { [witness.id]: finished } : {}),
+      },
     });
   });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    sharedWorkerTestTransport: "message-port",
-  });
-  await expect(
-    screen.findByText("Prepare the release review"),
-  ).resolves.toBeInTheDocument();
-
-  lifecycle.completeRun("The previous review is complete.");
-  await expect(
-    screen.findByText("The previous review is complete."),
-  ).resolves.toBeInTheDocument();
-  await readMarkRequested.promise;
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fill(composer, "Review the deployment risks");
-  click(await findEnabledButton("Send"));
-
-  await runStarted.promise;
-  lifecycle.setRunOutput("The agent received the deployment review.");
-  await expect(
-    screen.findByText("The agent received the deployment review."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Review the deployment risks")).toBeInTheDocument();
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-    "",
+  context.mocks.api(
+    chatThreadMarkReadContract.markRead,
+    ({ params, respond }) => {
+      expect(params.id).toBe(RUN_THREAD_ID);
+      read = terminal;
+      if (!first.settled()) {
+        first.resolve();
+      }
+      if (read === finished && !caughtUp.settled()) {
+        caughtUp.resolve();
+      }
+      return respond(200, { lastReadAt: read });
+    },
   );
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Review the harbor", {
+    selector: "[data-role=user] *",
+  });
+  await first.promise;
+  terminal = finished;
+  service.completeRun("Harbor inspection complete");
+  await screen.findByText("Harbor inspection complete");
+  await caughtUp.promise;
+  published = finished;
+  changeChatIndicators();
+  await received.promise;
+  await waitFor(() => {
+    expect(threadLinkByTitle("Pilot dispatch")).toHaveAccessibleName(
+      "Pilot dispatch Unread",
+    );
+    expect(threadLinkByTitle(thread)).toHaveAccessibleName(thread);
+  });
 });

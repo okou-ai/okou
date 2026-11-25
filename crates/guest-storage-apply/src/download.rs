@@ -6,6 +6,7 @@ use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
 };
+use guest_contracts::storage_files::{PACKED_BATCH_FILE_URL, PACKED_BATCH_START_URL};
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
@@ -20,6 +21,8 @@ use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
+#[cfg(target_os = "linux")]
+const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
 const LARGE_REMOTE_BATCH: usize = 64;
@@ -51,6 +54,17 @@ impl<'input> DownloadTask<'input> {
 
     pub(crate) fn mount_path(&self) -> &str {
         &self.mount_path
+    }
+
+    fn log_progress(&self) -> bool {
+        // Packed decoded requests keep batch progress and per-mount result
+        // metrics. Avoid synchronous stderr and system-log writes for the
+        // start and successful completion of every decoded mount.
+        self.files.is_none()
+            || !matches!(
+                self.url.as_str(),
+                PACKED_BATCH_START_URL | PACKED_BATCH_FILE_URL
+            )
     }
 
     pub(crate) fn set_files(
@@ -167,22 +181,24 @@ struct StartedDownload<'input> {
     local_metrics: Option<LocalArchiveTaskMetrics>,
     concurrency: usize,
     #[cfg(target_os = "linux")]
-    parallel_inflate: bool,
+    inflate_load: Option<archive::inflate::InflateLoad>,
 }
 
 impl<'input> StartedDownload<'input> {
     fn new(
         download: PendingDownload<'input>,
         concurrency: usize,
-        #[cfg(target_os = "linux")] paired_inflater: Option<usize>,
+        #[cfg(target_os = "linux")] inflate_load: Option<archive::inflate::InflateLoad>,
     ) -> Self {
         let start = Instant::now();
-        log_info!(
-            LOG_TAG,
-            "Downloading {} to {}",
-            download.task.task.label,
-            download.task.task.mount_path
-        );
+        if download.task.task.log_progress() {
+            log_info!(
+                LOG_TAG,
+                "Downloading {} to {}",
+                download.task.task.label,
+                download.task.task.mount_path
+            );
+        }
         Self {
             id: download.id,
             remote_metrics: download.task.task.telemetry.remote_metrics(),
@@ -192,7 +208,7 @@ impl<'input> StartedDownload<'input> {
             opened_file_compressed_bytes: None,
             concurrency,
             #[cfg(target_os = "linux")]
-            parallel_inflate: concurrency == 1 || paired_inflater == Some(download.id),
+            inflate_load,
         }
     }
 
@@ -208,12 +224,14 @@ impl<'input> StartedDownload<'input> {
                     self.remote_metrics.as_ref(),
                     self.local_metrics.as_ref(),
                 );
-                log_info!(
-                    LOG_TAG,
-                    "{} downloaded in {}ms",
-                    self.task.task.label,
-                    elapsed.as_millis()
-                );
+                if self.task.task.log_progress() {
+                    log_info!(
+                        LOG_TAG,
+                        "{} downloaded in {}ms",
+                        self.task.task.label,
+                        elapsed.as_millis()
+                    );
+                }
                 true
             }
             Err(error) => {
@@ -326,6 +344,12 @@ impl<'input> DownloadScheduler<'input> {
         telemetry: &mut DownloadRunTelemetry,
     ) -> bool {
         while self.active_attempts < self.concurrency {
+            // Share at most one inflater by using the existing first-wave
+            // Artifact promotion. Local batches with deferred sources do not
+            // set the priority flag.
+            #[cfg(target_os = "linux")]
+            let wide_inflate = self.prioritize_artifact
+                && self.pending.len() + self.active_attempts >= WIDE_LOCAL_INFLATE_TASKS;
             let selection = if self.prioritize_large {
                 DownloadSelection::Largest
             } else if std::mem::take(&mut self.prioritize_artifact) {
@@ -355,11 +379,20 @@ impl<'input> DownloadScheduler<'input> {
                     self.prioritize_artifact = false;
                 }
             }
+            #[cfg(target_os = "linux")]
+            let inflate_load = if self.concurrency == 1 || self.paired_inflater == Some(download.id)
+            {
+                Some(archive::inflate::InflateLoad::Light)
+            } else if wide_inflate && download.is_large_local_artifact() {
+                Some(archive::inflate::InflateLoad::WideBatch)
+            } else {
+                None
+            };
             let download = StartedDownload::new(
                 download,
                 self.concurrency,
                 #[cfg(target_os = "linux")]
-                self.paired_inflater,
+                inflate_load,
             );
             self.reservations.push(DownloadReservation::new(&download));
 
@@ -758,7 +791,7 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
     #[cfg(target_os = "linux")]
-    if download.parallel_inflate
+    if let Some(load) = download.inflate_load
         && task.telemetry.is_artifact()
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")
@@ -766,8 +799,13 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         let archive = source::LocalArchive::open(path)?;
         download.opened_file_compressed_bytes = archive.compressed_bytes;
         let extract_start = Instant::now();
-        let result =
-            archive::inflate::extract_staged(archive, target_path, local_attempt_metrics.as_ref());
+        let result = archive::inflate::extract_staged(
+            archive,
+            target_path,
+            local_attempt_metrics.as_ref(),
+            download.concurrency,
+            load,
+        );
         if let (Some(metrics), Some(attempt)) =
             (&mut download.local_metrics, &local_attempt_metrics)
         {

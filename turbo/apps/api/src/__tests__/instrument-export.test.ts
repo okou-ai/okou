@@ -3,6 +3,7 @@ import { IncomingMessage, request } from "node:http";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import {
   context as otelContext,
   ProxyTracerProvider,
@@ -18,6 +19,13 @@ import { server } from "../mocks/server";
 import { createApp } from "../app-factory";
 import { integrationsTelegramRoutes } from "../signals/routes/integrations-telegram";
 import { healthRoutes } from "../signals/routes/health";
+import { mailRoutes } from "../signals/routes/mail";
+import { createBddApi } from "../signals/routes/__tests__/helpers/api-bdd";
+import { createChatFilesBddApi } from "../signals/routes/__tests__/helpers/api-bdd-chat-files";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+} from "../signals/routes/__tests__/helpers/api-bdd-connectors";
 
 import { testContext } from "./test-context";
 
@@ -274,7 +282,7 @@ describe("API telemetry exports", () => {
     otelContext.disable();
   });
 
-  it("exports ordinary API telemetry while excluding sensitive provider URLs", async () => {
+  it("exports ordinary API telemetry while excluding sensitive provider data", async () => {
     const Sentry =
       await vi.importActual<typeof import("@sentry/node")>("@sentry/node");
     const otel =
@@ -371,7 +379,7 @@ describe("API telemetry exports", () => {
     // production Hono middleware/handlers, without replacing the request path.
     const app = createApp({
       signal: context.signal,
-      routes: [...integrationsTelegramRoutes, ...healthRoutes],
+      routes: [...integrationsTelegramRoutes, ...healthRoutes, ...mailRoutes],
     });
     const listener = serve({
       fetch: app.fetch,
@@ -469,14 +477,47 @@ describe("API telemetry exports", () => {
       message: "Ordinary request metadata positive control",
       request: { url: `${origin}/health` },
     });
-    const gmailDraftId = "synthetic-private-gmail-draft-id";
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    const thread = await createChatFilesBddApi(context).createThread(actor, {
+      title: "Draft link telemetry",
+    });
+    mockGmailConnectorOAuth();
+    const connectors = createConnectorBddApi(context);
+    const gmailOAuth = await connectors.startOauth(actor, "gmail", "oauth");
+    const state = new URL(gmailOAuth.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected Gmail OAuth state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "fixture-gmail-code",
+      state,
+    });
+
+    const gmailDraftId = "synthetic-private-gmail-draft-id+encoded";
     const gmailDraftBase =
       "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
-    const gmailDraftUrl = `${gmailDraftBase}/Draft%20${gmailDraftId}`;
+    const gmailDraftUrl = `${gmailDraftBase}/${encodeURIComponent(gmailDraftId)}`;
     const gmailSendUrl = `${gmailDraftBase}/send`;
+    const privateGmailMessage = "synthetic-private-gmail-error-text";
+    const privateGmailReason = "synthetic-private-reason@example.invalid";
     server.use(
       http.get(gmailDraftUrl, () => {
-        return new HttpResponse(null, { status: 400 });
+        return HttpResponse.json(
+          {
+            error: {
+              code: 400,
+              status: "INVALID_ARGUMENT",
+              message: privateGmailMessage,
+              errors: [{ reason: "invalid" }, { reason: privateGmailReason }],
+            },
+          },
+          { status: 400 },
+        );
       }),
       http.post(gmailSendUrl, () => {
         return HttpResponse.json({});
@@ -485,10 +526,6 @@ describe("API telemetry exports", () => {
     await trace
       .getTracer("dependency-upgrade")
       .startActiveSpan("gmail-calls", async (span) => {
-        const read = await fetch(`${gmailDraftUrl}?format=full`, {
-          signal: context.signal,
-        });
-        expect(read.status).toBe(400);
         const send = await fetch(gmailSendUrl, {
           method: "POST",
           signal: context.signal,
@@ -499,7 +536,15 @@ describe("API telemetry exports", () => {
           data: { url: gmailDraftUrl },
         });
         Sentry.addBreadcrumb({ category: "http", data: { url: gmailSendUrl } });
-        Sentry.captureException(new Error("Gmail request failure"));
+        const response = await app.request(mailContract.linkDraft.path, {
+          method: mailContract.linkDraft.method,
+          headers: {
+            authorization: "Bearer clerk-session",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ threadId: thread.id, gmailDraftId }),
+        });
+        expect(response.status).toBe(500);
         span.end();
       });
     trace
@@ -633,9 +678,28 @@ describe("API telemetry exports", () => {
     expect(exportedTraces).not.toContain("/ingest");
     expect(exportedTraces).toContain(`fetch POST ${gmailSendUrl}`);
     expect(errors.join("\n")).toContain(gmailSendUrl);
-    expect(errors.join("\n")).toContain("Gmail request failure");
-    expect(exportedTraces).not.toContain(gmailDraftId);
-    expect(errors.join("\n")).not.toContain(gmailDraftId);
+    expect(errorEvents).toContainEqual(
+      expect.objectContaining({
+        exception: expect.objectContaining({
+          values: expect.arrayContaining([
+            expect.objectContaining({
+              value: expect.stringMatching(
+                /Failed to read Gmail draft.*\binvalid\b/u,
+              ),
+            }),
+          ]),
+        }),
+      }),
+    );
+    for (const privateValue of [
+      gmailDraftId,
+      encodeURIComponent(gmailDraftId),
+      privateGmailMessage,
+      privateGmailReason,
+    ]) {
+      expect(exportedTraces).not.toContain(privateValue);
+      expect(errors.join("\n")).not.toContain(privateValue);
+    }
     for (const secret of [proof, identity, botToken]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);

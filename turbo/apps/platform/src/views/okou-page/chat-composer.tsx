@@ -1,4 +1,5 @@
 import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
+import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 
 import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
@@ -3987,6 +3988,9 @@ export function ChatComposer({
   const setLifecycleRef = useSet(signals.setLifecycleRef$);
   return (
     <>
+      <ComposerPresentationFormatSetup
+        signals={signals.submission.presentationFormatSetup}
+      />
       {(!signals.threadId || signals.editor.forwardComposer) && (
         <ThreadRemoteAccessDialog signals={signals} />
       )}

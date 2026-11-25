@@ -120,4 +120,12 @@
     <string name="workflow_history_trigger_unavailable">ट्रिगर उपलब्ध नहीं है</string>
     <string name="workflow_history_scheduled">शेड्यूल किया गया ट्रिगर</string>
     <string name="workflow_history_manual">मैन्युअल रन</string>
+    <string name="workflow_catalog_refresh_failed">वर्कफ़्लो निर्देशिका रीफ़्रेश नहीं हो सकी। लोड किए गए वर्कफ़्लो दिख रहे हैं।</string>
+    <string name="workflow_history_earlier_failed">पिछले रन लोड नहीं हो सके।</string>
+    <string name="workflow_rule_checking">नतीजे की जाँच हो रही है…</string>
+    <string name="workflow_rule_unconfirmed">नतीजे की अभी पुष्टि नहीं हुई है।</string>
+    <string name="workflow_event">इवेंट</string>
+    <string name="workflow_event_source">इवेंट का स्रोत</string>
+    <string name="workflow_source_gmail">Gmail · ईमेल मिला</string>
+    <string name="workflow_source_calendar">Google Calendar · इवेंट बनाया गया</string>
 </resources>

@@ -1,18 +1,18 @@
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-function startWithSuggestionsOff() {
-  let enabled = false;
+async function settings(rollout: boolean, enabled = false) {
+  let active = enabled;
   context.mocks.api(feedContract.sources, ({ respond }) => {
     return respond(200, {
-      suggestions: enabled,
+      suggestions: active,
       whatsNew: true,
       offers: true,
       systemUpdates: true,
@@ -20,34 +20,33 @@ function startWithSuggestionsOff() {
   });
   context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
     return respond(200, {
-      enabled,
-      status: enabled ? "enabled" : "paused",
+      enabled: active,
+      status: active ? "preparing" : "paused",
       unavailableReason: null,
     });
   });
   context.mocks.api(
     proactiveSuggestionsContract.updateWithFeed,
     ({ body, respond }) => {
-      enabled = body.enabled;
+      active = body.enabled;
       return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
+        enabled: active,
+        status: active ? "enabled" : "paused",
         unavailableReason: null,
       });
     },
   );
-}
-
-test("groups proactive preferences in My Okou and keeps Suggestions independent of Morning Brief", async () => {
-  startWithSuggestionsOff();
   await setupPage({
     context,
-    path: "/?settings=my-okou",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    },
+    host: "app.okou.ai",
+    path: rollout ? "/?settings=my-okou" : "/?settings=preference",
+    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: rollout },
   });
-  const region = await screen.findByRole("region", { name: "Proactive" });
+  return await screen.findByRole("region", { name: "Proactive" });
+}
+
+test("proactive-learning-settings-001 My Okou offers Morning brief before Suggestions and keeps them independent", async () => {
+  const region = await settings(true);
   expect(screen.getByRole("heading", { name: "My Okou" })).toBeInTheDocument();
   const morning = await within(region).findByRole("switch", {
     name: "Morning brief",
@@ -55,60 +54,53 @@ test("groups proactive preferences in My Okou and keeps Suggestions independent 
   const suggestions = await within(region).findByRole("switch", {
     name: "Suggestions",
   });
-  await waitFor(() => {
-    for (const toggle of [morning, suggestions]) {
-      expect(toggle).toBeEnabled();
-      expect(toggle).not.toBeChecked();
-    }
-  });
   expect(
-    within(region)
-      .getAllByRole("switch")
-      .map((toggle) => {
-        return toggle.getAttribute("aria-label");
-      }),
-  ).toStrictEqual(expect.arrayContaining(["Morning brief", "Suggestions"]));
+    morning.compareDocumentPosition(suggestions) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(morning).not.toBeChecked();
+  expect(suggestions).not.toBeChecked();
   click(suggestions);
   await waitFor(() => {
-    return expect(suggestions).toBeChecked();
+    expect(suggestions).toBeChecked();
+    expect(suggestions).toBeEnabled();
   });
   expect(morning).not.toBeChecked();
 });
 
-test.each([
-  {
-    rollout: "Morning brief",
-    suggestions: false,
-    labels: ["Morning brief"],
-  },
-  {
-    rollout: "Suggestions",
-    suggestions: true,
-    labels: ["Morning brief", "Suggestions"],
-  },
-])("offers $rollout independently of the other rollout", async (flags) => {
-  startWithSuggestionsOff();
-  await setupPage({
-    context,
-    path: flags.suggestions ? "/?settings=my-okou" : "/?settings=preference",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: flags.suggestions,
-    },
+test("proactive-learning-settings-002 Morning brief stays available outside the Suggestions rollout", async () => {
+  const region = await settings(false);
+  const morning = await within(region).findByRole("switch", {
+    name: "Morning brief",
   });
-  const region = await screen.findByRole("region", { name: "Proactive" });
   await waitFor(() => {
-    for (const name of flags.labels) {
-      expect(within(region).getByRole("switch", { name })).toBeEnabled();
-    }
+    expect(morning).toBeEnabled();
   });
-  expect(
-    within(region)
-      .getAllByRole("switch")
-      .map((toggle) => {
-        return toggle.getAttribute("aria-label");
-      }),
-  ).toStrictEqual(expect.arrayContaining(flags.labels));
-  expect(
-    within(region).queryByRole("switch", { name: "Suggestions" }) !== null,
-  ).toBe(flags.suggestions);
+  expect(within(region).getAllByRole("switch")).toStrictEqual([morning]);
+});
+
+test("proactive-suggestions-settings-001 the member can opt in and save an explicit opt-out independently", async () => {
+  const region = await settings(true);
+  const toggle = await within(region).findByRole("switch", {
+    name: "Suggestions",
+  });
+  const brief = await within(region).findByRole("switch", {
+    name: "Morning brief",
+  });
+  await waitFor(() => {
+    expect(toggle).toBeEnabled();
+  });
+  expect(toggle).not.toBeChecked();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).toBeChecked();
+    expect(toggle).toBeEnabled();
+  });
+  expect(brief).not.toBeChecked();
+  click(toggle);
+  await waitFor(() => {
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeEnabled();
+  });
+  expect(brief).not.toBeChecked();
 });

@@ -12,6 +12,7 @@ import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ConversationHistorySync
 import android.app.Activity
 import android.content.Intent
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
@@ -20,7 +21,10 @@ import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.widget.VideoView
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -48,13 +52,19 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.width
 import androidx.core.view.children
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
@@ -64,7 +74,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -699,6 +711,106 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun emptyCatalogActionsRestoreFocusAndKeepTheSelectedTypeWhenClearing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val files = compose.onNodeWithText("Files")
+            val query = compose.onNodeWithTag("artifact_query")
+            files.performClick()
+            query.performTextReplacement("no matching artifact")
+            awaitText("No matching artifacts")
+            val title = compose.onNodeWithText("No matching artifacts", useUnmergedTree = true)
+            val list = compose.onNodeWithTag("artifact_list").getUnclippedBoundsInRoot()
+            assertEquals(28.dp, title.getUnclippedBoundsInRoot().left - list.left)
+            compose.onNodeWithText("Clear keyword").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            query.assertIsFocused()
+            assertEquals(
+                "",
+                query.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            )
+            files.assertIsSelected()
+            compose.onNodeWithText("Yesterday").assertIsDisplayed()
+
+            compose.onNodeWithText("Videos").performClick()
+            awaitText("No artifacts of this type")
+            compose.onNodeWithText("Show all").assertHeightIsAtLeast(48.dp).performClick()
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithText("All").assertIsSelected().assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w840dp-h820dp")
+    fun wideCatalogRevealsKeyboardFiltersAndKeepsFocusOnTheActivatedResult() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.checklist.title)
+
+            val catalog = compose.onNodeWithTag("artifact_catalog").getUnclippedBoundsInRoot()
+            val videos = compose.onNodeWithText("Videos")
+            val filterEnd = catalog.right - 16.dp
+            assertTrue(videos.getUnclippedBoundsInRoot().right > filterEnd)
+            videos.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            assertTrue(videos.assertIsFocused().getUnclippedBoundsInRoot().right <= filterEnd)
+            videos.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.video.title)
+
+            val row = compose.onNode(hasText(fixture.video.title) and hasClickAction())
+            row.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            row.performKeyInput { pressKey(Key.Enter) }
+            awaitText("Play")
+            row.assertIsFocused().assertIsSelected()
+
+            val all = compose.onNodeWithText("All")
+            all.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            all.performKeyInput { pressKey(Key.Enter) }
+            awaitText(fixture.checklist.title)
+            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.video.title)
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.checklist.title)
+
+        val first = compose.onNodeWithText(fixture.checklist.title).getUnclippedBoundsInRoot()
+        val title =
+            compose
+                .onNodeWithText(fixture.checklist.title, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+        val nextDay = compose.onNodeWithText("Yesterday").getUnclippedBoundsInRoot()
+        assertTrue(first.height >= 80.dp)
+        assertEquals(8.dp, title.top - first.top)
+        assertEquals(16.dp, nextDay.top - first.bottom)
+    }
+
+    @Test
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -725,6 +837,16 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText("Yesterday").assertDoesNotExist()
         compose.onNodeWithText(fixture.summary.title).performClick()
         awaitText("Preview only", partial = true)
+        val previewTitleLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithTag("artifact_preview_title").performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult,
+        ) {
+            it(previewTitleLayouts)
+        }
+        val titleStyle = previewTitleLayouts.single().layoutInput.style
+        assertEquals(22.sp, titleStyle.fontSize)
+        assertEquals(28.sp, titleStyle.lineHeight)
+        assertEquals(FontWeight.SemiBold, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
         compose
             .onNodeWithText("View source conversation")
@@ -1007,22 +1129,111 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     fun conversationCardOpensAnAuthorizedPreviewWithoutReadingTheCatalog() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            fixture.installInlineHistory()
+            app.fixture.historyReply +=
+                "\n\n[${fixture.checklist.title}](/artifacts/checklist1.md) " +
+                    "[${fixture.image.title}](/artifacts/thumbnail1.png)"
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithText(fixture.sourceTitle).performClick()
+            awaitText(fixture.image.title)
+
+            val button = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)
+            val summary = compose.onNode(hasText(fixture.summary.title) and button)
+            val checklist = compose.onNode(hasText(fixture.checklist.title) and button)
+            val image = compose.onNode(hasText(fixture.image.title) and button)
+            val intro = compose.onNodeWithText("The release summary is ready.")
+            val summaryBounds = summary.assertHeightIsAtLeast(60.dp).getUnclippedBoundsInRoot()
+            val checklistBounds = checklist.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, summaryBounds.top - intro.getUnclippedBoundsInRoot().bottom)
+            assertEquals(8.dp, checklistBounds.top - summaryBounds.bottom)
+            assertEquals(8.dp, image.getUnclippedBoundsInRoot().top - checklistBounds.bottom)
+            assertTrue(fixture.requestedReferences.isEmpty())
+            summary.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            summary.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+
+            awaitText("Preview only", partial = true)
+            compose.onNodeWithText("Artifact preview").assertIsDisplayed()
+            compose.onNodeWithText("Save file").assertDoesNotExist()
+            assertEquals(
+                listOf("/api/artifact-references/artifacts2.md"),
+                fixture.requestedReferences,
+            )
+            assertTrue(fixture.catalogScopes.isEmpty())
+            compose.onNodeWithContentDescription("Back").performClick()
+            awaitText(fixture.image.title)
+            summary.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
+    fun adjacentArtifactCardsUseEightDpThroughMarkdownListsAndEarlierReplies() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         fixture.installInlineHistory()
+        val note = "Additional material for the handoff."
+        val handoff = "Release handoff notes"
+        val latest =
+            app.fixture.historyReply +
+                "\n\n- [${fixture.checklist.title}](/artifacts/checklist1.md)" +
+                "\n- [${fixture.image.title}](/artifacts/thumbnail1.png)" +
+                "\n- $note\n- [$handoff](/artifacts/part000001.md)"
+        val earlier =
+            "[${fixture.site.title}](https://fixture.okou.app/)" +
+                "\n\n[${fixture.slides.title}](/artifacts/launchdeck.pptx)"
+        app.fixture.setHistoryEvents(
+            CHAT_PERSONAL,
+            listOf(
+                historyEventWire(
+                    "input",
+                    17,
+                    type = "input.prompt",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Review the release files"}]}}""",
+                ),
+                historyEventWire(
+                    "earlier-output",
+                    19,
+                    payload = """{"content":${JsonPrimitive(earlier)}}""",
+                ),
+                historyEventWire(
+                    "output",
+                    23,
+                    payload = """{"content":${JsonPrimitive(latest)}}""",
+                ),
+                historyEventWire(type = "run.completed", payload = "null"),
+            ),
+        )
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         compose.onNodeWithText(fixture.sourceTitle).performClick()
-        awaitText(fixture.summary.title)
-        assertTrue(fixture.requestedReferences.isEmpty())
-        compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
-        awaitText("Preview only", partial = true)
-        compose.onNodeWithText("Save file").assertDoesNotExist()
-        assertEquals(1, fixture.requestedReferences.size)
-        assertTrue(fixture.catalogScopes.isEmpty())
-        compose.onNodeWithContentDescription("Back").performClick()
-        awaitText(fixture.summary.title)
-        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        awaitText(fixture.slides.title)
+
+        val labels =
+            listOf(
+                fixture.summary.title,
+                fixture.checklist.title,
+                fixture.image.title,
+                note,
+                handoff,
+                fixture.site.title,
+                fixture.slides.title,
+            )
+        val bounds = labels.map { label ->
+            compose.onNodeWithText(label).getUnclippedBoundsInRoot()
+        }
+        assertEquals(
+            listOf(8.dp, 8.dp, 12.dp, 12.dp, 8.dp, 8.dp),
+            bounds.zipWithNext { above, below -> below.top - above.bottom },
+        )
     }
 
     @Test
@@ -1221,7 +1432,90 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText(fixture.image.title)
         compose.onNodeWithText(fixture.image.title).performClick()
         awaitText("No preview is available for this file")
+        val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
+        val status =
+            compose
+                .onNodeWithText("No preview is available for this file")
+                .getUnclippedBoundsInRoot()
+        assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
+        val frameCenter = frame.top + frame.height / 2
+        val statusCenter = status.top + status.height / 2
+        assertTrue(abs((statusCenter - frameCenter).value) <= 1)
     }
+
+    @Test
+    fun mediaStartsOnlyAfterPlayAndKeepsItsFrameWhenPlaybackFails() {
+        val videoTitle = openVideoPreview()
+
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        val frame = surface.getUnclippedBoundsInRoot()
+        assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
+        assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+        compose.onNodeWithText("Play").assertHeightIsAtLeast(48.dp).performClick()
+        val view =
+            checkNotNull(
+                compose.runOnIdle { compose.activity.window.decorView.videoPreview() },
+            )
+        assertTrue(compose.runOnIdle { view.isPlaying })
+        assertEquals(frame, surface.getUnclippedBoundsInRoot())
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+        assertTrue(compose.runOnIdle { !view.isPlaying })
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        assertTrue(compose.runOnIdle { !view.isPlaying })
+
+        compose.runOnIdle {
+            shadowOf(view).onErrorListener.onError(null, MediaPlayer.MEDIA_ERROR_UNKNOWN, 0)
+        }
+        awaitText("Temporarily unable to load preview")
+        assertEquals(frame, surface.getUnclippedBoundsInRoot())
+        assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+        compose.onNodeWithContentDescription("Back to artifacts").performClick()
+        compose.onNodeWithText(videoTitle).assertIsDisplayed()
+        compose.onNodeWithText("Videos").assertIsSelected()
+    }
+
+    @Test
+    fun mediaDoesNotStartWhenThePlayFrameArrivesAfterPause() {
+        openVideoPreview()
+        val scenario = compose.activityRule.scenario
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText("Play").performClick()
+            assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+            scenario.moveToState(Lifecycle.State.STARTED)
+            compose.mainClock.advanceTimeByFrame()
+            val view =
+                checkNotNull(
+                    compose.runOnIdle { compose.activity.window.decorView.videoPreview() },
+                )
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun openVideoPreview(): String {
+        val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        compose.onNodeWithText("Videos").performClick()
+        awaitText(fixture.video.title)
+        compose.onNodeWithText(fixture.video.title).performClick()
+        awaitText("Play")
+        return fixture.video.title
+    }
+
+    private fun View.videoPreview(): VideoView? =
+        when (this) {
+            is VideoView -> this
+            is ViewGroup -> children.firstNotNullOfOrNull { it.videoPreview() }
+            else -> null
+        }
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)

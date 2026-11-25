@@ -3851,6 +3851,27 @@
       "when": 1795515997042,
       "tag": "1628_artifact_file_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 1629,
+      "version": "7",
+      "when": 1795519845513,
+      "tag": "1629_allow_free_credit_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 1630,
+      "version": "7",
+      "when": 1795527168266,
+      "tag": "1630_antigravity_member_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1631,
+      "version": "7",
+      "when": 1795528736916,
+      "tag": "1631_stale_surge",
+      "breakpoints": true
     }
   ]
 }

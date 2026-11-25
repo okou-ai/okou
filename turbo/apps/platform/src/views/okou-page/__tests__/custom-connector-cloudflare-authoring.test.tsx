@@ -1,655 +1,403 @@
 import {
+  customConnectorsContract,
+  customConnectorByIdContract,
+  type CustomConnectorResponse,
+  type UpdateCustomConnectorBody,
+  type CreateCustomConnectorBody,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import {
-  customConnectorByIdContract,
-  customConnectorsContract,
-  type CustomConnectorResponse,
-  type UpdateCustomConnectorBody,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
   fill,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  chooseConnectorAuthentication,
   customConnector,
   mcpCustomConnector,
-  getConnectorAction,
+  chooseConnectorAuthentication,
   getConnectorCard,
-  mockCustomConnectorStory,
 } from "./connector-page-test-helpers.ts";
-
 const context = testContext();
-const gateway = {
-  id: "a0000000-0000-4000-8000-000000000001",
-  name: "Corporate gateway",
-  scope: "organization",
-  revision: 1,
-  generation: 1,
-  sshHosts: [],
-  vncHosts: [],
-  createdAt: "2026-09-22T00:00:00.000Z",
-  updatedAt: "2026-09-22T00:00:00.000Z",
-} as const satisfies ScopedCloudflareAccessConfig;
-const replacement = {
-  ...gateway,
-  id: "a0000000-0000-4000-8000-000000000002",
-  name: "Replacement gateway",
-} as const satisfies ScopedCloudflareAccessConfig;
-const personal = {
-  ...gateway,
-  id: "a0000000-0000-4000-8000-000000000003",
-  name: "Personal gateway",
-  scope: "personal",
-} as const satisfies ScopedCloudflareAccessConfig;
 
-function binding(config: ScopedCloudflareAccessConfig = gateway) {
+const path = "/connectors?scope=custom";
+function makeGateway(
+  name: string,
+  scope: "personal" | "organization" = "organization",
+): ScopedCloudflareAccessConfig {
   return {
-    type: "cloudflare_access" as const,
-    configId: config.id,
-    status: "available" as const,
-    name: config.name,
-    generation: config.generation,
+    id: crypto.randomUUID(),
+    scope,
+    name,
+    generation: 1,
+    revision: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    sshHosts: [],
+    vncHosts: [],
   };
 }
-
-function definition(kind: "http" | "mcp"): CustomConnectorResponse {
-  return kind === "http"
-    ? customConnector({ displayName: "Protected HTTP", storageVersion: 7 })
-    : mcpCustomConnector({ displayName: "Protected MCP", storageVersion: 7 });
+function bound(gateway: ScopedCloudflareAccessConfig) {
+  return {
+    type: "cloudflare_access",
+    status: "available",
+    configId: gateway.id,
+    name: gateway.name,
+    generation: gateway.generation,
+  } as const;
 }
-
-function story(initial: readonly CustomConnectorResponse[] = []) {
-  mockCustomConnectorStory(context);
-  let connectors = [...initial];
-  const updates: UpdateCustomConnectorBody[] = [];
+function inventory(current: () => CustomConnectorResponse[]) {
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors });
+    return respond(200, { connectors: current() });
   });
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
-    return respond(200, {
-      configs: [
-        {
-          ...gateway,
-          ...(query.includeCustomConnectors === "true"
-            ? {
-                customConnectors: connectors
-                  .filter((connector) => {
-                    return connector.networkBinding?.configId === gateway.id;
-                  })
-                  .map(({ id, displayName, kind }) => {
-                    return { id, displayName, kind };
-                  }),
-              }
-            : {}),
-        },
-        replacement,
-        personal,
-      ],
-    });
-  });
-  context.mocks.api(
-    customConnectorByIdContract.update,
-    ({ params, body, respond }) => {
-      const previous = connectors.find((connector) => {
-        return connector.id === params.id;
-      });
-      if (!previous) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Connector not found" },
-        });
-      }
-      updates.push(body);
-      const selected = body.networkBinding;
-      const updated = {
-        ...previous,
-        displayName: body.displayName,
-        storageVersion: body.storageVersion ?? previous.storageVersion,
-        networkBinding:
-          selected === undefined
-            ? previous.networkBinding
-            : selected === null
-              ? undefined
-              : binding(
-                  selected.configId === replacement.id ? replacement : gateway,
-                ),
-      };
-      connectors = connectors.map((connector) => {
-        return connector.id === params.id ? updated : connector;
-      });
-      return respond(200, updated);
-    },
-  );
-  return {
-    updates,
-    recordCreated(connector: CustomConnectorResponse) {
-      connectors = [...connectors, connector];
-    },
-  };
 }
-
-async function page(
-  path = "/connectors?scope=custom",
-  enabled = true,
-  role: "admin" | "member" = "admin",
-) {
-  const orgId = "org_cloudflare_authoring";
-  context.mocks.data.org({ id: orgId, name: "Engineering", role });
+async function newHttp(name: string) {
+  click(await findFastControl("button", "New custom connector"));
+  const form = await screen.findByRole("dialog", {
+    name: "New custom connector",
+  });
+  await fill(within(form).getByPlaceholderText("Acme API"), name);
+  await fill(
+    within(form).getByPlaceholderText("https://api.acme.com/v1/"),
+    "https://api.acme.test/v1/",
+  );
+  await chooseConnectorAuthentication(form, "No authentication");
+  return form;
+}
+function advanced(form: HTMLElement) {
+  return within(form).getByText("Advanced settings").closest("summary")!;
+}
+function picker(form: HTMLElement) {
+  return within(form).getByRole("combobox", { name: "Cloudflare Access" });
+}
+test("custom-connector-cloudflare-authoring-001 creating a public HTTP definition with an organization gateway", async () => {
+  let submitted: CreateCustomConnectorBody | undefined;
+  const org = makeGateway("Corporate gateway");
+  const personal = makeGateway("Personal gateway", "personal");
+  let saved: CustomConnectorResponse[] = [];
+  inventory(() => {
+    return saved;
+  });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [personal, org] });
+  });
+  context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
+    submitted = body;
+    const api = customConnector({
+      displayName: body.displayName,
+      authMode: "none",
+      fields: [],
+      headerInjections: [],
+      networkBinding: bound(org),
+    });
+    saved = [api];
+    return respond(201, api);
+  });
   await setupPage({
     context,
     path,
     featureSwitches: {
-      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: enabled,
-    },
-    auth: {
-      user: { id: "cloudflare-author", fullName: "Cloudflare Author" },
-      organization: {
-        activeOrg: { id: orgId, name: "Engineering" },
-        memberships: [{ id: orgId }],
-      },
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
     },
   });
-}
-
-function networkAdvancedSettings(dialog: HTMLElement) {
-  const field = within(dialog).getByLabelText("Cloudflare Access");
-  const disclosure = field.closest("details");
-  if (!disclosure) {
-    throw new Error("Expected Cloudflare Access in Advanced settings");
-  }
-  const summary = within(disclosure)
-    .getByText("Advanced settings")
-    .closest("summary");
-  if (!summary) {
-    throw new Error("Expected an Advanced settings disclosure control");
-  }
-  return { field, disclosure, summary };
-}
-
-function expandNetworkSettings(dialog: HTMLElement) {
-  const settings = networkAdvancedSettings(dialog);
-  if (!settings.disclosure.open) {
-    click(settings.summary);
-  }
-  return settings;
-}
-
-async function choose(dialog: HTMLElement, name: string) {
-  expandNetworkSettings(dialog);
-  click(within(dialog).getByLabelText("Cloudflare Access"));
-  click(await screen.findByRole("option", { name }));
-}
-
-async function edit(name: string) {
-  getConnectorCard(name);
-  const more = await waitFor(() => {
-    return getConnectorAction("button", "More options");
-  });
-  click(more);
-  click(
-    getConnectorAction("menuitem", "Edit", await screen.findByRole("menu")),
-  );
-  return await screen.findByRole("dialog", { name: "Edit custom connector" });
-}
-
-async function save(dialog: HTMLElement) {
-  click(getConnectorAction("button", "Save", dialog));
-  await waitFor(() => {
-    return expect(dialog).not.toBeInTheDocument();
-  });
-}
-
-test.each(["http", "mcp"] as const)(
-  "Create a %s connector with organization Cloudflare Access",
-  async (kind) => {
-    const state = story();
-    const shared = {
-      networkBinding: binding(),
-      storageVersion: 1,
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
-    };
-    const created =
-      kind === "http"
-        ? customConnector({
-            ...shared,
-            displayName: "Protected HTTP",
-            authMode: "none",
-          })
-        : mcpCustomConnector({
-            ...shared,
-            displayName: "Protected MCP",
-            authMode: "automatic",
-          });
-    context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
-      expect(body.networkBinding).toStrictEqual({
-        type: "cloudflare_access",
-        configId: gateway.id,
-      });
-      expect(body.storageVersion).toBe(1);
-      expect(body.authMode).toBe(kind === "http" ? "none" : "automatic");
-      state.recordCreated(created);
-      return respond(201, created);
-    });
-    await page();
-    click(getConnectorAction("button", "New custom connector"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "New custom connector",
-    });
-    const settings = networkAdvancedSettings(dialog);
-    expect(settings.field).not.toBeVisible();
-    if (kind === "mcp") {
-      click(within(dialog).getByLabelText("Connector type"));
-      click(
-        await screen.findByRole("option", { name: "MCP · Streamable HTTP" }),
-      );
-      await fill(
-        within(dialog).getByLabelText(/MCP endpoint/u),
-        "https://mcp.acme.test/server",
-      );
-    } else {
-      await fill(
-        within(dialog).getByLabelText(/Prefixes/u),
-        "https://api.acme.test/v1/",
-      );
-      await chooseConnectorAuthentication(dialog, "No authentication");
-    }
-    await fill(
-      within(dialog).getByLabelText("Display name"),
-      created.displayName,
-    );
-    expandNetworkSettings(dialog);
-    expect(settings.field).toBeVisible();
-    click(within(dialog).getByLabelText("Cloudflare Access"));
-    await screen.findByRole("option", { name: gateway.name });
-    expect(
-      screen.queryByRole("option", { name: personal.name }),
-    ).not.toBeInTheDocument();
-    click(screen.getByRole("option", { name: gateway.name }));
-    click(settings.summary);
-    expect(settings.field).not.toBeVisible();
-    expect(settings.summary).toHaveTextContent(
-      `Cloudflare Access · ${gateway.name}`,
-    );
-    click(settings.summary);
-    expect(settings.field).toHaveTextContent(gateway.name);
-    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-      created.displayName,
-    );
-    click(settings.summary);
-    click(getConnectorAction("button", "Create", dialog));
-    await screen.findByText(`Cloudflare Access: ${gateway.name}`, {
-      exact: false,
-    });
-  },
-);
-
-test.each(["http", "mcp"] as const)(
-  "Preserve, rebind and clear a %s network requirement without changing app storage",
-  async (kind) => {
-    const connector = { ...definition(kind), networkBinding: binding() };
-    const state = story([connector]);
-    await page();
-    await screen.findByText(connector.displayName);
-    let dialog = await edit(connector.displayName);
-    await within(networkAdvancedSettings(dialog).summary).findByText(
-      `Cloudflare Access · ${gateway.name}`,
-    );
-    await fill(
-      within(dialog).getByLabelText("Display name"),
-      "Renamed protected connector",
-    );
-    await save(dialog);
-    expect(state.updates[0]).not.toHaveProperty("networkBinding");
-    expect(state.updates[0]?.storageVersion).toBe(7);
-    await screen.findByText("Renamed protected connector");
-    dialog = await edit("Renamed protected connector");
-    await choose(dialog, replacement.name);
-    await save(dialog);
-    expect(state.updates[1]).toMatchObject({
-      networkBinding: { type: "cloudflare_access", configId: replacement.id },
-      storageVersion: 7,
-      authMode: "manual",
-    });
-    await screen.findByText(`Cloudflare Access: ${replacement.name}`, {
-      exact: false,
-    });
-    dialog = await edit("Renamed protected connector");
-    await choose(dialog, "No Cloudflare Access");
-    const cleared = networkAdvancedSettings(dialog);
-    click(cleared.summary);
-    expect(cleared.summary).toHaveTextContent(
-      "Cloudflare Access will be removed on save",
-    );
-    await save(dialog);
-    expect(state.updates[2]).toMatchObject({
-      networkBinding: null,
-      storageVersion: 7,
-    });
-    expect(getConnectorCard("Renamed protected connector")).toHaveTextContent(
-      kind === "http"
-        ? "https://api.acme.test/v1/"
-        : "https://mcp.acme.test/server",
-    );
-  },
-);
-
-test("A member following a dependency link sees the connector without admin editing controls", async () => {
-  const connector = { ...definition("http"), networkBinding: binding() };
-  story([connector]);
-  await page(
-    `/connectors?scope=custom&editCustomConnector=${connector.id}`,
-    true,
-    "member",
-  );
-  await screen.findByText(`Cloudflare Access: ${gateway.name}`, {
-    exact: false,
-  });
-  expect(getConnectorCard(connector.displayName)).toHaveTextContent(
-    "https://api.acme.test/v1/",
-  );
+  const form = await newHttp("Reports endpoint");
+  const summary = advanced(form);
+  click(summary);
+  click(picker(form));
+  const choice = await screen.findByRole("option", { name: org.name });
   expect(
-    screen.queryByRole("dialog", { name: "Edit custom connector" }),
+    screen.queryByRole("option", { name: personal.name }),
   ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label") === "More options";
-    }),
-  ).toBeFalsy();
+  click(choice);
+  click(summary);
+  expect(summary).toHaveTextContent(org.name);
+  click(await findFastControl("button", "Create", form));
+  await screen.findByText("Reports endpoint");
+  expect(submitted).toMatchObject({
+    storageVersion: 1,
+    authMode: "none",
+    networkBinding: { type: "cloudflare_access", configId: org.id },
+  });
+  expect(getConnectorCard("Reports endpoint")).toHaveTextContent(
+    "Cloudflare Access: Corporate gateway",
+  );
 });
-
-test("A network-only OAuth edit preserves the app secret and account storage contract", async () => {
-  const oauthConfig = {
-    providerAdapter: "standard" as const,
-    clientId: "existing-client",
-    authorizationUrl: "https://identity.acme.test/authorize",
-    tokenUrl: "https://identity.acme.test/token",
-    tokenEndpointAuthMethod: "client_secret_post" as const,
-    pkceMethod: "S256" as const,
-    scopes: ["read"],
-    authorizationParams: {},
-  };
-  const connector = customConnector({
-    displayName: "OAuth with Cloudflare",
-    authMode: "oauth",
-    fields: [],
-    headerInjections: [
-      { name: "Authorization", valueTemplate: "Bearer {{oauth.access_token}}" },
-    ],
-    oauthConfig,
-    storageVersion: 7,
-    networkBinding: binding(),
+test("custom-connector-cloudflare-authoring-005 a member following the dependency link sees the bound API without editing actions", async () => {
+  const org = makeGateway("Corporate gateway");
+  const api = customConnector({
+    displayName: "Bound reports",
+    networkBinding: bound(org),
   });
-  const state = story([connector]);
-  await page(`/connectors?scope=custom&editCustomConnector=${connector.id}`);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Edit custom connector",
+  org.customConnectors = [
+    { id: api.id, kind: "http", displayName: api.displayName },
+  ];
+  inventory(() => {
+    return [api];
   });
-  await choose(dialog, replacement.name);
-  await save(dialog);
-  expect(state.updates[0]).toMatchObject({
-    authMode: "oauth",
-    storageVersion: 7,
-    oauthConfig,
-    networkBinding: { type: "cloudflare_access", configId: replacement.id },
+  context.mocks.data.org({ role: "member" });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [org] });
   });
-  expect(state.updates[0]?.oauthConfig).not.toHaveProperty("clientSecret");
+  await setupPage({
+    context,
+    path:
+      "/connectors?scope=private-network&remoteResource=cloudflare:" + org.id,
+    featureSwitches: {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    },
+  });
+  click(await findFastControl("link", api.displayName));
+  await screen.findByText(
+    "https://api.acme.test/v1/ · Cloudflare Access: Corporate gateway",
+  );
+  expect(getConnectorCard(api.displayName)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("More options")).not.toBeInTheDocument();
 });
-
-test.each(["http", "mcp"] as const)(
-  "A feature-disabled %s binding remains unavailable and can be explicitly removed",
-  async (kind) => {
-    const connector = {
-      ...definition(kind),
-      networkBinding: {
-        type: "cloudflare_access" as const,
-        configId: gateway.id,
-        status: "unavailable" as const,
-        name: null,
-      },
-    };
-    const state = story([connector]);
-    await page(
-      `/connectors?scope=custom&editCustomConnector=${connector.id}`,
-      false,
-    );
-    let dialog = await screen.findByRole("dialog", {
-      name: "Edit custom connector",
-    });
-    expect(networkAdvancedSettings(dialog).summary).toHaveTextContent(
-      "Cloudflare Access is off",
-    );
-    expandNetworkSettings(dialog);
-    expect(
-      within(dialog).getByLabelText("Cloudflare Access"),
-    ).toHaveTextContent("Unavailable");
-    expect(
-      within(dialog).getByText(/Cloudflare Access is turned off/u),
-    ).toBeInTheDocument();
-    await fill(
-      within(dialog).getByLabelText("Display name"),
-      "Still requires Cloudflare",
-    );
-    await save(dialog);
-    expect(state.updates[0]).not.toHaveProperty("networkBinding");
-    await screen.findByText("Still requires Cloudflare");
-    dialog = await edit("Still requires Cloudflare");
-    await choose(dialog, "No Cloudflare Access");
-    await save(dialog);
-    expect(state.updates[1]).toMatchObject({
-      networkBinding: null,
-      storageVersion: 7,
-    });
-  },
-);
-
-test("A collapsed requirement distinguishes pending, failed and unavailable lookup before a valid rebind", async () => {
-  const connector = {
-    ...definition("http"),
+test("custom-connector-cloudflare-authoring-009 rebind the unavailable definition after its configuration lookup recovers", async () => {
+  let submitted: UpdateCustomConnectorBody | undefined;
+  const gateway = makeGateway("Replacement gateway");
+  let api = customConnector({
+    storageVersion: 7,
     networkBinding: {
-      type: "cloudflare_access" as const,
-      configId: gateway.id,
-      status: "unavailable" as const,
+      type: "cloudflare_access",
+      configId: crypto.randomUUID(),
+      status: "unavailable",
       name: null,
     },
-  };
-  const state = story([connector]);
-  const response = context.mocks.deferred<void>();
-  let loaded = false;
+  });
+  inventory(() => {
+    return [api];
+  });
+  const failure = context.mocks.deferred<void>();
+  let recover = false;
   context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
-    if (!loaded) {
-      await response.promise;
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Unavailable" },
-      });
+    if (recover) {
+      return respond(200, { configs: [gateway] });
     }
-    return respond(200, { configs: [replacement] });
+    await failure.promise;
+    return respond(500, {
+      error: { code: "UNAVAILABLE", message: "Service unavailable" },
+    });
   });
-  await page(`/connectors?scope=custom&editCustomConnector=${connector.id}`);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Edit custom connector",
+  context.mocks.api(customConnectorByIdContract.update, ({ body, respond }) => {
+    submitted = body;
+    api = customConnector({
+      displayName: body.displayName,
+      networkBinding: bound(gateway),
+    });
+    return respond(200, api);
   });
-  const settings = networkAdvancedSettings(dialog);
-  await within(settings.summary).findByRole("status", {
+  await setupPage({
+    context,
+    path,
+    featureSwitches: {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    },
+  });
+  click(await findFastControl("button", "More options"));
+  click(await screen.findByText("Edit", { selector: '[role="menuitem"]' }));
+  const form = await screen.findByRole("dialog");
+  const summary = advanced(form);
+  await within(summary).findByRole("status", {
     name: "Loading Cloudflare Access…",
   });
-  expect(
-    within(settings.field).getByLabelText("Loading Cloudflare Access…"),
-  ).toBeInTheDocument();
-  await fill(within(dialog).getByLabelText("Display name"), "Draft kept");
-  response.resolve();
-  await within(settings.summary).findByText(
+  await fill(within(form).getByPlaceholderText("Acme API"), "Renamed reports");
+  failure.resolve();
+  await within(summary).findByText("Could not load Cloudflare Access.");
+  click(summary);
+  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
     "Could not load Cloudflare Access.",
   );
-  expect(settings.field).toHaveTextContent("Could not load Cloudflare Access.");
-  loaded = true;
-  expandNetworkSettings(dialog);
-  click(settings.field);
-  const alternative = await screen.findByRole("option", {
-    name: replacement.name,
-  });
-  expect(settings.summary).toHaveTextContent("Cloudflare Access · Unavailable");
-  click(alternative);
-  expect(settings.summary).toHaveTextContent(replacement.name);
+  recover = true;
+  click(picker(form));
+  const choice = await screen.findByRole("option", { name: gateway.name });
+  expect(summary).toHaveTextContent("Unavailable");
+  click(choice);
+  expect(summary).toHaveTextContent(gateway.name);
   expect(
-    within(dialog).queryByText(
-      "This configuration is unavailable. Select another one or remove the requirement.",
-    ),
+    within(form).queryByText(/This configuration is unavailable/),
   ).not.toBeInTheDocument();
-  click(settings.summary);
-  await save(dialog);
-  expect(state.updates[0]).toMatchObject({
-    displayName: "Draft kept",
-    networkBinding: { type: "cloudflare_access", configId: replacement.id },
+  click(await findFastControl("button", "Save", form));
+  await screen.findByText("Renamed reports");
+  expect(submitted).toMatchObject({
+    displayName: "Renamed reports",
     storageVersion: 7,
     authMode: "manual",
+    networkBinding: { type: "cloudflare_access", configId: gateway.id },
   });
 });
-
-test("A configuration load failure and rejected save preserve the connector draft until explicit retry", async () => {
-  const state = story();
-  const response = context.mocks.deferred<void>();
-  let loaded = false;
-  let saved = false;
+test("custom-connector-cloudflare-authoring-010 a failed lookup and rejected save preserve the HTTP creation draft", async () => {
+  const gateway = makeGateway("Corporate gateway");
+  const failure = context.mocks.deferred<void>();
+  let recover = false;
+  let accept = false;
+  let saved: CustomConnectorResponse[] = [];
+  inventory(() => {
+    return saved;
+  });
   context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
-    if (!loaded) {
-      await response.promise;
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Unavailable" },
-      });
+    if (recover) {
+      return respond(200, { configs: [gateway] });
     }
-    return respond(200, { configs: [gateway] });
+    await failure.promise;
+    return respond(500, {
+      error: { code: "UNAVAILABLE", message: "Service unavailable" },
+    });
   });
   context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
-    expect(body.displayName).toBe("Draft survives");
-    expect(body.networkBinding).toStrictEqual({
-      type: "cloudflare_access",
-      configId: gateway.id,
-    });
-    if (!saved) {
-      saved = true;
-      return respond(400, {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Configuration changed. Review your selection.",
-        },
+    if (!accept) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Gateway configuration changed" },
       });
     }
-    const created = customConnector({
+    const api = customConnector({
       displayName: body.displayName,
-      networkBinding: binding(),
-      authMode: "none",
-      fields: [],
-      headerInjections: [],
-      queryInjections: [],
+      networkBinding: bound(gateway),
     });
-    state.recordCreated(created);
-    return respond(201, created);
+    saved = [api];
+    return respond(201, api);
   });
-  await page();
-  click(getConnectorAction("button", "New custom connector"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "New custom connector",
+  await setupPage({
+    context,
+    path,
+    featureSwitches: {
+      [FeatureSwitchKey.CustomConnectorCloudflareAccess]: true,
+    },
   });
-  expandNetworkSettings(dialog);
-  await within(dialog).findAllByRole("status", {
-    name: "Loading Cloudflare Access…",
-  });
-  await fill(within(dialog).getByLabelText("Display name"), "Draft survives");
-  await fill(
-    within(dialog).getByLabelText(/Prefixes/u),
-    "https://api.acme.test/v1/",
+  const form = await newHttp("Metrics API");
+  const summary = advanced(form);
+  click(summary);
+  failure.resolve();
+  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not load Cloudflare Access.",
   );
-  await chooseConnectorAuthentication(dialog, "No authentication");
-  response.resolve();
-  await within(dialog).findByText("Could not load Cloudflare Access.");
-  loaded = true;
-  await choose(dialog, gateway.name);
-  click(getConnectorAction("button", "Create", dialog));
-  await screen.findByText("Configuration changed. Review your selection.");
-  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-    "Draft survives",
+  expect(within(form).getByPlaceholderText("Acme API")).toHaveValue(
+    "Metrics API",
   );
-  expect(within(dialog).getByLabelText("Cloudflare Access")).toHaveTextContent(
-    gateway.name,
+  expect(
+    within(form).getByRole("combobox", { name: "Authentication" }),
+  ).toHaveTextContent("No authentication");
+  expect(
+    within(form).getByPlaceholderText("https://api.acme.com/v1/"),
+  ).toHaveValue("https://api.acme.test/v1/");
+  recover = true;
+  click(picker(form));
+  click(await screen.findByRole("option", { name: gateway.name }));
+  click(await findFastControl("button", "Create", form));
+  await screen.findByText(/configuration changed/i);
+  expect(within(form).getByPlaceholderText("Acme API")).toHaveValue(
+    "Metrics API",
   );
-  click(getConnectorAction("button", "Create", dialog));
-  await waitFor(() => {
-    return expect(dialog).not.toBeInTheDocument();
-  });
+  expect(picker(form)).toHaveTextContent(gateway.name);
+  accept = true;
+  click(await findFastControl("button", "Create", form));
+  await screen.findByText("Metrics API");
+  expect(form).not.toBeInTheDocument();
 });
-
-test.each(["http", "mcp"] as const)(
-  "Resolve a %s dependency through its settings link before a fresh network deletion",
-  async (kind) => {
-    const connector = { ...definition(kind), networkBinding: binding() };
-    const state = story([connector]);
-    await page(
-      `/connectors?scope=private-network&remoteResource=cloudflare:${gateway.id}`,
-      false,
-    );
-    await screen.findByRole("heading", { name: gateway.name });
-    expect(
-      getConnectorAction("button", "Delete Cloudflare Access"),
-    ).toBeDisabled();
-    click(getConnectorAction("button", "Edit settings"));
-    const networkName =
-      await screen.findByLabelText<HTMLInputElement>("Network name");
-    const networkForm = networkName.form;
-    if (!networkForm) {
-      throw new Error("Expected the Cloudflare configuration form");
-    }
-    expect(
-      within(networkForm).getByLabelText(/^Only me/u, {
-        selector: '[role="radio"]',
-      }),
-    ).toHaveAttribute("aria-disabled", "true");
-    click(getConnectorAction("link", connector.displayName, networkForm));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Edit custom connector",
-    });
-    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
-      connector.displayName,
-    );
-    await choose(dialog, "No Cloudflare Access");
-    await save(dialog);
-    expect(state.updates[0]).toMatchObject({
-      networkBinding: null,
+test.each([
+  ["011", "http"],
+  ["012", "mcp"],
+] as const)(
+  "custom-connector-cloudflare-authoring-%s freeing a gateway from its %s dependent allows personal scope and deletion",
+  async (_id, kind) => {
+    const gateway = makeGateway("Corporate gateway");
+    let update: { id: string; body: UpdateCustomConnectorBody } | undefined;
+    const fields = {
+      displayName: "Bound service",
       storageVersion: 7,
+      networkBinding: bound(gateway),
+    };
+    let api: CustomConnectorResponse =
+      kind === "http" ? customConnector(fields) : mcpCustomConnector(fields);
+    gateway.customConnectors = [
+      { id: api.id, kind, displayName: api.displayName },
+    ];
+    inventory(() => {
+      return [api];
     });
-    act(() => {
-      return window.history.back();
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, { configs: [gateway] });
     });
-    const refreshedName =
-      await screen.findByLabelText<HTMLInputElement>("Network name");
-    const refreshedForm = refreshedName.form;
-    if (!refreshedForm) {
-      throw new Error("Expected the refreshed Cloudflare configuration form");
-    }
-    const personalScope = within(refreshedForm).getByLabelText(/^Only me/u, {
-      selector: '[role="radio"]',
+    context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+      return respond(200, {
+        expectedRevision: gateway.revision,
+        ownHostCount: 0,
+        otherHostCount: 0,
+        affectedOwners: [],
+        impactSnapshot: "a".repeat(64),
+      });
     });
-    click(personalScope);
-    expect(personalScope).toHaveAttribute("aria-checked", "true");
-    act(() => {
-      return window.history.back();
+    context.mocks.api(
+      cloudflareAccessContract.convertToPersonal,
+      ({ respond }) => {
+        gateway.scope = "personal";
+        gateway.revision++;
+        return respond(200, gateway);
+      },
+    );
+    context.mocks.api(
+      customConnectorByIdContract.update,
+      ({ params, body, respond }) => {
+        update = { id: params.id, body };
+        api = { ...api, networkBinding: undefined };
+        gateway.customConnectors = [];
+        return respond(200, api);
+      },
+    );
+    await setupPage({
+      context,
+      path:
+        "/connectors?scope=private-network&remoteResource=cloudflare:" +
+        gateway.id,
+      featureSwitches: {
+        [FeatureSwitchKey.CustomConnectorCloudflareAccess]: false,
+      },
+    });
+    await expect(
+      findFastControl("button", "Delete Cloudflare Access"),
+    ).resolves.toBeDisabled();
+    click(await findFastControl("button", "Edit settings"));
+    await screen.findByRole("radiogroup", { name: "Who can use this" });
+    click(await findFastControl("link", api.displayName));
+    const form = await screen.findByRole("dialog");
+    click(advanced(form));
+    click(picker(form));
+    click(await screen.findByRole("option", { name: "No Cloudflare Access" }));
+    click(await findFastControl("button", "Save", form));
+    await waitFor(() => {
+      return expect(form).not.toBeInTheDocument();
+    });
+    expect(update).toMatchObject({
+      id: api.id,
+      body: { storageVersion: 7, networkBinding: null },
+    });
+    click(await findFastControl("radio", /^Private network/i));
+    click(await findFastControl("link", "Manage Corporate gateway"));
+    click(await findFastControl("button", "Edit settings"));
+    const scope = await screen.findByRole("radiogroup", {
+      name: "Who can use this",
+    });
+    const personal = within(scope).getByText("Only me").closest("label")!;
+    click(personal);
+    expect(queryAllByRoleFast("radio", personal)[0]).toBeChecked();
+    click(await findFastControl("button", "Save network"));
+    const confirm = await screen.findByRole("dialog", { name: /only to you/i });
+    click(await findFastControl("button", "Make personal", confirm));
+    await waitFor(() => {
+      return expect(confirm).not.toBeInTheDocument();
     });
     await screen.findByRole("heading", { name: gateway.name });
-    expect(
-      getConnectorAction("button", "Delete Cloudflare Access"),
-    ).toBeEnabled();
+    await expect(
+      findFastControl("button", "Delete Cloudflare Access"),
+    ).resolves.toBeEnabled();
   },
 );

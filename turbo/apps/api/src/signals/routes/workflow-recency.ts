@@ -1,43 +1,19 @@
 import { command } from "ccstate";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { createWorkflowRecency } from "../services/workflow-recency.service";
 
 const { recentWorkflowIds$, saveRecentWorkflowIds$ } = createWorkflowRecency(
   organizationAuthContext$,
 );
 
-const requireWorkflowRecency$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.WorkflowRecencySync, context)) {
-      return resourceUnavailable("Workflow recency sync is not enabled");
-    }
-    set(setResHeader$, "Cache-Control", "private, no-store");
-    return null;
-  },
-);
-
 const readRecent$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const denied = await set(requireWorkflowRecency$, signal);
-  if (denied) {
-    return denied;
-  }
+  set(setResHeader$, "Cache-Control", "private, no-store");
   const workflowIds = await get(recentWorkflowIds$);
   signal.throwIfAborted();
   return { status: 200 as const, body: { workflowIds } };
@@ -50,10 +26,7 @@ function updateRecent(operation: "use" | "import") {
       : workflowsCollectionContract.importRecent,
   );
   return command(async ({ get, set }, signal: AbortSignal) => {
-    const denied = await set(requireWorkflowRecency$, signal);
-    if (denied) {
-      return denied;
-    }
+    set(setResHeader$, "Cache-Control", "private, no-store");
     const body = await get(body$);
     signal.throwIfAborted();
     if (!body.ok) {

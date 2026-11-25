@@ -51,7 +51,8 @@ final class MessageAttachmentTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     defer { commands.closeFileCache() }
-    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
+    let viewer = MessageAttachmentStore(
+      commands: commands, graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { viewer.close() }
     let file = ChatMessageAttachment(id: "file", filename: "notes.txt", contentType: "text/plain")
     viewer.open(file)
@@ -107,7 +108,8 @@ final class MessageAttachmentTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     defer { commands.closeFileCache() }
-    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
+    let viewer = MessageAttachmentStore(
+      commands: commands, graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { viewer.close() }
     viewer.open(.init(id: "old", filename: "old.txt", contentType: "text/plain"))
     let retired = try XCTUnwrap(viewer.preview)
@@ -169,7 +171,8 @@ final class MessageAttachmentTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     defer { commands.closeFileCache() }
-    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
+    let viewer = MessageAttachmentStore(
+      commands: commands, graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { viewer.close() }
     viewer.open(.init(id: "retry", filename: "notes.txt", contentType: "text/plain"))
     let preview = try XCTUnwrap(viewer.preview)
@@ -216,7 +219,8 @@ final class MessageAttachmentTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     defer { commands.closeFileCache() }
-    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
+    let viewer = MessageAttachmentStore(
+      commands: commands, graph: makeTestWorkspaceGraph(), didFail: { _ in })
     defer { viewer.close() }
     viewer.open(.init(id: "old", filename: "old.txt", contentType: "text/plain"))
     let old = try XCTUnwrap(viewer.preview)
@@ -244,7 +248,9 @@ final class MessageAttachmentTests: XCTestCase {
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     defer { commands.closeFileCache() }
     weak var owner: MessageAttachmentStore?
-    let viewer = MessageAttachmentStore(commands: commands) { _ in owner?.close() }
+    let viewer = MessageAttachmentStore(commands: commands, graph: makeTestWorkspaceGraph()) { _ in
+      owner?.close()
+    }
     owner = viewer
     defer { viewer.close() }
     viewer.open(.init(id: "file", filename: "notes.txt", contentType: "text/plain"))

@@ -1,223 +1,123 @@
-import {
-  ARCHIVED_THREAD_ID,
-  AUTOMATION_THREAD_ID,
-  createSidebarHelpers,
-  createThread,
-  INCIDENT_THREAD_ID,
-  RESEARCH_THREAD_ID,
-  setupSidebarPage,
-} from "./sidebar-test-helpers.tsx";
-
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import {
-  chatSearchContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { click, fill } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
-import { emptySearchImg } from "../platform-assets.ts";
-import { pathname } from "../../../signals/location.ts";
+import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, within, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+import { mockNow } from "../../../lib/time.ts";
+import {
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 const context = testContext();
-const { mockSidebarThreadStory } = createSidebarHelpers(context);
-
-async function setupWorkspaceSearch({
-  runningThreadIds = [],
-  unreadThreadIds = [],
-}: {
-  readonly runningThreadIds?: readonly string[];
-  readonly unreadThreadIds?: readonly string[];
-} = {}) {
-  mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Deployment notes"),
-    createThread(INCIDENT_THREAD_ID, "Incident response"),
-  ]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      threads: Object.fromEntries([
-        ...runningThreadIds.map((threadId) => {
-          return [threadId, "active" as const];
-        }),
-        ...unreadThreadIds.map((threadId) => {
-          return [threadId, "unread" as const];
-        }),
-      ]),
-      unreadAt: Object.fromEntries(
-        unreadThreadIds.map((threadId) => {
-          return [threadId, "2026-03-10T00:05:00Z"];
-        }),
-      ),
+function history(entries: readonly (readonly [string, number])[]) {
+  const today = new Date("2026-05-20T12:00:00Z");
+  const threads = entries.map(([title, age], index) => {
+    const date = new Date(today.valueOf() - age * 60_000).toISOString();
+    return chatListThread(index + 1, title, {
+      sortAt: date,
+      updatedAt: date,
+      createdAt: date,
     });
   });
+  mockNow(today, context.signal);
+  installChatListStream(context, { caseId: 65, snapshot: threads });
+  return threads;
+}
+async function search() {
+  await setupPage({
+    context,
+    path: "/",
+    sharedWorkerTestTransport: "message-port",
+  });
+  click(await screen.findByLabelText("Search workspace"));
+  return screen.findByRole("dialog");
+}
+test("Selecting the title in a mixed search opens its chat while the message match remains available", async () => {
+  const [notes, incident] = history([
+    ["Deployment notes", 3],
+    ["Incident response", 10],
+  ]);
   context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
     return respond(200, {
       results:
         query.keyword === "deploy"
           ? [
               {
-                chatThreadId: INCIDENT_THREAD_ID,
+                chatThreadId: incident.id,
                 matchedMessage: {
-                  chatThreadId: INCIDENT_THREAD_ID,
-                  role: "user" as const,
-                  content: "Production deploy completed successfully",
-                  createdAt: "2026-03-10T00:10:00Z",
+                  chatThreadId: incident.id,
+                  role: "user",
+                  content: "deploy the recovery",
+                  createdAt: incident.updatedAt,
                   seqId: 1,
                   runId: null,
                 },
-                matchedRanges: [{ start: 11, end: 17 }],
+                matchedRanges: [{ start: 0, end: 6 }],
               },
             ]
           : [],
     });
   });
-
-  await setupSidebarPage({
-    context,
-    path: `/`,
-  });
-
-  const list = await screen.findByTestId("chat-list-column");
-  click(within(list).getByLabelText("Search workspace"));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Search workspace...",
-  });
+  const dialog = await search();
   await fill(
     within(dialog).getByPlaceholderText("Search workspace..."),
     "deploy",
   );
-
-  return dialog;
-}
-
-test("Navigate from a matching message in workspace search", async () => {
-  const dialog = await setupWorkspaceSearch();
-  const messages = await within(dialog).findByRole("group", {
-    name: "Messages",
-  });
-  click(within(messages).getByText("Incident response"));
+  await expect(
+    within(dialog).findByText("Incident response"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(dialog).findByText(/the recovery/),
+  ).resolves.toBeInTheDocument();
+  const titles = within(dialog).getByRole("group", { name: "Threads" });
+  const messages = within(dialog).getByRole("group", { name: "Messages" });
+  expect(within(titles).queryByText("Incident response")).toBeNull();
+  expect(within(messages).getByText("Incident response")).toBeVisible();
+  click(within(titles).getByText("Deployment notes"));
   await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+    return expect(window.location.pathname).toBe("/chats/" + notes.id);
   });
+  expect(dialog).not.toBeInTheDocument();
 });
-
-function searchResultOption(dialog: HTMLElement, text: string): HTMLElement {
-  const option = within(dialog)
-    .getByText(text)
-    .closest<HTMLElement>('[role="option"]');
-  if (!option) {
-    throw new Error(`No search result contains ${text}`);
-  }
-  return option;
-}
-
-test("Show running and unread chat states in workspace search results", async () => {
-  const dialog = await setupWorkspaceSearch({
-    runningThreadIds: [RESEARCH_THREAD_ID],
-    unreadThreadIds: [INCIDENT_THREAD_ID],
-  });
-
-  await waitFor(() => {
-    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
-    // The chat-title match and the message match each show their chat's state.
-    expect(searchResultOption(dialog, "Deployment notes")).toHaveTextContent(
-      "Running",
-    );
-    expect(searchResultOption(dialog, "Incident response")).toHaveTextContent(
-      "Unread",
-    );
-  });
-});
-
-test("Navigate from a matching chat in workspace search", async () => {
-  const dialog = await setupWorkspaceSearch();
-  const chats = await within(dialog).findByRole("group", { name: "Threads" });
-  click(within(chats).getByText("Deployment notes"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);
-    expect(
-      screen.queryByRole("dialog", {
-        name: "Search workspace...",
-      }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("Show useful search-result ages and an illustrated empty state", async () => {
-  const now = Date.parse("2026-03-10T12:00:00.000Z");
-  mockNow(now, context.signal);
-  mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Minutes old", {
-      sortAt: new Date(now - 5 * 60 * 1000).toISOString(),
-    }),
-    createThread(INCIDENT_THREAD_ID, "Hours old", {
-      sortAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
-    }),
-    createThread(AUTOMATION_THREAD_ID, "Days old", {
-      sortAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    }),
-    createThread(ARCHIVED_THREAD_ID, "Older than a month", {
-      sortAt: new Date(now - 60 * 24 * 60 * 60 * 1000).toISOString(),
-    }),
-  ]);
+test("A title query reveals its conversation age and a nonmatching query shows the illustrated empty state", async () => {
+  const entries = [
+    ["Triage", 5],
+    ["Handover", 180],
+    ["Escalation", 2880],
+    ["Quarterly review", 86_400],
+  ] as const;
+  history(entries);
   context.mocks.api(chatSearchContract.search, ({ respond }) => {
     return respond(200, { results: [] });
   });
-
-  await setupSidebarPage({
-    context,
-    path: `/`,
-  });
-
-  const list = await screen.findByTestId("chat-list-column");
-  click(within(list).getByLabelText("Search workspace"));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Search workspace...",
-  });
-
-  const rowFor = async (title: string): Promise<HTMLElement> => {
+  const dialog = await search();
+  expect(within(dialog).queryByRole("listbox")).toBeNull();
+  for (const [title, age] of [
+    ["Triage", "5 minutes ago"],
+    ["Handover", "3 hours ago"],
+    ["Escalation", "2 days ago"],
+    ["Quarterly review", /Mar 21/],
+  ] as const) {
     await fill(within(dialog).getByRole("combobox"), title);
-    const row = (await within(dialog).findByText(title)).closest(
-      '[role="option"]',
-    );
-    if (!(row instanceof HTMLElement)) {
-      throw new Error(`no spotlight row for ${title}`);
+    const row = await within(dialog).findByText(title);
+    const result = row.closest('[role="option"]');
+    if (!(result instanceof HTMLElement)) {
+      throw new Error("Missing result for " + title);
     }
-    return row;
-  };
-
-  const minutesRow = await rowFor("Minutes old");
-  expect(minutesRow).toHaveTextContent("5 minutes ago");
-  const hoursRow = await rowFor("Hours old");
-  expect(hoursRow).toHaveTextContent("3 hours ago");
-  const daysRow = await rowFor("Days old");
-  expect(daysRow).toHaveTextContent("2 days ago");
-
-  // Past a month a relative phrase stops helping, so the row shows the
-  // absolute date instead. Assert the shape rather than an exact string so
-  // the expectation does not depend on the runner's timezone.
-  const archived = await rowFor("Older than a month");
-  expect(archived).not.toHaveTextContent("ago");
-  expect(archived).toHaveTextContent(/[A-Z][a-z]{2} \d{1,2},/u);
-
+    expect(within(result).getByText(age)).toBeInTheDocument();
+  }
   await fill(
     within(dialog).getByPlaceholderText("Search workspace..."),
-    "nothing matches this",
+    "xyzzzzz",
   );
-
-  await waitFor(() => {
-    expect(within(dialog).getByText("No results found")).toBeInTheDocument();
-  });
-  expect(within(dialog).queryByText("Minutes old")).not.toBeInTheDocument();
-  const emptyState = within(dialog)
-    .getByText("No results found")
-    .closest("div");
-  expect(emptyState?.querySelector("img")).toHaveAttribute(
+  await expect(
+    within(dialog).findByText("No results found"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByRole("presentation")).toHaveAttribute(
     "src",
-    emptySearchImg,
+    expect.stringMatching(/empty.*search/i),
   );
+  for (const [title] of entries) {
+    expect(within(dialog).queryByText(title)).toBeNull();
+  }
 });

@@ -171,7 +171,8 @@ default content size and grow with the reader's text size.
   `foreground` for the primary line, `muted-foreground` for the secondary one.
   Don't add a size to separate two lines that weight or colour can separate.
 - **Keep text readable.** Sentences stay at Footnote 13 or larger; Caption is
-  for a word or two. Chinese, Japanese and Korean read denser at the same size:
+  for a word or two, or one short uppercase label line (a For you direction's
+  action), and a label in Caption does not count toward a surface's three sizes. Chinese, Japanese and Korean read denser at the same size:
   prefer Subheadline 15 or larger for their reading text, and keep Footnote 13
   as their smallest sentence.
 - **Never shrink text to fit.** Let it wrap, truncate with a way to see the
@@ -928,30 +929,37 @@ feature; the catalog shows each one.
   written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
   The picture never resizes as the cards change, so it keeps one size and one sharpness. At night the whole scene dims, so the light header and status bar
   read on it.
-- **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
-  20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
-  pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
-  and the chosen one shows progress in its mark until the choice settles. The mark sits beside
-  the direction's label, centred on its first line without making the row taller, so its
-  description takes the full width (at most two lines; the mark and VoiceOver's hint say what
-  choosing it does) and the row keeps 16 pt above the label and below the description.
-  Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
-  as much room below the text as above it. A card is a reading surface
-  ([Type roles](#type-roles)): a Title 3 title over Body for the reason and each direction's
-  label, with Subheadline for a direction's description and the source.
-- **Dense text stays readable, with one way to overflow.** A closed reason shows as many lines
-  as fit under the title, so the closed card never scrolls and its inline Show more (the reason
-  itself opens too) is always in view; a taller phone shows more of it, and a reason that fits
-  shows whole with no Show more. Only an opened reason scrolls: it runs above the directions,
-  which stay at the card's bottom (`ForYouCardLayout`), fading out at the edge where more lies
-  and flashing its scroll indicator, with Show less at its end. Scrolling text runs out to the card's own edges rather than stopping at its
-  inset, with the scroll indicator along the card's side; above the actions it stops a gap short
-  of them. When the actions would leave the heading less than a third of the card, as at the
+- **Cards** stand on a ground a step back from white (`background-50`, a step darker than the
+  directions at night) at sheet radius, with a hairline and 24 pt above the heading and 20 pt
+  elsewhere, so the white directions on it show their outline. A direction is a white button
+  with a hairline (`state-pressed` and `control-border` while pressed, scaled to 98%), 16 pt
+  around its text and 8 pt from the next. It carries no mark: a short Caption line above its
+  label says what choosing it does, in uppercase with a 6 pt dot, amber (`primary-700`, or
+  `primary-200` at night) for "Send to a new chat" and `muted-foreground` for "Draft in" the
+  chat it drafts in; so the label and description keep the button's whole width (at most two
+  lines of description; VoiceOver hears the line as the button's hint). While a choice is under
+  way that line shows progress and "Sending…" or "Opening draft…", a 2 pt line runs along the
+  button's foot (amber or `control-border`; still under Reduce Motion), and the other directions
+  fade. A card that ends in text, as a direction's context does, keeps as much room below the
+  text as above it. A card is a reading surface ([Type roles](#type-roles)): a Title 3 title over
+  Body for the reason and each direction's label, with Subheadline for a direction's description
+  and the source; the action line is its one Caption label.
+- **Dense text scrolls in place.** A reason shows whole. When the heading runs past the card's
+  room it scrolls above the directions, which stay at the card's bottom (`ForYouCardLayout`): it
+  fades out at the edge where more lies with the cut line peeking under the fade, and its scroll
+  indicator flashes as the card appears and whenever the text comes to run past the room, so the
+  reader can tell there is more. There is no Show more: the card keeps one height, so opening
+  one could only make it scroll, one tap later. Scrolling text runs out to the card's own edges
+  rather than stopping at its inset, with the scroll indicator along the card's side; above the
+  actions it stops a gap short of them. When the actions would leave the heading less than a third of the card, as at the
   largest text sizes, heading and actions scroll together from the title.
-- **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
-  back a little but never tilts, since paging throws nothing away, and the next card rises out
-  of the deck, solid within the first third of the swipe. Past the last card the deck carries on
-  to the first, and back from the first to the last, as the web's stack turns. The counter rolls
+- **The deck pages round, the same both ways.** A sideways swipe either way throws the top card
+  off that side with the finger; it settles back a little but never tilts, since paging throws
+  nothing away. The card it pages to, next or previous, rises straight out of the deck beneath
+  it, centred where the deck's first layer lies, solid within the first third of the swipe; no
+  card ever slides in from the side. Tapping a progress segment throws the top card off the same
+  way. Past the last card the deck carries on to the first, and back from the first to the last,
+  as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
   Every card fills the room from just under the train's lower edge (the rails and sea may be
@@ -1104,7 +1112,7 @@ In Debug builds, `--for-you-deck` opens the production For you page (`ForYouDeck
 against an isolated `.invalid` HTTP fixture with suggestion and paused-automation cards, so
 paging, the dock, dismissal with Undo and the caught-up recap can be checked without signing
 in or sending read receipts. Add `--for-you-deck-slow` to hold the first load (the skeleton)
-or `--for-you-deck-failure` to fail it.
+and every choice (a direction's progress), or `--for-you-deck-failure` to fail the first load.
 
 The Iconography page's **Native icon calibration** includes native SF Symbol and
 Okou glass actions, list labels, and a real UIKit menu containing both image

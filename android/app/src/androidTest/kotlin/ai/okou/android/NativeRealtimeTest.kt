@@ -581,7 +581,8 @@ class NativeRealtimeTest {
             condition("Only the Stop action leaves the running layout") {
                 !device.hasObject(stopAction)
             }
-            reveal(app.getString(R.string.conversation_processing))
+            // The queued input has yet to start its own turn.
+            reveal(app.getString(R.string.conversation_replying))
             assertFalse(device.hasObject(label(app.getString(R.string.controls_stop_failed))))
             assertEquals(
                 activeRun,

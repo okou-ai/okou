@@ -1,0 +1,148 @@
+{
+  "browser-response-deadlines-007 Paused startup retires its first peer before the original page resumes": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "AssertionError: expected false to be true // Object.is equality"
+    }
+  ],
+  "browser-response-deadlines-009 Only the replacement accepts input after the first descriptor times out": [
+    {
+      "run": "view",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-response-deadlines-011 Image mode uses one startup budget for attach, hello and window proof": [
+    {
+      "run": "view",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-response-deadlines-022 The next chat receives input after the outstanding old operation": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "AssertionError: expected false to be true // Object.is equality"
+    }
+  ],
+  "browser-response-deadlines-023 The next chat receives input after the outstanding old operation": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "AssertionError: expected false to be true // Object.is equality"
+    }
+  ],
+  "browser-response-deadlines-053 The next chat receives input after the outstanding old operation": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "AssertionError: expected false to be true // Object.is equality"
+    }
+  ],
+  "browser-response-deadlines-039 Explicit reconnect creates a single blank tab in the original window": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "Error: Unable to find an element with the text: Browser view unavailable. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matc"
+    },
+    {
+      "run": "view2",
+      "status": "failed",
+      "observation": "AssertionError: expected false to be true // Object.is equality"
+    }
+  ],
+  "browser-response-deadlines-043 A late window read cannot displace the recovered original tab": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "TestTimeoutError: Test timed out in 5000ms."
+    },
+    {
+      "run": "view2",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-viewer-interaction-148 Destruction during membership admits only the surviving scoped tab": [
+    {
+      "run": "view",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-viewer-interaction-155 preserves the newer selection with destroy first": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "Error: expect(element).toBeEnabled()"
+    },
+    {
+      "run": "view2",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-viewer-interaction-155 preserves the newer selection with confirm first": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "Error: expect(element).toBeEnabled()"
+    },
+    {
+      "run": "view2",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ],
+  "browser-viewer-interaction-158 preserves the newer selection with fail first": [
+    {
+      "run": "view",
+      "status": "failed",
+      "observation": "Error: expect(element).toBeEnabled()"
+    },
+    {
+      "run": "view2",
+      "status": "passed",
+      "observation": "All assertions passed"
+    },
+    {
+      "run": "positive",
+      "status": "failed",
+      "observation": "TestTimeoutError: Test timed out in 5000ms."
+    }
+  ],
+  "browser-response-deadlines-011 Three image setup phases share the deadline before a single recovery descriptor": [
+    {
+      "run": "positive",
+      "status": "passed",
+      "observation": "All assertions passed"
+    }
+  ]
+}

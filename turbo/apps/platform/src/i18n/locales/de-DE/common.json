@@ -507,6 +507,40 @@
       "kindIcon": "{{kind}} Artefakt",
       "loading": "Artefakte werden geladen"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Abbrechen",
       "delete": "Löschen",
@@ -1897,6 +1931,14 @@
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
+      "presentationFormatSetup": {
+        "description": "Wir speichern diesen Standard und erstellen dann deine Präsentation. Ein ausdrücklich angefordertes Format hat weiterhin Vorrang.",
+        "htmlDescription": "Ideal zum Teilen im Browser",
+        "pptxDescription": "In PowerPoint bearbeitbare Folien",
+        "saveAndGenerate": "Speichern und erstellen",
+        "settingsHint": "Jederzeit unter Einstellungen → Präferenzen → Chat ändern.",
+        "title": "Standardformat für Präsentationen wählen"
+      },
       "selectedModelUnavailable": "Das ausgewählte Modell ist nicht verfügbar. Konfigurieren Sie es vor dem Senden.",
       "selectedModelUnavailableToast": "Das ausgewählte Modell ist nicht verfügbar",
       "selectModel": "Modell auswählen",
@@ -1968,8 +2010,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Connector-Konto",
       "actionFailed": "Kontowechsel fehlgeschlagen.",
+      "allowForHour": "1 Stunde zulassen",
       "customConnector": "Benutzerdefinierter Connector",
       "loadFailed": "Dieses Connector-Konto konnte nicht geladen werden.",
+      "memberScope": "Für alle deine Chats zulassen. Dieses Konto hier auswählen.",
       "reconnectRequired": "Erneute Verbindung erforderlich. Spätere Läufe verwenden möglicherweise den vorhandenen Fallback.",
       "selected": "Zu {{account}} gewechselt",
       "switch": "Wechseln",
@@ -5743,6 +5787,16 @@
       "actions": {
         "resetUsage": "Nutzung zurücksetzen"
       },
+      "antigravity": {
+        "check": "Anmeldung prüfen",
+        "error": "Prüfe die dir zugewiesene Anmeldeumgebung und versuche es erneut.",
+        "expired": "Die Anmeldung ist abgelaufen. Verbinde dich erneut.",
+        "openTerminal": "Google-Anmeldeterminal öffnen",
+        "terminal": "Führe diesen Befehl im Terminal aus und melde dich mit deinem persönlichen Google AI-Konto an.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Bitte einen Administrator, dir ein Anmeldeterminal zuzuweisen.",
+        "verify": "Dieser Befehl verwendet dein Abo, um je eine Anfrage an Neon, Carbon und Hydrogen zu senden."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Autorisierungscode",
@@ -5943,6 +5997,13 @@
           "title": "Standardmodell"
         },
         "description": "Lege Standardeinstellungen für neue Chats und die Art des Nachrichtenversands fest.",
+        "presentationFormat": {
+          "description": "Wähle den Standard für neue Präsentationen",
+          "saveFailed": "Das Standardformat konnte nicht gespeichert werden. Versuche es erneut.",
+          "title": "Standardformat für Präsentationen",
+          "unavailable": "Nicht verfügbar",
+          "unset": "Nicht festgelegt"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

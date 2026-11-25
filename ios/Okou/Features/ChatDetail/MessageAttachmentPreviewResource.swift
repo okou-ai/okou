@@ -10,7 +10,8 @@ final class MessageAttachmentPreviewResource: Identifiable {
   let id = UUID()
   let attachment: ChatMessageAttachment
   let thumbnail: UIImage?
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps this preview's file read.
+  let store: CCState.Store
   private let lifetime = CCState.State(true)
   private let revision = CCState.State(0)
   private let reload: Command<Void, Void>
@@ -21,8 +22,9 @@ final class MessageAttachmentPreviewResource: Identifiable {
 
   init(
     attachment: ChatMessageAttachment, thumbnail: UIImage?, commands: ChatCommands,
-    didFail: @escaping @MainActor (Error) -> Void
+    graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
   ) {
+    store = graph
     self.attachment = attachment
     self.thumbnail = thumbnail
     self.commands = commands

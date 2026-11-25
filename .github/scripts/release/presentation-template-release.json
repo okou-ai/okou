@@ -5,6 +5,7 @@
     "ref": "main",
     "directory": "Template-Presentation"
   },
+  "deferredTemplates": ["plain"],
   "templates": [
     {
       "slug": "bloom",

@@ -1,0 +1,63 @@
+{
+  "baseline": "1699ffa1134c9072908c78a015b6593ee3e6853d",
+  "starting": 121,
+  "handled": [
+    "realtime-019",
+    "realtime-020",
+    "realtime-011",
+    "realtime-005",
+    "realtime-006",
+    "realtime-010",
+    "message-port-014",
+    "message-port-038",
+    "message-port-032",
+    "browser-response-deadlines-007",
+    "browser-response-deadlines-009",
+    "browser-response-deadlines-011",
+    "browser-response-deadlines-022",
+    "browser-response-deadlines-023",
+    "browser-response-deadlines-039",
+    "browser-response-deadlines-043",
+    "browser-response-deadlines-053",
+    "browser-viewer-interaction-148",
+    "browser-viewer-interaction-155",
+    "browser-viewer-interaction-158"
+  ],
+  "firstOriginalAcceptances": [
+    "browser-response-deadlines-009",
+    "browser-response-deadlines-011",
+    "browser-response-deadlines-043",
+    "browser-viewer-interaction-148",
+    "browser-viewer-interaction-155",
+    "browser-viewer-interaction-158",
+    "realtime-019"
+  ],
+  "revisions": [
+    "message-port-032"
+  ],
+  "restorations": [],
+  "retirements": [],
+  "removed": [
+    "browser-response-deadlines-009",
+    "browser-response-deadlines-011",
+    "browser-response-deadlines-043",
+    "browser-viewer-interaction-148",
+    "browser-viewer-interaction-155",
+    "browser-viewer-interaction-158",
+    "message-port-032",
+    "realtime-019"
+  ],
+  "added": [],
+  "netDecrease": 8,
+  "remaining": 113,
+  "remainingOwners": 46,
+  "decisions": [
+    "platform-direct-bridge-002",
+    "shared-database-browser-006",
+    "unread-through-at-001",
+    "chat-continuity-uploads-003",
+    "connector-provider-pages-013",
+    "paid-media-creation-002"
+  ],
+  "upstream": 68
+}

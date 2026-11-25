@@ -18,6 +18,18 @@ def observer(value, begin, end):
         raise ValueError("foreground observer did not complete a new joined real read inside the held wait")
 
 
+def held_pool_observer(pool, begin, end, message):
+    """Validate clocks and a joined read while the pool and status locks are held."""
+    held, status_held, heartbeat_pending = [
+        pool.get(key) for key in ("pool_held_ns", "status_held_ns", "heartbeat_pending_ns")
+    ]
+    if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
+            or not begin < held <= status_held < heartbeat_pending < end):
+        raise ValueError(message)
+    observer(pool.get("observer"), heartbeat_pending, end)
+    return held, status_held, heartbeat_pending
+
+
 def heartbeat(value, sequence, begin, end, allocated=(2, 4096)):
     if (not isinstance(value, dict) or set(value) != {"receipt", "send_joined", "completed_ns"}
             or value["send_joined"] is not True or not report.positive_integer(value["completed_ns"])):
@@ -37,3 +49,10 @@ def heartbeat(value, sequence, begin, end, allocated=(2, 4096)):
             or type(state.get("allocatedMemoryMb")) is not int or state["allocatedMemoryMb"] != allocated[1]):
         raise ValueError("foreground heartbeat lost its original generation/sequence/full lease")
     return state["runnerId"], state["snapshotGeneration"]
+
+
+def claim_heartbeat_identity(original, subsequent, seen, message):
+    """Require one unchanged and previously unclaimed identity for the case."""
+    if any(original != identity for identity in subsequent) or original in seen:
+        raise ValueError(message)
+    seen.add(original)

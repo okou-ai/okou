@@ -185,6 +185,10 @@ function ProjectMenu({
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
     true;
   const setArchived = useSet(setProjectArchived$);
+  const archiveShortcut =
+    useGet(selectedProjectId$) === project.id
+      ? GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive
+      : undefined;
   const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
@@ -246,6 +250,7 @@ function ProjectMenu({
         </DropdownMenuItem>
         {archiveEnabled && (
           <DropdownMenuItem
+            aria-keyshortcuts={archiveShortcut?.ariaKeyShortcuts}
             onClick={() => {
               detach(
                 setArchived(project.id, !project.archived, signal),
@@ -265,6 +270,9 @@ function ProjectMenu({
               : t(($) => {
                   return $.projects.archiveProject;
                 })}
+            {archiveShortcut && (
+              <ChatThreadMenuShortcut shortcut={archiveShortcut.binding} />
+            )}
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />

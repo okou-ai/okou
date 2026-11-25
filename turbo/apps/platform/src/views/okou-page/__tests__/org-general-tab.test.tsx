@@ -1,506 +1,237 @@
-import {
-  orgContract,
-  orgDeleteContract,
-} from "@okouai/api-contracts/contracts/org-routes";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
+import { test, expect, vi } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  click,
-  setupPage,
-  fill,
-  holdElementAnimations,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { action, findAction } from "./workspace-billing-fixtures.ts";
 const context = testContext();
-
-function buttonWithText(container: HTMLElement, text: string): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.trim() === text;
-  });
-  if (!button) {
-    throw new Error(`Button not found: ${text}`);
-  }
-  return button;
+const workspace = {
+  id: "org_foundry",
+  name: "Old Name",
+  role: "admin",
+} as const;
+const logo = "https://images.example.org/foundry.png";
+function general() {
+  context.mocks.data.org(workspace);
+  return visitGeneral(context);
 }
-
-async function openDeleteDialog(): Promise<HTMLElement> {
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-  click(buttonWithText(settings, "Delete"));
-  return await screen.findByRole("dialog", { name: "Delete workspace?" });
+async function visitGeneral(runtime: typeof context) {
+  await setupPage({
+    context: runtime,
+    path: "/?settings=general",
+    auth: {
+      user: { id: "manager", fullName: "Marin" },
+      organization: {
+        activeOrg: workspace,
+        memberships: [{ id: workspace.id, role: "org:admin" }],
+      },
+    },
+    sharedWorkerTestTransport: "message-port",
+  });
+  return screen.findByPlaceholderText("Workspace name");
 }
-
-async function openGeneralTab(): Promise<void> {
-  await setupPage({ context, path: "/?settings=general" });
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "General" }),
-    ).toBeInTheDocument();
-  });
-}
-
-async function reopenGeneralTab(): Promise<HTMLElement> {
-  const rail = await screen.findByTestId("labeled-nav-rail");
-  click(within(rail).getByLabelText("Test User"));
-  click(within(await screen.findByRole("menu")).getByText("Settings"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  click(buttonWithText(settings, "General"));
-  await within(settings).findByRole("heading", { name: "General" });
-  return settings;
-}
-
-test("Finish loading when the workspace has no logo", async () => {
-  const response = context.mocks.deferred<void>();
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-  context.mocks.api(orgLogoContract.get, async ({ respond }) => {
-    await response.promise;
-    return respond(200, { logoUrl: null, hasImage: false });
-  });
-  await openGeneralTab();
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-  await within(settings).findByRole("status", {
-    name: "Loading workspace logo",
-  });
-  response.resolve();
-  await waitFor(() => {
-    expect(
-      within(settings).queryByRole("status", {
-        name: "Loading workspace logo",
-      }),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    within(settings).queryByText("Could not load workspace logo."),
-  ).not.toBeInTheDocument();
-  expect(within(settings).getByLabelText("Upload logo")).toBeEnabled();
-});
-
-test("Show the brand default instead of the provider placeholder when the workspace has no logo", async () => {
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
+function existingLogo() {
   context.mocks.api(orgLogoContract.get, ({ respond }) => {
-    // The provider returns a generated placeholder URL even without an upload.
-    return respond(200, {
-      logoUrl: "https://img.clerk.test/default-organization.png",
-      hasImage: false,
-    });
+    return respond(200, { logoUrl: logo, hasImage: true });
   });
-  await openGeneralTab();
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-
-  const logo = await within(settings).findByRole("img", { name: "Acme" });
-
-  expect(logo).not.toHaveAttribute("src");
-  expect(within(settings).getByLabelText("Upload logo")).toBeEnabled();
-});
-
-test("Reopening settings shows the current logo after an older read completes", async () => {
-  const started = context.mocks.deferred<void>();
-  const staleResponse = context.mocks.deferred<void>();
-  const freshLogoUrl = "https://cdn.okou.test/orgs/acme/current.png";
-  let stale = true;
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-  context.mocks.api(orgLogoContract.get, async ({ respond }) => {
-    if (stale) {
-      started.resolve();
-      await staleResponse.promise;
-      return respond(200, {
-        logoUrl: "https://cdn.okou.test/orgs/acme/stale.png",
-        hasImage: true,
-      });
-    }
-    return respond(200, { logoUrl: freshLogoUrl, hasImage: true });
-  });
-  await openGeneralTab();
-  await started.promise;
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-  click(within(settings).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-  stale = false;
-  const reopened = await reopenGeneralTab();
-  await waitFor(() => {
-    expect(within(reopened).getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      freshLogoUrl,
-    );
-  });
-  await act(() => {
-    staleResponse.resolve();
-  });
-  expect(within(reopened).getByRole("img", { name: "Acme" })).toHaveAttribute(
-    "src",
-    freshLogoUrl,
-  );
-  expect(
-    within(reopened).queryByText("Could not load workspace logo."),
-  ).not.toBeInTheDocument();
-});
-
-test("Show a saved upload while the initial logo load is pending and refresh on reopening", async () => {
-  const user = userEvent.setup({ delay: null });
-  const started = context.mocks.deferred<void>();
-  const initialResponse = context.mocks.deferred<void>();
-  const uploadedLogoUrl = "https://cdn.okou.test/orgs/acme/uploaded.png";
-  const currentLogoUrl = "https://cdn.okou.test/orgs/acme/current.png";
-  let initial = true;
-  let publishedLogoUrl = uploadedLogoUrl;
-  context.mocks.browser.imageDimensions({ width: 512, height: 512 });
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-  context.mocks.api(orgLogoContract.get, async ({ respond }) => {
-    if (initial) {
-      started.resolve();
-      await initialResponse.promise;
-      return respond(200, { logoUrl: null, hasImage: false });
-    }
-    return respond(200, { logoUrl: publishedLogoUrl, hasImage: true });
-  });
-  context.mocks.http.post("*/api/org/logo", () => {
-    initial = false;
-    return Response.json({ logoUrl: uploadedLogoUrl, hasImage: true });
-  });
-  await openGeneralTab();
-  await started.promise;
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-  await within(settings).findByRole("status", {
-    name: "Loading workspace logo",
-  });
-  await user.upload(
-    within(settings).getByLabelText("Upload logo"),
-    new File(["logo"], "logo.png", { type: "image/png" }),
-  );
-  click(
-    await waitFor(() => {
-      return buttonWithText(settings, "Save changes");
-    }),
-  );
-  await screen.findByText("Workspace updated");
-  initialResponse.resolve();
-  await waitFor(() => {
-    expect(within(settings).getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      uploadedLogoUrl,
-    );
-  });
-  expect(
-    within(settings).queryByRole("status", { name: "Loading workspace logo" }),
-  ).not.toBeInTheDocument();
-  click(within(settings).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-  publishedLogoUrl = currentLogoUrl;
-  const reopened = await reopenGeneralTab();
-  await waitFor(() => {
-    expect(within(reopened).getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      currentLogoUrl,
-    );
-  });
-});
-
-test("Edit, save, and discard workspace profile details", async () => {
-  let capturedBody: unknown = null;
-  const logoUrl = "https://cdn.okou.test/orgs/old-slug/logo.png";
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Old Name",
-    role: "admin",
-  });
-  context.mocks.http.get("*/api/org/logo", () => {
-    return new Response(JSON.stringify({ logoUrl, hasImage: true }), {
-      headers: { "Content-Type": "application/json" },
-    });
+}
+test("org-general-tab-005 A discarded rename leaves the published profile intact until Save", async () => {
+  existingLogo();
+  let profile = { ...workspace, name: "Old Name" };
+  const edits: string[] = [];
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, profile);
   });
   context.mocks.api(orgContract.update, ({ body, respond }) => {
-    capturedBody = body;
-    return respond(200, {
-      id: "org_1",
-      name: "New Name",
-      role: "admin",
-    });
+    edits.push(body.name ?? "");
+    profile = { ...profile, name: body.name ?? profile.name };
+    return respond(200, profile);
   });
-
-  await openGeneralTab();
-
+  const field = await visitGeneral(context);
+  expect(field).toHaveValue("Old Name");
+  await expect(
+    within(screen.getByRole("dialog")).findByRole("img", {
+      name: "Old Name",
+    }),
+  ).resolves.toHaveAttribute("src", logo);
+  await fill(field, "New Name");
+  click(await action("Discard"));
+  expect(field).toHaveValue("Old Name");
+  expect(edits).toStrictEqual([]);
+  await fill(field, "New Name");
+  click(await action("Save changes"));
+  await expect(
+    screen.findByText("Workspace updated"),
+  ).resolves.toBeInTheDocument();
+  expect(field).toHaveValue("New Name");
+  cleanup();
+  const reloaded = await visitGeneral(createTestRuntime(context));
   await waitFor(() => {
-    expect(screen.getByRole("img", { name: "Old Name" })).toHaveAttribute(
-      "src",
-      logoUrl,
-    );
-  });
-
-  await fill(await screen.findByDisplayValue("Old Name"), "New Name");
-  expect(screen.getByText("Save changes")).toBeInTheDocument();
-  expect(screen.getByText("Discard")).toBeInTheDocument();
-
-  click(screen.getByText("Discard"));
-  expect(screen.getByDisplayValue("Old Name")).toBeInTheDocument();
-  expect(capturedBody).toBeNull();
-
-  await fill(screen.getByDisplayValue("Old Name"), "New Name");
-  click(screen.getByText("Save changes"));
-
-  await waitFor(() => {
-    expect(capturedBody).toStrictEqual({
-      name: "New Name",
-    });
-    expect(screen.getByDisplayValue("New Name")).toBeInTheDocument();
-    expect(screen.getByText("Workspace updated")).toBeInTheDocument();
+    expect(reloaded).toHaveValue("New Name");
   });
 });
-
-test("Show a workspace profile update failure without losing the edit", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Old Name",
-    role: "admin",
-  });
+test("org-general-tab-006 A rejected rename keeps the draft available for retry", async () => {
   context.mocks.api(orgContract.update, ({ respond }) => {
     return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: "Could not update workspace",
+        message: "Profile service unavailable",
       },
     });
   });
-
-  await openGeneralTab();
-
-  await fill(screen.getByDisplayValue("Old Name"), "New Name");
-  click(screen.getByText("Save changes"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Could not update workspace")).toBeInTheDocument();
-    expect(screen.getByText("Save changes")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("New Name")).toBeInTheDocument();
-    expect(screen.queryByText("Workspace updated")).not.toBeInTheDocument();
-  });
+  const field = await general();
+  expect(field).toHaveValue("Old Name");
+  await fill(field, "New Name");
+  click(await action("Save changes"));
+  await expect(
+    screen.findByText(/Profile service unavailable/),
+  ).resolves.toBeInTheDocument();
+  expect(field).toHaveValue("New Name");
+  await expect(action("Save changes")).resolves.toBeEnabled();
+  expect(screen.queryByText("Workspace updated")).toBeNull();
 });
-
-test("Upload and save a valid workspace logo", async () => {
-  const user = userEvent.setup({ delay: null });
-  let capturedLogoName: string | null = null;
-  const initialLogoUrl = "https://cdn.okou.test/orgs/acme/logo-old.png";
-  const uploadedLogoUrl = "https://cdn.okou.test/orgs/acme/logo-new.png";
-  let publishedLogoUrl = initialLogoUrl;
-  context.mocks.browser.imageDimensions({ width: 512, height: 512 });
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Acme",
-    role: "admin",
-  });
-  context.mocks.http.get("*/api/org/logo", () => {
-    return new Response(
-      JSON.stringify({ logoUrl: publishedLogoUrl, hasImage: true }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  });
-  context.mocks.http.post("*/api/org/logo", async ({ request }) => {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!(file instanceof File)) {
-      throw new Error("Uploaded logo file not found");
-    }
-    capturedLogoName = file.name;
-    publishedLogoUrl = uploadedLogoUrl;
-    return new Response(
-      JSON.stringify({ logoUrl: uploadedLogoUrl, hasImage: true }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  });
-
-  await openGeneralTab();
-
-  await waitFor(() => {
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      initialLogoUrl,
-    );
-  });
-
-  await user.upload(
-    screen.getByLabelText("Upload logo"),
-    new File(["logo"], "workspace-logo.png", { type: "image/png" }),
-  );
-
-  await waitFor(() => {
-    expect(screen.getByText("Save changes")).toBeInTheDocument();
-  });
-
-  click(screen.getByText("Save changes"));
-
-  await waitFor(() => {
-    expect(capturedLogoName).toBe("workspace-logo.png");
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      uploadedLogoUrl,
-    );
-    expect(screen.getByText("Workspace updated")).toBeInTheDocument();
-  });
-});
-
-test("Reject invalid workspace logo files", async () => {
-  const user = userEvent.setup({ delay: null });
-  const initialLogoUrl = "https://cdn.okou.test/orgs/acme/logo.png";
+test("org-general-tab-008 Invalid logo files leave the published workspace image in place", async () => {
+  existingLogo();
   context.mocks.browser.imageDimensions([
     null,
     { width: 80, height: 80 },
     { width: 5000, height: 5000 },
   ]);
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Acme",
-    role: "admin",
+  await general();
+  const settings = screen.getByRole("dialog");
+  const current = await within(settings).findByRole("img", {
+    name: "Old Name",
   });
-  context.mocks.http.get("*/api/org/logo", () => {
-    return new Response(
-      JSON.stringify({ logoUrl: initialLogoUrl, hasImage: true }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
+  for (const [file, message] of [
+    ["broken", /Could not read image file/],
+    ["tiny", /80×80px.*100×100px/],
+    ["huge", /5000×5000px.*4096×4096px/],
+  ] as const) {
+    await userEvent.upload(
+      within(settings).getByLabelText("Upload logo"),
+      new File([file], file + ".png", { type: "image/png" }),
     );
-  });
-
-  await openGeneralTab();
-
-  await waitFor(() => {
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      initialLogoUrl,
-    );
-  });
-
-  const uploadInput = screen.getByLabelText("Upload logo");
-  await user.upload(
-    uploadInput,
-    new File(["not-image"], "unreadable.png", { type: "image/png" }),
-  );
-
-  await waitFor(() => {
-    expect(screen.getByText("Could not read image file")).toBeInTheDocument();
-    expect(screen.queryByText("Save changes")).not.toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      initialLogoUrl,
-    );
-  });
-
-  await user.upload(
-    uploadInput,
-    new File(["small"], "too-small.png", { type: "image/png" }),
-  );
-
-  await waitFor(() => {
-    expect(screen.getByText(/Logo is too small/u)).toBeInTheDocument();
-    expect(screen.queryByText("Save changes")).not.toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      initialLogoUrl,
-    );
-  });
-
-  await user.upload(
-    uploadInput,
-    new File(["large"], "too-large.png", { type: "image/png" }),
-  );
-
-  await waitFor(() => {
-    expect(screen.getByText(/Logo is too large/u)).toBeInTheDocument();
-    expect(screen.queryByText("Save changes")).not.toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Acme" })).toHaveAttribute(
-      "src",
-      initialLogoUrl,
-    );
-  });
-});
-
-test("Explain the billing effects before deleting a workspace", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Acme",
-    role: "admin",
-  });
-
-  await openGeneralTab();
-  const deleteButton = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Delete";
-  });
-  if (!deleteButton) {
-    throw new Error("Delete button not found");
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(current).toHaveAttribute("src", logo);
+    expect(current).toBeInTheDocument();
+    expect(findAction("Save changes", settings)).toBeUndefined();
   }
-  click(deleteButton);
-
-  await expect(
-    screen.findByText(
-      "All active subscriptions, including usage packs and add-ons, will be canceled immediately. Unused prepaid subscription time will be refunded proportionally. One-time and other non-subscription purchases will not be refunded.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "Delete workspace?" }),
-  ).toBeInTheDocument();
 });
-
-test("Require fresh workspace confirmation after cancelling", async () => {
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-  await openGeneralTab();
-
-  const dialog = await openDeleteDialog();
-  await fill(within(dialog).getByPlaceholderText("confirm"), "confirm");
-  expect(buttonWithText(dialog, "Delete workspace")).toBeEnabled();
-  const finishCloseTransition = holdElementAnimations(dialog);
-
-  click(buttonWithText(dialog, "Cancel"));
-  expect(dialog).toBeVisible();
-  expect(within(dialog).getByPlaceholderText("confirm")).toHaveValue("");
-  expect(buttonWithText(dialog, "Delete workspace")).toBeDisabled();
-  finishCloseTransition();
+async function deletePrompt() {
+  click(await action("Delete"));
+  return screen.findByRole("dialog", { name: "Delete workspace?" });
+}
+test("org-general-tab-010 Cancelling clears permission to delete before the next confirmation", async () => {
+  await general();
+  const prompt = await deletePrompt();
+  const text = within(prompt).getByRole("textbox");
+  await fill(text, "confirm");
+  await expect(action("Delete workspace", prompt)).resolves.toBeEnabled();
+  click(await action("Cancel", prompt));
+  expect(text).toHaveValue("");
   await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Delete workspace?" }),
-    ).not.toBeInTheDocument();
+    return expect(prompt).not.toBeInTheDocument();
   });
-
-  const reopened = await openDeleteDialog();
-  expect(within(reopened).getByPlaceholderText("confirm")).toHaveValue("");
-  expect(buttonWithText(reopened, "Delete workspace")).toBeDisabled();
+  const reopened = await deletePrompt();
+  expect(within(reopened).getByRole("textbox")).toHaveValue("");
+  await expect(action("Delete workspace", reopened)).resolves.toBeDisabled();
 });
-
-test("Enable workspace deletion only for the exact confirmation and keep the success flow", async () => {
-  context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-  context.mocks.api(orgDeleteContract.delete, ({ respond }) => {
-    return respond(200, { message: "Workspace deleted" });
-  });
-  await openGeneralTab();
-
-  const dialog = await openDeleteDialog();
-  const input = within(dialog).getByPlaceholderText("confirm");
-  const deleteButton = buttonWithText(dialog, "Delete workspace");
-  expect(input).toHaveValue("");
-  expect(deleteButton).toBeDisabled();
+test("org-general-tab-011 Only a literal confirm authorizes deleting the workspace and returning to organization selection", async () => {
+  await general();
+  const prompt = await deletePrompt();
+  const submit = await action("Delete workspace", prompt);
+  expect(submit).toBeDisabled();
+  const input = within(prompt).getByRole("textbox");
   await fill(input, "confirm");
-  expect(deleteButton).toBeEnabled();
-  await fill(input, "Confirm");
-  expect(deleteButton).toBeDisabled();
-  await fill(input, "confirm ");
-  expect(deleteButton).toBeDisabled();
+  expect(submit).toBeEnabled();
+  for (const typo of ["Confirm", "confirm "]) {
+    await fill(input, typo);
+    expect(submit).toBeDisabled();
+  }
   await fill(input, "confirm");
-  expect(deleteButton).toBeEnabled();
-
-  click(deleteButton);
-  await screen.findByText("Workspace deleted");
+  expect(submit).toBeEnabled();
+  click(submit);
+  await expect(
+    screen.findByText("Workspace deleted"),
+  ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe("/sign-in/tasks/choose-organization");
 });
+
+test.each([
+  ["org-general-tab-004", "received"],
+  ["Withheld control", "pending"],
+] as const)(
+  "%s %s original logo read during an upload and a later visit",
+  async (_label, previous) => {
+    const first = context.mocks.deferred<void>();
+    const finish = context.mocks.deferred<void>();
+    const decoded = context.mocks.deferred<void>();
+    const placeholder = "https://assets.example.test/workspace-placeholder.png";
+    const accepted = "https://assets.example.test/uploaded-emblem.png";
+    let published: string | null = null;
+    const parse = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const payload: unknown = await parse.call(this);
+      if (
+        this.url.endsWith(orgLogoContract.get.path) &&
+        JSON.stringify(payload).includes(placeholder)
+      ) {
+        decoded.resolve();
+      }
+      return payload;
+    });
+    context.mocks.api(orgLogoContract.get, async ({ respond }) => {
+      if (published) {
+        return respond(200, { hasImage: true, logoUrl: published });
+      }
+      first.resolve();
+      await finish.promise;
+      return respond(200, { hasImage: false, logoUrl: placeholder });
+    });
+    context.mocks.api(orgLogoContract.post, ({ body, respond }) => {
+      const uploaded = body.get("file");
+      expect(typeof uploaded === "object" && uploaded?.name).toBe("emblem.png");
+      published = accepted;
+      return respond(200, { hasImage: true, logoUrl: accepted });
+    });
+    context.mocks.browser.imageDimensions([{ width: 256, height: 256 }]);
+    await general();
+    await first.promise;
+    const panel = screen.getByRole("dialog");
+    await userEvent.upload(
+      within(panel).getByLabelText("Upload logo"),
+      new File(["emblem"], "emblem.png", { type: "image/png" }),
+    );
+    click(await action("Save changes", panel));
+    await screen.findByText("Workspace updated");
+    if (previous === "received") {
+      finish.resolve();
+      await decoded.promise;
+    }
+    await waitFor(() => {
+      return expect(
+        within(panel).getByRole("img", { name: workspace.name }),
+      ).toHaveAttribute("src", accepted);
+    });
+    expect(within(panel).queryByRole("status", { name: /logo/i })).toBeNull();
+    published = "https://assets.example.test/new-published-emblem.png";
+    click(await action("Close", panel));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    window.history.back();
+    const reopened = await screen.findByRole("dialog");
+    await waitFor(() => {
+      return expect(
+        within(reopened).getByRole("img", { name: workspace.name }),
+      ).toHaveAttribute("src", published);
+    });
+  },
+);

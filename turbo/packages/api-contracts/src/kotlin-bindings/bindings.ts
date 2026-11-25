@@ -28,6 +28,7 @@ import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
@@ -546,6 +547,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatEventsContract.send,
   },
   {
+    name: "summarizeRunActivity",
+    request: "RunActivityRequest",
+    response: "RunActivitySummary",
+    route: chatThreadActivitySummaryContract.summarize,
+  },
+  {
     name: "inputStatus",
     response: "InputStatus",
     route: chatInputStatusContract.get,
@@ -624,9 +631,20 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "createProject",
+    request: "CreateProjectRequest",
+    response: "ProjectRecord",
+    route: projectsContract.create,
+  },
+  {
+    name: "projectDetail",
+    response: "ProjectRecord",
+    route: projectsContract.get,
+  },
+  {
     name: "renameProject",
     request: "RenameProjectRequest",
-    response: "RenamedProject",
+    response: "ProjectRecord",
     route: projectsContract.update,
   },
   {
@@ -809,12 +827,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "output",
   },
   {
+    name: "CreateProjectRequest",
+    schema: projectsContract.create.body,
+    direction: "input",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
   },
   {
-    name: "RenamedProject",
+    name: "ProjectRecord",
     schema: projectsContract.update.responses[200],
     direction: "output",
   },
@@ -1050,6 +1073,16 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "AcceptedInput",
     schema: chatEventsContract.send.responses[201],
+    direction: "output",
+  },
+  {
+    name: "RunActivityRequest",
+    schema: chatThreadActivitySummaryContract.summarize.body,
+    direction: "input",
+  },
+  {
+    name: "RunActivitySummary",
+    schema: chatThreadActivitySummaryContract.summarize.responses[200],
     direction: "output",
   },
   {

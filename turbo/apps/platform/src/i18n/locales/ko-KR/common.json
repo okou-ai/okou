@@ -506,6 +506,40 @@
       "kindIcon": "{{kind}} 아티팩트",
       "loading": "아티팩트 로딩 중"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "취소",
       "delete": "삭제",
@@ -1891,6 +1925,14 @@
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
+      "presentationFormatSetup": {
+        "description": "기본 형식을 저장한 후 프레젠테이션을 생성합니다. 이번 요청에서 명시한 형식이 있으면 우선 적용됩니다.",
+        "htmlDescription": "브라우저에서 공유하기에 적합",
+        "pptxDescription": "PowerPoint에서 편집 가능한 슬라이드",
+        "saveAndGenerate": "저장하고 생성",
+        "settingsHint": "설정 → 환경설정 → 채팅에서 언제든 변경할 수 있습니다.",
+        "title": "기본 프레젠테이션 형식 선택"
+      },
       "selectedModelUnavailable": "선택한 모델을 사용할 수 없습니다. 전송 전에 구성하세요.",
       "selectedModelUnavailableToast": "선택한 모델을 사용할 수 없습니다",
       "selectModel": "모델 선택",
@@ -1962,8 +2004,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "커넥터 계정",
       "actionFailed": "계정을 전환할 수 없습니다.",
+      "allowForHour": "1시간 동안 허용",
       "customConnector": "사용자 지정 커넥터",
       "loadFailed": "이 커넥터 계정을 불러올 수 없습니다.",
+      "memberScope": "모든 채팅에서 허용하고 이 채팅에서 이 계정을 선택합니다.",
       "reconnectRequired": "다시 연결해야 합니다. 이후 실행에서는 기존 대체 계정을 사용할 수 있습니다.",
       "selected": "{{account}}(으)로 전환됨",
       "switch": "전환",
@@ -5720,6 +5764,16 @@
       "actions": {
         "resetUsage": "사용량 초기화"
       },
+      "antigravity": {
+        "check": "로그인 확인",
+        "error": "할당된 로그인 환경을 확인한 후 다시 시도하세요.",
+        "expired": "로그인이 만료되었습니다. 계정을 다시 연결하세요.",
+        "openTerminal": "Google 로그인 터미널 열기",
+        "terminal": "터미널에서 이 명령을 실행한 후 개인 Google AI 계정으로 로그인하세요.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "관리자에게 로그인 터미널 할당을 요청하세요.",
+        "verify": "이 명령은 구독 할당량을 사용해 Neon, Carbon, Hydrogen에 각각 한 번씩 요청을 보냅니다."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "승인 코드",
@@ -5919,6 +5973,13 @@
           "title": "기본 모델"
         },
         "description": "새 채팅의 기본값과 메시지 전송 방식을 선택하세요.",
+        "presentationFormat": {
+          "description": "새 프레젠테이션의 기본 형식을 선택하세요",
+          "saveFailed": "기본 형식을 저장하지 못했습니다. 다시 시도해 주세요.",
+          "title": "기본 프레젠테이션 형식",
+          "unavailable": "사용할 수 없음",
+          "unset": "설정되지 않음"
+        },
         "sectionTitle": "채팅"
       },
       "debug": {

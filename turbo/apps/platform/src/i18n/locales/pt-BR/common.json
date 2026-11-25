@@ -522,6 +522,40 @@
       "kindIcon": "Artefato do tipo {{kind}}",
       "loading": "Carregando artefatos"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "needsSetup": "Finish setup",
+      "notChecked": "No verification yet",
+      "okouUrl": "Okou URL",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verified": "Domain verified. Save to use this address.",
+      "verify": "Verify",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "Cancelar",
       "delete": "Excluir",
@@ -1927,6 +1961,14 @@
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
+      "presentationFormatSetup": {
+        "description": "Salvaremos este padrão e geraremos sua apresentação. Um formato solicitado explicitamente continua tendo prioridade.",
+        "htmlDescription": "Ideal para compartilhar no navegador",
+        "pptxDescription": "Slides editáveis no PowerPoint",
+        "saveAndGenerate": "Salvar e gerar",
+        "settingsHint": "Altere em Configurações → Preferências → Chat a qualquer momento.",
+        "title": "Escolha um formato padrão de apresentação"
+      },
       "selectedModelUnavailable": "O modelo selecionado não está disponível. Configure-o antes de enviar.",
       "selectedModelUnavailableToast": "O modelo selecionado não está disponível",
       "selectModel": "Selecionar modelo",
@@ -1998,8 +2040,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "Conta do conector",
       "actionFailed": "Não foi possível mudar de conta.",
+      "allowForHour": "Permitir por 1 hora",
       "customConnector": "Conector personalizado",
       "loadFailed": "Não foi possível carregar esta conta do conector.",
+      "memberScope": "Permita em todos os seus chats. Selecione esta conta aqui.",
       "reconnectRequired": "É necessário reconectar. Execuções posteriores podem usar a alternativa existente.",
       "selected": "Conta alterada para {{account}}",
       "switch": "Mudar",
@@ -5811,6 +5855,16 @@
       "actions": {
         "resetUsage": "Redefinir uso"
       },
+      "antigravity": {
+        "check": "Verificar login",
+        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
+        "expired": "O login expirou. Conecte a conta novamente.",
+        "openTerminal": "Abrir o terminal de login do Google",
+        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Peça a um administrador para atribuir um terminal de login a você.",
+        "verify": "Este comando usa sua assinatura para enviar uma solicitação a cada um dos modelos Neon, Carbon e Hydrogen."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Código de autorização",
@@ -6013,6 +6067,13 @@
           "title": "Modelo padrão"
         },
         "description": "Escolha os padrões para novos chats e como as mensagens são enviadas.",
+        "presentationFormat": {
+          "description": "Escolha o padrão para novas apresentações",
+          "saveFailed": "Não foi possível salvar o formato padrão. Tente novamente.",
+          "title": "Formato padrão de apresentação",
+          "unavailable": "Indisponível",
+          "unset": "Não definido"
+        },
         "sectionTitle": "Chat"
       },
       "debug": {

@@ -1,640 +1,204 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  chatThreadsContract,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import type {
-  AvailableRunModel,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  userModelPreferenceContract,
-  type UpdateUserModelPreferenceRequest,
-  type UserModelPreferenceResponse,
-} from "@okouai/api-contracts/contracts/user-model-preference";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { accountModels } from "./chat-account-model-fixture.ts";
 import {
-  createMockModelCatalog,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+  composerModelTrigger,
+  findComposerEditor,
+} from "./chat-composer-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   closeModelPanel,
-  modelOption,
+  findModelOption,
   openModelPanel,
 } from "./chat-model-panel-test-helpers.ts";
-import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { triggerAblyEvent } from "../../../mocks/ably.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
-import {
-  findButton,
-  NEW_CHAT_PATH,
-  readyChat,
-  RUN_PATH,
-  RUN_THREAD_ID,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
-
-import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { buildRunModel } from "./chat-model-builders.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
-
-function runModelFixture(
-  model: string,
-  index: number,
-  options: { readonly providerType?: ModelProviderType } = {},
-): AvailableRunModel {
-  return buildRunModel({
-    model,
-    ...options,
-    modelProviderId: `e2000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-  });
-}
-
-function configureRunModels(models: readonly string[]): void {
-  installConnectedPersonalSubscriptions(context);
-  context.mocks.data.availableRunModels(
-    models.map((model, index) => {
-      return runModelFixture(model, index + 1);
-    }),
-  );
-}
-
-function preference(
-  selectedModel: string,
-  serviceTier: "priority" | null = null,
-): UserModelPreferenceResponse {
-  return {
-    selectedModel,
-    serviceTier,
+const sol = "gpt-5.6-sol",
+  luna = "gpt-5.6-luna",
+  sonnet = "claude-sonnet-5";
+test("chat-composer-model-selection-002 remote preference changes can include a new preference kind", async () => {
+  const fable = "claude-fable-5-1",
+    opus = "claude-opus-5-5";
+  accountModels(context, [fable, opus], fable);
+  await setupPage({ context, path: "/" });
+  await composerModelTrigger("Claude Fable 5.1");
+  context.mocks.data.userModelPreference({
+    selectedModel: opus,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: FIXTURE_DATE,
-  };
-}
-
-function installNewChat(
-  models: readonly string[],
-  selectedModel: string,
-): void {
-  installRunChat({ selectedModel });
-  configureRunModels(models);
-  context.mocks.data.userModelPreference(preference(selectedModel));
-}
-
-async function modelPicker(name: string): Promise<HTMLElement> {
-  return await composerModelTrigger(name);
-}
-
-async function effortSlider(panel: HTMLElement): Promise<HTMLElement> {
-  return await within(panel).findByRole("slider", { name: "Effort" });
-}
-
-async function readyComposer(): Promise<HTMLElement> {
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(composer).toBeVisible();
-  return composer;
-}
-
-async function chooseModel(
-  user: ReturnType<typeof userEvent.setup>,
-  currentLabel: string,
-  optionName: string | RegExp,
-): Promise<void> {
-  const panel = await openModelPanel(currentLabel);
-  await user.click(modelOption(optionName, panel));
-  await closeModelPanel();
-}
-
-function buttonNamed(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
+    serviceTier: null,
+    updatedAt: null,
   });
-  if (!button) {
-    throw new Error(`Button ${name} was not visible`);
-  }
-  return button;
-}
-
-test("Temporarily choose a model for a new chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const updateGate = createDeferredPromise<void>(context.signal);
-  const responsePrepared = createDeferredPromise<void>(context.signal);
-  let update: UpdateUserModelPreferenceRequest | undefined;
-  installNewChat(["claude-fable-5-1", "claude-sonnet-5"], "claude-fable-5-1");
-  context.mocks.api(
-    userModelPreferenceContract.update,
-    async ({ body, respond }) => {
-      update = body;
-      await updateGate.promise;
-      const nextPreference = preference("claude-sonnet-5");
-      context.mocks.data.userModelPreference(nextPreference);
-      responsePrepared.resolve(undefined);
-      return respond(200, nextPreference);
-    },
-  );
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
+  context.mocks.ably.trigger("userPreferenceChanged", {
+    kinds: ["defaultModel", "futurePreference"],
   });
-
-  await readyComposer();
-  await chooseModel(user, "Claude Fable 5.1", /^Claude Sonnet 5/iu);
-  expect(update).toBeUndefined();
-  const scopeCard = await screen.findByRole("group", {
-    name: "Model for this chat",
-  });
-  expect(scopeCard).toHaveTextContent("Temporarily switch to Claude Sonnet 5");
-  const futureChats = buttonNamed("Use this for future chats", scopeCard);
-
-  click(futureChats);
-  await waitFor(() => {
-    expect(update).toStrictEqual({
-      selectedModel: "claude-sonnet-5",
-      serviceTier: null,
-      modelSettingsPatch: { model: "claude-sonnet-5", effort: "high" },
-    });
-    expect(futureChats).toHaveAttribute("aria-busy", "true");
-  });
-
-  updateGate.resolve(undefined);
-  await responsePrepared.promise;
-  triggerAblyEvent("userPreferenceChanged", { kinds: ["defaultModel"] });
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("group", { name: "Model for this chat" }),
-    ).not.toBeInTheDocument();
-  });
-  await expect(modelPicker("Claude Sonnet 5")).resolves.toBeVisible();
+  await expect(
+    composerModelTrigger("Claude Opus 5.5"),
+  ).resolves.toBeInTheDocument();
 });
-
-test("Follow model preference changes made in another session", async () => {
-  installNewChat(["claude-fable-5-1", "claude-opus-5-5"], "claude-fable-5-1");
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-
-  await readyComposer();
-  await expect(modelPicker("Claude Fable 5.1")).resolves.toBeVisible();
-
-  context.mocks.data.userModelPreference(preference("claude-opus-5-5"));
-  triggerAblyEvent("userPreferenceChanged", {
-    kinds: ["defaultModel", "futurePreferenceKind"],
-  });
-
-  await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
-});
-
-test("Switch chat models immediately and adjust Fast in the same panel", async () => {
-  installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  await readyComposer();
+test("chat-composer-model-selection-003 reselecting Luna preserves Fast and xHigh effort", async () => {
+  accountModels(context, [sol, luna], sol);
+  await setupPage({ context, path: "/" });
   const panel = await openModelPanel("GPT 5.6 Sol");
-  const options = queryAllByRoleFast("radio", panel);
-  // The server projects the catalog system default (Auto) for every org;
-  // rows follow catalog sortOrder.
-  expect(options).toHaveLength(3);
-  expect(options[0]).toHaveTextContent(/^Auto/u);
-  expect(options[1]).toHaveTextContent(/^GPT 5\.6 Sol/u);
-  expect(options[2]).toHaveTextContent(/^GPT 5\.6 Luna/u);
-  click(modelOption(/^GPT 5\.6 Luna/u, panel));
-  await expect(modelPicker("GPT 5.6 Luna")).resolves.toBeVisible();
+  const option = await findModelOption("GPT 5.6 Luna", panel);
+  click(option);
+  await composerModelTrigger("GPT 5.6 Luna");
+  const fast = within(panel).getByRole("switch", { name: "Fast mode" });
   expect(
     within(panel).getByText("2.5× subscription usage"),
   ).toBeInTheDocument();
-  click(within(panel).getByRole("switch", { name: "Fast mode" }));
-  await expect(findButton("GPT 5.6 Luna, xHigh, Fast")).resolves.toBeVisible();
-  expect(
-    within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).toBeChecked();
-  // Choosing the checked model again keeps Fast.
-  click(modelOption(/^GPT 5\.6 Luna/u, panel));
-  await expect(findButton("GPT 5.6 Luna, xHigh, Fast")).resolves.toBeVisible();
-  expect(
-    within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).toBeChecked();
+  click(fast);
+  await composerModelTrigger("GPT 5.6 Luna, xHigh, Fast");
+  click(option);
+  expect(fast).toBeChecked();
+  expect(within(panel).getByRole("slider")).toHaveAttribute(
+    "aria-valuetext",
+    "xHigh",
+  );
 });
-
-test("Choose effort for a new chat and keep Fast independent", async () => {
-  const user = userEvent.setup({ delay: null });
-  const creates: {
-    reasoningEffort?: string | null;
-    serviceTier?: string | null;
-  }[] = [];
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    onThreadCreate: (body) => {
-      creates.push(body);
+test("chat-composer-model-selection-004 every effort step can be selected before creating a priority Max chat", async () => {
+  const created = context.mocks.deferred<unknown>();
+  mockChatLifecycle(context, {
+    onThreadCreate: (b) => {
+      return created.resolve(b);
     },
   });
-  configureRunModels(["gpt-5.6-sol"]);
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  const composer = await readyComposer();
+  accountModels(context, [sol], sol, { [sol]: { effort: "max" } });
+  await setupPage({ context, path: "/" });
+  await fill(await findComposerEditor(), "Prepare a release note");
   const panel = await openModelPanel("GPT 5.6 Sol, Max");
-  const slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  const slider = within(panel).getByRole("slider");
   slider.focus();
-  await user.keyboard("{Home}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Low");
-  });
-  for (const effort of ["Medium", "High", "xHigh", "Max"]) {
-    await user.keyboard("{ArrowRight}");
-    await waitFor(() => {
-      expect(slider).toHaveAttribute("aria-valuetext", effort);
-    });
+  for (const [key, value] of [
+    ["Home", "Low"],
+    ["ArrowRight", "Medium"],
+    ["ArrowRight", "High"],
+    ["ArrowRight", "xHigh"],
+    ["ArrowRight", "Max"],
+  ]) {
+    await userEvent.keyboard("{" + key + "}");
+    expect(slider).toHaveAttribute("aria-valuetext", value);
   }
   click(within(panel).getByRole("switch", { name: "Fast mode" }));
-  await expect(findButton("GPT 5.6 Sol, Max, Fast")).resolves.toBeVisible();
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  await composerModelTrigger("GPT 5.6 Sol, Max, Fast");
   await closeModelPanel();
-  await user.click(composer);
-  await fillComposer(composer, "Use this effort for the new task");
-  click(await findButton("Send"));
-  await waitFor(() => {
-    expect(creates).toContainEqual(
-      expect.objectContaining({
-        reasoningEffort: "max",
-        serviceTier: "priority",
-      }),
-    );
+  click(await findFastControl("button", "Send"));
+  await expect(created.promise).resolves.toMatchObject({
+    reasoningEffort: "max",
+    serviceTier: "priority",
   });
 });
-
-test("Start a new chat on the route default when the saved effort is no longer offered", async () => {
-  const runStarted = createDeferredPromise<void>(context.signal);
-  let create: { reasoningEffort?: string } | undefined;
-  const lifecycle = installRunChat({
-    selectedModel: "claude-sonnet-5",
-    onRunCreate: () => {
-      runStarted.resolve(undefined);
-    },
-  });
-  configureRunModels(["claude-sonnet-5"]);
-  const catalog = createMockModelCatalog();
-  const currentEfforts = ["low", "medium", "high", "extra"];
-  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...catalog,
-      routes: catalog.routes.map((route) => {
-        return route.model === "claude-sonnet-5"
-          ? { ...route, efforts: currentEfforts }
-          : route;
-      }),
-    });
-  });
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-    create = body;
-    if (
-      body.reasoningEffort !== undefined &&
-      !currentEfforts.includes(body.reasoningEffort)
-    ) {
-      return respond(400, {
-        error: {
-          code: "BAD_REQUEST",
-          message: "Reasoning effort is not supported by the selected model",
-        },
-      });
-    }
-    if (!body.clientThreadId) {
-      throw new Error("Expected a client thread ID for the new chat");
-    }
-    return respond(201, {
-      id: body.clientThreadId,
-      title: null,
-      createdAt: FIXTURE_DATE,
-      selectedModel: "claude-sonnet-5",
-      serviceTier: null,
-    });
-  });
-  context.mocks.data.userModelPreference({
-    ...preference("claude-sonnet-5"),
-    modelSettings: { "claude-sonnet-5": { effort: "max" } },
-  });
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  const composer = await readyComposer();
-  await expect(
-    composerModelTrigger("Claude Sonnet 5, High"),
-  ).resolves.toBeInTheDocument();
-  await fillComposer(composer, "Run on the default effort");
-  click(await findButton("Send"));
-  await runStarted.promise;
-  lifecycle.completeRun("The route default completed the task.");
-  await expect(
-    screen.findByText("The route default completed the task."),
-  ).resolves.toBeInTheDocument();
-  expect(create?.reasoningEffort).toBeUndefined();
-});
-
-test("Select the default effort on an existing thread without changing Fast", async () => {
-  const user = userEvent.setup({ delay: null });
-  const updates: {
-    reasoningEffort?: string | null;
-    codexServiceTier?: string | null;
-  }[] = [];
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    reasoningEffort: "high",
-    codexServiceTier: "fast",
-    onModelSelectionUpdate: (body) => {
-      updates.push(body);
-    },
-  });
-  configureRunModels(["gpt-5.6-sol"]);
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-  const panel = await openModelPanel("GPT 5.6 Sol, High, Fast");
-  const slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "High");
-  slider.focus();
-  await user.keyboard("{ArrowRight}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
-  });
-  await user.keyboard("{ArrowRight}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  });
-  expect(
-    within(panel).getByRole("switch", { name: "Fast mode" }),
-  ).toBeChecked();
-  await waitFor(() => {
-    expect(updates).toContainEqual(
-      expect.objectContaining({
-        reasoningEffort: "max",
-        codexServiceTier: "fast",
-      }),
-    );
-  });
-});
-
-test("Keep independent effort selections when changing models", async () => {
-  const user = userEvent.setup({ delay: null });
-  installNewChat(
-    ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.6-luna"],
-    "claude-sonnet-5",
-  );
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  await readyComposer();
+test("chat-composer-model-selection-007 switching models restores each model's own effort", async () => {
+  accountModels(context, [sol, luna, sonnet], sonnet);
+  await setupPage({ context, path: "/" });
   const panel = await openModelPanel("Claude Sonnet 5, High");
-  let slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "High");
+  const slider = within(panel).getByRole("slider");
   slider.focus();
-  await user.keyboard("{End}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  });
-  await user.keyboard("{ArrowLeft}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Extra");
-  });
-  await expect(findButton("Claude Sonnet 5, Extra")).resolves.toBeVisible();
-  click(modelOption(/^GPT 5\.6 Sol/u, panel));
-  await expect(findButton("GPT 5.6 Sol, Max")).resolves.toBeVisible();
-  slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  slider.focus();
-  await user.keyboard("{End}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  });
-  click(modelOption(/^GPT 5\.6 Luna/u, panel));
-  await expect(findButton("GPT 5.6 Luna, xHigh")).resolves.toBeVisible();
-  slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
-  slider.focus();
-  await user.keyboard("{End}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
-  });
-  click(modelOption(/^Claude Sonnet 5/u, panel));
-  await expect(findButton("Claude Sonnet 5, Extra")).resolves.toBeVisible();
-  await expect(effortSlider(panel)).resolves.toHaveAttribute(
-    "aria-valuetext",
-    "Extra",
-  );
+  await userEvent.keyboard("{ArrowRight}");
+  expect(slider).toHaveAttribute("aria-valuetext", "Extra");
+  for (const [model, effort] of [
+    ["GPT 5.6 Sol", "Max"],
+    ["GPT 5.6 Luna", "xHigh"],
+    ["Claude Sonnet 5", "Extra"],
+  ]) {
+    click(await findModelOption(model, panel));
+    await composerModelTrigger(model + ", " + effort);
+    expect(within(panel).getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      effort,
+    );
+  }
 });
-
-test.each(["gpt-5.6-luna", "gpt-6-luna"])(
-  "Cap %s at xHigh even with a saved Max preference",
-  async (model) => {
-    const user = userEvent.setup({ delay: null });
-    const updates: { reasoningEffort?: string | null }[] = [];
-    installRunChat({
-      selectedModel: model,
-      reasoningEffort: "max",
-      onModelSelectionUpdate: (body) => {
-        updates.push(body);
-      },
-    });
-    configureRunModels([model]);
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-    await readyChat();
-    const label = mockCatalogDisplayName(model);
-    const panel = await openModelPanel(`${label}, xHigh`);
-    const slider = await effortSlider(panel);
-    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
-    expect(updates).toStrictEqual([]);
-    slider.focus();
-    await user.keyboard("{End}{ArrowRight}");
-    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
-    await user.keyboard("{ArrowLeft}");
-    await waitFor(() => {
-      expect(slider).toHaveAttribute("aria-valuetext", "High");
-    });
-    await user.keyboard("{End}");
-    await waitFor(() => {
-      expect(updates).toContainEqual(
-        expect.objectContaining({ reasoningEffort: "xhigh" }),
-      );
-    });
-  },
-);
-
-test("Show the Pi fallback without overwriting a saved native preference", async () => {
-  const updates: { reasoningEffort?: string | null }[] = [];
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
+test("chat-composer-model-selection-010 opening the Max fallback leaves the native Ultra preference intact", async () => {
+  const updated = context.mocks.deferred<unknown>();
+  accountModels(context, [sol], null);
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    selectedModel: sol,
     reasoningEffort: "ultra",
-    onModelSelectionUpdate: (body) => {
-      updates.push(body);
+    onModelSelectionUpdate: (b) => {
+      return updated.resolve(b);
     },
   });
-  configureRunModels(["gpt-5.6-sol"]);
+  const preferenceWrite = context.mocks.deferred<void>();
+  context.mocks.api(userModelPreferenceContract.update, ({ respond }) => {
+    preferenceWrite.resolve();
+    return respond(200, {
+      selectedModel: sol,
+      modelSettings: { [sol]: { effort: "ultra" } },
+      serviceTier: null,
+      selectedImageModel: null,
+      updatedAt: null,
+    });
+  });
   await setupPage({
     context,
     path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.CodexExecution]: false },
   });
-  await readyChat();
   const panel = await openModelPanel("GPT 5.6 Sol, Max");
-  const slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "Max");
-  expect(updates).toStrictEqual([]);
-});
-
-test("Save the preferred effort for future chats when Pi displays a fallback", async () => {
-  const user = userEvent.setup({ delay: null });
-  const updates: UpdateUserModelPreferenceRequest[] = [];
-  installNewChat(["claude-sonnet-5", "gpt-5.6-sol"], "claude-sonnet-5");
-  context.mocks.data.userModelPreference({
-    ...preference("claude-sonnet-5"),
-    modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
-  });
-  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
-    updates.push(body);
-    return respond(200, {
-      ...preference("gpt-5.6-sol"),
-      modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
-    });
-  });
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  const composer = await readyComposer();
-  const panel = await openModelPanel("Claude Sonnet 5");
-  click(modelOption(/^GPT 5\.6 Sol/u, panel));
-  await expect(findButton("GPT 5.6 Sol, Max")).resolves.toBeVisible();
-  await expect(effortSlider(panel)).resolves.toHaveAttribute(
+  expect(within(panel).getByRole("slider")).toHaveAttribute(
     "aria-valuetext",
     "Max",
   );
-  await closeModelPanel();
-  await user.click(composer);
-  const scopeCard = await screen.findByRole("group", {
-    name: "Model for this chat",
-  });
-  click(buttonNamed("Use this for future chats", scopeCard));
-  await waitFor(() => {
-    expect(updates).toContainEqual({
-      selectedModel: "gpt-5.6-sol",
-      serviceTier: null,
-      modelSettingsPatch: { model: "gpt-5.6-sol", effort: "ultra" },
-    });
-  });
+  expect(updated.settled()).toBeFalsy();
+  expect(preferenceWrite.settled()).toBeFalsy();
 });
-
-test("Follow model-scoped effort changes made in another session", async () => {
-  const events: ChatThreadEvent[] = [];
-  installRunChat({ selectedModel: "claude-sonnet-5", reasoningEffort: "high" });
-  configureRunModels(["claude-sonnet-5"]);
-  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
-    return respond(200, {
-      events: events.filter((event) => {
-        return event.seqId > (query.sinceSeqId ?? 0);
-      }),
-      hasMore: false,
-    });
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-  const panel = await openModelPanel("Claude Sonnet 5, High");
-  const slider = await effortSlider(panel);
-  expect(slider).toHaveAttribute("aria-valuetext", "High");
-  for (const [reasoningEffort, displayValue] of [
-    ["low", "Low"],
-    ["medium", "Medium"],
-    ["high", "High"],
-    ["extra", "Extra"],
-    ["max", "Max"],
-  ] as const) {
-    events.push({
-      id: crypto.randomUUID(),
-      seqId: events.length + 1,
-      kind: "model_selection_updated",
-      chatThreadId: RUN_THREAD_ID,
-      title: null,
-      selectedModel: "claude-sonnet-5",
-      modelSettingsPatch: {
-        model: "claude-sonnet-5",
-        effort: reasoningEffort,
-      },
-      serviceTier: null,
-      computerUseHostId: null,
-      createdAt: FIXTURE_DATE,
-    });
-    changeChatThreadList();
-    await waitFor(() => {
-      expect(slider).toHaveAttribute("aria-valuetext", displayValue);
-    });
-  }
-});
-
 test.each([
-  {
-    model: "gpt-6-astra",
-    providerType: "codex-oauth-token",
-    first: "Low",
-    last: "Ultra",
-  },
-] as const)(
-  "Offer $model efforts for $providerType with Pi enabled",
-  async ({ model, providerType, first, last }) => {
-    const user = userEvent.setup({ delay: null });
-    installRunChat({ selectedModel: model });
-    installConnectedPersonalSubscriptions(context);
-    context.mocks.data.availableRunModels([
-      runModelFixture(model, 1, { providerType }),
-    ]);
-    await setupPage({
-      context,
-      path: RUN_PATH,
+  ["001", sonnet, "Claude Sonnet 5", "High", "high"],
+  ["011", sol, "GPT 5.6 Sol", "Max", "ultra"],
+])(
+  "chat-composer-model-selection-%s making the temporary model the default saves its native effort",
+  async (_id, model, label, shown, native) => {
+    const fable = _id === "011" ? sonnet : "claude-fable-5-1";
+    const oldLabel = _id === "011" ? "Claude Sonnet 5" : "Claude Fable 5.1";
+    accountModels(context, [fable, model], fable, {
+      [sol]: { effort: "ultra" },
     });
-    await readyChat();
-    const panel = await openModelPanel(mockCatalogDisplayName(model));
-    const slider = await effortSlider(panel);
-    slider.focus();
-    await user.keyboard("{Home}");
+    const write = context.mocks.deferred<unknown>();
+    context.mocks.api(
+      userModelPreferenceContract.update,
+      ({ body, respond }) => {
+        write.resolve(body);
+        const pref = {
+          selectedModel: body.selectedModel,
+          serviceTier: body.serviceTier,
+          modelSettings: { [model]: { effort: native as "high" | "ultra" } },
+          selectedImageModel: null,
+          updatedAt: null,
+        };
+        context.mocks.data.userModelPreference(pref);
+        return respond(200, pref);
+      },
+    );
+    await setupPage({ context, path: "/" });
+    const panel = await openModelPanel(oldLabel);
+    click(await findModelOption(label, panel));
+    const future = await screen.findByText("Use this for future chats");
+    expect(within(panel).getByRole("slider")).toHaveAttribute(
+      "aria-valuetext",
+      shown,
+    );
+    expect(write.settled()).toBeFalsy();
+    click(future);
+    await expect(write.promise).resolves.toMatchObject({
+      selectedModel: model,
+      modelSettingsPatch: { model, effort: native },
+    });
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultModel"],
+    });
     await waitFor(() => {
-      return expect(slider).toHaveAttribute("aria-valuetext", first);
+      return expect(screen.queryByText("Use this for future chats")).toBeNull();
     });
-    await user.keyboard("{End}");
-    await waitFor(() => {
-      return expect(slider).toHaveAttribute("aria-valuetext", last);
-    });
+    await composerModelTrigger(label);
   },
 );

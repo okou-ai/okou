@@ -28,6 +28,7 @@
     <string name="artifact_empty">Belum ada artefak</string>
     <string name="artifact_empty_type">Tidak ada artefak jenis ini</string>
     <string name="artifact_no_matches">Tidak ada artefak yang cocok</string>
+    <string name="artifact_clear_keyword">Hapus pencarian</string>
     <string name="artifact_show_all">Tampilkan semua</string>
     <string name="artifact_catalog_load_failed">Artefak tidak dapat dimuat untuk sementara</string>
     <string name="artifact_catalog_refresh_failed">Pembaruan tidak dapat dilakukan untuk sementara. Menampilkan artefak yang sudah dimuat.</string>
@@ -49,6 +50,7 @@
     <string name="artifact_open_website">Buka di browser</string>
     <string name="artifact_browser_unavailable">Browser tidak dapat dibuka</string>
     <string name="artifact_play_media">Pemutaran media</string>
+    <string name="artifact_play">Putar</string>
     <string name="artifact_catalog_access_denied">Anda tidak memiliki akses ke katalog artefak ini</string>
     <string name="artifact_catalog_missing">Katalog artefak ini sudah tidak tersedia</string>
     <string name="chat_resources_related">Chat terkait</string>

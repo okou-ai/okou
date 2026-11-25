@@ -23,6 +23,10 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun deleteThread(threadId: String, eventId: String)
 
+    suspend fun createProject(projectId: String, name: String): ConfirmedProject
+
+    suspend fun projectDetail(projectId: String): ConfirmedProject
+
     suspend fun renameProject(projectId: String, name: String, eventId: String)
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String)

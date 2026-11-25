@@ -1,0 +1,876 @@
+{
+  "chat-scroll-024": {
+    "smallWheels": {
+      "initial": {
+        "stage": "initial",
+        "top": 5332,
+        "height": 676,
+        "q6": false,
+        "inView": false,
+        "q4": false
+      },
+      "mounts": [
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 4036,
+            "height": 676,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 4680,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "settled": {
+            "stage": "settled",
+            "top": 4680,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000038",
+            "text": "Turn 13, observation 3.",
+            "pendingY": 448.75,
+            "settledY": 448.75
+          }
+        }
+      ],
+      "stages": [],
+      "firstQuestion6InView": {
+        "stage": "scroll",
+        "top": 2336,
+        "height": 676,
+        "q6": true,
+        "inView": true,
+        "q4": true
+      }
+    },
+    "largeWheelWithCompactHistory": {
+      "initial": {
+        "stage": "initial",
+        "top": 4632,
+        "height": 1376,
+        "q6": false,
+        "inView": false,
+        "q4": false
+      },
+      "mounts": [
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 1412,
+            "height": 1376,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 1412,
+            "height": 1376,
+            "q6": true,
+            "inView": true,
+            "q4": true
+          },
+          "settled": {
+            "stage": "delivered",
+            "top": 1372,
+            "height": 1376,
+            "q6": true,
+            "inView": true,
+            "q4": true
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000025",
+            "text": "Question number 9",
+            "pendingY": 1031,
+            "settledY": 1019
+          }
+        }
+      ],
+      "stages": [],
+      "firstQuestion6InView": {
+        "stage": "layout",
+        "top": 1412,
+        "height": 1376,
+        "q6": true,
+        "inView": true,
+        "q4": true
+      }
+    },
+    "movingControl": {
+      "before": {
+        "event": "aa970000-0000-4000-8000-000000000044",
+        "text": "Turn 15, observation 4.",
+        "y": 84.25
+      },
+      "after": {
+        "event": "aa970000-0000-4000-8000-000000000044",
+        "text": "Turn 15, observation 4.",
+        "y": 135.25
+      }
+    }
+  },
+  "chat-scroll-025": {
+    "wheelsWithSettling": {
+      "initial": {
+        "stage": "initial",
+        "top": 5346,
+        "height": 676,
+        "q6": false,
+        "inView": false,
+        "q4": false
+      },
+      "mounts": [
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 4085,
+            "height": 676,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 4729,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "settled": {
+            "stage": "near",
+            "top": 4729,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000038",
+            "text": "Turn 13, observation 3.",
+            "pendingY": 399.75,
+            "settledY": 399.75
+          }
+        },
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 4673,
+            "height": 676,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 4629,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "settled": {
+            "stage": "near-again",
+            "top": 4629,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000038",
+            "text": "Turn 13, observation 3.",
+            "pendingY": 499.75,
+            "settledY": 499.75
+          }
+        }
+      ],
+      "stages": [
+        {
+          "stage": "near",
+          "top": 4729,
+          "height": 676,
+          "q6": true,
+          "inView": false,
+          "q4": false
+        },
+        {
+          "stage": "away",
+          "top": 5173,
+          "height": 676,
+          "q6": false,
+          "inView": false,
+          "q4": false
+        },
+        {
+          "stage": "near-again",
+          "top": 4629,
+          "height": 676,
+          "q6": true,
+          "inView": false,
+          "q4": false
+        }
+      ],
+      "firstQuestion6InView": null
+    },
+    "nextWheelAtScrollEvent": {
+      "initial": {
+        "stage": "initial",
+        "top": 5332,
+        "height": 676,
+        "q6": false,
+        "inView": false,
+        "q4": false
+      },
+      "mounts": [
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 4071,
+            "height": 676,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 4715,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "settled": {
+            "stage": "near",
+            "top": 4715,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000038",
+            "text": "Turn 13, observation 3.",
+            "pendingY": 413.75,
+            "settledY": 413.75
+          }
+        },
+        {
+          "pending": {
+            "stage": "scroll",
+            "top": 4659,
+            "height": 676,
+            "q6": false,
+            "inView": false,
+            "q4": false
+          },
+          "firstMount": {
+            "stage": "layout",
+            "top": 4615,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "settled": {
+            "stage": "near-again",
+            "top": 4615,
+            "height": 676,
+            "q6": true,
+            "inView": false,
+            "q4": false
+          },
+          "sameVisibleText": {
+            "event": "aa970000-0000-4000-8000-000000000038",
+            "text": "Turn 13, observation 3.",
+            "pendingY": 513.75,
+            "settledY": 513.75
+          }
+        }
+      ],
+      "stages": [
+        {
+          "stage": "near",
+          "top": 4715,
+          "height": 676,
+          "q6": true,
+          "inView": false,
+          "q4": false
+        },
+        {
+          "stage": "away",
+          "top": 5159,
+          "height": 676,
+          "q6": false,
+          "inView": false,
+          "q4": false
+        },
+        {
+          "stage": "near-again",
+          "top": 4615,
+          "height": 676,
+          "q6": true,
+          "inView": false,
+          "q4": false
+        },
+        {
+          "stage": "settled",
+          "top": 4615,
+          "height": 676,
+          "q6": true,
+          "inView": false,
+          "q4": false
+        }
+      ],
+      "firstQuestion6InView": null
+    }
+  },
+  "chat-scroll-023": {
+    "receivers": [
+      {
+        "turn": 17,
+        "seq": 51
+      },
+      {
+        "turn": 18,
+        "seq": 54
+      }
+    ],
+    "arrivals": [
+      {
+        "turn": 17,
+        "boxes": [
+          {
+            "text": "Delivered survey 17",
+            "top": 1507.75,
+            "bottom": 1533.25,
+            "paneBottom": 609
+          }
+        ],
+        "mounted": 1,
+        "ticks": 17
+      },
+      {
+        "turn": 18,
+        "boxes": [
+          {
+            "text": "Delivered survey 17",
+            "top": 1507.75,
+            "bottom": 1533.25,
+            "paneBottom": 609
+          },
+          {
+            "text": "Delivered survey 18",
+            "top": 1789.25,
+            "bottom": 1814.75,
+            "paneBottom": 609
+          }
+        ],
+        "mounted": 1,
+        "ticks": 18
+      }
+    ],
+    "deliveredAtTail": ["Delivered survey 17", "Delivered survey 18"],
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000041",
+      "text": "Turn 14, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 4687, 561, 760, 263.25, true],
+      ["arrived-17", 4687, 561, 1042, 263.25, true],
+      ["arrived-18", 4687, 561, 1323, 263.25, true]
+    ]
+  },
+  "chat-scroll-020": {
+    "initialImage": {
+      "tag": "IMG",
+      "src": "http://localhost:8193/b104/chart.svg",
+      "complete": false,
+      "rect": {
+        "x": 31,
+        "y": 239.75,
+        "width": 198,
+        "height": 178,
+        "top": 239.75,
+        "right": 229,
+        "bottom": 417.75,
+        "left": 31
+      }
+    },
+    "beforeRelease": {
+      "imageArrivals": 1,
+      "imageOpen": false
+    },
+    "beforeImage": {
+      "x": 31,
+      "y": -190.25,
+      "width": 198,
+      "height": 178
+    },
+    "imageSource": {
+      "current": "http://localhost:8193/b104/chart.svg",
+      "src": "http://localhost:8193/b104/chart.svg",
+      "loading": "lazy"
+    },
+    "afterImage": {
+      "x": 31,
+      "y": -190.25,
+      "width": 198,
+      "height": 178
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000038",
+      "text": "Turn 13, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5643, 561, 0, null, null],
+      ["reading", 4346, 561, 1297, 351.25, true],
+      ["decoded", 4346, 561, 1297, 351.25, true]
+    ]
+  },
+  "chat-scroll-008": {
+    "receivers": [
+      {
+        "turn": 17,
+        "seq": 51
+      }
+    ],
+    "markersWhileCovered": 17,
+    "trace": {
+      "writes": [
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 275,
+          "after": 297,
+          "height": 561
+        },
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 297,
+          "after": 275,
+          "height": 561
+        }
+      ],
+      "frames": [
+        {
+          "phase": "history",
+          "from": 275,
+          "to": 0,
+          "height": 0
+        },
+        {
+          "phase": "reveal",
+          "from": 0,
+          "to": 275,
+          "height": 561
+        }
+      ],
+      "controlRestored": true
+    },
+    "atTailText": 1,
+    "preparationCovered": {
+      "imageArrivals": 0,
+      "imageOpen": false
+    },
+    "preparationRevealed": {
+      "imageArrivals": 0,
+      "imageOpen": false
+    },
+    "preparationAtTail": {
+      "imageArrivals": 1,
+      "imageOpen": false
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000004",
+      "text": "Question number 2"
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 275, 561, 6504, 296, true],
+      ["automations-open", 0, 0, 0, 0, false],
+      ["revealed", 275, 561, 6792, 296, true]
+    ]
+  },
+  "chat-scroll-006": {
+    "receivers": [
+      {
+        "turn": 17,
+        "seq": 51
+      }
+    ],
+    "trace": {
+      "writes": [
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4329,
+          "after": 4351,
+          "height": 596
+        },
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4351,
+          "after": 4329,
+          "height": 596
+        }
+      ],
+      "frames": [
+        {
+          "phase": "history",
+          "from": 4329,
+          "to": 0,
+          "height": 0
+        },
+        {
+          "phase": "history",
+          "from": 0,
+          "to": 4329,
+          "height": 596
+        }
+      ],
+      "controlRestored": true
+    },
+    "image": {
+      "before": {
+        "x": 405,
+        "y": -156.25,
+        "width": 198,
+        "height": 178
+      },
+      "after": {
+        "x": 405,
+        "y": -156.25,
+        "width": 198,
+        "height": 178
+      },
+      "state": {
+        "tag": "IMG",
+        "src": "http://localhost:8193/b104/chart.svg",
+        "complete": true
+      }
+    },
+    "initialImage": {
+      "tag": "IMG",
+      "src": "http://localhost:8193/b104/chart.svg",
+      "complete": false,
+      "rect": {
+        "x": 405,
+        "y": 273.75,
+        "width": 198,
+        "height": 178,
+        "top": 273.75,
+        "right": 603,
+        "bottom": 451.75,
+        "left": 405
+      }
+    },
+    "sideUrl": "http://localhost:8193/chats/b0000000-0000-4000-a000-000000000081?sidebar=beef0000-0000-4000-8000-000000000104",
+    "headings": ["Find people", "Research", "Create", "Workflow"],
+    "narrowerControl": {
+      "width": 760,
+      "sideConversationLinksWhilePanelCovered": 0
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000038",
+      "text": "Turn 13, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5608, 596, 0, null, null],
+      ["reading", 4329, 596, 1279, 385.25, true],
+      ["automations-open", 0, 0, 0, 0, false],
+      ["side-open", 4329, 596, 1279, 385.25, true],
+      ["incoming-with-side", 4329, 596, 1561, 385.25, true],
+      ["revealed", 4329, 596, 1561, 385.25, true]
+    ]
+  },
+  "chat-scroll-007": {
+    "receivers": [
+      {
+        "turn": 17,
+        "seq": 51
+      }
+    ],
+    "markersWhileCovered": 17,
+    "atTailText": 1,
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000004",
+      "text": "Question number 2"
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 275, 561, 6504, 296, true],
+      ["automations-open", 0, 0, 0, 0, false],
+      ["revealed", 275, 561, 6792, 296, true]
+    ]
+  },
+  "chat-scroll-001": {
+    "trace": {
+      "writes": [
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4687,
+          "after": 4709,
+          "height": 561
+        },
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4709,
+          "after": 4687,
+          "height": 561
+        }
+      ],
+      "frames": [
+        {
+          "phase": "history",
+          "from": 4687,
+          "to": 0,
+          "height": 0
+        },
+        {
+          "phase": "reveal",
+          "from": 0,
+          "to": 4687,
+          "height": 561
+        }
+      ],
+      "controlRestored": true
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000041",
+      "text": "Turn 14, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 4687, 561, 760, 263.25, true],
+      ["automations-open", 0, 0, 0, 0, false],
+      ["revealed", 4687, 561, 760, 263.25, true]
+    ]
+  },
+  "chat-scroll-005": {
+    "receivers": [
+      {
+        "turn": 17,
+        "seq": 51
+      }
+    ],
+    "markersWhileCovered": 17,
+    "trace": {
+      "writes": [
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4687,
+          "after": 4709,
+          "height": 561
+        },
+        {
+          "phase": "control",
+          "method": "scrollBy",
+          "before": 4709,
+          "after": 4687,
+          "height": 561
+        }
+      ],
+      "frames": [
+        {
+          "phase": "history",
+          "from": 4687,
+          "to": 0,
+          "height": 0
+        },
+        {
+          "phase": "reveal",
+          "from": 0,
+          "to": 4687,
+          "height": 561
+        }
+      ],
+      "controlRestored": true
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000041",
+      "text": "Turn 14, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 4687, 561, 760, 263.25, true],
+      ["automations-open", 0, 0, 0, 0, false],
+      ["revealed", 4687, 561, 1042, 263.25, true]
+    ]
+  },
+  "chat-scroll-017": {
+    "standalone": false,
+    "launchProbe": {
+      "manifest": "http://localhost:8193/?source=pwa",
+      "standalone": false,
+      "steps": [
+        ["tail", 820, 0, 1, 367.75, false],
+        ["reading", 820, 0, 1, 263.25, false],
+        ["smaller-0", 820, 0, 1, 263.25, true],
+        ["pan-0", 820, 0, 1, 263.25, true],
+        ["restored-0", 820, 0, 1, 263.25, true],
+        ["smaller-1", 820, 0, 1, 263.25, true],
+        ["pan-1", 820, 0, 1, 263.25, true],
+        ["restored-1", 820, 0, 1, 263.25, true],
+        ["smaller-2", 820, 0, 1, 263.25, true],
+        ["pan-2", 820, 0, 1, 263.25, true],
+        ["restored-2", 820, 0, 1, 263.25, true],
+        ["resized", 900, 0, 1, 263.25, true]
+      ],
+      "screenColumns": [
+        "step",
+        "visualHeight",
+        "pan",
+        "scale",
+        "referenceScreenY",
+        "composerFocused"
+      ],
+      "draftDuringCycles": ["North pier\n\nSouth pier"]
+    },
+    "externalVisualViewportTrial": {
+      "beginY": 65,
+      "actualY": -265,
+      "registration": "supplemental counterexample"
+    },
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000041",
+      "text": "Turn 14, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, null, null],
+      ["reading", 4687, 561, 760, 263.25, true],
+      ["keyboard-size-0", 4687, 372, 949, 263.25, true],
+      ["restore-0", 4687, 561, 760, 263.25, true],
+      ["keyboard-size-1", 4687, 372, 949, 263.25, true],
+      ["restore-1", 4687, 561, 760, 263.25, true],
+      ["keyboard-size-2", 4687, 372, 949, 263.25, true],
+      ["restore-2", 4687, 561, 760, 263.25, true],
+      ["resize", 4687, 641, 680, 263.25, true]
+    ]
+  },
+  "chat-scroll-018": {
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000047",
+      "text": "Turn 16, observation 3."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5447, 561, 0, 367.75, true],
+      ["reading", 5447, 561, 0, 367.75, true],
+      ["research-open", 5807, 201, 0, 7.75, false],
+      ["after-dismiss", 5447, 561, 0, 367.75, true]
+    ],
+    "routeThroughout": ["/chats/b0000000-0000-4000-a000-000000000081"],
+    "emptyComposerThroughout": true
+  },
+  "chat-scroll-019": {
+    "terminalEvent": "run.cancelled",
+    "reference": {
+      "event": "aa970000-0000-4000-8000-000000000041",
+      "text": "Turn 14, observation 4."
+    },
+    "geometryColumns": [
+      "stage",
+      "scrollTop",
+      "clientHeight",
+      "bottomGap",
+      "referenceScreenY",
+      "referenceInViewport"
+    ],
+    "geometry": [
+      ["tail", 5461, 561, 0, null, null],
+      ["reading", 4701, 561, 760, 249.25, true],
+      ["research-open", 4701, 201, 1120, 249.25, false],
+      ["after-dismiss", 4701, 561, 760, 249.25, true]
+    ],
+    "routeThroughout": ["/chats/b0000000-0000-4000-a000-000000000081"],
+    "emptyComposerThroughout": true
+  }
+}

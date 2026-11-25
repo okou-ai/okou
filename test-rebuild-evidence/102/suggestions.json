@@ -1,0 +1,230 @@
+{
+  "workspaceFeeds": [
+    {
+      "member": "taylor",
+      "organization": "org_acme",
+      "createdCard": "d976f4d7-d50e-4ccb-8828-da77c3070f79",
+      "title": "Reserve the Acme lab",
+      "listedCards": [
+        {
+          "id": "d976f4d7-d50e-4ccb-8828-da77c3070f79",
+          "title": "Reserve the Acme lab"
+        }
+      ]
+    },
+    {
+      "member": "taylor",
+      "organization": "org_design",
+      "createdCard": "38c085ad-f76a-471c-8f18-5e1351027682",
+      "title": "Review the design proofs",
+      "listedCards": [
+        {
+          "id": "38c085ad-f76a-471c-8f18-5e1351027682",
+          "title": "Review the design proofs"
+        }
+      ]
+    }
+  ],
+  "queuePage": {
+    "initialCard": "f47f8056-c409-41fd-80c2-602b879983b4",
+    "initialOption": "prepare",
+    "initialTarget": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "initialParts": [
+      {
+        "type": "text",
+        "text": "Draft Schedule a dispatch"
+      },
+      {
+        "type": "chat_thread",
+        "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "titleSnapshot": "Dispatch archive"
+      }
+    ],
+    "consumeStatus": "consumed",
+    "decodedTarget": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "decodedParts": [
+      {
+        "type": "text",
+        "text": "Draft Schedule a dispatch"
+      },
+      {
+        "type": "chat_thread",
+        "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "titleSnapshot": "Dispatch archive"
+      }
+    ],
+    "event": "63d9ab62-f57f-4725-9eee-e386c675dacd",
+    "acceptedThread": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "page": "/chats/747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "sentConfirmation": false
+  },
+  "amendedOptionPage": {
+    "initialCard": "ee2a3f98-73ec-4104-813f-e0b960ab4b31",
+    "initialOption": "prepare",
+    "initialTarget": null,
+    "initialParts": [
+      {
+        "type": "text",
+        "text": "Draft Confirm the Baltic crossing"
+      },
+      {
+        "type": "chat_thread",
+        "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "titleSnapshot": "Dispatch archive"
+      }
+    ],
+    "consumeStatus": "consumed",
+    "decodedTarget": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "decodedParts": [
+      {
+        "type": "text",
+        "text": "Divert the shipment to Oslo"
+      }
+    ],
+    "event": "91c4529b-7e91-4343-ba85-fd2886ee692c",
+    "acceptedThread": "c7582228-e532-4704-9834-129947874a59",
+    "page": "/for-you",
+    "sentConfirmation": true
+  },
+  "authenticatedHistory": {
+    "runningThread": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "runningRun": "481dfe79-8e62-4557-84de-98583346b453",
+    "reference": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+    "approvals": [
+      {
+        "kind": "queue",
+        "card": "f47f8056-c409-41fd-80c2-602b879983b4",
+        "target": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Draft Schedule a dispatch"
+          },
+          {
+            "type": "chat_thread",
+            "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+            "titleSnapshot": "Dispatch archive"
+          }
+        ],
+        "status": 200
+      },
+      {
+        "kind": "amend",
+        "card": "ee2a3f98-73ec-4104-813f-e0b960ab4b31",
+        "target": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "parts": [
+          {
+            "type": "text",
+            "text": "Divert the shipment to Oslo"
+          }
+        ],
+        "status": 200
+      }
+    ],
+    "sends": [
+      {
+        "kind": "queue",
+        "requestEvent": "63d9ab62-f57f-4725-9eee-e386c675dacd",
+        "thread": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+        "status": 201,
+        "event": {
+          "id": "63d9ab62-f57f-4725-9eee-e386c675dacd",
+          "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+          "content": null,
+          "seqId": 3,
+          "sequenceNumber": null,
+          "createdAt": "2026-11-24T03:44:38.140Z",
+          "eventType": "input.prompt",
+          "userMessage": {
+            "version": 1,
+            "parts": [
+              {
+                "type": "text",
+                "text": "Draft Schedule a dispatch"
+              },
+              {
+                "type": "chat_thread",
+                "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+                "titleSnapshot": "Dispatch archive"
+              }
+            ]
+          }
+        },
+        "afterConsume": {
+          "event": "63d9ab62-f57f-4725-9eee-e386c675dacd",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Draft Schedule a dispatch"
+            },
+            {
+              "type": "chat_thread",
+              "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+              "titleSnapshot": "Dispatch archive"
+            }
+          ],
+          "claimed": false,
+          "existingRunInTarget": true,
+          "presentInAlternate": true,
+          "createdHere": false
+        }
+      },
+      {
+        "kind": "amend",
+        "requestEvent": "91c4529b-7e91-4343-ba85-fd2886ee692c",
+        "thread": "c7582228-e532-4704-9834-129947874a59",
+        "status": 201,
+        "event": {
+          "id": "91c4529b-7e91-4343-ba85-fd2886ee692c",
+          "threadId": "c7582228-e532-4704-9834-129947874a59",
+          "content": null,
+          "seqId": 1,
+          "sequenceNumber": null,
+          "createdAt": "2026-11-24T03:44:38.507Z",
+          "eventType": "input.prompt",
+          "userMessage": {
+            "version": 1,
+            "parts": [
+              {
+                "type": "text",
+                "text": "Draft Confirm the Baltic crossing"
+              },
+              {
+                "type": "chat_thread",
+                "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+                "titleSnapshot": "Dispatch archive"
+              }
+            ]
+          }
+        },
+        "afterConsume": {
+          "event": "91c4529b-7e91-4343-ba85-fd2886ee692c",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Draft Confirm the Baltic crossing"
+            },
+            {
+              "type": "chat_thread",
+              "threadId": "747bd14e-968f-47a4-95a0-49d0fa46a6c7",
+              "titleSnapshot": "Dispatch archive"
+            }
+          ],
+          "claimed": true,
+          "existingRunInTarget": false,
+          "presentInAlternate": false,
+          "createdHere": true
+        }
+      }
+    ],
+    "created": [
+      {
+        "id": "c7582228-e532-4704-9834-129947874a59",
+        "title": "Confirm the Baltic crossing",
+        "createdAt": "2026-11-24T03:44:38.484Z",
+        "selectedModel": "auto",
+        "serviceTier": null
+      }
+    ]
+  }
+}

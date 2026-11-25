@@ -59,6 +59,10 @@ import {
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import { presentationOutputFormat$ } from "./presentation-output-format.ts";
+import {
+  createPresentationFormatSetupSignals,
+  type PresentationFormatSetupSignals,
+} from "./composer-presentation-format-setup.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -213,6 +217,7 @@ interface ComposerComputerSignals {
 }
 
 interface ComposerSubmissionSignals {
+  readonly presentationFormatSetup: PresentationFormatSetupSignals;
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
@@ -1126,13 +1131,18 @@ function createComposerSubmissionSignals(
     workflowComposer,
     voiceState$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput({
-    options,
-    workflowComposer,
-    voice,
-    create,
-    taskChips,
+  const presentationFormatSetup = createPresentationFormatSetupSignals({
+    task$: taskChips.task$,
+    primaryAction$,
+    submitCurrentInput$: createSubmitCurrentInput({
+      options,
+      workflowComposer,
+      voice,
+      create,
+      taskChips,
+    }),
   });
+  const submitCurrentInput$ = presentationFormatSetup.submit$;
   const activatePrimaryAction$ = command(
     async (
       { get, set },
@@ -1155,6 +1165,7 @@ function createComposerSubmissionSignals(
   );
 
   return {
+    presentationFormatSetup,
     hasCurrentInvocation$,
     primaryAction$,
     submitCurrentInput$,

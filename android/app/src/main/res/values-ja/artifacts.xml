@@ -28,6 +28,7 @@
     <string name="artifact_empty">成果物はまだありません</string>
     <string name="artifact_empty_type">この種類の成果物はありません</string>
     <string name="artifact_no_matches">一致する成果物がありません</string>
+    <string name="artifact_clear_keyword">検索をクリア</string>
     <string name="artifact_show_all">すべて表示</string>
     <string name="artifact_catalog_load_failed">現在は成果物を読み込めません</string>
     <string name="artifact_catalog_refresh_failed">現在は更新できません。読み込み済みの成果物を表示しています。</string>
@@ -49,6 +50,7 @@
     <string name="artifact_open_website">ブラウザで開く</string>
     <string name="artifact_browser_unavailable">ブラウザを開けませんでした</string>
     <string name="artifact_play_media">メディア再生</string>
+    <string name="artifact_play">再生</string>
     <string name="artifact_catalog_access_denied">この成果物カタログにアクセスする権限がありません</string>
     <string name="artifact_catalog_missing">この成果物カタログは利用できなくなりました</string>
     <string name="chat_resources_related">関連するチャット</string>

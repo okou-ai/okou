@@ -8,6 +8,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "antigravity-personal-subscription",
+    contracts: ["antigravityPersonalSubscriptionContract"],
+    bindings: [],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
     bindings: [

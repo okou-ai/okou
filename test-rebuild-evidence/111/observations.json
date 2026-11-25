@@ -1,0 +1,1155 @@
+{
+  "scheduledCommandInProductionChromium": {
+    "vitest": false,
+    "history": [
+      {
+        "word": "new",
+        "ms": 29.5
+      }
+    ],
+    "discarded": "AbortError",
+    "latest": "newnew",
+    "beforeRelease": [
+      "first"
+    ],
+    "results": [
+      "first",
+      "latestlatest",
+      "latestlatest"
+    ],
+    "at200": 205.5,
+    "at600": 600.3999999994412,
+    "output": [
+      {
+        "label": "first",
+        "ms": 0.39999999944120646
+      },
+      {
+        "label": "latest",
+        "ms": 1001.0999999996275
+      }
+    ]
+  },
+  "indicator426": [
+    {
+      "label": "Registered pages; initial indicator response admitted",
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 22
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 22
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": null,
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "attach",
+          "status": null,
+          "mode": "ready",
+          "observed": 3
+        },
+        {
+          "operation": "settled",
+          "window": "attach",
+          "status": 200,
+          "mode": "ready",
+          "observed": 3
+        }
+      ]
+    },
+    {
+      "label": "Indicator held",
+      "dialog": false,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        }
+      ],
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 1
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 1
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": "held426",
+          "observed": 1
+        }
+      ]
+    },
+    {
+      "label": "Receiver delivered 426",
+      "dialog": true,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        },
+        {
+          "alias": "A",
+          "name": "ApiError",
+          "type": "ApiError",
+          "status": 426,
+          "code": "REQUEST_FAILED",
+          "aggregate": false,
+          "tagged": true,
+          "port": true
+        }
+      ],
+      "receiverCounts": []
+    }
+  ],
+  "indicator426Repeat": [
+    {
+      "label": "Registered pages; initial indicator response admitted",
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 22
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 22
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": null,
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "attach",
+          "status": null,
+          "mode": "ready",
+          "observed": 3
+        },
+        {
+          "operation": "settled",
+          "window": "attach",
+          "status": 200,
+          "mode": "ready",
+          "observed": 3
+        }
+      ]
+    },
+    {
+      "label": "Indicator held",
+      "dialog": false,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        }
+      ],
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 1
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 1
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": "held426",
+          "observed": 1
+        }
+      ]
+    },
+    {
+      "label": "Receiver delivered 426",
+      "dialog": true,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        },
+        {
+          "alias": "A",
+          "name": "ApiError",
+          "type": "ApiError",
+          "status": 426,
+          "code": "REQUEST_FAILED",
+          "aggregate": false,
+          "tagged": true,
+          "port": true
+        }
+      ],
+      "receiverCounts": []
+    }
+  ],
+  "twoWindowsAndRegistration": [
+    {
+      "label": "Registered pages; initial indicator response admitted",
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 24
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 24
+        },
+        {
+          "operation": "asked",
+          "window": "attach",
+          "status": null,
+          "mode": "ready",
+          "observed": 3
+        },
+        {
+          "operation": "settled",
+          "window": "attach",
+          "status": 200,
+          "mode": "ready",
+          "observed": 3
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": null,
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "B",
+          "status": null,
+          "mode": "ready",
+          "observed": 14
+        },
+        {
+          "operation": "settled",
+          "window": "B",
+          "status": 200,
+          "mode": "ready",
+          "observed": 14
+        }
+      ]
+    },
+    {
+      "label": "First provider failed; second held",
+      "found": true,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        },
+        {
+          "alias": "B",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        }
+      ],
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "B",
+          "status": null,
+          "mode": "hold-fail",
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "fail",
+          "observed": 7
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 503,
+          "mode": "fail",
+          "observed": 7
+        }
+      ],
+      "ports": {
+        "A": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            15,
+            17,
+            19
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            }
+          ],
+          "errorNames": []
+        },
+        "B": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            10
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            }
+          ],
+          "errorNames": []
+        }
+      }
+    },
+    {
+      "label": "Second failure released",
+      "done": true,
+      "errors": [
+        {
+          "alias": "A",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        },
+        {
+          "alias": "B",
+          "name": "TypeError",
+          "type": "TypeError",
+          "aggregate": false,
+          "tagged": false,
+          "port": false
+        }
+      ],
+      "receiverCounts": [
+        {
+          "operation": "settled",
+          "window": "B",
+          "status": 503,
+          "mode": "hold-fail",
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "B",
+          "status": null,
+          "mode": "hold-fail",
+          "observed": 1
+        },
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "fail",
+          "observed": 1
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 503,
+          "mode": "fail",
+          "observed": 1
+        }
+      ],
+      "ports": {
+        "A": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            15,
+            17,
+            19,
+            23
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            }
+          ],
+          "errorNames": []
+        },
+        "B": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            10,
+            12,
+            14,
+            18
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            }
+          ],
+          "errorNames": []
+        }
+      }
+    },
+    {
+      "label": "Healthy publication",
+      "recovered": true,
+      "receiverCounts": [
+        {
+          "operation": "asked",
+          "window": "A",
+          "status": null,
+          "mode": "ready",
+          "observed": 2
+        },
+        {
+          "operation": "settled",
+          "window": "A",
+          "status": 200,
+          "mode": "ready",
+          "observed": 2
+        },
+        {
+          "operation": "indicators",
+          "window": "A",
+          "status": null,
+          "mode": null,
+          "observed": 2
+        }
+      ],
+      "ports": {
+        "A": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            15,
+            17,
+            19,
+            23,
+            28,
+            30,
+            31,
+            33
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            },
+            {
+              "t": "result",
+              "i": 28
+            },
+            {
+              "t": "result",
+              "i": 30
+            },
+            {
+              "t": "result",
+              "i": 31
+            },
+            {
+              "t": "result",
+              "i": 33
+            }
+          ],
+          "errorNames": []
+        },
+        "B": {
+          "firstOperations": [
+            {
+              "t": "register-tab",
+              "i": null
+            },
+            {
+              "t": "query",
+              "i": 1,
+              "key": {
+                "kind": "chat-thread-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 2,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "query",
+              "i": 3,
+              "key": {
+                "kind": "project-event"
+              }
+            },
+            {
+              "t": "get-computed",
+              "i": 4,
+              "key": "chat-thread-indicators"
+            }
+          ],
+          "indicatorReadAliases": [
+            4,
+            10,
+            12,
+            14,
+            18,
+            23,
+            25,
+            26,
+            28
+          ],
+          "matchingOutcomes": [
+            {
+              "t": "result",
+              "i": 4
+            },
+            {
+              "t": "result",
+              "i": 23
+            },
+            {
+              "t": "result",
+              "i": 25
+            },
+            {
+              "t": "result",
+              "i": 26
+            },
+            {
+              "t": "result",
+              "i": 28
+            }
+          ],
+          "errorNames": []
+        }
+      }
+    }
+  ],
+  "005": {
+    "stages": [
+      {
+        "label": "first Router",
+        "path": "dashboard",
+        "markers": [],
+        "reads": []
+      },
+      {
+        "label": "second Router",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": false
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          }
+        ]
+      }
+    ],
+    "provider": [
+      {
+        "op": "token-http",
+        "status": 500
+      },
+      {
+        "op": "auth-result",
+        "client": "26add6c8-a9e2-4720-91c9-41a9d407c9a7",
+        "realm": "SharedWorkerGlobalScope",
+        "name": "failed",
+        "topic": ""
+      },
+      {
+        "op": "detail",
+        "status": 200
+      }
+    ],
+    "subscriptions": {
+      "attach": 3,
+      "subscribe": 24
+    }
+  },
+  "pending006": {
+    "stages": [
+      {
+        "label": "waiting at external attach",
+        "path": "dashboard",
+        "markers": [],
+        "reads": []
+      }
+    ],
+    "provider": [
+      {
+        "op": "connection-close",
+        "client": "bdcced4d-7697-46c0-a18b-ff0227dbfe06"
+      }
+    ],
+    "subscriptions": {
+      "attach": 3,
+      "connection-close": 1
+    }
+  },
+  "pending010": {
+    "stages": [
+      {
+        "label": "waiting at external attach",
+        "path": "dashboard",
+        "markers": [],
+        "reads": []
+      },
+      {
+        "label": "after failure",
+        "path": "dashboard",
+        "markers": [],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ]
+      }
+    ],
+    "provider": [
+      {
+        "op": "channel-state",
+        "client": "fac9cd27-1ffe-4290-9f1b-cdfd5929daf2",
+        "realm": "SharedWorkerGlobalScope",
+        "name": "failed",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "client": "fac9cd27-1ffe-4290-9f1b-cdfd5929daf2",
+        "realm": "SharedWorkerGlobalScope",
+        "name": "failed",
+        "topic": ""
+      }
+    ],
+    "subscriptions": {
+      "attach": 3,
+      "subscribe": 18,
+      "unsubscribe": 18
+    }
+  },
+  "020": {
+    "stages": [
+      {
+        "label": "initial",
+        "path": "same thread",
+        "markers": [
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          },
+          {
+            "op": "detail",
+            "status": 500,
+            "pending": false
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          },
+          {
+            "op": "automations",
+            "status": 200,
+            "version": "cedar",
+            "alias": "A"
+          }
+        ]
+      },
+      {
+        "label": "publication withheld",
+        "path": "same thread",
+        "markers": [
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": []
+      },
+      {
+        "label": "chatThreadAutomationsChanged:b0000000-0000-4000-a000-000000000081",
+        "path": "same thread",
+        "markers": [
+          "Maple schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "automations",
+            "status": 200,
+            "version": "maple",
+            "alias": "A"
+          }
+        ]
+      }
+    ],
+    "provider": [
+      {
+        "op": "detail",
+        "status": 500
+      },
+      {
+        "op": "automations",
+        "alias": "A",
+        "status": 200
+      },
+      {
+        "op": "published",
+        "client": "7a4fd9c8-30ac-4161-84b8-2a8fa8556437",
+        "realm": "SharedWorkerGlobalScope",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "delivery-1",
+        "client": "7a4fd9c8-30ac-4161-84b8-2a8fa8556437",
+        "realm": "SharedWorkerGlobalScope",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "automations",
+        "alias": "A",
+        "status": 200
+      }
+    ],
+    "subscriptions": {
+      "attach": 3,
+      "subscribe": 23
+    }
+  },
+  "indexeddbWriteControl": {
+    "stages": [
+      {
+        "label": "both signed-in dashboards with snapshot titles",
+        "index": 190,
+        "path": "/",
+        "visible": [
+          "Side survey",
+          "Primary survey",
+          "Find people"
+        ],
+        "network": [
+          [
+            "/api/user-preferences",
+            409
+          ],
+          [
+            "/api/user-model-preference",
+            200
+          ],
+          [
+            "/api/user-preferences/initialize",
+            200
+          ]
+        ]
+      },
+      {
+        "label": "seed batch with primary baseline and empty side",
+        "index": 241
+      },
+      {
+        "label": "primary 42 to 43 plus unchanged side",
+        "index": 279
+      },
+      {
+        "label": "A closed before B offline first selection",
+        "index": 279,
+        "closed": true
+      },
+      {
+        "label": "first offline read",
+        "index": 297,
+        "path": "/chats/THREAD",
+        "visible": [
+          "Side survey",
+          "Primary survey",
+          "Side survey"
+        ],
+        "network": [
+          [
+            "/api/user-preferences",
+            409
+          ],
+          [
+            "/api/user-model-preference",
+            200
+          ],
+          [
+            "/api/user-preferences/initialize",
+            200
+          ]
+        ]
+      },
+      {
+        "label": "offline changed thread",
+        "index": 310,
+        "shown": true
+      }
+    ],
+    "telemetry": [
+      {
+        "op": "telemetry",
+        "runtime": "window",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "A",
+        "name": "voice_drafts.get.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_thread_snapshot.get+chat_thread_events.get_all_by_seq.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "project_snapshot.get+project_events.get_all_by_seq.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "project_events.clear+put_many+project_snapshot.put.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_thread_events.clear+put_many+chat_thread_snapshot.put.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "window",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "B",
+        "name": "voice_drafts.get.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_cursor.get_many.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_rows.put_many+chat_event_cursor.put_many.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "count": 43,
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_rows.put_many+chat_event_cursor.put_many"
+      },
+      {
+        "op": "telemetry",
+        "count": 2,
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_rows.put_many+chat_event_cursor.put_many"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_cursor.get+chat_event_rows.get_all_by_order.transaction.create"
+      },
+      {
+        "op": "telemetry",
+        "runtime": "shared_worker",
+        "duration": true,
+        "privateValue": false,
+        "outcome": "success",
+        "alias": "worker",
+        "name": "chat_event_cursor.get.transaction.create"
+      }
+    ],
+    "missing": "Same-transaction get and its returned value."
+  }
+}

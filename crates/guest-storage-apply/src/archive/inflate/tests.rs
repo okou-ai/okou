@@ -2,6 +2,7 @@ use super::*;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
+use std::io::Seek;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tempfile::TempDir;
 
@@ -20,7 +21,39 @@ fn extract(dir: &TempDir, bytes: &[u8]) -> (Result<(), DownloadError>, Duration)
     let source = dir.path().join("archive.tar.gz");
     fs::write(&source, bytes).unwrap();
     let mut file = File::open(source).unwrap();
-    try_extract(&mut file, dir.path()).expect("the test inflater starts")
+    try_extract(&mut file, dir.path(), 1).expect("the test inflater starts")
+}
+
+#[test]
+fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("archive.tar.gz");
+    let content = [b'a'; 16 * 1024];
+
+    for (file_count, large_file, expected) in
+        [(16, None, true), (15, None, false), (16, Some(4), false)]
+    {
+        let encoder = GzEncoder::new(File::create(&source).unwrap(), Compression::none());
+        let mut archive = tar::Builder::new(encoder);
+        for index in 0..file_count {
+            let size = if large_file == Some(index) {
+                content.len()
+            } else {
+                128
+            };
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_size(size as u64);
+            archive
+                .append_data(&mut header, format!("file-{index}"), &content[..size])
+                .unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap();
+
+        let mut file = File::open(&source).unwrap();
+        assert_eq!(has_small_file_prefix(&file), expected);
+        assert_eq!(file.stream_position().unwrap(), 0);
+    }
 }
 
 #[test]

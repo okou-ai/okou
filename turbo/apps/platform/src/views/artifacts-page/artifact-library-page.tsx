@@ -344,7 +344,7 @@ function ArtifactLibraryRow({
           event.stopPropagation();
         }}
       >
-        <ArtifactCatalogRowActions artifactId={artifact.id} />
+        <ArtifactCatalogRowActions artifact={artifact} />
       </TableCell>
     </TableRow>
   );

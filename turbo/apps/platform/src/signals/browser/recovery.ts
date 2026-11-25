@@ -275,7 +275,7 @@ function waitForRetry(interval: number, signal: AbortSignal): Promise<void> {
     },
     1000,
     signal,
-    { testIntervalMs: 10 },
+    { testIntervalMs: 0 },
   );
 }
 
@@ -398,7 +398,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         },
         1000,
         signal,
-        { testIntervalMs: 10 },
+        { testIntervalMs: 0 },
       );
       for (const [index, interval] of [1000, 2000, 4000].entries()) {
         set(assertCurrent$, operation, signal);

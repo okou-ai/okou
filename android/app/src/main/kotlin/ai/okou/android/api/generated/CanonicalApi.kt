@@ -438,6 +438,13 @@ internal interface CanonicalApi {
         @Body body: SendRequest,
     ): Response<AcceptedInput>
 
+    @POST("/api/chat-threads/{id}/activity-summary")
+    suspend fun `summarizeRunActivity`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RunActivityRequest,
+    ): Response<RunActivitySummary>
+
     @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
     suspend fun `inputStatus`(
         @Header("Authorization") token: String,
@@ -596,12 +603,24 @@ internal interface CanonicalApi {
         @Body body: RenameThreadRequest,
     ): Response<Unit>
 
+    @POST("/api/projects")
+    suspend fun `createProject`(
+        @Header("Authorization") token: String,
+        @Body body: CreateProjectRequest,
+    ): Response<ProjectRecord>
+
+    @GET("/api/projects/{id}")
+    suspend fun `projectDetail`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ProjectRecord>
+
     @PATCH("/api/projects/{id}")
     suspend fun `renameProject`(
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
         @Body body: RenameProjectRequest,
-    ): Response<RenamedProject>
+    ): Response<ProjectRecord>
 
     @PUT("/api/chat-threads/{id}/project")
     suspend fun `moveThreadToProject`(
