@@ -10,7 +10,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  projectMenuItem,
   project,
   projectEditor,
   chooseProject,
@@ -32,10 +31,12 @@ async function confirmSent(
   projectId: string | null,
   message: string,
 ) {
-  const send = await waitFor(async () => {
-    const btn = await findFastControl("button", "Send");
-    expect(btn).toBeEnabled();
-    return btn;
+  const send = await waitFor(() => {
+    const button = screen.getByLabelText("Send", {
+      selector: '[data-slot="chat-composer-card"] button',
+    });
+    expect(button).toBeEnabled();
+    return button;
   });
   click(send);
   const posted = await workspace.created;
@@ -44,7 +45,11 @@ async function confirmSent(
   await waitFor(() => {
     return expect(location.pathname).toBe("/chats/" + posted.id);
   });
-  await expect(screen.findByText(message)).resolves.toBeVisible();
+  await expect(
+    screen.findByText(message, {
+      selector: '[data-message-container] [data-role="user"] *',
+    }),
+  ).resolves.toBeVisible();
 }
 test("projects-043 The composer preserves its message while changing from Launch to Campaign and sends to Campaign", async () => {
   const launch = project("Launch"),
@@ -55,9 +60,10 @@ test("projects-043 The composer preserves its message while changing from Launch
   await chooseProject(launch.name);
   await screen.findByLabelText("Remove Launch");
   await clickComposerAddMenuItem("Project");
-  const current = await projectMenuItem("Launch");
+  const menu = within(await screen.findByRole("menu", { name: "Project" }));
+  const current = menu.getByText("Launch").closest('[role="menuitem"]');
   expect(current).toHaveAttribute("aria-disabled", "true");
-  click(await projectMenuItem("Campaign"));
+  click(menu.getByText("Campaign"));
   await screen.findByLabelText("Remove Campaign");
   await expect(findComposerEditor()).resolves.toHaveTextContent(text);
   await confirmSent(ws, campaign.id, text);
