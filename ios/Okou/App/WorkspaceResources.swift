@@ -162,6 +162,9 @@ final class WorkspaceResources {
     return try await featureSnapshot.available(whileRefreshing: store.get(features.value))
   }
 
+  /// The shared model catalog read, for views that resolve model names.
+  var catalogValue: Computed<Task<ModelCatalog, Error>> { catalog.value }
+
   func loadCatalog() throws -> Task<ModelCatalog, Error> {
     try catalog.retryFailed(in: store)
     return try store.get(catalog.value)
