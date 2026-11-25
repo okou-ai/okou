@@ -5,8 +5,6 @@ import {
   runsQueueContract,
 } from "@okouai/api-contracts/contracts/run-routes";
 import { runWssContract } from "@okouai/api-contracts/contracts/run-wss";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -19,7 +17,6 @@ import {
   agentRunRunner,
   organizationTier,
 } from "../services/agent-runs.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { bootstrapRunWss$ } from "../services/run-wss.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -77,15 +74,6 @@ const bootstrapWss$ = authRoute(
   { ...runReadAuth, accept: ["session", "pat"] },
   command(async ({ get, set }, signal: AbortSignal) => {
     const { orgId, userId } = get(organizationAuthContext$);
-    const featureContext = await set(
-      loadUserFeatureSwitchContext$,
-      orgId,
-      userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.RunWss, featureContext)) {
-      return notFound("Run WebSocket unavailable");
-    }
     const { id: runId } = get(bootstrapWssParams$);
     return await set(bootstrapRunWss$, { runId, orgId, userId }, signal);
   }),

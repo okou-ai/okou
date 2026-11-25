@@ -61,8 +61,8 @@ API returns `wssUrl`, `ticket` and `expiresAt`. Connect to `wssUrl` and send
 consumes the 30-second, one-use ticket and replies `{"type":"auth.ok"}`. The
 admission deadline is five seconds. Established channels support WebSocket
 Ping/Pong and close when the local Run ends or is cancelled. Reconnecting
-requires a new bootstrap. The `_runWss` feature switch gates bootstrap. During
-rollout, older Runners return unavailable when asked to issue a ticket.
+requires a new bootstrap. During rollout, bootstrap returns unavailable for
+Runs assigned to older Runners that lack the ticket endpoint.
 
 `playbooks/provision-runner.yml` is the shared host-dependency entry point used
 by Runner build/release/preview provisioning. Its cache covers the complete

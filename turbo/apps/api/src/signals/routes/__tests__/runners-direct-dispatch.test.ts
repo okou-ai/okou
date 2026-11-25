@@ -17,9 +17,7 @@ import { cronCleanupSandboxesContract } from "@okouai/api-contracts/contracts/cr
 import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import { env } from "../../../lib/env";
 import { runWssContract } from "@okouai/api-contracts/contracts/run-wss";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runsRoutes } from "../runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -108,23 +106,8 @@ test("bootstraps a WebSocket only for the Run owner and uses the assigned Runner
     });
   }
   const outsider = bdd.user({ orgId });
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId, userId: outsider.userId },
-    {
-      [FeatureSwitchKey.RunWss]: true,
-    },
-  );
   await accept(bootstrap(outsider), [404]);
-  await accept(bootstrap(f.actor), [404]);
 
-  await updateFeatureSwitchesForUser(
-    context,
-    { orgId, userId: f.actor.userId },
-    {
-      [FeatureSwitchKey.RunWss]: true,
-    },
-  );
   const ticket = {
     ticket: "A".repeat(43),
     expiresAt: new Date(now() + 30_000).toISOString(),
