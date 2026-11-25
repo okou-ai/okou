@@ -238,10 +238,11 @@ final class WorkspaceStore {
   private(set) var selectedConversation: ConversationStore?
 
   /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
-  /// from its own composer, so leaving a chat marks it at once; others use the API's list.
-  func hasDraft(_ threadID: String) -> Bool {
+  /// from its own composer, so leaving a chat marks it at once; others use the API's list. A
+  /// view passes the list it resolved from `listedDraftIDs`.
+  func hasDraft(_ threadID: String, listed: Set<String>? = nil) -> Bool {
     if let composer = residentComposer(threadID) { return composer.hasContent }
-    return hasListedDraft(threadID)
+    return (listed ?? sidebarDrafts.threadIDs).contains(threadID)
   }
 
   /// The composer of a chat held in memory. Views read its `unsentContent` from the session graph.
@@ -255,6 +256,9 @@ final class WorkspaceStore {
 
   /// Whether the API's list marks a chat that is not held in memory as having a draft.
   func hasListedDraft(_ threadID: String) -> Bool { sidebarDrafts.threadIDs.contains(threadID) }
+
+  /// The chats the API's list marks as having a draft, kept in the workspace session's Store.
+  var listedDraftIDs: Computed<Set<String>> { sidebarDrafts.threadIDsValue }
 
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }

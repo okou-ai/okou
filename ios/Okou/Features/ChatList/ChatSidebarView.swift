@@ -610,11 +610,21 @@ private struct ChatSidebarThreadLabel: View {
   let row: ChatSidebarPresentation.Row
   let workspace: WorkspaceStore
   let showsStatusColumn: Bool
+  /// The API's draft list, kept in the workspace session's Store.
+  @ResolvedValue private var listedDrafts: Set<String>?
+
+  init(row: ChatSidebarPresentation.Row, workspace: WorkspaceStore, showsStatusColumn: Bool) {
+    self.row = row
+    self.workspace = workspace
+    self.showsStatusColumn = showsStatusColumn
+    _listedDrafts = ResolvedValue(workspace.listedDraftIDs)
+  }
 
   var body: some View {
     ChatSidebarThreadStates(
       row: row, composer: workspace.residentComposer(row.id),
-      listedDraft: workspace.hasListedDraft(row.id), showsStatusColumn: showsStatusColumn
+      listedDraft: listedDrafts?.contains(row.id) ?? workspace.hasListedDraft(row.id),
+      showsStatusColumn: showsStatusColumn
     )
     .task { await workspace.activateDrafts() }
   }
