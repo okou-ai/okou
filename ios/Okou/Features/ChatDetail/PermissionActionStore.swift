@@ -208,6 +208,8 @@ final class PermissionActionStore {
           if continuationUncertain {
             try await commands.permissions.validateContext(action)
             let history = try await sync.eventHistory(threadID: action.threadID)
+            try Task.checkCancellation()
+            guard !closed, self.generation == generation else { return }
             delivered = history.persistedEventIDs.contains(clientEventID)
           }
           if !delivered {

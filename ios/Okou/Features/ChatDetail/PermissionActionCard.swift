@@ -314,7 +314,8 @@ private struct PermissionActionDetailsContent: View {
         .buttonStyle(OkouButtonStyle(isPrimary: true))
         .disabled(
           !current.canConfirm(store.action, reviewing: snapshot) || isLoading
-            || phase.error != nil)
+            || phase.error != nil
+        )
         .accessibilityIdentifier("permission-confirm")
         if store.action.callbackPrompt != nil {
           Text("The chat will continue after confirmation.")
