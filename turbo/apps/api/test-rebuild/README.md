@@ -8,6 +8,8 @@ Vitest collected 599 files and 7,453 cases. All 7,453 are in run mode, with zero
 
 The local collection used Node 26.13.1, the frozen pnpm lockfile, and a disposable, migrated PostgreSQL 19 database with pgvector and UTC. The file scope includes `scripts/register-discord-commands.test.mjs` and lists the five standalone `scripts/*.node-test.mjs` files as exclusions. The Vitest wrapper for the native Runner transport probe is in scope.
 
+The current checkpoint has 1,226 written, 273 marked for review, and 5,954 missing cases across 329 remaining files.
+
 ## Verify the baseline
 
 Copy the checkpoint collector to the same path in the frozen checkout and install the locked dependencies. Set `DATABASE_URL` to the migrated disposable database. Run runtime collection with `CI=1 node turbo/apps/api/test-rebuild/collect.mjs /tmp/api-baseline.json`. The collector uses the same Vitest API project as the eight CI shards and collects the unsharded union.
@@ -160,3 +162,10 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `computer-use-command-create-002` | Followed the create helper to verify the distinct no-host, unsupported, ambiguous and stale host responses. |
 | `chat-events-admission-004` | The prohibited annotation returns 400 even when its ID matches a previously accepted event. |
 | `chat-events-admission-009` | Enqueue 201 is distinct from asynchronous insufficient-credits rejection, branded guidance and zero active concurrency. |
+| `connector-accounts-006` | The source accepts the bounded list of 256 and rejects 257. |
+| `connector-accounts-017` | An off-page default is returned separately without replacing the first row. |
+| `connector-accounts-023` | MCP edits advance the storage version while the unchanged HTTP path does not. |
+
+## Deletion scope to verify after reconciliation
+
+In addition to the 599 baseline entry files, inspect the importers of the registration modules before the deletion commit. Current candidates are `feishu-integration.cases.ts`, `run-lifecycle.bdd.cases.ts`, `system-storage-presigned-url-cache.suite.ts`, and `content-bundle-presigned-url-cache.suite.ts` under the API route tests. Shared setup, mocks, fixtures, reusable helpers and CI configuration remain outside the deletion scope.
