@@ -25,7 +25,12 @@ final class MessageTimeTests: XCTestCase {
       let expected = Date.FormatStyle(locale: locale, timeZone: timeZone)
         .year().month(.abbreviated).day().hour().minute(.twoDigits).second(.twoDigits).timeZone(
           .specificName(.short))
-      XCTAssertEqual(String(rendered.characters), "下次检查：\(instant.formatted(expected))。")
+      XCTAssertEqual(
+        String(rendered.characters), "下次检查：\(instant.formatted(expected))。",
+        String(
+          describing: try? AttributedString(
+            markdown: source, options: .init(appliesSourcePositionAttributes: true), baseURL: link))
+      )
       let linked = try XCTUnwrap(rendered.runs.first { $0.link == link })
       XCTAssertEqual(String(rendered[linked.range].characters), instant.formatted(expected))
       XCTAssertEqual(linked.inlinePresentationIntent?.contains(.stronglyEmphasized), true)

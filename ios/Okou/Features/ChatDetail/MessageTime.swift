@@ -2,18 +2,35 @@ import Foundation
 
 /// The cache retains the instant. The native text renderer formats it for the reading device.
 enum MessageTime: AttributedStringKey {
-  typealias Value = Date
+  struct Value: Hashable, Sendable {
+    let date: Date
+    // Adjacent equal instants are still two elements when Foundation coalesces runs.
+    let element: Int
+  }
+
   static let name = "ai.okou.message-time"
 
-  static func recognizingElements(in content: AttributedString) -> AttributedString {
+  static func recognizingElements(in content: AttributedString, source: String) -> AttributedString
+  {
     var opening: (run: AttributedString.Runs.Run, date: Date?)?
     var result = AttributedString()
     var cursor = content.startIndex
 
-    // Source positions keep adjacent HTML nodes distinct. Code and escaped tags are plain
-    // Markdown content and never enter this loop.
-    for run in content.runs where run.inlinePresentationIntent?.contains(.inlineHTML) == true {
-      let tag = String(content[run.range].characters)
+    for (element, run) in content.runs.enumerated() {
+      let characters = content[run.range].characters
+      guard characters.first == "<" else { continue }
+      let tag = String(characters)
+      if run.inlinePresentationIntent?.contains(.inlineHTML) != true {
+        // Foundation can replace the HTML intent with the enclosing emphasis or link.
+        // Recover only a literal source node, never an escape or a code example.
+        guard let position = run.markdownSourcePosition, let range = Range(position, in: source),
+          source[range] == tag, run.inlinePresentationIntent?.contains(.code) != true,
+          run.presentationIntent?.components.contains(where: {
+            if case .codeBlock = $0.kind { return true }
+            return false
+          }) != true
+        else { continue }
+      }
       if tag.prefixMatch(of: #/(?i)<time(?=[\s>])/#) != nil {
         opening = (run, instant(in: tag))
       } else if tag.wholeMatch(of: #/(?i)</time\s*>/#) != nil, let start = opening {
@@ -23,8 +40,10 @@ enum MessageTime: AttributedStringKey {
         if let date = start.date {
           var attributes = start.run.attributes
           attributes.inlinePresentationIntent?.remove(.inlineHTML)
-          attributes[Self.self] = date
-          result.append(AttributedString("\u{fffc}", attributes: attributes))
+          attributes[Self.self] = Value(date: date, element: element)
+          // Artifact titles also read these characters as plain text.
+          let text = date.formatted(format(locale: .current, timeZone: .current))
+          result.append(AttributedString(text, attributes: attributes))
         } else {
           result.append(content[start.run.range.upperBound..<run.range.lowerBound])
         }
@@ -63,16 +82,13 @@ enum MessageTime: AttributedStringKey {
   static func localized(_ content: AttributedString, format: Date.FormatStyle) -> AttributedString {
     var result = AttributedString()
     var cursor = content.startIndex
-    for run in content.runs {
-      guard let date = run[Self.self] else { continue }
-      result.append(content[cursor..<run.range.lowerBound])
-      // Adjacent identical timestamps can coalesce into one attributed run.
-      let text = String(
-        repeating: date.formatted(format), count: content[run.range].characters.count)
-      var attributes = run.attributes
+    for (time, range) in content.runs[Self.self] {
+      guard let time else { continue }
+      result.append(content[cursor..<range.lowerBound])
+      var attributes = content.runs[range.lowerBound].attributes
       attributes[Self.self] = nil
-      result.append(AttributedString(text, attributes: attributes))
-      cursor = run.range.upperBound
+      result.append(AttributedString(time.date.formatted(format), attributes: attributes))
+      cursor = range.upperBound
     }
     guard cursor != content.startIndex else { return content }
     result.append(content[cursor...])

@@ -162,7 +162,7 @@ private actor MarkdownWorker {
         content[run.range].imageURL = url
       }
     }
-    if tracksTimes { content = MessageTime.recognizingElements(in: content) }
+    if tracksTimes { content = MessageTime.recognizingElements(in: content, source: text) }
     if !tracksDiagrams { content.markdownSourcePosition = nil }
     content = content.repairingEmphasizedAutolinks()
     shortenCommitHashes(in: &content)
