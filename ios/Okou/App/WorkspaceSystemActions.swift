@@ -29,10 +29,6 @@ extension WorkspaceStore {
     return true
   }
 
-  var newChatProject: ChatProject? {
-    projects.projects.first { $0.id == newChatProjectID }
-  }
-
   var newChatDraft: String {
     get { newComposer.text }
     set { newComposer.text = newValue }

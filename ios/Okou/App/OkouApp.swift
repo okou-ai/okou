@@ -361,10 +361,7 @@ private struct WorkspaceRootView: View {
     .sheet(
       item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } })
     ) { flow in
-      ChatForkView(
-        flow: flow, webURL: store.webURL, threads: store.list.threads,
-        project: store.projects.projects.first(where: { $0.id == flow.projectID }),
-        needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+      WorkspaceForkSheet(store: store, flow: flow)
     }
     .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
     .composerSuggestionOverlay(
@@ -373,25 +370,8 @@ private struct WorkspaceRootView: View {
   }
 
   @ViewBuilder private var newChatComposer: some View {
-    let composer = store.newComposer
-    ChatComposerView(
-      isBusy: store.isCreating,
-      showsProgress: store.isCreating, canStop: false,
-      needsUpgrade: store.needsUpgrade,
-      error: store.error, attachmentURL: store.webURL,
-      draftState: composer,
-      submit: {
-        await store.sendNewChat(
-          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-        await notifications.requestAfterSend()
-      },
-      refresh: nil,
-      modelSelection: store.newModelSelection,
-      connectorSelection: store.newModelSelection.connectors,
-      mentionSource: ComposerMentionSource(threads: store.list.threads),
-      workflowSource: store.composerWorkflows,
-      project: store.newChatProject,
-      removeProject: store.removeNewChatProject
+    WorkspaceNewChatComposer(
+      store: store, notifications: notifications, reduceMotion: reduceMotion
     )
     .transition(.identity)
   }
@@ -443,6 +423,67 @@ private struct WorkspaceRootView: View {
 
   private func startNewChat() {
     NewChatRequests.shared.request()
+  }
+}
+
+/// The new chat's composer. Its Project is read from the workspace session's graph, so the
+/// composer sits under the workspace's Store provider.
+private struct WorkspaceNewChatComposer: View {
+  let store: WorkspaceStore
+  let notifications: NotificationService
+  let reduceMotion: Bool
+  @ResolvedValue private var projects: [ChatProject]?
+
+  init(store: WorkspaceStore, notifications: NotificationService, reduceMotion: Bool) {
+    self.store = store
+    self.notifications = notifications
+    self.reduceMotion = reduceMotion
+    _projects = ResolvedValue(store.projects.confirmedValue)
+  }
+
+  var body: some View {
+    let composer = store.newComposer
+    ChatComposerView(
+      isBusy: store.isCreating,
+      showsProgress: store.isCreating, canStop: false,
+      needsUpgrade: store.needsUpgrade,
+      error: store.error, attachmentURL: store.webURL,
+      draftState: composer,
+      submit: {
+        await store.sendNewChat(
+          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+        await notifications.requestAfterSend()
+      },
+      refresh: nil,
+      modelSelection: store.newModelSelection,
+      connectorSelection: store.newModelSelection.connectors,
+      mentionSource: ComposerMentionSource(threads: store.list.threads),
+      workflowSource: store.composerWorkflows,
+      project: store.newChatProjectID.flatMap { id in
+        (projects ?? store.projects.projects).first { $0.id == id }
+      },
+      removeProject: store.removeNewChatProject
+    )
+  }
+}
+
+/// The fork sheet. Its Project is read from the workspace session's graph.
+private struct WorkspaceForkSheet: View {
+  let store: WorkspaceStore
+  let flow: ChatForkStore
+  @ResolvedValue private var projects: [ChatProject]?
+
+  init(store: WorkspaceStore, flow: ChatForkStore) {
+    self.store = store
+    self.flow = flow
+    _projects = ResolvedValue(store.projects.confirmedValue)
+  }
+
+  var body: some View {
+    ChatForkView(
+      flow: flow, webURL: store.webURL, threads: store.list.threads,
+      project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
+      needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
   }
 }
 
