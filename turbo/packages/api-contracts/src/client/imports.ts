@@ -484,6 +484,7 @@ export const clientContractImportManifest = [
       "computerUseHostsContract",
       "computerUseSessionHostsContract",
       "computerUseWriteCommandContract",
+      "runnerAppStateContract",
     ],
     bindings: [
       {
@@ -1558,6 +1559,11 @@ export const clientContractImportManifest = [
         imported: "runContextStorageMountSchema",
       },
     ],
+  },
+  {
+    module: "run-wss",
+    contracts: ["runWssContract"],
+    bindings: [],
   },
   {
     module: "runner-ssh",

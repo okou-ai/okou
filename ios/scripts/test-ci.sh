@@ -125,13 +125,6 @@ for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-buil
   commit cache-configuration
   expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_cache"
 done
-for path in .github/workflows/ios-app-review.yml .github/scripts/release/ios-app-review.mjs; do
-  before_review=$(git rev-parse HEAD)
-  mkdir -p "$(dirname "$path")"
-  echo review > "$path"
-  commit review-automation
-  selection=scripts-needed expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_review"
-done
 expect false EVENT_NAME=push PUSH_BEFORE_SHA="$(git rev-parse HEAD)"
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA=missing-ref
 reject EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$pr_head"

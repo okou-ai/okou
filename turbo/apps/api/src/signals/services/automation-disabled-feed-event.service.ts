@@ -1,12 +1,9 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { workflows } from "@okouai/db/schema/workflow";
 import { feedPreferences } from "@okouai/db/schema/feed-preference";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 export interface PreparedAutomationDisabledFeedEvent {
   readonly automationId: string;
@@ -21,7 +18,7 @@ export interface PreparedAutomationDisabledFeedEvent {
 /** Prepare the owner's audience before the owning atomic disable statement. */
 export const prepareAutomationDisabledFeedEvent$ = command(
   async (
-    { get, set },
+    { get },
     automation: typeof workflowAutomations.$inferSelect,
     disabledAt: Date,
     signal?: AbortSignal,
@@ -31,15 +28,6 @@ export const prepareAutomationDisabledFeedEvent$ = command(
       automation.kind !== "schedule" ||
       (automation.scheduleType !== "cron" && automation.scheduleType !== "loop")
     ) {
-      return null;
-    }
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      automation.orgId,
-      automation.ownerUserId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, context)) {
       return null;
     }
     const [workflow] = await get(db$)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.2...guest-agent-v0.113.0) (2026-11-25)
+
+
+### Features
+
+* **runner:** inject personal antigravity oauth credential into the agy sandbox ([#50751](https://github.com/okou-ai/okou/issues/50751)) ([381b7c7](https://github.com/okou-ai/okou/commit/381b7c73486f63133b7ff0385b25f1aeea11e009))
+
 ## [0.112.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.1...guest-agent-v0.112.2) (2026-11-24)
 
 

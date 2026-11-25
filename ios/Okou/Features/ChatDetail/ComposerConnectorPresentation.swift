@@ -28,14 +28,7 @@ private struct ComposerConnectorPresentation: ViewModifier {
       } message: {
         Text(store.authorization.activationError ?? "")
       }
-      .sheet(
-        item: Binding(
-          get: { store.authorization.active },
-          set: { if $0 == nil { store.authorization.cancel() } })
-      ) { flow in
-        ConnectorAuthorizationSheet(flow: flow, store: store.authorization)
-          .okouSheetBackground()
-      }
+      .connectorAuthorization(store: store.authorization)
       .sheet(
         item: Binding(get: { store.webDestination }, set: { store.webDestination = $0 }),
         onDismiss: { Task { await store.refresh() } },

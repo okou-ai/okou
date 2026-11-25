@@ -8,6 +8,7 @@ import {
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
 import { initPostHog } from "../../../lib/posthog.ts";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
   click,
@@ -20,12 +21,6 @@ import {
   billingPlanCapabilities,
   defaultBillingStatus,
 } from "../../../mocks/handlers/api-billing.ts";
-import {
-  createChatRunFixtures,
-  promptEvent,
-  readyChat,
-  RUN_PATH,
-} from "./chat-run-test-fixtures.ts";
 
 vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
@@ -195,103 +190,6 @@ test("a restored upgrade dialog defers checkout feedback until closing completes
   expect(plans).not.toBeInTheDocument();
 });
 
-function prepareExhaustedCredits() {
-  const telemetry = prepareBilling();
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, { ...freeBilling(), canBuyCredits: false });
-  });
-  context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {
-    return respond(200, { rewardCredits: 200, token: "signed-offer-from-api" });
-  });
-  const fixtures = createChatRunFixtures(context);
-  fixtures.installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "feedback-user-prompt",
-        runId: "d0000000-0000-4000-a000-000000001401",
-        seqId: 1,
-        text: "Draft the launch plan",
-      }),
-      {
-        id: "feedback-out-of-credits",
-        eventType: "output.error",
-        role: "assistant",
-        content: null,
-        error: "insufficient_credits",
-        runId: "d0000000-0000-4000-a000-000000001401",
-        seqId: 2,
-        createdAt: "2026-08-01T10:00:02.000Z",
-      },
-    ],
-  });
-  return telemetry;
-}
-
-test("an upgrade-required exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
-  const telemetry = prepareExhaustedCredits();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-  click(button("Share feedback"));
-  await waitFor(() => {
-    expect(
-      surveyImpressions(telemetry).map((display) => {
-        return display.properties?.$survey_id;
-      }),
-    ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
-  });
-  expect(surveyImpressions(telemetry)[0]?.properties).toMatchObject({
-    billing_feedback_kind: "credits_exhausted",
-    billing_feedback_reward_token: "signed-offer-from-api",
-  });
-});
-
-test("the exhaustion feedback entry follows PostHog survey availability", async () => {
-  const telemetry = prepareExhaustedCredits();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-
-  telemetry.setActiveSurveyIds([]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-  });
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-
-  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.credits_exhausted]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-
-  telemetry.setActiveSurveyIds([BILLING_FEEDBACK_SURVEYS.upgrade_dismissed]);
-  telemetry.refreshFeatureFlags();
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-  });
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-});
-
-test("the exhaustion feedback entry waits for PostHog targeting before appearing", async () => {
-  const telemetry = prepareExhaustedCredits();
-  const flags = telemetry.deferFeatureFlags();
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  await readyChat();
-  await flags.subscribed;
-  expect(button("Upgrade to Pro")).toBeInTheDocument();
-  expect(screen.queryByLabelText("Share feedback")).not.toBeInTheDocument();
-
-  flags.resolve();
-  await waitFor(() => {
-    expect(button("Share feedback")).toBeInTheDocument();
-  });
-});
-
 test("a completed in-app upgrade closes the funnel without an abandonment question", async () => {
   const telemetry = prepareBilling();
   context.mocks.api(
@@ -451,11 +349,17 @@ test("a grouped selection submits a completed PostHog response with the signed r
   });
   const submit = button("Submit feedback", feedback);
   expect(submit).toBeDisabled();
-  click(
-    within(feedback).getByRole("radio", {
-      name: "I want to try it more first",
+  await userEvent.click(
+    within(feedback).getByLabelText("It's too expensive", {
+      selector: '[role="radio"]',
     }),
   );
+  await userEvent.keyboard("{ArrowDown}");
+  expect(
+    within(feedback).getByLabelText("I want to try it more first", {
+      selector: '[role="radio"]',
+    }),
+  ).toBeChecked();
   expect(submit).toBeEnabled();
   click(submit);
   await screen.findByRole("dialog", { name: "Thank you for your feedback!" });
@@ -479,7 +383,7 @@ test("a grouped selection submits a completed PostHog response with the signed r
     ],
     billing_feedback_reward_token: "signed-offer-from-api",
   });
-  click(within(feedback).getByLabelText("Close"));
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(feedback).not.toBeInTheDocument();
   });
@@ -496,7 +400,9 @@ test("translated other feedback requires text and sends the localized answer", a
   const feedback = await screen.findByRole("dialog", {
     name: "是什么让你没有完成购买？",
   });
-  click(within(feedback).getByRole("radio", { name: "其他原因" }));
+  click(
+    within(feedback).getByLabelText("其他原因", { selector: '[role="radio"]' }),
+  );
   const submit = button("Submit feedback", feedback);
   expect(submit).toBeDisabled();
   await fill(

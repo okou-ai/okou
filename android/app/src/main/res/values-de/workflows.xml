@@ -16,6 +16,7 @@
     <string name="workflow_daily_schedule">Täglich um %1$s</string>
     <string name="workflow_discard">Verwerfen</string>
     <string name="workflow_discard_title">Ungespeicherte Änderungen verwerfen?</string>
+    <string name="workflow_discard_detail">Ungespeicherte Änderungen an „%1$s“ auf diesem Gerät werden verworfen.</string>
     <string name="workflow_draft_unavailable">Der neue Chatentwurf konnte nicht geöffnet werden. Dein vorhandener Entwurf bleibt erhalten.</string>
     <string name="workflow_edit">Bearbeiten</string>
     <string name="workflow_edit_automation">Automatisierung bearbeiten</string>

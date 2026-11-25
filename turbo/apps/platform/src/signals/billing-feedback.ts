@@ -14,7 +14,6 @@ import { authenticatedIdentity$, authenticatedSessionKey$ } from "./auth.ts";
 import {
   consumeBillingFeedback$,
   pendingBillingFeedback$,
-  requestBillingFeedback$,
 } from "./billing-feedback-flow.ts";
 import {
   billingStatusAsync$,
@@ -26,34 +25,7 @@ import { isOrgAdmin$ } from "./org.ts";
 import { searchParams$ } from "./route.ts";
 import { onRef, resetSignal } from "./utils.ts";
 
-const creditsFeedbackSurveyMatch$ = state<{
-  readonly sessionKey: string | null;
-  readonly available: boolean;
-} | null>(null);
-
-export const creditsFeedbackSurveyAvailable$ = computed((get) => {
-  const match = get(creditsFeedbackSurveyMatch$);
-  return match?.sessionKey === get(authenticatedSessionKey$) && match.available;
-});
-
-export const watchCreditsFeedbackSurvey$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    const sessionKey = get(authenticatedSessionKey$);
-    set(creditsFeedbackSurveyMatch$, null);
-    watchBillingFeedbackSurvey(
-      BILLING_FEEDBACK_SURVEYS.credits_exhausted,
-      (survey) => {
-        set(creditsFeedbackSurveyMatch$, {
-          sessionKey,
-          available: survey !== null,
-        });
-      },
-      signal,
-    );
-  },
-);
-
-export const billingFeedbackOffer$ = computed(async (get) => {
+const billingFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);
   if (
     status.hasSubscription ||
@@ -178,13 +150,6 @@ export const handleBillingFeedbackRedirect$ = command(
     await set(handleBillingRedirect$, signal);
     signal.throwIfAborted();
     // The initial Stripe return precedes page setup and belongs to app startup.
-    await set(showPendingBillingFeedback$, signal);
-  },
-);
-
-export const requestCreditsFeedback$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    set(requestBillingFeedback$, "credits_exhausted");
     await set(showPendingBillingFeedback$, signal);
   },
 );

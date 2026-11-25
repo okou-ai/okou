@@ -131,9 +131,6 @@ class _AnthropicMessagesSseUsageHandler:
         if self._extractor is not None:
             self._extractor.feed(chunk)
 
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
-
     def on_event_end(self, event_name: str | None) -> None:
         extractor = self._extractor
         self._extractor = None

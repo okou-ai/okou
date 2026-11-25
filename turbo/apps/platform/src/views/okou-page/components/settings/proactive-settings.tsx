@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ProactivePreference as ProactivePreferenceValue } from "@okouai/api-contracts/contracts/proactive";
 import {
   Select,
@@ -8,17 +7,13 @@ import {
   SelectValue,
 } from "@okouai/ui/components/ui/select";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import { useLastResolved, useGet, useLastLoadable } from "ccstate-react";
+import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { featureSwitches$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
-import {
-  myOkouSuggestionsSignals,
-  proactiveSuggestionsSignals,
-} from "../../../../signals/okou-page/settings/proactive-preferences.ts";
+import { myOkouSuggestionsSignals } from "../../../../signals/okou-page/settings/proactive-preferences.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function preferenceStatusKey(
@@ -97,21 +92,14 @@ function MixedSuggestionsChoice({
   );
 }
 
-function ProactivePreference({ inMyOkou }: { readonly inMyOkou: boolean }) {
+export function ProactiveSuggestionsSettings() {
   const { t } = useTranslation();
-  const descriptionId = `${inMyOkou ? "my-okou" : "preference"}-suggestions-description`;
-  const linked = inMyOkou;
-  const { preference$, update$ } = linked
-    ? myOkouSuggestionsSignals
-    : proactiveSuggestionsSignals;
+  const descriptionId = "my-okou-suggestions-description";
+  const { preference$, update$ } = myOkouSuggestionsSignals;
   const preference = useLastLoadable(preference$);
   const [mutation, update] = useLoadableSet(update$);
   const signal = useGet(pageSignal$);
-  const value:
-    | (ProactivePreferenceValue & {
-        partial?: "cardsOnly" | "hourlyOnly" | null;
-      })
-    | undefined = preference.state === "hasData" ? preference.data : undefined;
+  const value = preference.state === "hasData" ? preference.data : undefined;
   const failed =
     preference.state === "hasError" || mutation.state === "hasError";
   const busy = preference.state === "loading" || mutation.state === "loading";
@@ -135,19 +123,13 @@ function ProactivePreference({ inMyOkou }: { readonly inMyOkou: boolean }) {
       <PreferenceCardRow
         icon={Sparkles}
         grouped
-        inline={inMyOkou}
+        inline
         iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
           return $.settings.preferences.proactiveSuggestions.title;
         })}
         descriptionId={descriptionId}
-        description={
-          linked
-            ? suggestionDescriptions[partial ?? "suggestions"]
-            : t(($) => {
-                return $.settings.preferences.proactiveSuggestions.description;
-              })
-        }
+        description={suggestionDescriptions[partial ?? "suggestions"]}
         status={
           <div aria-live="polite" className="text-xs text-muted-foreground">
             {statusKey !== null &&
@@ -179,15 +161,4 @@ function ProactivePreference({ inMyOkou }: { readonly inMyOkou: boolean }) {
       </PreferenceCardRow>
     </div>
   );
-}
-
-export function ProactiveSuggestionsSettings({
-  inMyOkou = false,
-}: {
-  readonly inMyOkou?: boolean;
-}) {
-  const flags = useLastResolved(featureSwitches$);
-  return flags?.[FeatureSwitchKey.AgentSuggestion] ? (
-    <ProactivePreference inMyOkou={inMyOkou} />
-  ) : null;
 }

@@ -129,6 +129,10 @@ final class SidebarDraftRefreshTests: XCTestCase {
     await read.value
     XCTAssertFalse(workspace.hasDraft(fixture.threadID))
     XCTAssertTrue(workspace.hasDraft(fixture.otherID))
+    // Sidebar rows and the widget read the same membership from the graph.
+    let listed = try workspace.graph.get(workspace.listedDraftIDs)
+    XCTAssertFalse(listed.contains(fixture.threadID))
+    XCTAssertTrue(listed.contains(fixture.otherID))
     XCTAssertEqual(fixture.draftReads, 1)
   }
 

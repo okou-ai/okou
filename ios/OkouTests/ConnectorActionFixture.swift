@@ -57,10 +57,6 @@ struct ConnectorCardHarness: View {
   let store: ConnectorActionStore
   var body: some View {
     ConnectorActionCard(action: action, store: store, loadsState: false)
-      .sheet(
-        item: Binding(get: { store.active }, set: { if $0 == nil { store.cancel() } })
-      ) { flow in
-        ConnectorAuthorizationSheet(flow: flow, store: store)
-      }
+      .connectorAuthorization(store: store)
   }
 }

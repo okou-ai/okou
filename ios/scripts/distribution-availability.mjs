@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { appleClientFromEnvironment, required } from "./testflight.mjs";
 
-export const appId = "6815550027";
+const appId = "6815550027";
 const bundleId = "ai.okou.ios";
 
 function one(resources, description) {
@@ -53,7 +53,7 @@ export function releaseCommit(read, version, build) {
   );
 }
 
-export function publishedReleaseCommit(version, build) {
+function publishedReleaseCommit(version, build) {
   const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
   const read = (path, paginate) => {
     const raw = execFileSync(
@@ -96,7 +96,7 @@ async function catalog(country) {
 }
 
 const marketingVersion = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}$/u;
-export function checkBuild(version, build) {
+function checkBuild(version, build) {
   if (
     typeof version !== "string" ||
     !marketingVersion.test(version) ||
@@ -181,7 +181,6 @@ export async function verifyDistribution(
     territoryCodes,
     internalGroup,
     externalGroups,
-    requireAppStoreEligible = false,
   },
   lookup = catalog,
 ) {
@@ -237,7 +236,7 @@ export async function verifyDistribution(
     throw new Error("A TestFlight check requires an internal group");
   const uploaded = one(
     await client.list(
-      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS", "fields[builds]": "version,expired,expirationDate,processingState,buildAudienceType" })}`,
+      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS", "fields[builds]": "version,expired,expirationDate,processingState" })}`,
     ),
     "iOS TestFlight build",
   );
@@ -254,14 +253,6 @@ export async function verifyDistribution(
     !(Date.parse(expirationDate) > Date.now())
   ) {
     throw new Error("TestFlight build is invalid or expired");
-  }
-  if (
-    requireAppStoreEligible &&
-    uploaded.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE"
-  ) {
-    throw new Error(
-      "App Review requires an App Store eligible build; check its audience in App Store Connect",
-    );
   }
   const detail = (
     await client.request(`/v1/builds/${uploaded.id}/buildBetaDetail`)

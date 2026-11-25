@@ -180,6 +180,23 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.LinkedInOAuthConnector]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "LinkedIn OAuth connector",
+    description:
+      "Connect LinkedIn for personal publishing through the official API. Other LinkedIn tasks use Cloud Browser.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.ComputerUseAppStateDirectTransfer]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Computer Use app state direct transfer",
+    description:
+      "Deliver the current Mac window state and PNG directly to the Run through its Runner.",
+    enabled: false,
+    staffOptInOnly: true,
+  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
@@ -291,13 +308,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.AgentSuggestion]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Suggestions",
-    description:
-      "Update the user profile daily and curate useful next-step suggestions.",
-    enabled: true,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",

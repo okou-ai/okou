@@ -1205,7 +1205,6 @@
     "feedback": {
       "otherPlaceholder": "可以多说一点…",
       "rewardTerms": "每个工作区仅一次 · 积分有效期 30 天",
-      "shareFeedback": "分享反馈",
       "submitFeedback": "提交反馈",
       "thanks": "感谢你的反馈"
     },
@@ -1741,6 +1740,7 @@
       "waiting": "正在等待 Mastercard Data Connect。在那边完成后，回到聊天继续。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "最低充值 $5 即可继续使用，或升级 Pro 解锁专属功能。",
       "addCreditsToContinue": "添加积分，继续和 {{assistantName}} 对话。",
       "askAdminCredits": "请工作区管理员添加积分，你就能继续和 {{assistantName}} 对话。",
       "askAdminUpgrade": "请工作区管理员升级到 Pro，你就能继续和 {{assistantName}} 对话。",
@@ -1754,7 +1754,6 @@
       "customAmountError": "请输入 $1 到 $10,000 之间的金额",
       "customDollarAmount": "自定义金额（美元）",
       "outOfCredits": "你的积分用完了",
-      "redirecting": "正在跳转…",
       "upgradeToContinue": "升级到 Pro，继续和 {{assistantName}} 对话。",
       "upgradeToPro": "升级到 Pro",
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",
@@ -4415,7 +4414,6 @@
   },
   "myOkou": {
     "conflict": "指令已在其他地方更新。本地草稿已保留，请先查看或复制，再重新加载已保存的内容。",
-    "description": "在此工作区中，专属于你的 Okou 指令",
     "discard": "放弃",
     "draftKept": "切换页面或工作区时，草稿会保留在此浏览器标签页中。",
     "instructions": "指令",
@@ -5685,7 +5683,6 @@
           "title": "偏好设置"
         },
         "proactiveLearning": {
-          "description": "选择 Okou 主动工作的方式。",
           "title": "Proactive"
         },
         "tools": {
@@ -6090,7 +6087,6 @@
         "title": "晨报"
       },
       "proactiveSuggestions": {
-        "description": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",

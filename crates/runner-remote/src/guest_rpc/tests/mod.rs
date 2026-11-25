@@ -1,3 +1,4 @@
+mod app_state;
 use super::{Run, Runtime};
 use async_trait::async_trait;
 use runner_rpc_proto::ResponseReader;
@@ -102,10 +103,13 @@ impl Harness {
     }
 
     fn start(with_usage: bool) -> Self {
+        Self::with_runtime(Runtime::new(None, None, None), with_usage)
+    }
+
+    fn with_runtime(runtime: Runtime, with_usage: bool) -> Self {
         let (incoming, receiver) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
         let run_id = runner_types::ids::RunId::new_v4();
-        let runtime = Runtime::new(None, None, None);
         let run = runtime.start_with_usage(
             Arc::new(Acceptor(Mutex::new(receiver))),
             "assigned-sandbox".into(),

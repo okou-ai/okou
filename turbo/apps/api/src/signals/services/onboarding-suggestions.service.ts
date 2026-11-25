@@ -1,5 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { onboardingRollouts } from "@okouai/db/schema/onboarding-rollout";
 import { command } from "ccstate";
@@ -7,12 +5,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { clerk$, type ClerkUser } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import type { ProactiveWorkflowOwner } from "./proactive-workflows-eligibility.service";
 
 export const shouldEnableOnboardingSuggestions$ = command(
   async (
-    { get, set },
+    { get },
     owner: ProactiveWorkflowOwner,
     knownUser: ClerkUser | undefined,
     signal: AbortSignal,
@@ -40,18 +37,9 @@ export const shouldEnableOnboardingSuggestions$ = command(
     const user =
       knownUser ?? (await findClerkUser(get(clerk$), owner.userId, signal));
     signal.throwIfAborted();
-    if (
-      user?.createdAt === undefined ||
-      user.createdAt < rollout.activatedAt.getTime()
-    ) {
-      return false;
-    }
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      owner.orgId,
-      owner.userId,
-      signal,
+    return (
+      user?.createdAt !== undefined &&
+      user.createdAt >= rollout.activatedAt.getTime()
     );
-    return isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features);
   },
 );

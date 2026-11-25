@@ -1205,7 +1205,6 @@
     "feedback": {
       "otherPlaceholder": "Ceritakan lebih lanjut…",
       "rewardTerms": "Sekali per ruang kerja · Kredit berlaku 30 hari",
-      "shareFeedback": "Bagikan masukan",
       "submitFeedback": "Kirim masukan",
       "thanks": "Terima kasih atas masukannya"
     },
@@ -1741,6 +1740,7 @@
       "waiting": "Menunggu Mastercard Data Connect. Selesaikan proses di sana, lalu kembali ke Chat."
     },
     "billing": {
+      "addCreditsOrUpgrade": "Isi ulang kredit mulai $5 untuk melanjutkan, atau upgrade ke Pro untuk membuka fitur eksklusif.",
       "addCreditsToContinue": "Tambahkan kredit untuk terus mengobrol dengan {{assistantName}}.",
       "askAdminCredits": "Minta admin ruang kerja untuk menambahkan kredit agar Anda bisa terus mengobrol dengan {{assistantName}}.",
       "askAdminUpgrade": "Minta admin ruang kerja untuk upgrade ke Pro agar Anda bisa terus mengobrol dengan {{assistantName}}.",
@@ -1754,7 +1754,6 @@
       "customAmountError": "Masukkan antara $1 dan $10.000",
       "customDollarAmount": "Jumlah dolar kustom",
       "outOfCredits": "Kredit Anda habis",
-      "redirecting": "Mengarahkan...",
       "upgradeToContinue": "Upgrade ke Pro agar tetap bisa mengobrol dengan {{assistantName}}.",
       "upgradeToPro": "Upgrade ke Pro",
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",
@@ -4415,7 +4414,6 @@
   },
   "myOkou": {
     "conflict": "Instruksi tersimpan berubah di tempat lain. Draf Anda tetap disimpan. Tinjau atau salin sebelum memuat ulang instruksi tersimpan.",
-    "description": "Instruksi Anda untuk Okou di ruang kerja ini",
     "discard": "Buang",
     "draftKept": "Draf Anda tetap ada di tab ini saat berpindah halaman atau ruang kerja.",
     "instructions": "Instruksi",
@@ -5685,7 +5683,6 @@
           "title": "Preferensi"
         },
         "proactiveLearning": {
-          "description": "Pilih cara Okou bekerja secara proaktif.",
           "title": "Proactive"
         },
         "tools": {
@@ -6090,7 +6087,6 @@
         "title": "Brief Pagi"
       },
       "proactiveSuggestions": {
-        "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
