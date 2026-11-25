@@ -76,7 +76,7 @@ class WorkspaceToolDirectoryRowTest {
         val supporting =
             compose.onNodeWithText(description, useUnmergedTree = true).getUnclippedBoundsInRoot()
 
-        assertTrue(row.height > 80.dp)
+        assertTrue(row.bottom - row.top > 80.dp)
         assertEquals(64.dp, heading.left - row.left)
         assertEquals(8.dp, heading.top - row.top)
         assertEquals(4.dp, supporting.top - heading.bottom)
