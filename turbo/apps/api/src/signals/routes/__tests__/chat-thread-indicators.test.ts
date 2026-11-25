@@ -21,6 +21,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
+const INDICATOR_TEST_MODEL = "claude-fable-5-1";
 const context = testContext();
 const store = createStore();
 const bdd = createBddApi(context);
@@ -99,7 +100,7 @@ async function prepareChatRuntime(): Promise<void> {
 async function prepareEntitledMember(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
+    model: INDICATOR_TEST_MODEL,
   });
 
   const restoreEnvironment = captureConnectorExternalState(context);
@@ -128,7 +129,7 @@ async function createCancelledThread(args: {
 }): Promise<SeededThread> {
   const sent = await chat.sendAndLaunch(args.actor, {
     prompt: args.prompt,
-    model: "claude-fable-5-1",
+    model: INDICATOR_TEST_MODEL,
   });
   const executionInput = await indicatorCredentials.executionInput(
     args.actor,
@@ -358,6 +359,7 @@ describe("GET /api/indicators", () => {
     for (let index = 0; index < 50; index += 1) {
       const sent = await chat.sendAndLaunch(actor, {
         prompt: `Later active indicator ${index}`,
+        model: INDICATOR_TEST_MODEL,
       });
       recent[sent.threadId] = "active";
     }
