@@ -32,7 +32,7 @@ function buildIntegrationToolsPrompt(
 ): readonly string[] {
   const localFileContext = [
     markdownFirstOutputEnabled
-      ? "Honor the user's explicitly requested delivery format. Otherwise, for text-focused documents and reports, prefer Markdown as the primary deliverable so it can be opened quickly in Okou. Use HTML for visually rich or interactive deliverables; do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
+      ? "Honor the user's explicitly requested delivery format. Otherwise, choose the format based on the content: use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. No format has default priority. Do not create DOCX or PDF copies unless requested, exported by the user, or required by a selected generation template. Decide the format before choosing production and delivery tools."
       : "Honor the user's explicitly requested delivery format. Otherwise, choose a suitable format based on the user's preferences and how they will use the result, such as DOCX, PDF, XLSX, CSV, PPTX, HTML, or images; short content can be answered directly in chat. No format has default priority. Decide the format before choosing production and delivery tools.",
     ...(markdownFirstOutputEnabled
       ? [

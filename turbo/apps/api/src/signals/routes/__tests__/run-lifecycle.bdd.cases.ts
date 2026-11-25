@@ -989,10 +989,33 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
-      it("enables Markdown-first output guidance for staff runs", async () => {
+      it("guides ordinary runs to choose document formats by content", async () => {
         const api = createRunsApi(context);
-        const { actor, runnerGroup } = await entitledRunActor({
-          orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        const { actor, runnerGroup } = await entitledRunActor();
+        const run = await api.createThreadRun(actor, {
+          prompt: "write a project update",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const execution = await api.executionInput(run.runId);
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
+        expect(appendSystemPrompt).toContain(
+          "Honor the user's explicitly requested delivery format.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables. No format has default priority.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Keep Markdown as the source of truth and let the user export DOCX or PDF",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
+      });
+
+      it("honors Markdown-first output opt-outs in run guidance", async () => {
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const { actor, runnerGroup } = await entitledRunActor();
+        await connectors.updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.MarkdownFirstOutput]: false,
         });
         const run = await api.createThreadRun(actor, {
           prompt: "write a project update",
@@ -1001,10 +1024,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
         const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain(
-          "for text-focused documents and reports, prefer Markdown",
+          "choose a suitable format based on the user's preferences and how they will use the result",
         );
-        expect(appendSystemPrompt).toContain(
-          "Keep Markdown as the source of truth and let the user export DOCX or PDF",
+        expect(appendSystemPrompt).not.toContain(
+          "For Markdown deliverables, use portable Markdown",
         );
         await api.requestCancelRun(actor, run.runId, [200]);
       });
