@@ -3934,7 +3934,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun projectRenameRetainsTheConfirmedNameAndRetriesTheSameEvent() {
+    fun projectRenameRetainsTheConfirmedNameAndChecksTheOriginalEvent() {
         val app = compose.activity.application as ChatListApplication
         val pending = CountDownLatch(1)
         val writes = CopyOnWriteArrayList<String>()
@@ -3951,17 +3951,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                 check(body.getValue("name").jsonPrimitive.content == "Field notes")
                 val eventId = body.getValue("eventId").jsonPrimitive.content
                 writes.add(eventId)
-                when (writes.size) {
-                    1 -> {
-                        pending.await()
-                        MockResponse().setResponseCode(503)
-                    }
-                    2 -> MockResponse().setResponseCode(503)
-                    else -> {
-                        committed.set(eventId)
-                        MockResponse().setResponseCode(503)
-                    }
-                }
+                pending.await()
+                MockResponse().setResponseCode(503)
             }
         }
         app.fixture.projectEvents = { request ->
@@ -4017,17 +4008,15 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             compose.onAllNodesWithText(unconfirmed).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("Research").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText("Research").performTouchInput { longClick() }
         compose.onNodeWithText("Rename").performClick()
         editor.assertTextContains("Field notes")
-        compose.onNodeWithText("Check result").assertIsEnabled()
-        compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithText("Try again").performClick()
-        compose.waitUntil(10_000) { writes.size == 2 && currentList()?.renamingProjectId == null }
-        compose.onNodeWithText(unconfirmed).assertIsDisplayed()
-        compose.onNodeWithText("Try again").performClick()
-        compose.waitUntil(10_000) { writes.size == 3 && currentList()?.renamingProjectId == null }
-        assertEquals(List(3) { writes.first() }, writes.toList())
+        committed.set(writes.single())
+        compose.onNodeWithText("Check result").assertIsEnabled().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Project name saved"), 10_000)
+        editor.assertDoesNotExist()
+        assertEquals(1, writes.size)
         compose.onNodeWithText("Field notes").assertIsDisplayed()
         compose.onNodeWithText(unconfirmed).assertDoesNotExist()
     }

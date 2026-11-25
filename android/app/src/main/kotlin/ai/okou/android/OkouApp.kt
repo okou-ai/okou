@@ -1822,7 +1822,6 @@ internal fun OkouApp(
                                     onRenameFocusFinished = ::finishRenameFocus,
                                     { id -> confirmingProjectDelete = id },
                                     confirmingProjectDelete,
-                                    { id -> chats?.retryProjectRename(id) },
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,

@@ -1882,8 +1882,6 @@ class ChatListModel(
 
     internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
 
-    internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
-
     internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =

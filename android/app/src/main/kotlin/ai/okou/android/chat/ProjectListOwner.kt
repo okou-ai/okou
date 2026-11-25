@@ -99,7 +99,7 @@ internal class ProjectListOwner(
     private val createReceipts = mutableMapOf<String, ConfirmedProject>()
     private val renameReceipts = mutableMapOf<String, ProjectRenameReceipt>()
     private var projectRename: ProjectRename? = null
-    private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
+    private val unresolvedProjectRenames = mutableMapOf<String, ProjectRename>()
     private val retryableProjectDeletes = mutableMapOf<String, String>()
     private var projectsRestoreJob: Job? = null
     private var projectsJob: Job? = null
@@ -319,17 +319,13 @@ internal class ProjectListOwner(
                 state.rows.none { it.id == id && it.name.trim() != name }
         )
             return null
-        if (retryableProjectRenames[id]?.connectionFailed == false) return null
+        if (unresolvedProjectRenames[id]?.connectionFailed == false) return null
         val rename = ProjectRename(id, name, newProjectOperationId(wallMillis()))
         return if (submitProjectRename(rename)) rename.submission else null
     }
 
-    internal fun retryProjectRename(id: String) {
-        retryableProjectRenames[id]?.let(::submitProjectRename)
-    }
-
     internal fun checkProjectRename(id: String) {
-        if (retryableProjectRenames[id]?.connectionFailed == false) refresh(verifyWrite = true)
+        if (unresolvedProjectRenames[id]?.connectionFailed == false) refresh(verifyWrite = true)
     }
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) {
@@ -456,9 +452,9 @@ internal class ProjectListOwner(
                         },
                 renamingId = pending?.id,
                 unconfirmedRenameAttempts =
-                    retryableProjectRenames.mapValues { it.value.submission },
+                    unresolvedProjectRenames.mapValues { it.value.submission },
                 connectionFailedRenames =
-                    retryableProjectRenames.values
+                    unresolvedProjectRenames.values
                         .filter { it.connectionFailed }
                         .mapTo(hashSetOf()) { it.id },
             )
@@ -469,12 +465,8 @@ internal class ProjectListOwner(
         if (!current() || !snapshot.canRename) return false
         val baseline = confirmedRows().firstOrNull { it.id == rename.id } ?: return false
         val snapshotCursor = checkNotNull(confirmedProjects).checkpoint.snapshotCursor
-        val uncertainAttempt =
-            retryableProjectRenames[rename.id]?.let {
-                it.eventId == rename.eventId && !it.connectionFailed
-            } == true
         projectRename = rename
-        retryableProjectRenames.remove(rename.id)
+        unresolvedProjectRenames.remove(rename.id)
         val previousRejection = snapshot.renameRejection
         publishProjects(
             if (previousRejection?.projectId == rename.id) snapshot.copy(renameRejection = null)
@@ -500,10 +492,9 @@ internal class ProjectListOwner(
                     if (
                         error is ApiFailure.Network &&
                             error.connectionFailed &&
-                            !uncertainAttempt &&
                             !hasProjectReceipt(rename.eventId)
                     ) {
-                        retryableProjectRenames[rename.id] = rename.copy(connectionFailed = true)
+                        unresolvedProjectRenames[rename.id] = rename.copy(connectionFailed = true)
                         return@launch
                     }
                 }
@@ -516,14 +507,14 @@ internal class ProjectListOwner(
                         hasProjectReceipt(rename.eventId) ||
                         readBack && confirmedName == rename.name
                 if (!confirmedByReadback && confirmedName != null) {
-                    // The server deduplicates retries by this Project event ID.
-                    retryableProjectRenames[rename.id] = rename.copy(connectionFailed = false)
+                    // An inconclusive read retains the ID needed to match the original event.
+                    unresolvedProjectRenames[rename.id] = rename.copy(connectionFailed = false)
                 }
             } finally {
                 projectRename = null
                 if (current()) {
                     val snapshot = state
-                    // A retry can be rejected after the original write was confirmed.
+                    // The exact event may have been observed while the response was in flight.
                     val settled =
                         when {
                             confirmedByReadback ->
@@ -682,11 +673,11 @@ internal class ProjectListOwner(
                         if (observedProjectEvent(it.eventId))
                             recordConfirmedRename(it.id, it.eventId)
                     }
-                    if (retryableProjectRenames.isNotEmpty()) {
+                    if (unresolvedProjectRenames.isNotEmpty()) {
                         val names = selected.rows.associate { it.id to it.name }
                         val appliedEvents = selected.checkpoint.events.mapTo(hashSetOf()) { it.id }
                         selected.checkpoint.archive.latestEventId?.let(appliedEvents::add)
-                        retryableProjectRenames.entries.removeAll { (id, rename) ->
+                        unresolvedProjectRenames.entries.removeAll { (id, rename) ->
                             val applied =
                                 names[id] == rename.name ||
                                     rename.eventId in appliedEvents ||
@@ -723,7 +714,7 @@ internal class ProjectListOwner(
                     // A missing Projects collection does not revoke the workspace session.
                     if (error is ApiFailure.Http && error.status == 404) {
                         if (current()) {
-                            retryableProjectRenames.clear()
+                            unresolvedProjectRenames.clear()
                             // Keep the confirmed checkpoint for catch-up and rename receipts.
                             publishProjects(
                                 state.copy(source = null, phase = ChatReadPhase.Failed),
