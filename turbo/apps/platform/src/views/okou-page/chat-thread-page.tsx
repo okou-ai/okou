@@ -6127,17 +6127,7 @@ function RefreshedSelectablePagedGroupRow({
         })}
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
-        <div
-          className={cn(
-            "min-w-0",
-            !nameLine && "@[900px]:pl-[46px]",
-            // Once anything is chosen, what is left out steps back, and
-            // pointing at its checkbox brings it forward again.
-            selectedEventIds.size > 0 && !hasSelection && "opacity-40",
-            phase === "selecting" &&
-              "[@media(hover:hover)]:group-has-[[data-chat-share-selection]:hover]/share-group:opacity-100",
-          )}
-        >
+        <div className={cn("min-w-0", !nameLine && "@[900px]:pl-[46px]")}>
           {messages}
         </div>
       </div>
@@ -6167,11 +6157,12 @@ function shareGroupClassName({
     // action row under its bubble. Every group then sits the same 16px
     // from the next, and the tint hugs the bubble.
     role === "user" && "[&_[data-chat-user-message-actions]]:hidden",
-    "data-selected:bg-gray-50 dark:data-selected:bg-gray-100",
+    // Outline the selected group without changing the transcript's geometry.
+    "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-transparent data-selected:before:border-primary data-selected:bg-state-selected",
     phase === "selecting" &&
       (hasSelection
-        ? "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover-overlay"
-        : "[@media(hover:hover)]:has-[[data-chat-share-selection]:hover]:bg-state-hover"),
+        ? "hover:bg-state-selected-hover"
+        : "hover:bg-state-hover hover:before:border-border"),
   );
 }
 
@@ -6383,7 +6374,13 @@ function ShareGroupSelectionColumn({
           // Once the link exists the selection is the record of what was
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
-          className={cn(shareGroupCheckboxHoverClass(props))}
+          className={cn(
+            "h-5 w-5 border-muted-foreground",
+            selecting &&
+              !allSelected &&
+              !indeterminate &&
+              "group-hover/share-group:border-foreground group-hover/share-group:bg-state-hover-overlay",
+          )}
           onCheckedChange={onToggle}
         />
       </span>
