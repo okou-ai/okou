@@ -3,8 +3,9 @@ package ai.okou.android.workflows
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
+import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceFilterRow
-import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
@@ -14,6 +15,8 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.retainSearchResultsWhileComposing
+import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowDraftAction
@@ -22,10 +25,8 @@ import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.rememberWorkflowDiscardConfirmation
 import ai.okou.android.state.rememberWorkflowEditorReturnFocus
-import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchFocusOutline
-import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
@@ -56,9 +57,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,7 +86,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
@@ -117,7 +114,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -368,9 +364,11 @@ private fun WorkflowDirectory(
     onRowRestored: () -> Unit,
 ) {
     val text = query.keyword
+    val searchFocus = remember { FocusRequester() }
+    val clearQuery = searchClearAction(searchFocus, query::clearQuery)
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
-        else query.retainWhileComposing(state)
+        else key(query) { retainSearchResultsWhileComposing(state, query.hasPendingInput) }
     val catalog =
         remember(displayedState.catalog, state.catalog) {
             val displayed = displayedState.catalog
@@ -464,7 +462,19 @@ private fun WorkflowDirectory(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (createError != null) WorkflowNotice(createError)
-            WorkflowQuery(query)
+            WorkspaceSearchInput(
+                value = query.query,
+                onValueChange = query::edit,
+                label = stringResource(R.string.workflow_search),
+                onClear = clearQuery,
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .focusRequester(searchFocus)
+                        .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
+                        .testTag("workflow_query"),
+                shape = ToolDirectorySearchShape,
+                clearLabel = stringResource(R.string.workflow_clear_search),
+            )
             WorkspaceFilterRow(
                 WorkflowScope.entries,
                 route.scope,
@@ -495,7 +505,7 @@ private fun WorkflowDirectory(
                                 WorkflowEmpty(
                                     route.scope,
                                     text,
-                                    query::reset,
+                                    clearQuery,
                                     onScope,
                                     topPadding = if (readFeedback == null) 24.dp else 0.dp,
                                 )
@@ -538,70 +548,6 @@ private val WorkflowScope.label: Int
             WorkflowScope.Private -> R.string.workflow_private
             WorkflowScope.Shared -> R.string.workflow_shared
         }
-
-@Composable
-private fun WorkflowQuery(query: ChatSearchState) {
-    val name = stringResource(R.string.workflow_search)
-    val requester = remember { FocusRequester() }
-    var focused by remember { mutableStateOf(false) }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val colors = MaterialTheme.colorScheme
-    val style = workspaceSearchTextStyle()
-    BasicTextField(
-        value = query.query,
-        onValueChange = query::edit,
-        modifier =
-            Modifier.fillMaxWidth()
-                .focusRequester(requester)
-                .onFocusChanged {
-                    focused = it.isFocused
-                    if (!it.isFocused) query.cancelComposition()
-                }
-                .testTag("workflow_query")
-                .semantics { contentDescription = name },
-        textStyle = style.copy(color = colors.onBackground),
-        singleLine = true,
-        cursorBrush = SolidColor(colors.onBackground),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-        decorationBox = { input ->
-            WorkspaceSearchField(
-                Modifier.fillMaxWidth(),
-                focused = focused,
-                hasTrailingAction = query.query.text.isNotEmpty(),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    if (query.query.text.isEmpty())
-                        Text(
-                            name,
-                            color = colors.onSurfaceVariant,
-                            style = style,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    input()
-                }
-                if (query.query.text.isNotEmpty())
-                    IconButton(
-                        onClick = {
-                            query.reset()
-                            requester.requestFocus()
-                            keyboard?.show()
-                        },
-                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            stringResource(R.string.workflow_clear_search),
-                            modifier = Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
-                        )
-                    }
-            }
-        },
-    )
-}
 
 @Composable
 private fun WorkflowEmpty(
