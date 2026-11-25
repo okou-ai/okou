@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.RenameDraft
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
@@ -11,7 +12,6 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGran
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.renameForm
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -72,10 +72,11 @@ internal fun ConnectorRenameSheet(
     cancel: () -> Unit,
 ) {
     val currentLabel = account.label()
-    val baseline = remember(account.id) { currentLabel }
-    val label = remember(account.id) { TextFieldState(initialText = baseline) }
-    val form =
-        renameForm(label.text, baseline, currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
+    val draft = remember(account.id) { RenameDraft(currentLabel) }
+    LaunchedEffect(draft, currentLabel, action?.busy) {
+        if (action?.busy != true) draft.receive(currentLabel)
+    }
+    val form = draft.form(currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
     val errorMessage =
         when (form.error) {
             RenameFieldError.Required -> stringResource(R.string.connector_rename_required)
@@ -100,7 +101,7 @@ internal fun ConnectorRenameSheet(
     ) {
         ConnectorInput(
             stringResource(R.string.connector_account_name),
-            label,
+            draft.input,
             readOnly = !canModify,
             supportingText =
                 stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),

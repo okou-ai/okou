@@ -41,6 +41,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -140,6 +141,7 @@ internal abstract class WorkflowModelTestFixture {
                 error("Unexpected automation update")
             }
         val toggleRequests = mutableListOf<Pair<String, Boolean>>()
+        val workflowUpdates = mutableListOf<UpdateWorkflowRequest>()
         var detailReads = 0
             private set
 
@@ -203,6 +205,7 @@ internal abstract class WorkflowModelTestFixture {
             id: String,
             request: UpdateWorkflowRequest,
         ): WorkflowDetail {
+            workflowUpdates += request
             detail =
                 detail.copy(instruction = (request.instruction as CanonicalOptional.Present).value)
             return detail
@@ -752,6 +755,48 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
     }
 
     @Test
+    fun workflowRefreshFillsAPristineEditorAndSavesDifferencesFromTheLatestFields() =
+        check { service, model ->
+            model.select(service.summary.id)
+            model.visibilityChanged(true)
+            runCurrent()
+            model.edit(checkNotNull(model.state.value.detail).editableInstructions())
+            val summary = service.summary.copy(displayName = "New name")
+            service.catalogRead = { listOf(summary) }
+            val latestDetail = CompletableDeferred<WorkflowDetail>()
+            service.detailRead = { latestDetail.await() }
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
+            runCurrent()
+
+            val pristine = model.state.value.editor as WorkflowEdit.Instructions
+            assertEquals("New name", pristine.value.title)
+            assertFalse(pristine.canSave)
+            val edited = pristine.copy(value = pristine.value.copy(purpose = "My purpose"))
+            model.edit(edited)
+            service.detail =
+                service.detail.copy(
+                    displayName = summary.displayName,
+                    description = "Updated purpose",
+                    instruction = "Updated instruction",
+                )
+            latestDetail.complete(service.detail)
+            runCurrent()
+
+            val draft = model.state.value.editor as WorkflowEdit.Instructions
+            assertEquals(edited.value, draft.value)
+            assertEquals("Updated instruction", draft.original.instruction)
+            assertTrue(draft.canSave)
+            model.save(draft)
+            runCurrent()
+            val sent = service.workflowUpdates.single()
+            assertEquals(CanonicalOptional.Absent, sent.displayName)
+            assertEquals(CanonicalOptional.Present("My purpose"), sent.description)
+            assertEquals(CanonicalOptional.Present(""), sent.instruction)
+            assertNull(model.state.value.editor)
+        }
+
+    @Test
     fun aConfirmedSaveRefreshesTheDetailCacheAge() = check { service, model ->
         model.select(service.summary.id)
         model.visibilityChanged(true)
@@ -923,6 +968,43 @@ internal class WorkflowToggleModelTest : WorkflowModelTestFixture() {
         assertNull(model.state.value.editor)
         assertNull(model.state.value.toggles[active.id])
     }
+
+    @Test
+    fun editingAnExistingRuleFollowsConfirmedFieldsWithoutReplacingAnEdit() =
+        check { service, model ->
+            val schedule =
+                WorkflowAutomationVariant1ScheduleVariant1(
+                    WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                    "0 9 * * 1-5",
+                    "UTC",
+                )
+            val rule = openRule(service, model, service.weeklyRule().copy(schedule = schedule))
+            model.edit(checkNotNull(rule.editableRule("UTC")))
+            fun update(next: WorkflowAutomationVariant1) {
+                service.detail = service.detail.copy(automations = listOf(next))
+                service.rulesRead = {
+                    listOf(WorkspaceWorkflowAutomationsItem(service.summary, next))
+                }
+                model.foregroundChanged(false)
+                model.foregroundChanged(true)
+                runCurrent()
+            }
+            update(rule.copy(schedule = schedule.copy(cronExpression = "30 9 * * 1-5")))
+            val pristine = model.state.value.editor as WorkflowEdit.Rule
+            assertEquals("09:30", pristine.value.time)
+            assertFalse(pristine.canSave)
+            val local = pristine.value.copy(time = "10:00")
+            model.edit(pristine.copy(value = local))
+            update(rule.copy(schedule = schedule.copy(cronExpression = "15 9 * * 1-5")))
+            val draft = model.state.value.editor as WorkflowEdit.Rule
+            assertEquals(local, draft.value)
+            assertEquals("09:15", draft.original.time)
+            assertTrue(draft.canSave)
+            update(rule.copy(schedule = schedule.copy(cronExpression = "0 10 * * 1-5")))
+            val matching = model.state.value.editor as WorkflowEdit.Rule
+            assertEquals(local, matching.value)
+            assertFalse(matching.canSave)
+        }
 
     @Test
     fun unavailableReadbackKeepsTheActionUnconfirmedUntilAReadSettlesIt() =

@@ -43,6 +43,10 @@ internal data class WorkflowState(
     val editor: WorkflowEdit? = null,
 )
 
+private fun WorkflowState.editorFor(detail: WorkflowDetail?): WorkflowEdit? = detail?.let {
+    if (writing) editor else editor?.updateConfirmed(it)
+}
+
 internal enum class WorkflowHistoryRead(val loading: Boolean, val earlier: Boolean = false) {
     Latest(true),
     Earlier(true, earlier = true),
@@ -410,19 +414,20 @@ internal constructor(
             cancelDetailRead()
             cancelHistoryRead()
         }
+        val detail = current.detail?.let { details[it.id]?.detail }
         mutable.value =
             current.copy(
                 catalog = rows,
                 catalogRefreshing = false,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
-                detail = current.detail?.let { details[it.id]?.detail },
+                detail = detail,
                 history = current.history.takeUnless { lostSelected },
                 historyRead = current.historyRead.takeUnless { lostSelected },
                 historyFailure = current.historyFailure.takeUnless { lostSelected },
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
-                editor = current.editor.takeUnless { lostSelected },
+                editor = current.editorFor(detail),
                 toggles = if (lostSelected) emptyMap() else current.toggles,
                 issue = current.issue.takeUnless { lostSelected },
             )
@@ -439,11 +444,13 @@ internal constructor(
             if (cached.detail === detail) cached else cached.copy(detail = detail)
         }
         val current = mutable.value
+        val detail = current.detail?.let { details[it.id]?.detail }
         mutable.value =
             current.copy(
                 rules = confirmed,
                 rulesFailure = null,
-                detail = current.detail?.let { details[it.id]?.detail },
+                detail = detail,
+                editor = current.editorFor(detail),
             )
     }
 
@@ -674,16 +681,17 @@ internal constructor(
 
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
-        if (!authorized() || state.writing || value != null && state.detail?.canEdit(value) != true)
-            return
+        if (!authorized() || state.writing) return
+        val editor =
+            if (value == null) null else value.updateConfirmed(state.detail ?: return) ?: return
         val issue =
             state.issue?.takeIf {
-                value != null &&
+                editor != null &&
                     state.editor != null &&
                     (it.failure == WorkflowWriteFailure.UncertainCreate ||
                         it.failure == WorkflowWriteFailure.Network)
             }
-        mutable.value = state.copy(editor = value, issue = issue)
+        mutable.value = state.copy(editor = editor, issue = issue)
     }
 
     internal fun toggle(rule: WorkflowAutomation) {
@@ -890,6 +898,7 @@ internal constructor(
         mutable.value =
             current.copy(
                 detail = detail,
+                editor = current.editorFor(detail),
                 detailFailure = null,
                 toggles = toggles,
                 catalog =
