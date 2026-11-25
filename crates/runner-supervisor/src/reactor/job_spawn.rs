@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use api_contracts::generated::{routes, types};
 use futures_util::FutureExt;
+use runner_storage::memory_delta::MemoryDeltaBase;
 use sandbox::SandboxId;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -502,7 +503,6 @@ async fn warm_committed_memory(
             routes::webhooks::run::storages::memory_archive::READ,
             firewall_token,
         )
-        .query(&[("includeDeltaBase", "true")])
         .timeout(Duration::from_secs(2))
         .send("committed-memory-archive")
         .await
@@ -514,6 +514,16 @@ async fn warm_committed_memory(
     if !response.status().is_success() {
         return;
     }
+    let headers = response.headers();
+    let delta_base = headers
+        .get("x-okou-memory-id")
+        .zip(headers.get("x-okou-memory-parent-version"))
+        .and_then(|(memory_id, parent_version)| {
+            Some(MemoryDeltaBase {
+                memory_id: memory_id.to_str().ok()?.to_owned(),
+                parent_version_id: parent_version.to_str().ok()?.to_owned(),
+            })
+        });
     let Ok(response) = response
         .json::<types::webhooks::run::storages::memory_archive::Response>()
         .await
@@ -526,12 +536,7 @@ async fn warm_committed_memory(
             &archive.version_id,
             &archive.archive_url,
             archive.archive_size,
-            archive
-                .delta_base
-                .map(|base| runner_storage::memory_delta::MemoryDeltaBase {
-                    memory_id: base.memory_id,
-                    parent_version_id: base.parent_version_id,
-                }),
+            delta_base,
             reporter,
         );
     }

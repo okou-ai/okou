@@ -1,5 +1,5 @@
 //! Optional, process-local packages derived from committed Member Memory
-//! archives. All archive reads, validation, and compression happen off startup.
+//! archives. Archive reads, validation, and decoding happen off startup.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, Read};
@@ -14,12 +14,16 @@ use guest_contracts::{
 use sha2::{Digest, Sha256};
 
 const MAX_READY_DELTAS: usize = 128;
-/// Minimum compressed size for a version that can justify incremental restore.
-pub const MIN_ARCHIVE_BYTES: u64 = 1024 * 1024;
+const MIN_ARCHIVE_BYTES: u64 = 1024 * 1024;
 const MAX_CHANGED_BYTES: usize = 512 * 1024;
 const MAX_CHANGED_PATHS: usize = 128;
 // Tar block rounding and long names are separate from the file content budget.
 const MAX_TAR_BYTES: u64 = 2 * memory_tree::MAX_CONTENT_BYTES;
+
+/// Eligible compressed archive sizes for a locally prepared Memory delta.
+pub fn eligible_archive_size(size: u64) -> bool {
+    (MIN_ARCHIVE_BYTES..=crate::storage_cache::CACHE_MAX_SIZE).contains(&size)
+}
 
 /// A successful publication of a nonempty target has one direct base.
 #[derive(Clone)]
@@ -87,7 +91,8 @@ pub(crate) fn build_memory_delta(
     parent_archive: &[u8],
     target_archive: &[u8],
 ) -> io::Result<Option<MemoryDelta>> {
-    if (target_archive.len() as u64) < MIN_ARCHIVE_BYTES || base.parent_version_id == target_version
+    if !eligible_archive_size(target_archive.len() as u64)
+        || base.parent_version_id == target_version
     {
         return Ok(None);
     }
@@ -241,7 +246,7 @@ fn scan_archive(
         if read == 0 {
             break;
         }
-        if tail[..read].iter().any(|&byte| byte != 0) {
+        if tail.iter().take(read).any(|&byte| byte != 0) {
             return Err(unsupported());
         }
     }

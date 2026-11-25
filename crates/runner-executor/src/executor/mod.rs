@@ -541,15 +541,17 @@ impl ExecuteOutcome {
         self.storage_fingerprints = inputs;
         if self.failure.is_none()
             && let Some(lease) = self.home_image.as_mut()
-            && let Some(memory) = context
+        {
+            let memory = context
                 .storage_manifest
                 .as_ref()
                 .and_then(|manifest| manifest.member_memory())
-            && memory.empty != Some(true)
-            && memory
-                .archive_size
-                .is_some_and(|size| size >= runner_storage::memory_delta::MIN_ARCHIVE_BYTES)
-        {
+                .filter(|memory| {
+                    memory.empty != Some(true)
+                        && memory
+                            .archive_size
+                            .is_some_and(runner_storage::memory_delta::eligible_archive_size)
+                });
             lease.set_memory_mount(memory);
         }
         self

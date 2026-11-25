@@ -47,6 +47,7 @@ pub(super) async fn execute_reused_sandbox(
         start.prev_storage,
         run.home_image
             .as_ref()
+            .filter(|_| run.kind == IdleSandboxKind::Blank)
             .and_then(HomeImageLease::previous_memory),
         config,
         &inputs.controls.cancel,

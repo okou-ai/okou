@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nix::fcntl::Flock;
 use tokio::fs;
@@ -63,9 +63,9 @@ pub struct HomeMemoryProof {
 }
 
 pub(super) struct HomeMemoryProofEntry {
-    generation: String,
     image: HomeImageFileIdentity,
     proof: Arc<HomeMemoryProof>,
+    published_at: Instant,
 }
 
 pub struct HomeImageLease {
@@ -373,9 +373,8 @@ impl HomeImageCache {
             .memory_proofs
             .try_lock()
             .ok()?
-            .iter()
-            .rev()
-            .find(|entry| entry.generation == generation && entry.image == image)
+            .get(generation)
+            .filter(|entry| entry.image == image)
             .map(|entry| Arc::clone(&entry.proof))
     }
 
@@ -388,14 +387,23 @@ impl HomeImageCache {
         let Ok(mut entries) = self.inner.memory_proofs.lock() else {
             return;
         };
-        if entries.len() == MAX_HOME_MEMORY_PROOFS {
-            entries.pop_front();
+        if entries.len() == MAX_HOME_MEMORY_PROOFS
+            && !entries.contains_key(&generation)
+            && let Some(oldest) = entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.published_at)
+                .map(|(generation, _)| generation.clone())
+        {
+            entries.remove(&oldest);
         }
-        entries.push_back(HomeMemoryProofEntry {
+        entries.insert(
             generation,
-            image,
-            proof,
-        });
+            HomeMemoryProofEntry {
+                image,
+                proof,
+                published_at: Instant::now(),
+            },
+        );
     }
 
     pub(crate) fn observe_home(&self, observation: HomeObservation) {
@@ -1414,8 +1422,11 @@ impl HomeImageLease {
         self.previous_memory.as_deref()
     }
 
-    pub fn set_memory_mount(&mut self, artifact: &runner_types::storage_manifest::ArtifactEntry) {
-        self.memory_mount = Some(MemoryMount {
+    pub fn set_memory_mount(
+        &mut self,
+        artifact: Option<&runner_types::storage_manifest::ArtifactEntry>,
+    ) {
+        self.memory_mount = artifact.map(|artifact| MemoryMount {
             path: artifact.mount_path.clone(),
             storage_id: artifact.vas_storage_id.clone(),
         });

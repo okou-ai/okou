@@ -48,40 +48,33 @@ describe("Memory publication authorization", () => {
       ).toStrictEqual({});
 
       await fixture.completePublication(writer, prepared.versionId);
-      await accept(archives.read({ headers: writer.headers }), [401]);
+      const denied = await accept(
+        archives.read({ headers: writer.headers }),
+        [401],
+      );
+      expect(denied.headers.get("x-okou-memory-id")).toBeNull();
+      expect(denied.headers.get("x-okou-memory-parent-version")).toBeNull();
       const result = await accept(
         archives.read({ headers: hostHeaders }),
         [200],
       );
       const expected = memoryFilesArchive(files);
       expect(result.headers.get("cache-control")).toBe("private, no-store");
+      expect(result.headers.get("x-okou-memory-id")).toBe(
+        writer.memory.storageId,
+      );
+      expect(result.headers.get("x-okou-memory-parent-version")).toBe(
+        writer.memory.versionId,
+      );
       const archive = result.body.archive;
-      expect(archive).toMatchObject({
+      expect(archive).toStrictEqual({
         versionId: prepared.versionId,
         archiveSize: expected.length,
+        archiveUrl: expect.any(String),
       });
       if (!archive) {
         throw new Error("Expected the completed Run's Memory archive");
       }
-      expect(archive.deltaBase).toBeUndefined();
-      const lineage = await accept(
-        archives.read({
-          headers: hostHeaders,
-          query: { includeDeltaBase: "true" },
-        }),
-        [200],
-      );
-      expect(lineage.body.archive?.deltaBase).toStrictEqual({
-        memoryId: writer.memory.storageId,
-        parentVersionId: writer.memory.versionId,
-      });
-      await accept(
-        archives.read({
-          headers: writer.headers,
-          query: { includeDeltaBase: "true" },
-        }),
-        [401],
-      );
       const response = await fetch(archive.archiveUrl);
       expect(response.ok).toBeTruthy();
       expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(expected);

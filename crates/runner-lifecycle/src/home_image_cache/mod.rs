@@ -13,7 +13,7 @@
 use crate::error::{LifecycleError, LifecycleResult};
 use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_storage::SandboxOpReporter;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
@@ -183,7 +183,7 @@ struct HomeImageCacheInner {
     lock_dir: PathBuf,
     cache_scope: String,
     entry_lock_owners: Mutex<HashMap<String, HomeCacheLockRegistration>>,
-    memory_proofs: Mutex<VecDeque<lifecycle::HomeMemoryProofEntry>>,
+    memory_proofs: Mutex<HashMap<String, lifecycle::HomeMemoryProofEntry>>,
     publication_admission: Semaphore,
     checkout_io: TaskTracker,
     selection_releases: SelectionReleases,

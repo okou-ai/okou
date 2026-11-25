@@ -708,15 +708,6 @@ export const rustTypeBindings = [
           versionId: ["Content-addressed version used as the cache key."],
           archiveSize: ["Committed compressed byte count."],
           archiveUrl: ["Scoped, presigned GET URL for the committed archive."],
-          deltaBase: ["The direct published parent, returned on request."],
-        },
-      },
-      {
-        rustTypeName: "ResponseArchiveDeltaBase",
-        rustDoc: ["Owner-scoped base of the completed Memory publication."],
-        fields: {
-          memoryId: ["Owner-scoped Member Memory identifier."],
-          parentVersionId: ["The publication's direct parent version."],
         },
       },
     ],

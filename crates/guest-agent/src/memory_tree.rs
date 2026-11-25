@@ -124,7 +124,7 @@ impl TreeScan {
                 return Err(unavailable());
             }
             seen += n as u64;
-            sha256.update(&buffer[..n]);
+            sha256.update(buffer.get(..n).ok_or_else(unavailable)?);
         }
         if seen != state.stx_size {
             return Err(unavailable());

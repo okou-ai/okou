@@ -15,7 +15,7 @@ use tracing::warn;
 
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::memory_delta::{
-    MIN_ARCHIVE_BYTES, MemoryDelta, MemoryDeltaBase, ReadyMemoryDeltas, build_memory_delta,
+    MemoryDelta, MemoryDeltaBase, ReadyMemoryDeltas, build_memory_delta, eligible_archive_size,
 };
 use crate::storage_plan::ArchiveHandle;
 #[cfg(test)]
@@ -198,7 +198,7 @@ impl StorageCacheBackgroundFillCoordinator {
             home,
             reporter,
             BackgroundFillAction::WarmCommittedMemory(
-                delta_base.filter(|_| archive_size >= MIN_ARCHIVE_BYTES),
+                delta_base.filter(|_| eligible_archive_size(archive_size)),
             ),
             false,
         );
@@ -830,7 +830,7 @@ async fn run_background_fill_work(
         .await;
         if let Ok(Some(delta)) = built {
             deltas.insert(delta);
-            tracing::debug!(
+            tracing::info!(
                 duration_ms = started.elapsed().as_millis(),
                 "prebuilt Memory delta"
             );

@@ -211,6 +211,8 @@ pub mod heartbeat;
 pub mod home_cache_history;
 pub mod http;
 pub mod masker;
+#[cfg(target_os = "linux")]
+mod memory_tree;
 pub mod metrics;
 mod native_continuation;
 mod nofollow_fs;
@@ -274,5 +276,3 @@ pub(crate) fn lock_system_log_test_state() -> tokio::sync::MutexGuard<'static, (
 pub(crate) async fn lock_system_log_test_state_async() -> tokio::sync::MutexGuard<'static, ()> {
     SYSTEM_LOG_TEST_MUTEX.lock().await
 }
-#[cfg(target_os = "linux")]
-mod memory_tree;

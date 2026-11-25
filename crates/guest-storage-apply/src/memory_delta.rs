@@ -62,6 +62,11 @@ pub(super) fn apply(manifest: &Manifest, groups: &[StorageFiles<&[u8]>]) -> io::
     // Keep full-restore responsibility with the caller if the verified root
     // is no longer available. Never create a partial replacement root.
     let _directory = CleanupDirectory::open(root)?;
+    // The generic decoded writer can skip files with an escaping ancestor.
+    // A delta needs every write, and the proved tree already has each parent.
+    for file in files {
+        CleanupDirectory::open_parent(&root.join(&file.path))?;
+    }
     for path in &manifest.cleanup_paths {
         let (parent, name) = CleanupDirectory::open_parent(Path::new(path))?;
         let anchored = parent.proc_path().join(name);

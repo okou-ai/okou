@@ -3766,16 +3766,6 @@ pub mod webhooks {
         pub mod storages {
             /// Host-only responses for warming committed Memory archives.
             pub mod memory_archive {
-                /// Owner-scoped base of the completed Memory publication.
-                #[derive(serde::Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                pub struct ResponseArchiveDeltaBase {
-                    /// Owner-scoped Member Memory identifier.
-                    pub memory_id: String,
-                    /// The publication's direct parent version.
-                    pub parent_version_id: String,
-                }
-
                 /// The authorized, immutable member Memory archive.
                 #[derive(serde::Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -3786,9 +3776,6 @@ pub mod webhooks {
                     pub archive_size: u64,
                     /// Scoped, presigned GET URL for the committed archive.
                     pub archive_url: String,
-                    /// The direct published parent, returned on request.
-                    #[serde(default, skip_serializing_if = "Option::is_none")]
-                    pub delta_base: Option<ResponseArchiveDeltaBase>,
                 }
 
                 /// Optional archive eligible for post-Run cache warming.

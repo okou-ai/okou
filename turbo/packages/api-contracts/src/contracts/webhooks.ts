@@ -1128,17 +1128,12 @@ export const webhookMemoryArchiveContract = c.router({
     method: "GET",
     path: "/api/webhooks/run/storages/memory-archive",
     headers: authHeadersSchema,
-    query: object({ includeDeltaBase: literal("true").optional() }),
     responses: {
       200: object({
         archive: object({
           versionId: string(),
           archiveSize: number().int().positive(),
           archiveUrl: string(),
-          deltaBase: object({
-            memoryId: string(),
-            parentVersionId: string(),
-          }).optional(),
         }).optional(),
       }),
       401: apiErrorSchema,

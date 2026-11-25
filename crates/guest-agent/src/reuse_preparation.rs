@@ -213,7 +213,7 @@ pub fn prepare_for_cache_from_stdin() -> Result<
     request
         .validate()
         .map_err(|_| invalid_path("invalid publication generation"))?;
-    let mut report = prepare(
+    let report = prepare(
         &ReusePreparationRequest {
             current_runtime_dir: request.current_runtime_dir,
             retained_runtime_dir: request.retained_runtime_dir,
@@ -222,12 +222,19 @@ pub fn prepare_for_cache_from_stdin() -> Result<
         Some(&request.generation),
     )?;
     #[cfg(target_os = "linux")]
-    if report.cleanup.home.home_rejection_reason().is_none()
-        && let Some(mount) = request.memory_mount.as_deref()
-    {
-        report.memory_digest = crate::memory_tree::capture(mount).ok();
-    }
-    Ok(report)
+    let memory_digest = request
+        .memory_mount
+        .as_deref()
+        .filter(|_| report.cleanup.home.home_rejection_reason().is_none())
+        .and_then(|mount| crate::memory_tree::capture(mount).ok());
+    #[cfg(not(target_os = "linux"))]
+    let memory_digest = None;
+    Ok(
+        guest_contracts::home_cache_history::TerminalHomeCachePreparationReport {
+            memory_digest,
+            ..report
+        },
+    )
 }
 
 fn prepare_from_stdin_with_retention(

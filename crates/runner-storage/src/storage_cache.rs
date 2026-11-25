@@ -121,7 +121,7 @@ pub use guest_application::{
 };
 
 /// Archive sizes strictly larger than this are passthrough.
-const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
+pub(crate) const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
 const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 
 /// Parallel (probe GET / full GET / flock / vsock) operations per `populate_cache` call.
