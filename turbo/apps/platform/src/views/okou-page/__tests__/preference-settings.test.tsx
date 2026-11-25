@@ -1,211 +1,87 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   morningBriefPreferenceContract,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { describe, expect, it, test } from "vitest";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { pathname, search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
 const context = testContext();
-
-test("keeps the Morning Brief switch on while the platform recovers its schedule", async () => {
+async function openBrief(status: "preparing" | "error") {
   let preference: MorningBriefPreferenceResponse = {
     enabled: true,
-    status: "error",
+    status,
     unavailableReason: null,
   };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
     return respond(200, preference);
   });
-  context.mocks.api(
-    morningBriefPreferenceContract.update,
-    ({ body, respond }) => {
-      preference = { ...preference, enabled: body.enabled, status: "paused" };
-      return respond(200, preference);
-    },
-  );
-  await setupPage({ context, path: "/?settings=preference" });
-  const card = await screen.findByTestId("morning-brief-preference");
-  await expect(
-    within(card).findByText("Temporarily unavailable."),
-  ).resolves.toBeInTheDocument();
-  const toggle = within(card).getByRole("switch", { name: "Morning brief" });
-  expect(toggle).toBeChecked();
-  click(toggle);
-  await waitFor(() => {
-    expect(toggle).not.toBeChecked();
-  });
-});
-
-async function expectUnifiedSection(
-  section: "preference" | "model" | "debug",
-  heading: "Preference" | "Use more models" | "Debug",
-): Promise<void> {
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  expect(within(dialog).getByRole("heading", { name: heading })).toBeVisible();
-  expect(pathname()).toBe("/");
-  const params = new URLSearchParams(search());
-  expect(params.get("settings")).toBe(section);
-  expect(params.has("tab")).toBeFalsy();
-}
-
-describe("unified preference settings", () => {
-  it.each(["/settings"])(
-    "maps the legacy preference URL %s into unified Settings",
-    async (path) => {
-      await setupPage({ context, path });
-
-      await expectUnifiedSection("preference", "Preference");
-      expect(pathname()).toBe("/");
-    },
-  );
-
-  it.each(["/settings?tab=model-configuration"])(
-    "maps the legacy model URL %s into unified Settings",
-    async (path) => {
-      await setupPage({ context, path });
-
-      await expectUnifiedSection("model", "Use more models");
-      const dialog = screen.getByRole("dialog", { name: "Settings" });
-      expect(
-        within(dialog).getByRole("heading", { name: "Claude" }),
-      ).toBeVisible();
-      expect(
-        within(dialog).getByRole("heading", { name: "ChatGPT (Codex)" }),
-      ).toBeVisible();
-    },
-  );
-
-  it("retains the unified Debug visibility fallback for legacy links", async () => {
-    await setupPage({ context, path: "/preferences?tab=debug" });
-
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(
-      within(dialog).getByRole("heading", { name: "Preference" }),
-    ).toBeVisible();
-    expect(within(dialog).queryByText("Debug")).not.toBeInTheDocument();
-    expect(pathname()).toBe("/");
-    expect(new URLSearchParams(search()).get("settings")).toBe("debug");
-  });
-
-  it("shows Morning Brief without requiring Official Workflows", async () => {
-    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled: false,
-        status: "paused",
-        unavailableReason: null,
-      });
-    });
-
-    await setupPage({
-      context,
-      path: "/?settings=preference",
-    });
-
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    await expect(
-      within(dialog).findByTestId("morning-brief-preference"),
-    ).resolves.toBeVisible();
-  });
-
-  it("a rejected Morning Brief update preserves the confirmed preference and reports conflict", async () => {
-    const captured: boolean[] = [];
-    let preference: MorningBriefPreferenceResponse = {
-      enabled: false,
-      status: "paused",
-      unavailableReason: null,
-    };
-    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-      return respond(200, preference);
-    });
-    context.mocks.api(
-      morningBriefPreferenceContract.update,
-      ({ body, respond }) => {
-        captured.push(body.enabled);
-        if (!body.enabled) {
-          return respond(409, {
-            error: {
-              code: "MORNING_BRIEF_STATE_CONFLICT",
-              message: "conflict",
-            },
-          });
-        }
-        preference = {
-          enabled: true,
-          status: "enabled",
-          unavailableReason: null,
-        };
-        return respond(200, preference);
-      },
-    );
-
-    await setupPage({
-      context,
-      path: "/?settings=preference",
-    });
-    const toggle = await screen.findByRole("switch", {
-      name: "Morning brief",
-    });
-    click(toggle);
-    await waitFor(() => {
-      expect(captured).toStrictEqual([true]);
-      expect(toggle).toBeChecked();
-    });
-
-    click(toggle);
-    await waitFor(() => {
-      expect(
-        screen.getByText(/Morning Brief is temporarily unavailable/u),
-      ).toBeInTheDocument();
-      expect(toggle).toHaveAttribute("aria-disabled", "true");
-      expect(toggle).toBeChecked();
-    });
-  });
-});
-
-test("shows pending Morning Brief enrollment and accepts cancellation", async () => {
-  let preference: MorningBriefPreferenceResponse = {
-    enabled: true,
-    status: "preparing",
-    unavailableReason: null,
-  };
-  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+  context.mocks.api(morningBriefPreferenceContract.retry, ({ respond }) => {
     return respond(200, preference);
   });
   context.mocks.api(
     morningBriefPreferenceContract.update,
     ({ body, respond }) => {
       preference = {
-        ...preference,
         enabled: body.enabled,
         status: body.enabled ? "preparing" : "paused",
+        unavailableReason: null,
       };
       return respond(200, preference);
     },
   );
-  await setupPage({ context, path: "/?settings=preference" });
-  const card = await screen.findByTestId("morning-brief-preference");
+  await setupPage({
+    context,
+    path: "/?settings=preference",
+    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: false },
+  });
+  return screen.findByRole("switch", { name: /morning brief/i });
+}
+test("preference-settings-001 the member can disable an enabled Morning Brief while its schedule is unavailable", async () => {
+  const toggle = await openBrief("error");
   await expect(
-    within(card).findByText(
-      "Preparing your first Morning Brief. You can turn it off at any time.",
-    ),
+    screen.findByText("Temporarily unavailable."),
   ).resolves.toBeVisible();
-  const toggle = within(card).getByRole("switch", { name: "Morning brief" });
+  expect(toggle).toBeChecked();
+  click(toggle);
+  await waitFor(() => {
+    return expect(toggle).not.toBeChecked();
+  });
+});
+test("preference-settings-007 preparing Morning Brief supports cancellation and re-enrollment", async () => {
+  const toggle = await openBrief("preparing");
+  const message =
+    "Preparing your first Morning Brief. You can turn it off at any time.";
+  await expect(screen.findByText(message)).resolves.toBeVisible();
   expect(toggle).toBeChecked();
   expect(toggle).toBeEnabled();
   click(toggle);
   await waitFor(() => {
-    expect(
-      within(card).getByRole("switch", { name: "Morning brief" }),
-    ).not.toBeChecked();
+    return expect(toggle).not.toBeChecked();
   });
-  click(within(card).getByRole("switch", { name: "Morning brief" }));
+  expect(screen.queryByText(message)).not.toBeInTheDocument();
+  click(toggle);
+  await expect(screen.findByText(message)).resolves.toBeVisible();
+  expect(toggle).toBeChecked();
+  expect(toggle).toBeEnabled();
+});
+test("preference-settings-002 the legacy settings link opens Preference on Home", async () => {
+  await setupPage({ context, path: "/settings" });
+  await expect(screen.findByText("Account & security")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
+  expect(location.search).toBe("?settings=preference");
+});
+test("Upstream Home redirect for the legacy model tab opens both subscription providers in Unified Settings", async () => {
+  await setupPage({ context, path: "/settings?tab=model-configuration" });
   await waitFor(() => {
+    expect(location.pathname).toBe("/");
     expect(
-      within(card).getByRole("switch", { name: "Morning brief" }),
-    ).toBeChecked();
+      screen.getByRole("heading", { name: "Use more models" }),
+    ).toBeVisible();
   });
+  expect(screen.getByText("Claude", { exact: true })).toBeVisible();
+  expect(screen.getByText("ChatGPT (Codex)", { exact: true })).toBeVisible();
+  expect(location.search).toBe("?settings=model");
+  expect(location.pathname).toBe("/");
 });

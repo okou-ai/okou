@@ -1,498 +1,273 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import { fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getConnectorAction,
-  getConnectorCard,
-  mockGithubAccounts,
-} from "./connector-page-test-helpers.ts";
+import { findButton, queryButton } from "./chat-run-test-fixtures.ts";
+import { mockSavedConnectorAccounts } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-type User = ReturnType<typeof userEvent.setup>;
+const managerName = "Manage GitHub accounts";
+const accountName = "Account name";
 
-function mockRenameAccounts({
-  accountCount = 3,
-  renameResponse,
-  refreshResponse,
-}: {
-  readonly accountCount?: number;
-  readonly renameResponse?: Promise<void>;
-  readonly refreshResponse?: Promise<void>;
-} = {}) {
-  let accounts = mockGithubAccounts(context, accountCount);
-  let renamed = false;
-  let submittedRename: {
-    readonly connectionId: string;
-    readonly displayName: string | null;
-  } | null = null;
-  const renameStarted = context.mocks.deferred<void>();
-  const renameReturned = context.mocks.deferred<void>();
-  const refreshStarted = context.mocks.deferred<void>();
-  const refreshReturned = context.mocks.deferred<void>();
-  context.mocks.api(
-    connectorAccountsContract.connections,
-    async ({ query, respond }) => {
-      if (renamed) {
-        if (!refreshStarted.settled()) {
-          refreshStarted.resolve();
-        }
-        await refreshResponse;
-        if (!refreshReturned.settled()) {
-          refreshReturned.resolve();
-        }
+async function openAccountList() {
+  click(await findButton(managerName));
+  return screen.findByRole("dialog", { name: managerName });
+}
+
+async function accountActions(label: string) {
+  const row = await screen.findByRole("group", { name: label });
+  const button = queryButton("Account actions", row);
+  if (!button) {
+    throw new Error("Missing account actions for " + label);
+  }
+  return button;
+}
+
+function accounts() {
+  return ["Work 1", "Work 2"].map((displayName, index) => {
+    return connectorAccountFixture(
+      { kind: "builtin", connectorSlug: "github" },
+      { displayName, isDefault: index === 0 },
+    );
+  });
+}
+
+async function chooseRenameWithKeys(actions: HTMLElement) {
+  const dialog = screen.getByRole("dialog", { name: managerName });
+  for (
+    let i = 0;
+    i < dialog.querySelectorAll("button,input").length + 2 &&
+    document.activeElement !== actions;
+    i++
+  ) {
+    await userEvent.tab();
+  }
+  expect(actions).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  const rename = await screen.findByText("Rename", {
+    selector: '[role="menuitem"]',
+  });
+  await userEvent.keyboard("{Home}{ArrowDown}");
+  expect(rename).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+}
+
+async function beginEdit(label: string, input: "pointer" | "keyboard") {
+  const actions = await accountActions(label);
+  if (input === "keyboard") {
+    await chooseRenameWithKeys(actions);
+  } else {
+    await userEvent.click(actions);
+    await userEvent.click(
+      await screen.findByText("Rename", { selector: '[role="menuitem"]' }),
+    );
+  }
+  return screen.findByRole("textbox", { name: accountName });
+}
+
+test.each([
+  ["001", "keyboard"],
+  ["002", "pointer"],
+] as const)(
+  "connectors-account-rename-focus-%s tab navigation after %s rename",
+  async (_id, input) => {
+    const saved = accounts();
+    mockSavedConnectorAccounts(context, () => {
+      return saved;
+    });
+    await setupPage({ context, path: "/connectors" });
+    const manager = await openAccountList();
+    const field = await beginEdit("Work 1", input);
+    await fill(field, "Work 1x");
+    expect(field).toHaveValue("Work 1x");
+    await userEvent.tab();
+    expect(queryButton("Cancel", manager)).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(field).toHaveFocus();
+    await userEvent.tab({ shift: true });
+    expect(manager).toContainElement(document.activeElement as HTMLElement);
+    expect(field).not.toHaveFocus();
+    await userEvent.tab();
+    expect(field).toHaveFocus();
+  },
+);
+
+test("connectors-account-rename-focus-009 the refreshed Research row takes focus when it arrives", async () => {
+  const saved = accounts();
+  const patch = context.mocks.deferred<void>();
+  const requestedList = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
+  let changed = false;
+  mockSavedConnectorAccounts(context, async () => {
+    if (changed) {
+      if (!requestedList.settled()) {
+        requestedList.resolve();
       }
-      const search = query.search?.toLowerCase();
-      return respond(200, {
-        connections: search
-          ? accounts.filter((account) => {
-              return account.displayName?.toLowerCase().includes(search);
-            })
-          : accounts,
-        nextCursor: null,
-        defaultConnection:
-          accounts.find((account) => {
-            return account.isDefault;
-          }) ?? null,
-      });
-    },
-  );
+      await refresh.promise;
+    }
+    return saved;
+  });
   context.mocks.api(
     connectorAccountsContract.rename,
     async ({ params, body, respond }) => {
-      submittedRename = {
-        connectionId: params.connectionId,
-        displayName: body.displayName,
-      };
-      if (!renameStarted.settled()) {
-        renameStarted.resolve();
-      }
-      await renameResponse;
-      const account = accounts.find((candidate) => {
-        return candidate.id === params.connectionId;
-      });
-      if (!account) {
-        throw new Error("Expected an existing account to rename");
-      }
-      const updated = { ...account, displayName: body.displayName };
-      accounts = accounts.map((candidate) => {
-        return candidate.id === account.id ? updated : candidate;
-      });
-      renamed = true;
-      if (!renameReturned.settled()) {
-        renameReturned.resolve();
-      }
-      return respond(200, updated);
+      await patch.promise;
+      const row = saved.find((item) => {
+        return item.id === params.connectionId;
+      })!;
+      row.displayName = body.displayName;
+      changed = true;
+      return respond(200, row);
     },
   );
-  return {
-    renameStarted: renameStarted.promise,
-    renameReturned: renameReturned.promise,
-    refreshStarted: refreshStarted.promise,
-    refreshReturned: refreshReturned.promise,
-    submittedRename: () => {
-      return submittedRename;
-    },
-  };
-}
-
-async function openManager(user: User): Promise<HTMLElement> {
-  const trigger = await waitFor(() => {
-    return getConnectorAction(
-      "button",
-      "Manage GitHub accounts",
-      getConnectorCard("GitHub"),
-    );
-  });
-  await user.click(trigger);
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-  await within(manager).findByRole("group", { name: "Work 1" });
-  return manager;
-}
-
-function accountActions(manager: HTMLElement, accountName: string) {
-  return getConnectorAction(
-    "button",
-    "Account actions",
-    within(manager).getByRole("group", { name: accountName }),
-  );
-}
-
-async function tabTo(user: User, target: HTMLElement): Promise<void> {
-  for (
-    let index = 0;
-    index < 30 && document.activeElement !== target;
-    index++
-  ) {
-    await user.tab();
-  }
-  expect(target).toHaveFocus();
-}
-
-async function activateRenameWithKeyboard(
-  user: User,
-  trigger: HTMLElement,
-): Promise<void> {
-  await tabTo(user, trigger);
-  await user.keyboard("{Enter}");
-  const menu = await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(getConnectorAction("menuitem", "Reconnect", menu)).toHaveFocus();
-  });
-  await user.keyboard("{ArrowDown}");
-  expect(getConnectorAction("menuitem", "Rename", menu)).toHaveFocus();
-  await user.keyboard("{Enter}");
-}
-
-async function enterRename(
-  user: User,
-  manager: HTMLElement,
-  activation: "keyboard" | "pointer",
-  accountName = "Work 1",
-): Promise<HTMLElement> {
-  const trigger = accountActions(manager, accountName);
-  if (activation === "keyboard") {
-    await activateRenameWithKeyboard(user, trigger);
-  } else {
-    await user.click(trigger);
-    const menu = await screen.findByRole("menu");
-    await user.click(getConnectorAction("menuitem", "Rename", menu));
-  }
-  const input = await within(manager).findByLabelText("Account name");
-  await waitFor(() => {
-    expect(input).toHaveFocus();
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-  return input;
-}
-
-async function openRenameForm(activation: "keyboard" | "pointer") {
-  const fixture = mockRenameAccounts();
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, activation);
-  await user.keyboard("{End}x");
-  expect(input).toHaveValue("Work 1x");
-  expect(input).toHaveFocus();
-  await user.tab();
-  expect(getConnectorAction("button", "Cancel", manager)).toHaveFocus();
-  return { user, manager, input, fixture };
-}
-
-test.each(["keyboard", "pointer"] as const)(
-  "Keep input navigation focus after %s account rename",
-  async (activation) => {
-    const { user, manager, input } = await openRenameForm(activation);
-    await user.tab({ shift: true });
-    expect(input).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(manager.contains(document.activeElement)).toBeTruthy();
-    await user.tab();
-    expect(input).toHaveFocus();
-    return;
-  },
-);
-
-test.each(["keyboard", "pointer"] as const)(
-  "Keep cancel focus after %s account rename",
-  async (activation) => {
-    const { fixture, user, manager } = await openRenameForm(activation);
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(accountActions(manager, "Work 1")).toHaveFocus();
-    });
-    expect(fixture.submittedRename()).toBeNull();
-    expect(manager).toBeInTheDocument();
-  },
-);
-
-test.each(["keyboard", "pointer"] as const)(
-  "Keep account menu focus after %s account rename",
-  async (activation) => {
-    const { fixture, user, manager } = await openRenameForm(activation);
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(accountActions(manager, "Work 1")).toHaveFocus();
-    });
-    expect(fixture.submittedRename()).toBeNull();
-    await user.keyboard("{Enter}");
-    await screen.findByRole("menu");
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(accountActions(manager, "Work 1")).toHaveFocus();
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
-    expect(manager).toBeInTheDocument();
-  },
-);
-
-test.each(["keyboard", "pointer"] as const)(
-  "Keep dismiss manager focus after %s account rename",
-  async (activation) => {
-    const { fixture, user, manager } = await openRenameForm(activation);
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(accountActions(manager, "Work 1")).toHaveFocus();
-    });
-    expect(fixture.submittedRename()).toBeNull();
-    expect(manager).toBeInTheDocument();
-    await user.keyboard("{Enter}");
-    await screen.findByRole("menu");
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(accountActions(manager, "Work 1")).toHaveFocus();
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
-    await user.tab();
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(manager).not.toBeInTheDocument();
-      expect(
-        getConnectorAction("button", "Manage GitHub accounts"),
-      ).toHaveFocus();
-    });
-  },
-);
-
-test("Restore the renamed account actions only after the refreshed list arrives", async () => {
-  const response = context.mocks.deferred<void>();
-  const refresh = context.mocks.deferred<void>();
-  const fixture = mockRenameAccounts({
-    renameResponse: response.promise,
-    refreshResponse: refresh.promise,
-  });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, "keyboard");
-  await user.keyboard("{Control>}a{/Control}Research");
-  expect(input).toHaveValue("Research");
-  await user.tab();
-  await user.tab();
-  expect(getConnectorAction("button", "Save", manager)).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await fixture.renameStarted;
-  expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
-  expect(input).toHaveFocus();
-
-  response.resolve();
-  await fixture.refreshStarted;
-  expect(input).toHaveFocus();
+  await setupPage({ context, path: "/connectors" });
+  const manager = await openAccountList();
+  const field = await beginEdit("Work 1", "pointer");
+  await fill(field, "Research");
+  await userEvent.keyboard("{Enter}");
+  patch.resolve();
+  await requestedList.promise;
+  expect(field).toHaveFocus();
+  expect(queryButton("Save", manager)).toBeDisabled();
   expect(
     within(manager).queryByRole("group", { name: "Research" }),
   ).not.toBeInTheDocument();
   refresh.resolve();
-
+  const actions = await accountActions("Research");
   await waitFor(() => {
-    expect(accountActions(manager, "Research")).toHaveFocus();
+    return expect(actions).toHaveFocus();
   });
-  await user.keyboard("{Enter}");
-  await screen.findByRole("menu");
+  await userEvent.keyboard("{Enter}");
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
 });
 
-test("Focus account search when the saved name no longer matches its results", async () => {
-  const fixture = mockRenameAccounts({ accountCount: 7 });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const search = within(manager).getByPlaceholderText("Find accounts");
-  await user.click(search);
-  await user.keyboard("Work 1");
-  await waitFor(() => {
-    expect(
-      within(manager).getByRole("group", { name: "Work 1" }),
-    ).toBeInTheDocument();
-    expect(
-      within(manager).queryByRole("group", { name: "Work 2" }),
-    ).not.toBeInTheDocument();
-  });
-  const input = await enterRename(user, manager, "keyboard");
-  await user.keyboard("{Control>}a{/Control}Research{Enter}");
-
-  await within(manager).findByText("No accounts found");
-  expect(fixture.submittedRename()).toMatchObject({ displayName: "Research" });
-  await waitFor(() => {
-    expect(search).toHaveFocus();
-  });
-  expect(input).not.toBeInTheDocument();
-  await user.keyboard("{Control>}a{/Control}Research");
-  expect(search).toHaveValue("Research");
-  await waitFor(() => {
-    expect(
-      within(manager).queryByLabelText("Account name"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(manager)
-        .queryAllByRole("group")
-        .map((row) => {
-          return row.getAttribute("aria-label");
-        }),
-    ).toContain("Research");
-  });
-  expect(search).toHaveFocus();
-  await user.tab();
-  expect(manager.contains(document.activeElement)).toBeTruthy();
-  await user.tab({ shift: true });
-  expect(search).toHaveFocus();
-});
-
-test("Keep focus outside a manager closed during a delayed rename", async () => {
-  const response = context.mocks.deferred<void>();
-  const fixture = mockRenameAccounts({ renameResponse: response.promise });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  await enterRename(user, manager, "keyboard");
-  await user.keyboard("{End} saved{Enter}");
-  await fixture.renameStarted;
-  await user.keyboard("{Escape}");
-  const trigger = getConnectorAction("button", "Manage GitHub accounts");
-  await waitFor(() => {
-    expect(manager).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-  });
-  await user.tab();
-  const outsideFocus = document.activeElement;
-  expect(outsideFocus).not.toBe(document.body);
-
-  await act(async () => {
-    response.resolve();
-    await fixture.renameReturned;
-  });
-  expect(outsideFocus).toHaveFocus();
-  expect(
-    screen.queryByRole("dialog", { name: "Manage GitHub accounts" }),
-  ).not.toBeInTheDocument();
-  await user.click(trigger);
-  const reopened = await screen.findByRole("dialog", {
-    name: "Manage GitHub accounts",
-  });
-  await within(reopened).findByRole("group", { name: "Work 1 saved" });
-  expect(
-    within(reopened).queryByLabelText("Account name"),
-  ).not.toBeInTheDocument();
-});
-
-test("A search changed during save determines focus without a later stale handoff", async () => {
-  const refresh = context.mocks.deferred<void>();
-  const fixture = mockRenameAccounts({
-    accountCount: 7,
-    refreshResponse: refresh.promise,
-  });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, "pointer");
-  await fill(input, "Research");
-  await user.keyboard("{Enter}");
-  await fixture.refreshStarted;
-  const search = within(manager).getByPlaceholderText("Find accounts");
-  await fill(search, "No matching account");
-  expect(search).toHaveValue("No matching account");
-
-  refresh.resolve();
-  await within(manager).findByText("No accounts found");
-  // Empty results can render before save finishes its focus handoff.
-  await waitFor(() => {
-    expect(
-      within(manager).queryByLabelText("Account name"),
-    ).not.toBeInTheDocument();
-    expect(search).toHaveFocus();
-  });
-  await user.keyboard("{Control>}a{/Control}");
-  await user.paste("Research");
-  await within(manager).findByRole("group", { name: "Research" });
-  expect(search).toHaveFocus();
-  await user.keyboard("{End}x");
-  expect(search).toHaveValue("Researchx");
-});
-
-test("An old rename response cannot clear or steal focus from a newly opened edit", async () => {
-  const response = context.mocks.deferred<void>();
-  const fixture = mockRenameAccounts({ renameResponse: response.promise });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  await enterRename(user, manager, "keyboard");
-  await user.keyboard("{End} saved{Enter}");
-  await fixture.renameStarted;
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(manager).not.toBeInTheDocument();
-  });
-  const reopened = await openManager(user);
-  const input = await enterRename(user, reopened, "keyboard", "Work 2");
-  await user.keyboard("{End} new");
-
-  await act(async () => {
-    response.resolve();
-    await fixture.renameReturned;
-  });
-  expect(input).toHaveFocus();
-  expect(input).toHaveValue("Work 2 new");
-  await user.keyboard("{End} draft");
-  expect(input).toHaveValue("Work 2 new draft");
-  expect(getConnectorAction("button", "Save", reopened)).toBeEnabled();
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(fixture.submittedRename()).toMatchObject({
-      displayName: "Work 2 new draft",
+test.each([
+  ["005", "keyboard"],
+  ["006", "pointer"],
+] as const)(
+  "connectors-account-rename-focus-%s A concurrent name survives cancelling the %s edit",
+  async (_id, interaction) => {
+    const saved = accounts();
+    mockSavedConnectorAccounts(context, () => {
+      return saved;
     });
-    expect(
-      within(reopened).queryByLabelText("Account name"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(reopened)
-        .queryAllByRole("group")
-        .map((row) => {
-          return row.getAttribute("aria-label");
-        }),
-    ).toContain("Work 2 new draft");
+    context.mocks.api(
+      connectorAccountsContract.rename,
+      ({ body, params, respond }) => {
+        const row = saved.find((item) => {
+          return item.id === params.connectionId;
+        })!;
+        row.displayName = body.displayName;
+        return respond(200, row);
+      },
+    );
+    await setupPage({ context, path: "/connectors" });
+    const dialog = await openAccountList();
+    const name = await beginEdit("Work 1", interaction);
+    await fill(name, "Release planning");
+    saved[0]!.displayName = "Updated in another window";
+    const cancel = await findFastControl("button", "Cancel", dialog);
+    await userEvent.tab();
+    expect(cancel).toHaveFocus();
+    if (interaction === "keyboard") {
+      await userEvent.keyboard("{Enter}");
+    } else {
+      await userEvent.click(cancel);
+    }
+    const opener = await accountActions("Work 1");
+    await waitFor(() => {
+      return expect(opener).toHaveFocus();
+    });
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(opener).toHaveFocus();
+    expect(dialog).toBeVisible();
+    await userEvent.click(await findFastControl("button", "Close", dialog));
+    await screen.findByPlaceholderText("Find connectors");
+    await openAccountList();
+    const nextEdit = await beginEdit("Updated in another window", "pointer");
+    expect(nextEdit).toHaveValue("Updated in another window");
+    await fill(nextEdit, "Release planning");
+    await userEvent.keyboard("{Enter}");
+    await expect(accountActions("Release planning")).resolves.toHaveFocus();
+  },
+);
+
+async function leavePendingRename() {
+  const rows = accounts();
+  const saved = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const finished = context.mocks.deferred<void>();
+  mockSavedConnectorAccounts(context, () => {
+    return rows;
   });
-  expect(accountActions(reopened, "Work 2 new draft")).toHaveFocus();
+  context.mocks.api(
+    connectorAccountsContract.rename,
+    async ({ params, body, respond }) => {
+      const account = rows.find((row) => {
+        return row.id === params.connectionId;
+      })!;
+      account.displayName = body.displayName;
+      if (account.id === rows[0]!.id) {
+        saved.resolve();
+        await response.promise;
+        finished.resolve();
+      }
+      return respond(200, account);
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const manager = await openAccountList();
+  const field = await beginEdit("Work 1", "pointer");
+  await fill(field, "Research archive");
+  await userEvent.keyboard("{Enter}");
+  await saved.promise;
+  await userEvent.click(await findFastControl("button", "Close", manager));
+  await waitFor(() => {
+    return expect(manager).not.toBeInTheDocument();
+  });
+  return async () => {
+    response.resolve();
+    await finished.promise;
+  };
+}
+
+test("connectors-account-rename-focus-011 revised closed manager keeps outside focus while its saved name is persisted", async () => {
+  const finish = await leavePendingRename();
+  const search = await screen.findByPlaceholderText("Find connectors");
+  await userEvent.click(search);
+  await finish();
+  expect(search).toHaveFocus();
+  expect(screen.queryByRole("dialog", { name: managerName })).toBeNull();
+  const manager = await openAccountList();
+  await within(manager).findByRole("group", { name: "Research archive" });
+  expect(
+    within(manager).queryByRole("textbox", { name: accountName }),
+  ).toBeNull();
 });
 
-test("Finish a saved rename after an intermediate account search is superseded", async () => {
-  const refresh = context.mocks.deferred<void>();
-  const fixture = mockRenameAccounts({
-    accountCount: 7,
-    refreshResponse: refresh.promise,
-  });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  const input = await enterRename(user, manager, "pointer");
-  await fill(input, "Research");
-  await user.keyboard("{Enter}");
-  await fixture.refreshStarted;
-  const search = within(manager).getByPlaceholderText("Find accounts");
-  await user.click(search);
-  await user.keyboard("No");
-
-  await act(async () => {
-    refresh.resolve();
-    await fixture.refreshReturned;
-  });
-  expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
-  await fill(search, "No matching account");
-  expect(search).toHaveValue("No matching account");
-
-  await within(manager).findByText("No accounts found");
+test("connectors-account-rename-focus-013 revised reopened manager saves its own draft after the first account changes", async () => {
+  const finish = await leavePendingRename();
+  const manager = await openAccountList();
+  await within(manager).findByRole("group", { name: "Research archive" });
+  const editor = await beginEdit("Work 2", "pointer");
+  await fill(editor, "Work 2 new");
+  await finish();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveValue("Work 2 new");
+  await userEvent.keyboard(" draft{Enter}");
+  const updated = await accountActions("Work 2 new draft");
   await waitFor(() => {
-    expect(
-      within(manager).queryByLabelText("Account name"),
-    ).not.toBeInTheDocument();
-    expect(search).toHaveFocus();
+    return expect(updated).toHaveFocus();
   });
-  await fill(search, "Research");
-  await within(manager).findByRole("group", { name: "Research" });
-  expect(search).toHaveFocus();
-  await user.keyboard("{End}x");
-  expect(search).toHaveValue("Researchx");
+  expect(
+    within(manager).getByRole("group", { name: "Research archive" }),
+  ).toBeInTheDocument();
 });

@@ -1,0 +1,28 @@
+{
+  "received": {
+    "north": {
+      "socketId": 1,
+      "sessionId": "70EE75EBAD0B990516BB5FB10EDADAAC",
+      "url": "http://127.0.0.1:58189/refused",
+      "id": 94,
+      "frameId": "ADC1DAFA84C9AB66BB8A7A03397BCD81",
+      "errorText": "net::ERR_CONNECTION_REFUSED"
+    },
+    "south": {
+      "socketId": 2,
+      "sessionId": "BADCB300C5243E06A69B36F61CFDED96",
+      "url": "https://south.example.com/not-found",
+      "id": 49,
+      "frameId": "8B379FC132B065B19B65BDCEB2CD227E",
+      "errorText": "net::ERR_NAME_NOT_RESOLVED"
+    }
+  },
+  "southFirst": [
+    "127.0.0.1:58189/refused",
+    "south.example.com/not-found\n\nThe browser action could not be completed. Check the browser before trying again."
+  ],
+  "both": [
+    "127.0.0.1:58189/refused\n\nThe browser action could not be completed. Check the browser before trying again.",
+    "south.example.com/not-found\n\nThe browser action could not be completed. Check the browser before trying again."
+  ]
+}

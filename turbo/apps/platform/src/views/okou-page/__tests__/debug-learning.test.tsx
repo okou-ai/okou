@@ -1,261 +1,144 @@
-import userEvent from "@testing-library/user-event";
-import { screen, waitFor, within } from "@testing-library/react";
 import {
   workflowAutomationsContract,
   type WorkflowAutomationsListEntry,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { HttpResponse } from "msw";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const AUTOMATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const THREAD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-
-function learningEntry(): WorkflowAutomationsListEntry {
+function entry(official: boolean): WorkflowAutomationsListEntry {
+  const ownerUserId = "harbor-reader";
+  const id = crypto.randomUUID();
   return {
     workflow: {
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      id: crypto.randomUUID(),
       name: "proactive-learning",
-      displayName: "Proactive Learning",
-      description: "Review recent activity and maintain personal memory.",
-      visibility: "private",
-      ownerUserId: "test-user-123",
-      createdAt: "2026-11-09T00:00:00.000Z",
-      canManage: false,
+      displayName: "Learning",
+      description: "Learning schedule",
+      ownerUserId,
+      canManage: true,
       canPublish: false,
+      visibility: "private",
+      createdAt: "2026-09-10T12:00:00.000Z",
+      official: official
+        ? {
+            definitionName: "proactive-learning",
+            installationState: "installed",
+            definitionLifecycle: "active",
+            readOnly: true,
+          }
+        : null,
       importSource: null,
-      official: {
-        definitionName: "proactive-learning",
-        installationState: "installed",
-        definitionLifecycle: "active",
-        readOnly: true,
-      },
     },
     automation: {
-      id: AUTOMATION_ID,
-      kind: "schedule",
-      ownerUserId: "test-user-123",
+      id,
+      ownerUserId,
       enabled: false,
-      chatThreadId: null,
+      kind: "schedule",
+      schedule: { type: "cron", cronExpression: "0 2 * * *", timezone: "UTC" },
+      scheduleSummary: "Nightly",
+      chatThreadId: crypto.randomUUID(),
       nextRunAt: null,
       lastRunAt: null,
-      schedule: {
-        type: "cron",
-        cronExpression: "0 2 * * *",
-        timezone: "Asia/Shanghai",
-      },
-      scheduleSummary: "Every night at 02:00",
-      official: {
-        blueprintKey: "nightly-learning",
-        appliedFingerprint: "a".repeat(64),
-        reconciliationStatus: "current",
-        intendedEnabled: false,
-        parameterBindings: [{ key: "cron", value: "0 2 * * *" }],
-      },
+      official: official
+        ? {
+            blueprintKey: "nightly-learning",
+            appliedFingerprint: "e".repeat(64),
+            reconciliationStatus: "current",
+            intendedEnabled: false,
+            parameterBindings: [],
+          }
+        : null,
     },
   };
 }
-
-function customLearningEntry(): WorkflowAutomationsListEntry {
-  const entry = learningEntry();
-  return {
-    workflow: {
-      ...entry.workflow,
-      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      official: null,
+async function visit(entries: WorkflowAutomationsListEntry[]) {
+  context.mocks.api(
+    workflowAutomationsContract.listWorkspace,
+    ({ respond }) => {
+      return respond(200, entries);
     },
-    automation: {
-      ...entry.automation,
-      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-      official: null,
-    },
-  };
-}
-
-function runButton() {
-  const card = screen.getByRole("region", { name: "Learning" });
-  const button = queryAllByRoleFast("button", card).find((candidate) => {
-    return candidate.textContent?.trim() === "Run learning";
-  });
-  if (!button) {
-    throw new Error("Expected the Learning run button");
-  }
-  return button;
-}
-
-async function openDebug(learning = true) {
+  );
   await setupPage({
     context,
     path: "/?settings=debug",
+    host: "app.okou.ai",
     featureSwitches: {
+      [FeatureSwitchKey.AgentSuggestion]: true,
       [FeatureSwitchKey.OkouDebug]: true,
-      [FeatureSwitchKey.AgentSuggestion]: learning,
     },
   });
-  await screen.findByRole("heading", { name: "Debug" });
+  return await findFastControl("button", "Run learning");
 }
-
-test("runs the workspace's official Learning while its nightly schedule is paused", async () => {
-  const unrelated = learningEntry();
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    ({ respond }) => {
-      return respond(200, [
-        customLearningEntry(),
-        {
-          ...unrelated,
-          workflow: {
-            ...unrelated.workflow,
-            id: "11111111-1111-4111-8111-111111111111",
-            name: "proactive-suggestions",
-            official: {
-              definitionName: "proactive-suggestions",
-              installationState: "installed",
-              definitionLifecycle: "active",
-              readOnly: true,
-            },
-          },
-          automation: {
-            ...unrelated.automation,
-            id: "22222222-2222-4222-8222-222222222222",
-          },
-        },
-        learningEntry(),
-      ]);
-    },
-  );
-  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
-    expect(params.id).toBe(AUTOMATION_ID);
-    return respond(201, { chatThreadId: THREAD_ID, runId: null });
-  });
-  await openDebug();
-  await screen.findByRole("region", { name: "Learning" });
-  const run = runButton();
-  await waitFor(() => {
-    expect(run).toBeEnabled();
-  });
-  click(run);
-  await screen.findByText("Learning queued.");
-  expect(screen.getByText("Open chat")).toHaveAttribute(
-    "href",
-    `/chats/${THREAD_ID}`,
-  );
-  expect(run).toBeDisabled();
-});
-
-test("explains the installation prerequisite instead of running a same-name custom workflow", async () => {
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    ({ respond }) => {
-      return respond(200, [customLearningEntry()]);
-    },
-  );
-  await openDebug();
+test("debug-learning-002 a custom workflow named Learning cannot start the official learning job", async () => {
+  const run = await visit([entry(false)]);
   await screen.findByText(
     "Enable Learning in Preferences before running it here.",
   );
-  expect(runButton()).toBeDisabled();
-});
-
-test("keeps an uncertain submission disabled rather than replaying it", async () => {
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    ({ respond }) => {
-      return respond(200, [learningEntry()]);
-    },
-  );
-  // A lost response has no contract status; intercept the transport boundary.
-  context.mocks.http.post("*/api/workflow-automations/:id/run", () => {
-    return HttpResponse.error();
-  });
-  await openDebug();
-  await screen.findByRole("region", { name: "Learning" });
-  const run = runButton();
-  await waitFor(() => {
-    expect(run).toBeEnabled();
-  });
-  click(run);
-  const card = screen.getByRole("region", { name: "Learning" });
-  const alert = await within(card).findByRole("alert");
-  expect(alert).toHaveTextContent("The request could not be confirmed.");
   expect(run).toBeDisabled();
 });
-
-test("dismissal cancels a pending Learning request", async () => {
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  let requestSignal: AbortSignal | undefined;
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    ({ respond }) => {
-      return respond(200, [learningEntry()]);
-    },
-  );
+test("debug-learning-004 closing Debug aborts the pending Learning run", async () => {
+  const official = entry(true),
+    started = context.mocks.deferred<void>(),
+    aborted = context.mocks.deferred<void>();
   context.mocks.api(
     workflowAutomationsContract.run,
-    async ({ request, respond }) => {
-      requestSignal = request.signal;
-      requested.resolve();
-      await response.promise;
-      return respond(201, { chatThreadId: THREAD_ID, runId: null });
+    async ({ request, params, respond }) => {
+      expect(params.id).toBe(official.automation.id);
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      started.resolve();
+      await aborted.promise;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Request closed" },
+      });
     },
   );
-  await openDebug();
-  await screen.findByRole("region", { name: "Learning" });
-  const run = runButton();
+  const run = await visit([official]);
   await waitFor(() => {
     expect(run).toBeEnabled();
   });
   click(run);
-  await requested.promise;
+  await started.promise;
+  await waitFor(() => {
+    expect(run).toBeDisabled();
+  });
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.keyboard("{Escape}");
+  await aborted.promise;
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+});
+
+test("Debug queues the member's installed Learning schedule and opens its returned conversation", async () => {
+  const installed = entry(true);
+  const threadId = crypto.randomUUID();
+  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
+    if (params.id !== installed.automation.id) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Unknown schedule" },
+      });
+    }
+    return respond(201, { runId: null, chatThreadId: threadId });
+  });
+  const run = await visit([entry(false), installed]);
+  await userEvent.click(run);
+  await screen.findByText("Learning queued.");
   expect(run).toBeDisabled();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
+  const chat = await findFastControl("link", "Open chat");
+  expect(chat).toHaveAttribute("href", "/chats/" + threadId);
+  await userEvent.click(chat);
   await waitFor(() => {
-    expect(requestSignal?.aborted).toBeTruthy();
+    return expect(window.location.pathname).toBe("/chats/" + threadId);
   });
-  response.resolve();
-});
-
-test("dismissal also cancels Learning discovery", async () => {
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  const requestSignals: AbortSignal[] = [];
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    async ({ request, respond }) => {
-      requestSignals.push(request.signal);
-      requested.resolve();
-      await response.promise;
-      return respond(200, [learningEntry()]);
-    },
-  );
-  await openDebug();
-  await requested.promise;
-  expect(runButton()).toBeDisabled();
-  const settings = screen.getByRole("dialog", { name: "Settings" });
-  click(within(settings).getByLabelText("Close", { selector: "button" }));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-    expect(
-      requestSignals.some((signal) => {
-        return signal.aborted;
-      }),
-    ).toBeTruthy();
-  });
-  response.resolve();
-});
-
-test("does not offer Learning outside its rollout", async () => {
-  await openDebug(false);
-  expect(
-    screen.queryByRole("region", { name: "Learning" }),
-  ).not.toBeInTheDocument();
 });

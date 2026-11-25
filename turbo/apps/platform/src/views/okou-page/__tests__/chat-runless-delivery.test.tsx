@@ -1,158 +1,77 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
-import {
-  assistantEvent,
-  completedEvent,
-  expectTextOrder,
-  queryWorkHistoryToggle,
-  readyChat,
-  RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-const PREVIOUS_RUN = "a0000000-0000-4000-a000-000000000401";
-const PREVIOUS_WORK = "Work performed during the previous Run";
-const PREVIOUS_RESPONSE = "Response from the previous Run";
-const RUNLESS_MESSAGE = "Message delivered without a Run";
-const MESSAGE_CREATED_AT = "2026-08-02T03:25:05.000Z";
-
-/**
- * An independent message is one bare `output.message`: no run id,
- * no run event id and no run event sequence number, and none of the input,
- * terminal or followup events a Run leaves around its answer.
- */
-function runlessDelivery(args: {
-  readonly id: string;
-  readonly seqId: number;
-  readonly text: string;
-  readonly createdAt: string;
-}): MockChatEventInput {
-  return {
-    id: args.id,
-    role: "assistant",
-    content: args.text,
-    runId: undefined,
-    runEventId: undefined,
-    sequenceNumber: undefined,
-    seqId: args.seqId,
-    createdAt: args.createdAt,
-  };
-}
-
-/**
- * A prior automation Run's input, work, answer and completion before an
- * independent message is delivered to the same thread.
- */
-function runAnchoredHistory(): MockChatEventInput[] {
-  return [
-    {
-      id: "previous-automation",
-      role: "user",
-      eventType: "input.automation",
-      content: null,
-      userMessage: {
-        version: 1,
-        parts: [
-          {
-            type: "automation",
-            workflowName: "example-workflow",
-            automationBrief: "Scheduled update",
-          },
-        ],
-      },
-      runId: PREVIOUS_RUN,
-      seqId: 1,
-      createdAt: "2026-08-01T03:25:00.000Z",
-    },
-    assistantEvent({
-      id: "previous-work",
-      runId: PREVIOUS_RUN,
-      seqId: 2,
-      text: PREVIOUS_WORK,
-      createdAt: "2026-08-01T03:25:02.000Z",
-    }),
-    assistantEvent({
-      id: "previous-response",
-      runId: PREVIOUS_RUN,
-      seqId: 3,
-      text: PREVIOUS_RESPONSE,
-      createdAt: "2026-08-01T03:25:04.000Z",
-    }),
-    completedEvent({
-      id: "previous-completed",
-      runId: PREVIOUS_RUN,
-      seqId: 4,
-      createdAt: "2026-08-01T03:25:05.000Z",
-    }),
-  ];
-}
-
-function deliveryAfterRunHistory(): MockChatEventInput[] {
-  return [
-    ...runAnchoredHistory(),
-    runlessDelivery({
-      id: "runless-message",
-      seqId: 5,
-      text: RUNLESS_MESSAGE,
-      createdAt: MESSAGE_CREATED_AT,
-    }),
-  ];
-}
-
-function assistantGroupFor(text: string): HTMLElement {
-  const group = screen
-    .getByText(text)
-    .closest<HTMLElement>('[data-role="assistant"]');
-  if (!group) {
-    throw new Error(`No assistant response renders "${text}"`);
-  }
-  return group;
-}
-
-test("renders a thread whose only message carries no run identity", async () => {
-  installRunChat({
+const delivery = "Message delivered without a Run";
+test("chat-runless-delivery-001 an assistant delivery with no Run opens in its own conversation", async () => {
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
     chatEvents: [
-      runlessDelivery({
-        id: "runless-message",
-        seqId: 1,
-        text: RUNLESS_MESSAGE,
-        createdAt: MESSAGE_CREATED_AT,
-      }),
+      {
+        createdAt: "2026-08-01T10:01:00Z",
+        id: "local-delivery",
+        role: "assistant",
+        content: delivery,
+        runId: undefined,
+      },
     ],
   });
   await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-
-  await expect(screen.findByText(RUNLESS_MESSAGE)).resolves.toBeInTheDocument();
+  await expect(screen.findByText(delivery)).resolves.toBeInTheDocument();
 });
-
-test("renders a delivery that carries no run identity after a Run", async () => {
-  installRunChat({ chatEvents: deliveryAfterRunHistory() });
+test("chat-runless-delivery-003 only the earlier completed response offers its work history", async () => {
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    chatEvents: [
+      {
+        createdAt: "2026-08-01T10:00:00Z",
+        id: "q",
+        role: "user",
+        content: "Review launch",
+        runId: "local-run",
+      },
+      {
+        createdAt: "2026-08-01T10:00:04Z",
+        id: "step",
+        role: "assistant",
+        content: "Inspecting launch notes",
+        runId: "local-run",
+      },
+      {
+        createdAt: "2026-08-01T10:00:20Z",
+        id: "completed",
+        role: "assistant",
+        content: "Launch review completed",
+        runId: "local-run",
+        runLifecycleEvent: "completed",
+      },
+      {
+        createdAt: "2026-08-01T10:01:00Z",
+        id: "followup",
+        role: "assistant",
+        content: delivery,
+        runId: undefined,
+      },
+    ],
+  });
   await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-
-  await expect(screen.findByText(RUNLESS_MESSAGE)).resolves.toBeInTheDocument();
-});
-
-test("keeps run work history off a delivery that has no Run", async () => {
-  installRunChat({ chatEvents: deliveryAfterRunHistory() });
-  await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-  await screen.findByText(RUNLESS_MESSAGE);
-
-  expectTextOrder(PREVIOUS_RESPONSE, RUNLESS_MESSAGE);
-  const runResponse = assistantGroupFor(PREVIOUS_RESPONSE);
-  const runlessResponse = assistantGroupFor(RUNLESS_MESSAGE);
-  // The delivery reads as a response of its own rather than as more of the
-  // Run's answer, and only the Run offers the work behind its answer.
-  expect(runlessResponse).not.toBe(runResponse);
-  expect(queryWorkHistoryToggle("collapsed", runResponse)).not.toBeNull();
-  expect(queryWorkHistoryToggle("collapsed", runlessResponse)).toBeNull();
+  const earlier = await screen.findByText("Launch review completed");
+  const later = await screen.findByText(delivery);
+  expect(
+    earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const response =
+    earlier.closest("[data-chat-message-anchor]") ??
+    earlier.closest("[data-role=assistant]")!;
+  const followup = later.closest("[data-role=assistant]")!;
+  expect(response).not.toContainElement(later);
+  expect(
+    response.querySelector('[aria-label*="work history" i]'),
+  ).toBeInTheDocument();
+  expect(followup.querySelector('[aria-label*="work history" i]')).toBeNull();
 });

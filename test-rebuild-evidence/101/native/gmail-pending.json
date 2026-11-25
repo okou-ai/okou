@@ -1,0 +1,16 @@
+{
+  "opened": [],
+  "admitted": [
+    {
+      "attempt": "63201bdf-59dc-40c3-abe9-85024f75fb5b",
+      "hash": "9d5b3908f797d09cc88b0b78a8d9c7534fa7bde9937ca75c900cdc1ec5281a64",
+      "origin": "https://accounts.google.com",
+      "status": 200
+    }
+  ],
+  "focused": true,
+  "popupCount": 1,
+  "dialogBeforeClose": true,
+  "closed": true,
+  "dialogClosed": true
+}

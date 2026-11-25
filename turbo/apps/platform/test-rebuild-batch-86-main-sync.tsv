@@ -1,0 +1,49 @@
+历史稳定 ID	原始 GWT 与历史修订	同步影响与保留条件	最终注册名	源提交
+get-started-entry-017	"## get-started-entry-017
+
+Original test `Daily rewards are claimed by selecting check in`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L884).
+
+- **Given** A member has not checked in today.
+- **When** They select Check in on the daily quest.
+- **Then** A confirmation dialog shows a 1-day streak and +100 credits. After returning to work, the quest no longer offers Check in and is not actionable."	首次签到奖励与 1 日连签，退出后任务显示完成且不可操作。	The first daily credit receipt leads back to a completed check-in	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+get-started-entry-036	"## get-started-entry-036
+
+Original test `An ordinary day's check-in confirms the reward and streak in a dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1408).
+
+- **Given** A member has not checked in today and has an eight-day streak.
+- **When** They check in from the quest panel.
+- **Then** A “Checked in for today” dialog shows a 9-day streak and +100 credits.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `An ordinary day's check-in confirms the reward and streak in the menu` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1417)). Rebuild this scenario against the current menu behavior."	保留原 ID；9 日连签与 +100 到账，关闭后焦点回到入口。	get-started-entry-036 a ninth-day receipt shows the award and returns focus to the rewards entry	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+get-started-entry-037	"## get-started-entry-037
+
+Original test `Check-in waits for refreshed rewards before showing the success dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1427).
+
+- **Given** A member has not checked in today and has an eight-day streak.
+- **When** They check in, but the refreshed reward status is still loading.
+- **Then** The success dialog stays hidden while rewards refresh, and the check-in control is marked busy. Once refreshed rewards arrive, the dialog shows a 9-day streak and +100 credits.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `Check-in keeps the menu open and busy through the request and reward refresh` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1433)). Rebuild this scenario against the current menu behavior."	保留原 ID 与原 Then；#50136 把到账提示提前至状态刷新完成之前。请求在途时入口忙碌；到账后先显示 +100，再补 9 日连签。	get-started-entry-037 the confirmed credit arrives before the refreshed ninth-day streak	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+get-started-entry-038	"## get-started-entry-038
+
+Original test `A saved check-in waits for a financial confirmation before celebrating`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1462).
+
+- **Given** A member has not checked in today.
+- **When** Their check-in is saved but awaits financial confirmation.
+- **Then** They are told the check-in was saved and credits will update after confirmation. No success dialog or “Checked in” status appears, and the quest is marked “In review.”
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A saved check-in stays in review in the menu until financially confirmed` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1491)). Rebuild this scenario against the current menu behavior."	待财务确认仍进入 In review，不显示成功框。	get-started-entry-038 a check-in awaiting financial confirmation shows its review state	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+get-started-entry-039	"## get-started-entry-039
+
+Original test `A failed check-in does not show a success dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1497).
+
+- **Given** A member has not checked in today.
+- **When** Their check-in request fails with “Check-in unavailable.”
+- **Then** The error is shown, no success dialog appears, and the quest still offers “Check in.”
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A failed check-in keeps the menu open and can be retried` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1516)). Rebuild this scenario against the current menu behavior."	首次外部请求失败时菜单可重试，重试成功显示 +100。	A member retries a rejected check-in and receives the credit confirmation	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+get-started-entry-040	"## get-started-entry-040
+
+Original test `Checking in confirms the reward instead of closing silently`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1522).
+
+- **Given** An admin has not checked in today.
+- **When** They check in from the quest panel.
+- **Then** A “Checked in for today” dialog confirms +100 credits and explains that credits pay for runs, artifacts, and scheduled workflows.
+- **Upstream change** `44fa0d5b` (#49459) keeps check-in feedback in the rewards menu instead of a success dialog; the upstream test is now `A check-in continues after manual dismissal and updates the reopened menu` ([Registration](https://github.com/okou-ai/okou/blob/44fa0d5b0f0081dbdbac2b89553831df76749907/turbo/apps/platform/src/views/okou-page/__tests__/get-started-entry.test.tsx#L1553)). Rebuild this scenario against the current menu behavior."	关闭在途的菜单再打开，完成后保持菜单可用。原 Then 关于积分用途说明仍待取证。	Leaving an outstanding check-in keeps the reopened rewards menu usable after the claim settles	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420
+	同步新增上游场景	状态刷新失败后，已确认的奖励仍可见且可关闭。	The claim receipt can be dismissed after the rewards status becomes unavailable	https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420

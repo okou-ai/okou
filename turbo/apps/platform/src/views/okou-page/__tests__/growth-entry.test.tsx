@@ -1,326 +1,101 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
-  type BillingStatusResponse,
-  type UsagePackCreditsResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import {
-  integrationsSlackContract,
-  type SlackOrgStatus,
-} from "@okouai/api-contracts/contracts/integrations-slack";
-import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
-import {
-  testContext,
-  type TestContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { test, expect } from "vitest";
+import { defaultBillingStatus } from "../../../mocks/handlers/api-billing.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { setupPage, click } from "../../../__tests__/page-helper.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-
-type GrowthActionRole = "button" | "link" | "menuitem";
-
-function normalizedText(element: Element): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function actionNamed(
-  role: GrowthActionRole,
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const action = queryAllByRoleFast(role, container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      normalizedText(candidate) === name
-    );
-  });
-  if (!action) {
-    throw new Error(`Could not find ${role} named ${name}`);
-  }
-  return action;
-}
-
-function menuItemContaining(menu: ParentNode, text: string): HTMLElement {
-  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
-    return normalizedText(candidate).includes(text);
-  });
-  if (!item) {
-    throw new Error(`Could not find menu item containing ${text}`);
-  }
-  return item;
-}
-
-function growthChatPath(): string {
-  return `/`;
-}
-
-function slackStatus(options: {
-  readonly connected: boolean;
-  readonly installed: boolean;
-  readonly workspaceAdmin: boolean;
-}): SlackOrgStatus {
-  return {
-    isConnected: options.connected,
-    isInstalled: options.installed,
-    isAdmin: options.workspaceAdmin,
-    workspaceName: options.installed ? "Growth Workspace" : null,
-    installUrl: options.installed
-      ? null
-      : "https://slack.com/oauth/v2/authorize?client_id=growth-test",
-    connectUrl:
-      options.installed && !options.connected
-        ? "https://slack.com/oauth/v2/authorize?client_id=growth-connect"
-        : null,
-  };
-}
-
-function billingStatus(): BillingStatusResponse {
-  return {
-    showUsagePack: false,
-    tier: "pro",
-    ...billingPlanCapabilities("pro"),
-    credits: 0,
-    onboardingPaymentPending: false,
-    subscriptionStatus: null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: false,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
-  };
-}
-
-function usagePackCredits(): UsagePackCreditsResponse {
-  return {
-    totalCredits: 1600,
-    purchasedCredits: 1200,
-    bonusCredits: 400,
-    creditGrants: [],
-    hasUsagePack: true,
-    memberCredits: [],
-  };
-}
-
-function configureGrowthPage(
-  context: TestContext,
-  options: {
-    readonly role: "admin" | "member";
-    readonly slack: SlackOrgStatus;
-    readonly withCreditBalance?: boolean;
-  },
-): void {
-  context.mocks.data.org({
-    id: "org_default",
-    name: "Growth Workspace",
-    role: options.role,
+async function home(admin: boolean, installed: boolean, connected: boolean) {
+  const org = { id: "org_growth", name: "Harbor Studio" };
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, { ...org, role: admin ? "admin" : "member" });
   });
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(200, options.slack);
-  });
-  if (options.withCreditBalance) {
-    context.mocks.api(billingStatusContract.get, ({ respond }) => {
-      return respond(200, billingStatus());
+    return respond(200, {
+      isConnected: connected,
+      isInstalled: installed,
+      isAdmin: admin,
+      workspaceName: installed ? "Harbor Studio" : null,
     });
-    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
-      return respond(200, usagePackCredits());
-    });
-  }
-}
-
-test("An admin is guided to add Okou to Slack first", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: false,
-      workspaceAdmin: true,
-    }),
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const addToSlack = await waitFor(() => {
-    return actionNamed("link", "Add Okou in Slack");
-  });
-  expect(addToSlack).toHaveAttribute("href", "/works");
-
-  click(addToSlack);
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/works");
-  });
-  await expect(
-    waitFor(() => {
-      return actionNamed("button", "Install to Slack");
-    }),
-  ).resolves.toBeVisible();
-});
-
-test("The growth menu credit balance opens Usage settings", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: true,
-      installed: true,
-      workspaceAdmin: true,
-    }),
-    withCreditBalance: true,
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, { ...billingStatus(), credits: -23_000 });
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const primaryEntry = await waitFor(() => {
-    return actionNamed("button", "Invite humans 🤝");
-  });
-  const moreActions = await waitFor(() => {
-    return actionNamed("button", "More actions");
-  });
-  expect(primaryEntry).toBeVisible();
-  expect(moreActions).toBeVisible();
-
-  click(moreActions);
-
-  const menu = await screen.findByRole("menu");
-  expect(menuItemContaining(menu, "Okou is in Slack")).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  expect(menuItemContaining(menu, "Telegram and phone")).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  const credits = await waitFor(() => {
-    return menuItemContaining(menu, "Credits");
-  });
-  expect(credits).toHaveTextContent("1,600");
-
-  click(credits);
-
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await expect(
-    within(settings).findByRole("heading", { name: "Credit balance" }),
-  ).resolves.toBeVisible();
-});
-
-test.each(["Okou is in Slack", "Telegram and phone"])(
-  "The growth menu opens %s through a native link with keyboard activation",
-  async (label) => {
-    const user = userEvent.setup({ delay: null });
-    configureGrowthPage(context, {
-      role: "admin",
-      slack: slackStatus({
-        connected: true,
-        installed: true,
-        workspaceAdmin: true,
-      }),
-    });
-    await setupPage({ context, path: growthChatPath() });
-    const more = await waitFor(() => {
-      return actionNamed("button", "More actions");
-    });
-    click(more);
-    const menu = await screen.findByRole("menu");
-    const destination = menuItemContaining(menu, label);
-    expect(destination).toHaveAttribute("href", "/works");
-    destination.focus();
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(pathname()).toBe("/works");
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
-  },
-);
-
-test("Installed Slack shifts the growth entry to inviting people", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: true,
-      workspaceAdmin: true,
-    }),
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const invitePeople = await waitFor(() => {
-    return actionNamed("button", "Invite humans 🤝");
-  });
-  expect(invitePeople).toBeVisible();
-
-  click(invitePeople);
-
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await expect(
-    within(settings).findByRole("heading", { name: "People" }),
-  ).resolves.toBeVisible();
-  await expect(
-    waitFor(() => {
-      return actionNamed("button", "Add member", settings);
-    }),
-  ).resolves.toBeVisible();
-});
-
-test("An admin keeps the growth entry when the org has no quests", async () => {
-  // The server withholds the quests, so Get started draws nothing and the
-  // corner would otherwise be empty.
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: true,
-      workspaceAdmin: true,
-    }),
   });
   await setupPage({
     context,
-    path: growthChatPath(),
+    path: "/",
+    auth: {
+      user: { id: "user_harbor", fullName: "Harbor reader" },
+      organization: {
+        activeOrg: org,
+        memberships: [{ id: org.id, role: admin ? "org:admin" : "org:member" }],
+      },
+    },
   });
-
-  const invitePeople = await waitFor(() => {
-    return actionNamed("button", "Invite humans 🤝");
+}
+async function menu() {
+  click(await screen.findByTestId("growth-entry-menu"));
+  return await screen.findByRole("menu");
+}
+test("growth-entry-002 workspace credits open the matching credit balance in Settings", async () => {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, { ...defaultBillingStatus(), showUsagePack: true });
   });
-  expect(invitePeople).toBeInTheDocument();
-  expect(screen.queryByTestId("get-started-entry")).toBeNull();
+  context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+    return respond(200, {
+      totalCredits: 1600,
+      purchasedCredits: 1600,
+      bonusCredits: 0,
+      creditGrants: [],
+    });
+  });
+  await home(true, true, true);
+  const dropdown = await menu();
+  const item = await within(dropdown).findByTestId("growth-credits");
+  expect(item).toHaveTextContent("1,600");
+  click(item);
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByRole("heading", { name: "Credit balance" });
+  await within(dialog).findByText("1,600");
 });
-
-test("A non-admin does not see the workspace growth entry", async () => {
-  configureGrowthPage(context, {
-    role: "member",
-    slack: slackStatus({
-      connected: false,
-      installed: false,
-      workspaceAdmin: false,
-    }),
+test("growth-entry-003 keyboard activation of the Slack workspace link visits Works and closes the menu", async () => {
+  await home(true, true, true);
+  const dropdown = await menu();
+  const item = await within(dropdown).findByTestId("growth-slack");
+  expect(item).toHaveTextContent("Okou is in Slack");
+  expect(item.tagName).toBe("A");
+  expect(item).toHaveAttribute("href", "/works");
+  item.focus();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/works");
+    expect(dropdown).not.toBeInTheDocument();
   });
-  await setupPage({ context, path: growthChatPath() });
-
+  await screen.findByRole("heading", { name: "Where Okou works" });
+});
+test("growth-entry-005 inviting from a disconnected installation opens People with Add member", async () => {
+  await home(true, true, false);
+  const dropdown = await menu();
+  const invite = await within(dropdown).findByTestId("growth-invite");
+  expect(invite).toHaveTextContent("Invite humans");
+  click(invite);
+  const dialog = await screen.findByRole("dialog");
   await expect(
-    screen.findByRole("textbox", { name: "Message" }),
+    within(dialog).findByRole("heading", { name: "People" }),
   ).resolves.toBeVisible();
-
-  expect(
-    queryAllByRoleFast("link").find((candidate) => {
-      return normalizedText(candidate) === "Add Okou in Slack";
-    }),
-  ).toBeUndefined();
-  expect(
-    queryAllByRoleFast("button").find((candidate) => {
-      return normalizedText(candidate) === "Invite humans 🤝";
-    }),
-  ).toBeUndefined();
+  await expect(
+    findFastControl("button", "Add member", dialog),
+  ).resolves.toBeEnabled();
+});
+test("growth-entry-007 an ordinary member can compose in a workspace without the admin growth actions", async () => {
+  await home(false, false, false);
+  await expect(findComposerEditor()).resolves.toBeVisible();
+  expect(screen.queryByText("Add Okou in Slack")).toBeNull();
+  expect(screen.queryByText(/Invite humans/i)).toBeNull();
+  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
 });

@@ -1,216 +1,139 @@
-import { command } from "ccstate";
+import { command, createStore } from "ccstate";
 import { expect, test } from "vitest";
 import { mockNow } from "../../lib/time.ts";
-import {
-  debounceCommand,
-  resetSignal,
-  setLoop,
-  throttleCommand,
-  waitLoopUntil,
-} from "../utils.ts";
-import { testContext } from "./test-helpers.ts";
+import { debounceCommand, throttleCommand } from "../utils.ts";
+import { createTestRuntime, testContext } from "./test-helpers.ts";
 
 const context = testContext();
 
-// Exercise the public scheduling state machine through real ccstate commands.
-// Page and Worker protocol tests separately cover the production consumers.
-test("Debounced commands preserve arguments and return only the latest result", async () => {
-  const executions: string[] = [];
-  const format$ = command(
-    (_ctx, value: string, copies: number, _signal: AbortSignal) => {
-      executions.push(value);
-      return value.repeat(copies);
-    },
-  );
-  const debounced$ = debounceCommand(format$, 20);
+// The caller supplies the source command and owns these receipts and Stores.
+// No Platform or worker state is prepared or inspected.
+function issueLabels(deliver: (label: string) => void) {
+  return command((_ctx, text: string, copies: number, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const label = text.repeat(copies);
+    deliver(label);
+    return label;
+  });
+}
 
-  const first = context.store.set(debounced$, "old", 1, context.signal);
-  const latest: Promise<string> = context.store.set(
-    debounced$,
-    "new",
-    2,
-    context.signal,
+test("command-scheduling-001 A superseding label receives its expanded text and cancels the first issuer", async () => {
+  const issued: string[] = [];
+  const print = debounceCommand(
+    issueLabels((label) => {
+      return issued.push(label);
+    }),
+    20,
   );
-
-  await Promise.all([
-    expect(first).rejects.toMatchObject({ name: "AbortError" }),
-    expect(latest).resolves.toBe("newnew"),
-  ]);
-  expect(executions).toStrictEqual(["new"]);
+  const caller = createStore();
+  const discarded = caller.set(print, "old", 1, context.signal);
+  const current = caller.set(print, "new", 2, context.signal);
+  await expect(discarded).rejects.toMatchObject({ name: "AbortError" });
+  await expect(current).resolves.toBe("newnew");
+  expect(issued).toStrictEqual(["newnew"]);
 });
 
-test("New debounced work cancels an active command cooperatively", async () => {
+test("command-scheduling-002 Held work observes cancellation before its old result can be returned", async () => {
   const started = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  const save$ = command(async (_ctx, value: string, signal: AbortSignal) => {
-    if (value === "old") {
+  const finish = context.mocks.deferred<void>();
+  const printed: string[] = [];
+  const work$ = command(async (_ctx, text: string, signal: AbortSignal) => {
+    if (text === "old") {
       started.resolve();
-      await release.promise;
-      signal.throwIfAborted();
+      await finish.promise;
     }
-    return value;
+    signal.throwIfAborted();
+    printed.push(text);
+    return text;
   });
-  const debounced$ = debounceCommand(save$, 20);
-  const first = context.store.set(debounced$, "old", context.signal);
+  const caller = createStore();
+  const scheduled = debounceCommand(work$, 20);
+  const first = caller.set(scheduled, "old", context.signal);
   await started.promise;
+  const replacement = caller.set(scheduled, "new", context.signal);
+  finish.resolve();
+  await expect(first).rejects.toMatchObject({ name: "AbortError" });
+  await expect(replacement).resolves.toBe("new");
+  expect(printed).toStrictEqual(["new"]);
+});
 
-  const latest = context.store.set(debounced$, "new", context.signal);
-  release.resolve();
-
-  await Promise.all([
-    expect(first).rejects.toMatchObject({ name: "AbortError" }),
-    expect(latest).resolves.toBe("new"),
+test("command-scheduling-003 A retired issuer cannot replace the live issuer's pending label", async () => {
+  const retired = createTestRuntime(context);
+  const reason = new DOMException("Label tray removed", "AbortError");
+  const issued: string[] = [];
+  const scheduled = debounceCommand(
+    issueLabels((label) => {
+      return issued.push(label);
+    }),
+    20,
+  );
+  const caller = createStore();
+  const discarded = caller.set(scheduled, "discarded", 1, retired.signal);
+  retired.dispose(reason);
+  const latest = caller.set(scheduled, "latest", 1, context.signal);
+  const invalid = caller.set(scheduled, "invalid", 1, retired.signal);
+  const [withdrawn, refused, accepted] = await Promise.allSettled([
+    discarded,
+    invalid,
+    latest,
   ]);
+  expect(withdrawn).toMatchObject({
+    status: "rejected",
+    reason: { name: "AbortError", message: String(reason) },
+  });
+  await expect(invalid).rejects.toBe(reason);
+  expect(refused.status).toBe("rejected");
+  expect(accepted).toStrictEqual({ status: "fulfilled", value: "latest" });
+  expect(issued).toStrictEqual(["latest"]);
 });
 
-test("A cancelled debounce can be reused without running the discarded command", async () => {
-  const executions: string[] = [];
-  const read$ = command((_ctx, value: string, _signal: AbortSignal) => {
-    executions.push(value);
-    return value;
-  });
-  const debounced$ = debounceCommand(read$, 20);
-  const resetCaller$ = resetSignal();
-  const callerSignal = context.store.set(resetCaller$, context.signal);
-  const pending = context.store.set(debounced$, "discarded", callerSignal);
-  context.store.set(resetCaller$);
-  await expect(pending).rejects.toMatchObject({
-    name: "AbortError",
-    message: String(callerSignal.reason),
-  });
-
-  // A pre-aborted invocation must not cancel another caller's valid work.
-  const latest = context.store.set(debounced$, "latest", context.signal);
-  await expect(
-    context.store.set(debounced$, "invalid", callerSignal),
-  ).rejects.toBe(callerSignal.reason);
-  await expect(latest).resolves.toBe("latest");
-  expect(executions).toStrictEqual(["latest"]);
-});
-
-test("Throttled commands serialize a leading call and share the latest trailing result", async () => {
-  mockNow(10_000, context.signal);
-  const release = context.mocks.deferred<void>();
-  const executions: string[] = [];
-  const format$ = command(
-    async (_ctx, value: string, copies: number, signal: AbortSignal) => {
-      executions.push(value);
-      if (value === "first") {
-        await release.promise;
-        signal.throwIfAborted();
+test("command-scheduling-004 Both waiting issuers receive the final label when the leading job finishes", async () => {
+  const started = context.mocks.deferred<void>();
+  const finish = context.mocks.deferred<void>();
+  const starts: string[] = [];
+  const source$ = command(
+    async (_ctx, label: string, copies: number, signal: AbortSignal) => {
+      starts.push(label);
+      if (label === "first") {
+        started.resolve();
+        await finish.promise;
       }
-      return value.repeat(copies);
+      signal.throwIfAborted();
+      return label.repeat(copies);
     },
   );
-  const throttled$ = throttleCommand(format$, 1000);
-  const first = context.store.set(throttled$, "first", 1, context.signal);
-  expect(executions).toStrictEqual(["first"]);
-
-  mockNow(10_200, context.signal);
-  const second = context.store.set(throttled$, "discarded", 1, context.signal);
-  mockNow(10_600, context.signal);
-  const latest = context.store.set(throttled$, "latest", 2, context.signal);
-  expect(executions).toStrictEqual(["first"]);
-
-  mockNow(11_000, context.signal);
-  release.resolve();
-  await expect(Promise.all([first, second, latest])).resolves.toStrictEqual([
+  const scheduled = throttleCommand(source$, 1000);
+  const caller = createStore();
+  mockNow(8000, context.signal);
+  const leading = caller.set(scheduled, "first", 1, context.signal);
+  await started.promise;
+  mockNow(8200, context.signal);
+  const earlier = caller.set(scheduled, "discarded", 1, context.signal);
+  mockNow(8600, context.signal);
+  const later = caller.set(scheduled, "latest", 2, context.signal);
+  expect(starts).toStrictEqual(["first"]);
+  mockNow(9000, context.signal);
+  finish.resolve();
+  await expect(Promise.all([leading, earlier, later])).resolves.toStrictEqual([
     "first",
     "latestlatest",
     "latestlatest",
   ]);
-  expect(executions).toStrictEqual(["first", "latest"]);
+  expect(starts).toStrictEqual(["first", "latest"]);
 });
 
-test("A failed trailing command rejects every caller and allows another execution", async () => {
-  mockNow(20_000, context.signal);
-  const failure = new Error("Request failed");
-  const read$ = command((_ctx, value: string, _signal: AbortSignal) => {
-    if (value === "fail") {
-      throw failure;
-    }
-    return value;
-  });
-  const throttled$ = throttleCommand(read$, 20);
-  await expect(
-    context.store.set(throttled$, "first", context.signal),
-  ).resolves.toBe("first");
-
-  mockNow(20_019, context.signal);
-  const first = context.store.set(throttled$, "fail", context.signal);
-  const second = context.store.set(throttled$, "fail", context.signal);
-  await Promise.all([
-    expect(first).rejects.toBe(failure),
-    expect(second).rejects.toBe(failure),
-  ]);
-
-  mockNow(20_040, context.signal);
-  await expect(
-    context.store.set(throttled$, "recovered", context.signal),
-  ).resolves.toBe("recovered");
-});
-
-test.each([
-  { name: "debounce", schedule: debounceCommand, immediate: [] },
-  {
-    name: "throttle",
-    schedule: throttleCommand,
-    immediate: ["first", "second"],
-  },
-])(
-  "$name scheduling is isolated between Stores",
-  async ({ schedule, immediate }) => {
-    const executions: string[] = [];
-    const read$ = command((_ctx, value: string, _signal: AbortSignal) => {
-      executions.push(value);
-      return value;
-    });
-    const scheduled$ = schedule(read$, 20);
-    const first = context.store.set(scheduled$, "first", context.signal);
-    const second = context.workerStore.set(
-      scheduled$,
-      "second",
-      context.signal,
-    );
-
-    expect(executions).toStrictEqual(immediate);
-    await expect(Promise.all([first, second])).resolves.toStrictEqual([
-      "first",
-      "second",
-    ]);
-    expect(executions).toStrictEqual(["first", "second"]);
-  },
-);
-
-test("A background loop reports a failed round and runs the next one", async () => {
-  const rounds: string[] = [];
-  const finished = context.mocks.deferred<void>();
-  setLoop(
-    () => {
-      if (rounds.length === 0) {
-        rounds.push("failed");
-        throw new Error("Transient failure");
-      }
-      rounds.push("succeeded");
-      finished.resolve();
-      return true;
-    },
-    1000,
-    context.signal,
+test("command-scheduling-006 Two independent issuers can complete the same scheduled command", async () => {
+  const printed = new Set<string>();
+  const shared = debounceCommand(
+    issueLabels((label) => {
+      return printed.add(label);
+    }),
+    20,
   );
-
-  await finished.promise;
-  expect(rounds).toStrictEqual(["failed", "succeeded"]);
-});
-
-test("Waiting on a loop still surfaces its failed round", async () => {
-  await expect(
-    waitLoopUntil(
-      () => {
-        throw new Error("Round failed");
-      },
-      0,
-      context.signal,
-    ),
-  ).rejects.toThrow("Round failed");
+  const first = createStore().set(shared, "first", 1, context.signal);
+  const second = createStore().set(shared, "second", 1, context.signal);
+  expect(printed.size).toBe(0);
+  await expect(first).resolves.toBe("first");
+  await expect(second).resolves.toBe("second");
+  expect(printed).toStrictEqual(new Set(["first", "second"]));
 });

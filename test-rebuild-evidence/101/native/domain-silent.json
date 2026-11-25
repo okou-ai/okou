@@ -1,0 +1,66 @@
+{
+  "mode": "silent",
+  "before": {
+    "body": "Example\n\nConnecting to browser…",
+    "inputEnabled": false,
+    "at": 1795486409698
+  },
+  "after": {
+    "body": "Connecting to browser…\n\nReconnect\nReconnecting…",
+    "inputEnabled": false,
+    "at": 1795486440718
+  },
+  "elapsed": 31109,
+  "recovered": {
+    "body": "Example",
+    "inputEnabled": true,
+    "at": 1795486441562
+  },
+  "admissionsBeforeCleanup": [
+    {
+      "kind": "provider admission",
+      "at": 1795486409214,
+      "ordinal": 1
+    },
+    {
+      "kind": "retirement requested",
+      "at": 1795486409436,
+      "sessionId": "5C7910966AA92675A1EF7182688C8CC1"
+    },
+    {
+      "kind": "Chrome detached",
+      "at": 1795486409439,
+      "sessionId": "5C7910966AA92675A1EF7182688C8CC1"
+    },
+    {
+      "kind": "peer held",
+      "at": 1795486409608,
+      "sessionId": "1FEE4273805FEF2EF3923FDBBE3FA622"
+    },
+    {
+      "kind": "page forwarded",
+      "at": 1795486409609,
+      "sessionId": "1FEE4273805FEF2EF3923FDBBE3FA622"
+    },
+    {
+      "kind": "admission closed",
+      "at": 1795486440238,
+      "ordinal": 1
+    },
+    {
+      "kind": "provider admission",
+      "at": 1795486441305,
+      "ordinal": 2
+    },
+    {
+      "kind": "retirement requested",
+      "at": 1795486441333,
+      "sessionId": "6958EF812783B3AA70DE8B4CA24E6FBD"
+    },
+    {
+      "kind": "Chrome detached",
+      "at": 1795486441336,
+      "sessionId": "6958EF812783B3AA70DE8B4CA24E6FBD"
+    }
+  ]
+}

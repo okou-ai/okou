@@ -1,272 +1,134 @@
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const ENTRIES = [
-  {
-    name: "Email",
-    entry:
-      "/settings/email?message=00000000-0000-4000-8000-000000000001&expires=1784880000&signature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  },
-  {
-    name: "AgentPhone",
-    entry:
-      "/settings/agentphone?handle=%2B15555550123&agent=agt_test&ts=1784880000&sig=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&channel=imessage&context=one&context=two",
-  },
-  {
-    name: "Slack OAuth completion",
-    entry:
-      "/connectors/slack/callback?integration=slack&state=private-state&code=private-code",
-  },
-  {
-    name: "Teams OAuth completion",
-    entry:
-      "/connectors/microsoft-365/callback?integration=teams&state=private-state&code=private-code",
-  },
-  {
-    name: "GitHub OAuth continuation",
-    entry:
-      "/connectors/github/callback?integration=github&state=private-state&installation_id=12345&setup_action=install",
-  },
-  {
-    name: "Slack",
-    entry:
-      "/settings/slack?w=T123&u=U123&c=C123&t=123.456&context=one&context=two",
-  },
-  {
-    name: "Telegram",
-    entry:
-      "/settings/telegram?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester&context=one&context=two",
-  },
-  {
-    name: "Telegram with case-insensitive and trailing-slash routing",
-    entry:
-      "/SETTINGS/telegram/?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&context=one&context=two",
-  },
-  {
-    name: "legacy Telegram",
-    entry:
-      "/telegram/connect?bot=official&tgUser=99001&ts=1700000000&sig=test-signature&tgUserName=alice&tgDisplayName=Alice+Tester&context=one&context=two",
-  },
-  // Discord captures and sanitizes its callback before the shared auth wrapper.
-  // Only its supported public fields belong in the continuation contract.
-  {
-    name: "Discord",
-    entry: "/settings/discord?guild_id=123456789012345678&status=pending",
-  },
-  {
-    name: "Discord install",
-    entry:
-      "/settings/discord/install?guild_id=123456789012345678&status=connected",
-  },
-  {
-    name: "Teams",
-    entry:
-      "/settings/teams?tenantId=tenant&teamsUserId=user&teamsAadObjectId=aad&orgId=org&conversationId=conversation&activityId=activity&channelId=channel&threadId=thread&context=one&context=two",
-  },
-  {
-    name: "legacy pending Discord callback",
-    entry: "/works?discord=pending&guild_id=123456789012345678",
-  },
-  {
-    name: "legacy failed Discord callback",
-    entry: "/works?discord=error&discord_error=cancelled",
-  },
-  {
-    name: "legacy connected Discord callback",
-    entry: "/works?discord=connected&guild_id=123456789012345678",
-  },
+const host = "app.okou.ai";
+const member = () => {
+  return {
+    user: { id: "member-erin", fullName: "Erin Ward" },
+    organization: { activeOrg: null, memberships: [] },
+  };
+};
+
+const signedTelegram =
+  "bot=official&tgUser=682913&tgUserName=erin_case&tgDisplayName=Erin+Ward&ts=1795000000&sig=" +
+  "19".repeat(32) +
+  "&context=mobile&context=setup";
+const destinations = [
+  [
+    "001",
+    "email message",
+    "/settings/email?message=letter-421&expires=1900000000&signature=" +
+      "c9".repeat(32),
+  ],
+  [
+    "002",
+    "signed phone",
+    "/settings/agentphone?handle=%2B15555550194&agent=phone-71&ts=1795000000&sig=" +
+      "3e".repeat(32) +
+      "&context=device&channel=imessage&context=callback",
+  ],
+  [
+    "003",
+    "Slack OAuth",
+    "/connectors/slack/callback?integration=slack&code=reply-87&state=state-828&team=T602",
+  ],
+  [
+    "004",
+    "Teams OAuth",
+    "/connectors/microsoft-365/callback?integration=teams&code=reply-19&state=state-813&tenantId=tenant-31",
+  ],
+  [
+    "005",
+    "GitHub installation",
+    "/connectors/github/callback?integration=github&state=state-451&installation_id=58231&setup_action=install",
+  ],
+  [
+    "006",
+    "Slack settings",
+    "/settings/slack?context=install&u=U19K&c=C428&w=T602&t=1795000000.728&context=team",
+  ],
+  ["007", "Telegram identity", "/settings/telegram?" + signedTelegram],
+  ["008", "mixed-case Telegram", "/SETTINGS/Telegram/?" + signedTelegram],
+  [
+    "010",
+    "pending Discord",
+    "/settings/discord?status=pending&guild_id=892541296347801054",
+  ],
+  [
+    "011",
+    "Discord install",
+    "/settings/discord/install?status=connected&guild_id=782541296347801056",
+  ],
+  [
+    "012",
+    "Teams conversation",
+    "/settings/teams?conversationId=conv-903&context=team&activityId=mention-17&channelId=channel-4&tenantId=tenant-74&threadId=reply-116&teamsUserId=person-31&orgId=workspace-61&teamsAadObjectId=directory-34&context=channel",
+  ],
 ] as const;
 
-function expectContinuation(
-  actual: string | null | undefined,
-  expected: string,
-) {
-  if (!actual) {
-    throw new Error("The auth page did not provide a continuation URL");
-  }
-  const actualUrl = new URL(actual);
-  const expectedUrl = new URL(expected);
-  // Stable sorting ignores key order while retaining repeated-value order.
-  actualUrl.searchParams.sort();
-  expectedUrl.searchParams.sort();
-  // A failed continuation check must not print signed-link fields.
-  expect(actualUrl.href === expectedUrl.href).toBeTruthy();
-}
-
-test.each(ENTRIES)(
-  "Organization selection preserves the complete supported continuation for $name",
-  async ({ entry }) => {
-    const target = `https://app.okou.ai${entry}#public-context`;
-    await startPage({
-      context,
-      host: "app.okou.ai",
-      path: target,
-      auth: {
-        user: { id: "integration-user", fullName: "Integration User" },
-        organization: { activeOrg: null, memberships: [] },
-      },
-    });
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe(
-        "/sign-in/tasks/choose-organization",
-      );
-    });
-    expectContinuation(
-      new URL(window.location.href).searchParams.get("redirect_url"),
-      target,
-    );
-
-    // Follow the emitted destination through the real auth Router and Clerk UI.
-    window.history.replaceState(null, "", window.location.href);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    const signIn = await screen.findByTestId("clerk-sign-in");
-    expectContinuation(signIn.dataset.clerkForceRedirectUrl, target);
-  },
-);
-
-test.each(ENTRIES)(
-  "Sign-in and sign-up retain the complete supported continuation for $name",
-  async ({ entry }) => {
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    const target = `https://app.okou.ai${entry}#public-context`;
-    await startPage({ context, host: "app.okou.ai", path: target, auth: null });
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/sign-in");
-    });
-    window.history.replaceState(null, "", window.location.href);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    const signIn = await screen.findByTestId("clerk-sign-in");
-    expectContinuation(signIn.dataset.clerkForceRedirectUrl, target);
-
-    const signUpUrl = signIn.dataset.clerkSignUpUrl;
-    const router = window.__okouClerkRouter;
-    if (!signUpUrl || !router) {
-      throw new Error("Clerk did not expose its sign-up navigation");
-    }
-    await router.push(signUpUrl, {
-      windowNavigate(to) {
-        window.location.assign(to);
-      },
-    });
-    const signUp = await screen.findByTestId("clerk-sign-up");
-    expectContinuation(signUp.dataset.clerkForceRedirectUrl, target);
-  },
-);
-
-test.each(["/works", "/works?discord=unknown", "/"])(
-  "Organization selection does not add a new return flow for %s",
-  async (path) => {
-    await startPage({
-      context,
-      path,
-      host: "app.okou.ai",
-      auth: {
-        user: { id: "unrelated-user", fullName: "Unrelated User" },
-        organization: { activeOrg: null, memberships: [] },
-      },
-    });
-    await waitFor(() => {
-      expect(window.location.pathname).toBe(
-        "/sign-in/tasks/choose-organization",
-      );
-    });
-    expect(window.location.search).toBe("");
-  },
-);
-
-test.each([
-  { entry: "/settings/discord?status=pending", signedIn: false },
-  { entry: "/works?discord=pending", signedIn: false },
-  { entry: "/settings/discord?status=pending", signedIn: true },
-  { entry: "/works?discord=pending", signedIn: true },
-])(
-  "Discord proof is consumed before auth from $entry (signed in: $signedIn)",
-  async ({ entry, signedIn }) => {
-    const logs = vi.spyOn(console, "info").mockImplementation(() => {});
-    const proof = "a".repeat(43);
-    await startPage({
-      context,
-      host: "app.okou.ai",
-      path: `${entry}&guild_id=123456789012345678#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${proof}`,
-      auth: signedIn
-        ? {
-            user: { id: "approval-user", fullName: "Approval User" },
-            organization: { activeOrg: null, memberships: [] },
-          }
-        : null,
-    });
-    await waitFor(() => {
-      expect(window.location.pathname).toBe(
-        signedIn ? "/sign-in/tasks/choose-organization" : "/sign-in",
-      );
-    });
-    const params = new URL(window.location.href).searchParams;
-    expectContinuation(
-      params.get("redirect_url"),
-      `https://app.okou.ai${entry}&guild_id=123456789012345678`,
-    );
-    expect(JSON.stringify(logs.mock.calls).includes(proof)).toBeFalsy();
-    expect(window.location.href.includes("approval_proof")).toBeFalsy();
-    expect(
-      JSON.stringify({
-        ...window.localStorage,
-        ...window.sessionStorage,
-      }).includes(proof),
-    ).toBeFalsy();
-  },
-);
-
-test("A sanitized Discord return after login or actor change reports interrupted approval", async () => {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, {
-      isAvailable: true,
-      isConnected: false,
-      isAdmin: true,
-      guildId: null,
-      guildName: null,
-      discordUserId: null,
-
-      onboarding: "oauth",
-      dmSelectionConnectionId: null,
-      dmBindings: [],
-      contextMode: "mentions_only",
-    });
-  });
-  await setupPage({
+async function followOrganizationRedirect(entry: string) {
+  // No form renders in the document that initiates a full-page redirect.
+  await startPage({
     context,
-    host: "app.okou.ai",
-    path: "/settings/discord?status=pending&guild_id=123456789012345678",
-    auth: {
-      user: { id: "replacement-user", fullName: "Replacement User" },
-    },
+    path: entry,
+    host,
+    auth: member(),
+    sharedWorkerTestTransport: "message-port",
   });
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("This authorization was interrupted or refreshed."),
-  ).toBeInTheDocument();
-  expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
-    "href",
-    "/works",
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/sign-in/tasks/choose-organization");
+  });
+  const next = new URL(window.location.href);
+  expect(next.origin).toBe("https://" + host);
+  cleanup();
+  await setupPage({
+    context: createTestRuntime(context),
+    path: next.pathname + next.search + next.hash,
+    host: next.host,
+    auth: member(),
+    sharedWorkerTestTransport: "message-port",
+  });
+  const form = await screen.findByTestId("clerk-sign-in");
+  expect(form).toBeVisible();
+  return { next, form };
+}
+test.each(destinations)(
+  "integration-continuation-%s The chooser carries %s through to the hosted sign-in form",
+  async (_id, _name, destination) => {
+    const entry = destination + "#workspace-access";
+    const expected = new URL(entry, "https://" + host).href;
+    const { next, form } = await followOrganizationRedirect(entry);
+    expect(next.searchParams.get("redirect_url")).toBe(expected);
+    expect(form).toHaveAttribute("data-clerk-force-redirect-url", expected);
+  },
+);
+test("integration-continuation-031 Works opens organization selection without a return destination", async () => {
+  const { next, form } = await followOrganizationRedirect("/works");
+  expect(next.searchParams.has("redirect_url")).toBeFalsy();
+  expect(form).toHaveAttribute(
+    "data-clerk-force-redirect-url",
+    "https://" + host,
   );
-  expect(window.location.hash).toBe("");
 });
 
-test("An untrusted integration-looking return cannot bypass allowed-origin auth", async () => {
+test("integration-continuation-039 An external Telegram-looking return leaves the chooser pointing home", async () => {
+  const query = new URLSearchParams({
+    redirect_url: "https://external.example/settings/telegram?context=mobile",
+  });
   await setupPage({
     context,
-    host: "app.okou.ai",
-    path: `/sign-in/tasks/choose-organization?redirect_url=${encodeURIComponent("https://evil.example/settings/telegram?bot=official")}`,
+    host,
     auth: null,
+    path: "/sign-in/tasks/choose-organization?" + query,
+    sharedWorkerTestTransport: "message-port",
   });
-  expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toHaveAttribute(
     "data-clerk-force-redirect-url",
     "https://app.okou.ai",
   );

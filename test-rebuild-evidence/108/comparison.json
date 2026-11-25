@@ -1,0 +1,270 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "7c9025af98e840271151001a11aa98a8ea7c76cc",
+    "opening": "42d8234906b2766b3ba4236f4fad3fbeb133a52c"
+  },
+  "owners": {
+    "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": {
+      "compared": {
+        "frozen": {
+          "suiteSha256": "c2b934876e44a5aa0c103fdb76d9adb02fbcf06fae515d773167e1248f5e164c",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/utils.ts": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/lib/api-error.ts": "a8b98cd63d305a99e9c1f985877eb083d50a4fdc5f8d5e8d406dcd63a69f3739",
+            "turbo/apps/platform/src/shared-database/http-error.ts": "24acc7a0020a4443ee0503ec7bab2fb367d5911e108701204f0d843a0b62c8b7",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/message-port-client.ts": "0eeac628926e5bf4148072173b48cddaa75a57c14848ee1968baf193011462e9",
+            "turbo/apps/platform/src/shared-database/message-port-server.ts": "fbee413d489fa3bca17c995b3d74a423de3fcaf8ca8e14b835ac6199f7f32996",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a",
+            "turbo/apps/platform/src/shared-database/worker-context.ts": "32320a3bbdab33d67f41257b82f49c09df400b879baf089a90f40b4dadeff8ab",
+            "turbo/apps/platform/src/shared-database/worker-signals.ts": "47b6af460df963a074b5ac1f432c12c4b6bc6d7d52ad043b9e4abe974ced9d3e"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "suiteSha256": "7c9eb6dbb42970c124ec5b7da9abf09dbe6e5d567730c093df322797101b394f",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/utils.ts": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/lib/api-error.ts": "a8b98cd63d305a99e9c1f985877eb083d50a4fdc5f8d5e8d406dcd63a69f3739",
+            "turbo/apps/platform/src/shared-database/http-error.ts": "24acc7a0020a4443ee0503ec7bab2fb367d5911e108701204f0d843a0b62c8b7",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/message-port-client.ts": "0eeac628926e5bf4148072173b48cddaa75a57c14848ee1968baf193011462e9",
+            "turbo/apps/platform/src/shared-database/message-port-server.ts": "fbee413d489fa3bca17c995b3d74a423de3fcaf8ca8e14b835ac6199f7f32996",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a",
+            "turbo/apps/platform/src/shared-database/worker-context.ts": "32320a3bbdab33d67f41257b82f49c09df400b879baf089a90f40b4dadeff8ab",
+            "turbo/apps/platform/src/shared-database/worker-signals.ts": "47b6af460df963a074b5ac1f432c12c4b6bc6d7d52ad043b9e4abe974ced9d3e"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        },
+        "main": {
+          "suiteSha256": "cb9e3fc62f124ed706613256e58108837e94989b1343e268c42ffa9c7d5c8d05",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/utils.ts": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/lib/api-error.ts": "a8b98cd63d305a99e9c1f985877eb083d50a4fdc5f8d5e8d406dcd63a69f3739",
+            "turbo/apps/platform/src/shared-database/http-error.ts": "24acc7a0020a4443ee0503ec7bab2fb367d5911e108701204f0d843a0b62c8b7",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/message-port-client.ts": "0eeac628926e5bf4148072173b48cddaa75a57c14848ee1968baf193011462e9",
+            "turbo/apps/platform/src/shared-database/message-port-server.ts": "fbee413d489fa3bca17c995b3d74a423de3fcaf8ca8e14b835ac6199f7f32996",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a",
+            "turbo/apps/platform/src/shared-database/worker-context.ts": "32320a3bbdab33d67f41257b82f49c09df400b879baf089a90f40b4dadeff8ab",
+            "turbo/apps/platform/src/shared-database/worker-signals.ts": "d998aaead523e7aa0a0211333e203f14fd3bac41e9c13f1fd20db68221979c1d"
+          }
+        },
+        "opening": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        }
+      },
+      "otherCurrentFilesWithCommonBlocks": {}
+    },
+    "turbo/apps/platform/src/signals/__tests__/realtime.test.ts": {
+      "compared": {
+        "frozen": {
+          "suiteSha256": "45010b16d0004e9e1f746b655df0b077a18ef7dffd0a979135aeb73744b9370c",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/realtime.ts": "56f8189a2aa6c87215e7e7e38b396e26425c060cc4dd6eb3b761ddd97073b5b2",
+            "turbo/apps/platform/src/signals/auth.ts": "e54a5c9ed2f4cb8b35bced84158f4b38da117b564749408ba6bb3fe9e458daf3",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/app-version.ts": "91b43a251b05127feee9ee1a9cf1f9338426022a90a83094fac614a476ae57fb",
+            "turbo/apps/platform/src/signals/clerk-token.ts": "e39b4c14a7c13c1841bc833550ed82587c1eb60e891303da7df9d5009a87cd2c",
+            "turbo/apps/platform/src/signals/root-signal.ts": "e9cb37eced0ceb3d06b10bf85eb5d99888682bc82ac165de18bd782b186fd8a4",
+            "turbo/apps/platform/src/signals/api-client-runtime.ts": "ef7d387869a9768123844e6b7132ff92f6e46dc31704ab23a098708901163321",
+            "turbo/apps/platform/src/signals/auth-context.ts": "cc558989e99ae1d5a6895536462e3939ac530fc5f298ae6136bbeadf211bef08",
+            "turbo/apps/platform/src/signals/chat-page/chat-thread-remote-signals.ts": "1ebc8d65663b318712f0d7c50847224be72db146040ac574c34a68445ac8ecbe",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/ably.ts": "13d22ddc50550c11a2f2603a8eb1e876af2f67b6336e9c60752138e2a49542f9",
+            "turbo/apps/platform/src/signals/utils.ts": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "suiteSha256": "e436b57610eab65a6a440b211abaa4853384a86ca0feb14bd27ce9bac78c1336",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/realtime.ts": "56f8189a2aa6c87215e7e7e38b396e26425c060cc4dd6eb3b761ddd97073b5b2",
+            "turbo/apps/platform/src/signals/auth.ts": "e54a5c9ed2f4cb8b35bced84158f4b38da117b564749408ba6bb3fe9e458daf3",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/app-version.ts": "91b43a251b05127feee9ee1a9cf1f9338426022a90a83094fac614a476ae57fb",
+            "turbo/apps/platform/src/signals/clerk-token.ts": "e39b4c14a7c13c1841bc833550ed82587c1eb60e891303da7df9d5009a87cd2c",
+            "turbo/apps/platform/src/signals/root-signal.ts": "e9cb37eced0ceb3d06b10bf85eb5d99888682bc82ac165de18bd782b186fd8a4",
+            "turbo/apps/platform/src/signals/api-client-runtime.ts": "ef7d387869a9768123844e6b7132ff92f6e46dc31704ab23a098708901163321",
+            "turbo/apps/platform/src/signals/auth-context.ts": "cc558989e99ae1d5a6895536462e3939ac530fc5f298ae6136bbeadf211bef08",
+            "turbo/apps/platform/src/signals/chat-page/chat-thread-remote-signals.ts": "1ebc8d65663b318712f0d7c50847224be72db146040ac574c34a68445ac8ecbe",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/ably.ts": "13d22ddc50550c11a2f2603a8eb1e876af2f67b6336e9c60752138e2a49542f9",
+            "turbo/apps/platform/src/signals/utils.ts": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        },
+        "main": {
+          "suiteSha256": "edd0b0d60a889a55067f778ffaa606c1ed59dd61ac1d8530e283532a3499189a",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/signals/realtime.ts": "56f8189a2aa6c87215e7e7e38b396e26425c060cc4dd6eb3b761ddd97073b5b2",
+            "turbo/apps/platform/src/signals/auth.ts": "e54a5c9ed2f4cb8b35bced84158f4b38da117b564749408ba6bb3fe9e458daf3",
+            "turbo/apps/platform/src/__tests__/mock-auth.ts": "a53189888ed023df4a7c720440a53048da89b0cf12a01a66a91022d22b477bb8",
+            "turbo/apps/platform/src/signals/app-version.ts": "91b43a251b05127feee9ee1a9cf1f9338426022a90a83094fac614a476ae57fb",
+            "turbo/apps/platform/src/signals/clerk-token.ts": "e39b4c14a7c13c1841bc833550ed82587c1eb60e891303da7df9d5009a87cd2c",
+            "turbo/apps/platform/src/signals/root-signal.ts": "e9cb37eced0ceb3d06b10bf85eb5d99888682bc82ac165de18bd782b186fd8a4",
+            "turbo/apps/platform/src/signals/api-client-runtime.ts": "ef7d387869a9768123844e6b7132ff92f6e46dc31704ab23a098708901163321",
+            "turbo/apps/platform/src/signals/auth-context.ts": "cc558989e99ae1d5a6895536462e3939ac530fc5f298ae6136bbeadf211bef08",
+            "turbo/apps/platform/src/signals/chat-page/chat-thread-remote-signals.ts": "143608c2cb0a3266d8f9983d1accea2146820c162cc3f381ecc2db45dbb6f9a4",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/mocks/ably.ts": "13d22ddc50550c11a2f2603a8eb1e876af2f67b6336e9c60752138e2a49542f9",
+            "turbo/apps/platform/src/signals/utils.ts": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
+            "turbo/apps/platform/src/shared-database/bridge.ts": "97ef94190b1ecdb96e2e5188275da6d60cad607fffe9e8e558080da8d79e5092",
+            "turbo/apps/platform/src/shared-database/computed-key.ts": "f5da3de106db7047eb3dfcfc79a6fe213322d69edeb494959bbb574760cf0db7",
+            "turbo/apps/platform/src/shared-database/data-key.ts": "b0522d64177f5a6bd11317f57950e4a83aaff50e1712dc890fb25e5577165599",
+            "turbo/apps/platform/src/shared-database/protocol.ts": "a5d97eba9f04b0db84f16a835f5b490327d24d8a9de68d0ec98c687cf2bffc7a"
+          }
+        },
+        "opening": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        }
+      },
+      "otherCurrentFilesWithCommonBlocks": {}
+    },
+    "turbo/apps/platform/src/signals/browser/__tests__/client.test.ts": {
+      "compared": {
+        "frozen": {
+          "suiteSha256": "a8f8b0628d686350af4d5651075ea51e320016699183733fcf481b22e6accf17",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/browser/cdp/client.ts": "2a71674bdeed5e742898068475bf4af130b1c60ccf0559bedc4cd146980232a5",
+            "turbo/apps/platform/src/signals/browser/cdp/errors.ts": "6b4b4d1d2893aa25a4ea4b65be70720ab1b71baced291b0ad638afeaf8e6ed74",
+            "turbo/apps/platform/src/signals/browser/cdp/native.ts": "87895811f5e01759f07d98af4c84ad61e0e772a80f43ae89781bcceb4d823802",
+            "turbo/apps/platform/src/signals/browser/cdp/runtime-objects.ts": "7149f1dbca2969b26614b6a4728fd748096f3ea96e0afde8efe3d8fdb022a141",
+            "turbo/apps/platform/src/signals/browser/render/canvas.ts": "fbf7f32d1fd5aba0d1376d3549857cf13237d8c704c2b4c5b67d84e487337c3c"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "suiteSha256": "fceae9b57104da70ca4e056337963007a732262eaca308de54f94d79f4afe6b6",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/browser/cdp/client.ts": "2a71674bdeed5e742898068475bf4af130b1c60ccf0559bedc4cd146980232a5",
+            "turbo/apps/platform/src/signals/browser/cdp/errors.ts": "6b4b4d1d2893aa25a4ea4b65be70720ab1b71baced291b0ad638afeaf8e6ed74",
+            "turbo/apps/platform/src/signals/browser/cdp/native.ts": "87895811f5e01759f07d98af4c84ad61e0e772a80f43ae89781bcceb4d823802"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        },
+        "main": {
+          "suiteSha256": "a8f8b0628d686350af4d5651075ea51e320016699183733fcf481b22e6accf17",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/lib/time.ts": "667b59f54c4090af448563ef2c60ebd15d74297ed613d792ded51d4484ab0f5c",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/browser/cdp/client.ts": "2a71674bdeed5e742898068475bf4af130b1c60ccf0559bedc4cd146980232a5",
+            "turbo/apps/platform/src/signals/browser/cdp/errors.ts": "6b4b4d1d2893aa25a4ea4b65be70720ab1b71baced291b0ad638afeaf8e6ed74",
+            "turbo/apps/platform/src/signals/browser/cdp/native.ts": "87895811f5e01759f07d98af4c84ad61e0e772a80f43ae89781bcceb4d823802",
+            "turbo/apps/platform/src/signals/browser/cdp/runtime-objects.ts": "7149f1dbca2969b26614b6a4728fd748096f3ea96e0afde8efe3d8fdb022a141",
+            "turbo/apps/platform/src/signals/browser/render/canvas.ts": "fbf7f32d1fd5aba0d1376d3549857cf13237d8c704c2b4c5b67d84e487337c3c"
+          }
+        },
+        "opening": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        }
+      },
+      "otherCurrentFilesWithCommonBlocks": {}
+    },
+    "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx": {
+      "compared": {
+        "frozen": {
+          "suiteSha256": "2b23147ad5cc36bcdc6d455c59dab3c36f958dd8841abe21510a50886b046e31",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/utils.ts": "a7377369a5568edcd14517718315450eee1c3a0b951cc3bf8000ea4391f116a0",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "13793c23ffd010598660ed4d97fcbdc9a1caf96106a805eb7b05b887734701e1",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "c431bdda456b01bc108227ce92a9bb270ebc15cb1b62586769a74cde02018c97"
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "suiteSha256": "1488f0b1159e5b6601ee165bb5475ec1df784103cda2a6dc6bffd21bfcb85cea",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "ec9a35e56bf7cec1a7c0431d26619ea9777f2a0f96cbc4dd67fbf9207cbbaba8",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "e4b2a86e6762065f528e03a846f2f536f5e8541c051491e8c9caabaab9c78035"
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "suiteSha256": null,
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {}
+        },
+        "main": {
+          "suiteSha256": "b9d9664024aaadcb91fe74da9116027246a9c88dccf1568bf866a7a7dac9964d",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/signals/utils.ts": "7704468bcd58fbcd1c6b9b91787c2e23cff4de3be405c86192567d0283992c30",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "8880f603e54ac78608504433dd5dee8412cb9aa5a7446f0d71eeba17ec7ec2d3",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950"
+          }
+        },
+        "opening": {
+          "suiteSha256": "3eeec072b94d24731598471dae8e0dd424885b07487f55fa47597a052e176d01",
+          "matchingFiveLineBlocks": 0,
+          "directHelperSha256": {
+            "turbo/apps/platform/src/views/okou-page/__tests__/composer-menu-page-fixture.ts": "fa5646ab124eb6157137f31c44a025f8e60f175c9719ab06969a770d97ba84d5",
+            "turbo/apps/platform/src/__tests__/page-helper.ts": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors-test-helpers.ts": "634f089bd4d45e4a1c8f81a549a5883bbfca77fcfbb75b18f009302ddac4a898",
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950"
+          }
+        }
+      },
+      "otherCurrentFilesWithCommonBlocks": {}
+    }
+  },
+  "review": "Frozen and withdrawn implementations use direct client requests or worker-store subscriptions. Current trials drive the Router or independent Chromium HTTP and CDP boundaries. Shared test infrastructure supplies real Router mounting or external responses. Request counts for the panel are checked independently in the external receipt audit. The Chrome control did not exercise App caller promises."
+}

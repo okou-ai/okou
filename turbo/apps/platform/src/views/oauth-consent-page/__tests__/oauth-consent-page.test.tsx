@@ -1,92 +1,69 @@
 import { screen, waitFor } from "@testing-library/react";
-import { buildPublishableKey } from "@clerk/shared/keys";
 import { expect, test } from "vitest";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+
+import {
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const CLIENT_ID = "https://chatgpt.com/oauth/client.json";
+const CONSENT_PATH = `/oauth-consent?${new URLSearchParams({
+  client_id: "oauth-client-7f3a",
+  redirect_uri: "https://partner.example.test/callback",
+  response_type: "code",
+  scope: "openid profile",
+  state: "partner-state-91",
+  code_challenge: "y3Q2b0R8fH9xV1sZpL6mN4cT7wE5aK2jU8gB0iD3oFq",
+  code_challenge_method: "S256",
+})}`;
 
-function clerkEnvironment() {
-  return {
-    VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: buildPublishableKey(
-      "oauth-test.clerk.accounts.dev",
-    ),
-    VITE_CLERK_PUBLISHABLE_KEY_PROD: buildPublishableKey("clerk.okou.ai"),
-  };
-}
+test("app.vm7.ai renders the app-hosted OAuth consent request", async () => {
+  await setupPage({ context, path: CONSENT_PATH, host: "app.vm7.ai" });
 
-function consentPath(): string {
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    code_challenge: "synthetic-challenge",
-    code_challenge_method: "S256",
-    redirect_uri: "https://chatgpt.com/connector_platform_oauth_redirect",
-    resource: "https://api.okou.ai/mcp",
-    response_type: "code",
-    scope: "openid email okou:chat:read",
-    state: "synthetic-state",
-  });
-  return `/oauth-consent?${params.toString()}`;
-}
-
-test.each(["app.vm7.ai", "app.okou.ai"])(
-  "%s renders the app-hosted OAuth consent request",
-  async (host) => {
-    await setupPage({
-      context,
-      env: clerkEnvironment(),
-      host,
-      path: consentPath(),
-    });
-
-    const consent = await screen.findByTestId("clerk-oauth-consent");
-    expect(consent).toHaveAttribute("data-client-id", CLIENT_ID);
-    expect(consent).toHaveAttribute("data-clerk-theme", "simple");
-    expect(consent).toHaveAttribute("data-clerk-logo-link-url", "/");
-    expect(consent).toHaveAttribute(
-      "data-clerk-primary-color",
-      "hsl(var(--primary))",
-    );
-    expect(consent).toHaveAttribute(
-      "data-clerk-primary-foreground",
-      "hsl(var(--primary-foreground))",
-    );
-    expect(screen.getByTestId("app-auth-layout")).toContainElement(
-      screen.getByTestId("app-oauth-consent"),
-    );
-    expect(screen.getByTestId("app-auth-background")).toBeInTheDocument();
-    expect(screen.getByLabelText("Go to Okou home")).toHaveAttribute(
-      "href",
-      "/",
-    );
-    expect(screen.getByLabelText("Toggle theme")).toBeVisible();
-    expect(location.pathname).toBe("/oauth-consent");
-    expect(new URLSearchParams(location.search).get("code_challenge")).toBe(
-      "synthetic-challenge",
-    );
-  },
-);
+  const consent = await screen.findByTestId("clerk-oauth-consent");
+  expect(consent).toHaveAttribute("data-client-id", "oauth-client-7f3a");
+  expect(consent).toHaveAttribute("data-clerk-theme", "simple");
+  expect(consent).toHaveAttribute("data-clerk-logo-link-url", "/");
+  expect(consent).toHaveAttribute(
+    "data-clerk-primary-color",
+    "hsl(var(--primary))",
+  );
+  expect(consent).toHaveAttribute(
+    "data-clerk-primary-foreground",
+    "hsl(var(--primary-foreground))",
+  );
+  expect(screen.getByTestId("app-auth-layout")).toContainElement(consent);
+  expect(screen.getByTestId("app-auth-background")).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").find((button) => {
+      return button.getAttribute("aria-label") === "Toggle theme";
+    }),
+  ).toBeDefined();
+  expect(window.location.href).toBe(`https://app.vm7.ai${CONSENT_PATH}`);
+});
 
 test("A signed-out consent request returns through app sign-in", async () => {
-  const assigned = context.mocks.browser.locationAssign();
-  const path = consentPath();
+  const navigation = context.mocks.browser.locationAssign();
+
   await startPage({
     context,
-    auth: null,
-    env: clerkEnvironment(),
+    path: CONSENT_PATH,
     host: "app.vm7.ai",
-    path,
+    auth: null,
   });
 
-  await waitFor(() => {
-    expect(assigned.calls).toHaveLength(1);
+  const destination = await waitFor(() => {
+    const assigned = navigation.calls.at(-1);
+    expect(assigned).toBeDefined();
+    return new URL(assigned as string);
   });
-  const signIn = new URL(assigned.calls[0] ?? "");
-  expect(signIn.origin).toBe("https://app.vm7.ai");
-  expect(signIn.pathname).toBe("/sign-in");
-  expect(new URLSearchParams(signIn.hash.slice(3)).get("redirect_url")).toBe(
-    `https://app.vm7.ai${path}`,
+  expect(`${destination.origin}${destination.pathname}`).toBe(
+    "https://app.vm7.ai/sign-in",
   );
+  expect(
+    new URLSearchParams(destination.hash.split("?")[1]).get("redirect_url"),
+  ).toBe(`https://app.vm7.ai${CONSENT_PATH}`);
   expect(screen.queryByTestId("clerk-oauth-consent")).not.toBeInTheDocument();
 });

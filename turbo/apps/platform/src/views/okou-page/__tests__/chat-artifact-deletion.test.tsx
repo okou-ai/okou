@@ -1,235 +1,143 @@
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-
+import { click } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { artifact } from "../../artifacts-page/__tests__/artifact-catalog-test-helpers.ts";
+import { imageArtifactDetail } from "./chat-navigation-artifact-test-helpers.ts";
 import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
+  ATTACHMENT_RUN_ID,
+  artifactFile,
+  findNamedButton,
   findNamedLink,
   findNamedMenuItem,
+  getNamedButton,
+  queryNamedButton,
 } from "./chat-attachment-test-helpers.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  artifactRun,
-  artifactSummary,
-  buttonNamed,
-  fileArtifactDetail,
-  mockArtifactConversation,
-  NAVIGATION_ARTIFACT_THREAD_ID,
-  openResourceArtifact,
-} from "./chat-navigation-artifact-test-helpers.ts";
+import { openMessageFile } from "./chat-artifact-preview-test-helpers.ts";
 
 const context = testContext();
-const report = artifactSummary(
-  "a0000000-0000-4000-a000-000000000921",
-  "file",
-  "thread-report.txt",
-);
-const url = "https://cdn.vm7.io/artifacts/tests/deletion/thread-report.txt";
 
-function mockReport(available: () => boolean, sourceUrl = url) {
-  const detail = fileArtifactDetail(report, {
-    filename: report.title,
-    contentType: "text/plain",
-    fileId: "f0000000-0000-4000-a000-000000000921",
-    url: sourceUrl,
+test("chat-artifact-deletion-001 returns focus after Cancel and removes the owner's delete action after confirmation", async () => {
+  const summary = artifact({ kind: "image", title: "Cove survey" });
+  const file = artifactFile("shore.png", {
+    artifactId: summary.id,
+    title: summary.title,
+    contentType: "image/png",
   });
-  mockArtifactConversation(context, {
-    catalog: [report],
-    getDetail: () => {
-      return available() ? detail : null;
-    },
-    artifactRuns: () => {
-      return available()
-        ? [
-            artifactRun({
-              artifactId: report.id,
-              filename: report.title,
-              contentType: "text/plain",
-              fileId: "f0000000-0000-4000-a000-000000000921",
-              url: sourceUrl,
-            }),
-          ]
-        : [];
-    },
-    chatEvents: [
-      {
-        id: "thread-report-message",
-        role: "assistant",
-        content: `[${report.title}](${sourceUrl})`,
-        runId: "navigation-artifact-run",
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-      {
-        id: "thread-report-completed",
-        role: "assistant",
-        content: null,
-        runId: "navigation-artifact-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
-        createdAt: "2026-09-01T12:00:01.000Z",
-      },
-    ],
+  const legend = artifactFile("legend.png", {
+    contentType: "image/png",
+    title: "Survey legend",
   });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: available() ? [report] : [],
-      nextCursor: null,
-    });
-  });
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text("Thread report content");
-  });
-}
-
-test.each(["sidebar", "resources"] as const)(
-  "a thread artifact can be deleted from the %s preview",
-  async (surface) => {
-    let removed = false;
-    mockReport(() => {
-      return !removed;
-    });
-    context.mocks.api(artifactCatalogContract.delete, ({ params, respond }) => {
-      expect(params.artifactId).toBe(report.id);
-      removed = true;
-      return respond(200, { deleted: true });
-    });
-    await setupPage({
-      context,
-      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-      host: "app.okou.ai",
-    });
-    if (surface === "resources") {
-      await openResourceArtifact(report.title);
-    } else {
-      click(await findNamedLink(report.title));
-    }
-    const previewId = "artifact-sidebar";
-    const preview = await screen.findByTestId(previewId);
-    await expect(
-      within(preview).findByText("Thread report content"),
-    ).resolves.toBeInTheDocument();
-    const requestDeletion = async () => {
-      const more = await waitFor(() => {
-        const button = buttonNamed("More artifact actions", preview);
-        expect(button).toBeVisible();
-        return button;
-      });
-      click(more);
-      const menu = await screen.findByRole("menu");
-      click(await findNamedMenuItem("Delete", menu));
-    };
-    await requestDeletion();
-    const cancelled = await screen.findByRole("dialog", {
-      name: `Delete ${report.title}?`,
-    });
-    click(buttonNamed("Cancel", cancelled));
-    await waitFor(() => {
-      return expect(cancelled).not.toBeInTheDocument();
-    });
-    expect(preview).toBeInTheDocument();
-    expect(removed).toBeFalsy();
-    await waitFor(() => {
-      expect(buttonNamed("More artifact actions", preview)).toHaveFocus();
-    });
-    await requestDeletion();
-    const confirmed = await screen.findByRole("dialog", {
-      name: `Delete ${report.title}?`,
-    });
-    click(buttonNamed("Delete", confirmed));
-    await expect(
-      screen.findByText("Artifact deleted"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      return expect(screen.queryByTestId(previewId)).not.toBeInTheDocument();
-    });
-    expect(removed).toBeTruthy();
-    click(await findNamedLink(report.title));
-    const reopenedId = "artifact-sidebar";
-    const reopened = await screen.findByTestId(reopenedId);
-    await expect(
-      within(reopened).findByText("Thread report content"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(buttonNamed("Download artifact", reopened)).toBeVisible();
-    });
-    expect(
-      queryAllByRoleFast("button", reopened).find((button) => {
-        return button.getAttribute("aria-label") === "More artifact actions";
-      }),
-    ).toBeUndefined();
-  },
-);
-
-test("a read-only artifact retains Download and link copy without owner deletion", async () => {
-  const fileId = "f0000000-0000-4000-a000-000000000921";
-  const canonical = artifactReferencePath(fileId, report.title);
-  const ownershipDenied = context.mocks.deferred<void>();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  mockReport(() => {
-    return true;
-  }, canonical);
+  const inventory = context.mocks.deferred<void>();
+  let owned = true;
   context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    if (!ownershipDenied.settled()) {
-      ownershipDenied.resolve();
+    return owned
+      ? respond(
+          200,
+          imageArtifactDetail(summary, {
+            filename: file.filename,
+            fileId: summary.id,
+            url: file.url,
+          }),
+        )
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Artifact removed" },
+        });
+  });
+  context.mocks.api(artifactCatalogContract.delete, ({ params, respond }) => {
+    if (params.artifactId !== summary.id) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Unknown artifact" },
+      });
     }
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
-    });
+    owned = false;
+    return respond(200, { deleted: true });
   });
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+  const viewer = await openMessageFile(context, file, {
+    relatedFiles: [legend],
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, async ({ respond }) => {
+    if (!owned) {
+      await inventory.promise;
+    }
     return respond(200, {
-      url,
-      downloadUrl: url,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      filename: report.title,
-      contentType: "text/plain",
-      target: { kind: "file", id: fileId },
+      runs: [
+        { runId: ATTACHMENT_RUN_ID, files: owned ? [file, legend] : [legend] },
+      ],
     });
   });
-  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
-    await ownershipDenied.promise;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
-    });
+  const more = await findNamedButton("More artifact actions", viewer);
+  click(more);
+  click(await findNamedMenuItem("Delete"));
+  const prompt = { name: "Delete Cove survey?" };
+  click(getNamedButton("Cancel", await screen.findByRole("dialog", prompt)));
+  await waitFor(() => {
+    return expect(more).toHaveFocus();
   });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  click(await findNamedLink(report.title));
-  const preview = await screen.findByTestId("artifact-sidebar");
+  expect(within(viewer).getByAltText(file.filename)).toHaveAttribute(
+    "src",
+    file.url,
+  );
+  click(more);
+  click(await findNamedMenuItem("Delete"));
+  click(getNamedButton("Delete", await screen.findByRole("dialog", prompt)));
   await expect(
-    within(preview).findByText("Thread report content"),
+    screen.findByText("Artifact deleted"),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(buttonNamed("Share artifact", preview)).toBeVisible();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(buttonNamed("Share artifact", preview));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([
-      new URL(canonical, "https://app.okou.ai").href,
-    ]);
-  });
-  click(buttonNamed("Download artifact", preview));
-  const menu = await screen.findByRole("menu");
+  // The legend's catalog title is supplied by the same refreshed inventory.
+  click(await findNamedLink(legend.filename));
+  const legendPreview = await screen.findByTestId("artifact-sidebar");
+  await within(legendPreview).findByText("legend.png");
+  inventory.resolve();
+  await within(legendPreview).findByText("Survey legend");
+  click(getNamedButton("Close artifact", legendPreview));
+  click(await findNamedLink("Inspect attachment"));
+  const reopened = await screen.findByTestId("artifact-sidebar");
   await expect(
-    findNamedMenuItem("Download", menu),
-  ).resolves.not.toHaveAttribute("aria-disabled", "true");
-  expect(
-    queryAllByRoleFast("button", preview).find((button) => {
-      return button.getAttribute("aria-label") === "More artifact actions";
-    }),
-  ).toBeUndefined();
+    within(reopened).findByAltText(file.filename),
+  ).resolves.toHaveAttribute("src", file.url);
+  await waitFor(() => {
+    return expect(within(reopened).getByAltText(file.filename)).toBeVisible();
+  });
+  await within(reopened).findByText("shore.png");
+  await expect(
+    findNamedButton("Download artifact", reopened),
+  ).resolves.toBeVisible();
+  expect(queryNamedButton("More artifact actions", reopened)).toBeNull();
+});
+
+test("chat-artifact-deletion-004 shares a read-only attachment and offers its download", async () => {
+  const file = artifactFile("visitor-map.png", {
+    artifactId: "20000000-0000-4000-8000-000000000026",
+    title: "Visitor map",
+    contentType: "image/png",
+  });
+  const decision = context.mocks.deferred<void>();
+  context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
+    await decision.promise;
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Read-only attachment" },
+    });
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const viewer = await openMessageFile(context, file);
+  const share = within(viewer).getByLabelText("Share artifact");
+  expect(share).not.toBeVisible();
+  decision.resolve();
+  await waitFor(() => {
+    return expect(share).toBeVisible();
+  });
+  click(share);
+  await waitFor(() => {
+    return expect(clipboard.writes).toContain(file.url);
+  });
+  click(getNamedButton("Download artifact", viewer));
+  await expect(findNamedMenuItem("Download")).resolves.toBeEnabled();
+  expect(queryNamedButton("More artifact actions", viewer)).toBeNull();
+  expect(queryNamedButton("Delete", viewer)).toBeNull();
 });

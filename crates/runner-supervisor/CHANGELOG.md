@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.16...runner-supervisor-v0.28.17) (2026-11-25)
+
+
+### Refactoring
+
+* **runner-supervisor:** share idle-pool transfer cancellation cleanup ([#50680](https://github.com/okou-ai/okou/issues/50680)) ([048ac40](https://github.com/okou-ai/okou/commit/048ac40028ae5241b39a90688e354929c4b9cd34))
+
 ## [0.28.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.15...runner-supervisor-v0.28.16) (2026-11-24)
 
 

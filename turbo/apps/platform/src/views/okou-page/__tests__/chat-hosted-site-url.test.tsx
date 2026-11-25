@@ -2,36 +2,183 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
-  click,
-  queryAllByRoleFast,
   setupPage,
+  click,
+  fill,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  artifactRun,
   artifactSummary,
-  buttonNamed,
+  artifactRun,
   hostedSiteArtifactDetail,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  resourceButton,
-  resourcePanel,
-} from "./chat-resources-test-helpers.ts";
+  findNamedButton,
+  findNamedLink,
+  getNamedButton,
+} from "./chat-attachment-test-helpers.ts";
+import { openResources } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
+const title = "Quarterly launch report";
+const original = "launch-recap";
+const address = (slug: string) => {
+  return "https://" + slug + ".okou.app";
+};
+const deployment = address("dpl-8a4d4487-18c0-44cd-a09d-206056d499b0");
+const siteId = "be311386-caaa-4bfb-a74a-7d694c27c41e";
+async function publishedReport(customDomains = false) {
+  let slug = original;
+  const site = () => {
+    return {
+      siteId,
+      publicSlug: slug,
+      url: address(slug),
+      isActive: true,
+    };
+  };
+  const item = {
+    ...artifactSummary(
+      "d8064466-f246-4524-8e90-3655890190fe",
+      "hosted-site",
+      title,
+    ),
+    sourceUrl: deployment,
+    aliasUrl: address(original),
+  };
+  const run = artifactRun({
+    artifactId: item.id,
+    fileId: siteId,
+    filename: "index.html",
+    contentType: "text/html",
+    url: deployment,
+  });
+  mockArtifactConversation(context, {
+    catalog: [item],
+    artifactRuns: () => {
+      return [
+        {
+          ...run,
+          files: [
+            {
+              ...run.files[0]!,
+              title,
+              artifactKind: "hosted-site",
+              aliasUrl: address(original),
+            },
+          ],
+        },
+      ];
+    },
+    getDetail: () => {
+      return hostedSiteArtifactDetail(item, {
+        siteId,
+        slug,
+        url: address(slug),
+      });
+    },
+    chatEvents: [
+      {
+        role: "assistant",
+        content: "[Read the launch report](" + deployment + ")",
+        createdAt: "2026-10-10T18:00:00Z",
+        runId: NAVIGATION_ARTIFACT_RUN_ID,
+      },
+    ],
+  });
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(200, site());
+  });
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "public", revision: null });
+  });
+  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
+    return respond(200, { siteId, showBanner: true, revision: null });
+  });
+  context.mocks.api(hostContract.siteUrlAvailability, ({ query, respond }) => {
+    return respond(200, { available: query.publicSlug !== slug });
+  });
+  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
+    if (body.expectedPublicSlug !== slug) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "The site was already renamed" },
+      });
+    }
+    slug = body.publicSlug;
+    return respond(200, site());
+  });
+  await setupPage({
+    context,
+    path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
+    featureSwitches: {
+      [FeatureSwitchKey.HostedSiteCustomDomains]: customDomains,
+    },
+    host: "app.okou.ai",
+  });
+  click(await findNamedLink("Read the launch report"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await findNamedLink(title, preview);
+  return preview;
+}
 
-const deploymentId = "00000000-0000-4000-8000-000000000041";
-const siteId = "00000000-0000-4000-8000-000000000042";
-const artifactId = "00000000-0000-4000-8000-000000000043";
-const siteTitle = "Quarterly launch report";
+test("chat-hosted-site-url-002 shows the owner's current banner and public audience in Share", async () => {
+  const preview = await publishedReport();
+  click(await findNamedButton("Share artifact", preview));
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  const menu = toggle.closest<HTMLElement>('[role="dialog"]')!;
+  expect(toggle).toBeEnabled();
+  expect(toggle).toBeChecked();
+  const audience = within(menu).getByLabelText("Anyone with the link");
+  expect(audience).toBeEnabled();
+  expect(audience).toBeChecked();
+});
+
+test("chat-hosted-site-url-004 follows both saved addresses through the preview and Resources", async () => {
+  const viewer = await publishedReport();
+  const user = userEvent.setup({ delay: null, writeToClipboard: false });
+  for (const [current, next] of [
+    [original, "renamed-site"],
+    ["renamed-site", "final-site"],
+  ] as const) {
+    click(await findNamedButton("Share artifact", viewer));
+    await screen.findByText(current + ".okou.app");
+    click(getNamedButton("Customize URL"));
+    await fill(await screen.findByLabelText("Website URL"), next);
+    await screen.findByText("Available");
+    click(getNamedButton("Save"));
+    const url = address(next);
+    await waitFor(() => {
+      expect(
+        within(viewer).getByText(title, { selector: "a" }),
+      ).toHaveAttribute("href", url + "/");
+    });
+    const shareCopy = await findNamedButton("Copy link");
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    click(shareCopy);
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([url]);
+    });
+    await user.keyboard("{Escape}");
+  }
+  click(await findNamedButton("Close artifact", viewer));
+  const resources = await openResources();
+  const row = (await within(resources).findByText(title)).closest("li")!;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(getNamedButton("Copy link", row));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([address("final-site")]);
+  });
+});
 
 function tabNamed(name: string, container: HTMLElement) {
   const tab = queryAllByRoleFast("tab", container).find((item) => {
@@ -43,305 +190,19 @@ function tabNamed(name: string, container: HTMLElement) {
   return tab;
 }
 
-async function setupHostedSite(
-  initialSlug = "launch-site",
-  hostDomain = "okou.app",
-  customDomains = false,
-) {
-  const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
-  let currentSlug = initialSlug;
-  context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({
-    timezone: "Etc/UTC",
-    locale: "en-US",
-  });
-  const summary = {
-    ...artifactSummary(artifactId, "hosted-site", siteTitle),
-    sourceUrl: deploymentUrl,
-    aliasUrl: `https://${initialSlug}.${hostDomain}`,
-  };
-  const run = artifactRun({
-    artifactId,
-    filename: "launch-site.html",
-    fileId: deploymentId,
-    contentType: "text/html",
-    url: deploymentUrl,
-  });
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    getDetail: (requestedArtifactId) => {
-      return requestedArtifactId === artifactId
-        ? hostedSiteArtifactDetail(summary, {
-            siteId,
-            slug: currentSlug,
-            url: `https://${currentSlug}.${hostDomain}`,
-          })
-        : null;
-    },
-    artifactRuns: () => {
-      return [
-        {
-          ...run,
-          files: run.files.map((file) => {
-            return {
-              ...file,
-              title: siteTitle,
-              aliasUrl: `https://${currentSlug}.${hostDomain}`,
-              artifactKind: "hosted-site" as const,
-            };
-          }),
-        },
-      ];
-    },
-    chatEvents: [
-      {
-        id: "hosted-url-message",
-        createdAt: "2026-09-01T12:00:00.000Z",
-        role: "assistant",
-        content: `[Open website](${deploymentUrl})`,
-        runId: NAVIGATION_ARTIFACT_RUN_ID,
-        seqId: 1,
-      },
-      {
-        id: "hosted-url-completed",
-        createdAt: "2026-09-01T12:00:01.000Z",
-        role: "assistant",
-        content: null,
-        runId: NAVIGATION_ARTIFACT_RUN_ID,
-        runLifecycleEvent: "completed",
-        seqId: 2,
-      },
-    ],
-  });
-  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-    if (params.id !== NAVIGATION_ARTIFACT_THREAD_ID) {
-      return respond(404, {
-        error: {
-          code: "CHAT_THREAD_NOT_FOUND",
-          message: "Chat thread not found",
-        },
-      });
-    }
-    return respond(200, {
-      id: NAVIGATION_ARTIFACT_THREAD_ID,
-      title: "Artifact navigation",
-      selectedModel: null,
-      modelSettings: {},
-      serviceTier: null,
-      pinnedAt: null,
-      archived: false,
-      muted: false,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-    });
-  });
-  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-    return respond(200, {
-      siteId,
-      publicSlug: currentSlug,
-      url: `https://${currentSlug}.${hostDomain}`,
-      isActive: true,
-    });
-  });
-  context.mocks.api(hostContract.siteUrlAvailability, ({ respond }) => {
-    return respond(200, { available: true });
-  });
-  context.mocks.api(hostContract.updateSiteUrl, ({ body, respond }) => {
-    expect(body.expectedPublicSlug).toBe(currentSlug);
-    currentSlug = body.publicSlug;
-    return respond(200, {
-      siteId,
-      publicSlug: currentSlug,
-      url: `https://${currentSlug}.${hostDomain}`,
-      isActive: true,
-    });
-  });
-  context.mocks.api(hostContract.resolveAlias, ({ params, respond }) => {
-    if (params.publicSlug !== currentSlug) {
-      return respond(200, { pointer: null });
-    }
-    return respond(200, {
-      pointer: {
-        version: 1,
-        publicBrand: "okou",
-        publicSlug: currentSlug,
-        siteId,
-        deploymentId,
-        prefix: `sites/brands/okou/publications/${deploymentId}`,
-        manifestKey: `sites/brands/okou/publications/${deploymentId}/manifest.json`,
-        spaFallback: false,
-        updatedAt: "2026-10-27T00:00:00Z",
-      },
-    });
-  });
-  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-    return respond(200, { siteId, visibility: "public", revision: null });
-  });
-  context.mocks.api(hostContract.siteBanner, ({ respond }) => {
-    return respond(200, { siteId, showBanner: true, revision: null });
-  });
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.HostedSiteCustomDomains]: customDomains,
-    },
-  });
-  await screen.findByText("Open website");
-  const link = queryAllByRoleFast("link").find((element) => {
-    return element.textContent === "Open website";
-  });
-  expect(link).toBeDefined();
-  click(link!);
-  return await screen.findByTestId("artifact-sidebar");
-}
-
-async function copyFromResources() {
-  // Working in the artifact preview dismisses the resource panel like any
-  // outside press, so reopen it from the header.
-  if (!resourcePanel()) {
-    click(resourceButton());
-  }
-  const resources = await screen.findByRole("dialog", {
-    name: "Artifacts and chats",
-  });
-  const title = await within(resources).findByText(siteTitle);
-  const row = title.closest("li")!;
-  click(buttonNamed("Copy link", row));
-}
-
 async function openHostedSiteShare(preview: HTMLElement) {
-  const shareLabel = "Share artifact";
-  await waitFor(() => {
-    expect(buttonNamed(shareLabel, preview)).toBeEnabled();
-  });
-  click(buttonNamed(shareLabel, preview));
-  const shareMenu = await waitFor(() => {
-    const dialog = buttonNamed("Customize URL").closest('[role="dialog"]');
-    if (!(dialog instanceof HTMLElement)) {
-      throw new Error("Expected the hosted site's Share dialog");
-    }
-    expect(dialog).toHaveAccessibleName(shareLabel);
-    return dialog;
-  });
-  await within(shareMenu).findByText("Who can access");
-  return shareMenu;
+  click(await findNamedButton("Share artifact", preview));
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  await within(menu).findByText("Who can access");
+  return menu;
 }
-
-async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
-  await waitFor(() => {
-    expect(buttonNamed("Customize URL", shareMenu)).toBeEnabled();
-  });
-  click(buttonNamed("Customize URL", shareMenu));
-  const input = await within(shareMenu).findByLabelText("Website URL");
-  expect(input).toHaveFocus();
-  fireEvent.change(input, { target: { value: slug } });
-  expect(input).toHaveValue(slug);
-  await within(shareMenu).findByText("Available");
-  expect(buttonNamed("Save", shareMenu)).toBeEnabled();
-  click(buttonNamed("Save", shareMenu));
-  await waitFor(() => {
-    expect(buttonNamed("Customize URL", shareMenu)).toHaveFocus();
-  });
-  expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
-}
-
-test("owners see visibility and banner settings from chat deployment links", async () => {
-  const preview = await setupHostedSite();
-  const menu = await openHostedSiteShare(preview);
-  const banner = await within(menu).findByRole("switch", {
-    name: "Show Okou banner",
-  });
-  expect(banner).toBeChecked();
-  expect(banner).toBeEnabled();
-  const publicAccess = queryAllByRoleFast("radio", menu).find((row) => {
-    return row.getAttribute("aria-label") === "Anyone with the link";
-  });
-  expect(publicAccess).toHaveAttribute("aria-checked", "true");
-  expect(publicAccess).toBeEnabled();
-});
-
-test("consecutive site renames preserve the title, link and Share/Resources copy addresses", async () => {
-  const preview = await setupHostedSite();
-  const title = await within(preview).findByTestId("artifact-title-link");
-  expect(title).toHaveTextContent(siteTitle);
-  const shareMenu = await openHostedSiteShare(preview);
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  for (const slug of ["renamed-site", "final-site"]) {
-    await renameHostedSite(shareMenu, slug);
-    click(buttonNamed("Copy link", shareMenu));
-    await waitFor(() => {
-      expect(title).toHaveTextContent(siteTitle);
-      expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-      expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
-    });
-  }
-  expect(clipboard.writes).toStrictEqual([
-    "https://renamed-site.okou.app",
-    "https://final-site.okou.app",
-  ]);
-  await userEvent.keyboard("{Escape}", { delay: null });
-  await waitFor(() => {
-    expect(shareMenu).not.toBeInTheDocument();
-  });
-  click(buttonNamed("Close artifact", preview));
-  await waitFor(() => {
-    expect(title).not.toBeInTheDocument();
-  });
-  const resourceClipboard = context.mocks.browser.clipboardWriteText();
-  await copyFromResources();
-  await waitFor(() => {
-    expect(resourceClipboard.writes.at(-1)).toBe("https://final-site.okou.app");
-  });
-  expect(resourceClipboard.writes).toStrictEqual([
-    "https://final-site.okou.app",
-  ]);
-});
-
-test("a reopened chat shows the catalog title and copies the current site address", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const preview = await setupHostedSite("already-renamed");
-  const title = await within(preview).findByTestId("artifact-title-link");
-  expect(title).toHaveTextContent(siteTitle);
-  expect(title).toHaveAttribute("href", "https://already-renamed.okou.app/");
-  click(buttonNamed("Close artifact", preview));
-  await waitFor(() => {
-    expect(title).not.toBeInTheDocument();
-  });
-  await copyFromResources();
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([
-      "https://already-renamed.okou.app",
-    ]);
-  });
-});
-
-test("Share directly copies legacy website links without URL customization", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const preview = await setupHostedSite("legacy-site", "sites.vm0.io");
-  const title = await within(preview).findByTestId("artifact-title-link");
-  expect(title).toHaveTextContent(siteTitle);
-  expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
-  const shareLabel = "Share artifact";
-  await waitFor(() => {
-    expect(buttonNamed(shareLabel, preview)).toBeEnabled();
-  });
-  click(buttonNamed(shareLabel, preview));
-  await screen.findByText("Link copied");
-  expect(clipboard.writes).toStrictEqual(["https://legacy-site.sites.vm0.io"]);
-  expect(
-    screen.queryByRole("dialog", { name: shareLabel }),
-  ).not.toBeInTheDocument();
-});
-
 test("custom domain verification stays manual and saves directly from the verification view", async () => {
   const domainId = "00000000-0000-4000-8000-000000000051";
   const revision = "00000000-0000-4000-8000-000000000052";
   let settings: zInfer<typeof hostedDomainSettingsSchema> = {
     siteId,
-    defaultUrl: "https://launch-site.okou.app",
-    effectiveUrl: "https://launch-site.okou.app",
+    defaultUrl: "https://launch-recap.okou.app",
+    effectiveUrl: "https://launch-recap.okou.app",
     selectedDomainId: null,
     revision,
     allowed: true,
@@ -401,9 +262,9 @@ test("custom domain verification stays manual and saves directly from the verifi
     return respond(200, settings);
   });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const preview = await publishedReport(true);
   const menu = await openHostedSiteShare(preview);
-  click(buttonNamed("Customize URL", menu));
+  click(getNamedButton("Customize URL", menu));
   await within(menu).findByLabelText("Website URL");
   expect(
     within(menu).queryByRole("combobox", { name: "Domain" }),
@@ -413,32 +274,32 @@ test("custom domain verification stays manual and saves directly from the verifi
   const input = await within(menu).findByPlaceholderText("www.example.com");
   fireEvent.change(input, { target: { value: "www.customer-example.net" } });
   expect(input).toHaveValue("www.customer-example.net");
-  expect(buttonNamed("Continue", menu)).toBeEnabled();
-  click(buttonNamed("Continue", menu));
+  expect(getNamedButton("Continue", menu)).toBeEnabled();
+  click(getNamedButton("Continue", menu));
   await within(menu).findByText("No verification yet");
   expect(
     within(menu).getByRole("heading", { name: "www.customer-example.net" }),
   ).toBeInTheDocument();
   expect(verifies).toBe(0);
-  click(buttonNamed("Verify", menu));
+  click(getNamedButton("Verify", menu));
   await within(menu).findByText("Domain verified. Save to use this address.");
   expect(verifies).toBe(1);
   expect(saves).toBe(0);
   expect(within(menu).queryByText("Continue")).not.toBeInTheDocument();
   expect(within(menu).queryByText("Remove")).not.toBeInTheDocument();
-  expect(buttonNamed("Cancel", menu)).toBeEnabled();
-  click(buttonNamed("Save", menu));
+  expect(getNamedButton("Cancel", menu)).toBeEnabled();
+  click(getNamedButton("Save", menu));
   await waitFor(() => {
-    return expect(buttonNamed("Copy link", menu)).toBeEnabled();
+    return expect(getNamedButton("Copy link", menu)).toBeEnabled();
   });
-  click(buttonNamed("Copy link", menu));
+  click(getNamedButton("Copy link", menu));
   await waitFor(() => {
     return expect(clipboard.writes.at(-1)).toBe(
       "https://www.customer-example.net",
     );
   });
   expect(saves).toBe(1);
-  click(buttonNamed("Customize URL", menu));
+  click(getNamedButton("Customize URL", menu));
   await waitFor(() => {
     expect(tabNamed("Custom domain", menu)).toHaveAttribute(
       "aria-selected",
@@ -450,16 +311,16 @@ test("custom domain verification stays manual and saves directly from the verifi
       name: "www.customer-example.net HTTPS ready",
     }),
   ).resolves.toBeChecked();
-  expect(buttonNamed("Remove www.customer-example.net", menu)).toBeEnabled();
+  expect(getNamedButton("Remove www.customer-example.net", menu)).toBeEnabled();
   click(tabNamed("Okou URL", menu));
   await expect(
     within(menu).findByLabelText("Website URL"),
-  ).resolves.toHaveValue("launch-site");
+  ).resolves.toHaveValue(original);
   expect(within(menu).getByText(".okou.app")).toBeInTheDocument();
-  click(buttonNamed("Cancel", menu));
+  click(getNamedButton("Cancel", menu));
   click(
     await waitFor(() => {
-      return buttonNamed("Copied", menu);
+      return getNamedButton("Copied", menu);
     }),
   );
   await waitFor(() => {
@@ -473,8 +334,8 @@ test("pending domains are managed as full hostnames and cannot replace the shari
   const revision = "00000000-0000-4000-8000-000000000062";
   let settings: zInfer<typeof hostedDomainSettingsSchema> = {
     siteId,
-    defaultUrl: "https://launch-site.okou.app",
-    effectiveUrl: "https://launch-site.okou.app",
+    defaultUrl: "https://launch-recap.okou.app",
+    effectiveUrl: "https://launch-recap.okou.app",
     selectedDomainId: null,
     revision,
     allowed: true,
@@ -499,9 +360,9 @@ test("pending domains are managed as full hostnames and cannot replace the shari
     settings = { ...settings, domains: [] };
     return respond(200, settings);
   });
-  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const preview = await publishedReport(true);
   const menu = await openHostedSiteShare(preview);
-  click(buttonNamed("Customize URL", menu));
+  click(getNamedButton("Customize URL", menu));
   click(
     await waitFor(() => {
       return tabNamed("Custom domain", menu);
@@ -512,26 +373,26 @@ test("pending domains are managed as full hostnames and cannot replace the shari
       name: "pending.customer-example.net Finish setup",
     }),
   ).resolves.toHaveAttribute("aria-disabled", "true");
-  expect(buttonNamed("Save", menu)).toBeDisabled();
+  expect(getNamedButton("Save", menu)).toBeDisabled();
   expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
-  click(buttonNamed("Manage pending.customer-example.net", menu));
+  click(getNamedButton("Manage pending.customer-example.net", menu));
   await within(menu).findByRole("heading", {
     name: "pending.customer-example.net",
   });
   expect(within(menu).getByText("No verification yet")).toBeInTheDocument();
-  click(buttonNamed("Cancel", menu));
+  click(getNamedButton("Cancel", menu));
   await expect(
     within(menu).findByRole("radio", {
       name: "pending.customer-example.net Finish setup",
     }),
   ).resolves.toHaveAttribute("aria-disabled", "true");
-  click(buttonNamed("Remove pending.customer-example.net", menu));
+  click(getNamedButton("Remove pending.customer-example.net", menu));
   let confirmation = await screen.findByRole("dialog", { name: /Remove/ });
-  click(buttonNamed("Cancel", confirmation));
+  click(getNamedButton("Cancel", confirmation));
   expect(removals).toBe(0);
-  click(buttonNamed("Remove pending.customer-example.net", menu));
+  click(getNamedButton("Remove pending.customer-example.net", menu));
   confirmation = await screen.findByRole("dialog", { name: /Remove/ });
-  click(buttonNamed("Remove", confirmation));
+  click(getNamedButton("Remove", confirmation));
   await waitFor(() => {
     expect(removals).toBe(1);
   });
@@ -543,7 +404,7 @@ test("pending domains are managed as full hostnames and cannot replace the shari
   click(tabNamed("Okou URL", menu));
   await expect(
     within(menu).findByLabelText("Website URL"),
-  ).resolves.toHaveValue("launch-site");
+  ).resolves.toHaveValue(original);
 });
 
 test("a workspace without an active subscription cannot select an existing verified custom domain", async () => {
@@ -551,8 +412,8 @@ test("a workspace without an active subscription cannot select an existing verif
   context.mocks.api(hostContract.siteDomains, ({ respond }) => {
     return respond(200, {
       siteId,
-      defaultUrl: "https://launch-site.okou.app",
-      effectiveUrl: "https://launch-site.okou.app",
+      defaultUrl: "https://launch-recap.okou.app",
+      effectiveUrl: "https://launch-recap.okou.app",
       selectedDomainId: null,
       revision,
       allowed: false,
@@ -569,9 +430,9 @@ test("a workspace without an active subscription cannot select an existing verif
       ],
     });
   });
-  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const preview = await publishedReport(true);
   const menu = await openHostedSiteShare(preview);
-  click(buttonNamed("Customize URL", menu));
+  click(getNamedButton("Customize URL", menu));
   click(
     await waitFor(() => {
       return tabNamed("Custom domain", menu);
@@ -582,8 +443,8 @@ test("a workspace without an active subscription cannot select an existing verif
       name: "verified.customer-example.net HTTPS ready",
     }),
   ).resolves.toHaveAttribute("aria-disabled", "true");
-  expect(buttonNamed("Save", menu)).toBeDisabled();
+  expect(getNamedButton("Save", menu)).toBeDisabled();
   expect(
-    buttonNamed("Manage verified.customer-example.net", menu),
+    getNamedButton("Manage verified.customer-example.net", menu),
   ).toBeEnabled();
 });

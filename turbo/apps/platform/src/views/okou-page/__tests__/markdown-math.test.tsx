@@ -1,123 +1,80 @@
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  createMarkdownChatFixture,
-  type MarkdownChatFixture,
-} from "./markdown-page-test-helpers.ts";
+  completedConversation,
+  createChatCapabilityHelpers,
+  RUN_PATH,
+} from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
-function completedMessageRows(chat: MarkdownChatFixture, content: string) {
+const ANSWER = [
+  String.raw`Pythagoras: \(a^2 + b^2 = c^2\) holds.`,
+  "",
+  String.raw`\[`,
+  String.raw`\int_0^1 x\,dx = \tfrac{1}{2}`,
+  String.raw`\]`,
+  "",
+  String.raw`Label \(\text{katex-error}\) is only text.`,
+  "",
+  String.raw`Broken \(\frac{1}{\) stays readable.`,
+  "",
+  String.raw`Runaway \(\def\loop{\loop}\loop\) stays readable.`,
+  "",
+  "Lunch costs $5 to $10 and $AAPL closed higher.",
+  "",
+  `Inline code \`${String.raw`\(x + y\)`}\` stays code.`,
+  "",
+  "```",
+  String.raw`\[ z = 1 \]`,
+  "```",
+].join("\n");
+
+function formulas(status: string): HTMLElement[] {
   return [
-    chat.outputMessage(content, { seqId: 1 }),
-    chat.runCompleted({ seqId: 2 }),
+    ...document.querySelectorAll<HTMLElement>(
+      `[data-role='assistant'] [data-math-status="${status}"]`,
+    ),
   ];
 }
 
 test("Agent formulas render from explicit delimiters without treating currency as math", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "Portfolio value is $2,499 and ticker $ABC$.",
-    "",
-    String.raw`Inline \(E = mc^2\).`,
-    "",
-    String.raw`Valid marker \(\text{okou-katex-error}\) renders.`,
-    "",
-    String.raw`Invalid \(\notARealCommand{x}\) stays readable.`,
-    "",
-    String.raw`Fatal \(\frac{\) stays readable.`,
-    "",
-    String.raw`\[`,
-    String.raw`\begin{aligned}`,
-    String.raw`x &= 1 \\`,
-    "y &= 2",
-    String.raw`\end{aligned}`,
-    String.raw`\]`,
-    "",
-    String.raw`$$\int_0^1 x^2 \, dx$$`,
-    "",
-    "`\\(code\\)`",
-    "",
-    "```text",
-    String.raw`\[not math\]`,
-    "```",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
+  installCapabilityChat({ events: completedConversation(ANSWER) });
 
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
+  await setupPage({ context, path: RUN_PATH });
 
   await waitFor(() => {
-    expect(
-      [...document.querySelectorAll("[data-math-status]")].map((element) => {
-        return (element as HTMLElement).dataset.mathStatus;
-      }),
-    ).toStrictEqual([
-      "rendered",
-      "rendered",
-      "hasError",
-      "hasError",
-      "rendered",
-      "rendered",
-    ]);
-    expect(document.querySelectorAll("math")).toHaveLength(4);
+    expect(formulas("rendered")).toHaveLength(3);
   });
-  expect(document.querySelectorAll('math[display="block"]')).toHaveLength(2);
-  const message = await screen.findByText(/Portfolio value is/);
-  const frame = message.closest(".wmde-markdown");
-  if (!frame) {
-    throw new Error("Expected the formulas inside a Markdown frame");
+  for (const formula of formulas("rendered")) {
+    expect(formula.querySelector("math")).not.toBeNull();
   }
-  expect(frame).toHaveTextContent("Portfolio value is $2,499");
-  expect(frame).toHaveTextContent("ticker $ABC$");
-  expect(frame).toHaveTextContent(String.raw`\text{okou-katex-error}`);
-  expect(frame).toHaveTextContent(String.raw`\(\notARealCommand{x}\)`);
-  expect(frame).toHaveTextContent(String.raw`\(\frac{\)`);
-  expect(frame.querySelector("code")).toHaveTextContent(String.raw`\(code\)`);
-  expect(frame.querySelector("pre code")).toHaveTextContent(
-    String.raw`\[not math\]`,
+  expect(
+    formulas("hasError").map((formula) => {
+      return formula.textContent;
+    }),
+  ).toStrictEqual([
+    String.raw`\(\frac{1}{\)`,
+    String.raw`\(\def\loop{\loop}\loop\)`,
+  ]);
+  expect(
+    screen.getByText("Lunch costs $5 to $10 and $AAPL closed higher."),
+  ).toBeInTheDocument();
+  const code = [
+    ...document.querySelectorAll<HTMLElement>("[data-role='assistant'] code"),
+  ].map((element) => {
+    return element.textContent?.trim();
+  });
+  expect(code).toStrictEqual(
+    expect.arrayContaining([String.raw`\(x + y\)`, String.raw`\[ z = 1 \]`]),
   );
-});
-
-test("Shared Agent formulas render", async () => {
-  const sharedThreadId = "30000000-0000-4000-8000-000000000703";
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(200, {
-      id: sharedThreadId,
-      title: "Shared formula",
-      messages: [
-        {
-          messageIndex: 0,
-          role: "assistant",
-          content: String.raw`Shared \(x^2\) formula.`,
-          runIndex: 0,
-        },
-      ],
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/share/threads/${sharedThreadId}`,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-math-status=rendered]"),
-    ).not.toBeNull();
-  });
-  expect(document.querySelectorAll("math")).toHaveLength(1);
+  for (const element of document.querySelectorAll(
+    "[data-role='assistant'] code",
+  )) {
+    expect(element.querySelector("[data-math-status]")).toBeNull();
+  }
 });

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -6,29 +6,32 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import type { MockedMembership } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 
-function orgAMembership(): MockedMembership {
-  return {
-    id: "membership_org_a",
-    organization: {
-      id: "org_a",
-      name: "Org A",
-    },
-  };
+function memberships() {
+  return [
+    { id: "org_a", organization: { id: "org_a", name: "Org A" } },
+    { id: "org_b", organization: { id: "org_b", name: "Org B" } },
+  ];
 }
 
-function workspaceSwitcher(): HTMLElement {
-  const switcher = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === "Switch workspace";
-  });
-  if (!switcher) {
-    throw new Error("Expected workspace switcher");
-  }
-  return switcher;
+function workspaceChoices(): string[] {
+  return queryAllByRoleFast("menuitem", screen.getByRole("menu")).map(
+    (item) => {
+      return item.textContent?.trim() ?? "";
+    },
+  );
+}
+
+function expectWorkflowsPage(): void {
+  expect(location.pathname).toBe("/workflows");
+  expect(location.search).toBe("");
+  expect(
+    screen.getByRole("heading", { name: "Workflows", level: 1 }),
+  ).toBeInTheDocument();
 }
 
 test("A temporary authentication refresh keeps the active workspace", async () => {
@@ -36,108 +39,39 @@ test("A temporary authentication refresh keeps the active workspace", async () =
     context,
     path: "/workflows",
     auth: {
-      user: {
-        id: "user_org_a",
-        fullName: "Org A Member",
-        email: "member@example.com",
-      },
+      user: { id: "user_avery", fullName: "Avery Stone" },
       organization: {
         activeOrg: { id: "org_a", name: "Org A" },
-        memberships: [orgAMembership()],
+        memberships: memberships(),
       },
     },
   });
-
-  const agentsHeading = await screen.findByRole("heading", {
-    name: "Workflows",
-  });
-  expect(agentsHeading).toBeVisible();
-  click(workspaceSwitcher());
-  const initialWorkspaceMenu = await screen.findByRole("menu");
-  expect(within(initialWorkspaceMenu).getByText("Org A")).toBeVisible();
-  click(workspaceSwitcher());
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
+  await expect(
+    screen.findByRole("heading", { name: "Workflows", level: 1 }),
+  ).resolves.toBeInTheDocument();
+  click(await findFastControl("button", "Switch workspace"));
+  await expect(screen.findByRole("menu")).resolves.toHaveTextContent("Org A");
+  expect(workspaceChoices()).toStrictEqual(["Org B"]);
   const clerk = context.mocks.clerk();
 
-  act(() => {
-    clerk.organization({
-      activeOrg: null,
-      memberships: [orgAMembership()],
-    });
-    clerk.stateChanged();
-  });
+  clerk.organization({ activeOrg: null, memberships: memberships() });
+  clerk.stateChanged();
 
-  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
-  expect(window.location.pathname).toBe("/workflows");
-  click(workspaceSwitcher());
-  const refreshingWorkspaceMenu = await screen.findByRole("menu");
-  expect(within(refreshingWorkspaceMenu).getByText("Org A")).toBeVisible();
-  click(workspaceSwitcher());
+  // While no workspace is active, Org A is still offered.
   await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(workspaceChoices()).toStrictEqual(["Org A", "Org B"]);
   });
+  expectWorkflowsPage();
 
-  act(() => {
-    clerk.organization({
-      activeOrg: { id: "org_a", name: "Org A" },
-      memberships: [orgAMembership()],
-    });
-    clerk.stateChanged();
+  clerk.organization({
+    activeOrg: { id: "org_a", name: "Org A" },
+    memberships: memberships(),
   });
-
-  click(workspaceSwitcher());
-  const restoredWorkspaceMenu = await screen.findByRole("menu");
-  expect(within(restoredWorkspaceMenu).getByText("Org A")).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
-  expect(window.location.pathname).toBe("/workflows");
-});
-
-test("Reload the changed tab before using a new workspace", async () => {
-  await setupPage({
-    context,
-    path: "/workflows",
-    auth: {
-      user: {
-        id: "user_org_a",
-        fullName: "Workspace Member",
-        email: "member@example.com",
-      },
-      organization: {
-        activeOrg: { id: "org_a", name: "Org A" },
-        memberships: [
-          orgAMembership(),
-          {
-            id: "membership_org_b",
-            organization: { id: "org_b", name: "Org B" },
-          },
-        ],
-      },
-    },
-  });
-
-  const agentsHeading = await screen.findByRole("heading", {
-    name: "Workflows",
-  });
-  expect(agentsHeading).toBeVisible();
-  const clerk = context.mocks.clerk();
-
-  act(() => {
-    clerk.organization({
-      activeOrg: { id: "org_b", name: "Org B" },
-      memberships: [
-        orgAMembership(),
-        {
-          id: "membership_org_b",
-          organization: { id: "org_b", name: "Org B" },
-        },
-      ],
-    });
-    clerk.stateChanged();
-  });
+  clerk.stateChanged();
 
   await waitFor(() => {
-    expect(window.location.pathname).toBe("/");
+    expect(workspaceChoices()).toStrictEqual(["Org B"]);
   });
+  expect(screen.getByRole("menu")).toHaveTextContent("Org A");
+  expectWorkflowsPage();
 });

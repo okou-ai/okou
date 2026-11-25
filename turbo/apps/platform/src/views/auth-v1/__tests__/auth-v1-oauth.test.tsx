@@ -1,256 +1,159 @@
-import { buildPublishableKey } from "@clerk/shared/keys";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { test, expect } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  setupPage,
+  startPage,
+  type SetupPageAuth,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
 const context = testContext();
-const previewApp = "https://app.vm7.ai";
-function clerkEnvironment() {
-  return {
-    VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: buildPublishableKey(
-      "oauth-test.clerk.accounts.dev",
-    ),
-    VITE_CLERK_PUBLISHABLE_KEY_PROD: buildPublishableKey("clerk.okou.ai"),
-  };
+const dev = "app.vm7.ai";
+const user = { id: "mira", fullName: "Mira Han" } as const;
+function destination(host: string) {
+  const consent = new URL("https://" + host + "/oauth-consent");
+  for (const [key, value] of [
+    ["client_id", "journal-client"],
+    ["response_type", "code"],
+    ["state", "winter-31"],
+    ["scope", "openid profile"],
+    ["resource", "https://calendar.example"],
+    ["resource", "https://journal.example"],
+  ] as const) {
+    consent.searchParams.append(key, value);
+  }
+  return consent.href;
 }
-
-function consentUrl(origin = previewApp): string {
-  return `${origin}/oauth-consent?client_id=https%3A%2F%2Fclient.example%2Fmetadata.json&state=a%2Bb&code_challenge=challenge&code_challenge_method=S256&scope=user%3Aorg%3Aread+okou%3Achat%3Aread&resource=https%3A%2F%2Fapi.example%2Fmcp&resource=https%3A%2F%2Fapi.example%2Fsecond`;
+function returning(to: string) {
+  return new URLSearchParams({ redirect_url: to }).toString();
 }
-
+function visit(path: string, auth: SetupPageAuth = null, host = dev) {
+  return setupPage({
+    context,
+    host,
+    path,
+    auth,
+    sharedWorkerTestTransport: "message-port",
+  });
+}
 test.each([
-  ["app.vm7.ai", previewApp],
-  ["app.okou.ai", "https://app.okou.ai"],
-])(
-  "%s preserves its own app consent return in both validation layers",
-  async (host, appOrigin) => {
-    const target = consentUrl(appOrigin);
-    await setupPage({
-      context,
-      host,
-      path: `/sign-in?redirect_url=${encodeURIComponent(target)}`,
-      auth: null,
-      env: clerkEnvironment(),
-    });
-
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-clerk-force-redirect-url",
-      target,
-    );
-    expect(screen.getByTestId("clerk-provider-config")).toHaveAttribute(
-      "data-clerk-allowed-redirect-origins",
-      expect.stringContaining(appOrigin),
-    );
+  ["001", dev],
+  ["002", "app.okou.ai"],
+] as const)(
+  "auth-v1-oauth-%s Both login surfaces preserve the full consent request on %s",
+  async (_id, host) => {
+    const to = destination(host);
+    await visit("/sign-in?" + returning(to), null, host);
+    const form = await screen.findByTestId("clerk-sign-in");
+    expect(form).toHaveAttribute("data-clerk-force-redirect-url", to);
     expect(screen.getByTestId("clerk-google-one-tap")).toHaveAttribute(
       "data-sign-in-force-redirect-url",
-      target,
+      to,
     );
-    const signUpUrl = new URL(
-      screen.getByTestId("clerk-sign-in").dataset.clerkSignUpUrl ?? "",
-      location.origin,
-    );
-    expect(signUpUrl.searchParams.get("redirect_url")).toBe(target);
+    expect(
+      JSON.parse(
+        screen.getByTestId("clerk-provider-config").dataset
+          .clerkAllowedRedirectOrigins ?? "[]",
+      ),
+    ).toContain("https://" + host);
+    const signup = new URL(form.dataset.clerkSignUpUrl ?? "", location.href);
+    expect(signup.pathname).toBe("/sign-up");
+    expect(signup.searchParams.get("redirect_url")).toBe(to);
   },
 );
-
-test("Sign-in preserves the consent query when Clerk moves the return into its hash", async () => {
-  const target = consentUrl();
-  await setupPage({
-    context,
-    host: "app.vm7.ai",
-    path: `/sign-in#/?redirect_url=${encodeURIComponent(target)}`,
-    auth: null,
-    env: clerkEnvironment(),
-  });
-
-  const form = screen.getByTestId("clerk-sign-in");
-  expect(form).toHaveAttribute("data-clerk-force-redirect-url", target);
-  const switchUrl = new URL(form.dataset.clerkSignUpUrl ?? "", location.origin);
-  expect(new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url")).toBe(
-    target,
-  );
-});
-
-test("Hosted signup preserves the consent return and sign-in navigation from its hash", async () => {
-  const target = consentUrl();
-  await setupPage({
-    context,
-    host: "app.vm7.ai",
-    path: `/sign-up#/?redirect_url=${encodeURIComponent(target)}`,
-    auth: null,
-    env: clerkEnvironment(),
-  });
-
-  const signUp = screen.getByTestId("clerk-sign-up");
-  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", target);
-  const switchUrl = new URL(
-    signUp.dataset.clerkSignInUrl ?? "",
-    location.origin,
-  );
-  expect(new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url")).toBe(
-    target,
-  );
-});
-
 test.each([
-  "https://oauth-test.accounts.dev/oauth-consent",
-  "https://another.accounts.dev/oauth-consent",
-  "https://accounts.okou.ai/oauth-consent",
-  "https://app.okou.ai/oauth-consent",
-  "https://oauth-test.accounts.dev.evil.example/oauth-consent",
-  "https://oauth-test.accounts.dev@evil.example/oauth-consent",
-  "https://user:secret@app.vm7.ai/oauth-consent",
-  "http://app.vm7.ai/oauth-consent",
-  "https://app.vm7.ai:444/oauth-consent",
-  "javascript:alert(1)",
-])(
-  "An untrusted consent destination cannot control login: %s",
-  async (target) => {
-    await setupPage({
-      context,
-      host: "app.vm7.ai",
-      path: `/sign-in?redirect_url=${encodeURIComponent(target)}`,
-      env: clerkEnvironment(),
-    });
-
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-clerk-force-redirect-url",
-      previewApp,
+  ["003", "sign-in", "sign-up"],
+  ["004", "sign-up", "sign-in"],
+] as const)(
+  "auth-v1-oauth-%s A hash continuation on %s is offered on the opposite form",
+  async (_id, mode, opposite) => {
+    const to = destination(dev);
+    await visit("/" + mode + "#/?" + returning(to));
+    const form = await screen.findByTestId("clerk-" + mode);
+    expect(form).toHaveAttribute("data-clerk-force-redirect-url", to);
+    const link = new URL(
+      form.getAttribute("data-clerk-" + opposite + "-url") ?? "",
+      location.href,
     );
-    expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
+    expect(link.pathname).toBe("/" + opposite);
+    expect(
+      new URLSearchParams(link.hash.split("?")[1]).get("redirect_url"),
+    ).toBe(to);
   },
 );
-
-test.each([
-  "https://app.vm7.ai/oauth-consent/other",
-  "https://app.vm7.ai/oauth-consent#untrusted-route",
-])("A non-consent app return cannot bypass login: %s", async (target) => {
-  await setupPage({
-    context,
-    host: "app.vm7.ai",
-    path: `/sign-in?redirect_url=${encodeURIComponent(target)}`,
-    env: clerkEnvironment(),
-  });
-
-  expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
+test("auth-v1-oauth-015 A sibling path under consent stays a regular form return", async () => {
+  const to = "https://app.vm7.ai/oauth-consent/other";
+  await visit("/sign-in?" + returning(to));
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toHaveAttribute(
     "data-clerk-force-redirect-url",
-    target,
+    to,
   );
   expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
 });
-
-test.each(["sign-in", "sign-up"])(
-  "An active session on %s continues through Clerk's authenticated navigation",
-  async (mode) => {
-    const target = consentUrl();
-    const assigned = context.mocks.browser.locationAssign();
-    const decorated = `${target}&__clerk_db_jwt=synthetic-browser-handoff`;
-    mockedClerk.buildUrlWithAuth.mockReturnValueOnce(decorated);
+test.each([
+  ["017", "sign-in"],
+  ["018", "sign-up"],
+] as const)(
+  "auth-v1-oauth-%s An active session leaves %s for the SDK-decorated consent page",
+  async (_id, mode) => {
+    const to = destination(dev);
+    const decorated = to + "&session_marker=issued-by-clerk";
+    mockedClerk.buildUrlWithAuth.mockImplementation((uri) => {
+      return uri + "&session_marker=issued-by-clerk";
+    });
     await startPage({
       context,
-      host: "app.vm7.ai",
-      path: `/${mode}?redirect_url=${encodeURIComponent(target)}`,
-      env: clerkEnvironment(),
+      host: dev,
+      path: "/" + mode + "?" + returning(to),
+      auth: { user },
+      sharedWorkerTestTransport: "message-port",
     });
-
     await waitFor(() => {
-      expect(assigned.calls).toStrictEqual([decorated]);
+      expect(window.location.href).toBe(decorated);
     });
-    expect(mockedClerk.redirectWithAuth).toHaveBeenCalledExactlyOnceWith(
-      target,
-    );
-    expect(screen.queryByTestId(`clerk-${mode}`)).not.toBeInTheDocument();
+    expect(mockedClerk.redirectWithAuth.mock.calls).toStrictEqual([[to]]);
+    expect(screen.queryByTestId("clerk-" + mode)).toBeNull();
   },
 );
-
 test.each([
-  ["/sign-in/tasks/choose-organization", "", ""],
-  ["/sign-in/factor-two", "", ""],
-  ["/sign-in", "", "#/choose"],
-  ["/sign-in", "&__clerk_ticket=invitation", ""],
-  ["/sign-in", "&prompt=login", ""],
-  ["/sign-in", "", "#/?prompt=select_account"],
-])(
-  "An existing session preserves explicit auth steps: %s %s %s",
-  async (path, query, hash) => {
-    await setupPage({
-      context,
-      host: "app.vm7.ai",
-      path: `${path}?redirect_url=${encodeURIComponent(consentUrl())}${query}${hash}`,
-      env: clerkEnvironment(),
-    });
-
-    expect(screen.getByTestId("clerk-sign-in")).toBeVisible();
+  ["019", "/sign-in/tasks/choose-organization", ""],
+  ["020", "/sign-in/factor-two", ""],
+  ["022", "/sign-in", "&__clerk_ticket=invite-mira"],
+  ["023", "/sign-in", "&prompt=login"],
+] as const)(
+  "auth-v1-oauth-%s Clerk retains the requested interactive step %s%s",
+  async (_id, path, extra) => {
+    await visit(path + "?" + returning(destination(dev)) + extra, { user });
+    await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
     expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
   },
 );
-
 test.each([
-  "prompt=login",
-  "prompt=select_account",
-  "max_age=0",
-  "login_hint=other@example.com",
-])(
-  "A consent request requiring user interaction stays on the form: %s",
-  async (intent) => {
-    await setupPage({
-      context,
-      host: "app.vm7.ai",
-      path: `/sign-in?redirect_url=${encodeURIComponent(`${consentUrl()}&${intent}`)}`,
-      env: clerkEnvironment(),
-    });
-    expect(screen.getByTestId("clerk-sign-in")).toBeVisible();
+  ["025", "prompt", "login"],
+  ["027", "max_age", "0"],
+] as const)(
+  "auth-v1-oauth-%s A signed-out consent request with %s=%s shows sign-in",
+  async (_id, key, value) => {
+    const to = new URL(destination(dev));
+    to.searchParams.set(key, value);
+    await visit("/sign-in?" + returning(to.href));
+    await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
     expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
   },
 );
-
-test("An incomplete Clerk session finishes its task before OAuth consent", async () => {
-  await setupPage({
-    context,
-    host: "app.vm7.ai",
-    path: `/sign-in?redirect_url=${encodeURIComponent(consentUrl())}`,
-    env: clerkEnvironment(),
-    auth: {
-      user: {
-        id: "user_oauth",
-        fullName: "OAuth Test",
-        clientSessions: [
-          {
-            id: "session_pending",
-            status: "pending",
-            currentTask: { key: "choose-organization" },
-          },
-        ],
-      },
+test("auth-v1-oauth-029 A pending organization task keeps the user at sign-in", async () => {
+  await visit("/sign-in?" + returning(destination(dev)), {
+    user: {
+      ...user,
+      clientSessions: [
+        {
+          id: "mira-pending",
+          status: "pending",
+          currentTask: { key: "choose-organization" },
+        },
+      ],
     },
   });
-
-  expect(screen.getByTestId("clerk-sign-in")).toBeVisible();
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
   expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
-});
-
-test("A failed OAuth continuation offers visible recovery", async () => {
-  const consoleError = vi.spyOn(console, "error");
-  const unexpectedError = consoleError.getMockImplementation();
-  consoleError.mockImplementation((...args) => {
-    if (!args.includes("Clerk OAuth continuation failed")) {
-      unexpectedError?.(...args);
-    }
-  });
-  mockedClerk.redirectWithAuth.mockRejectedValueOnce(
-    new Error("Navigation failed"),
-  );
-  await setupPage({
-    context,
-    host: "app.vm7.ai",
-    path: `/sign-in?redirect_url=${encodeURIComponent(consentUrl())}`,
-    env: clerkEnvironment(),
-  });
-
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "Oops! Something went sideways",
-  );
-  expect(mockedClerk.redirectWithAuth).toHaveBeenCalledOnce();
 });

@@ -1,0 +1,235 @@
+{
+  "connector-directory-010": {
+    "starts": 1,
+    "pending": 1,
+    "completion": [
+      {
+        "resource": "/api/connector-accounts/connections",
+        "status": 200
+      },
+      {
+        "resource": "/api/connector-accounts/oauth-completions/ATTEMPT",
+        "status": 404
+      }
+    ],
+    "nativePopups": 1,
+    "closed": false,
+    "providerStillDisplayed": true
+  },
+  "browser-response-deadlines-039": {
+    "silentHello": {
+      "originalHelloHeld": true,
+      "disabled": true,
+      "oldSocketClosed": true,
+      "originalWindow": 1098380693,
+      "newWindow": 1098380693,
+      "newPages": 1,
+      "nativeFocus": "TEXTAREA",
+      "receivedOnNew": true,
+      "destinationValue": "Harbor",
+      "originalValue": "",
+      "originalUnchanged": true,
+      "remoteInputs": [
+        {
+          "method": "Input.insertText",
+          "target": "new",
+          "text": "Harbor"
+        }
+      ]
+    },
+    "ordinaryCreationControl": {
+      "oldSocketClosed": true,
+      "originalWindow": 2111353273,
+      "newWindow": 2111353273,
+      "newPages": 1,
+      "inventory": [
+        "about:blank",
+        "http://localhost:8188/remote-example"
+      ],
+      "methods": [
+        "hello",
+        "getWindow",
+        "createTab",
+        "getWindow",
+        "getTab",
+        "getTab",
+        "getTab",
+        "getTab",
+        "getWindow"
+      ],
+      "failedHttp": [
+        {
+          "path": "/api/user-preferences",
+          "status": 409,
+          "code": "USER_PREFERENCES_UNINITIALIZED"
+        }
+      ],
+      "pageText": "Example\nNew tab",
+      "inputPackets": 0,
+      "error": "locator.click: Timeout 30000ms exceeded."
+    },
+    "additionalObservation": "A separate member-visible run reported a new tab moved or navigated before it was ready. The ordinary creation control with no held hello also reported that fault; its native target still existed. No late text was accepted as proof."
+  },
+  "browser-response-deadlines-006": {
+    "concealBeforeAdmission": {
+      "before": {
+        "paused": true,
+        "inputReady": true,
+        "atB": true,
+        "atA": false
+      },
+      "afterReady": true,
+      "afterB": true,
+      "afterA": false
+    },
+    "admitBeforeConcealing": {
+      "before": {
+        "paused": true,
+        "inputReady": false,
+        "atB": false,
+        "atA": false
+      },
+      "afterReady": true,
+      "afterB": true,
+      "afterA": false
+    }
+  },
+  "browser-response-deadlines-023": {
+    "registration": "src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx",
+    "fixtureReceipts": "Held a recovery frame on A. B descriptor admitted while paused. Live canvas painted B, tagged by raster width 1263. Delivered A, tagged by raster width 1171, then sent b from B. Canvas retained B, B remained selected and the receiver of b was B alone.",
+    "focusedTestPassed": true
+  },
+  "client-003": {
+    "registered": {
+      "originalParent": true,
+      "siblingInitiallyLive": true,
+      "targetLossDelivered": true,
+      "noEarlyDetach": true,
+      "replyDelivered": true,
+      "siblingText": true,
+      "detaches": [
+        {
+          "op": "detach",
+          "correctChild": true,
+          "correctParent": true,
+          "correctConnection": true
+        }
+      ],
+      "sameConnectionHello": true,
+      "sameConnectionInput": true,
+      "closeBeforeFinish": []
+    },
+    "seed113": {
+      "originalParent": true,
+      "siblingInitiallyLive": true,
+      "targetLossDelivered": true,
+      "noEarlyDetach": true,
+      "replyDelivered": true,
+      "siblingText": true,
+      "detaches": [
+        {
+          "op": "detach",
+          "correctChild": true,
+          "correctParent": true,
+          "correctConnection": true
+        }
+      ],
+      "sameConnectionHello": true,
+      "sameConnectionInput": true,
+      "closeBeforeFinish": []
+    },
+    "rootAttachControl": {
+      "attachParent": null,
+      "detachParent": null,
+      "attachConnection": 1,
+      "detachConnection": 1,
+      "siblingConnection": 1,
+      "correctChild": true
+    },
+    "closedConnectionControl": {
+      "hadParent": true,
+      "connection": 1,
+      "liveOnExit": 0,
+      "consumed": false,
+      "cleanupMatchedParent": false
+    }
+  },
+  "chat-scroll-017": [
+    {
+      "before": {
+        "item": {
+          "text": "Question number 14",
+          "readable": true,
+          "top": 83,
+          "bottom": 103
+        },
+        "draft": "Review the north pier\n\nKeep the survey notes",
+        "focus": true,
+        "viewport": [
+          0,
+          820
+        ],
+        "keyboardOpen": null,
+        "paneHeight": 561,
+        "history": true,
+        "standalone": true
+      },
+      "after": {
+        "item": {
+          "text": "Question number 14",
+          "readable": true,
+          "top": 83,
+          "bottom": 103
+        },
+        "draft": "Review the north pier\n\nKeep the survey notes",
+        "focus": true,
+        "viewport": [
+          0,
+          460
+        ],
+        "keyboardOpen": "true",
+        "paneHeight": 622,
+        "history": true,
+        "standalone": true
+      }
+    },
+    {
+      "before": {
+        "item": {
+          "text": "Question number 14",
+          "readable": true,
+          "top": 83,
+          "bottom": 103
+        },
+        "draft": "Review the north pier\n\nKeep the survey notes",
+        "focus": true,
+        "viewport": [
+          0,
+          820
+        ],
+        "keyboardOpen": null,
+        "paneHeight": 561,
+        "history": true,
+        "standalone": true
+      },
+      "after": {
+        "item": {
+          "text": "Question number 14",
+          "readable": false,
+          "top": 83,
+          "bottom": 103
+        },
+        "draft": "Review the north pier\n\nKeep the survey notes",
+        "focus": true,
+        "viewport": [
+          280,
+          460
+        ],
+        "keyboardOpen": "true",
+        "paneHeight": 622,
+        "history": true,
+        "standalone": true
+      }
+    }
+  ]
+}
