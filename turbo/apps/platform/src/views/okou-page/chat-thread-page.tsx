@@ -6162,7 +6162,7 @@ function shareGroupClassName({
     phase === "selecting" &&
       (hasSelection
         ? "data-selected:hover:bg-state-selected-hover"
-        : "hover:bg-state-hover hover:before:border-border"),
+        : "hover:bg-state-hover"),
   );
 }
 
