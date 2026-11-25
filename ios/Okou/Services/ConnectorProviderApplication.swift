@@ -5,20 +5,38 @@ import UIKit
 /// The installed-app boundary. Provider credentials and callback exchange stay at the API.
 @MainActor
 protocol ConnectorProviderApplication {
-  func open(_ url: URL) async -> Bool
+  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool
 }
 
 struct SystemConnectorProviderApplication: ConnectorProviderApplication {
-  func open(_ url: URL) async -> Bool {
+  func open(_ url: URL, universalLinksOnly: Bool) async -> Bool {
+    if universalLinksOnly {
+      return await UIApplication.shared.open(url, options: [.universalLinksOnly: true])
+    }
     guard UIApplication.shared.canOpenURL(url) else { return false }
     return await UIApplication.shared.open(url, options: [:])
   }
 }
 
 enum ConnectorProviderAuthorization {
+  private static let googleConnectors: Set<String> = [
+    "gmail", "google-ads", "google-analytics", "google-calendar", "google-cloud",
+    "google-contacts", "google-docs", "google-drive", "google-forms", "google-maps",
+    "google-meet", "google-play", "google-search-console", "google-sheets", "youtube"
+  ]
+
   static func appURL(
     receipt: ChatConnectorReceipt, target: ChatConnectorTarget, methodID: String, webURL: URL
   ) throws -> URL? {
+    if case .builtin(let slug) = target, googleConnectors.contains(slug), methodID == "oauth" {
+      guard webURL.scheme == "https", webURL.host == "accounts.google.com", webURL.port == nil,
+        webURL.path == "/o/oauth2/v2/auth", webURL.user == nil, webURL.password == nil,
+        webURL.fragment == nil
+      else { throw APIClientError.invalidResponse }
+      // Only iOS can determine whether an installed Google app handles this URL.
+      // Preserve the complete server-owned grant for the system-browser path too.
+      return webURL
+    }
     guard let authorization = receipt.nativeAppAuthorization else { return nil }
     guard authorization.provider == "strava", target == .builtin("strava"), methodID == "oauth",
       webURL.scheme == "https", webURL.host == "www.strava.com", webURL.port == nil,
