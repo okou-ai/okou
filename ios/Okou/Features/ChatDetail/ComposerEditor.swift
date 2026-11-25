@@ -64,13 +64,18 @@ final class ComposerEditor {
   @ObservationIgnored private var inputs: [ObjectIdentifier: Input] = [:]
   private(set) var mentionQuery: String?
   private(set) var selectedMentionIndex = -1
-  var mentionSource: ComposerMentionSource?
   @ObservationIgnored private weak var mentionView: ComposerTextView?
   @ObservationIgnored private var mentionRange: NSRange?
   @ObservationIgnored private var dismissedMention: String?
 
+  /// The chats the menu shows for the active query, from the source its composer renders.
+  func mentionSuggestions(from source: ComposerMentionSource?) -> [ComposerMentionSuggestion] {
+    mentionQuery.map { source?.suggestions(for: $0) ?? [] } ?? []
+  }
+
+  /// Keyboard activation reads the source the mentioning input was last rendered with.
   var mentionSuggestions: [ComposerMentionSuggestion] {
-    mentionQuery.map { mentionSource?.suggestions(for: $0) ?? [] } ?? []
+    mentionSuggestions(from: mentionView?.mentionSource)
   }
 
   func updateMention(in view: ComposerTextView, textChanged: Bool = false) {
