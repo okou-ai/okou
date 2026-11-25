@@ -79,6 +79,12 @@ def main():
                 managed / "Caddyfile",
                 managed / "applied-state.json",
             )
+            saved_config = managed / "Caddyfile.applied"
+            config_paths = {
+                "/etc/okou-runner-caddy/Caddyfile": str(config),
+                "/etc/okou-runner-caddy/Caddyfile.applied": str(saved_config),
+                "/etc/okou-runner-caddy/applied-state.json": str(applied),
+            }
             shutil.copy2(caddy, binary)
             binary.chmod(0o755)
             with socket.socket() as reservation:
@@ -117,6 +123,8 @@ def main():
                     or task.get("register")
                     in ["runner_caddy_unit", "runner_caddy_config"]
                     or task["name"] == "Recover and apply Runner Caddy deployment"
+                    or task["name"]
+                    == "Preserve the confirmed Caddyfile before publication"
                 ]
             )
 
@@ -140,17 +148,31 @@ def main():
                         validate=f"{binary} validate --config %s --adapter caddyfile",
                     )
                 if "ansible.builtin.stat" in task:
-                    task["loop"] = list(map(str, [binary, config, unit_path]))
+                    if "loop" in task:
+                        task["loop"] = list(map(str, [binary, config, unit_path]))
+                    else:
+                        parameters = task["ansible.builtin.stat"]
+                        parameters["path"] = config_paths[parameters["path"]]
+                if "ansible.builtin.slurp" in task:
+                    task["ansible.builtin.slurp"]["src"] = str(applied)
+                if "ansible.builtin.script" in task:
+                    script = task["ansible.builtin.script"]
+                    script["cmd"] = (
+                        script["cmd"]
+                        .replace("../files/", str(repo / "ansible/files") + "/")
+                        .replace("okou-runner-caddy.service", unit)
+                        .replace("/etc/okou-runner-caddy/Caddyfile", str(config))
+                    )
                 if "ansible.builtin.command" in task:
                     argv = task["ansible.builtin.command"]["argv"]
                     argv[argv.index("okou-runner-caddy.service")] = unit
                 if "ansible.builtin.copy" in task:
                     parameters = task["ansible.builtin.copy"]
-                    assert (
-                        parameters["dest"]
-                        == "/etc/okou-runner-caddy/applied-state.json"
-                    )
-                    parameters["dest"] = str(applied)
+                    parameters["dest"] = config_paths[parameters["dest"]]
+                    if "src" in parameters:
+                        parameters["src"] = config_paths[parameters["src"]]
+                    if parameters.get("group") == "okou-runner-caddy":
+                        parameters["group"] = account
                 if "ansible.builtin.systemd_service" in task:
                     task["ansible.builtin.systemd_service"].update(
                         name=unit, enabled=False
@@ -236,43 +258,72 @@ def main():
             cases.append("interrupted unit publication")
 
             config_publication = [
-                task for task in tasks if task.get("register") == "runner_caddy_config"
+                task
+                for task in tasks
+                if task.get("register") == "runner_caddy_config"
+                or task["name"] == "Preserve the confirmed Caddyfile before publication"
             ]
             before = process_state()
             provision(config_publication, marker="after", status=410)
             assert process_state() == before and http_status() == 404
             provision(marker="after", status=410)
-            assert process_state()[0] != before[0] and http_status() == 410
-            cases.append("interrupted config publication")
+            assert process_state() == before and http_status() == 410
+            cases.append("interrupted config publication reloads in place")
+
+            provision(marker="after", status=418)
+            assert process_state() == before and http_status() == 418
+            unchanged("after", 418)
+            cases.append("ordinary config publication reloads in place")
 
             committed_state = applied.read_bytes()
+            confirmed_source = config.read_bytes()
+            try:
+                provision(marker="combined", status=409)
+            except subprocess.CalledProcessError:
+                assert process_state() == before and http_status() == 418
+                assert config.read_bytes() == confirmed_source
+                assert applied.read_bytes() == committed_state
+            else:
+                raise AssertionError(
+                    "combined config and unit activation restarted Caddy"
+                )
+            provision(marker="after", status=418)
+            assert process_state() == before and http_status() == 418
+            cases.append(
+                "combined config and process changes require separate deployment"
+            )
+
             with socket.socket() as occupied:
                 occupied.bind(("127.0.0.1", 0))
                 occupied.listen()
                 occupied_port = occupied.getsockname()[1]
+                provision(
+                    config_publication, marker="after", status=410, listen=occupied_port
+                )
+                assert config.read_bytes() != confirmed_source and http_status() == 418
                 try:
                     provision(marker="after", status=410, listen=occupied_port)
                 except subprocess.CalledProcessError:
-                    assert f"http://127.0.0.1:{occupied_port} {{" in config.read_text()
-                    result = run(
-                        ["systemctl", "show", unit, "--property=Result", "--value"]
-                    )
-                    assert result.strip() == "exit-code", result
+                    assert config.read_bytes() == confirmed_source
+                    assert process_state() == before and http_status() == 418
                     assert applied.read_bytes() == committed_state
+                    run(["systemctl", "restart", unit])
+                    before = process_state()
+                    assert http_status() == 418
                 else:
                     raise AssertionError(
                         "Caddy unexpectedly activated on an occupied port"
                     )
             provision(marker="after", status=410)
-            assert http_status() == 410
-            cases.append("failed activation retains prior receipt and recovers")
+            assert process_state() == before and http_status() == 410
+            cases.append("failed reload restores the source for a later start")
 
             run(["systemctl", "restart", unit])
             restarted = process_state()
             provision(marker="after", status=410)
-            assert process_state()[0] != restarted[0]
+            assert process_state() == restarted
             unchanged("after", 410)
-            cases.append("new service invocation is reapplied once")
+            cases.append("new service invocation is verified without another restart")
             metadata = applied.stat()
             assert (
                 stat.S_IMODE(metadata.st_mode) == 0o600
