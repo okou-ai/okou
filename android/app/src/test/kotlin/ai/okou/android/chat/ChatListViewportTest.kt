@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.resolvePalette
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -78,8 +79,9 @@ class ChatListViewportTest {
             indicator.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo],
         )
         val pixels = indicator.captureToImage().toPixelMap()
-        assertEquals(Color(0xFFB5790C), pixels[pixels.width / 8, pixels.height / 2])
-        assertEquals(Color(0xFFF6EFE2), pixels[pixels.width * 3 / 4, pixels.height / 2])
+        val colors = resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false)
+        assertEquals(colors.primary, pixels[pixels.width / 8, pixels.height / 2])
+        assertEquals(colors.secondaryContainer, pixels[pixels.width * 3 / 4, pixels.height / 2])
     }
 
     @Test
