@@ -426,6 +426,35 @@ private struct WorkspaceRootView: View {
   }
 }
 
+/// Publishes the widget snapshot. The selected chat's draft mark is read from the session graph,
+/// so the publisher sits under the workspace's Store provider.
+private struct WorkspaceWidgetPublisher: View {
+  let store: WorkspaceStore
+  let workspaceID: String
+  let name: String?
+  private let selectedThreadID: String?
+  @ResolvedValue private var selectedDraft: Bool?
+
+  init(store: WorkspaceStore, workspaceID: String, name: String?) {
+    self.store = store
+    self.workspaceID = workspaceID
+    self.name = name
+    let selected = store.selectedConversation
+    selectedThreadID = selected?.thread.id
+    _selectedDraft = ResolvedValue(
+      selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)
+  }
+
+  var body: some View {
+    let snapshot = OkouWidgetPublishing.snapshot(
+      workspaceID: workspaceID, threads: store.list.threads, name: name,
+      hasDraft: { id in id == selectedThreadID ? selectedDraft == true : store.hasDraft(id) })
+    Color.clear
+      .frame(width: 0, height: 0)
+      .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
+  }
+}
+
 /// The new chat's composer. Its Project is read from the workspace session's graph, so the
 /// composer sits under the workspace's Store provider.
 private struct WorkspaceNewChatComposer: View {
@@ -484,35 +513,6 @@ private struct WorkspaceForkSheet: View {
       flow: flow, webURL: store.webURL, threads: store.list.threads,
       project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
       needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
-  }
-}
-
-/// Publishes the widget snapshot. The selected chat's draft mark is read from the session graph,
-/// so the publisher sits under the workspace's Store provider.
-private struct WorkspaceWidgetPublisher: View {
-  let store: WorkspaceStore
-  let workspaceID: String
-  let name: String?
-  private let selectedThreadID: String?
-  @ResolvedValue private var selectedDraft: Bool?
-
-  init(store: WorkspaceStore, workspaceID: String, name: String?) {
-    self.store = store
-    self.workspaceID = workspaceID
-    self.name = name
-    let selected = store.selectedConversation
-    selectedThreadID = selected?.thread.id
-    _selectedDraft = ResolvedValue(
-      selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)
-  }
-
-  var body: some View {
-    let snapshot = OkouWidgetPublishing.snapshot(
-      workspaceID: workspaceID, threads: store.list.threads, name: name,
-      hasDraft: { id in id == selectedThreadID ? selectedDraft == true : store.hasDraft(id) })
-    Color.clear
-      .frame(width: 0, height: 0)
-      .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
   }
 }
 
