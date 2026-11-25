@@ -2,10 +2,10 @@ domain	test_file	case_id	status	duration_ms	note
 account-org	src/signals/routes/__tests__/antigravity-device-auth.test.ts	antigravity-device-auth-001	rewritten	59.4	
 account-org	src/signals/routes/__tests__/antigravity-device-auth.test.ts	antigravity-device-auth-002	rewritten	106.4	
 account-org	src/signals/routes/__tests__/antigravity-device-auth.test.ts	antigravity-device-auth-003	rewritten	46.3	
-account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-001	planned		
-account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-002	planned		
-account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-003	planned		
-account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-006	planned		
+account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-001	rewritten	74.2	
+account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-002	rewritten	73.7	
+account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-003	rewritten	23.7	
+account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-006	rewritten	27.9	
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-001	planned		
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-002	planned		
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	planned		
