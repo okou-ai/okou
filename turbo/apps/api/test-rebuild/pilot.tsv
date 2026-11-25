@@ -72,12 +72,12 @@ artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-ac
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-001	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-002	planned		
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-003	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-001	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-003	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-004	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-005	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-008	planned		
-artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	planned		
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-001	rewritten	120.4	
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-003	rewritten	186.6	
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-004	rewritten	127.8	
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-005	rewritten	90.3	
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-008	rewritten	100.3	
+artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	rewritten	124.1	
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	rewritten	25.4	
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	rewritten	33.5	
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-009	rewritten	71.1	
