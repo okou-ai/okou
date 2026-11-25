@@ -28,9 +28,9 @@
 
 - Vitest: "usage pack subscription Stripe lifecycle > grants fully discounted renewal credits without a refundable amount"
 - Mode: run
-- Given: A workspace admin with 0 credits checked out a Pro usage-pack plan with a $20 pack, and Stripe created the subscription.
-- When: Stripe delivers a fully discounted `invoice.paid` to `POST /api/webhooks/stripe`, then Clerk reports the member's organization membership deleted, and a remaining admin reads `GET /api/billing/usage-pack-credits`.
-- Then: The member first receives a purchased grant of 20000 and a bonus grant of 400. After the membership deletion no Stripe refund is created and the remaining admin sees no grants.
+- Given: A workspace admin with 0 credits checked out a Pro usage-pack plan with a $20 pack for themselves, and Stripe reports the subscription for the current period.
+- When: Stripe delivers `customer.subscription.created` and a fully discounted `invoice.paid` (each pack line's discount equals its amount) to `POST /api/webhooks/stripe` and the purchaser reads `GET /api/billing/usage-pack-credits`; then a signed Clerk `organizationMembership.deleted` webhook for the purchaser arrives at `POST /api/webhooks/clerk`, and a remaining admin of the workspace reads `GET /api/billing/usage-pack-credits`.
+- Then: Before the deletion the purchaser has a purchased grant of 20000 and a bonus grant of 400. After the membership deletion no Stripe refund is created and the remaining admin sees no member credit grants.
 
 ## usage-pack-subscription-lifecycle-005
 

@@ -5,7 +5,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > links a imessage model failure to its original Web conversation"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone to Okou through the AgentPhone connect prompt, a Runner group is online, and the Web URL is `https://app.okou.ai`; the channel is `imessage`.
-- When: The phone sends "review this attachment" through the signed `POST /api/agentphone/webhook`, the Runner receives the dispatched run, and the sandbox completes it through `POST /api/webhooks/agent/complete` with exit code 1 and failure reason `account_verification_required`.
+- When: The phone sends "review this attachment" through the signed `POST /api/agentphone/webhook`, the Runner receives the dispatched run, and the sandbox completes it through `POST /api/webhooks/run/complete` with exit code 1 and failure reason `account_verification_required`.
 - Then: The member's thread lifecycle exposes the newly created integration conversation, whose events contain `run.failed` for that run. The last AgentPhone reply contains "Switch this conversation's model in Okou: https://app.okou.ai/chats/<threadId>" and "Send your previous request again after switching."
 
 ## agentphone.bdd-002
@@ -13,7 +13,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > links a sms model failure to its original Web conversation"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone to Okou through the AgentPhone connect prompt, a Runner group is online, and the Web URL is `https://app.okou.ai`; the channel is `sms`.
-- When: The phone sends "review this attachment" through the signed `POST /api/agentphone/webhook`, the Runner receives the dispatched run, and the sandbox completes it through `POST /api/webhooks/agent/complete` with exit code 1 and failure reason `account_verification_required`.
+- When: The phone sends "review this attachment" through the signed `POST /api/agentphone/webhook`, the Runner receives the dispatched run, and the sandbox completes it through `POST /api/webhooks/run/complete` with exit code 1 and failure reason `account_verification_required`.
 - Then: The member's thread lifecycle exposes the newly created integration conversation, whose events contain `run.failed` for that run. The last AgentPhone reply contains "Switch this conversation's model in Okou: https://app.okou.ai/chats/<threadId>" and "Send your previous request again after switching."
 
 ## agentphone.bdd-003
@@ -245,7 +245,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > sends one contact card after a successful text conversation and ignores repeated callbacks"
 - Mode: run
 - Given: A linked member has an iMessage conversation whose AgentPhone capabilities allow messages and media; the connect welcome messages carried no media.
-- When: The phone asks "hello" through `POST /api/agentphone/webhook` and the run completes with result "Answer: hello"; the sandbox then repeats `POST /api/webhooks/agent/complete`, the same inbound message ID is redelivered, and the phone later asks "another question".
+- When: The phone asks "hello" through `POST /api/agentphone/webhook` and the run completes with result "Answer: hello"; the sandbox then repeats `POST /api/webhooks/run/complete`, the same inbound message ID is redelivered, and the phone later asks "another question".
 - Then: After the first answer AgentPhone receives "Answer: hello" without media followed by one contact card "Save Okou to your contacts so you can find this chat anytime." with an `okou.vcf` media URL to the phone. The repeated completion and redelivered message add no sends. The next answer adds only "Answer: another question", with no second contact card.
 
 ## agentphone.bdd-032
@@ -277,7 +277,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > defers a restricted contact card until a new text interaction without replaying the answer"
 - Mode: run
 - Given: A linked member has a media-capable iMessage conversation, and AgentPhone rejects the first media send with HTTP 422 `CONVERSATION_CONTENT_RESTRICTED`.
-- When: The phone asks "hello", the run completes, the sandbox repeats `POST /api/webhooks/agent/complete`, and the phone then asks "please continue".
+- When: The phone asks "hello", the run completes, the sandbox repeats `POST /api/webhooks/run/complete`, and the phone then asks "please continue".
 - Then: After the first answer only "Answer: hello" is delivered and one card attempt is recorded; the repeated completion adds no attempt. After the next answer there are two card attempts and the deliveries are "Answer: hello", "Answer: please continue", then the `okou.vcf` contact card, without replaying the first answer.
 
 ## agentphone.bdd-036
@@ -389,7 +389,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > sends one contact card when completion callbacks arrive concurrently"
 - Mode: run
 - Given: A linked member has a media-capable iMessage conversation and asked "hello", dispatching one run.
-- When: The sandbox sends two concurrent successful `POST /api/webhooks/agent/complete` callbacks for that run.
+- When: The sandbox sends two concurrent successful `POST /api/webhooks/run/complete` callbacks for that run.
 - Then: AgentPhone receives exactly "Task completed successfully." without media followed by one `okou.vcf` contact card.
 
 ## agentphone.bdd-050
@@ -461,7 +461,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > runs a prompt from an already linked mixed-case iMessage email sender"
 - Mode: run
 - Given: A Pro-entitled member with a personal subscription model has linked a lowercase email iMessage handle with a one-time code, and a Runner group is online.
-- When: The same email, upper-cased with surrounding spaces, sends "Summarize my meeting notes" over iMessage and the run completes through `POST /api/webhooks/agent/complete`.
+- When: The same email, upper-cased with surrounding spaces, sends "Summarize my meeting notes" over iMessage and the run completes through `POST /api/webhooks/run/complete`.
 - Then: The dispatched prompt is exactly "Summarize my meeting notes". AgentPhone replies "Task completed successfully." to the sender as given, threaded to the inbound message, and the link status still shows the original email handle.
 
 ## agentphone.bdd-059
@@ -533,7 +533,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > linked iMessage DMs preserve typing and plain-text completion"
 - Mode: run
 - Given: A Pro-entitled member with Okou debug enabled has linked their phone and a Runner group is online (scenario: typing and plain-text completion).
-- When: The phone sends "summarize my inbox" as an iMessage DM; after 4 seconds the sandbox posts an assistant event to `POST /api/webhooks/agent/events`, after another 4 seconds posts `POST /api/webhooks/agent/heartbeat`, and then completes with a Markdown result.
+- When: The phone sends "summarize my inbox" as an iMessage DM; after 4 seconds the sandbox posts an assistant event to `POST /api/webhooks/run/events`, after another 4 seconds posts `POST /api/webhooks/run/heartbeat`, and then completes with a Markdown result.
 - Then: The events request returns `{ received: 1, firstSequence: 1, lastSequence: 1 }` and the heartbeat returns `{ ok: true, typingRefreshIntervalSeconds: 4 }`; the typing indicator is sent once, twice and three times for the conversation. The completion reply goes to the phone without a conversation ID, threaded to the inbound message, with the Markdown converted to the expected plain text.
 
 ## agentphone.bdd-068
@@ -557,7 +557,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > recovers a Phone typing server failure on the next progress update"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; AgentPhone's first typing request fails with HTTP 503 (failure: server) and later requests succeed.
-- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/agent/heartbeat`, and the run completes.
+- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/run/heartbeat`, and the run completes.
 - Then: The heartbeat triggers exactly one accepted typing indicator for the conversation, and the completion reply goes to the phone.
 
 ## agentphone.bdd-071
@@ -565,7 +565,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > recovers a Phone typing network failure on the next progress update"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; AgentPhone's first typing request fails with a network error (failure: network) and later requests succeed.
-- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/agent/heartbeat`, and the run completes.
+- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/run/heartbeat`, and the run completes.
 - Then: The heartbeat triggers exactly one accepted typing indicator for the conversation, and the completion reply goes to the phone.
 
 ## agentphone.bdd-072
@@ -573,7 +573,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > recovers a Phone typing timeout failure on the next progress update"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; AgentPhone's first typing request hangs until aborted and then errors (failure: timeout), and later requests succeed.
-- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/agent/heartbeat`, and the run completes.
+- When: The phone sends an iMessage, the sandbox posts `POST /api/webhooks/run/heartbeat`, and the run completes.
 - Then: The heartbeat triggers exactly one accepted typing indicator for the conversation, and the completion reply goes to the phone.
 
 ## agentphone.bdd-073
@@ -581,7 +581,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > keeps run progress alive when the typing provider fails"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; after the first typing indicator, AgentPhone fails every typing request with HTTP 503.
-- When: The phone sends "check my inbox" as an iMessage DM; after the clock advances 4 seconds the sandbox posts `POST /api/webhooks/agent/heartbeat`, and the run completes.
+- When: The phone sends "check my inbox" as an iMessage DM; after the clock advances 4 seconds the sandbox posts `POST /api/webhooks/run/heartbeat`, and the run completes.
 - Then: One typing indicator is sent initially. The heartbeat still returns HTTP 200 with `{ ok: true, typingRefreshIntervalSeconds: 4 }`, and the completion reply reaches the phone.
 
 ## agentphone.bdd-074
@@ -621,7 +621,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > offers personal subscription recovery for ChatGPT (Codex) in iMessage"
 - Mode: run
 - Given: A Pro-entitled member with native subscription models has linked their phone and prefers model `gpt-6-astra` (label "ChatGPT (Codex)"); a Runner group is online.
-- When: The phone sends "Finish my report" over iMessage; the run fails through `POST /api/webhooks/agent/complete` with `usage_limit` and a native usage-limit message; after 2 seconds the member switches the recovery subscription to a Codex OAuth token.
+- When: The phone sends "Finish my report" over iMessage; the run fails through `POST /api/webhooks/run/complete` with `usage_limit` and a native usage-limit message; after 2 seconds the member switches the recovery subscription to a Codex OAuth token.
 - Then: The reply mentions "Your ChatGPT (Codex) subscription", "Wait for your subscription allowance to reset", `?settings=model` and `reply "continue"`, without the native message. After the switch a new run is dispatched with prompt "continue" and a further typing indicator is sent.
 
 ## agentphone.bdd-079
@@ -629,7 +629,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > offers personal subscription recovery for Claude in iMessage"
 - Mode: run
 - Given: A Pro-entitled member with native subscription models has linked their phone and prefers model `claude-fable-5-1` (label "Claude"); a Runner group is online.
-- When: The phone sends "Finish my report" over iMessage; the run fails through `POST /api/webhooks/agent/complete` with `usage_limit` and a native usage-limit message; after 2 seconds the member switches the recovery subscription to a Claude Code OAuth token.
+- When: The phone sends "Finish my report" over iMessage; the run fails through `POST /api/webhooks/run/complete` with `usage_limit` and a native usage-limit message; after 2 seconds the member switches the recovery subscription to a Claude Code OAuth token.
 - Then: The reply mentions "Your Claude subscription", "Wait for your subscription allowance to reset", `?settings=model` and `reply "continue"`, without the native message. After the switch a new run is dispatched with prompt "continue" and a further typing indicator is sent.
 
 ## agentphone.bdd-080
@@ -701,7 +701,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > keeps the phone conversation usable after the provider rejects a completion reply"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; AgentPhone rejects the next message send once with HTTP 422.
-- When: The phone sends "first phone request" over iMessage and its run completes through `POST /api/webhooks/agent/complete`, the completion callback is repeated, then the phone sends "try the next phone request" and that run completes.
+- When: The phone sends "first phone request" over iMessage and its run completes through `POST /api/webhooks/run/complete`, the completion callback is repeated, then the phone sends "try the next phone request" and that run completes.
 - Then: No reply is delivered for the first run, including after the repeated callback. The next run's prompt is "try the next phone request" and exactly one new reply "Task completed successfully." reaches the phone, threaded to the second message.
 
 ## agentphone.bdd-089
@@ -709,7 +709,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > does not send a phone reply after the user deletes the running thread"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; the phone has started a run with "delete this phone conversation".
-- When: The member deletes the phone conversation's thread, then the sandbox reports the run failed through `POST /api/webhooks/agent/complete`.
+- When: The member deletes the phone conversation's thread, then the sandbox reports the run failed through `POST /api/webhooks/run/complete`.
 - Then: No phone reply is sent, and listing the deleted thread's events returns HTTP 404.
 
 ## agentphone.bdd-090
@@ -749,7 +749,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > rejects a queued AgentPhone input and replies with the failure when launch preparation fails with debug enabled"
 - Mode: run
 - Given: A Pro-entitled member with Okou debug enabled has linked their phone; one SMS run is active and "fail this queued Okou launch" is queued behind it; the default Runner group is then unconfigured.
-- When: The sandbox completes the active run through `POST /api/webhooks/agent/complete`.
+- When: The sandbox completes the active run through `POST /api/webhooks/run/complete`.
 - Then: Completion fails with "No executor configured: set RUNNER_DEFAULT_GROUP". The phone receives exactly two replies, "Task completed successfully." and "Oops, something went wrong. Please try again later.". `GET /api/logs` lists only the active run as `completed`, and the queued input has no run ID and is revoked by an `input.rejected` event with error `internal_error`.
 
 ## agentphone.bdd-095
@@ -757,7 +757,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > archives group admission-failure replies with the iMessage channel"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone; an iMessage group run is active and "@Okou fail this queued group launch" is queued behind it; the default Runner group is then unconfigured.
-- When: The sandbox completes the active run through `POST /api/webhooks/agent/complete`, and the member reads `GET /api/integrations/agentphone/group-history`.
+- When: The sandbox completes the active run through `POST /api/webhooks/run/complete`, and the member reads `GET /api/integrations/agentphone/group-history`.
 - Then: Completion fails with "No executor configured: set RUNNER_DEFAULT_GROUP". The phone replies include "Task completed successfully." and "Oops, something went wrong. Please try again later.", and the group history contains an outbound iMessage reply containing "Oops, something went wrong".
 
 ## agentphone.bdd-096
@@ -765,7 +765,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > rejects a queued input whose phone link was removed before admission"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone; an SMS run is active and "reject this input after unlinking" is queued as a pending input without a run; the member then unlinks AgentPhone (HTTP 204).
-- When: The sandbox completes the active run through `POST /api/webhooks/agent/complete`.
+- When: The sandbox completes the active run through `POST /api/webhooks/run/complete`.
 - Then: The thread gains an `input.rejected` event revoking the queued input with error `conflict` and an `output.error` with error `conflict`. No phone reply is sent and no further run is dispatched.
 
 ## agentphone.bdd-097
@@ -981,7 +981,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > delivers a group run reply when the provider roster lookup fails"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and a Runner group is online; the phone posts "@Okou summarize this group" in an iMessage group, and AgentPhone's conversation roster lookup then fails with HTTP 503.
-- When: The run completes through `POST /api/webhooks/agent/complete`, and the member reads `GET /api/integrations/agentphone/group-history`.
+- When: The run completes through `POST /api/webhooks/run/complete`, and the member reads `GET /api/integrations/agentphone/group-history`.
 - Then: A typing indicator is sent and the run's system prompt contains the group ID. The reply is still sent to the group, but the history contains only the inbound message (the reply is not archived).
 
 ## agentphone.bdd-124
@@ -1109,7 +1109,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > skips completion delivery after the phone link changes through unlink"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and has an active iMessage DM run and an active group run; the member then unlinks through `DELETE /api/integrations/agentphone/link` (method: unlink).
-- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/agent/complete`.
+- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/run/complete`.
 - Then: Neither completion sends any AgentPhone message.
 
 ## agentphone.bdd-140
@@ -1117,7 +1117,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > skips completion delivery after the phone link changes through switch"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and has an active iMessage DM run and an active group run; the phone then sends "/switch" and receives a `/settings/agentphone?` link (method: switch).
-- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/agent/complete`.
+- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/run/complete`.
 - Then: Neither completion sends any AgentPhone message.
 
 ## agentphone.bdd-141
@@ -1125,7 +1125,7 @@
 - Vitest: "INT-03: AgentPhone linked-run lifecycle through public APIs > skips completion delivery after the phone link changes through replace"
 - Mode: run
 - Given: A Pro-entitled member has linked their phone and has an active iMessage DM run and an active group run; the member then connects a new phone through `POST /api/agentphone/connect` with `replacePhoneHandle` set to the old phone (method: replace).
-- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/agent/complete`.
+- When: The sandbox completes the DM run and then the group run through `POST /api/webhooks/run/complete`.
 - Then: Neither completion sends any AgentPhone message.
 
 ## agentphone.bdd-142

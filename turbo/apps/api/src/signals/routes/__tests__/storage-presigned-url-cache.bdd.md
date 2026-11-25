@@ -126,5 +126,5 @@
 - Vitest: "content bundle presigned URL cache > retains the newer URL when an older cold signer publishes last"
 - Mode: run
 - Given: An entitled user has a Workflow with an attached file and a direct Runner group. An older chat Run's first storage signature is delayed.
-- When: The user sends the older chat message; while its signature is delayed, a newer chat Run one second later is dispatched; then the older signature completes and its Run is dispatched and cancelled; finally another Run is sent two seconds after the start.
+- When: The user sends the older chat message with `POST /api/chat/events` (accepted with HTTP 201); while its signature is delayed, a newer chat Run sent one second later is dispatched to the Runner and cancelled with `POST /api/runs/:id/cancel`; then the older signature completes and its Run is dispatched and cancelled; finally another Run is sent two seconds after the start and dispatched.
 - Then: The older Run receives an instructions bundle URL different from the newer Run's. The final Run reuses the newer Run's instructions download URL.

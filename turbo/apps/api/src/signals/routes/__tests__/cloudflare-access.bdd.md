@@ -45,7 +45,7 @@
 - Vitest: "organization Cloudflare Access > returns scoped configurations and lets members bind shared configurations without seeing other hosts"
 - Mode: run
 - Given: A workspace admin creates an organization-scoped Access configuration and a personal one; two members of the same workspace and a user from another workspace are signed in in turn.
-- When: The admin lists and renames configurations via `GET` and `PATCH /api/cloudflare-access/configs`; each member lists with `?view=scoped` and binds a host to the shared config; a member tries to update, delete and create organization configurations; the outsider lists and tries to bind a host to the shared config.
+- When: The admin lists configurations via `GET /api/cloudflare-access/configs` and renames them via `PATCH /api/cloudflare-access/configs/:configId`; each member lists with `?view=scoped` and binds a host to the shared config; a member tries to update, delete and create organization configurations; the outsider lists and tries to bind a host to the shared config.
 - Then: The shared config is created with scope `organization` and no hosts; the personal config returns scope `personal`, revision 1, generation 1 and empty SSH/VNC host lists, and renaming returns revision 2. Each member's scoped list shows only the shared config with only their own bound hosts, never the admin's personal config or the client secret. Member update, delete and organization-scoped create return HTTP 403; the outsider sees an empty scoped list and binding to the shared config returns HTTP 404.
 
 ## cloudflare-access-007

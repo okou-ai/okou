@@ -60,9 +60,9 @@
 
 - Vitest: "keeps the accepted Workflow after deletion during startup"
 - Mode: run
-- Given: A signed-in workspace admin with a personal subscription model is ready to run, and another workspace member authors a public Workflow. Download-URL signing is held so the member's Run pauses during startup.
-- When: The member sends a prompt via `POST /api/chat/events` (HTTP 201); during startup the author deletes the Workflow via `DELETE /api/workflows/:workflowId` (HTTP 204); signing is then released. After that Run completes, the member sends another prompt to the same Thread.
-- Then: The admitted Run's execution still mounts the Workflow under its original name with its original content. The next Run on the Thread does not mount that Workflow.
+- Given: Row `deletion`. A signed-in Pro workspace admin with a personal subscription model is ready to run, and another member of the same workspace authors a public Workflow. Download-URL signing is held so the admin's Run pauses during startup.
+- When: The admin sends a prompt via `POST /api/chat/events` (HTTP 201); during startup the author deletes the Workflow via `DELETE /api/workflows/:workflowId` (HTTP 204); signing is then released. After the Runner reports that Run finished, the admin sends another prompt to the same Thread.
+- Then: The admitted Run's execution input still mounts the Workflow under its original name, and its `SKILL.md` contains the original content. The next Run's execution input on the Thread does not mount that Workflow.
 
 ## workflow-execution-distribution-009
 

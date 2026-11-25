@@ -45,8 +45,8 @@
 - Vitest: "Workflow schedule recovery > stops a user-created schedule after three failed manual runs"
 - Mode: run
 - Given: A member in UTC has a workflow with a 10-minute loop automation, and a Runner is available.
-- When: Three times, one minute apart, the member runs the automation now and the Run completes with exit code 1 ("Managed provider temporarily unavailable"), then reads the automation.
-- Then: After the third failed manual Run the automation reads `enabled: false` with `nextRunAt: null`.
+- When: Three times, one minute apart, the member runs the automation now (`POST /api/workflow-automations/:id/run`), the Run's sandbox reports completion with exit code 1 ("Managed provider temporarily unavailable") via `POST /api/webhooks/run/complete`, and the member reads `GET /api/workflow-automations/:id`.
+- Then: Each run-now request returns HTTP 201, each completion callback HTTP 200, and each read HTTP 200. After the third failed manual Run the automation reads `enabled: false` with `nextRunAt: null`.
 
 ## official-workflows-007
 

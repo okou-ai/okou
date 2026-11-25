@@ -261,8 +261,8 @@
 - Vitest: "WhatsApp through the shared AgentPhone number > rejects expired and replaced codes while leaving the new code usable"
 - Mode: run
 - Given: A signed-in member creates two WhatsApp link codes in succession via `POST /api/integrations/whatsapp/link-code`.
-- When: A phone sends the first (replaced) code over WhatsApp; after 10 minutes and 1 ms it sends the second code; then the member creates a fresh code and the phone sends it.
-- Then: The replaced code and the expired code both leave the member unlinked. The fresh code links the member to the phone.
+- When: A phone sends the first (replaced) code over WhatsApp via `POST /api/agentphone/webhook` and the member reads `GET /api/integrations/whatsapp/link`; the clock advances 10 minutes and 1 ms, the phone sends the second code and the member reads the link again; then the member creates a fresh code, the same phone sends it and the member reads the link.
+- Then: Each signed webhook delivery returns HTTP 200. After the replaced code and after the expired code the link status reports `linked` false. After the fresh code it reports `linked: true` with that phone as `phoneHandle`.
 
 ## whatsapp-034
 

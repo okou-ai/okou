@@ -21,7 +21,7 @@
 - Vitest: "AUTH-02: platform realtime token > issues signed user and active-org token requests only for authenticated users"
 - Mode: run
 - Given: A signed-in user has an active organization, and the realtime provider signs token requests. An unauthenticated caller also exists.
-- When: The unauthenticated caller and then the user call `GET /api/realtime/token`.
+- When: The unauthenticated caller and then the user call `POST /api/realtime/token`.
 - Then: The unauthenticated request returns HTTP 401 with `UNAUTHORIZED`. The user's request returns HTTP 200 with exactly the signed token request, which is created for client ID = user ID with a one-hour TTL and capabilities to subscribe to `user:<user>`, `org:<org>`, `user-org:<user>:<org>`, `run-output:<user>:<org>:*`, `phone-use:<org>:<user>:*`, `computer-use-host:<user>:<org>:*`, and presence on `user-org-foreground:<user>:<org>`.
 
 ## auth-device.bdd-004
@@ -29,7 +29,7 @@
 - Vitest: "AUTH-02: platform realtime token > keeps user realtime available without an active organization"
 - Mode: run
 - Given: A signed-in user has no active organization, and the realtime provider signs token requests.
-- When: The user calls `GET /api/realtime/token`.
+- When: The user calls `POST /api/realtime/token`.
 - Then: The response is HTTP 200 with exactly the signed token request, created for client ID = user ID with a one-hour TTL and only the `user:<user>` subscribe capability.
 
 ## auth-device.bdd-005
@@ -37,7 +37,7 @@
 - Vitest: "AUTH-02: platform realtime token > issues a fresh signed request when the client renews its token"
 - Mode: run
 - Given: A signed-in user with an active organization exists, and the realtime provider returns a first and then a renewed signed token request with different nonces.
-- When: The user calls `GET /api/realtime/token` twice.
+- When: The user calls `POST /api/realtime/token` twice.
 - Then: Both requests return HTTP 200; the first body equals the first signed request and the second equals the renewed one.
 
 ## auth-device.bdd-006
@@ -45,7 +45,7 @@
 - Vitest: "AUTH-02: platform realtime token > returns an error when a signed request cannot be created"
 - Mode: run
 - Given: A signed-in user exists, and the realtime provider fails to sign the token request.
-- When: The user calls `GET /api/realtime/token`.
+- When: The user calls `POST /api/realtime/token`.
 - Then: The response is HTTP 500 with exactly `{ error: "Internal server error" }`.
 
 ## auth-device.bdd-007

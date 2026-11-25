@@ -149,8 +149,8 @@
 - Vitest: "Agent suggestions > isolates owners and refuses a suggestion targeting another user's thread"
 - Mode: run
 - Given: A workspace member has created a chat thread, and their personal Agent Run has published a card whose option continues that thread. A second user in another workspace has their own executing personal Agent Run and is signed in.
-- When: The second user lists cards and consumes the first user's card; the second Agent updates the first user's card, publishes a card with an option targeting the first user's thread, publishes its own card, and updates it to target that thread; then the first user lists their cards.
-- Then: The second user's list is empty and their consume returns HTTP 409. The second Agent's update of the foreign card returns HTTP 409, the publish targeting the foreign thread returns HTTP 404, its own card publishes with HTTP 200, and the retargeting update returns HTTP 404 leaving its options unchanged. The first user still sees exactly their own card.
+- When: The second user lists cards with `GET /api/feed/items` and consumes the first user's card with `POST /api/feed/items/:id/suggestion/consume`; the second Agent updates the first user's card's priority with `PATCH /api/feed/items/:id`, publishes a card with an option targeting the first user's thread with `POST /api/feed/items`, publishes its own card, and updates it with `PATCH /api/feed/items/:id` to add an option targeting that thread; the second user lists cards again; then the first user lists their cards.
+- Then: The second user's list is empty and their consume returns HTTP 409. The second Agent's update of the foreign card returns HTTP 409, the publish targeting the foreign thread returns HTTP 404, its own card publishes with HTTP 200, and the retargeting update returns HTTP 404; the second user's list still shows its card with the original options. The first user still sees exactly one card, their own.
 
 ## suggestions-020
 

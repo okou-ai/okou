@@ -270,7 +270,7 @@
 - Mode: run
 - Given: An owner has a public share whose stored policy is rewritten to use an existing 24-character public token.
 - When: The owner calls `PUT /api/artifact-shares` with `public`, then with `private`.
-- Then: The public update returns HTTP 200 with URL `https://a.okou.io/<24 a's>.pdf` and a delivery alias for that token exists. After the private update the stored policy has status `revoked` and `publicToken` null.
+- Then: The public update returns HTTP 200 with URL `https://a.okou.io/<24 a's>.pdf` and a delivery alias for that token exists. The private update returns HTTP 200, after which the stored policy has status `revoked` and `publicToken` null.
 
 ## artifact-shares-035
 

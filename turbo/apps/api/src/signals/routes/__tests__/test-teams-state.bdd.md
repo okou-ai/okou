@@ -20,6 +20,6 @@
 
 - Vitest: "Teams webhook dispatch > rejects unlinked users and dispatches for a connected member"
 - Mode: run
-- Given: An onboarded member installed Teams and then disconnected their Teams account, so status shows installed but not connected. A second member is installed and connected but not onboarded (no default Agent profile).
-- When: Each member's Teams user posts a personal message to `POST /api/webhooks/teams/bot`, and each reads their Runs or chat thread events.
-- Then: The unlinked user receives the notice "Please connect your account to use Okou in this Teams workspace." and has no Runs. The connected member's Teams status shows installed and connected, and after the message their chat thread events include a `created` thread event.
+- Given: Two members in separate workspaces each have the Teams bot installed for their tenant and a connected Teams account. The first member completed onboarding and then disconnected their Teams account with `DELETE /api/integrations/teams/connect`. The second member has not provisioned a workspace or completed onboarding.
+- When: Each member reads `GET /api/integrations/teams/connect`, then their Teams user posts a personal message to `POST /api/webhooks/teams/bot`. The first member then lists `GET /api/logs` and the second reads `GET /api/chat-threads/events`.
+- Then: The first member's status shows installed, not connected, with their tenant ID; the second's shows installed and connected with their tenant ID. Both webhook posts return HTTP 200 with `ok: true`, the normalized personal message activity and a Teams settings connect URL. The disconnected user receives the Teams notice "Please connect your account to use Okou in this Teams workspace." and the first member's Run list is empty. The second member's thread events include a `created` event.

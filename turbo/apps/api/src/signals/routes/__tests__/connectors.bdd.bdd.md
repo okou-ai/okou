@@ -717,8 +717,8 @@
 - Vitest: "CONN-03: custom connectors and connector-owned secrets > scopes custom connector deletion to org admins and same-org ids"
 - Mode: run
 - Given: An organization admin and a member of the same organization, and an admin of another organization; each admin owns a custom connector.
-- When: The member sends `DELETE /api/custom-connectors/:id` for the first admin's connector; the first admin sends `DELETE` for the other organization's connector; then each admin deletes its own connector.
-- Then: The member's delete returns HTTP 403 "Only org admins can delete custom connectors" and the connector remains with display name "Original". The cross-organization delete returns HTTP 404 `NOT_FOUND` and the foreign connector remains as "OtherOrg". After the owners delete their connectors, the foreign connector is gone from its organization's list.
+- When: The member sends `DELETE /api/custom-connectors/:id` for the first admin's connector; the first admin sends `DELETE` for the other organization's connector; then the other admin stores a secret on its connector and each admin deletes its own connector.
+- Then: The member's delete returns HTTP 403 "Only org admins can delete custom connectors" and the connector remains with display name "Original". The cross-organization delete returns HTTP 404 `NOT_FOUND` and the foreign connector remains as "OtherOrg". Both owner deletes return HTTP 204, and the other organization's connector no longer appears in its organization's list.
 
 ## connectors.bdd-091
 

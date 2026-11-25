@@ -45,7 +45,7 @@
 - Vitest: "/api/feature-switches > keeps three-point timing available to its owner across workspaces with personal opt-out and opt-in"
 - Mode: run
 - Given: The designated owner user of three-point timing is signed in to an ordinary workspace that also has an admin peer.
-- When: The owner reads `_artifactThreePointTimingV2`, opts out and reads; the admin peer reads; the owner reads from another workspace, then from the original workspace, and opts in again.
+- When: The owner reads `_artifactThreePointTimingV2` with `GET /api/feature-switches`, opts out with `POST /api/feature-switches` and reads; the admin peer reads; the owner reads from another workspace, then from the original workspace, opts in again with `POST /api/feature-switches`, and reads.
 - Then: The switch is initially effective `true`; the opt-out stores and effects `false`, which persists. The peer reads `false`. In another workspace the owner reads `true`, while in the original workspace it is still `false`. Opting in stores and effects `true`, which persists.
 
 ## feature-switches-007

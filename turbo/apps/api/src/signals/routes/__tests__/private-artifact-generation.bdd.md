@@ -36,6 +36,6 @@
 
 - Vitest: "managed artifact privacy > fails private completion without falling back to the public bucket when credentials are missing"
 - Mode: run
-- Given: A signed-in member has queued a private image generation, and the private artifact storage access key is not configured.
-- When: Fal delivers the completed result to the generation's webhook callback URL; later the key is configured again and Fal delivers the completion again.
-- Then: The first callback returns HTTP 500; the generation stays `running` with no result and no JPEG is stored anywhere. After the key is restored, the retried callback completes the generation with an `/artifacts/` URL.
+- Given: A signed-in member with ample credits has selected the `fal-ai/flux-pro/v1.1` image model and queued an image with the ordinary `POST /api/image-io/generate` (HTTP 202); the private artifact storage access key is then unset.
+- When: Fal posts a completed result to the generation's callback URL (`POST /api/webhooks/built-in-generations/fal/:generationId` with its token) and the member reads `GET /api/built-in-generations/:generationId`; later the key is configured again and Fal delivers the completion again.
+- Then: The first callback returns HTTP 500; the generation read returns HTTP 200 still `running` with no result, and no JPEG object is stored in any bucket. After the key is restored, the retried callback returns HTTP 200 and the generation reads `completed` with a result URL containing `/artifacts/`.

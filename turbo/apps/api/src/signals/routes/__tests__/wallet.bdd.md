@@ -661,7 +661,7 @@
 - Vitest: "cron recovers a failed approval Workflow without another purchase request and continues the original chat once"
 - Mode: run
 - Given: A Pro workspace member's chat Run created a tracked spend, but the initial request to start the Link approval Worker failed with HTTP 503. Any further Link spend creation would be unexpected.
-- When: The cron calls `POST /api/cron/process-background-jobs` with the cron secret; the Run reads `GET /api/wallet/spend/:id`; Link approves, the Run completes, and the Worker polls `POST /api/internal/link-approval/poll` twice concurrently before the member checks the card and the thread events.
+- When: The cron calls `GET /api/cron/process-background-jobs` with the cron secret; the Run reads `GET /api/wallet/spend/:id`; Link approves, the Run completes, and the Worker polls `POST /api/internal/link-approval/poll` twice concurrently before the member checks the card and the thread events.
 - Then: The cron returns HTTP 200 and restarts the Worker with the same spend ID and deadline. The spend keeps its ID, expiry and approval URL with automatic continuation on. Both polls return `done`, the card shows `continued`, the thread has exactly one input event for the spend, and Link receives no new spend creation.
 
 ## wallet-084

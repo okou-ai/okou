@@ -77,8 +77,8 @@
 - Vitest: "agent mail notifications > records an unsubscribe skip and keeps it on replay after resubscription"
 - Mode: run
 - Given: A Pro member's thread Run is running and holds an Okou run token, and the member has unsubscribed via `PUT /api/preferences/email-subscription`.
-- When: The Run sends a notification; the member resubscribes; the Run replays the same notification and then sends a new one.
-- Then: The first send returns HTTP 200 `skipped` with reason `unsubscribed` and not deduplicated. The replay returns the same notification ID, still `skipped` and deduplicated, and the new notification is `queued`.
+- When: The Run sends a notification via `POST /api/notifications/mail`; the member resubscribes via `PUT /api/preferences/email-subscription`; the Run replays the same notification request and then sends a new one.
+- Then: The first send returns HTTP 200 `skipped` with reason `unsubscribed` and not deduplicated. The replay returns HTTP 200 with the same notification ID, still `skipped` and deduplicated, and the new notification returns HTTP 200 `queued`.
 
 ## notifications-011
 
