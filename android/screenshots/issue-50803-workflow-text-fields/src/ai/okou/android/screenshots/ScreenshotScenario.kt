@@ -154,14 +154,14 @@ class ScreenshotScenario {
                 assertEquals(purposeTop, text("用途").visibleBounds.top)
 
                 val edited = "$instruction\n复核上线时间。"
+                input(instruction).text = edited
+                input(edited)
+                val cancelBounds = text("取消").visibleBounds
+                val saveBounds = action("保存").visibleBounds
                 val release = CountDownLatch(1)
                 fixture.instructionSaveConflict = true
                 fixture.beforeInstructionSave = { check(release.await(20, TimeUnit.SECONDS)) }
                 try {
-                    input(instruction).text = edited
-                    input(edited)
-                    val cancelBounds = text("取消").visibleBounds
-                    val saveBounds = action("保存").visibleBounds
                     ScreenshotCapture.capture("phone-ready-to-save.png")
                     action("保存").click()
                     val pending =
@@ -181,6 +181,9 @@ class ScreenshotScenario {
                 }
                 text("保存时此工作流已更新。你的修改已保留。")
                 input(edited)
+                assertEquals(saveBounds, action("保存").visibleBounds)
+                assertEquals(cancelBounds, text("取消").visibleBounds)
+                ScreenshotCapture.capture("phone-save-conflict.png")
                 fixture.beforeInstructionSave = {}
                 fixture.instructionSaveConflict = false
             }
