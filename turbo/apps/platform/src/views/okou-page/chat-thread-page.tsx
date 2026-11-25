@@ -6374,13 +6374,7 @@ function ShareGroupSelectionColumn({
           // Once the link exists the selection is the record of what was
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
-          className={cn(
-            "h-5 w-5 border-muted-foreground",
-            selecting &&
-              !allSelected &&
-              !indeterminate &&
-              "group-hover/share-group:border-foreground group-hover/share-group:bg-state-hover-overlay",
-          )}
+          className="h-5 w-5"
           onCheckedChange={onToggle}
         />
       </span>
