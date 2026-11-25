@@ -25,10 +25,11 @@ import ai.okou.android.preferences.TimezoneSelectionSheet
 import ai.okou.android.preferences.timezoneLabel
 import ai.okou.android.state.rememberWorkflowFieldInput
 import ai.okou.android.workspaceSearchFocusOutline
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -61,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -71,14 +74,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.DateFormat
@@ -419,10 +424,12 @@ internal fun WorkflowEditor(
                         available,
                         read = { it.value.title },
                         update = { edit, text -> edit.copy(value = edit.value.copy(title = text)) },
-                        errorMessage =
-                            if (value.title.isBlank())
-                                stringResource(R.string.workflow_name_required)
-                            else workflowLengthError(value.title, WORKFLOW_DISPLAY_NAME_LIMIT),
+                        validation =
+                            workflowValidation(
+                                value.title,
+                                WORKFLOW_DISPLAY_NAME_LIMIT,
+                                stringResource(R.string.workflow_name_required),
+                            ),
                     )
                     WorkflowField(
                         R.string.workflow_purpose,
@@ -433,7 +440,7 @@ internal fun WorkflowEditor(
                         update = { edit, text ->
                             edit.copy(value = edit.value.copy(purpose = text))
                         },
-                        errorMessage = workflowLengthError(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                        validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
                     )
                     WorkflowField(
                         R.string.workflow_instructions_heading,
@@ -445,8 +452,8 @@ internal fun WorkflowEditor(
                             edit.copy(value = edit.value.copy(instruction = text))
                         },
                         singleLine = false,
-                        errorMessage =
-                            workflowLengthError(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
+                        validation =
+                            workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
                     )
                 }
                 is WorkflowEdit.Rule -> WorkflowRuleFields(editor, available, model)
@@ -628,8 +635,8 @@ private fun WorkflowRuleFields(
                 enabled,
                 read = { it.value.calendarId },
                 update = { edit, text -> edit.copy(value = edit.value.copy(calendarId = text)) },
-                errorMessage =
-                    workflowLengthError(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
+                validation =
+                    workflowValidation(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
             )
     }
     WorkflowSecondary(
@@ -654,12 +661,29 @@ private val EditableTrigger.eventLabel: Int
             EditableTrigger.Calendar -> R.string.workflow_source_calendar
         }
 
+private data class WorkflowValidation(
+    val lengthMessage: String,
+    val requiredMessage: String?,
+    val errorMessage: String?,
+)
+
 @Composable
-private fun workflowLengthError(value: String, limit: Int): String? {
-    if (value.length <= limit) return null
+private fun workflowValidation(
+    value: String,
+    limit: Int,
+    requiredMessage: String? = null,
+): WorkflowValidation {
+    val locale = LocalConfiguration.current.locales[0]
     val formattedLimit =
-        NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0]).format(limit)
-    return stringResource(R.string.workflow_field_too_long, formattedLimit)
+        remember(locale, limit) { NumberFormat.getIntegerInstance(locale).format(limit) }
+    val lengthMessage = stringResource(R.string.workflow_field_too_long, formattedLimit)
+    val errorMessage =
+        when {
+            requiredMessage != null && value.isBlank() -> requiredMessage
+            value.length > limit -> lengthMessage
+            else -> null
+        }
+    return WorkflowValidation(lengthMessage, requiredMessage, errorMessage)
 }
 
 @Composable
@@ -671,7 +695,7 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
     crossinline read: (T) -> String,
     crossinline update: (T, String) -> T,
     singleLine: Boolean = true,
-    errorMessage: String? = null,
+    validation: WorkflowValidation? = null,
 ) {
     val title = stringResource(label)
     val value = read(editor)
@@ -696,64 +720,104 @@ private inline fun <reified T : WorkflowEdit> WorkflowField(
             }
     }
     val colors = MaterialTheme.colorScheme
-    val lineHeight = 16.sp
-    val supportHeight = with(LocalDensity.current) { ceil(lineHeight.toPx()).toDp() }
+    val baseHeight = if (singleLine) OutlinedTextFieldDefaults.MinHeight else 112.dp
+    val errorMessage = validation?.errorMessage
     Column {
         WorkflowFieldLabel(title)
         Spacer(Modifier.height(OkouFormLayout.LabelGap))
-        OutlinedTextField(
-            state = input,
-            modifier =
-                Modifier.fillMaxWidth()
-                    .heightIn(
-                        min =
-                            (if (singleLine) 56.dp else 112.dp) +
-                                OkouFormLayout.SupportingTextGap +
-                                supportHeight,
-                    )
-                    .semantics {
-                        contentDescription = title
-                        if (errorMessage != null) error(errorMessage)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val supportStyle =
+                MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
+            val minimumHeight =
+                if (validation == null) baseHeight
+                else baseHeight + OkouFormLayout.SupportingTextGap
+            val supportHeight =
+                if (validation == null) 0.dp
+                else workflowSupportingHeight(validation, supportStyle, constraints.maxWidth)
+            OutlinedTextField(
+                state = input,
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = minimumHeight + supportHeight)
+                        .semantics {
+                            contentDescription = title
+                            if (errorMessage != null) error(errorMessage)
+                        },
+                readOnly = !enabled,
+                isError = errorMessage != null,
+                lineLimits =
+                    if (singleLine) TextFieldLineLimits.SingleLine
+                    else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+                textStyle = okouFormInputStyle(),
+                shape = RoundedCornerShape(12.dp),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = colors.onSurface,
+                        focusedContainerColor = colors.surface,
+                        unfocusedContainerColor = colors.surface,
+                        errorContainerColor = colors.surface,
+                    ),
+                contentPadding = OkouFormLayout.FieldPadding,
+                supportingText =
+                    if (validation == null) null
+                    else {
+                        {
+                            Box(Modifier.height(supportHeight).clipToBounds()) {
+                                if (errorMessage != null) {
+                                    Text(
+                                        errorMessage,
+                                        modifier =
+                                            Modifier.wrapContentHeight(
+                                                Alignment.Top,
+                                                unbounded = true,
+                                            ),
+                                        style = supportStyle,
+                                    )
+                                }
+                            }
+                        }
                     },
-            readOnly = !enabled,
-            isError = errorMessage != null,
-            lineLimits =
-                if (singleLine) TextFieldLineLimits.SingleLine
-                else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-            textStyle = okouFormInputStyle(),
-            shape = RoundedCornerShape(12.dp),
-            colors =
-                OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = colors.onSurface,
-                    focusedContainerColor = colors.surface,
-                    unfocusedContainerColor = colors.surface,
-                    errorContainerColor = colors.surface,
-                ),
-            contentPadding = OkouFormLayout.FieldPadding,
-            supportingText = {
-                Text(
-                    errorMessage ?: " ",
-                    modifier =
-                        Modifier.animateContentSize()
-                            .then(
-                                if (errorMessage == null) Modifier.clearAndSetSemantics {}
-                                else Modifier,
-                            ),
-                    style =
-                        MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            lineHeight = lineHeight,
-                            lineHeightStyle =
-                                LineHeightStyle(
-                                    LineHeightStyle.Alignment.Center,
-                                    LineHeightStyle.Trim.None,
-                                    LineHeightStyle.Mode.Tight,
-                                ),
-                        ),
-                )
-            },
-        )
+            )
+        }
     }
+}
+
+@Composable
+private fun workflowSupportingHeight(
+    validation: WorkflowValidation,
+    style: TextStyle,
+    fieldWidth: Int,
+): Dp {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val reservedPixels =
+        remember(measurer, density, style, validation.lengthMessage, validation.requiredMessage) {
+            with(density) {
+                // A localized fallback font can make one line taller than its nominal line height.
+                val lengthLine = measurer.measure(validation.lengthMessage, style, maxLines = 1)
+                val requiredLine =
+                    validation.requiredMessage?.let { measurer.measure(it, style, maxLines = 1) }
+                maxOf(
+                    ceil(style.lineHeight.toPx()).toInt(),
+                    lengthLine.size.height,
+                    requiredLine?.size?.height ?: 0,
+                )
+            }
+        }
+    val errorPixels =
+        remember(measurer, density, style, fieldWidth, validation.errorMessage) {
+            validation.errorMessage?.let {
+                // Material 3 adds 16 dp of supporting-text padding on each side.
+                val textWidth =
+                    with(density) { (fieldWidth - 2 * 16.dp.roundToPx()).coerceAtLeast(0) }
+                measurer
+                    .measure(it, style, constraints = Constraints(maxWidth = textWidth))
+                    .size
+                    .height
+            } ?: 0
+        }
+    // The native outline's minimum includes its supporting slot. Keep both in sync while animating.
+    return animateDpAsState(with(density) { maxOf(reservedPixels, errorPixels).toDp() }).value
 }
 
 @Composable
