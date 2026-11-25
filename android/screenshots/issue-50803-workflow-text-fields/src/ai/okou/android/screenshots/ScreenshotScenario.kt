@@ -19,6 +19,8 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -150,6 +152,37 @@ class ScreenshotScenario {
                 input(" ").text = fixture.releaseTitle
                 assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(displayNameError)), 5_000))
                 assertEquals(purposeTop, text("用途").visibleBounds.top)
+
+                val edited = "$instruction\n复核上线时间。"
+                val release = CountDownLatch(1)
+                fixture.instructionSaveConflict = true
+                fixture.beforeInstructionSave = { check(release.await(20, TimeUnit.SECONDS)) }
+                try {
+                    input(instruction).text = edited
+                    input(edited)
+                    val cancelBounds = text("取消").visibleBounds
+                    val saveBounds = action("保存").visibleBounds
+                    ScreenshotCapture.capture("phone-ready-to-save.png")
+                    action("保存").click()
+                    val pending =
+                        checkNotNull(
+                            device.wait(
+                                Until.findObject(
+                                    By.pkg(app.packageName).desc("保存").enabled(false),
+                                ),
+                                10_000,
+                            ),
+                        )
+                    assertEquals(cancelBounds, text("取消").visibleBounds)
+                    assertEquals(saveBounds, pending.visibleBounds)
+                    ScreenshotCapture.capture("phone-saving-workflow.png")
+                } finally {
+                    release.countDown()
+                }
+                text("保存时此工作流已更新。你的修改已保留。")
+                input(edited)
+                fixture.beforeInstructionSave = {}
+                fixture.instructionSaveConflict = false
             }
 
             verifyWindow(1180, 820) {
