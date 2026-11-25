@@ -25,6 +25,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -1450,7 +1451,7 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun returningFromWorkflowDetailsKeepsSearchResultsDuringCatalogRefresh() {
+    fun returningFromWorkflowDetailsShowsSearchFeedbackDuringCatalogRefresh() {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         val scope = compose.onNodeWithTag("search_type_Workflows")
@@ -1476,13 +1477,34 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             back()
             query.assertTextContains("launch")
             scope.assertIsSelected()
-            compose.onNodeWithText(originalTitle).assertIsDisplayed()
+            val row = compose.onNodeWithText(originalTitle).assertIsDisplayed()
+            val rowTop = row.getUnclippedBoundsInRoot().top
+            val loading = hasContentDescription("Searching…")
+            val progressSemantics =
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)
+            val progress = compose.onNode(loading and progressSemantics)
+            compose.mainClock.advanceTimeBy(280)
+            progress.assertIsDisplayed()
+            assertEquals(rowTop, row.getUnclippedBoundsInRoot().top)
+
+            query.performTextReplacement("unmatched query")
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(280)
+            compose.onNode(loading and !progressSemantics).assertIsDisplayed()
+            progress.assertDoesNotExist()
+            compose.onNodeWithText("No matching workflows").assertDoesNotExist()
 
             val updatedTitle = "Launch planning"
             app.fixture.releaseTitle = updatedTitle
             releaseCatalog.countDown()
+            waitFor("No matching workflows")
+            query.assertTextContains("unmatched query")
+            scope.assertIsSelected()
+            compose.onNode(loading).assertDoesNotExist()
+
+            query.performTextReplacement("launch")
             waitFor(updatedTitle)
-            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+            row.assertDoesNotExist()
         } finally {
             releaseCatalog.countDown()
         }
