@@ -20,14 +20,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -84,7 +81,6 @@ data class UpdateUiState(
     val transfer: UpdateTransfer = UpdateTransfer.Recovering(null),
     val problem: UpdateProblem? = null,
     val sdk: Int,
-    val offline: Boolean = false,
 ) {
     val candidate
         get() = info?.release
@@ -172,14 +168,12 @@ class AppUpdates(
     sdk: Int,
     dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val now: () -> Long = System::currentTimeMillis,
-    connectivity: Flow<Boolean> = emptyFlow(),
 ) : Closeable {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutable = MutableStateFlow(UpdateUiState(version, sdk = sdk))
     val state = mutable.asStateFlow()
     val required = state.map { it.required }.stateIn(scope, SharingStarted.Eagerly, false)
     private val initialized = CompletableDeferred<Unit>()
-    private val connectivityReady = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
     private var checkJob: Job? = null
@@ -189,22 +183,6 @@ class AppUpdates(
     @Volatile private var transferTicket = 0L
 
     init {
-        scope.launch {
-            try {
-                connectivity.collectLatest { online ->
-                    val reconnected = online && mutable.value.offline
-                    mutable.update { it.copy(offline = !online) }
-                    connectivityReady.complete(Unit)
-                    if (reconnected) {
-                        initialized.await()
-                        check(manual = mutable.value.needsRequiredRelease)
-                    }
-                }
-            } finally {
-                // An absent connectivity observer completes without a sample.
-                connectivityReady.complete(Unit)
-            }
-        }
         scope.launch {
             try {
                 val saved = store.load()?.takeIf { it.installedVersion == version }
@@ -248,14 +226,12 @@ class AppUpdates(
 
     fun check(manual: Boolean = true, advanceRetry: Boolean = false) {
         if (checkJob?.isActive == true) {
-            if (advanceRetry && !mutable.value.offline) checkRetry.advance()
+            if (advanceRetry) checkRetry.advance()
             return
         }
         checkJob = scope.launch {
             initialized.await()
-            connectivityReady.await()
             val snapshot = mutable.value
-            if (snapshot.offline) return@launch
             if (
                 !manual &&
                     !snapshot.needsRequiredRelease &&
@@ -300,7 +276,7 @@ class AppUpdates(
                     return null
                 }
                 retries++
-                checkRetry.awaitNextAttempt {
+                checkRetry.awaitNextAttempt(error) {
                     mutable.update { it.copy(check = UpdateCheck.Waiting) }
                 }
             }
@@ -328,7 +304,6 @@ class AppUpdates(
 
     fun download(release: AndroidUpdatesRelease, advanceRetry: Boolean = false): Boolean {
         val offered = mutable.value
-        if (offered.offline) return false
         if (transferJob?.isActive == true) {
             return advanceRetry &&
                 (offered.transfer as? UpdateTransfer.Waiting)?.release == release &&
@@ -337,8 +312,7 @@ class AppUpdates(
         if (!offered.canDownload || offered.candidate != release) return false
         transferJob = scope.launch {
             val snapshot = mutable.value
-            if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
-                return@launch
+            if (!snapshot.canDownload || snapshot.candidate != release) return@launch
             val ticket = ++transferTicket
             mutable.update {
                 it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
@@ -376,7 +350,7 @@ class AppUpdates(
                     return
                 }
                 retries++
-                downloadRetry.awaitNextAttempt {
+                downloadRetry.awaitNextAttempt(error) {
                     mutable.update {
                         it.copy(transfer = UpdateTransfer.Waiting(release), problem = failure)
                     }
@@ -389,18 +363,25 @@ class AppUpdates(
         }
     }
 
-    private inner class RetryDelay {
+    private class RetryDelay {
         private var pending: CompletableDeferred<Unit>? = null
 
         fun advance() = pending?.complete(Unit) == true
 
-        suspend fun awaitNextAttempt(showWaiting: () -> Unit) {
+        suspend fun awaitNextAttempt(error: Exception, showWaiting: () -> Unit) {
+            val serverWait =
+                ((error as? ApiFailure.Http)?.retryAfterSeconds ?: 0L).coerceIn(
+                    0,
+                    Long.MAX_VALUE / 1_000,
+                ) * 1_000
             val signal = CompletableDeferred<Unit>()
             pending = signal
             try {
                 showWaiting()
-                withTimeoutOrNull(3_000) { signal.await() }
-                state.first { !it.offline }
+                // A manual retry can advance the local delay after the server's deadline.
+                delay(serverWait)
+                val remaining = 3_000L - serverWait
+                if (remaining > 0) withTimeoutOrNull(remaining) { signal.await() }
             } finally {
                 if (pending === signal) pending = null
             }

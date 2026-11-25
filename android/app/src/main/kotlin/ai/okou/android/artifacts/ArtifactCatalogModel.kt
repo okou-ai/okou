@@ -82,7 +82,6 @@ internal data class ConfirmedArtifactCatalog(val page: ArtifactPage, val confirm
 internal data class ArtifactCatalogState(
     val query: ArtifactQuery = ArtifactQuery(),
     val catalog: ConfirmedArtifactCatalog? = null,
-    val offline: Boolean = false,
     val failedRead: ArtifactCatalogFailure? = null,
     val reading: ArtifactCatalogRead? = null,
     val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
@@ -101,7 +100,6 @@ internal data class ArtifactCatalogState(
 class ArtifactCatalogModel
 internal constructor(
     private val service: ArtifactService,
-    connectivity: Flow<Boolean>,
     private val cache: ChatCacheStore.Lease? = null,
     catalogChanges: Flow<ChatChanges> = emptyFlow(),
     unavailableChat: Flow<String?> = emptyFlow(),
@@ -126,30 +124,6 @@ internal constructor(
     private var missingThread: String? = null
 
     init {
-        viewModelScope.launch {
-            connectivity.collect { online ->
-                val current = mutable.value
-                if (online == !current.offline) return@collect
-                val preview = current.preview
-                mutable.value =
-                    current.copy(
-                        offline = !online,
-                        preview =
-                            if (online && preview?.isHosted == true) preview.copy(content = null)
-                            else preview,
-                    )
-                if (online && active) {
-                    if (catalogJob?.isActive != true) {
-                        readCatalog(append = current.failedRead == ArtifactCatalogFailure.More)
-                    }
-                    if (relatedRead?.isActive != true) refreshRelatedChats()
-                    refreshWorkflows()
-                    if (previewJob?.isActive != true) {
-                        mutable.value.preview?.let { readPreview(it.id) }
-                    }
-                }
-            }
-        }
         viewModelScope.launch {
             catalogChanges.collect { changes ->
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
@@ -183,7 +157,7 @@ internal constructor(
             if (catalogVisible) {
                 if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
                 else {
-                    readCatalog()
+                    readCatalog(append = mutable.value.failedRead == ArtifactCatalogFailure.More)
                     refreshRelatedChats()
                     refreshWorkflows()
                 }
@@ -275,13 +249,12 @@ internal constructor(
         if (id != null) readPreview(id)
     }
 
-    internal suspend fun thumbnail(url: String, offline: Boolean): Bitmap? {
+    internal suspend fun thumbnail(url: String): Bitmap? {
         thumbnails.get(url)?.let {
             return it
         }
-        if (offline) return null
         return try {
-            service.thumbnail(url)?.also { thumbnails.put(url, it) }
+            retryArtifactOperation { service.thumbnail(url) }?.also { thumbnails.put(url, it) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

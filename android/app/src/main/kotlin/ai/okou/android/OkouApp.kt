@@ -317,8 +317,7 @@ internal fun OkouApp(
             workflows.foregroundChanged(true)
             onPauseOrDispose { workflows.foregroundChanged(false) }
         }
-        LaunchedEffect(workflows, list.offline, searchCatalogOpen) {
-            workflows.connectivityChanged(list.offline)
+        LaunchedEffect(workflows, searchCatalogOpen) {
             workflows.searchVisibilityChanged(searchCatalogOpen)
         }
         DisposableEffect(workflows) { onDispose { workflows.searchVisibilityChanged(false) } }
@@ -441,10 +440,6 @@ internal fun OkouApp(
     var handoffPending by remember { mutableStateOf(false) }
     var workflowHandoffFailed by remember { mutableStateOf(false) }
     var workflowDraftError by remember { mutableStateOf<WorkflowDraftError?>(null) }
-    LaunchedEffect(list.offline) {
-        if (!list.offline && workflowDraftError?.message == R.string.workflow_draft_network_failed)
-            workflowDraftError = null
-    }
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
@@ -827,14 +822,7 @@ internal fun OkouApp(
                             )
                         }
                     }
-                    ComposerPrefillResult.NetworkFailed -> {
-                        if (fromSearch) workflowHandoffFailed = true
-                        workflowDraftError =
-                            WorkflowDraftError(
-                                workflowId,
-                                R.string.workflow_draft_network_failed,
-                            )
-                    }
+                    ComposerPrefillResult.NetworkFailed,
                     ComposerPrefillResult.Unavailable -> {
                         if (fromSearch) workflowHandoffFailed = true
                         workflowDraftError =
@@ -1061,7 +1049,6 @@ internal fun OkouApp(
                 controls,
                 checkNotNull(chats).history,
                 controlThreadId,
-                list.offline,
                 composer,
             )
         else null
@@ -1404,12 +1391,7 @@ internal fun OkouApp(
     }
     val detailActions =
         @Composable {
-            if (
-                !conversationMissing &&
-                    !stopPlacement.inline &&
-                    !list.offline &&
-                    runActions?.currentRunId != null
-            )
+            if (!conversationMissing && !stopPlacement.inline && runActions?.currentRunId != null)
                 ConversationStopButton(runActions, stopPlacement, inline = false)
             if (queueCount > 0) {
                 ConversationQueueButton(
@@ -2046,7 +2028,6 @@ internal fun OkouApp(
                                                         composerTarget,
                                                         failureId = failure.id,
                                                         reason = failure.failureReason,
-                                                        offline = list.offline,
                                                     )
                                                 else AssistantFailureText(failure.failureReason)
                                             }
@@ -2075,7 +2056,6 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         composerTarget,
-                                                        offline = list.offline,
                                                         followup = followup,
                                                         onFollowupInserted = { followup = null },
                                                         connectorOptions =
@@ -2130,7 +2110,6 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         newTarget,
-                                                        offline = list.offline,
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
                                                                 canOpenConnectors
@@ -2152,9 +2131,8 @@ internal fun OkouApp(
                                         TextButton(
                                             onClick = chats::retryList,
                                             enabled =
-                                                !list.offline &&
-                                                    listState.value.listReadFailure !=
-                                                        ChatListReadFailure.Retrying &&
+                                                listState.value.listReadFailure !=
+                                                    ChatListReadFailure.Retrying &&
                                                     list.listPhase != ChatReadPhase.Loading,
                                         ) {
                                             Text(stringResource(R.string.chat_refresh))
@@ -2177,7 +2155,6 @@ internal data class WorkspaceChatNavigation(
     val listPhase: ChatReadPhase,
     val projectsPhase: ChatReadPhase,
     val projectsSource: ChatListSource?,
-    val offline: Boolean,
 )
 
 @Composable
@@ -2194,7 +2171,6 @@ internal fun rememberWorkspaceChatNavigation(
                 list.listPhase,
                 list.projectsPhase,
                 list.projectsSource,
-                list.offline,
             )
         }
     }

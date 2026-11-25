@@ -14,7 +14,6 @@
     <string name="conversation_new_reply">Neue Antwort</string>
     <string name="conversation_view_progress">Fortschritt ansehen</string>
     <string name="conversation_processing">In Bearbeitung…</string>
-    <string name="conversation_offline_send">Geh zum Senden online. Dein Entwurf bleibt hier.</string>
     <string name="conversation_reply_summary">Antwortübersicht</string>
     <string name="conversation_turn_continued">In der nächsten Runde fortgesetzt</string>
     <string name="conversation_replying">Antwort wird erstellt …</string>

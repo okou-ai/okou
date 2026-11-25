@@ -28,7 +28,6 @@ import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -50,7 +49,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -69,15 +67,12 @@ class UpdateRootApplication : TestOkouApplication() {
             heldCheck = CompletableDeferred()
         }
 
-    internal val online = MutableStateFlow(true)
-
     override val updates by lazy {
         AppUpdates(
             fixture,
             MemoryUpdateStore(),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
-            connectivity = online,
         )
     }
 
@@ -409,25 +404,20 @@ class UpdateRootTest {
     }
 
     @Test
-    fun offlineRequiredPageShowsTheInstalledVersionDuringDiscovery() {
+    fun requiredPageShowsTheInstalledVersionDuringDiscovery() {
         val discovery = checkNotNull(app.fixture.heldCheck)
         try {
-            app.online.value = false
             app.updates.requireUpdate(RequiredUpdate("99.0.0"))
             compose.waitUntil(10_000) {
-                app.updates.state.value.required && app.updates.state.value.offline
+                app.updates.state.value.let { it.required && it.check == UpdateCheck.Checking }
             }
             compose.onNodeWithText("Update Okou to continue").assertIsDisplayed()
             compose
                 .onNodeWithText("Current version: ${BuildConfig.VERSION_NAME}")
                 .assertIsDisplayed()
-            compose
-                .onNodeWithText("Connect to the internet to check for updates.")
-                .assertIsDisplayed()
-            compose.onNodeWithText("Waiting to check").assertIsNotEnabled()
+            compose.onNodeWithText("Checking…").assertIsDisplayed()
             compose.onNodeWithText("You are up to date").assertDoesNotExist()
 
-            app.online.value = true
             discovery.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.canDownload }
             compose.onNodeWithText("Download update").assertIsEnabled()

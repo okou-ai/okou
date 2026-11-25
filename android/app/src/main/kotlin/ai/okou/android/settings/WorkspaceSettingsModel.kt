@@ -17,7 +17,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -92,7 +91,6 @@ internal data class WorkspaceSettingsState(
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
-    val offline: Boolean = false,
 )
 
 /** Lives with the authorized workspace. Reading settings never participates in startup. */
@@ -104,7 +102,6 @@ internal constructor(
     internal val showWorkspaceCredits: Boolean,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
-    connectivity: Flow<Boolean>,
     private val cache: WorkspaceSettingsCache? = null,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
@@ -161,27 +158,6 @@ internal constructor(
     private var workspaceCreditsRead: Job? = null
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
-    init {
-        viewModelScope.launch {
-            connectivity.collect { online ->
-                defaultModel.online(online)
-                emailSubscription.online(online)
-                proactive?.online(online)
-                val changed = mutable.value.offline == online
-                mutable.update { it.copy(offline = !online) }
-                if (changed && online) builtInTools?.refresh()
-                if (changed) {
-                    if (online) refresh()
-                    else {
-                        accountsRead?.cancel()
-                        usagePackRead?.cancel()
-                        workspaceCreditsRead?.cancel()
-                    }
-                }
-            }
-        }
-    }
-
     internal fun visible(destination: SettingsDestination?) {
         if (visible == destination) return
         visible = destination
@@ -231,7 +207,7 @@ internal constructor(
         return SettingsRead(confirmed.value, readAt = confirmed.readAt)
     }
 
-    private fun canRead() = restored && authorized() && !mutable.value.offline
+    private fun canRead() = restored && authorized()
 
     private fun refresh() {
         if (!canRead()) return
@@ -345,7 +321,6 @@ internal constructor(
         val provider = account.provider ?: return
         if (
             !authorized() ||
-                state.offline ||
                 account.isActive == true ||
                 account.needsReconnect ||
                 provider in state.switching

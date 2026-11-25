@@ -32,13 +32,12 @@ internal data class EmailSubscriptionState(
     val read: SettingsRead<EmailSubscription> = SettingsRead(),
     val desired: Boolean? = null,
     val unconfirmed: Boolean? = null,
-    val offline: Boolean = false,
 ) {
     val checked: Boolean?
         get() = read.value?.let { desired ?: it.subscribed }
 
     val canChange: Boolean
-        get() = read.value?.canReceive == true && !offline && unconfirmed == null
+        get() = read.value?.canReceive == true && unconfirmed == null
 }
 
 /** The preference belongs to the account. Requests use the active authorized workspace. */
@@ -69,20 +68,6 @@ internal class EmailSubscriptionSettings(
         synchronize()
     }
 
-    fun online(online: Boolean) {
-        val current = mutable.value
-        if (current.offline == !online) return
-        val noValueOffline = !online && restored && current.read.value == null
-        mutable.value =
-            current.copy(
-                offline = !online,
-                read = if (noValueOffline) current.read.copy(unavailable = true) else current.read,
-            )
-        if (visible) readRequested = true
-        if (!online && restored && reading) work?.cancel()
-        synchronize()
-    }
-
     fun subscribe(subscribed: Boolean) {
         val current = mutable.value
         if (!authorized() || !current.canChange || current.checked == subscribed) return
@@ -97,8 +82,8 @@ internal class EmailSubscriptionSettings(
     private fun synchronize() {
         if (work != null || !scope.isActive || !authorized()) return
         val current = mutable.value
-        val write = current.desired != null && current.unconfirmed == null && !current.offline
-        if (!write && (!readRequested || !visible || restored && current.offline)) return
+        val write = current.desired != null && current.unconfirmed == null
+        if (!write && (!readRequested || !visible)) return
         reading = !write
         if (reading) readRequested = false
         val job =
@@ -106,7 +91,7 @@ internal class EmailSubscriptionSettings(
                 if (write) save() else readVisible()
             }
         work = job
-        // A rapid dismiss or reconnect can cancel a scheduled read before its body starts.
+        // A rapid dismiss can cancel a scheduled read before its body starts.
         job.invokeOnCompletion {
             scope.launch {
                 work = null
@@ -125,12 +110,12 @@ internal class EmailSubscriptionSettings(
             mutable.value =
                 current.copy(
                     read =
-                        if (stored == null) SettingsRead(unavailable = current.offline)
+                        if (stored == null) SettingsRead()
                         else SettingsRead(stored.value, readAt = stored.readAt),
                 )
             restored = true
         }
-        if (!mutable.value.offline) refresh(mutable.value.unconfirmed)
+        refresh(mutable.value.unconfirmed)
     }
 
     private suspend fun refresh(attempted: Boolean?) {
@@ -224,7 +209,7 @@ internal class EmailSubscriptionSettings(
                     delay(settingsReadRetryDelayMillis)
                     val latest = mutable.value
                     if (latest.desired != attempted) return
-                    if (!latest.offline) return@repeat
+                    return@repeat
                 }
                 val latest = mutable.value
                 if (latest.desired == attempted) {

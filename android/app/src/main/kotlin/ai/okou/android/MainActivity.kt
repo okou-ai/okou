@@ -83,7 +83,6 @@ class MainActivity : AppCompatActivity() {
                     settingsCache = app.workspaceSettingsCache,
                     searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
-                    connectivity = app.connectivity,
                 )
             }
         }

@@ -307,9 +307,8 @@ internal fun ChatListScreen(
     val outline = MaterialTheme.colorScheme.outlineVariant
     val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
-        !state.offline &&
-            if (missingUnread) state.indicatorsNonRetryableFailure
-            else state.listReadFailure == ChatListReadFailure.NeedsRetry
+        if (missingUnread) state.indicatorsNonRetryableFailure
+        else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val hasUsableList = state.confirmedAt != null && !missingUnread
     val skeletonVisible =
         rememberContentReadSkeleton(
@@ -320,7 +319,7 @@ internal fun ChatListScreen(
         )
     val unreadFilter = state.filter == ChatListFilter.Unread
     val syncConfirmation =
-        if (!hasUsableList || state.offline) null
+        if (!hasUsableList) null
         else {
             val listRead =
                 state.confirmedAt.takeIf {
@@ -420,7 +419,6 @@ internal fun ChatListScreen(
                 if (
                     state.confirmedAt != null &&
                         !missingUnread &&
-                        !state.offline &&
                         state.indicatorsPhase == ChatReadPhase.Failed &&
                         state.indicatorsNonRetryableFailure
                 ) {
@@ -428,11 +426,7 @@ internal fun ChatListScreen(
                         ChatListDependencyNotice(R.string.chat_refresh_failed)
                     }
                 }
-                if (
-                    state.confirmedAt != null &&
-                        !state.offline &&
-                        state.projectsPhase == ChatReadPhase.Failed
-                )
+                if (state.confirmedAt != null && state.projectsPhase == ChatReadPhase.Failed)
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }

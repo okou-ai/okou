@@ -88,7 +88,7 @@ internal fun WorkspaceSettingsProgress(
             SettingsDestination.ModelAccounts -> state.accounts.refreshing
             else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
         }
-    if (refreshing && !state.offline) {
+    if (refreshing) {
         ContentReadProgress(label)
     }
 }
@@ -236,9 +236,6 @@ private fun ModelAccounts(
     val accounts = state.accounts.value
     val status =
         when {
-            state.offline && accounts?.isEmpty() == true ->
-                R.string.settings_accounts_offline_connect
-            state.offline -> R.string.settings_accounts_offline
             state.accounts.unavailable && accounts != null ->
                 R.string.settings_accounts_update_failed
             else -> null
@@ -248,7 +245,7 @@ private fun ModelAccounts(
         else R.string.settings_accounts_scope
     SettingsPageIntro(workspace, scope, status)
     when {
-        accounts == null && (state.accounts.unavailable || state.offline) ->
+        accounts == null && state.accounts.unavailable ->
             SettingsReadError(R.string.settings_accounts_unavailable)
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
@@ -292,7 +289,6 @@ private fun ModelAccounts(
                                     provider,
                                     index + 1,
                                     switch?.takeIf { it.accountId == account.id }?.phase,
-                                    state.offline,
                                     switch != null,
                                     activateAccount,
                                 )
@@ -312,7 +308,6 @@ private fun ModelAccountRow(
     provider: ModelAccountProvider,
     index: Int,
     switchPhase: AccountSwitchPhase?,
-    offline: Boolean,
     groupSwitching: Boolean,
     activateAccount: (String) -> Unit,
 ) {
@@ -324,8 +319,7 @@ private fun ModelAccountRow(
         when {
             account.isActive == true -> stringResource(R.string.settings_account_current)
             account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
-            switchPhase == AccountSwitchPhase.Unconfirmed ||
-                switchPhase == AccountSwitchPhase.Confirming && offline ->
+            switchPhase == AccountSwitchPhase.Unconfirmed ->
                 stringResource(R.string.settings_account_switch_unconfirmed)
             switchPhase != null -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
@@ -338,7 +332,7 @@ private fun ModelAccountRow(
         Modifier.fillMaxWidth()
             .semantics { if (groupSwitching) disabled() }
             .clickable(
-                enabled = !offline && !account.needsReconnect,
+                enabled = !account.needsReconnect,
                 role = Role.Button,
                 onClick = { if (!groupSwitching) activateAccount(account.id) },
             )
@@ -500,7 +494,6 @@ private fun CreditBalance(
     val shared = state.workspaceCredits.value
     val status =
         when {
-            state.offline && (member != null || shared != null) -> R.string.settings_credit_offline
             state.usagePack.unavailable && member != null ||
                 state.workspaceCredits.unavailable && shared != null ->
                 R.string.settings_credit_update_failed
@@ -516,7 +509,7 @@ private fun CreditBalance(
                     stringResource(R.string.settings_credit_bonus) to member.bonusCredits,
                 ),
             )
-        } else CreditReadState(state.usagePack, state.offline)
+        } else CreditReadState(state.usagePack)
     }
     if (showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
@@ -542,15 +535,15 @@ private fun CreditBalance(
                         stringResource(label) to credits
                     },
                 )
-            } else CreditReadState(state.workspaceCredits, state.offline)
+            } else CreditReadState(state.workspaceCredits)
         }
     }
     SettingsWebAction(stringResource(R.string.settings_credit_web), "usage")
 }
 
 @Composable
-private fun CreditReadState(state: SettingsRead<*>, offline: Boolean) {
-    if (state.initialFailure || offline) {
+private fun CreditReadState(state: SettingsRead<*>) {
+    if (state.initialFailure) {
         SettingsReadError(R.string.settings_credit_unavailable)
     } else SettingsPlaceholder()
 }

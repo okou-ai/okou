@@ -91,7 +91,6 @@ internal constructor(
     private var visible = false
     private var searchingCatalog = false
     private var foreground = false
-    private var offline = false
     private var selected: String? = null
     private var tab = WorkflowTab.Instructions
     private var readSequence = 0L
@@ -105,47 +104,6 @@ internal constructor(
         LinkedHashMap<String, CachedWorkflowHistory>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
     private var historyLoad: Job? = null
     private val readsAfterWrite = mutableSetOf<WorkflowReadScope>()
-
-    internal fun connectivityChanged(offline: Boolean) {
-        if (this.offline == offline) return
-        this.offline = offline
-        if (!offline) {
-            val current = mutable.value
-            if (current.issue?.failure == WorkflowWriteFailure.Network)
-                mutable.value = current.copy(issue = null)
-            // Active reads already own their backoff, including any server-requested delay.
-            val now = monotonicMillis()
-            refresh(
-                buildSet {
-                    if (
-                        !catalogRead.readAt.isFresh(now) ||
-                            current.catalogFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Catalog)
-                    if (
-                        !rulesRead.readAt.isFresh(now) ||
-                            current.rulesFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Rules)
-                    if (
-                        !connectionsRead.readAt.isFresh(now) ||
-                            current.connectionsFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Connections)
-                    if (
-                        !selected?.let { details[it]?.readAt }.isFresh(now) ||
-                            current.detailFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.Detail)
-                    if (
-                        !selected?.let { histories[it]?.readAt }.isFresh(now) ||
-                            current.historyFailure == WorkflowReadFailure.Network
-                    )
-                        add(WorkflowReadScope.History)
-                },
-            )
-        }
-    }
 
     internal fun visibilityChanged(open: Boolean, retainCurrentVisit: Boolean = false) {
         if (visible == open) return

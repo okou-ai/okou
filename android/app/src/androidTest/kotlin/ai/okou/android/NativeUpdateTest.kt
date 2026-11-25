@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
@@ -25,12 +26,10 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.io.File
 import java.io.IOException
-import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -49,7 +48,6 @@ class NativeUpdateTest {
         val gate = CompletableDeferred<Unit>()
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
-        val online = MutableStateFlow(true)
         val release =
             AndroidUpdatesRelease(
                 "99.0.0",
@@ -95,7 +93,6 @@ class NativeUpdateTest {
                 },
                 BuildConfig.VERSION_NAME,
                 35,
-                connectivity = online,
             )
         val previous = app.updateOwner
         app.updateOwner = owner
@@ -386,20 +383,18 @@ class NativeUpdateTest {
             download.set(CompletableDeferred())
             click(R.string.updates_retry_download)
             assertNotNull(text(progressLabel))
-            val timedOut = download.getAndSet(CompletableDeferred())
-            online.value = false
-            timedOut.completeExceptionally(SocketTimeoutException("fixture download timed out"))
+            val rateLimited = download.getAndSet(CompletableDeferred())
+            rateLimited.completeExceptionally(ApiFailure.Http(429, null, null, 8))
             val waiting = checkNotNull(text(app.getString(R.string.updates_retry_download)))
-            assertFalse(
+            assertTrue(
                 generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
             )
-            captureState("details-retry-offline")
+            captureState("details-retry-waiting")
             assertEquals(initialDetailsBounds, detailsBounds())
             withShortWindowAndLargeText(width = 780) {
                 exists(R.string.updates_retry_download)
-                captureState("details-short-retry-offline")
+                captureState("details-short-retry-waiting")
             }
-            online.value = true
             assertNotNull(text(progressLabel))
             click(R.string.updates_close)
 

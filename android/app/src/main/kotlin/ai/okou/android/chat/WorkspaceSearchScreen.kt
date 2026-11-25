@@ -508,9 +508,7 @@ private fun SearchResults(
         }
     val listFailure = list.listReadFailure
     val needsChatList = showChats || needsMessageChats
-    val listFailed =
-        listFailure == ChatListReadFailure.NeedsRetry ||
-            list.offline && list.listPhase == ChatReadPhase.Failed
+    val listFailed = listFailure == ChatListReadFailure.NeedsRetry
     val waitingForList =
         needsChatList && list.confirmedAt == null && !listFailed ||
             needsMessageChats &&

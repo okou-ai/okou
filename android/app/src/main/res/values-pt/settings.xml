@@ -36,8 +36,6 @@
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Contas de modelos em “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_offline">Offline. Conecte-se para trocar de conta.</string>
-    <string name="settings_accounts_offline_connect">Offline. Conecte-se para vincular uma conta de modelo.</string>
     <string name="settings_accounts_unavailable">Não foi possível exibir as contas de modelos agora.</string>
     <string name="settings_accounts_update_failed">Não foi possível atualizar as contas. Exibindo as últimas informações conhecidas.</string>
     <string name="settings_accounts_empty">Nenhuma conta de modelo vinculada</string>
@@ -66,7 +64,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Saldo de créditos</string>
     <string name="settings_credit_scope">Créditos Okou em “%1$s”</string>
-    <string name="settings_credit_offline">Offline. Exibindo o último saldo conhecido.</string>
     <string name="settings_credit_update_failed">Não foi possível atualizar. Exibindo o último saldo conhecido.</string>
     <string name="settings_credit_unavailable">Não foi possível exibir o saldo agora.</string>
     <string name="settings_credit_member">Pacote de uso pessoal</string>
@@ -83,7 +80,6 @@
     <string name="settings_model_plan_restricted">Requer outro plano</string>
     <string name="settings_model_fast">Modo rápido</string>
     <string name="settings_model_fast_usage">Quando ativado, o consumo da assinatura do ChatGPT é %1$s vezes o do modo padrão</string>
-    <string name="settings_model_load_when_online">O conteúdo será carregado quando você voltar a ficar online.</string>
     <string name="settings_model_save_rolled_back">Não foi possível salvar o modelo padrão. A configuração anterior foi restaurada.</string>
     <string name="settings_model_save_unconfirmed">O salvamento do modelo padrão ainda não foi confirmado.</string>
     <string name="settings_model_effort">Nível de raciocínio</string>
@@ -98,7 +94,6 @@
     <string name="settings_proactive_services">Serviços proativos</string>
     <string name="settings_proactive_scope">Estas configurações se aplicam em “%1$s”.</string>
     <string name="settings_proactive_loading">Carregando serviços proativos</string>
-    <string name="settings_proactive_offline">Off-line. Conecte-se para alterar esta configuração.</string>
     <string name="settings_proactive_needs_timezone">Escolha um fuso horário para programar o envio.</string>
     <string name="settings_proactive_read_failed">Não foi possível carregar esta configuração agora.</string>
     <string name="settings_proactive_refresh_failed">Não foi possível sincronizar. A última configuração confirmada está sendo exibida.</string>

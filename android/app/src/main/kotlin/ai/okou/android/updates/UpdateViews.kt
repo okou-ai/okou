@@ -160,10 +160,7 @@ internal fun updateToolbarAction(
             UpdateToolbarAction(stringResource(R.string.updates_download_failed), openDetails)
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
-            UpdateToolbarAction(
-                stringResource(R.string.updates_toolbar),
-                if (state.offline) openDetails else ({ download(release) }),
-            )
+            UpdateToolbarAction(stringResource(R.string.updates_toolbar), { download(release) })
         }
         else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
     }
@@ -442,7 +439,7 @@ private fun UpdateSheet(
                             ) {
                                 UpdateMetadata(release, compact = compact)
                             }
-                        } else if (state.check == UpdateCheck.Checked && !state.offline) {
+                        } else if (state.check == UpdateCheck.Checked) {
                             val current = stringResource(R.string.updates_current)
                             UpdateCopy(
                                 current,
@@ -642,7 +639,6 @@ private fun UpdateMetadata(release: AndroidUpdatesRelease, compact: Boolean = fa
 
 @StringRes
 private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): Int? {
-    val disconnected = offline && !canInstall && transfer !is UpdateTransfer.Downloading
     val latestProblem =
         when (problem) {
             UpdateProblem.Check -> R.string.updates_error_check
@@ -655,9 +651,6 @@ private fun UpdateUiState.updateProblemMessage(requiresNewerAndroid: Boolean): I
             null -> null
         }
     return when {
-        disconnected && (canDownload || transfer is UpdateTransfer.Waiting) ->
-            R.string.updates_connect_to_download
-        disconnected -> R.string.updates_connect_to_check
         latestProblem != null -> latestProblem
         (check == UpdateCheck.Failed || check == UpdateCheck.Waiting) &&
             !canDownload &&
@@ -762,7 +755,6 @@ private fun UpdateAction(
     val waiting = transfer is UpdateTransfer.Waiting || waitingForCheck
     val checking =
         state.check == UpdateCheck.Checking &&
-            !state.offline &&
             transfer !is UpdateTransfer.Downloading &&
             !state.preparing &&
             !waiting &&
@@ -776,8 +768,7 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
-    val enabled =
-        progress == null && (state.canInstall || !state.offline && (!waiting || allowRetry))
+    val enabled = progress == null && (state.canInstall || !waiting || allowRetry)
     val showingProgress = progress != null
     // Capture focus before the action target is replaced by a progress or waiting target.
     val retainFocus = remember(showingProgress, enabled) { focus.isFocused }
@@ -847,7 +838,6 @@ private fun UpdateAction(
                 label to { download(checkNotNull(state.candidate)) }
             }
             allowRetry && state.check == UpdateCheck.Failed -> R.string.updates_retry_check to check
-            state.offline -> R.string.updates_waiting_to_check to {}
             state.required || state.requiresNewerAndroid ->
                 R.string.updates_check_compatible to check
             else -> R.string.updates_check to check
