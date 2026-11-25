@@ -90,11 +90,11 @@ billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subsc
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-021	rewritten	59.7	
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-022	rewritten	38.4	
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-024	rewritten	30.2	
-billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-001	planned		
-billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-002	planned		
-billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-005	planned		
-billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-007	planned		
-billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-008	planned		
+billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-001	rewritten	119.7	
+billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-002	rewritten	163.5	
+billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-005	rewritten	92.9	
+billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-007	rewritten	62.8	
+billing	src/signals/routes/__tests__/billing-checkout-complete.test.ts	billing-checkout-complete-008	rewritten	18.9	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-003	planned		
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-004	planned		
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-010	planned		
