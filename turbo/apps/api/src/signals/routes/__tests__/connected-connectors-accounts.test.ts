@@ -68,7 +68,6 @@ test.each(["builtin", "custom"] as const)(
       initialExpiresIn: 60,
       omitRefreshToken: true,
     });
-    mockStripeCliDashboardAuth();
     const headers = { authorization: "Bearer clerk-session" };
     const accounts = app(connectorAccountsContract);
     let target: ConnectorAccountTarget = {
@@ -95,9 +94,10 @@ test.each(["builtin", "custom"] as const)(
       target = { kind: "custom", customConnectorId: definition.body.id };
     }
 
-    async function connect(displayName: string) {
+    async function connect(displayName: string, providerAccountId: string) {
       const account = { intent: "add" as const, displayName };
       if (target.kind === "builtin") {
+        mockStripeCliDashboardAuth({ accountId: providerAccountId });
         const auth = app(builtinConnectorOauthDeviceAuthSessionContract);
         const issuedAt = now();
         const started = await accept(
@@ -165,7 +165,10 @@ test.each(["builtin", "custom"] as const)(
       ).body.connectionId;
     }
 
-    const originalDefault = await connect("Original default");
+    const originalDefault = await connect(
+      "Original default",
+      "acct_connected_original",
+    );
     mockNow(startedAt);
     const savedBriefs = (
       await accept(app(connectedConnectorsContract).list({ headers }), [200])
@@ -180,8 +183,8 @@ test.each(["builtin", "custom"] as const)(
           ? [expect.objectContaining({ id: target.customConnectorId })]
           : [],
     });
-    const work = await connect("Work");
-    const personal = await connect("Personal");
+    const work = await connect("Work", "acct_connected_work");
+    const personal = await connect("Personal", "acct_connected_personal");
     const listed = await accept(
       accounts.connections({ headers, query: target }),
       [200],

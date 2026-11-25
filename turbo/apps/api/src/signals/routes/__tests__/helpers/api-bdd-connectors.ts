@@ -1873,7 +1873,9 @@ interface StripeCliDashboardAuthMock {
   readonly pollCount: () => number;
 }
 
-export function mockStripeCliDashboardAuth(): StripeCliDashboardAuthMock {
+export function mockStripeCliDashboardAuth(
+  options: { readonly accountId?: string } = {},
+): StripeCliDashboardAuthMock {
   const startBodies: URLSearchParams[] = [];
   let pollCount = 0;
 
@@ -1890,7 +1892,7 @@ export function mockStripeCliDashboardAuth(): StripeCliDashboardAuthMock {
       pollCount += 1;
       return HttpResponse.json({
         redeemed: true,
-        account_id: "acct_bdd",
+        account_id: options.accountId ?? "acct_bdd",
         account_display_name: "BDD Stripe",
         livemode_key_secret: "rk_live_api456",
         livemode_key_publishable: "pk_live_api456",
