@@ -704,7 +704,7 @@ workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	planned		extension after sandbox reset
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	planned		extension after sandbox reset
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-001	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-002	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-003	planned		extension after sandbox reset
-workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-007	planned		extension after sandbox reset
+workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-001	rewritten	137.4	extension after sandbox reset
+workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-002	rewritten	98.8	extension after sandbox reset
+workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-003	rewritten	79.2	extension after sandbox reset
+workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-007	rewritten	91.5	extension after sandbox reset
