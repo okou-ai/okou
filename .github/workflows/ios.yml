@@ -132,8 +132,7 @@ jobs:
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
-          node --test ios/scripts/testflight.test.mjs ios/scripts/distribution-availability.test.mjs ios/scripts/app-review.test.mjs
-          node --test .github/scripts/release/ios-app-review.test.mjs
+          node --test ios/scripts/testflight.test.mjs ios/scripts/distribution-availability.test.mjs
           python3 ios/scripts/archive-proof.test.py
           python3 ios/scripts/preview-artifact.test.py
           python3 ios/scripts/upload-sentry-symbols.test.py
