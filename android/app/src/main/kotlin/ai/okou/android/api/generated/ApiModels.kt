@@ -1964,11 +1964,6 @@ data class ConnectorOauthStartRequest(
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
-@Serializable
-enum class ConnectorOpenIdStartRequestNativeCallback {
-    @SerialName("ios-https") IOS_HTTPS,
-}
-
 @Serializable(with = ConnectorOpenIdStartRequestAccountSerializer::class)
 sealed interface ConnectorOpenIdStartRequestAccount
 
@@ -2058,10 +2053,15 @@ object ConnectorOpenIdStartRequestAccountSerializer :
 }
 
 @Serializable
+enum class ConnectorOpenIdStartRequestNativeCallback {
+    @SerialName("ios-https") IOS_HTTPS,
+}
+
+@Serializable
 data class ConnectorOpenIdStartRequest(
     val `authMethod`: String,
-    val `nativeCallback`: ConnectorOpenIdStartRequestNativeCallback? = null,
     val `account`: ConnectorOpenIdStartRequestAccount,
+    val `nativeCallback`: ConnectorOpenIdStartRequestNativeCallback? = null,
 )
 
 @Serializable(with = ConnectorAutomaticStartSerializer::class)
@@ -2137,11 +2137,6 @@ object ConnectorAutomaticStartSerializer : KSerializer<ConnectorAutomaticStart> 
                 encoder.encodeSerializableValue(ConnectorAutomaticStartVariant2.serializer(), value)
         }
     }
-}
-
-@Serializable
-enum class ConnectorAutomaticStartRequestNativeCallback {
-    @SerialName("ios-https") IOS_HTTPS,
 }
 
 @Serializable(with = ConnectorAutomaticStartRequestAccountSerializer::class)
@@ -2235,10 +2230,15 @@ object ConnectorAutomaticStartRequestAccountSerializer :
 }
 
 @Serializable
+enum class ConnectorAutomaticStartRequestNativeCallback {
+    @SerialName("ios-https") IOS_HTTPS,
+}
+
+@Serializable
 data class ConnectorAutomaticStartRequest(
     val `authMethod`: String,
-    val `nativeCallback`: ConnectorAutomaticStartRequestNativeCallback? = null,
     val `account`: ConnectorAutomaticStartRequestAccount,
+    val `nativeCallback`: ConnectorAutomaticStartRequestNativeCallback? = null,
 )
 
 @Serializable

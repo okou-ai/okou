@@ -85,8 +85,8 @@ export const builtinConnectorAutomaticContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      nativeCallback: literal("ios-https").optional(),
       account: connectorAccountMutationIntentSchema,
+      nativeCallback: literal("ios-https").optional(),
     }),
     responses: {
       200: builtinConnectorAutomaticResponseSchema,
@@ -127,8 +127,8 @@ export const builtinConnectorOpenIdStartContract = c.router({
     pathParams: object({ connectorSlug: connectorSlugSchema }),
     body: object({
       authMethod: connectorAuthMethodIdSchema,
-      nativeCallback: literal("ios-https").optional(),
       account: connectorAccountMutationIntentSchema,
+      nativeCallback: literal("ios-https").optional(),
     }),
     responses: {
       200: builtinConnectorOauthStartResponseSchema,

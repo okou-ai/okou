@@ -1,11 +1,13 @@
-import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
+import {
+  customConnectorOAuth2Contract,
+  type CreateCustomConnectorBody,
+} from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { customConnectorOAuth2Routes } from "../custom-connectors-oauth2";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { randomUUID } from "node:crypto";
 
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -118,8 +120,9 @@ describe("Custom connector OAuth callbacks", () => {
         }),
         [200],
       );
-      if (started.body.result !== "authorization")
+      if (started.body.result !== "authorization") {
         throw new Error("Expected authorization");
+      }
       expect(started.body.nativeCallbackUrl).toBe(
         `https://app.okou.ai/native/connector-authorization?attemptId=${started.body.oauthAttemptId}`,
       );
