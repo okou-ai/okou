@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.874.0](https://github.com/okou-ai/okou/compare/core-v8.873.0...core-v8.874.0) (2026-11-24)
+
+
+### Features
+
+* **connectors:** enable app store connect signing and google play oauth ([#50644](https://github.com/okou-ai/okou/issues/50644)) ([81d115b](https://github.com/okou-ai/okou/commit/81d115b8e1d4d25ff40bfee210859bbd12547927))
+
+
+### Bug Fixes
+
+* **lab:** show internal feature switches by key ([#50652](https://github.com/okou-ai/okou/issues/50652)) ([7261e03](https://github.com/okou-ai/okou/commit/7261e0395625c2600a56cde976f625ba4bfd3668))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.125.0
+
 ## [8.873.0](https://github.com/okou-ai/okou/compare/core-v8.872.0...core-v8.873.0) (2026-11-24)
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.250.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.8...runner-rs-v0.250.9) (2026-11-24)
+
+
+### Refactoring
+
+* **runner:** decouple sse usage recovery from log labels ([#50675](https://github.com/okou-ai/okou/issues/50675)) ([11961d2](https://github.com/okou-ai/okou/commit/11961d2c8bf1b66b199b8140fed451f9aadaaba3))
+* **runner:** share single-prefix case witness collection ([#50656](https://github.com/okou-ai/okou/issues/50656)) ([6050e2a](https://github.com/okou-ai/okou/commit/6050e2aa558b377e457d81bd5275a03cc6017530))
+* **runner:** unify model usage quantity field definitions ([#50669](https://github.com/okou-ai/okou/issues/50669)) ([e1d1756](https://github.com/okou-ai/okou/commit/e1d1756fee087cd52abd74fdf80b018ef26b35a8))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.250.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.250.7...runner-rs-v0.250.8) (2026-11-24)
 
 

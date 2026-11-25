@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.15...runner-supervisor-v0.28.16) (2026-11-24)
+
+
+### Refactoring
+
+* **runner-supervisor:** share post-create blank sandbox cleanup ([#50663](https://github.com/okou-ai/okou/issues/50663)) ([c8d3afc](https://github.com/okou-ai/okou/commit/c8d3afceac25a382518808d8d63234e0d9057a8b))
+
 ## [0.28.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.14...runner-supervisor-v0.28.15) (2026-11-24)
 
 ## [0.28.14](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.13...runner-supervisor-v0.28.14) (2026-11-24)
