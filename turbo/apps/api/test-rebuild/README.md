@@ -1,6 +1,6 @@
 # API test rebuild checkpoint
 
-The frozen main commit is `0797b30b16f1c2dbe0c07fd4fa17a4cd8dabd989`. The checkpoint was compared with the same remote `main` commit, so there are no post-baseline upstream test changes to record.
+The frozen main commit is `0797b30b16f1c2dbe0c07fd4fa17a4cd8dabd989`. The upstream comparison through `4629019afe215bc58715c57aed6dbb9f09ee6d11` found no changes under `turbo/apps/api`.
 
 Vitest collected 599 files and 7,453 cases. All 7,453 are in run mode, with zero skips, todos or focused cases. Vitest's independent `list --project=api --filesOnly` output matched the runtime file set exactly. The partial reconciliation checked 65 complete BDD files and 300 cases, including 257 review entries. The other 534 files and 7,153 cases are pending.
 
@@ -23,7 +23,7 @@ node turbo/apps/api/test-rebuild/reconcile.mjs --partial
 node turbo/apps/api/test-rebuild/reconcile.mjs
 ```
 
-The first command updates checkpoint coverage. The second requires exact coverage of the frozen IDs. Finish that check before the test deletion commit. The current commit is a recoverable transcription checkpoint. Fold transcription checkpoints into the inventory commit before creating the separate deletion commit and opening the Draft PR.
+The first command updates checkpoint coverage. The second requires exact coverage of the frozen IDs. Finish that check before the test deletion commit. Keep the pushed transcription checkpoints in order. After strict reconciliation passes, create the separate deletion commit and open the Draft PR.
 
 ## Source review
 
@@ -38,3 +38,22 @@ The checks below re-read the indicated BDDs against the test source, shared help
 | Registration CLI   | Discord partial registration and mismatched receipt (2)                                                            | The tests check the surviving command set through the Discord listing, and only the partial-registration case retains successfully registered replacements.                                                                                                                                                                     |
 
 The source review refined the Auto routing and Runner BDDs to capture the actual endpoints and outcomes. The Vercel cron BDD keeps all 29 ordered path and schedule pairs, including the re-exported X resource cleanup route.
+
+## Follow-up source review
+
+| Group        | Case                                          | Finding                                                                                                                                                            |
+| ------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Billing      | `billing-concurrency-invoice-publication-001` | A newer cancellation arrives during the first invoice attempt. The first attempt returns 500. Both accepted replays preserve credits and the cancellation flag.    |
+| Computer Use | `computer-use-screenshot-completion-002`      | The owner reads the running state during the held upload and again after the response fails. The successful retry exposes PNG dimensions and the exact byte count. |
+| Cron         | `cron-compact-chat-thread-snapshots-001`      | The source checks scope through both HTTP and MCP. The MCP response omits the snapshot storage URL.                                                                |
+| Runner       | `runner-disk-telemetry-001`                   | All six matching telemetry variants succeed. A mismatched Run ID is rejected, and failure is verified through the Run readback.                                    |
+| Voice        | `transcribe-001`                              | The upstream 429 maps to 503 without a charge. The two HTTP 200 retries share one successful provider call and a three-credit settlement.                          |
+
+| Chat case                                 | Finding                                                                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat-event-snapshot-001`                 | Same user in another workspace receives 404. The raw snapshot pairs rows with the event cursor and both incompatible cursors receive 410. |
+| `chat-events-concurrency-prefetch-001`    | The grace cutoff passes during object metadata lookup. The scenario rechecks live occupancy after both cancellations.                     |
+| `chat-events-pi-delegation-001`           | Delegated input returns 201 and the target thread reference. Three distinct target classes are rejected.                                  |
+| `feishu-user-deletion-002`                | The shared suite uses Lark-specific status while the display name remains Feishu User.                                                    |
+| `discord-gateway-identity-002`            | Signed event identity and stable message identity differ. The original thread projection is verified after rejection.                     |
+| `integration-model-recovery-telegram-001` | Thread Auto selection is distinct from global preference. The continued Runner input and 64-byte callback limit are preserved.            |

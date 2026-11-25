@@ -1,0 +1,9 @@
+# chat-events-pi-activity
+
+## chat-events-pi-activity-001
+
+- Vitest: "CHAT-02: model-first routing > launches personal Codex in the Sandbox and captures guest tool activity"
+- Mode: run
+- Given: An entitled workspace member has configured personal Codex `gpt-6-luna` for Pi and starts a new Web Chat without native history. The external activity summarizer can return a title.
+- When: The member sends a prompt. The Sandbox reports Pi initialization, assistant text and parallel tool activity, then completes the Run with its native session and no local Memory output. The member reads thread events and requests an activity summary. Subsequent Sandbox requests repeat outputs and completions, attempt to replace the native identity or framework, fail or cancel before initialization, report a failure with a native session, and finally launch a Claude Code Run on the same thread.
+- Then: The first dispatch uses Pi with the thread ID as session ID, fresh continuation, launch schema 2, the personal Codex model, Web instructions, and a writeback Memory mount that preserves its parent version. Thread events expose the ordered assistant text from before and after the tools. Activity summary returns HTTP 200 with an available message and the summary provider receives the CLI command and file name. Successful completion preserves the selected Memory version and matching output and completion replays return the same result. Changed session or framework writes return HTTP 400 and cannot replace committed output. After uninitialized turns, Pi dispatch has no resumable generation, includes Chat recovery instructions, and history retains the affected prompts. A reported initialized failure is read back as failed, replays return the same response, and the next Pi Run resumes that failure's generation. A Claude Code dispatch on the same thread starts with no Pi session or generation and supplies Chat recovery guidance.
