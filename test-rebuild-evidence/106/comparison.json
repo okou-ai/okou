@@ -1,0 +1,980 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "a0ae29c897aa14624e8a2b2ab6660bc60d1358c6",
+    "opening": "4e24814707dbd667f12575a2f68517ee90158e2e"
+  },
+  "method": "After the first Router and receiver trials, reviewed each frozen body, both withdrawal parents, main, and the directly referenced fixture/helper implementations. Scanned current test files for shared sequences of five substantive lines. Shared setup or membership helpers were checked for the external boundary they actually observe.",
+  "owners": {
+    "chat-scroll": {
+      "historicalPath": "turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx",
+      "references": {
+        "frozen": {
+          "ownerSha256": "8bedbca792cbf2509085ad988dfacb230dc35a57825e9c45c6d954f5d1764ff0",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/mocks/mock-helpers.ts": {
+              "blobSha256": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+              "blobSha256": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": {
+              "blobSha256": "931d0a69490bd106d5ef9c4c9d3ff810360329a3455b377a368b937e640fb268",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": {
+              "blobSha256": "51700ff9e2cd38220430db386798373105ea8890fc6e3f6cc66751b8d9f6f8c9",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "1d47b8ba23817fcec9451dfcec935cce453c589adb524b8a9f9f1f5f52b5e29a",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/mocks/mock-helpers.ts": {
+              "blobSha256": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+              "blobSha256": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": {
+              "blobSha256": "b7f6e5f74ced484d9650742205b7a61b56e2104cc989fc639c05343e3475e72d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": {
+              "blobSha256": "94c6ba43e0e45f6d90708c47d49a624f86255c4b020df6b919162a3a32612495",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "21a4306aa91e6df8cf1f90a9cc70cafba1b0ab5c60412d04104ef0fd2a502541",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/mocks/mock-helpers.ts": {
+              "blobSha256": "43803b12d97500d6c5b94f9150db55c8445bf75844cd96393a85bced4a791a2a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+              "blobSha256": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-lifecycle-test-helpers.ts": {
+              "blobSha256": "4ac61a70d72d94d4cbfdcffb89baf1dfd2efd996e4f902cf3370e8443892714d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/sidebar-test-helpers.tsx": {
+              "blobSha256": "230bc082a53456b83f4a76aba3162dd1feb5e9c75612fa547a628d1ca41da781",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": "f117542a78ae9bf60707bee2d28410405f771e306ff51cd0ca465aa907c161b7",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": {
+              "blobSha256": "b66e0c84944c2067734bfd442a5fd5c8b13978fdd065ea0e8895503c0ea1839f",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator-test-helpers.ts": {
+              "blobSha256": "25f874495ca98890b0da383e1a54368689cbdb5b2aa5de6ec717c4297679f795",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": {
+              "blobSha256": "df21091f9c8c510e0f8d2f536e3d8aa4d3354c14f6abe4d9f06013e74b43f429",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": {
+              "blobSha256": "7af98f18efaf93e5f7d02b487786e93c4699f6fa08c81e35ffe4bd7d49703950",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": {
+              "blobSha256": "93e3df3924efd06a15ee06ceb1d234608878c4eb7b478edfb2314a2a8e9b20b0",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": {
+              "blobSha256": "f0964cd16b97de4d5881252f0a86e695e4ec5623f6d20b1a4841b156b435b227",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "message-port": {
+      "historicalPath": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "references": {
+        "frozen": {
+          "ownerSha256": "c2b934876e44a5aa0c103fdb76d9adb02fbcf06fae515d773167e1248f5e164c",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "7c9eb6dbb42970c124ec5b7da9abf09dbe6e5d567730c093df322797101b394f",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "cb9e3fc62f124ed706613256e58108837e94989b1343e268c42ffa9c7d5c8d05",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "worker-runtime": {
+      "historicalPath": "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts",
+      "references": {
+        "frozen": {
+          "ownerSha256": "3a2d9bb1a4647889637fb758d2c89435dbca6543163926cbdc9345e29ea50f31",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "2154e8c650c13bb0561760bc8e4a44909504bc7ccc9931e1a4c40bad81f6dc0e",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "cd9d86c27dfc899f86ab7744073e4d6dc03d8525152b558e99c7f3fb2de65a72",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "realtime": {
+      "historicalPath": "turbo/apps/platform/src/signals/__tests__/realtime.test.ts",
+      "references": {
+        "frozen": {
+          "ownerSha256": "45010b16d0004e9e1f746b655df0b077a18ef7dffd0a979135aeb73744b9370c",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "e436b57610eab65a6a440b211abaa4853384a86ca0feb14bd27ce9bac78c1336",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "edd0b0d60a889a55067f778ffaa606c1ed59dd61ac1d8530e283532a3499189a",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "browser-automatic-recovery": {
+      "historicalPath": "turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx",
+      "references": {
+        "frozen": {
+          "ownerSha256": "229a491c9c3a0bee0964d5decf55912f2aea647c3c330442c06ccef1e71d0639",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "1747ad2e41951d574f017150208e443eba371f462315d8ec9bfc92fa2b8e3e1d",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "229a491c9c3a0bee0964d5decf55912f2aea647c3c330442c06ccef1e71d0639",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": "ea9a49a27f42b7e699c9e4a699645f386bd1659b852e7141abeef95a182d8bd6",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "browser-response-deadlines": {
+      "historicalPath": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+      "references": {
+        "frozen": {
+          "ownerSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "b364569561c4aaa5c0de583c8a2ed13a6ac6d6fd1be2a355fb9eea61c7574631",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "22d304ec42d291040c6a4d515915ae767150639f7c677e1497d41542cca2c005",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": "918d569860432e7dc1d67aced53fd7e560ade528d6eeee3c1cb3be514165db0d",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    },
+    "browser-viewer-interaction": {
+      "historicalPath": "turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx",
+      "references": {
+        "frozen": {
+          "ownerSha256": "783c18daf14b34fa9620c0f00a09c2bda8003bb5f1e42cebf941c6ffc60a52d6",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeFirstWithdrawal": {
+          "ownerSha256": "1b041a0da5699ee163eaca4bb695a899cebd8854c96ebe10a5854e6959f2368d",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "beforeSecondWithdrawal": {
+          "ownerSha256": null,
+          "matchingOwnerFiveLineBlocks": null,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "fefec188dcf9648965532a42c74f4bc88fb74a14d71672f2c8b627ee7d3a640a",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "eb7c10ed5369a3bdbde05c5a1ed9639d868ffe2cdbc350124d0c1e564fe06757",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "main": {
+          "ownerSha256": "783c18daf14b34fa9620c0f00a09c2bda8003bb5f1e42cebf941c6ffc60a52d6",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "f44c989a172cb7016262ef8687c8ba5012da8d3baecb56abd8fba9183f56aacd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "54e660d701aaaf4852716ad2fd52908f36821726443c48bc4e73af739448682b",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "e73b68f62dce4b81d3dce0ad466179f843c9080c39e174c47874ca378c1bb8bd",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        },
+        "opening": {
+          "ownerSha256": "13d15ec1ac0a053efe9fe27a4a3783a1dd88e3eb255b131fff0ec6a7de1bbe4a",
+          "matchingOwnerFiveLineBlocks": 0,
+          "helpers": {
+            "turbo/apps/platform/src/__tests__/browser-cdp-fixture.ts": {
+              "blobSha256": "41eeaebe04d9b3c6fdd833fa17ef363241caf6525f2d9c287f14a0d8901860f9",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/browser-recovery-clock.ts": {
+              "blobSha256": "d1e55d256f0e0e234c094ab373bf72b2b731dabd5e99a9f41c61d9d5a5ccc734",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/__tests__/page-helper.ts": {
+              "blobSha256": "008ed724541ca075e909f9814c1fdfa72647ab0a160059ceb3c2ad09dc104c99",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": {
+              "blobSha256": "0572c614bf3eacc99a08835593df314415fddfbfb3643d9b74204b8adeeb203d",
+              "matchingFiveLineBlocks": 0
+            },
+            "turbo/apps/platform/src/views/browser-session/__tests__/browser-native-page-fixture.ts": {
+              "blobSha256": "29b9002992b95515275cb9842e09a7b927448c94fc8ea4f26a070f22096a6fea",
+              "matchingFiveLineBlocks": 0
+            }
+          }
+        }
+      },
+      "otherCurrentSuitesWithMatchingFiveLineBlocks": {}
+    }
+  }
+}

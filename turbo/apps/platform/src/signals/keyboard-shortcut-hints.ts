@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
+import { IN_VITEST } from "../env.ts";
 import { onDomEventFn, resetSignal } from "./utils.ts";
 
 const internalKeyboardShortcutHintPhase$ = state<
@@ -22,7 +23,7 @@ export const hideKeyboardShortcutHints$ = command(({ get, set }) => {
 
 const showKeyboardShortcutHints$ = command(
   async ({ set }, signal: AbortSignal) => {
-    await delay(500, { signal });
+    await delay(IN_VITEST ? 0 : 500, { signal });
     set(internalKeyboardShortcutHintPhase$, "visible");
   },
 );

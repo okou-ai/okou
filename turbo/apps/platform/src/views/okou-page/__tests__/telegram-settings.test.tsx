@@ -1,310 +1,157 @@
+import { screen, waitFor, cleanup } from "@testing-library/react";
+import { test, expect, vi } from "vitest";
+import { integrationsTelegramContract as api } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
-  getAction,
-  queryAction,
-} from "./connector-integrations-test-helpers.ts";
-import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { act, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
+import { click } from "../../../__tests__/page-helper.ts";
+import {
+  telegramPath,
+  telegramBotUrl,
+  signedQuery,
+  chatInstructions,
+  botState,
+  openTelegram,
+  visitLink,
+} from "./telegram-page-fixture.ts";
 const context = testContext();
-const bot = Object.freeze({
-  id: "official",
-  kind: "official" as const,
-  username: "support_bot",
-  avatarUrl: null,
-  isOwner: false,
-  isConnected: false,
-  connectedUser: null,
-  tokenStatus: "valid" as const,
-  official: {
-    configured: true,
-    linkedTelegramUserId: null,
-  },
-  domainConfigured: true,
-  environment: {
-    requiredSecrets: [],
-    requiredVars: [],
-    missingSecrets: [],
-    missingVars: [],
-  },
+test("telegram-settings-002 A status marker leaves an unlinked official bot ready to authorize", async () => {
+  botState(context);
+  await openTelegram(context, telegramPath + "?status=connected");
+  await expect(
+    screen.findByText("Continue with Telegram"),
+  ).resolves.toBeEnabled();
+  expect(screen.queryByText(chatInstructions)).toBeNull();
+  expect(location.pathname).toBe(telegramPath);
 });
-const proof = new URLSearchParams({
-  bot: "official",
-  tgUser: "99001",
-  tgUserName: "requested",
-  tgDisplayName: "Requested name",
-  ts: "1700000000",
-  sig: "b".repeat(64),
-}).toString();
-function setConnection(connected: boolean, id = "99001") {
-  context.mocks.data.telegramIntegration({
-    statuses: [
-      {
-        ...bot,
-        isConnected: connected,
-        connectedUser: connected
-          ? {
-              telegramUserId: id,
-              telegramUsername: "actual_name",
-              telegramDisplayName: "Actual name",
-            }
-          : null,
-      },
-    ],
-    linkStatus: connected
-      ? { linked: true, telegramUserId: id, botUsername: "support_bot" }
-      : { linked: false },
-  });
-}
-
-test.each([
-  "/settings/telegram",
-  "/settings/telegram?status=connected",
-  "/telegram/connect",
-])(
-  "%s reads the official bot and offers a real connect action without trusting result markers",
-  async (path) => {
-    setConnection(false);
-    await setupPage({ context, path });
-    await expect(
-      waitFor(() => {
-        const action = getAction("button", "Continue with Telegram");
-        expect(action).toBeEnabled();
-        return action;
-      }),
-    ).resolves.toBeEnabled();
-    expect(
-      screen.queryByText("Already connected to Telegram"),
-    ).not.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/settings/telegram");
-  },
-);
-
-test("A bare result and reload display the verified connection and never bind or launch Telegram", async () => {
-  setConnection(true);
-  const launched = context.mocks.browser.locationAssign();
-  const opened = context.mocks.browser.open();
-  let posts = 0;
-  context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
-    posts++;
-    return respond(200, {
-      telegramUserId: "99001",
-      botUsername: "support_bot",
+test("telegram-settings-004 Reloading an already linked bot leaves the bot tab closed until Open Telegram", async () => {
+  botState(context, "99001");
+  const writes = vi.fn<() => void>();
+  context.mocks.api(api.link, ({ respond }) => {
+    writes();
+    return respond(400, {
+      error: { code: "BAD_REQUEST", message: "Unexpected link" },
     });
   });
-  await setupPage({ context, path: "/settings/telegram?status=connected" });
+  const opened = vi.spyOn(window, "open");
+  const path = telegramPath + "?status=connected";
+  await openTelegram(context, path);
+  await screen.findByText(chatInstructions);
+  cleanup();
+  expect(screen.queryByText(chatInstructions)).toBeNull();
+  await openTelegram(createTestRuntime(context), path);
   await expect(
-    screen.findByText("Send the bot a message in Telegram to start chatting."),
+    screen.findByText(chatInstructions),
   ).resolves.toBeInTheDocument();
-  const link = getAction("link", "Open Telegram");
-  expect(link).toHaveAttribute("href", "https://t.me/support_bot");
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  act(() => {
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expect(
-    screen.findByText("Send the bot a message in Telegram to start chatting."),
-  ).resolves.toBeInTheDocument();
-  expect(posts).toBe(0);
-  expect(launched.calls).toStrictEqual([]);
-  expect(opened.calls).toStrictEqual([]);
+  expect(opened).not.toHaveBeenCalled();
+  expect(writes).not.toHaveBeenCalled();
+  await visitLink(context, "Open Telegram", telegramBotUrl);
 });
-
-test("Signed identity mismatch is a controlled account-management choice, with no silent unlink or bind", async () => {
-  setConnection(true, "99002");
-  await setupPage({ context, path: `/settings/telegram?${proof}` });
+test("telegram-settings-005 A different linked identity shows both accounts and offers workspace management", async () => {
+  botState(context, "99002");
+  await openTelegram(context, telegramPath + signedQuery);
   await expect(
-    screen.findByRole("heading", {
-      name: "A different Telegram account is connected",
-    }),
+    screen.findByText("A different Telegram account is connected"),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText(/@actual_name.*99001/u)).toBeInTheDocument();
-  expect(getAction("link", "Manage connected account")).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-  expect(new URLSearchParams(window.location.search).get("sig")).toBe(
-    "b".repeat(64),
-  );
-});
-
-test("Signed confirmation consumes proof only after the POST and displays a real readback", async () => {
-  setConnection(false);
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  let posts = 0;
-  context.mocks.api(
-    integrationsTelegramContract.link,
-    async ({ body, respond }) => {
-      posts++;
-      expect(body.connectSignature).toStrictEqual({
-        telegramUserId: "99001",
-        telegramUsername: "requested",
-        telegramDisplayName: "Requested name",
-        timestamp: 1_700_000_000,
-        signature: "b".repeat(64),
-      });
-      requested.resolve();
-      await release.promise;
-      setConnection(true);
-      return respond(200, {
-        telegramUserId: "99001",
-        botUsername: "support_bot",
-      });
-    },
-  );
-  await setupPage({
+  expect(screen.getByText(/@actual_name.*99001/)).toBeInTheDocument();
+  expect(screen.queryByText("Connect")).toBeNull();
+  expect(location.search).toContain("sig=" + "71".repeat(32));
+  await visitLink(
     context,
-    path: `/telegram/connect?${proof}&context=one&context=two#return-context`,
-  });
-  const connect = await waitFor(() => {
-    const action = getAction("button", "Connect");
-    expect(action).toBeEnabled();
-    return action;
-  });
-  connect.focus();
-  await userEvent.setup({ delay: null }).keyboard("{Enter}");
-  await requested.promise;
-  expect(screen.queryByText("Connected to Telegram!")).not.toBeInTheDocument();
-  expect({
-    value: new URLSearchParams(window.location.search).has("sig"),
-  }).toStrictEqual({ value: true });
-  release.resolve();
-  await expect(
-    screen.findByText("Send the bot a message in Telegram to start chatting."),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/settings/telegram");
-  expect({
-    value: new URLSearchParams(window.location.search).has("sig"),
-  }).toStrictEqual({ value: false });
-  expect({
-    value: new URLSearchParams(window.location.search).has("tgUser"),
-  }).toStrictEqual({ value: false });
-  expect(
-    new URLSearchParams(window.location.search).getAll("context"),
-  ).toStrictEqual(["one", "two"]);
-  expect(window.location.hash).toBe("#return-context");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  await expect(
-    screen.findByText("Send the bot a message in Telegram to start chatting."),
-  ).resolves.toBeInTheDocument();
-  expect(posts).toBe(1);
+    "Manage connected account",
+    "https://app.okou.ai/works",
+  );
 });
-
-test.each([400, 409] as const)(
-  "A signed server rejection %s stays visible without consuming the pending link",
-  async (status) => {
-    setConnection(false);
-    context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
-      return respond(status, {
-        error: {
-          code: status === 400 ? "BAD_REQUEST" : "CONFLICT",
-          message:
-            status === 400
-              ? "Invalid or expired connect link."
-              : "This Telegram account is already connected elsewhere.",
-        },
-      });
-    });
-    await setupPage({ context, path: `/settings/telegram?${proof}` });
-    const connect = await waitFor(() => {
-      const action = getAction("button", "Connect");
-      expect(action).toBeEnabled();
-      return action;
-    });
-    click(connect);
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        status === 400
-          ? "Invalid or expired connect link."
-          : "This Telegram account is already connected elsewhere.",
-      );
-    });
-    expect(getAction("button", "Connect")).toBeEnabled();
-    expect({
-      value: new URLSearchParams(window.location.search).has("sig"),
-    }).toStrictEqual({ value: true });
-    expect(getAction("link", "Open Telegram")).toHaveAttribute(
-      "href",
-      "https://t.me/support_bot",
-    );
-  },
-);
-
-test.each(["focus", "visibilitychange"])(
-  "Foreground %s recovers a missed connection without replaying proof",
-  async (event) => {
-    setConnection(false);
-    context.mocks.browser.standaloneDisplayMode(true);
-    await setupPage({ context, path: "/settings/telegram" });
-    await expect(
-      waitFor(() => {
-        const action = getAction("button", "Continue with Telegram");
-        expect(action).toBeEnabled();
-        return action;
-      }),
-    ).resolves.toBeEnabled();
-    setConnection(true);
-    act(() => {
-      (event === "focus" ? window : document).dispatchEvent(new Event(event));
-    });
-    await expect(
-      screen.findByText(
-        "Send the bot a message in Telegram to start chatting.",
-      ),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-test("Returning from setup restores signed confirmation without copying or consuming proof", async () => {
-  setConnection(false);
-  context.mocks.data.onboardingStatus({
-    hasOrg: false,
-    needsOnboarding: true,
-    onboardingComplete: false,
+test("telegram-settings-006 The signed link survives a pending save and is consumed only after successful binding", async () => {
+  botState(context);
+  const gate = createDeferredPromise<void>(context.signal),
+    received = createDeferredPromise<void>(context.signal);
+  const requests: string[] = [];
+  context.mocks.api(api.link, async ({ body, respond }) => {
+    const id = body.connectSignature?.telegramUserId ?? "";
+    requests.push(id);
+    received.resolve();
+    await gate.promise;
+    botState(context, id);
+    return respond(200, { telegramUserId: id, botUsername: "support_bot" });
   });
-  await setupPage({
-    context,
-    path: `/settings/telegram?${proof}#keep-context`,
-  });
+  await openTelegram(context, telegramPath + signedQuery);
+  click(await screen.findByText("Connect"));
+  await received.promise;
+  expect(location.search).toContain("sig=");
+  expect(screen.queryByText(chatInstructions)).toBeNull();
+  expect(screen.queryByText("Connected to Telegram!")).toBeNull();
+  gate.resolve();
   await expect(
-    screen.findByRole("heading", { name: "Finish account setup" }),
+    screen.findByText(chatInstructions),
   ).resolves.toBeInTheDocument();
-  const setup = getAction("link", "Open setup");
-  expect(setup).toHaveAttribute("href", "/onboarding");
-  expect(setup).toHaveAttribute("rel", "noopener noreferrer");
-  context.mocks.data.onboardingStatus({
-    hasOrg: true,
-    needsOnboarding: false,
-    onboardingComplete: true,
-  });
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(new URL(location.href).searchParams.has("sig")).toBeFalsy();
   });
-  expect(new URLSearchParams(window.location.search).get("sig")).toBe(
-    "b".repeat(64),
-  );
-  expect(window.location.hash).toBe("#keep-context");
+  const url = new URL(location.href);
+  expect(url.searchParams.has("tgUser")).toBeFalsy();
+  expect(url.searchParams.getAll("context")).toStrictEqual(["phone", "inbox"]);
+  expect(url.hash).toBe("#message");
+  expect(requests).toStrictEqual(["99001"]);
 });
-
+test("telegram-settings-007 A refused signed link retains retry and the bot destination", async () => {
+  botState(context);
+  context.mocks.api(api.link, ({ respond }) => {
+    return respond(400, {
+      error: {
+        code: "BAD_REQUEST",
+        message: "Invalid or expired connect link.",
+      },
+    });
+  });
+  await openTelegram(context, telegramPath + signedQuery);
+  click(await screen.findByText("Connect"));
+  await waitFor(() => {
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Invalid or expired connect link.",
+    );
+  });
+  expect(screen.getByText("Connect")).toBeEnabled();
+  expect(location.search).toContain("sig=");
+  await visitLink(context, "Open Telegram", telegramBotUrl);
+});
 test.each([
-  "bot=unknown",
-  "bot=official&bot=official",
-  "bot=official&tgUser=99001",
-])("An unsupported or incomplete entry %s fails closed", async (search) => {
-  await setupPage({ context, path: `/settings/telegram?${search}` });
+  ["009", "focus"],
+  ["010", "visibilitychange"],
+] as const)(
+  "telegram-settings-%s Standalone %s reloads verified Telegram membership",
+  async (_id, event) => {
+    botState(context);
+    context.mocks.browser.standaloneDisplayMode(true);
+    const writes = vi.fn<() => void>();
+    context.mocks.api(api.link, ({ respond }) => {
+      writes();
+      return respond(400, {
+        error: { code: "BAD_REQUEST", message: "Unexpected link" },
+      });
+    });
+    const subscription = context.mocks.ably.deferSubscribeOnChannel(
+      "user:test-user-123",
+      "telegram:changed",
+    );
+    await openTelegram(context, telegramPath);
+    await screen.findByText("Continue with Telegram");
+    await subscription.started;
+    botState(context, "99001");
+    (event === "focus" ? window : document).dispatchEvent(new Event(event));
+    await expect(
+      screen.findByText(chatInstructions),
+    ).resolves.toBeInTheDocument();
+    expect(writes).not.toHaveBeenCalled();
+    subscription.attach();
+  },
+);
+test("telegram-settings-013 An unsupported bot has no connection action", async () => {
+  await openTelegram(context, telegramPath + "?bot=unknown");
   await expect(
-    screen.findByRole("heading", { name: "Connect link is incomplete" }),
+    screen.findByText("Connect link is incomplete"),
   ).resolves.toBeInTheDocument();
-  expect(queryAction("button", "Connect")).toBeNull();
+  expect(screen.queryByText("Connect")).toBeNull();
 });

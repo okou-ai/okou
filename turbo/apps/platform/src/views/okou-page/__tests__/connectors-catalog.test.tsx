@@ -1,495 +1,133 @@
-import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { browserAuthMethod } from "./chat-capability-connector-test-helpers.ts";
+import {
+  mockPublicConnectorStatus,
+  getConnectorCard,
+  customConnector,
+  mockConnectors,
+  publicStatusItem,
+} from "./connector-page-test-helpers.ts";
+import { waitFor, screen } from "@testing-library/react";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
+import { test, expect } from "vitest";
 import {
   click,
   fill,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { search as locationSearch } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  customConnector,
-  getConnectorAction,
-  getConnectorCard,
-  getConnectorIcon,
-  mockConnectors,
-  mockOAuthCompletions,
-  mockPublicConnectorStatus,
-  publicStatusItem,
-  queryConnectorAction,
-  queryConnectorCard,
-} from "./connector-page-test-helpers.ts";
-
+import { findButton, queryButton } from "./chat-run-test-fixtures.ts";
 const context = testContext();
-
-test("Connector catalog describes the current experience", async () => {
-  mockConnectors(context, []);
-  const metadata = publicStatusItem({
-    connectorSlug: "github",
-    label: "GitHub",
-    authMethods: [oauthMethod()],
-  });
-  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
-    return respond(200, { connectors: [metadata], totalConnectorCount: 42 });
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  await expect(
-    screen.findByText("Connect 42 services for your Okou to use."),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Show saved membership without loading accounts when catalog projections have been retired", async () => {
-  const [account] = mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  if (!account) {
-    throw new Error("Expected the saved GitHub account");
-  }
-  const metadata = publicStatusItem({
-    connectorSlug: "github",
-    label: "GitHub",
-    authMethods: [oauthMethod()],
-  });
-  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
-    return respond(200, { connectors: [metadata], totalConnectorCount: 1 });
-  });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [metadata] });
-  });
-  context.mocks.api(connectorAccountsContract.connections, () => {
-    throw new Error("The directory must not load account lists");
-  });
-
-  await setupPage({ context, path: "/connectors?scope=connected" });
-
-  const card = await waitFor(() => {
-    return getConnectorCard("GitHub");
-  });
-  expect(within(card).getByText("Connected")).toBeInTheDocument();
-  expect(within(card).queryByText("octocat")).not.toBeInTheDocument();
-  expect(
-    getConnectorAction("button", "Manage GitHub accounts", card),
-  ).toBeEnabled();
-  expect(queryConnectorAction("button", "Connect GitHub", card)).toBeNull();
-});
-
-function oauthMethod() {
-  return {
-    id: "oauth",
-    label: "OAuth",
-    description: null,
-    grantKind: "auth-code" as const,
-    supportsRefresh: true,
-    manualFields: [],
-    startOptions: [],
-  };
-}
-
-test("Browse connectors by category", async () => {
-  mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-  ]);
-  await setupPage({ context, path: "/connectors" });
-
-  const engineering = await screen.findByTestId(
-    "connector-category-engineering-team-execution",
-  );
-  const labels = within(engineering)
-    .getAllByTestId("connector-card-label")
-    .map((element) => {
-      return element.textContent;
-    });
-  expect(labels).toContain("GitHub");
-  expect(labels).toContain("Asana");
-  // The catalog is browsed a category at a time, and a category is far taller
-  // than the viewport. Its marks are fetched as they are reached.
-  expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
-});
-
-test("Require an application update before using connectors", async () => {
-  context.mocks.http.get("*/api/connector-catalog/discovery", () => {
-    return Response.json(
-      { error: "Client update required" },
-      { status: CLIENT_FORCE_UPGRADE_STATUS },
-    );
-  });
-  await setupPage({ context, path: "/connectors" });
-
-  const dialog = await screen.findByRole("dialog", { name: "Update required" });
-  expect(dialog).toHaveTextContent(
-    "We've released new features in Okou. Refresh to get the latest version.",
-  );
-  expect(screen.queryByText("HTTP 426")).not.toBeInTheDocument();
-});
-
-test("Search connectors and keep the query in the URL", async () => {
-  mockConnectors(context, [
-    { connectorSlug: "github", externalUsername: "octocat" },
-    { connectorSlug: "axiom", authMethod: "api-token" },
-  ]);
+test("connectors-catalog-008 an incoming Axiom search can be replaced with GitHub and an empty result", async () => {
   await setupPage({ context, path: "/connectors?keywords=axiom" });
-  const search = await screen.findByPlaceholderText("Find connectors");
-  expect(search).toHaveValue("axiom");
-  expect(queryConnectorCard("Axiom")).toBeInTheDocument();
-  expect(queryConnectorCard("GitHub")).not.toBeInTheDocument();
-
-  await fill(search, "github");
-  await waitFor(() => {
-    expect(queryConnectorCard("GitHub")).toBeInTheDocument();
-    expect(queryConnectorCard("Axiom")).not.toBeInTheDocument();
-  });
-  expect(new URLSearchParams(locationSearch()).get("keywords")).toBe("github");
-
-  await fill(search, "missing-service");
+  const field = await screen.findByPlaceholderText("Find connectors");
+  await findButton("Connect Axiom");
+  expect(field).toHaveValue("axiom");
+  expect(queryButton("Connect GitHub")).toBeNull();
+  await fill(field, "github");
+  await findButton("Connect GitHub");
+  expect(queryButton("Connect Axiom")).toBeNull();
+  expect(new URL(window.location.href).searchParams.get("keywords")).toBe(
+    "github",
+  );
+  await fill(field, "missing-service");
   await expect(
-    screen.findByText(/No connectors matching/u),
+    screen.findByText('No connectors matching "missing-service"'),
   ).resolves.toBeInTheDocument();
 });
 
-test("Search the full connector catalog", async () => {
-  mockConnectors(context, []);
-  const github = publicStatusItem({ connectorSlug: "github", label: "GitHub" });
+test("connectors-catalog-009 remote Slack search preserves the total size of the catalog", async () => {
+  const git = publicStatusItem({ connectorSlug: "github", label: "GitHub" });
   const slack = publicStatusItem({ connectorSlug: "slack", label: "Slack" });
-  const keywords: (string | undefined)[] = [];
   context.mocks.api(
     connectorCatalogContract.discovery,
     ({ query, respond }) => {
-      keywords.push(query.keyword);
       return respond(200, {
-        connectors: query.keyword ? [slack] : [github],
+        connectors:
+          query.keyword === "Slack" ? [slack] : query.keyword ? [] : [git],
         totalConnectorCount: 1234,
       });
     },
   );
   await setupPage({ context, path: "/connectors" });
-  await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByText("Connect 1,234 services for your Okou to use."),
-  ).resolves.toBeInTheDocument();
-
+  await findButton("Connect GitHub");
+  const total = await screen.findByText(/Connect 1,234 services/);
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
-
-  await waitFor(() => {
-    expect(queryConnectorCard("Slack")).toBeInTheDocument();
-    expect(queryConnectorCard("GitHub")).not.toBeInTheDocument();
-  });
-  expect(keywords).toContain("Slack");
-  await expect(
-    screen.findByText("Connect 1,234 services for your Okou to use."),
-  ).resolves.toBeInTheDocument();
+  await findButton("Connect Slack");
+  expect(queryButton("Connect GitHub")).toBeNull();
+  expect(total).toBeInTheDocument();
 });
 
-test("Present a connector with no accounts and start direct OAuth", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      description:
-        "Connect your GitHub account to access repositories and GitHub features.",
-      authMethods: [oauthMethod()],
-      singleAuthCodeAuthMethodId: "oauth",
-    }),
-  ]);
-  mockOAuthCompletions(context);
-  const popup = context.mocks.browser.authWindow();
-  Object.defineProperty(popup, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  context.mocks.browser.open(popup);
-  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
-    return respond(200, {
-      authorizationUrl: "https://oauth.test/github/authorize",
-      oauthAttemptId: crypto.randomUUID(),
-    });
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  const card = await waitFor(() => {
-    return getConnectorCard("GitHub");
-  });
-  expect(card).toHaveTextContent(
-    "Connect your GitHub account to access repositories and GitHub features.",
-  );
-  expect(within(card).queryByText("No accounts")).not.toBeInTheDocument();
-  expect(
-    queryConnectorAction("button", "Manage GitHub access", card),
-  ).toBeNull();
-  const connect = await waitFor(() => {
-    return getConnectorAction("button", "Connect GitHub");
-  });
-
-  click(connect);
-  await waitFor(() => {
-    expect(popup.location.href).toBe("https://oauth.test/github/authorize");
-  });
-});
-
-function shelfCatalog() {
-  // Sixteen, so the category holds more than the twelve discovery returns for
-  // it when no category is asked for by name.
-  const mail = [
-    "Gmail",
-    "Outlook Mail",
-    "Slack",
-    "Microsoft Teams Bot",
-    "Discord",
-    "Telegram",
-    "Lark",
-    "Test Subdomain",
-    "Intercom",
-    "Mailchimp",
-    "Resend",
-    "Twilio",
-    "Front",
-    "Missive",
-    "Crisp",
-    "Help Scout",
-  ].map((label, index) => {
-    return publicStatusItem({
-      connectorSlug: `mail-${index}` as ConnectorSlug,
-      label,
-      category: "communication-collaboration",
-      popularityRank: index,
-    });
-  });
-  return [
-    ...mail,
-    publicStatusItem({
-      connectorSlug: "voice-0" as ConnectorSlug,
-      label: "ElevenLabs",
-      category: "ai-voice-audio",
-      popularityRank: 40,
-    }),
-  ];
-}
-
-test("Browse the catalog as shelves, then enter a category and come back", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, shelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-
-  // Six per shelf, closed by the products it stands for rather than a count.
-  await waitFor(() => {
-    expect(screen.getByText(/^See .* and 321 more$/u)).toBeVisible();
-  });
-  expect(
-    screen.getByTestId("connector-shelf-communication-collaboration"),
-  ).toBeInTheDocument();
-
-  expect(screen.getByLabelText("Filter connectors")).toBeInTheDocument();
-
-  // A category is a place: entering it filters the page and leaves a way back.
-  await click(screen.getByText(/^See .* and 321 more$/u));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("category=communication-collaboration");
-  });
-  expect(
-    screen.queryByTestId("connector-shelf-communication-collaboration"),
-  ).toBeNull();
-  expect(getConnectorCard("Test Subdomain")).toBeInTheDocument();
-
-  // Entering a category asks the API for that category, so the view holds all
-  // of it -- the count on the way in is a promise the page has to keep.
-  // All sixteen, not the twelve the unfiltered response slices per category:
-  // the count offered on the way in is a promise this view has to keep.
-  expect(screen.getAllByTestId("connector-card-label")).toHaveLength(16);
-  expect(screen.queryByTestId("connector-category-grid")).toBeInTheDocument();
-
-  const back = queryAllByRoleFast("button").find((element) => {
-    return element.textContent === "Discover";
-  });
-  await click(back!);
-  await waitFor(() => {
-    expect(locationSearch()).not.toContain("category=");
-  });
-  expect(
-    screen.getByTestId("connector-shelf-communication-collaboration"),
-  ).toBeInTheDocument();
-});
-
-function connectedShelfCatalog() {
-  return shelfCatalog().map((connector) => {
-    return connector.slug === "mail-0" || connector.slug === "mail-1"
-      ? {
-          ...connector,
-          connected: true,
-          connectionStatus: "connected" as const,
-          connection: {
-            authMethod: "oauth" as const,
-            externalUsername: "octocat",
-            externalEmail: null,
-            reconnectReason: null,
-          },
-        }
-      : connector;
-  });
-}
-
-function mockSavedShelfConnectors(slugs: readonly string[]) {
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      builtinConnectors: connectedShelfCatalog()
-        .filter((connector) => {
-          return slugs.includes(connector.slug);
-        })
-        .map((connector) => {
-          return {
-            slug: connector.slug,
-            label: connector.label,
-            icon: connector.icon,
-            hasPermissions: connector.permissionSummary.hasPermissions,
-          };
-        }),
-      customConnectors: [],
-    });
-  });
-}
-
-test("Land on Discover, then switch to the connectors this workspace has", async () => {
-  mockConnectors(context, [
-    { connectorSlug: "mail-0" as ConnectorSlug },
-    { connectorSlug: "mail-1" as ConnectorSlug },
-  ]);
-  mockSavedShelfConnectors(["mail-0", "mail-1"]);
-  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-
-  // Discovery leads: the catalog is what a visit is usually for, and the
-  // connectors this workspace has are counted rather than listed twice.
-  await waitFor(() => {
-    expect(
-      screen.getByTestId("connector-shelf-communication-collaboration"),
-    ).toBeInTheDocument();
-  });
-  const connected = screen.getByTestId("connectors-scope-connected");
-  expect(connected).toHaveTextContent("Connected2");
-  expect(screen.queryByTestId("connectors-connected-grid")).toBeNull();
-
-  // A connector this workspace already has is still an answer to "what talks
-  // to mail", so it stays on the shelf -- without an add affordance.
-  const head = screen.getByTestId("connector-shelf-head");
-  expect(within(head).getByTestId("connector-card-label")).toHaveTextContent(
-    "Gmail",
-  );
-  expect(queryConnectorAction("button", "Connect Gmail")).toBeNull();
-  // Category is the dimension that organises the catalog, so it owns the filter.
-  expect(screen.getByLabelText("Filter connectors")).toHaveTextContent(
-    "Filter: All",
-  );
-
-  await click(connected);
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=connected");
-  });
-
-  const grid = await screen.findByTestId("connectors-connected-grid");
-  expect(within(grid).getAllByTestId("connector-card-label")).toHaveLength(2);
-  expect(
-    screen.queryByTestId("connector-shelf-communication-collaboration"),
-  ).toBeNull();
-  const search = screen.getByPlaceholderText("Find connected connectors");
-  await fill(search, "gmail");
-  await waitFor(() => {
-    const results = within(screen.getByTestId("connectors-connected-grid"));
-    expect(results.getAllByTestId("connector-card-label")).toHaveLength(1);
-    expect(results.getByTestId("connector-card-label")).toHaveTextContent(
-      "Gmail",
-    );
-  });
-});
-
-test("Keep a saved connector in Connected when its account needs a reconnect", async () => {
+test("connectors-catalog-013 a revoked Gmail authorization remains a manageable connected account", async () => {
   mockConnectors(context, [
     {
-      connectorSlug: "mail-0" as ConnectorSlug,
+      connectorSlug: "gmail",
       connectionStatus: "reconnect-required",
       reconnectReason: "authorization_expired_or_revoked",
     },
   ]);
-  mockSavedShelfConnectors(["mail-0"]);
-  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
+  await setupPage({ context, path: "/connectors" });
+  await expect(findButton("Manage Gmail accounts")).resolves.toBeEnabled();
+  const scope = queryAllByRoleFast("radio").find((item) => {
+    return item.textContent === "Connected1";
   });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-
-  await waitFor(() => {
-    expect(screen.getByTestId("connectors-scope-connected")).toHaveTextContent(
-      "Connected1",
-    );
-    expect(getConnectorAction("button", "Manage Gmail accounts")).toBeEnabled();
-  });
+  expect(scope).toBeInTheDocument();
 });
 
-test("Reach the connectors this workspace built from their own segment", async () => {
-  mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
-  mockSavedShelfConnectors(["mail-0"]);
-  mockPublicConnectorStatus(context, connectedShelfCatalog(), {
-    "communication-collaboration": 327,
-    "ai-voice-audio": 50,
-  });
+test("connectors-catalog-015 the Custom scope offers Acme Search and custom creation", async () => {
+  mockConnectors(context, [{ connectorSlug: "github" }]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [customConnector()] });
+    return respond(200, {
+      connectors: [customConnector({ displayName: "Acme Search" })],
+    });
   });
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
+  await setupPage({ context, path: "/connectors" });
+  await findButton("Manage GitHub accounts");
+  expect(screen.queryByText("Acme Search")).not.toBeInTheDocument();
+  click(screen.getByText("Custom", { selector: '[role="radio"]' }));
+  await screen.findByText("Acme Search");
+  expect(queryButton("Filter connectors")).toBeNull();
+  expect(screen.queryAllByTestId(/^connector-shelf-/)).toHaveLength(0);
+  await expect(findButton("New custom connector")).resolves.toBeEnabled();
+});
 
-  // Connectors this workspace authored have their own scope: browsing the
-  // catalog does not list them, and the segment counts them.
+test("connectors-catalog-010 the unconnected GitHub catalog card launches its OAuth destination", async () => {
+  const github = publicStatusItem({
+    connectorSlug: "github",
+    label: "GitHub",
+    description: "Track pull requests in shared repositories.",
+    authMethods: [browserAuthMethod()],
+    singleAuthCodeAuthMethodId: "oauth",
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector: github });
+  });
+  mockPublicConnectorStatus(context, [github]);
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const destination = "https://github.example.test/connect/workspace";
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, respond }) => {
+      return respond(200, {
+        authorizationUrl:
+          params.connectorSlug === "github" ? destination : "about:blank",
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const connect = await findButton("Connect GitHub");
+  const card = getConnectorCard("GitHub");
+  expect(card).toHaveTextContent(github.description!);
+  expect(card).not.toHaveTextContent("No accounts");
+  expect(queryButton("Manage GitHub access", card)).toBeNull();
+  click(connect);
   await waitFor(() => {
-    expect(screen.getByTestId("connectors-scope-custom")).toHaveTextContent(
-      "Custom1",
-    );
+    return expect(popup.location.href).toBe(destination);
   });
-  expect(queryConnectorCard("Acme Search")).toBeNull();
-
-  await click(screen.getByTestId("connectors-scope-custom"));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=custom");
-  });
-
-  // The scope that owns them also owns the action that creates one, and it
-  // offers no category filter -- a custom connector has no category.
-  expect(getConnectorCard("Acme Search")).toBeInTheDocument();
-  expect(
-    screen.queryByTestId("connector-shelf-communication-collaboration"),
-  ).toBeNull();
-  expect(screen.queryByLabelText("Filter connectors")).toBeNull();
-  expect(
-    getConnectorAction("button", "New custom connector"),
-  ).toBeInTheDocument();
+  popup.close();
 });

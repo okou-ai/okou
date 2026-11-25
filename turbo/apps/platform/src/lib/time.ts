@@ -2,39 +2,47 @@ type NowValue = number | (() => number);
 
 interface NowOverride {
   readonly value: NowValue;
+  readonly signal: AbortSignal;
 }
 
-function createNowOverride(): {
-  readonly get: () => number | undefined;
-  readonly set: (value: NowValue, signal: AbortSignal) => void;
-} {
+function createNowOverride() {
   let current: NowOverride | undefined;
+  let writes: EventTarget | undefined;
+
+  function get(): number | undefined {
+    const value = current?.value;
+    return typeof value === "function" ? value() : value;
+  }
+
+  function onNextWrite(notify: () => void, signal: AbortSignal): void {
+    writes ??= new EventTarget();
+    writes.addEventListener("change", notify, { once: true, signal });
+  }
+
+  function clear(event: Event): void {
+    if (current?.signal === event.target) {
+      current = undefined;
+      writes?.dispatchEvent(new Event("change"));
+    }
+  }
 
   return {
-    get: () => {
-      const value = current?.value;
-      return typeof value === "function" ? value() : value;
+    get,
+    readTestClock: () => {
+      return { now: get() ?? 0, onNextWrite };
     },
-    set: (value, signal) => {
+    set: (value: NowValue, signal: AbortSignal) => {
       signal.throwIfAborted();
-      const override = { value };
-      current = override;
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (current === override) {
-            current = undefined;
-          }
-        },
-        { once: true },
-      );
+      current?.signal.removeEventListener("abort", clear);
+      current = { value, signal };
+      signal.addEventListener("abort", clear, { once: true });
+      writes?.dispatchEvent(new Event("change"));
     },
   };
 }
 
 const { get: getMockedNow, set: setMockedNow } = createNowOverride();
-const { get: getMockedMonotonicNow, set: setMockedMonotonicNow } =
-  createNowOverride();
+const monotonicOverride = createNowOverride();
 
 export function now(): number {
   return getMockedNow() ?? Date.now();
@@ -50,9 +58,14 @@ export function mockNow(value: Date | NowValue, signal: AbortSignal): void {
 
 /** Elapsed-time deadlines must not move when the system clock is corrected. */
 export function monotonicNow(): number {
-  return getMockedMonotonicNow() ?? performance.now();
+  return monotonicOverride.get() ?? performance.now();
 }
 
 export function mockMonotonicNow(value: NowValue, signal: AbortSignal): void {
-  setMockedMonotonicNow(value, signal);
+  monotonicOverride.set(value, signal);
+}
+
+/** Background refreshes wake when a test publishes a new elapsed time. */
+export function readTestMonotonicClock() {
+  return monotonicOverride.readTestClock();
 }

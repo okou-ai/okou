@@ -47,8 +47,6 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import { nowDate } from "../../../lib/time.ts";
 
-export const PLACEHOLDER = "Ask me to automate workflows, manage tasks...";
-
 const MOCK_RUN_ID = "d0000000-0000-4000-a000-000000000001";
 
 interface ModelSelectionRequest {
@@ -350,27 +348,34 @@ export function mockChatLifecycle(
      * Gate or per-send gate factory awaited before the initial send responds.
      * Lets tests keep an optimistic run mounted while interacting with it.
      */
-    sendGate?: Promise<void> | (() => Promise<void>);
+    sendGate?:
+      Promise<void> | ((message: { prompt?: string }) => Promise<void>);
     /**
      * Promise the thread metadata handler awaits before responding. Lets tests
      * prove event-derived UI does not wait for activeRunIds metadata.
      */
     threadGate?: Promise<void>;
     afterInitialEventsList?: () => void;
-    onRunCreate?: (body: {
-      prompt?: string;
-      clientEventId?: string;
-      clientThreadId?: string;
-      hasTextContent?: boolean;
-      userMessage?: UserMessageDocument;
-      model?: string | null;
-      modelSelection?: ModelSelectionRequest | null;
-      runOptions?: ChatRunOptionsRequest;
-      computerUseHostId?: string | null;
-      cloudBrowserEnabled?: boolean;
-      revokesEventId?: string;
-      sourceRunId?: string;
-    }) => void;
+    beforeEventRowsResponse?: (
+      rows: ReturnType<typeof mockChatEventRows>,
+    ) => Promise<void>;
+    onRunCreate?: (
+      body: {
+        prompt?: string;
+        clientEventId?: string;
+        clientThreadId?: string;
+        hasTextContent?: boolean;
+        userMessage?: UserMessageDocument;
+        model?: string | null;
+        modelSelection?: ModelSelectionRequest | null;
+        runOptions?: ChatRunOptionsRequest;
+        computerUseHostId?: string | null;
+        cloudBrowserEnabled?: boolean;
+        revokesEventId?: string;
+        sourceRunId?: string;
+      },
+      runId: string,
+    ) => void;
     onSendRequest?: (body: {
       prompt: string;
       clientEventId?: string;
@@ -698,7 +703,7 @@ export function mockChatLifecycle(
     sourceRunId?: string;
   }) => {
     if (typeof options?.sendGate === "function") {
-      await options.sendGate();
+      await options.sendGate(body);
     } else if (options?.sendGate) {
       await options.sendGate;
     }
@@ -718,7 +723,7 @@ export function mockChatLifecycle(
       cloudBrowserEnabled = false;
     }
     const modelSelection = modelSelectionFromBody(body);
-    options?.onRunCreate?.({ ...body, modelSelection });
+    options?.onRunCreate?.({ ...body, modelSelection }, currentRunId);
     runStatus = "running";
     runError = null;
     runFailureReason = undefined;
@@ -765,22 +770,32 @@ export function mockChatLifecycle(
       },
     });
   });
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = mockChatEventRows(
-      normalizeMockChatEvents(
-        buildCanonicalEvents().map(cloneMockChatEvent),
-        threadId,
-      ),
-    )
-      .filter((row) => {
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    async ({ query, respond }) => {
+      const remaining = mockChatEventRows(
+        normalizeMockChatEvents(
+          buildCanonicalEvents().map(cloneMockChatEvent),
+          threadId,
+        ),
+      ).filter((row) => {
         return row.seqId > query.sinceSeqId;
-      })
-      .slice(0, query.limit ?? 50);
-    if (query.sinceSeqId === 0) {
-      options?.afterInitialEventsList?.();
-    }
-    return respond(200, chatEventRowsResponse(rows, query));
-  });
+      });
+      const rows = remaining.slice(0, query.limit ?? 50);
+      if (query.sinceSeqId === 0) {
+        options?.afterInitialEventsList?.();
+      }
+      if (options?.beforeEventRowsResponse) {
+        await options.beforeEventRowsResponse(rows);
+      }
+      return respond(
+        200,
+        chatEventRowsResponse(rows, query, {
+          hasMore: rows.length < remaining.length,
+        }),
+      );
+    },
+  );
   context.mocks.api(chatThreadByIdContract.get, async ({ respond }) => {
     if (options?.threadGate) {
       await options.threadGate;

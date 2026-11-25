@@ -1,0 +1,648 @@
+import {
+  chatConnectorAccessContract,
+  type ChatConnectorAccess,
+} from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { continuityAttachment } from "./chat-continuity-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { screen, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  builtinConnector,
+  connectorAccount,
+  chatConnectorOverviewFixture,
+  createComposerConnectorHelpers,
+  SCOUT_THREAD_ID,
+  OTHER_THREAD_ID,
+} from "./chat-composer-connectors-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+const context = testContext();
+const target = { kind: "builtin", connectorSlug: "github" } as const;
+const work = "cf790000-0000-4000-a000-000000000001";
+const personal = "cf790000-0000-4000-a000-000000000002";
+
+async function openChat(
+  options: {
+    path?: string;
+    defaults?: readonly boolean[];
+    failSelection?: boolean;
+    beforeOverride?: (signal: AbortSignal) => Promise<void>;
+    beforeCurrent?: (
+      threadId: string,
+      selected: string | null,
+    ) => Promise<void>;
+    remoteHost?: string;
+  } = {},
+  configureBoundary?: () => void,
+) {
+  const defaults = options.defaults ?? [true];
+  const accounts = defaults.map((_enabled, i) => {
+    return connectorAccount({
+      id: i === 0 ? work : personal,
+      target,
+      displayName: i === 0 ? "Work" : "Personal",
+      isDefault: i === 0,
+    });
+  });
+  const overrides = new Map<string, boolean>();
+  let current: string | null = defaults[0] ? work : null;
+  let reject = options.failSelection;
+  function access(): ChatConnectorAccess {
+    return {
+      target,
+      accounts: accounts.map((a, i) => {
+        return {
+          connectionId: a.id,
+          displayName: a.displayName,
+          defaultEnabled: defaults[i] ?? false,
+          isDefault: a.isDefault,
+          overrideEnabled: overrides.get(a.id) ?? null,
+          enabled: overrides.get(a.id) ?? defaults[i] ?? false,
+        };
+      }),
+      currentConnectionId: current,
+      available: true,
+    };
+  }
+  const atRun: ChatConnectorAccess[] = [];
+  createComposerConnectorHelpers(context).installComposerConnectorFixture({
+    threadId: SCOUT_THREAD_ID,
+    threads: [
+      { id: SCOUT_THREAD_ID, title: "Repository review" },
+      { id: OTHER_THREAD_ID, title: "Release planning" },
+    ],
+    catalog: [builtinConnector({ slug: "github", label: "GitHub" })],
+    accounts,
+    onFirstRun: () => {
+      atRun.push(access());
+    },
+  });
+  const overview = () => {
+    return chatConnectorOverviewFixture({
+      target,
+      label: "GitHub",
+      accounts,
+      access: access(),
+    });
+  };
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    return respond(200, [overview()]);
+  });
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      return respond(200, { connector: overview() });
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.accountDefaults,
+    ({ respond }) => {
+      return respond(
+        200,
+        access().accounts.map(
+          ({ connectionId, displayName, defaultEnabled, isDefault }) => {
+            return {
+              connectionId,
+              displayName,
+              defaultEnabled,
+              isDefault,
+            };
+          },
+        ),
+      );
+    },
+  );
+  context.mocks.api(chatConnectorAccessContract.getThread, ({ respond }) => {
+    return respond(200, access());
+  });
+
+  context.mocks.api(
+    chatConnectorAccessContract.setThreadOverride,
+    async ({ params, body, respond, request }) => {
+      await options.beforeOverride?.(request.signal);
+      if (body.enabled !== null) {
+        overrides.set(params.connectionId, body.enabled);
+      }
+      return respond(200, access());
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.setThreadCurrent,
+    async ({ body, params, respond }) => {
+      await options.beforeCurrent?.(params.threadId, body.connectionId);
+      if (reject) {
+        reject = false;
+        return respond(400, {
+          error: {
+            code: "SAVE_FAILED",
+            message: "Account access could not be saved",
+          },
+        });
+      }
+      current = body.connectionId;
+      return respond(200, access());
+    },
+  );
+  if (options.remoteHost) {
+    mockChatLifecycle(context, {
+      threadId: SCOUT_THREAD_ID,
+      cloudBrowserEnabled: true,
+    });
+    const host = {
+      connectionId: crypto.randomUUID(),
+      displayName: options.remoteHost,
+      defaultEnabled: true,
+    };
+    context.mocks.api(remotesContract.overview, ({ respond }) => {
+      return respond(200, {
+        computerUseHosts: [],
+        cloudBrowserAvailable: true,
+        cloudBrowserEnabledByDefault: true,
+        sshHosts: [host],
+        vncHosts: [],
+      });
+    });
+    context.mocks.api(
+      chatRemoteAccessContract.listThreadAccess,
+      ({ respond }) => {
+        return respond(200, {
+          ssh: [
+            {
+              ...host,
+              enabled: true,
+              source: "default",
+              overrideEnabled: null,
+            },
+          ],
+          vnc: [],
+        });
+      },
+    );
+  }
+  configureBoundary?.();
+  await setupPage({
+    context,
+    path: options.path ?? "/chats/" + SCOUT_THREAD_ID,
+  });
+  return { atRun };
+}
+const openConnectors = (root: ParentNode = document.body) => {
+  return findFastControl("button", "Connectors", root);
+};
+async function choices(root: ParentNode = document.body) {
+  const trigger = await openConnectors(root);
+  click(trigger);
+  const row = await findFastControl("button", /GitHub/);
+  click(row);
+  const panel = await screen.findByRole("dialog", { name: "GitHub" });
+  return { row, panel, trigger };
+}
+function toggle(panel: HTMLElement, name: string) {
+  return within(panel).findByRole("switch", { name: name + " access" });
+}
+test("chat-composer-chat-connector-access-011 Managing the saved Work account returns to the original composer and its draft", async () => {
+  await openChat();
+  const editor = await findComposerEditor();
+  const text = "Use my personal GitHub account.";
+  await fill(editor, text);
+  const { panel, trigger } = await choices();
+  click(await findFastControl("button", "Manage accounts", panel));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  await within(dialog).findByText("Work");
+  await findFastControl("button", "Add account", dialog);
+  await waitFor(() => {
+    return expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(trigger).toHaveFocus();
+  });
+  expect(location.pathname).toBe("/chats/" + SCOUT_THREAD_ID);
+  expect(editor).toHaveTextContent(text);
+  const reopened = await choices();
+  await expect(toggle(reopened.panel, "Work")).resolves.toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+test("chat-composer-chat-connector-access-013 Each pane opens and dismisses its own single GitHub account manager", async () => {
+  await openChat({
+    path: "/chats/" + SCOUT_THREAD_ID + "?sidebar=" + OTHER_THREAD_ID,
+  });
+  const user = userEvent.setup({ delay: null });
+  for (const id of [SCOUT_THREAD_ID, OTHER_THREAD_ID, SCOUT_THREAD_ID]) {
+    const pane = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>(
+        '[data-chat-thread-container-id="' + id + '"]',
+      );
+      if (!el) {
+        throw new Error("Missing chat pane " + id);
+      }
+      return el;
+    });
+    const { panel, trigger } = await choices(pane);
+    click(await findFastControl("button", "Manage accounts", panel));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Manage GitHub accounts",
+    });
+    await within(dialog).findByText("Work");
+    expect(
+      screen.getAllByRole("dialog", { name: "Manage GitHub accounts" }),
+    ).toHaveLength(1);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(trigger).toHaveFocus();
+    });
+  }
+});
+async function firstMessage(
+  defaults: readonly boolean[],
+  failSelection = false,
+) {
+  const { atRun } = await openChat({
+    path: "/?compose=1",
+    defaults,
+    failSelection,
+  });
+  const text = "Use my personal GitHub account";
+  const editor = await findComposerEditor();
+  await fill(editor, text);
+  const { panel } = await choices();
+  const mine = await toggle(panel, "Personal");
+  click(mine);
+  await waitFor(() => {
+    return expect(mine).toHaveAttribute("aria-checked", "true");
+  });
+  const org = await toggle(panel, "Work");
+  click(org);
+  await waitFor(() => {
+    return expect(org).toHaveAttribute(
+      "aria-checked",
+      defaults[0] ? "false" : "true",
+    );
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}{Escape}");
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  return { atRun, user, editor, text };
+}
+async function resultingConversation(
+  atRun: ChatConnectorAccess[],
+  text: string,
+  workEnabled: boolean,
+) {
+  await screen.findByText(text, { exact: true });
+  await waitFor(() => {
+    return expect(location.pathname).toMatch(/^\/chats\//);
+  });
+  expect(
+    atRun.map((x) => {
+      return [
+        x.currentConnectionId,
+        ...x.accounts.map((a) => {
+          return a.enabled;
+        }),
+      ];
+    }),
+  ).toStrictEqual([[personal, workEnabled, true]]);
+  const { panel, row } = await choices();
+
+  await expect(toggle(panel, "Personal")).resolves.toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(toggle(panel, "Work")).resolves.toHaveAttribute(
+    "aria-checked",
+    String(workEnabled),
+  );
+  return row;
+}
+test("chat-composer-chat-connector-access-016 Enabling Personal first keeps it selected for the new run after both accounts are allowed", async () => {
+  const { atRun, text } = await firstMessage([false, false]);
+  await expect(
+    resultingConversation(atRun, text, true),
+  ).resolves.toHaveTextContent("2 accounts");
+});
+test("chat-composer-chat-connector-access-017 The new run sees the confirmed Personal choice and the new thread retains both overrides", async () => {
+  const { atRun, text } = await firstMessage([true, false]);
+  await expect(
+    resultingConversation(atRun, text, false),
+  ).resolves.toHaveTextContent("2 accounts");
+});
+test("chat-composer-chat-connector-access-018 Retrying a rejected account save retains the prompt and starts with Personal selected", async () => {
+  const { atRun, user, editor, text } = await firstMessage([true, false], true);
+  await screen.findByText("Account access could not be saved");
+  expect(location.pathname).toBe("/");
+  expect(editor).toHaveTextContent(text);
+  expect(atRun).toStrictEqual([]);
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  await expect(
+    resultingConversation(atRun, text, false),
+  ).resolves.toHaveTextContent("2 accounts");
+});
+
+test("chat-composer-chat-connector-access-003 the same composer opens its enabled remote host and connector discovery", async () => {
+  await openChat({ remoteHost: "Build host" });
+  const { panel, trigger } = await choices();
+  await expect(toggle(panel, "Work")).resolves.toBeChecked();
+  await userEvent.keyboard("{Escape}");
+  const menu = await screen.findByRole("dialog", { name: "Connectors" });
+  await expect(within(menu).findByText("Your computer")).resolves.toBeVisible();
+  await findFastControl("button", "Connect my computer", menu);
+  await expect(
+    within(menu).findByRole("switch", { name: /cloud browser/i }),
+  ).resolves.toBeChecked();
+  click(await findFastControl("button", /^Remote access/, menu));
+  const remote = await screen.findByRole("dialog", { name: "Remote access" });
+  await expect(
+    within(remote).findByRole("combobox", { name: "SSH Build host" }),
+  ).resolves.toHaveTextContent(/On/);
+  click(await findFastControl("button", "Close", remote));
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+  click(trigger);
+  click(await findFastControl("button", "Add connectors"));
+  const directory = await screen.findByRole("dialog", { name: "Connectors" });
+  await expect(
+    within(directory).findByRole("radio", { name: "Custom" }),
+  ).resolves.toBeEnabled();
+  expect(within(directory).getByRole("textbox")).toBeEnabled();
+});
+
+test("The new conversation restores Personal access on reopening and applies it before its first prompt", async () => {
+  const selecting = context.mocks.deferred<{
+    thread: string;
+    account: string | null;
+  }>();
+  const accept = context.mocks.deferred<void>();
+  const { atRun } = await openChat({
+    path: "/?compose=1",
+    defaults: [true, true],
+    beforeCurrent: async (thread, account) => {
+      if (!selecting.settled()) {
+        selecting.resolve({ thread, account });
+      }
+      await accept.promise;
+    },
+  });
+  const first = await choices();
+  await expect(toggle(first.panel, "Work")).resolves.toBeChecked();
+  await expect(toggle(first.panel, "Personal")).resolves.toBeChecked();
+  click(await toggle(first.panel, "Work"));
+  await waitFor(() => {
+    expect(
+      within(first.panel).getByRole("switch", { name: "Work access" }),
+    ).not.toBeChecked();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}{Escape}");
+  const reopened = await choices();
+  await expect(toggle(reopened.panel, "Personal")).resolves.toBeChecked();
+  await expect(toggle(reopened.panel, "Work")).resolves.not.toBeChecked();
+  await user.keyboard("{Escape}{Escape}");
+  const editor = await findComposerEditor();
+  await fill(editor, "List my personal repository issues");
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  const selection = await selecting.promise;
+  expect(selection.account).toBe(personal);
+  expect(atRun).toStrictEqual([]);
+  accept.resolve();
+  await screen.findByText("List my personal repository issues", {
+    selector: "[data-role=user] *",
+  });
+  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
+  expect(location.pathname).toBe("/chats/" + selection.thread);
+});
+
+test("A new chat inherits both account choices after leaving a pending thread override", async () => {
+  const request = context.mocks.deferred<AbortSignal>();
+  const release = context.mocks.deferred<void>();
+  await openChat({
+    defaults: [true, true],
+    beforeOverride: async (signal) => {
+      request.resolve(signal);
+      await release.promise;
+    },
+  });
+  const previous = await choices();
+  click(await toggle(previous.panel, "Work"));
+  const signal = await request.promise;
+  await userEvent.keyboard("{Escape}{Escape}");
+  click(await findFastControl("link", /^New chat/));
+  await waitFor(() => {
+    expect(location.pathname).toBe("/");
+  });
+  expect(signal.aborted).toBeTruthy();
+  release.resolve();
+  const fresh = await choices();
+  await expect(toggle(fresh.panel, "Personal")).resolves.toBeChecked();
+  await expect(toggle(fresh.panel, "Work")).resolves.toBeChecked();
+});
+
+test.each(["Personal", "Work"] as const)(
+  "A rejected Personal selection preserves the edited report for a retry using %s",
+  async (account) => {
+    const attempted = context.mocks.deferred<void>();
+    const reject = context.mocks.deferred<void>();
+    const attachment = continuityAttachment(
+      86,
+      6,
+      "field-report.txt",
+      "text/plain",
+      5,
+    );
+    const { atRun } = await openChat(
+      {
+        path: "/?compose=1",
+        defaults: [true, true],
+        failSelection: true,
+        beforeCurrent: async () => {
+          if (!attempted.settled()) {
+            attempted.resolve();
+          }
+          await reject.promise;
+        },
+      },
+      () => {
+        context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+          return respond(200, {
+            ...attachment,
+            uploadUrl: "https://survey-storage.example/report",
+            uploadHeaders: {},
+          });
+        });
+        context.mocks.http.put("https://survey-storage.example/report", () => {
+          return new Response(null, { status: 200 });
+        });
+        context.mocks.api(uploadsContract.complete, ({ respond }) => {
+          return respond(200, attachment);
+        });
+      },
+    );
+    const editor = await findComposerEditor();
+    const message = "Review the attached field report";
+    await fill(editor, message);
+    const picker = document.querySelector<HTMLInputElement>(
+      "input[type=file][multiple]",
+    )!;
+    await userEvent.upload(
+      picker,
+      new File(["notes"], attachment.filename, { type: "text/plain" }),
+    );
+    await findFastControl("button", "Remove field-report.txt");
+    const accounts = await choices();
+    click(await toggle(accounts.panel, "Work"));
+    await waitFor(() => {
+      expect(
+        within(accounts.panel).getByRole("switch", { name: "Work access" }),
+      ).not.toBeChecked();
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.keyboard("{Escape}{Escape}");
+    await user.click(editor);
+    await user.keyboard("{Enter}");
+    await attempted.promise;
+    const edited = "Review the updated field report first";
+    await fill(editor, edited);
+    reject.resolve();
+    await screen.findByText("Account access could not be saved");
+    expect(location.pathname).toBe("/");
+    expect(editor).toHaveTextContent(edited);
+    await expect(
+      findFastControl("button", "Remove field-report.txt"),
+    ).resolves.toBeEnabled();
+    expect(atRun).toStrictEqual([]);
+    const retry = await choices();
+    await expect(toggle(retry.panel, "Personal")).resolves.toBeChecked();
+    await expect(toggle(retry.panel, "Work")).resolves.not.toBeChecked();
+    expect(queryFastControl("button", "Use default", retry.panel)).toBeNull();
+    if (account === "Work") {
+      await user.click(await toggle(retry.panel, "Work"));
+      await user.click(await toggle(retry.panel, "Personal"));
+    }
+    await expect(toggle(retry.panel, account)).resolves.toBeChecked();
+    await expect(
+      toggle(retry.panel, account === "Work" ? "Personal" : "Work"),
+    ).resolves.not.toBeChecked();
+    await user.keyboard("{Escape}{Escape}");
+    await user.click(editor);
+    await user.keyboard("{Enter}");
+    await screen.findByText(edited, { selector: "[data-role=user] *" });
+    await screen.findByText(attachment.filename);
+    expect(atRun.at(-1)?.currentConnectionId).toBe(
+      account === "Work" ? work : personal,
+    );
+  },
+);
+
+test("A new composer can change local account access before a conversation exists", async () => {
+  const write = context.mocks.deferred<void>();
+  await openChat({
+    path: "/?compose=1",
+    defaults: [true, true],
+    beforeOverride: () => {
+      if (!write.settled()) {
+        write.resolve();
+      }
+      return Promise.resolve();
+    },
+  });
+  const first = await choices();
+  click(await toggle(first.panel, "Work"));
+  await waitFor(() => {
+    return expect(
+      within(first.panel).getByRole("switch", { name: "Work access" }),
+    ).not.toBeChecked();
+  });
+  await userEvent.keyboard("{Escape}{Escape}");
+  const again = await choices();
+  await expect(toggle(again.panel, "Work")).resolves.not.toBeChecked();
+  await expect(toggle(again.panel, "Personal")).resolves.toBeChecked();
+  expect(location.pathname).toBe("/");
+  expect(write.settled()).toBeFalsy();
+});
+
+test("chat-composer-connector-accounts-008 Retrying the original admission sends the prompt with Personal access", async () => {
+  let admission: { chat: string; event: string; request: string } | undefined;
+  const { atRun } = await openChat(
+    {
+      path: "/",
+      defaults: [true, false],
+    },
+    () => {
+      context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+        if (!body.clientThreadId || !body.eventId) {
+          throw new Error("A chat needs both client identifiers");
+        }
+        if (!admission) {
+          admission = {
+            chat: body.clientThreadId,
+            event: body.eventId,
+            request: JSON.stringify(body),
+          };
+          return respond(500, {
+            error: {
+              code: "INTERNAL_ERROR",
+              message: "Chat admission interrupted",
+            },
+          });
+        }
+        if (
+          admission.chat !== body.clientThreadId ||
+          admission.event !== body.eventId ||
+          admission.request !== JSON.stringify(body)
+        ) {
+          return respond(500, {
+            error: {
+              code: "INTERNAL_ERROR",
+              message: "Previous admission has different identifiers",
+            },
+          });
+        }
+        return respond(201, {
+          id: admission.chat,
+          title: "Repository desk",
+          createdAt: "2026-03-10T00:07:00Z",
+          selectedModel: body.model ?? null,
+          serviceTier: null,
+        });
+      });
+    },
+  );
+  const controls = await choices();
+  click(await toggle(controls.panel, "Personal"));
+  click(await toggle(controls.panel, "Work"));
+  await expect(toggle(controls.panel, "Personal")).resolves.toBeChecked();
+  await userEvent.keyboard("{Escape}{Escape}");
+  const editor = await findComposerEditor();
+  const prompt = "Open the personal repository";
+  await fill(editor, prompt);
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText("Chat admission interrupted");
+  expect(editor).toHaveTextContent(prompt);
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText(prompt, { selector: "[data-role=user] *" });
+  expect(location.pathname).toBe("/chats/" + admission?.chat);
+  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
+});

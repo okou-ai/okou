@@ -1,678 +1,179 @@
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
-import {
-  getDocument,
-  GlobalWorkerOptions,
-} from "pdfjs-dist/legacy/build/pdf.mjs";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { HttpResponse } from "msw";
+// @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
 import { expect, test } from "vitest";
-import { chatThreadPdfFilenameContract } from "@okouai/api-contracts/contracts/chat-thread-pdf-filename";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  TABLE_WORKBOOK_CONTENT_TYPE,
-  writeTableWorkbook,
-} from "../../../lib/markdown-table-workbook.ts";
-import { renderMessagePdf } from "../../../lib/message-pdf/render.ts";
-import {
-  platformMessagePdfFontUrls,
-  platformPreviewMessagePdfFontUrls,
-} from "../../../lib/static-assets.ts";
-import type {
-  PdfWorkerRequest,
-  PdfWorkerResponse,
-} from "../../../lib/message-pdf/types.ts";
+import { waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { findLink } from "./chat-run-test-fixtures.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-
+import { conversation, assistantRow } from "./attachment-preview-boundaries.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
+import { pdfServices, readSavedPdf } from "./message-export-boundaries.ts";
 const context = testContext();
-const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
-const ANSWER = "The launch plan has three phases.";
-const ASSISTANT_EVENT_ID = "b0000000-0000-4000-a000-000000000954";
 
-function button(name: string): HTMLElement {
-  const result = queryAllByRoleFast("button").find((element) => {
-    return (
-      element.getAttribute("aria-label") === name ||
-      element.textContent?.trim() === name
+async function downloadLink() {
+  return await waitFor(() => {
+    const link = document.querySelector(
+      'a[aria-label="Download PDF"][download][href]',
     );
-  });
-  if (!result) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return result;
-}
-
-function downloadLink(): HTMLAnchorElement {
-  const result = queryAllByRoleFast("link").find((element) => {
-    return element.getAttribute("aria-label") === "Download PDF";
-  });
-  if (!(result instanceof HTMLAnchorElement)) {
-    throw new Error("PDF download link not found");
-  }
-  return result;
-}
-
-async function setupPdfChat(
-  content = ANSWER,
-  loadFont: (request: Request) => Response | Promise<Response> = () => {
-    return HttpResponse.arrayBuffer(new ArrayBuffer(8));
-  },
-  filenameResponse: () => Response = () => {
-    return HttpResponse.json("Launch-plan");
-  },
-  host = "app.okou.ai",
-) {
-  context.mocks.http.post(
-    `*${chatThreadPdfFilenameContract.generate.path}`,
-    async ({ request, params }) => {
-      expect(params.threadId).toBe(THREAD_ID);
-      await expect(request.json()).resolves.toStrictEqual({
-        eventIds: [ASSISTANT_EVENT_ID],
-      });
-      return filenameResponse();
-    },
-  );
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    chatEvents: [
-      {
-        id: "b0000000-0000-4000-a000-000000000953",
-        role: "user",
-        content: "Summarize the launch plan",
-        runId: "pdf-run",
-        createdAt: "2026-08-01T10:00:00Z",
-      },
-      {
-        id: ASSISTANT_EVENT_ID,
-        role: "assistant",
-        content,
-        runId: "pdf-run",
-        createdAt: "2026-08-01T10:00:01Z",
-      },
-    ],
-  });
-  const production = host === "app.okou.ai";
-  const fontUrls = production
-    ? platformMessagePdfFontUrls
-    : platformPreviewMessagePdfFontUrls;
-  for (const url of Object.values(fontUrls)) {
-    const filename = new URL(url, "https://app.okou.ai").pathname
-      .split("/")
-      .at(-1);
-    const pattern = production
-      ? `https://static.okou.io/platform/message-pdf/fonts/${filename}`
-      : `*/${filename}`;
-    context.mocks.http.get(pattern, ({ request }) => {
-      expect(new URL(request.url).origin).toBe(
-        production ? "https://static.okou.io" : location.origin,
-      );
-      expect(request.credentials).toBe(production ? "omit" : "same-origin");
-      return loadFont(request);
-    });
-  }
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host,
-  });
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(button("Generate PDF")).toBeInTheDocument();
-  });
-}
-
-test.each(["app.okou.ai", "pr-1-app.omby.ai"])(
-  "Offer a native PDF download whose bytes survive repeated clicks on %s",
-  async (host) => {
-    const response = context.mocks.deferred<PdfWorkerResponse>();
-    context.mocks.browser.dedicatedWorker(() => {
-      return response.promise;
-    });
-    const browser = context.mocks.browser.blobDownload();
-    await setupPdfChat(ANSWER, undefined, undefined, host);
-
-    button("Generate PDF").focus();
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(button("Generating PDF…")).toHaveAttribute(
-        "aria-disabled",
-        "true",
-      );
-    });
-    expect(button("Generating PDF…")).toHaveFocus();
-    const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-    response.resolve({ ok: true, blob: pdf });
-    await waitFor(() => {
-      expect(downloadLink()).toHaveAttribute("download", "Launch-plan.pdf");
-    });
-    const link = downloadLink();
-    expect(link).toHaveFocus();
-    const url = link.href;
-    expect(browser.blobForUrl(url)).toBe(pdf);
-    expect(fireEvent.click(link)).toBeTruthy();
-    expect(fireEvent.click(link)).toBeTruthy();
-    expect(browser.blobForUrl(url)).toBe(pdf);
-
-    click(await findLink("Workflows"));
-    await waitFor(() => {
-      expect(location.pathname).toBe("/workflows");
-      expect(browser.blobForUrl(url)).toBeNull();
-    });
-  },
-);
-
-test.each([
-  {
-    name: "empty model result",
-    response: () => {
-      return HttpResponse.json("");
-    },
-  },
-  {
-    name: "older API",
-    response: () => {
-      return new HttpResponse(null, { status: 404 });
-    },
-  },
-  {
-    name: "network failure",
-    response: () => {
-      return HttpResponse.error();
-    },
-  },
-])(
-  "PDF downloads keep their default filename after $name",
-  async ({ response }) => {
-    const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-    context.mocks.browser.dedicatedWorker(() => {
-      return Promise.resolve({
-        ok: true,
-        blob: pdf,
-      } satisfies PdfWorkerResponse);
-    });
-    const browser = context.mocks.browser.blobDownload();
-    await setupPdfChat(ANSWER, undefined, response);
-
-    click(button("Generate PDF"));
-    await waitFor(() => {
-      expect(downloadLink()).toHaveAttribute("download", "okou-message.pdf");
-    });
-    expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
-  },
-);
-
-test("A generation error is visible and the PDF action can be retried", async () => {
-  const first = context.mocks.deferred<PdfWorkerResponse>();
-  const retry = context.mocks.deferred<PdfWorkerResponse>();
-  let response = first;
-  context.mocks.browser.dedicatedWorker(() => {
-    return response.promise;
-  });
-  const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat();
-
-  click(button("Generate PDF"));
-  await waitFor(() => {
-    expect(button("Generating PDF…")).toHaveAttribute("aria-disabled", "true");
-  });
-  first.resolve({ ok: false, failure: "render_rejection" });
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Could not generate PDF.",
-  );
-  response = retry;
-  click(button("Generate PDF"));
-  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-  retry.resolve({ ok: true, blob: pdf });
-  await waitFor(() => {
-    expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
-  });
-});
-
-test("PDF generation resolves private image access again instead of reusing the preview grant", async () => {
-  const imageId = "b0000000-0000-4000-a000-000000000952";
-  const imageUrl = artifactReferencePath(imageId, "chart.png");
-  let resourceUrl = "https://storage.example.test/preview.png";
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      url: resourceUrl,
-      downloadUrl: resourceUrl,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename: "chart.png",
-      contentType: "image/png",
-      target: { kind: "file", id: imageId },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 640, height: 480 });
-  context.mocks.browser.canvasRendering();
-  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-  context.mocks.browser.dedicatedWorker(() => {
-    return Promise.resolve({ ok: true, blob: pdf } satisfies PdfWorkerResponse);
-  });
-  const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat(`${ANSWER}\n\n![Private chart](${imageUrl})`);
-  await screen.findByAltText("Private chart");
-
-  resourceUrl = "https://storage.example.test/export.png";
-  context.mocks.http.get(resourceUrl, () => {
-    return HttpResponse.arrayBuffer(new ArrayBuffer(8), {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  click(button("Generate PDF"));
-  await waitFor(() => {
-    expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
-  });
-});
-
-test("Removing the message actions cancels PDF generation without leaving the page", async () => {
-  const fontStarted = context.mocks.deferred<Request>();
-  const fontGate = context.mocks.deferred<void>();
-  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
-  context.mocks.browser.dedicatedWorker(() => {
-    return Promise.resolve({ ok: true, blob: pdf } satisfies PdfWorkerResponse);
-  });
-  const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat(ANSWER, async (request) => {
-    if (!fontStarted.settled()) {
-      fontStarted.resolve(request);
+    if (!(link instanceof HTMLAnchorElement)) {
+      throw new Error("Waiting for the native PDF download");
     }
-    await fontGate.promise;
-    return HttpResponse.arrayBuffer(new ArrayBuffer(8));
+    return link;
   });
+}
 
-  click(button("Generate PDF"));
-  const request = await fontStarted.promise;
-  click(button("Share messages"));
-  await screen.findAllByText("0 selected");
-  expect(request.signal.aborted).toBeTruthy();
-  expect(location.pathname).toBe(`/chats/${THREAD_ID}`);
-  fontGate.resolve();
-
-  click(button("Cancel"));
-  await waitFor(() => {
-    expect(button("Generate PDF")).toBeInTheDocument();
-  });
-  click(button("Generate PDF"));
-  await waitFor(() => {
-    expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
-  });
-});
-
-async function exportRenderedPdf(markdown: string) {
-  const require = createRequire(import.meta.url);
-  GlobalWorkerOptions.workerSrc = pathToFileURL(
-    require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"),
-  ).href;
-  const fontFiles = new Map([
-    [platformMessagePdfFontUrls.regular, "NotoSansCJKsc-Regular.otf"],
-    [platformMessagePdfFontUrls.bold, "NotoSansCJKsc-Bold.otf"],
-    [platformMessagePdfFontUrls.italic, "sarasa-gothic-sc-italic.ttf"],
-    [platformMessagePdfFontUrls.boldItalic, "sarasa-gothic-sc-bolditalic.ttf"],
-    [platformMessagePdfFontUrls.emoji, "noto-emoji-emoji-400-normal.woff"],
-  ]);
-  const rendered = context.mocks.deferred<void>();
-  // Replace only the browser transport. The page command, Markdown parser,
-  // document builder, font loading and PDF renderer all execute unchanged.
-  context.mocks.browser.dedicatedWorker(async (message) => {
-    const blob = await renderMessagePdf(message as PdfWorkerRequest);
-    rendered.resolve();
-    return { ok: true, blob };
-  });
-  const browser = context.mocks.browser.blobDownload();
-  await setupPdfChat(`${ANSWER}\n\n${markdown}`, async (request) => {
-    const filename = [...fontFiles].find(([url]) => {
-      return new URL(url, location.href).href === request.url;
-    })?.[1];
-    if (!filename) {
-      throw new Error("Unexpected PDF font request");
-    }
-    const data = await readFile(
-      require.resolve(
-        `../../../../test-fixtures/message-pdf-fonts/${filename}`,
-      ),
-    );
-    return HttpResponse.arrayBuffer(Uint8Array.from(data).buffer);
-  });
-  click(button("Generate PDF"));
-  await rendered.promise;
-  await waitFor(() => {
-    expect(downloadLink()).toBeInTheDocument();
-  });
-  const blob = browser.blobForUrl(downloadLink().href);
+async function exportMessage(body: string, name = "Field-notes") {
+  const browser = pdfServices(context, name);
+  await conversation(context, { chatEvents: [assistantRow(body)] });
+  click(await findAction("button", "Generate PDF"));
+  const link = await downloadLink();
+  const blob = browser.blobForUrl(link.href);
   if (!blob) {
-    throw new Error("PDF download has no data");
+    throw new Error("The download link has no PDF");
   }
-  const task = getDocument({
-    data: new Uint8Array(await blob.arrayBuffer()),
-    useSystemFonts: false,
-  });
-  return { pdf: await task.promise, task };
+  return { link, pages: await readSavedPdf(blob) };
 }
-
-test("Exported file cards retain their labels and durable links on a download-restricted workspace", async () => {
-  const workbook = "/artifacts/1111111111.xlsx";
-  const csv = "/artifacts/2222222222.csv";
-  const guide = "https://example.test/guide";
-  const workbookPreview = "https://storage.example.test/private-workbook";
-  const csvPreview = "https://storage.example.test/private-csv";
-  context.mocks.http.get(workbookPreview, () => {
-    return new HttpResponse(writeTableWorkbook([["Total"], ["42"]]), {
-      headers: { "Content-Type": TABLE_WORKBOOK_CONTENT_TYPE },
-    });
+test("chat-message-pdf-001 Enter generates a focused native link that survives two downloads until navigation", async () => {
+  const naming = createDeferredPromise<string>(context.signal);
+  const browser = pdfServices(context, naming.promise);
+  await conversation(context, {
+    chatEvents: [assistantRow("Field launch checklist")],
   });
-  context.mocks.http.get(csvPreview, () => {
-    return new HttpResponse("Total\n42\n", {
-      headers: { "Content-Type": "text/csv; charset=utf-8" },
-    });
+  const generate = await findAction("button", "Generate PDF");
+  generate.focus();
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+  await expect(
+    findAction("button", "Generating PDF…"),
+  ).resolves.toHaveAccessibleName("Generating PDF…");
+  naming.resolve("Launch-plan");
+  const link = await downloadLink();
+  expect(link).toHaveFocus();
+  expect(link.download).toBe("Launch-plan.pdf");
+  const url = link.href;
+  link.click();
+  link.click();
+  expect(
+    browser.downloads.map((file) => {
+      return [file.url, file.filename];
+    }),
+  ).toStrictEqual([
+    [url, "Launch-plan.pdf"],
+    [url, "Launch-plan.pdf"],
+  ]);
+  const [first, second] = browser.downloads;
+  const firstBytes = new Uint8Array(await first!.blob!.arrayBuffer());
+  expect(firstBytes).toStrictEqual(
+    new Uint8Array(await second!.blob!.arrayBuffer()),
+  );
+  expect((await readSavedPdf(first!.blob!))[0]!.text).toContain(
+    "Field launch checklist",
+  );
+  click(await findAction("link", "Artifacts"));
+  await waitFor(() => {
+    return expect(browser.revokedUrls).toContain(url);
   });
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      const isWorkbook = params.reference === "1111111111.xlsx";
-      return respond(200, {
-        filename: isWorkbook ? "budget.xlsx" : "totals.csv",
-        contentType: isWorkbook
-          ? TABLE_WORKBOOK_CONTENT_TYPE
-          : "text/csv; charset=utf-8",
-        url: isWorkbook ? workbookPreview : csvPreview,
-        downloadUrl: "https://api.example.test/guarded-download",
-        downloadAllowed: false,
-        expiresAt: "2099-01-01T00:00:00Z",
-        target: {
-          kind: "file",
-          id: isWorkbook
-            ? "b0000000-0000-4000-a000-000000000955"
-            : "b0000000-0000-4000-a000-000000000956",
-        },
-      });
-    },
+  expect(location.pathname).toBe("/artifacts");
+  expect(browser.blobForUrl(url)).toBeNull();
+});
+test("chat-message-pdf-002 an empty naming response preserves the exported message under the default name", async () => {
+  const { link, pages } = await exportMessage(
+    "Final dispatch to the northern camp",
+    "",
   );
-  const { pdf, task } = await exportRenderedPdf(
-    `![Budget workbook](${workbook})\n\n![](${csv})\n\n[![Read the guide](${workbook})](${guide})\n\nEnd of answer.`,
+  expect(link.download).toBe("okou-message.pdf");
+  expect(pages[0]!.text).toContain("Final dispatch to the northern camp");
+});
+test("chat-message-pdf-008 the exported font faces preserve Chinese emphasis and literal unmatched markers", async () => {
+  const { pages } = await exportMessage(
+    "Ordinary text. **重点** and *说明* then ***中文***.\n\nUnpaired **marker",
   );
-  try {
-    const page = await pdf.getPage(1);
-    const content = await page.getTextContent();
-    const text = content.items
-      .map((item) => {
-        return "str" in item ? item.str : "";
-      })
-      .join("");
-    for (const label of [
-      ANSWER,
-      "Budget workbook",
-      "totals.csv",
-      "Read the guide",
-      "End of answer.",
-    ]) {
-      expect(text).toContain(label);
-    }
-    const annotations = await page.getAnnotations();
+  const items = pages.flatMap((page) => {
+    return page.items;
+  });
+  for (const [word, style] of [
+    ["Ordinary text.", "Regular"],
+    ["重点", "Bold"],
+    ["说明", "Italic"],
+    ["中文", "BoldItalic"],
+  ] as const) {
     expect(
-      new Set(
-        annotations.map((annotation: { url?: string }) => {
-          return annotation.url;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([
-        new URL(workbook, location.href).href,
-        new URL(csv, location.href).href,
-        guide,
-      ]),
-    );
-  } finally {
-    await task.destroy();
+      items.find((item) => {
+        return item.text.includes(word);
+      })?.font,
+    ).toMatch(new RegExp(style + "$"));
   }
+  expect(pages[0]!.text).toContain("**marker");
+  expect(pages[0]!.text.replace("**marker", "")).not.toContain("*");
 });
-
-test("PDF text and typography render CJK emphasis", async () => {
-  const { pdf, task } = await exportRenderedPdf(
-    [
-      "Normal **Bold** *Italic* ***BoldItalic***",
-      "**机构与身份：**个人站",
-      "*说明：*后文",
-      "***重点：***后文",
-      "未闭合**（保留",
-    ].join("\n\n"),
+test("chat-message-pdf-009 prose around whitespace-only emphasis survives export", async () => {
+  const { pages } = await exportMessage("Before **  ** Between *   * After");
+  expect(pages[0]!.text).toMatch(/Before.*Between.*After/u);
+});
+test("chat-message-pdf-010 long cells and merged headers preserve text within both page margins", async () => {
+  const { pages } = await exportMessage(
+    "| Region | Notes | Boundary |\n|---|---|---|\n| North | " +
+      "Trade winds and tidal records ".repeat(18) +
+      ' | RIGHTEDGE |\n\n<table><tr><th colspan="2">Merged group</th><th>Last column</th></tr><tr><td colspan="2">Combined observations</td><td>Final note</td></tr></table>',
   );
-  try {
-    const content = await (await pdf.getPage(1)).getTextContent();
-    const items = content.items.filter((item) => {
-      return "str" in item;
-    });
-    const text = items
-      .map((item) => {
-        return item.str;
-      })
-      .join("");
-    expect(text).toContain("机构与身份：个人站");
-    expect(text).toContain("说明：后文");
-    expect(text).toContain("重点：后文");
-    expect(text).toContain("未闭合**（保留");
-    const fontFor = (value: string) => {
-      const item = items.find((entry) => {
-        return entry.str.includes(value);
-      });
-      if (!item) {
-        throw new Error(`Missing PDF text: ${value}`);
-      }
-      return item.fontName;
-    };
-    expect(fontFor("机构与身份：")).toBe(fontFor("Bold"));
-    expect(fontFor("说明：")).toBe(fontFor("Italic"));
-    expect(fontFor("重点：")).toBe(fontFor("BoldItalic"));
-  } finally {
-    await task.destroy();
+  const text = pages
+    .map((page) => {
+      return page.text;
+    })
+    .join(" ");
+  for (const word of [
+    "RIGHTEDGE",
+    "Last column",
+    "Merged group",
+    "Combined observations",
+    "Final note",
+  ]) {
+    expect(text).toContain(word);
   }
-});
-
-test("Whitespace-only emphasis still exports the surrounding text", async () => {
-  const { pdf, task } = await exportRenderedPdf(
-    "Before<em> </em>between<strong><em> </em></strong>after.",
-  );
-  try {
-    const content = await (await pdf.getPage(1)).getTextContent();
-    const text = content.items
-      .map((item) => {
-        return "str" in item ? item.str : "";
-      })
-      .join("");
-    expect(text).toContain("Before");
-    expect(text).toContain("between");
-    expect(text).toContain("after.");
-  } finally {
-    await task.destroy();
-  }
-});
-
-test("Exported table text stays inside the page and merged columns preserve all cells", async () => {
-  const { pdf, task } = await exportRenderedPdf(`| Rank | Candidate | Reason |
-|---|---|---|
-| 1 | org_members_metadata.translation_language | RIGHT_EDGE_SENTINEL |
-| 2 | ${"https://example.com/" + "longpath".repeat(25)} | LAST_COLUMN |
-
-<table><tr><th colspan="2">Group header</th><th>Notes</th></tr><tr><td>A</td><td>B</td><td>Normal row</td></tr><tr><td colspan="2">Combined columns</td><td>Final note</td></tr></table>`);
-  try {
-    let text = "";
-    for (let number = 1; number <= pdf.numPages; number++) {
-      const page = await pdf.getPage(number);
-      const width = page.getViewport({ scale: 1 }).width;
-      const content = await page.getTextContent();
-      for (const item of content.items) {
-        if (!("str" in item)) {
-          continue;
-        }
-        text += item.str;
-        expect(item.transform[4]).toBeGreaterThanOrEqual(47);
-        expect(item.transform[4] + item.width).toBeLessThanOrEqual(width - 47);
-      }
+  for (const page of pages) {
+    for (const item of page.items) {
+      expect(item.x).toBeGreaterThanOrEqual(47);
+      expect(item.x + item.width).toBeLessThanOrEqual(page.width - 47);
     }
-    expect(text).toContain("RIGHT_EDGE_SENTINEL");
-    expect(text).toContain("LAST_COLUMN");
-    expect(text).toContain("Group header");
-    expect(text).toContain("Combined columns");
-    expect(text).toContain("Final note");
-  } finally {
-    await task.destroy();
   }
 });
-
-test("Exported typography preserves code alignment, emphasis, emoji and Markdown breaks", async () => {
-  const { pdf, task } =
-    await exportRenderedPdf(`Normal **Bold** *Italic* ***BoldItalic*** 中文 *中文斜体* ✅ 🚀 👩‍💻 🇨🇳 1️⃣
-
-H<sub>2</sub>O x<sup>2</sup>
-
-soft_first
-soft_second
-
-hard_first${"  "}
-hard_second
-
-\`\`\`text
-iiii|VALUE
-WWWW|VALUE
-1111|VALUE
-\`\`\``);
-  try {
-    const page = await pdf.getPage(1);
-    const content = await page.getTextContent();
-    const items = content.items.filter((item) => {
-      return "str" in item;
-    });
-    const text = items
-      .map((item) => {
-        return item.str;
-      })
-      .join("");
-    expect(text).toContain("✅");
-    expect(text).toContain("🚀");
-    expect(text).toContain("👩‍💻");
-    expect(text).toContain("🇨🇳");
-    const find = (value: string) => {
-      const item = items.find((entry) => {
-        return entry.str.includes(value);
-      });
-      if (!item) {
-        throw new Error(`Missing PDF text: ${value}`);
-      }
-      return item;
-    };
-    expect(find("Italic").fontName).not.toBe(find("Normal").fontName);
-    expect(find("BoldItalic").fontName).not.toBe(find("Bold").fontName);
-    expect(find("soft_first").transform[5]).toBe(
-      find("soft_second").transform[5],
-    );
-    expect(find("hard_first").transform[5]).toBeGreaterThan(
-      find("hard_second").transform[5],
-    );
-    expect(find("iiii|VALUE").width).toBeCloseTo(find("WWWW|VALUE").width, 2);
-    expect(find("1111|VALUE").width).toBeCloseTo(find("WWWW|VALUE").width, 2);
-    const twos = items.filter((item) => {
-      return item.str === "2";
-    });
-    expect(twos).toHaveLength(2);
-    expect(twos[0]?.transform[5]).toBeLessThan(find("H").transform[5]);
-    expect(twos[1]?.transform[5]).toBeGreaterThan(find("x").transform[5]);
-  } finally {
-    await task.destroy();
-  }
-});
-
-test("A table row taller than a page retains every line in the exported PDF", async () => {
-  const lines = Array.from({ length: 75 }, (_, index) => {
-    return `LONG_ROW_${String(index + 1).padStart(3, "0")}`;
+test("chat-message-pdf-012 one tall row spans pages without losing or duplicating any line", async () => {
+  const lines = Array.from({ length: 75 }, (_, i) => {
+    return "Marker" + String(i + 1).padStart(2, "0");
   });
-  const { pdf, task } = await exportRenderedPdf(
-    `| ID | Content |\n|---|---|\n| A | ${lines.join("<br>")} |\n\nTABLE_END`,
+  const { pages } = await exportMessage(
+    "<table><tr><th>Observations</th></tr><tr><td>" +
+      lines.join("<br>") +
+      "</td></tr></table>\n\nEnd of survey",
   );
-  try {
-    expect(pdf.numPages).toBeGreaterThan(1);
-    let text = "";
-    for (let number = 1; number <= pdf.numPages; number++) {
-      const content = await (await pdf.getPage(number)).getTextContent();
-      text += content.items
-        .map((item) => {
-          return "str" in item ? item.str : "";
-        })
-        .join("");
-    }
-    for (const line of lines) {
-      expect(text.split(line)).toHaveLength(2);
-    }
-    expect(text).toContain("TABLE_END");
-  } finally {
-    await task.destroy();
-  }
+  expect(pages.length).toBeGreaterThan(1);
+  expect(
+    pages.flatMap((page) => {
+      return page.text.match(/Marker\d\d/gu) ?? [];
+    }),
+  ).toStrictEqual(lines);
+  expect(pages.at(-1)!.text).toContain("End of survey");
 });
-
-test("Exported short table rows keep their identifiers, descriptions and statuses on one page", async () => {
-  const rows = Array.from({ length: 42 }, (_, index) => {
-    const id = String(index + 1).padStart(2, "0");
-    return `| ROW_${id} | 中文说明；A short description for record ${id}. DETAIL_${id} | OK_${id} |`;
+test("chat-message-pdf-013 short rows keep their identifiers, descriptions, details and statuses together", async () => {
+  const rows = Array.from({ length: 42 }, (_, i) => {
+    return String(i + 1).padStart(2, "0");
   });
-  const { pdf, task } = await exportRenderedPdf(
-    `| Row | Description | Status |\n|---|---|---|\n${rows.join("\n")}\n\nTABLE_END`,
-  );
-  try {
-    const pages: string[] = [];
-    for (let number = 1; number <= pdf.numPages; number++) {
-      const content = await (await pdf.getPage(number)).getTextContent();
-      pages.push(
-        content.items
-          .map((item) => {
-            return "str" in item ? item.str : "";
-          })
-          .join(""),
-      );
-    }
-    for (let number = 1; number <= 42; number++) {
-      const id = String(number).padStart(2, "0");
-      const page = pages.find((text) => {
-        return text.includes(`ROW_${id}`);
-      });
-      expect(page).toContain(`DETAIL_${id}`);
-      expect(page).toContain(`OK_${id}`);
-    }
-  } finally {
-    await task.destroy();
-  }
-});
-
-test("An exported heading stays with the following table at a page boundary", async () => {
-  const fillers = Array.from({ length: 22 }, (_, index) => {
-    return `FILLER_${index} — Pagination calibration paragraph.`;
-  }).join("\n\n");
-  const { pdf, task } = await exportRenderedPdf(
-    `# Heading pagination\n\n${fillers}\n\n## Important table heading\n\n| Name | Status |\n|---|---|\n| CONTENT_START | Ready |`,
-  );
-  try {
-    const locations = new Map<string, number>();
-    for (let number = 1; number <= pdf.numPages; number++) {
-      const content = await (await pdf.getPage(number)).getTextContent();
-      for (const item of content.items) {
-        if ("str" in item) {
-          locations.set(item.str, number);
-        }
-      }
-    }
-    expect(locations.get("Important table heading")).toBe(2);
-    expect(locations.get("CONTENT_START")).toBe(2);
-  } finally {
-    await task.destroy();
+  const body = [
+    "| ID | Description | Detail | Status |",
+    "|---|---|---|---|",
+    ...rows.map((n) => {
+      return "| Field" + n + " | 中文说明 | Detail" + n + " | Open" + n + " |";
+    }),
+  ].join("\n");
+  const { pages } = await exportMessage(body);
+  expect(pages.length).toBeGreaterThan(1);
+  for (const n of rows) {
+    const containing = pages.filter((page) => {
+      return page.text.includes("Field" + n);
+    });
+    expect(containing).toHaveLength(1);
+    const text = containing[0]!.text;
+    expect(text).toContain("中文说明");
+    expect(text).toContain("Detail" + n);
+    expect(text).toContain("Open" + n);
   }
 });

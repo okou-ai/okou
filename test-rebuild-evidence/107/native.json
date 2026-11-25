@@ -1,0 +1,1818 @@
+{
+  "realtime-019": {
+    "stages": [
+      {
+        "label": "withheld",
+        "path": "same thread",
+        "markers": [
+          "Cedar account",
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey",
+          "Queued tide survey"
+        ],
+        "reads": [],
+        "topics": []
+      },
+      {
+        "label": "chatThreadDetailChanged:thread",
+        "path": "same thread",
+        "markers": [
+          "Maple account",
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey",
+          "Finalizing the cancelled run",
+          "Queued tide survey"
+        ],
+        "reads": [
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": true
+          },
+          {
+            "op": "connectorOverview",
+            "status": 200,
+            "label": "Maple account",
+            "enabled": true
+          }
+        ],
+        "topics": [
+          [
+            "published",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "delivery-1",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ]
+        ]
+      },
+      {
+        "label": "chatThreadAutomationsChanged:thread",
+        "path": "same thread",
+        "markers": [
+          "Maple account",
+          "Maple schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey",
+          "Finalizing the cancelled run",
+          "Queued tide survey"
+        ],
+        "reads": [
+          {
+            "op": "automations",
+            "status": 200,
+            "version": "maple",
+            "alias": "A"
+          }
+        ],
+        "topics": [
+          [
+            "published",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "delivery-1",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      },
+      {
+        "op": "automations",
+        "alias": "A",
+        "status": 200
+      },
+      {
+        "op": "published",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      },
+      {
+        "op": "published",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "automations",
+        "alias": "A",
+        "status": 200
+      }
+    ]
+  },
+  "realtime-020": {
+    "stages": [
+      {
+        "label": "initial",
+        "path": "same thread",
+        "markers": [
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A"
+          },
+          {
+            "op": "detail",
+            "status": 500,
+            "pending": false
+          },
+          {
+            "op": "automations",
+            "status": 200,
+            "version": "cedar"
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "getStartedRewardsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "slack:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "connectorPermissionUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "userPreferenceChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "runModelsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "vnc:observations-changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "cloudflare-access:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "tailscale:changed"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "*"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatThreadReadCursorUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "computerUseHostsChanged"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "runQueueChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ]
+        ]
+      },
+      {
+        "label": "publication withheld",
+        "path": "same thread",
+        "markers": [
+          "Cedar schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [],
+        "topics": []
+      },
+      {
+        "label": "chatThreadAutomationsChanged:thread",
+        "path": "same thread",
+        "markers": [
+          "Maple schedule",
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "automations",
+            "status": 200,
+            "version": "maple"
+          }
+        ],
+        "topics": [
+          [
+            "published",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "delivery-1",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "detail",
+        "status": 500
+      },
+      {
+        "op": "automations",
+        "status": 200
+      },
+      {
+        "op": "published",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "automations",
+        "status": 200
+      }
+    ]
+  },
+  "realtime-011": {
+    "stages": [
+      {
+        "label": "first publication A",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Delivered survey 17",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A"
+          },
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": false
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "getStartedRewardsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "slack:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "connectorPermissionUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "userPreferenceChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "runModelsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "vnc:observations-changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "cloudflare-access:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "tailscale:changed"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "*"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatThreadReadCursorUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "computerUseHostsChanged"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "runQueueChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "published",
+            "",
+            "chatThreadMessageCreated:thread"
+          ],
+          [
+            "delivery-1",
+            "user-org:fixture:fixture",
+            "chatThreadMessageCreated:thread"
+          ]
+        ]
+      },
+      {
+        "label": "resume",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Delivered survey 17",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [],
+        "topics": [
+          [
+            "connection-state",
+            "suspended",
+            ""
+          ],
+          [
+            "connection-state",
+            "connected",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "continuity gap",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Delivered survey 17",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [],
+        "topics": [
+          [
+            "connection-state",
+            "suspended",
+            ""
+          ],
+          [
+            "connection-state",
+            "connected",
+            ""
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      },
+      {
+        "op": "published",
+        "name": "",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "user:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "org:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "user-org-foreground:fixture:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "catchUp",
+        "status": 200,
+        "threads": [
+          {
+            "source": "side",
+            "cursor": 0,
+            "returned": 0
+          },
+          {
+            "source": "primary",
+            "cursor": 48,
+            "returned": 3
+          }
+        ]
+      },
+      {
+        "op": "connection-state",
+        "name": "suspended",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "connected",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "suspended",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "connected",
+        "topic": ""
+      }
+    ]
+  },
+  "realtime-005": {
+    "stages": [
+      {
+        "label": "first Router",
+        "path": "dashboard",
+        "markers": [],
+        "reads": [],
+        "topics": []
+      },
+      {
+        "label": "second Router",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": false
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "token-http",
+        "status": 500
+      },
+      {
+        "op": "auth-result",
+        "name": "failed",
+        "topic": ""
+      },
+      {
+        "op": "detail",
+        "status": 200
+      }
+    ]
+  },
+  "realtime-006": {
+    "stages": [
+      {
+        "label": "waiting at external attach",
+        "path": "dashboard",
+        "markers": [],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": []
+      }
+    ],
+    "catalog": [
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      }
+    ],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "asked",
+        "alias": "attach",
+        "mode": "holdfail"
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "settled",
+        "alias": "attach",
+        "mode": "holdfail",
+        "status": 503
+      }
+    ]
+  },
+  "realtime-010": {
+    "stages": [
+      {
+        "label": "waiting at external attach",
+        "path": "dashboard",
+        "markers": [],
+        "reads": [],
+        "topics": []
+      },
+      {
+        "label": "after failure",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "channel-state",
+            "failed",
+            ""
+          ],
+          [
+            "connection-state",
+            "failed",
+            ""
+          ]
+        ]
+      }
+    ],
+    "catalog": [
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      }
+    ],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "channel-state",
+        "name": "failed",
+        "topic": ""
+      },
+      {
+        "op": "asked",
+        "alias": "attach",
+        "mode": "holdfail"
+      },
+      {
+        "op": "connection-state",
+        "name": "failed",
+        "topic": ""
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "settled",
+        "alias": "attach",
+        "mode": "holdfail",
+        "status": 503
+      }
+    ]
+  },
+  "message-port-014": {
+    "stages": [
+      {
+        "label": "two shelves after user publication",
+        "index": 148,
+        "cards": [
+          true,
+          true
+        ],
+        "reads": [
+          {
+            "alias": "B",
+            "count": 1,
+            "harbor": true
+          },
+          {
+            "alias": "A",
+            "count": 1,
+            "harbor": true
+          },
+          {
+            "alias": "B",
+            "count": 1,
+            "harbor": true
+          }
+        ]
+      },
+      {
+        "label": "resume",
+        "index": 151,
+        "cards": [
+          true,
+          true
+        ],
+        "reads": []
+      },
+      {
+        "label": "gap",
+        "index": 221,
+        "cards": [
+          true,
+          true
+        ],
+        "reads": [
+          {
+            "alias": "A",
+            "count": 1,
+            "harbor": true
+          },
+          {
+            "alias": "B",
+            "count": 1,
+            "harbor": true
+          }
+        ]
+      },
+      {
+        "label": "survivor after second user publication",
+        "index": 249,
+        "cards": [
+          false
+        ],
+        "reads": [
+          {
+            "alias": "B",
+            "count": 0,
+            "harbor": false
+          }
+        ]
+      }
+    ],
+    "catalog": [
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "B",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "A",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "B",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "A",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "B",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "B",
+        "count": 0,
+        "harbor": false
+      }
+    ],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "published",
+        "name": "user:fixture",
+        "topic": "presentationTemplatesChanged"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user:fixture",
+        "topic": "presentationTemplatesChanged"
+      },
+      {
+        "op": "connection-state",
+        "name": "suspended",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "connected",
+        "topic": ""
+      },
+      {
+        "op": "channel-state",
+        "name": "attached",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "suspended",
+        "topic": ""
+      },
+      {
+        "op": "connection-state",
+        "name": "connected",
+        "topic": ""
+      },
+      {
+        "op": "channel-state",
+        "name": "attached",
+        "topic": ""
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "published",
+        "name": "user:fixture",
+        "topic": "presentationTemplatesChanged"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user:fixture",
+        "topic": "presentationTemplatesChanged"
+      },
+      {
+        "op": "indicators",
+        "alias": "B"
+      }
+    ]
+  },
+  "message-port-038": {
+    "stages": [
+      {
+        "label": "waiting at external attach",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "connection-state",
+            "suspended",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "after failure",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "connection-state",
+            "suspended",
+            ""
+          ]
+        ]
+      },
+      {
+        "label": "same topic delivered after reacquisition",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "getStartedRewardsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "slack:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "connectorPermissionUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "userPreferenceChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "runModelsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "vnc:observations-changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "cloudflare-access:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "tailscale:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "agentphone:changed"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "*"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ],
+          [
+            "subscribe",
+            "user-org:fixture:fixture",
+            "chatThreadReadCursorUpdated"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "computerUseHostsChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "billing:changed"
+          ],
+          [
+            "subscribe",
+            "org:fixture",
+            "runQueueChanged"
+          ],
+          [
+            "published",
+            "org:fixture",
+            "presentationTemplatesChanged"
+          ],
+          [
+            "delivery-1",
+            "org:fixture",
+            "presentationTemplatesChanged"
+          ]
+        ]
+      }
+    ],
+    "catalog": [
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "B",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "A",
+        "count": 0,
+        "harbor": false
+      },
+      {
+        "alias": "A",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "A",
+        "count": 1,
+        "harbor": true
+      },
+      {
+        "alias": "A",
+        "count": 1,
+        "harbor": true
+      }
+    ],
+    "unpublishedRow": null,
+    "boundary": [
+      {
+        "op": "asked",
+        "alias": "attach",
+        "mode": "holdfail"
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "connection-state",
+        "name": "suspended",
+        "topic": ""
+      },
+      {
+        "op": "settled",
+        "alias": "attach",
+        "mode": "holdfail",
+        "status": 503
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "published",
+        "name": "org:fixture",
+        "topic": "presentationTemplatesChanged"
+      },
+      {
+        "op": "delivery-1",
+        "name": "org:fixture",
+        "topic": "presentationTemplatesChanged"
+      }
+    ]
+  },
+  "message-port-032 (indicator)": {
+    "stages": [
+      {
+        "label": "empty projection",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "published",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ]
+        ]
+      },
+      {
+        "label": "offline rows",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          },
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": false
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "published",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": 0,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "agentphone:changed"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "browserSessionChanged"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatArtifactCatalogChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "artifact:changed"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadWorkflowsChanged:thread"
+      },
+      {
+        "op": "published",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatIndicatorsChanged"
+      },
+      {
+        "op": "delivery-2",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatIndicatorsChanged"
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "browserSessionChanged"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatArtifactCatalogChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "artifact:changed"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadWorkflowsChanged:thread"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      }
+    ]
+  },
+  "message-port-032 (message control)": {
+    "stages": [
+      {
+        "label": "empty projection",
+        "path": "dashboard",
+        "markers": [
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "published",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ]
+        ]
+      },
+      {
+        "label": "offline rows",
+        "path": "same thread",
+        "markers": [
+          "Question number 16",
+          "Delivered survey 17",
+          "Primary survey",
+          "Side survey"
+        ],
+        "reads": [
+          {
+            "op": "indicators",
+            "alias": "A",
+            "empty": true
+          },
+          {
+            "op": "catchUp",
+            "status": 200,
+            "threads": [
+              {
+                "source": "side",
+                "cursor": 0,
+                "returned": 0
+              },
+              {
+                "source": "primary",
+                "cursor": 48,
+                "returned": 3
+              }
+            ],
+            "includesPrimary": true
+          },
+          {
+            "op": "detail",
+            "status": 200,
+            "pending": false
+          },
+          {
+            "op": "event-rows",
+            "resource": "primary"
+          }
+        ],
+        "topics": [
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "published",
+            "user-org:fixture:fixture",
+            "chatIndicatorsChanged"
+          ],
+          [
+            "published",
+            "",
+            "chatThreadMessageCreated:thread"
+          ],
+          [
+            "delivery-1",
+            "user-org:fixture:fixture",
+            "chatThreadMessageCreated:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "unsubscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "browserSessionChanged"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatArtifactCatalogChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadDetailChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "artifact:changed"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadAutomationsChanged:thread"
+          ],
+          [
+            "subscribe",
+            "user:fixture",
+            "chatThreadWorkflowsChanged:thread"
+          ]
+        ]
+      }
+    ],
+    "catalog": [],
+    "unpublishedRow": 1,
+    "boundary": [
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "agentphone:changed"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "browserSessionChanged"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatArtifactCatalogChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "artifact:changed"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadWorkflowsChanged:thread"
+      },
+      {
+        "op": "published",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatIndicatorsChanged"
+      },
+      {
+        "op": "delivery-2",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatIndicatorsChanged"
+      },
+      {
+        "op": "indicators",
+        "alias": "A"
+      },
+      {
+        "op": "published",
+        "name": "",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-1",
+        "name": "user-org:fixture:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "user:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "org:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "delivery-0",
+        "name": "user-org-foreground:fixture:fixture",
+        "topic": "chatThreadMessageCreated:thread"
+      },
+      {
+        "op": "catchUp",
+        "status": 200,
+        "threads": [
+          {
+            "source": "side",
+            "cursor": 0,
+            "returned": 0
+          },
+          {
+            "source": "primary",
+            "cursor": 48,
+            "returned": 3
+          }
+        ]
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "browserSessionChanged"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatArtifactCatalogChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadDetailChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "artifact:changed"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadAutomationsChanged:thread"
+      },
+      {
+        "op": "unsubscribe",
+        "name": "user:fixture",
+        "topic": "chatThreadWorkflowsChanged:thread"
+      },
+      {
+        "op": "detail",
+        "status": 200
+      }
+    ]
+  }
+}

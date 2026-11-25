@@ -1,3 +1,5 @@
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 import {
   catalogFixture,
   connectorFixtureAccount,
@@ -102,6 +104,7 @@ export function mockOnboardingConnectorCatalog(
   items: readonly PublicConnectorCatalogStatusItem[],
   options: {
     readonly ready?: Promise<void>;
+    readonly onList?: () => void;
     readonly unavailable?: () => boolean;
   } = {},
 ): void {
@@ -121,6 +124,7 @@ export function mockOnboardingConnectorCatalog(
     ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   );
   context.mocks.api(onboardingSourcesContract.list, async ({ respond }) => {
+    options.onList?.();
     if (options.ready) {
       await options.ready;
     }
@@ -146,4 +150,49 @@ export function mockOnboardingConnectorCatalog(
       return connectorFixtureAccount(item) ? [builtinConnection(item)] : [];
     }),
   );
+}
+
+export function onboardingOAuth(
+  context: TestContext,
+  slug: "notion" | "gmail",
+  label: string,
+) {
+  const item = {
+    slug,
+    label,
+    description: "Connect your " + label + " account",
+  };
+  const items = [onboardingSourceItem({ ...item, hasAccount: false })];
+  mockOnboardingConnectorCatalog(context, items);
+  const completed = mockOAuthCompletions(context);
+  const attempt = crypto.randomUUID();
+  const url = "https://accounts.example.test/" + slug + "/consent";
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const started = context.mocks.deferred<{ slug: string; intent: string }>();
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, body, respond }) => {
+      if (!started.settled()) {
+        started.resolve({
+          slug: params.connectorSlug,
+          intent: body.account.intent,
+        });
+      }
+      return respond(200, { oauthAttemptId: attempt, authorizationUrl: url });
+    },
+  );
+  return {
+    popup,
+    url,
+    started: started.promise,
+    authorize: () => {
+      items[0] = onboardingSourceItem({ ...item, hasAccount: true });
+      const account = builtinConnection(items[0]);
+      context.mocks.data.connectors([account]);
+      completed.set(attempt, account.id);
+      context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
+    },
+  };
 }

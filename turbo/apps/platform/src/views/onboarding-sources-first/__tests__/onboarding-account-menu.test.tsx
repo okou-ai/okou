@@ -1,81 +1,69 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import {
-  connectedPersonalClaudeCodeProvider,
-  connectedPersonalCodexProvider,
-  createSidebarAccountHelpers,
-} from "../../okou-page/__tests__/sidebar-account-test-helpers.ts";
-import { mockOnboardingConnectorCatalog } from "./onboarding-catalog-test-helpers.ts";
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const { mockAdminAccountSidebar } = createSidebarAccountHelpers(context);
-
 test.each([
-  { provider: "ChatGPT", activation: "pointer" },
-  { provider: "Claude", activation: "Enter" },
-  { provider: "ChatGPT", activation: "Space" },
+  ["onboarding-account-menu-002", "Claude usage", "{Enter}"],
+  ["onboarding-account-menu-003", "ChatGPT usage", " "],
 ])(
-  "Open Model settings from $provider usage in the onboarding account menu using $activation",
-  async ({ provider, activation }) => {
-    const user = userEvent.setup();
-    mockAdminAccountSidebar();
-    context.mocks.data.personalModelProviders([
-      connectedPersonalCodexProvider(),
-      connectedPersonalClaudeCodeProvider(),
-    ]);
+  "%s opens model settings from %s using the keyboard",
+  async (_id, usage, key) => {
     context.mocks.data.onboardingStatus({
       needsOnboarding: true,
       onboardingComplete: false,
     });
-    mockOnboardingConnectorCatalog(context, []);
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      path: ROUTES.onboarding,
-      auth: {
-        user: {
-          id: "test-user-123",
-          fullName: "Alex Rivera",
-          email: "alex.rivera@example.test",
-        },
-      },
-    });
-
-    await screen.findByRole("heading", {
-      name: "What kind of work do you do?",
-    });
-    click(await screen.findByLabelText("Alex Rivera"));
+    const types = ["codex-oauth-token", "claude-code-oauth-token"] as const;
+    context.mocks.data.personalModelProviders(
+      types.map((type) => {
+        return {
+          type,
+          id: crypto.randomUUID(),
+          framework: type === "codex-oauth-token" ? "codex" : "claude-code",
+          isActive: true,
+          needsReconnect: false,
+          lastRefreshErrorCode: null,
+          createdAt: "2026-10-01T00:00:00Z",
+          updatedAt: "2026-10-01T00:00:00Z",
+          subscriptionUsage: {
+            fiveHour: {
+              usedPercent: 20,
+              remainingPercent: 80,
+              resetAt: null,
+              windowSeconds: 18_000,
+            },
+            weekly: null,
+          },
+        };
+      }),
+    );
+    const user = userEvent.setup();
+    await setupPage({ context, path: "/onboarding" });
+    await user.click(await findAction("button", "Test User"));
     const menu = await screen.findByRole("menu");
-    const section = await within(menu).findByRole("region", {
-      name: `${provider} usage`,
+    const item = await screen.findByLabelText(usage, {
+      selector: '[role="menuitem"]',
     });
-    const information = within(section).getByLabelText(`${provider} usage`);
-
-    if (activation === "pointer") {
-      click(information);
-    } else {
-      within(menu).getByTestId("account-menu-credit-balance").focus();
-      await user.keyboard(
-        provider === "Claude" ? "{ArrowDown}{ArrowDown}" : "{ArrowDown}",
-      );
-      await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+    for (const _entry of menu.querySelectorAll('[role="menuitem"]')) {
+      if (item === document.activeElement) {
+        break;
+      }
+      await user.keyboard("{ArrowDown}");
     }
-
-    const settings = await screen.findByRole("dialog", { name: "Settings" });
-    await expect(
-      within(settings).findByRole("heading", { name: "Use more models" }),
-    ).resolves.toBeInTheDocument();
+    expect(item).toHaveFocus();
+    await user.keyboard(key);
+    const dialog = await screen.findByRole("dialog");
+    await screen.findByText("Use more models");
+    expect(new URLSearchParams(window.location.search).get("settings")).toBe(
+      "model",
+    );
     await waitFor(() => {
-      expect(new URLSearchParams(window.location.search).get("settings")).toBe(
-        "model",
+      return expect(dialog).toContainElement(
+        document.activeElement as HTMLElement,
       );
-      expect(settings).toContainElement(document.activeElement as HTMLElement);
     });
   },
 );

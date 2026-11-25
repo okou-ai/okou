@@ -1,101 +1,57 @@
-import {
-  getAction,
-  queryAction,
-} from "./connector-integrations-test-helpers.ts";
-import {
-  integrationsTelegramContract,
-  OFFICIAL_TELEGRAM_BOT_ID,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+import {
+  openTelegram,
+  botState,
+  signedQuery,
+  telegramBotUrl,
+  telegramPath,
+  visitLink,
+} from "./telegram-page-fixture.ts";
 const context = testContext();
-const TELEGRAM_PATHS = ["/settings/telegram", "/telegram/connect"] as const;
-
-function connectSearch(): string {
-  return new URLSearchParams({
-    bot: OFFICIAL_TELEGRAM_BOT_ID,
-    tgUser: "99001",
-    tgUserName: "alice",
-    tgDisplayName: "Alice Tester",
-    ts: "1700000000",
-    sig: "b".repeat(64),
-  }).toString();
-}
-
-test.each(TELEGRAM_PATHS)(
-  "%s keeps the standalone connection page and complete URL context",
-  async (path) => {
-    context.mocks.api(
-      integrationsTelegramContract.getLinkStatus,
-      ({ respond }) => {
-        return respond(200, {
-          linked: true,
-          telegramUserId: "99001",
-          botUsername: "agent_bot",
-        });
-      },
-    );
-    const entry = `${path}?${connectSearch()}&settings=profile&context=one&context=two#return-context`;
-
-    await setupPage({ context, path: entry, host: "app.okou.ai" });
-
-    await expect(
-      screen.findByRole("heading", { name: "Already connected to Telegram" }),
-    ).resolves.toBeInTheDocument();
-    expect(getAction("link", "Open Telegram")).toHaveAttribute(
-      "href",
-      "https://t.me/agent_bot",
-    );
-    expect(window.location.href).toBe(
-      `https://app.okou.ai${entry.replace(path, "/settings/telegram")}`,
-    );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  },
-);
-
-test.each(TELEGRAM_PATHS)(
-  "%s requires sign-in with the full connection URL as its return destination",
-  async (path) => {
-    const entry = `${path}?${connectSearch()}&context=one&context=two#return-context`;
-
-    await startPage({ context, path: entry, host: "app.okou.ai", auth: null });
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/sign-in");
-    });
-    const authParams = new URL(window.location.href).searchParams;
-    expect(authParams.get("redirect_url")).toBe(`https://app.okou.ai${entry}`);
-  },
-);
-
-test.each(TELEGRAM_PATHS)(
-  "%s keeps the signed link while setup opens separately",
-  async (path) => {
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-      hasOrg: false,
-    });
-    const search = `${connectSearch()}&prompt=hello%20world&context=one&context=two`;
-
-    await setupPage({ context, path: `${path}?${search}` });
-
-    await expect(
-      screen.findByRole("heading", { name: "Finish account setup" }),
-    ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/settings/telegram");
-    expect([...new URLSearchParams(window.location.search)]).toStrictEqual([
-      ...new URLSearchParams(search),
-    ]);
-    expect(getAction("link", "Open setup")).toHaveAttribute(
-      "href",
-      "/onboarding",
-    );
-    expect(getAction("link", "Open setup")).toHaveAttribute("target", "_blank");
-    expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-  },
-);
+test("telegram-connect-routes-001 The linked member lands on standalone Telegram with the original query and fragment", async () => {
+  botState(context, "99001");
+  await openTelegram(context, telegramPath + signedQuery);
+  await expect(
+    screen.findByText("Already connected to Telegram"),
+  ).resolves.toBeInTheDocument();
+  expect(location.href).toBe(
+    "https://app.okou.ai" + telegramPath + signedQuery,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await visitLink(context, "Open Telegram", telegramBotUrl);
+});
+test("telegram-connect-routes-003 Sign-in carries the complete signed member destination", async () => {
+  await startPage({
+    context,
+    auth: null,
+    host: "app.okou.ai",
+    path: telegramPath + signedQuery,
+    sharedWorkerTestTransport: "message-port",
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe("/sign-in");
+  });
+  expect(new URL(location.href).searchParams.get("redirect_url")).toBe(
+    "https://app.okou.ai" + telegramPath + signedQuery,
+  );
+});
+test("telegram-connect-routes-005 Setup opens onboarding in a new page and preserves the signed request", async () => {
+  botState(context);
+  context.mocks.data.onboardingStatus({
+    hasOrg: false,
+    needsOnboarding: true,
+  });
+  const path =
+    telegramPath +
+    signedQuery.replace("context=phone", "prompt=connect&context=phone");
+  await openTelegram(context, path);
+  await expect(
+    screen.findByText("Finish account setup"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Connect")).toBeNull();
+  await visitLink(context, "Open setup", "https://app.okou.ai/onboarding");
+  expect(location.href).toBe("https://app.okou.ai" + path);
+});

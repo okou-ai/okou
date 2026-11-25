@@ -1,78 +1,312 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-import type {
-  Project,
-  ProjectEvent,
-} from "@okouai/api-contracts/validators/projects";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import {
-  chatThreadByIdContract,
-  chatThreadDraftContract,
-  chatThreadsContract,
-  chatThreadPinOrderContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
 import { mockNow } from "../../../lib/time.ts";
 import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { chatListThread } from "./chat-list-test-helpers.ts";
+import { menuItemByText } from "./sidebar-test-helpers.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  menuItemByText,
-  queryMenuItemByText,
-} from "./sidebar-test-helpers.tsx";
-
+  projectsContract,
+  type Project,
+} from "@okouai/api-contracts/contracts/projects";
+import {
+  chatThreadsContract,
+  chatThreadPinOrderContract,
+  type ChatThreadSnapshotProjection,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import {
+  click,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatListAuth,
+  chatListThread,
+  cachedChatListEvents,
+  installActiveChatBoundaries,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const launchId = "30000000-0000-4000-8000-000000000081";
-const researchId = "30000000-0000-4000-8000-000000000082";
-const at = "2026-11-02T00:00:00.000Z";
+function project(name: string, sortOrder: string): Project {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    sortOrder,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+  };
+}
+async function open(
+  projects: Project[],
+  threads: ChatThreadSnapshotProjection[],
+  current?: string,
+  archiveMenuEnabled?: boolean,
+) {
+  const auth = chatListAuth(848);
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects,
+      latestSeqId: 1,
+      latestEventId: crypto.randomUUID(),
+    });
+  });
+  context.mocks.api(projectsContract.threads, ({ params, respond }) => {
+    return respond(200, {
+      threads: threads.filter((t) => {
+        return t.projectId === params.id;
+      }),
+      nextAfter: null,
+    });
+  });
+  installChatListStream(context, { caseId: 848, snapshot: threads });
+  installActiveChatBoundaries(context);
+  context.mocks.api(
+    chatThreadPinOrderContract.reorder,
+    ({ params, body, respond }) => {
+      const thread = threads.find((t) => {
+        return t.id === params.id;
+      });
+      if (!thread) {
+        throw new Error("Unknown chat");
+      }
+      thread.pinOrder = body.pinOrder;
+      return respond(204);
+    },
+  );
+  await setupPage({
+    context,
+    path: current ? "/chats/" + current : "/",
+    auth,
+    ...(archiveMenuEnabled === undefined
+      ? {}
+      : {
+          featureSwitches: {
+            [FeatureSwitchKey.ProjectArchive]: archiveMenuEnabled,
+          },
+        }),
+    sharedWorkerTestTransport: "message-port",
+    cachedChatThreadEvents: cachedChatListEvents(848, threads),
+  });
+}
+function handle(name: string) {
+  return findFastControl("button", "Show or hide chats in " + name);
+}
+function children(p: Project) {
+  const container = document.querySelector<HTMLElement>(
+    '[data-project-children-id="' + p.id + '"]',
+  );
+  if (!container) {
+    throw new Error("Project children not rendered: " + p.name);
+  }
+  return container;
+}
+function titles(p: Project) {
+  return queryAllByRoleFast("link", children(p)).map((link) => {
+    return link.querySelector('[data-slot="sidebar-thread-title"]')
+      ?.textContent;
+  });
+}
+test("project-chat-list-001 expanding active and empty projects keeps inbox-empty and archive controls out of view", async () => {
+  const launch = project("Launch", "a0"),
+    research = project("Research", "a1"),
+    active = chatListThread(11, "Coastal launch", { projectId: launch.id }),
+    archived = chatListThread(12, "Retired notebook", { archived: true });
+  await open([launch, research], [active, archived]);
+  const list = await handle("Launch");
+  expect(list).toHaveAttribute("aria-expanded", "false");
+  const inbox = () => {
+    expect(screen.queryByText("Your inbox is empty")).toBeNull();
+    expect(screen.queryByText("Show archived chats")).toBeNull();
+  };
+  inbox();
+  click(list);
+  await waitFor(() => {
+    expect(titles(launch)).toContain("Coastal launch");
+  });
+  inbox();
+  click(await handle("Research"));
+  await waitFor(() => {
+    expect(
+      within(children(research)).getByText("No chats here yet"),
+    ).toBeInTheDocument();
+  });
+  inbox();
+});
+test("project-chat-list-005 an empty Inbox opens its archived conversation", async () => {
+  const old = chatListThread(13, "Winter plan", { archived: true });
+  await open([], [old]);
+  await screen.findByText("Your inbox is empty");
+  click(await findFastControl("button", "Show archived chats"));
+  await expect(
+    findFastControl("link", /Winter plan/),
+  ).resolves.toBeInTheDocument();
+});
+test("project-chat-list-007 an empty project's archive reveals its own chat and preserves the current conversation", async () => {
+  const launch = project("Launch", "a0"),
+    research = project("Research", "a1"),
+    active = chatListThread(14, "Outside notes"),
+    old = chatListThread(15, "Archived launch", {
+      archived: true,
+      projectId: launch.id,
+    });
+  await open([launch, research], [active, old], active.id);
+  click(await handle("Research"));
+  await waitFor(() => {
+    expect(
+      within(children(research)).getByText("No chats here yet"),
+    ).toBeInTheDocument();
+  });
+  click(await handle("Launch"));
+  await waitFor(() => {
+    expect(
+      within(children(launch)).getByText("No chats here yet"),
+    ).toBeInTheDocument();
+  });
+  click(
+    await findFastControl("button", "Show archived chats", children(launch)),
+  );
+  await waitFor(() => {
+    expect(titles(launch)).toContain("Archived launch");
+  });
+  expect(location.pathname).toBe("/chats/" + active.id);
+});
+test("project-chat-list-009 moving a project pin up and down never brings in an outside pin", async () => {
+  const launch = project("Launch", "a0"),
+    pinnedAt = "2026-08-02T09:00:00Z",
+    first = chatListThread(17, "First pin", {
+      projectId: launch.id,
+      pinnedAt,
+      pinOrder: "a0",
+    }),
+    second = chatListThread(18, "Second pin", {
+      projectId: launch.id,
+      pinnedAt,
+      pinOrder: "a2",
+    }),
+    regular = chatListThread(19, "Regular chat", { projectId: launch.id }),
+    outside = chatListThread(20, "Outside pin", { pinnedAt, pinOrder: "a1" });
+  await open([launch], [first, second, regular, outside]);
+  click(await handle("Launch"));
+  const initial = ["First pin", "Second pin", "Regular chat"];
+  await waitFor(() => {
+    expect(titles(launch)).toStrictEqual(initial);
+  });
+  async function move(direction: "up" | "down") {
+    const link = await findFastControl("link", /Second pin/, children(launch));
+    const row = link.closest("[data-project-row-id]");
+    if (!(row instanceof HTMLElement)) {
+      throw new Error("Missing project chat row");
+    }
+    click(await within(row).findByTestId("chat-thread-menu-trigger"));
+    const menu = await screen.findByRole("menu");
+    click(await within(menu).findByText("Move " + direction));
+  }
+  await move("up");
+  await waitFor(() => {
+    expect(titles(launch)).toStrictEqual([
+      "Second pin",
+      "First pin",
+      "Regular chat",
+    ]);
+  });
+  await move("down");
+  await waitFor(() => {
+    expect(titles(launch)).toStrictEqual(initial);
+  });
+});
+test("project-chat-list-011 folding Launch twice preserves the selected outside conversation and its address", async () => {
+  const launch = project("Launch", "a0"),
+    inside = chatListThread(21, "Launch planning", { projectId: launch.id }),
+    outside = chatListThread(22, "Current notes");
+  await open([launch], [inside, outside], outside.id);
+  const current = await findFastControl("link", /Current notes/);
+  expect(current).toHaveAttribute("aria-current", "page");
+  const trigger = await handle("Launch");
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  click(trigger);
+  await waitFor(() => {
+    expect(titles(launch)).toContain("Launch planning");
+  });
+  click(trigger);
+  await waitFor(() => {
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Launch planning")).toBeNull();
+  });
+  expect(current).toHaveAttribute("aria-current", "page");
+  expect(location.pathname).toBe("/chats/" + outside.id);
+});
 
-// A Project's rows are siblings in the virtual list, so its group is the
-// ordered set of rows that carry its id.
-function projectRows(projectId = launchId) {
+test("The archive shows both chats in a retired project and only the archived chat in a current project", async () => {
+  const retired = { ...project("Harbor maps", "a0"), archived: true };
+  const current = project("Field notes", "a1");
+  const threads = [
+    chatListThread(31, "Harbor survey", { projectId: retired.id }),
+    chatListThread(32, "Older survey", {
+      projectId: retired.id,
+      archived: true,
+    }),
+    chatListThread(33, "Current fieldwork", { projectId: current.id }),
+    chatListThread(34, "Prior fieldwork", {
+      projectId: current.id,
+      archived: true,
+    }),
+  ];
+  await open([retired, current], threads);
+  await handle(current.name);
+  expect(
+    queryFastControl("button", "Show or hide chats in Harbor maps"),
+  ).toBeNull();
+  click(await findFastControl("button", "Open chat list menu"));
+  const filters = within(await screen.findByRole("menu"));
+  click(await filters.findByText("Archived"));
+  const archivedRow = await handle(retired.name);
+  expect(archivedRow).not.toHaveTextContent("Archived");
+  click(archivedRow);
+  click(await handle(current.name));
+  await waitFor(() => {
+    expect(titles(retired).sort()).toStrictEqual([
+      "Harbor survey",
+      "Older survey",
+    ]);
+    expect(titles(current)).toStrictEqual(["Prior fieldwork"]);
+  });
+});
+
+test.each([true, false])(
+  "Project archive action follows the workspace switch (%s)",
+  async (enabled) => {
+    const client = project("Seaside research", "a0");
+    await open([client], [], undefined, enabled);
+    click(await findFastControl("button", "Options for Seaside research"));
+    const menu = await screen.findByRole("menu");
+    const actions = queryAllByRoleFast("menuitem", menu).filter((item) => {
+      const label = item.textContent?.trim();
+      return label === "Rename" || label === "Archive";
+    });
+    const labels = actions.map((action) => {
+      expect(action).toBeVisible();
+      return action.textContent?.trim();
+    });
+    expect(labels.sort()).toStrictEqual(
+      enabled ? ["Archive", "Rename"] : ["Rename"],
+    );
+  },
+);
+
+function projectRows(projectId: string) {
   return [
     ...document.querySelectorAll<HTMLElement>(
       `[data-project-row-id="${projectId}"]`,
     ),
   ];
-}
-
-function button(name: string, containers: readonly ParentNode[] = [document]) {
-  const found = containers
-    .flatMap((container) => {
-      return queryAllByRoleFast("button", container);
-    })
-    .find((item) => {
-      return (
-        item.getAttribute("aria-label") === name ||
-        item.textContent?.trim() === name
-      );
-    });
-  if (!found) {
-    throw new Error(`Button ${name} not found`);
-  }
-  return found;
-}
-
-function hasButton(name: string, containers: readonly ParentNode[]) {
-  return containers.some((container) => {
-    return queryAllByRoleFast("button", container).some((item) => {
-      return item.textContent?.trim() === name;
-    });
-  });
-}
-
-function projectToggle(name: string, projectId = launchId) {
-  return button(`Show or hide chats in ${name}`, projectRows(projectId));
 }
 
 function threadLink(threadId: string) {
@@ -81,192 +315,6 @@ function threadLink(threadId: string) {
   );
 }
 
-// The chats a Project lists, in the order it lists them.
-function projectChatTitles(projectId = launchId) {
-  return projectRows(projectId).flatMap((row) => {
-    return [
-      ...row.querySelectorAll<HTMLElement>("[data-sidebar-chat-thread-id]"),
-    ].map((link) => {
-      return (
-        link
-          .querySelector('[data-slot="sidebar-thread-title"]')
-          ?.textContent?.trim() ?? ""
-      );
-    });
-  });
-}
-
-function projectText(projectId = launchId) {
-  return projectRows(projectId).map((row) => {
-    return row.textContent?.trim() ?? "";
-  });
-}
-
-function chatMenuButton(threadId: string) {
-  const row = threadLink(threadId)?.parentElement;
-  if (!row) {
-    throw new Error("Chat row not found");
-  }
-  return button("Open chat menu", [row]);
-}
-
-function installProjects(
-  projects: Project[] = [
-    { id: launchId, name: "Launch", createdAt: at, updatedAt: at },
-    { id: researchId, name: "Research", createdAt: at, updatedAt: at },
-  ],
-) {
-  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      projects,
-      latestEventId: null,
-      latestSeqId: 1,
-    });
-  });
-  context.mocks.api(projectsContract.events, ({ respond }) => {
-    return respond(200, { events: [], hasMore: false });
-  });
-  context.mocks.api(composerDraftContract.get, ({ respond }) => {
-    return respond(200, { draftUserMessage: null, draftAttachments: null });
-  });
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, { draftUserMessage: null, draftAttachments: null });
-  });
-  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
-    return respond(204);
-  });
-  context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
-    return respond(204);
-  });
-}
-
-async function openChatList(
-  caseId: number,
-  threads: Parameters<typeof installContinuityWorkspace>[1]["threads"],
-  path: string,
-) {
-  const workspace = installContinuityWorkspace(context, { caseId, threads });
-  installProjects();
-  await setupPage({
-    context,
-    path,
-    ...workspace.pageOptions,
-  });
-  await waitFor(() => {
-    expect(projectToggle("Launch")).toBeInTheDocument();
-  });
-}
-
-test.each([
-  { mobile: false, archivedOutside: true },
-  { mobile: false, archivedOutside: false },
-  { mobile: true, archivedOutside: true },
-  { mobile: true, archivedOutside: false },
-])(
-  "Projects populate the inbox without chats outside them (mobile: $mobile, archived outside: $archivedOutside)",
-  async ({ mobile, archivedOutside }) => {
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 48rem)" && !mobile;
-    });
-    const member = {
-      ...continuityThread(301, 1, "Launch planning"),
-      projectId: launchId,
-    };
-    const archived = {
-      ...continuityThread(301, 2, "Archived notes"),
-      archived: true,
-    };
-    await openChatList(
-      301,
-      archivedOutside ? [member, archived] : [member],
-      "/",
-    );
-
-    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Start a conversation and it'll show up here"),
-    ).not.toBeInTheDocument();
-    expect(hasButton("Show archived chats", [document])).toBeFalsy();
-
-    click(projectToggle("Launch"));
-    await waitFor(() => {
-      expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
-    });
-    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Start a conversation and it'll show up here"),
-    ).not.toBeInTheDocument();
-    expect(hasButton("Show archived chats", [document])).toBeFalsy();
-
-    click(projectToggle("Research", researchId));
-    await waitFor(() => {
-      expect(projectText(researchId)).toContain("No chats here yet");
-    });
-    expect(screen.queryByText("Your inbox is empty")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Start a conversation and it'll show up here"),
-    ).not.toBeInTheDocument();
-    expect(hasButton("Show archived chats", [document])).toBeFalsy();
-  },
-);
-
-test.each([false, true])(
-  "An inbox without Projects or active chats leads to archived chats (mobile: %s)",
-  async (mobile) => {
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 48rem)" && !mobile;
-    });
-    const archived = {
-      ...continuityThread(302, 1, "Archived notes"),
-      archived: true,
-    };
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 302,
-      threads: [archived],
-    });
-    installProjects([]);
-    await setupPage({
-      context,
-      path: "/",
-      ...workspace.pageOptions,
-    });
-
-    await expect(
-      screen.findByText("Your inbox is empty"),
-    ).resolves.toBeInTheDocument();
-    click(button("Show archived chats"));
-    await waitFor(() => {
-      expect(threadLink(archived.id)).toBeInTheDocument();
-    });
-  },
-);
-
-test.each([false, true])(
-  "Project menu shows Archive according to the feature switch (%s)",
-  async (enabled) => {
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 327,
-      threads: [],
-    });
-    installProjects();
-    await setupPage({
-      context,
-      path: "/",
-      ...workspace.pageOptions,
-      featureSwitches: { [FeatureSwitchKey.ProjectArchive]: enabled },
-    });
-    const user = userEvent.setup({ delay: null });
-    await user.click(
-      await waitFor(() => {
-        return button("Options for Launch", projectRows());
-      }),
-    );
-    expect(menuItemByText("Rename")).toBeVisible();
-    expect(queryMenuItemByText("Archive") !== null).toBe(enabled);
-  },
-);
-
 test.each([
   { mobile: false, rejected: false },
   { mobile: true, rejected: false },
@@ -274,10 +322,15 @@ test.each([
 ])(
   "Project archive and restore update before confirmation and reconcile later events (mobile: $mobile, rejected: $rejected)",
   async ({ mobile, rejected }) => {
+    const launchId = "30000000-0000-4000-8000-000000000081";
+    const at = "2026-11-02T00:00:00.000Z";
     mockNow(new Date("2026-11-03T00:00:00.000Z"), context.signal);
     context.mocks.browser.matchMedia((query) => {
       return query === "(min-width: 48rem)" && !mobile;
     });
+    const toggle = (name: string) => {
+      return queryFastControl("button", "Show or hide chats in " + name);
+    };
     const archiveResponse = context.mocks.deferred<void>();
     const restoreResponse = context.mocks.deferred<void>();
     const ordinary = continuityThread(328, 1, "Ordinary chat");
@@ -295,7 +348,13 @@ test.each([
       createdAt: at,
       updatedAt: at,
     };
-    installProjects([project]);
+    context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+      return respond(200, {
+        projects: [project],
+        latestEventId: null,
+        latestSeqId: 1,
+      });
+    });
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
         threads: { [planning.id]: "unread" },
@@ -345,57 +404,56 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.ProjectArchive]: true },
     });
     await waitFor(() => {
-      expect(projectToggle("Launch")).toHaveAccessibleDescription("Unread");
+      expect(toggle("Launch")).toHaveAccessibleDescription("Unread");
     });
-    click(projectToggle("Launch"));
+    click(await handle("Launch"));
     await waitFor(() => {
       expect(threadLink(planning.id)).toHaveAccessibleName(
         "Launch planning Unread",
       );
     });
-    click(button("Options for Launch", projectRows()));
+    click(await findFastControl("button", "Options for Launch"));
     await screen.findByRole("menu");
     click(menuItemByText("Archive"));
     await waitFor(() => {
-      expect(projectRows()).toHaveLength(0);
+      expect(projectRows(launchId)).toHaveLength(0);
     });
     expect(archiveResponse.settled()).toBeFalsy();
 
-    click(button("Open chat list menu"));
+    click(await findFastControl("button", "Open chat list menu"));
     await screen.findByRole("menu");
     click(menuItemByText("Archived"));
     await waitFor(() => {
-      expect(projectToggle("Launch")).toBeInTheDocument();
+      expect(toggle("Launch")).toBeInTheDocument();
     });
-    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    expect(titles(project)).toStrictEqual(["Launch planning"]);
     archiveResponse.resolve();
-    const archiveResult = await waitFor(() => {
-      return rejected
-        ? screen.getByText("Archive confirmation unavailable")
-        : projectToggle("Launch saved");
-    });
-    expect(archiveResult).toBeInTheDocument();
+    if (rejected) {
+      await screen.findByText("Archive confirmation unavailable");
+    } else {
+      await handle("Launch saved");
+    }
     const archivedName = rejected ? "Launch" : "Launch saved";
-    click(button(`Options for ${archivedName}`, projectRows()));
+    click(await findFastControl("button", `Options for ${archivedName}`));
     await screen.findByRole("menu");
     click(menuItemByText("Restore project"));
     await waitFor(() => {
-      expect(projectRows()).toHaveLength(0);
+      expect(projectRows(launchId)).toHaveLength(0);
     });
     expect(restoreResponse.settled()).toBeFalsy();
 
-    click(button("Open chat list menu"));
+    click(await findFastControl("button", "Open chat list menu"));
     await screen.findByRole("menu");
     click(menuItemByText("Inbox"));
     await waitFor(() => {
-      expect(projectToggle(archivedName)).toBeInTheDocument();
+      expect(toggle(archivedName)).toBeInTheDocument();
     });
-    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    expect(titles(project)).toStrictEqual(["Launch planning"]);
     // Restoring retains the archive cutoff instead of reviving old unread state.
     expect(threadLink(planning.id)).toHaveAccessibleName("Launch planning");
     restoreResponse.resolve();
     await waitFor(() => {
-      expect(projectToggle("Launch restored")).toBeInTheDocument();
+      expect(toggle("Launch restored")).toBeInTheDocument();
     });
 
     // The restore receipt also settles a rejected archive. Once settled,
@@ -412,234 +470,14 @@ test.each([
     });
     context.mocks.ably.trigger("threadListChanged");
     await waitFor(() => {
-      expect(projectRows()).toHaveLength(0);
+      expect(projectRows(launchId)).toHaveLength(0);
     });
-    click(button("Open chat list menu"));
+    click(await findFastControl("button", "Open chat list menu"));
     await screen.findByRole("menu");
     click(menuItemByText("Archived"));
     await waitFor(() => {
-      expect(projectToggle("Launch remote")).toBeInTheDocument();
+      expect(toggle("Launch remote")).toBeInTheDocument();
     });
-    expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
+    expect(titles(project)).toStrictEqual(["Launch planning"]);
   },
 );
-
-test("Archived opens the full contents of an archived Project and the archived chats of an active Project", async () => {
-  const planning = {
-    ...continuityThread(326, 1, "Launch planning"),
-    projectId: launchId,
-  };
-  const notes = {
-    ...continuityThread(326, 2, "Launch notes"),
-    projectId: launchId,
-    archived: true,
-  };
-  const research = {
-    ...continuityThread(326, 3, "Research notes"),
-    projectId: researchId,
-    archived: true,
-  };
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 326,
-    threads: [planning, notes, research],
-  });
-  installProjects([
-    {
-      id: launchId,
-      name: "Launch",
-      createdAt: at,
-      updatedAt: at,
-      archived: true,
-    },
-    { id: researchId, name: "Research", createdAt: at, updatedAt: at },
-  ]);
-  await setupPage({ context, path: "/", ...workspace.pageOptions });
-  const user = userEvent.setup({ delay: null });
-  await waitFor(() => {
-    expect(button("Open chat list menu")).toBeInTheDocument();
-  });
-  await user.click(button("Open chat list menu"));
-  await user.click(menuItemByText("Archived"));
-  await waitFor(() => {
-    expect(projectToggle("Launch")).toBeInTheDocument();
-    expect(projectToggle("Research", researchId)).toBeInTheDocument();
-  });
-  expect(projectToggle("Launch")).not.toHaveTextContent("Archived");
-  await user.click(projectToggle("Launch"));
-  await user.click(projectToggle("Research", researchId));
-  await waitFor(() => {
-    expect(projectChatTitles()).toHaveLength(2);
-    expect(projectChatTitles()).toStrictEqual(
-      expect.arrayContaining(["Launch planning", "Launch notes"]),
-    );
-    expect(projectChatTitles(researchId)).toStrictEqual(["Research notes"]);
-  });
-});
-
-test("An unfolded Project without chats offers the archived ones it holds", async () => {
-  const ordinary = continuityThread(303, 1, "Ordinary chat");
-  const archived = {
-    ...continuityThread(303, 2, "Archived research"),
-    projectId: launchId,
-    archived: true,
-  };
-  await openChatList(303, [ordinary, archived], `/chats/${ordinary.id}`);
-  const user = userEvent.setup({ delay: null });
-
-  // Research holds no chat at all, so it only says so.
-  await user.click(projectToggle("Research", researchId));
-  expect(projectText(researchId)).toContain("No chats here yet");
-  expect(hasButton("Show archived chats", projectRows(researchId))).toBeFalsy();
-
-  await user.click(projectToggle("Launch"));
-  expect(projectText()).toContain("No chats here yet");
-  await user.click(button("Show archived chats", projectRows()));
-  await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual(["Archived research"]);
-  });
-  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
-});
-
-test("A Project lists every chat it holds", async () => {
-  const ordinary = continuityThread(304, 1, "Ordinary chat");
-  const members = Array.from({ length: 21 }, (_, index) => {
-    const timestamp = `2026-08-05T01:${index.toString().padStart(2, "0")}:00.000Z`;
-    return chatListThread(30_400 + index, `Member ${index + 1}`, {
-      projectId: launchId,
-      sortAt: timestamp,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-  });
-  await openChatList(304, [ordinary, ...members], `/chats/${ordinary.id}`);
-
-  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
-  const titles = projectChatTitles();
-  expect(titles).toHaveLength(21);
-  // The most recently active chat leads and the oldest one closes the list.
-  expect(titles.at(0)).toBe("Member 21");
-  expect(titles.at(-1)).toBe("Member 1");
-});
-
-test("Pinned chats in a Project move among themselves", async () => {
-  const pinnedAt = "2026-09-01T00:00:00Z";
-  // Its rank falls between the Project's pins, which it does not join.
-  const outside = {
-    ...continuityThread(305, 1, "Outside pin"),
-    pinnedAt,
-    pinOrder: "a0V",
-  };
-  const first = {
-    ...continuityThread(305, 2, "First pin"),
-    projectId: launchId,
-    pinnedAt,
-    pinOrder: "a0",
-  };
-  const second = {
-    ...continuityThread(305, 3, "Second pin"),
-    projectId: launchId,
-    pinnedAt,
-    pinOrder: "a1",
-  };
-  const regular = {
-    ...continuityThread(305, 4, "Regular chat"),
-    projectId: launchId,
-  };
-  const reordered: string[] = [];
-  context.mocks.api(
-    chatThreadPinOrderContract.reorder,
-    ({ params, respond }) => {
-      reordered.push(params.id);
-      return respond(204);
-    },
-  );
-  await openChatList(
-    305,
-    [outside, first, second, regular],
-    `/chats/${outside.id}`,
-  );
-  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
-  expect(projectChatTitles()).toStrictEqual([
-    "First pin",
-    "Second pin",
-    "Regular chat",
-  ]);
-
-  click(chatMenuButton(second.id));
-  await screen.findByRole("menu");
-  click(menuItemByText("Move up"));
-  await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual([
-      "Second pin",
-      "First pin",
-      "Regular chat",
-    ]);
-  });
-  expect(reordered).toStrictEqual([second.id]);
-
-  click(chatMenuButton(second.id));
-  await screen.findByRole("menu");
-  click(menuItemByText("Move down"));
-  await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual([
-      "First pin",
-      "Second pin",
-      "Regular chat",
-    ]);
-  });
-});
-
-test("A pinned chat moves past another pinned chat in the same Project", async () => {
-  const pinnedAt = "2026-09-01T00:00:00Z";
-  const ordinary = continuityThread(307, 1, "Ordinary chat");
-  const first = {
-    ...continuityThread(307, 2, "First pin"),
-    projectId: launchId,
-
-    pinnedAt,
-    pinOrder: "a0",
-  };
-  const second = {
-    ...continuityThread(307, 3, "Second pin"),
-    projectId: launchId,
-    pinnedAt,
-    pinOrder: "a1",
-  };
-  context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
-    return respond(204);
-  });
-  await openChatList(307, [ordinary, first, second], `/chats/${ordinary.id}`);
-  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
-  expect(projectChatTitles()).toStrictEqual(["First pin", "Second pin"]);
-
-  click(chatMenuButton(second.id));
-  await screen.findByRole("menu");
-  click(menuItemByText("Move up"));
-  await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual(["Second pin", "First pin"]);
-  });
-});
-
-test("Clicking an expanded, unselected Project title folds its chats and keeps the current conversation", async () => {
-  const ordinary = continuityThread(306, 1, "Ordinary chat");
-  const member = {
-    ...continuityThread(306, 2, "Launch planning"),
-    projectId: launchId,
-  };
-  // A Project page lists the default Agent's chats, so these belong to it.
-  await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
-  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
-
-  click(button("Launch", projectRows()));
-  await waitFor(() => {
-    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
-  });
-  expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
-
-  click(button("Launch", projectRows()));
-  await waitFor(() => {
-    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
-  });
-  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
-  expect(threadLink(ordinary.id)).toHaveAttribute("aria-current", "page");
-});

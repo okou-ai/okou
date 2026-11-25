@@ -1,15 +1,9 @@
-import {
-  catalogFixture,
-  httpConnectorFixture,
-  mcpConnectorFixture,
-  type FixtureAccountOverrides,
-} from "../../../mocks/handlers/connector-account-fixtures.ts";
+import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogPermissionDetail,
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -21,7 +15,6 @@ import { RUN_THREAD_ID } from "./chat-capability-test-helpers.ts";
 const APP_ORIGIN = "https://app.okou.ai";
 
 export const CONNECTOR_CONNECTION_ID = "e0000000-0000-4000-a000-000000000901";
-export const CUSTOM_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000902";
 
 export function browserAuthMethod(
   id: ConnectorAuthMethodId = "oauth",
@@ -128,59 +121,6 @@ export function connectedConnectorResponse(args: {
   };
 }
 
-export function customConnector(args: {
-  readonly slug: `_${string}`;
-  readonly displayName: string;
-  readonly account?: FixtureAccountOverrides;
-  readonly permissionBundleRef?: `builtin:${string}@1` | null;
-  readonly kind?: "http" | "mcp";
-}): CustomConnectorResponse {
-  const base = {
-    id: CUSTOM_CONNECTOR_ID,
-    slug: args.slug,
-    displayName: args.displayName,
-    fields: [
-      {
-        key: "apiSecret",
-        label: "API secret",
-        kind: "secret" as const,
-        required: true,
-        description: "Secret used to connect this service.",
-      },
-    ],
-    headerInjections: [],
-    queryInjections: [],
-    authMode: "manual" as const,
-    permissionBundleRef: args.permissionBundleRef ?? null,
-    skillMarkdown: null,
-    storageVersion: 1,
-    account: args.account
-      ? {
-          id: CONNECTOR_CONNECTION_ID,
-          updatedAt: "2026-08-01T09:00:00.000Z",
-          configuredFieldKeys: ["apiSecret"],
-          ...args.account,
-        }
-      : undefined,
-    createdAt: "2026-08-01T08:00:00.000Z",
-    updatedAt: "2026-08-01T09:00:00.000Z",
-  };
-  return args.kind === "http"
-    ? httpConnectorFixture({
-        ...base,
-        kind: "http",
-        prefixTemplates: ["https://api.example.test/**"],
-      })
-    : mcpConnectorFixture({
-        ...base,
-        kind: "mcp",
-        endpoint: "https://mcp.example.test",
-        transport: "streamable-http",
-        prefixTemplates: [],
-        permissionBundleRef: null,
-      });
-}
-
 export function connectorActionUrl(args: {
   readonly slug: string;
   readonly callbackPrompt?: string;
@@ -191,29 +131,6 @@ export function connectorActionUrl(args: {
   const url = new URL(`/connectors/${args.slug}/${action}`, APP_ORIGIN);
   url.searchParams.set("threadId", RUN_THREAD_ID);
   if (args.callbackPrompt) {
-    url.searchParams.set("callbackPrompt", args.callbackPrompt);
-  }
-  return url.href;
-}
-
-export function permissionActionUrl(args: {
-  readonly connectorSlug: string;
-  readonly permission: string;
-  readonly action?: "allow" | "deny";
-  readonly expiresIn?: "1h" | "24h" | "7d" | "always";
-  readonly callbackPrompt?: string;
-}): string {
-  const url = new URL("/connectors/permissions", APP_ORIGIN);
-  url.searchParams.set("orgId", "org_default");
-  url.searchParams.set("userId", "test-user-123");
-  url.searchParams.set("connectorSlug", args.connectorSlug);
-  url.searchParams.set("permission", args.permission);
-  url.searchParams.set("action", args.action ?? "allow");
-  if (args.expiresIn) {
-    url.searchParams.set("expiresIn", args.expiresIn);
-  }
-  if (args.callbackPrompt) {
-    url.searchParams.set("threadId", RUN_THREAD_ID);
     url.searchParams.set("callbackPrompt", args.callbackPrompt);
   }
   return url.href;

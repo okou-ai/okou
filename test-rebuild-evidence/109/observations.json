@@ -1,0 +1,1220 @@
+{
+  "inventory": [
+    {
+      "label": "before chat navigation",
+      "visible": [],
+      "dispatched": [],
+      "wire": []
+    },
+    {
+      "label": "chat ready before opening",
+      "visible": [],
+      "dispatched": [],
+      "wire": []
+    },
+    {
+      "label": "first open",
+      "visible": [
+        "Inventory station 01",
+        "Inventory station 02",
+        "Inventory station 03",
+        "Inventory station 04",
+        "Inventory station 05",
+        "Inventory station 06",
+        "Inventory station 07",
+        "Inventory station 08",
+        "Inventory station 09",
+        "Inventory station 10",
+        "Inventory station 11",
+        "Inventory station 12",
+        "Inventory station 13",
+        "Inventory station 14",
+        "Inventory station 15",
+        "Inventory station 16",
+        "Inventory station 17",
+        "Inventory station 18",
+        "Inventory station 19",
+        "Inventory station 20"
+      ],
+      "dispatched": [
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview"
+        }
+      ],
+      "wire": [
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview",
+          "thread": "current"
+        }
+      ]
+    },
+    {
+      "label": "first closed",
+      "visible": [],
+      "dispatched": [
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview"
+        }
+      ],
+      "wire": [
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview",
+          "thread": "current"
+        }
+      ]
+    },
+    {
+      "label": "second open",
+      "visible": [
+        "Inventory station 01",
+        "Inventory station 02",
+        "Inventory station 03",
+        "Inventory station 04",
+        "Inventory station 05",
+        "Inventory station 06",
+        "Inventory station 07",
+        "Inventory station 08",
+        "Inventory station 09",
+        "Inventory station 10",
+        "Inventory station 11",
+        "Inventory station 12",
+        "Inventory station 13",
+        "Inventory station 14",
+        "Inventory station 15",
+        "Inventory station 16",
+        "Inventory station 17",
+        "Inventory station 18",
+        "Inventory station 19",
+        "Inventory station 20"
+      ],
+      "dispatched": [
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview"
+        }
+      ],
+      "wire": [
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview",
+          "thread": "current"
+        }
+      ]
+    },
+    {
+      "label": "second closed",
+      "visible": [],
+      "dispatched": [
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview"
+        }
+      ],
+      "wire": [
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview",
+          "thread": "current"
+        }
+      ]
+    },
+    {
+      "label": "after detector calibration",
+      "visible": [],
+      "dispatched": [
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview"
+        },
+        {
+          "method": "GET",
+          "path": "/api/connectors/connected"
+        },
+        {
+          "method": "GET",
+          "path": "/api/connector-account-access/defaults"
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/b0000000-0000-4000-a000-000000000081/connector-access"
+        },
+        {
+          "method": "GET",
+          "path": "/api/connector-accounts/d0110000-0000-4000-a000-000000000001"
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-connector-overview/target"
+        }
+      ],
+      "wire": [
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview",
+          "thread": "current"
+        },
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/connectors/connected",
+          "thread": null
+        },
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/connector-account-access/defaults",
+          "thread": null
+        },
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-threads/b0000000-0000-4000-a000-000000000081/connector-access",
+          "thread": null
+        },
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/connector-accounts/d0110000-0000-4000-a000-000000000001",
+          "thread": null
+        },
+        {
+          "op": "http-inventory",
+          "method": "GET",
+          "resource": "/api/chat-connector-overview/target",
+          "thread": null
+        }
+      ]
+    }
+  ],
+  "regular": {
+    "chat-composer-connector-status-001": {
+      "wire": [
+        []
+      ],
+      "watched": "PUT /api/custom-connectors/[^/]+/values|PUT /api/agents/[^/]+/custom-connectors|POST /api/connectors/[^/]+/manual-grant"
+    },
+    "get-started-entry-042": {
+      "before": [],
+      "selected": [
+        [
+          {
+            "method": "GET",
+            "path": "/api/connector-catalog/github",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "artifact-sharing-002": {
+      "arms": [
+        "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations false)",
+        "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations true)"
+      ],
+      "receipts": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/artifact-shares/status",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "organization"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "public"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "private"
+          }
+        ],
+        [
+          {
+            "method": "POST",
+            "path": "/api/artifact-shares/status",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "organization"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "public"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "private"
+          }
+        ]
+      ]
+    },
+    "chat-attachment-annotation-018": {
+      "original": [
+        [
+          {
+            "method": "GET",
+            "path": "/artifacts/tests/chat-attachments/freight-plan.png",
+            "at": "/chats/:id",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "chat-list-cache-004": {
+      "watched": "GET /api/chat-threads/snapshot|GET /api/chat-threads/events|GET /api/indicators|GET /api/agents",
+      "signedOut": [
+        []
+      ],
+      "signedInControl": [
+        {
+          "method": "GET",
+          "path": "/api/indicators",
+          "at": "/",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/snapshot",
+          "at": "/",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/events",
+          "at": "/",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-001": {
+      "pendingCreation": [
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": null,
+          "model": "claude-sonnet-5",
+          "chat": "37e53efd8e18",
+          "eventKey": "20f547a0a805"
+        }
+      ],
+      "threadDraft": [],
+      "confirmedThreadDraft": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/draft",
+          "at": "/chats/:id",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-005": {
+      "pendingCreation": [
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": null,
+          "model": "claude-sonnet-5",
+          "chat": "e8286b5e509b",
+          "eventKey": "4082dfdaeb48"
+        }
+      ],
+      "threadDraft": [],
+      "confirmedThreadDraft": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/draft",
+          "at": "/chats/:id",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-002": {
+      "pendingMovieArtifacts": [],
+      "otherConfirmedDocument": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/artifacts",
+          "at": "/chats/:id",
+          "status": 404
+        }
+      ]
+    },
+    "onboarding-sources-first-flow-012": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding/ready",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "61d8361cc6fc",
+          "eventKey": "ec4736fb41f0"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "61d8361cc6fc",
+          "eventKey": "86bfd9ab79b1"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-sources-first-flow-015": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding/ready",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "7e05489e1cee",
+          "eventKey": "d8cf75e59b66"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "7e05489e1cee",
+          "eventKey": "a01cd7f8a1a8"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-sources-first-flow-021": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "3e1e32d537d0",
+          "eventKey": "4146e8b747ea"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "3e1e32d537d0",
+          "eventKey": "19a997ce9f09"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-start-001": {
+      "marketing": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/events",
+            "at": "/onboarding",
+            "status": 204,
+            "eventKey": "494bff8d3f96",
+            "tag": "onboarding-start"
+          }
+        ]
+      ],
+      "origin": "https://www.okou.ai",
+      "telemetryBeforeDispatch": {
+        "outcome": "started",
+        "tag": "onboarding-start",
+        "userMatches": true,
+        "orgMatches": true,
+        "statusCodePresent": false
+      }
+    },
+    "discord-oauth-compatibility-007": {
+      "router": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/integrations/discord/oauth/approve",
+            "at": "/settings/discord",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "agent-suggestions-021": {
+      "attempts": [
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/for-you",
+          "status": 500,
+          "chat": "a987b6a3d829",
+          "eventKey": "14d698eacc9d"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/for-you",
+          "status": 201,
+          "chat": "a987b6a3d829",
+          "eventKey": "14d698eacc9d"
+        }
+      ],
+      "ordinaryConsume": [
+        []
+      ]
+    },
+    "debug-morning-brief-005": {
+      "afterEnter": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/debug/morning-brief",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ],
+      "beforeEnter": [
+        []
+      ]
+    },
+    "settings-wallet-cards-005": {
+      "onReturn": [
+        [],
+        []
+      ],
+      "afterPublication": [
+        [
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/transactions",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/payment-methods",
+            "at": "/",
+            "status": 200
+          }
+        ],
+        [
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/transactions",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/payment-methods",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "vnc-settings-054": {
+      "switched": [
+        [],
+        []
+      ],
+      "sameOwner": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/vnc/connections",
+            "at": "/connectors",
+            "status": 201
+          }
+        ]
+      ]
+    },
+    "browser-frame-rate-001": {
+      "peerDispatchAndIngressWhileSelectingOn": [],
+      "throughEscape": [],
+      "remoteTextControl": "Input.insertText acknowledged before settings"
+    },
+    "chat-continuity-uploads-011": {
+      "partsAndFinalization": [
+        {
+          "method": "PUT",
+          "path": "/part/1",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/2",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/3",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/4",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/5",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/uploads/multipart/complete",
+          "at": "/chats/:id",
+          "status": 404
+        }
+      ]
+    }
+  },
+  "shuffled": {
+    "chat-composer-connector-status-001": {
+      "wire": [
+        []
+      ],
+      "watched": "PUT /api/custom-connectors/[^/]+/values|PUT /api/agents/[^/]+/custom-connectors|POST /api/connectors/[^/]+/manual-grant"
+    },
+    "get-started-entry-042": {
+      "before": [],
+      "selected": [
+        [
+          {
+            "method": "GET",
+            "path": "/api/connector-catalog/github",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "artifact-sharing-002": {
+      "arms": [
+        "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations false)",
+        "artifact-sharing-002 The owner copies the canonical link across all audiences (invitations true)"
+      ],
+      "receipts": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/artifact-shares/status",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "organization"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "public"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "private"
+          }
+        ],
+        [
+          {
+            "method": "POST",
+            "path": "/api/artifact-shares/status",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "organization"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "public"
+          },
+          {
+            "method": "PUT",
+            "path": "/api/artifact-shares",
+            "at": "/artifacts/coast025ab.png",
+            "status": 200,
+            "audience": "private"
+          }
+        ]
+      ]
+    },
+    "chat-attachment-annotation-018": {
+      "original": [
+        [
+          {
+            "method": "GET",
+            "path": "/artifacts/tests/chat-attachments/freight-plan.png",
+            "at": "/chats/:id",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "chat-list-cache-004": {
+      "watched": "GET /api/chat-threads/snapshot|GET /api/chat-threads/events|GET /api/indicators|GET /api/agents",
+      "signedOut": [
+        []
+      ],
+      "signedInControl": [
+        {
+          "method": "GET",
+          "path": "/api/indicators",
+          "at": "/",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/snapshot",
+          "at": "/",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/events",
+          "at": "/",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-001": {
+      "pendingCreation": [
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": null,
+          "model": "claude-sonnet-5",
+          "chat": "6fee64bc3c21",
+          "eventKey": "eff30bce61ce"
+        }
+      ],
+      "threadDraft": [],
+      "confirmedThreadDraft": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/draft",
+          "at": "/chats/:id",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-005": {
+      "pendingCreation": [
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": null,
+          "model": "claude-sonnet-5",
+          "chat": "e93011587793",
+          "eventKey": "ebca62153a30"
+        }
+      ],
+      "threadDraft": [],
+      "confirmedThreadDraft": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/draft",
+          "at": "/chats/:id",
+          "status": 200
+        }
+      ]
+    },
+    "chat-list-optimistic-002": {
+      "pendingMovieArtifacts": [],
+      "otherConfirmedDocument": [
+        {
+          "method": "GET",
+          "path": "/api/chat-threads/:id/artifacts",
+          "at": "/chats/:id",
+          "status": 404
+        }
+      ]
+    },
+    "onboarding-sources-first-flow-012": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding/ready",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "de747d1f2295",
+          "eventKey": "372ad26a862e"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "de747d1f2295",
+          "eventKey": "689236f20218"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-sources-first-flow-015": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding/ready",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "4af159515d99",
+          "eventKey": "283f57b1b3e6"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "4af159515d99",
+          "eventKey": "ed74dee451e9"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-sources-first-flow-021": {
+      "receipts": [
+        {
+          "method": "POST",
+          "path": "/api/onboarding/complete",
+          "at": "/onboarding",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat-threads",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "c76605aa55cc",
+          "eventKey": "4f29f96a1c2c"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/chats/:id",
+          "status": 201,
+          "chat": "c76605aa55cc",
+          "eventKey": "ed87be673cf4"
+        }
+      ],
+      "completionRepliedBeforeCreate": true
+    },
+    "onboarding-start-001": {
+      "marketing": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/events",
+            "at": "/onboarding",
+            "status": 204,
+            "eventKey": "901853d3a4fb",
+            "tag": "onboarding-start"
+          }
+        ]
+      ],
+      "origin": "https://www.okou.ai",
+      "telemetryBeforeDispatch": {
+        "outcome": "started",
+        "tag": "onboarding-start",
+        "userMatches": true,
+        "orgMatches": true,
+        "statusCodePresent": false
+      }
+    },
+    "discord-oauth-compatibility-007": {
+      "router": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/integrations/discord/oauth/approve",
+            "at": "/settings/discord",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "agent-suggestions-021": {
+      "attempts": [
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/for-you",
+          "status": 500,
+          "chat": "a987b6a3d829",
+          "eventKey": "14d698eacc9d"
+        },
+        {
+          "method": "POST",
+          "path": "/api/chat/events",
+          "at": "/for-you",
+          "status": 201,
+          "chat": "a987b6a3d829",
+          "eventKey": "14d698eacc9d"
+        }
+      ],
+      "ordinaryConsume": [
+        []
+      ]
+    },
+    "debug-morning-brief-005": {
+      "afterEnter": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/debug/morning-brief",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ],
+      "beforeEnter": [
+        []
+      ]
+    },
+    "settings-wallet-cards-005": {
+      "onReturn": [
+        [],
+        []
+      ],
+      "afterPublication": [
+        [
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/transactions",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/payment-methods",
+            "at": "/",
+            "status": 200
+          }
+        ],
+        [
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/transactions",
+            "at": "/",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "path": "/api/wallet/connection/payment-methods",
+            "at": "/",
+            "status": 200
+          }
+        ]
+      ]
+    },
+    "vnc-settings-054": {
+      "switched": [
+        [],
+        []
+      ],
+      "sameOwner": [
+        [
+          {
+            "method": "POST",
+            "path": "/api/vnc/connections",
+            "at": "/connectors",
+            "status": 201
+          }
+        ]
+      ]
+    },
+    "browser-frame-rate-001": {
+      "peerDispatchAndIngressWhileSelectingOn": [],
+      "throughEscape": [],
+      "remoteTextControl": "Input.insertText acknowledged before settings"
+    },
+    "chat-continuity-uploads-011": {
+      "partsAndFinalization": [
+        {
+          "method": "PUT",
+          "path": "/part/1",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/2",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/3",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/4",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "PUT",
+          "path": "/part/5",
+          "at": "/chats/:id",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/uploads/multipart/complete",
+          "at": "/chats/:id",
+          "status": 404
+        }
+      ]
+    }
+  },
+  "discord": [
+    {
+      "browserAttempts": [
+        {
+          "method": "POST",
+          "path": "/api/integrations/discord/oauth/approve"
+        }
+      ],
+      "relayIngress": [
+        {
+          "method": "POST",
+          "path": "/approve"
+        }
+      ],
+      "through": "callback context closed",
+      "control": "page alone",
+      "scope": "4709cfae6123b94e8729ed8e794032da0ae6b4e5af4da002f61ef84f25c5273e",
+      "openerAliveAtAcceptance": true,
+      "statusDelivered": 200,
+      "pageMessage": "This authorization was interrupted or refreshed.",
+      "openDiscordLinks": 0,
+      "cleanLocation": "/settings/discord?status=pending&guild_id=1088859251972602688",
+      "receipts": [
+        {
+          "scope": "4709cfae6123b94e8729ed8e794032da0ae6b4e5af4da002f61ef84f25c5273e",
+          "status": 200,
+          "kind": "/approve"
+        }
+      ],
+      "replay": null
+    },
+    {
+      "browserAttempts": [
+        {
+          "method": "POST",
+          "path": "/api/integrations/discord/oauth/approve"
+        }
+      ],
+      "relayIngress": [
+        {
+          "method": "POST",
+          "path": "/approve"
+        }
+      ],
+      "through": "callback context closed",
+      "control": "relay resubmits the identical page payload",
+      "scope": "c9a7c1192813a8004e37d02d1d576a1728f89eb03f32c38e3600d51b4ac5d3a7",
+      "openerAliveAtAcceptance": true,
+      "statusDelivered": 200,
+      "pageMessage": "This authorization was interrupted or refreshed.",
+      "openDiscordLinks": 0,
+      "cleanLocation": "/settings/discord?status=pending&guild_id=1088859251972602688",
+      "receipts": [
+        {
+          "scope": "c9a7c1192813a8004e37d02d1d576a1728f89eb03f32c38e3600d51b4ac5d3a7",
+          "status": 200,
+          "kind": "/approve"
+        },
+        {
+          "scope": "c9a7c1192813a8004e37d02d1d576a1728f89eb03f32c38e3600d51b4ac5d3a7",
+          "status": 400,
+          "kind": "/approve"
+        }
+      ],
+      "replay": {
+        "status": 400,
+        "code": "DISCORD_OAUTH_INVALID_ATTEMPT"
+      }
+    }
+  ],
+  "suggestionIngress": [
+    {
+      "path": "/fixture",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/change",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/create",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/send",
+      "method": "POST",
+      "status": 409
+    },
+    {
+      "path": "/restore",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/create",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/send",
+      "method": "POST",
+      "status": 201
+    },
+    {
+      "path": "/inspect",
+      "method": "GET",
+      "status": 200
+    }
+  ],
+  "suggestionProduct": {
+    "statuses": [
+      409,
+      201
+    ],
+    "sameChat": true,
+    "sameEvent": true,
+    "chatAndEventDistinct": true,
+    "firstStored": false,
+    "retryStored": true,
+    "matchingFeedbackInAuthenticatedHistory": true,
+    "ordinaryPageAttempts": 0,
+    "inspectionControlStatus": 409,
+    "ui": {
+      "publishedBackground": "Survey launch depends on the tide",
+      "retainedFollowup": "Confirm the harbor depth with Mara.",
+      "failure": "This suggestion background has changed",
+      "retainedCard": true,
+      "retryEnabled": true,
+      "cardRemoved": true,
+      "editorClosed": true,
+      "confirmation": "Sent to a new chat",
+      "empty": "All caught up",
+      "page": "/for-you"
+    }
+  }
+}

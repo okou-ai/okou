@@ -1,32 +1,35 @@
-import { screen, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const context = testContext();
 
-const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
-
 test("The chat home lists the compliance statuses", async () => {
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: "/",
+  context.mocks.browser.matchMedia((query) => {
+    return [SIDEBAR_DESKTOP_MEDIA_QUERY, "(min-width: 1280px)"].includes(query);
   });
 
-  const region = await screen.findByRole("region", { name: COMPLIANCE_TITLE });
-  const statuses = within(region)
-    .getAllByRole("listitem")
-    .map((item) => {
-      return item.textContent;
-    });
-  // SOC 2 must read as in progress, never as certified.
-  expect(statuses).toStrictEqual([
-    "SOC 2 Type IIIn progress",
-    "CCPA / CPRACompliant",
-    "GDPRCompliant",
-    "HIPAAAligned",
-    "ISO/IEC 27001Aligned",
+  await setupPage({ context, path: "/" });
+
+  const compliance = await screen.findByRole("region", {
+    name: "Okou’s compliance, built for your trust",
+  });
+  expect(
+    [...compliance.querySelectorAll("li")].map((item) => {
+      // Each item names the framework, then its status.
+      return [...item.querySelectorAll(":scope > span > span")].map((part) => {
+        return part.textContent?.trim();
+      });
+    }),
+  ).toStrictEqual([
+    ["SOC 2 Type II", "In progress"],
+    ["CCPA / CPRA", "Compliant"],
+    ["GDPR", "Compliant"],
+    ["HIPAA", "Aligned"],
+    ["ISO/IEC 27001", "Aligned"],
   ]);
+  expect(compliance).not.toHaveTextContent(/certified/iu);
 });
