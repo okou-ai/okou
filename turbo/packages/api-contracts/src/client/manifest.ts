@@ -662,6 +662,10 @@ export const clientDescriptorManifest = [
     ],
   },
   {
+    module: "run-wss",
+    contracts: ["runWssContract"],
+  },
+  {
     module: "runner-ssh",
     contracts: ["runnerSshContract"],
   },
