@@ -10,49 +10,73 @@ enum MessageTime: AttributedStringKey {
 
   static let name = "ai.okou.message-time"
 
-  static func recognizingElements(in content: AttributedString, source: String) -> AttributedString
-  {
-    var opening: (run: AttributedString.Runs.Run, date: Date?)?
+  static func recognizingElements(
+    in content: AttributedString, source: String
+  ) -> AttributedString {
+    var opening: (range: Range<AttributedString.Index>, date: Date?)?
     var result = AttributedString()
     var cursor = content.startIndex
 
-    for (element, run) in content.runs.enumerated() {
-      let characters = content[run.range].characters
-      guard characters.first == "<" else { continue }
-      let tag = String(characters)
-      if run.inlinePresentationIntent?.contains(.inlineHTML) != true {
-        // Foundation can replace the HTML intent with the enclosing emphasis or link.
-        // Recover only a literal source node, never an escape or a code example.
-        guard let position = run.markdownSourcePosition, let range = Range(position, in: source),
-          source[range] == tag, run.inlinePresentationIntent?.contains(.code) != true,
-          run.presentationIntent?.components.contains(where: {
-            if case .codeBlock = $0.kind { return true }
-            return false
-          }) != true
-        else { continue }
-      }
+    for (element, range) in htmlRanges(in: content, source: source).enumerated() {
+      let tag = String(content[range].characters)
       if tag.prefixMatch(of: #/(?i)<time(?=[\s>])/#) != nil {
-        opening = (run, instant(in: tag))
+        opening = (range, instant(in: tag))
       } else if tag.wholeMatch(of: #/(?i)</time\s*>/#) != nil, let start = opening {
         opening = nil
-        guard start.run.presentationIntent == run.presentationIntent else { continue }
-        result.append(content[cursor..<start.run.range.lowerBound])
+        let run = content.runs[start.range.lowerBound]
+        guard run.presentationIntent == content.runs[range.lowerBound].presentationIntent else {
+          continue
+        }
+        result.append(content[cursor..<start.range.lowerBound])
         if let date = start.date {
-          var attributes = start.run.attributes
+          var attributes = run.attributes
           attributes.inlinePresentationIntent?.remove(.inlineHTML)
           attributes[Self.self] = Value(date: date, element: element)
           // Artifact titles also read these characters as plain text.
           let text = date.formatted(format(locale: .current, timeZone: .current))
           result.append(AttributedString(text, attributes: attributes))
         } else {
-          result.append(content[start.run.range.upperBound..<run.range.lowerBound])
+          result.append(content[start.range.upperBound..<range.lowerBound])
         }
-        cursor = run.range.upperBound
+        cursor = range.upperBound
       }
     }
     guard cursor != content.startIndex else { return content }
     result.append(content[cursor...])
     return result
+  }
+
+  private static func htmlRanges(
+    in content: AttributedString, source: String
+  ) -> [Range<AttributedString.Index>] {
+    var ranges: [Range<AttributedString.Index>] = []
+    for run in content.runs {
+      if run.inlinePresentationIntent?.contains(.inlineHTML) == true {
+        ranges.append(run.range)
+        continue
+      }
+      // Foundation can collapse a formatted link label into a single run. Parse its
+      // original Markdown to recover HTML boundaries without interpreting escaped or code text.
+      guard run.link != nil || run.inlinePresentationIntent?.isEmpty == false,
+        run.inlinePresentationIntent?.contains(.code) != true,
+        run.inlinePresentationIntent?.contains(.blockHTML) != true,
+        content[run.range].characters.contains("<"),
+        let position = run.markdownSourcePosition, let sourceRange = Range(position, in: source),
+        let label = try? AttributedString(
+          markdown: String(source[sourceRange]),
+          options: .init(appliesSourcePositionAttributes: true)),
+        label.characters.elementsEqual(content[run.range].characters)
+      else { continue }
+      var cursor = run.range.lowerBound
+      for child in label.runs {
+        let end = content.characters.index(cursor, offsetBy: label[child.range].characters.count)
+        if child.inlinePresentationIntent?.contains(.inlineHTML) == true {
+          ranges.append(cursor..<end)
+        }
+        cursor = end
+      }
+    }
+    return ranges
   }
 
   private static func instant(in tag: String) -> Date? {
