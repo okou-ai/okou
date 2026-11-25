@@ -290,9 +290,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         }
 
     @Test
-    fun searchReplacesAFailedInitialCatalogWithLoadingOnReconnect() = check { service, model ->
-        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
-        model.connectivityChanged(true)
+    fun searchReplacesAFailedInitialCatalogWithLoadingOnResume() = check { service, model ->
+        service.catalogRead = { throw ApiFailure.Network(IOException("Connection failed")) }
         model.searchVisibilityChanged(true)
         runCurrent()
 
@@ -305,7 +304,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
 
         val recovered = CompletableDeferred<List<WorkflowSummary>>()
         service.catalogRead = { recovered.await() }
-        model.connectivityChanged(false)
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
         runCurrent()
         assertEquals(SearchRead.Loading, model.state.value.searchCatalog("release"))
         recovered.complete(emptyList())

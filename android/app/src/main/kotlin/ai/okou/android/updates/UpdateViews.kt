@@ -742,6 +742,7 @@ private fun UpdateAction(
     val focus = rememberInstallControlFocus(inProgress = installProgress != null)
     val checking =
         state.check == UpdateCheck.Checking &&
+            transfer !is UpdateTransfer.Downloading &&
             !state.preparing &&
             transfer !is UpdateTransfer.Waiting &&
             !state.canInstall &&

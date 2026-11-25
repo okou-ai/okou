@@ -32,10 +32,10 @@ Simplified and Traditional Chinese.
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
 account and workspace and is read off the main thread. With known local
-workspace permissions, Settings can show these values during online
-verification. Preference controls become available after the app loads the
+workspace permissions, Settings can show these values while the app verifies
+workspace access. Preference controls become available after the app loads the
 server preferences, which take precedence and refresh the cache. Remote
-workspace content and operations require online confirmation.
+workspace content and operations require verified workspace access.
 Temporary workspace metadata and preference failures after authorization retry
 while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
@@ -130,14 +130,13 @@ linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
 after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait. A first read with no available list
-shows the skeleton after 250 ms. Failures keep the available list or skeleton
-in place. With a confirmed list, the progress bar appears during an active
-read once the last confirmation is more than ten minutes old, or immediately
-after three consecutive read failures. It stays visible through retry gaps
-until success or a terminal failure. If a write stays unconfirmed, Refresh
-chats reads back the list and clears the unresolved projection once that
-read succeeds.
+the wait. A first read with no available list shows the skeleton after 250 ms.
+Failures keep the available list or skeleton in place. With a confirmed list,
+the progress bar appears during an active read once the last confirmation is
+more than ten minutes old, or immediately after three consecutive read
+failures. It stays visible through retry gaps until success or a terminal
+failure. If a write stays unconfirmed, Refresh chats reads back the list and
+clears the unresolved projection once that read succeeds.
 
 A definitively failed Undo keeps the confirmed row state and closes its offer.
 An uncertain Undo keeps its receipt check available.
