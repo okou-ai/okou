@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.chat.ChatChanges
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.unit.dp
@@ -181,7 +184,13 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
         fixture.install()
         openConversation()
         awaitText("The release is ready for review.")
-        compose.onNodeWithContentDescription(fixture.readyAlt).assertIsDisplayed()
+        val latestImage =
+            hasContentDescription(fixture.readyAlt) and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) {
+            compose.onAllNodes(latestImage).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(latestImage).assertIsDisplayed()
         assertTrue(fixture.earlierReference !in fixture.references)
 
         compose.onNodeWithContentDescription("Chat actions").performClick()
@@ -189,7 +198,10 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
         compose.onNodeWithTag("conversation_find_query").performTextReplacement("Staging baseline")
         awaitText("1 matching message")
         assertTrue(fixture.earlierReference !in fixture.references)
-        compose.onNodeWithText(fixture.earlierAlt, substring = true).performClick()
+        compose
+            .onNode(hasText(fixture.earlierAlt, substring = true) and hasClickAction())
+            .assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.OnClick)
         val hit = hasTestTag("conversation_find_hit") and hasContentDescription(fixture.earlierAlt)
         try {
             compose.waitUntil(8_000) {
