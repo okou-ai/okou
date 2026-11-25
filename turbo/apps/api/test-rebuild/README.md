@@ -89,3 +89,9 @@ The source review refined the Auto routing and Runner BDDs to capture the actual
 | `runner-app-state-002` | Upload authorization is confined to the claimed host response. The command read omits it, and completion or host stop invalidates the Runner grant. |
 | `runners-run-lookups-001` | The non-owner sees 403 while the Run is active and 404 after completion. Only the owner sees the terminal-sync error. |
 | `runners-member-instructions-003` | Storage verification races the sender’s edit, and the execution package preserves the earlier sender text. |
+| `chat-events-identity-004` | Stale and stopped hosts with durable selections are accepted despite the title. Only the unknown host returns 404. |
+| `chat-events-pi-handoff-002` | Preserved leading whitespace and consecutive spaces in the input. Used a JSON escape to protect the exact Vitest title during formatting. |
+| `chat-thread-read-cursor-003` | A concurrent loser may return the old cursor while only one committed publication is observed. |
+| `teams-oauth-017` | Preserved the first redirect, follow-up JSON and resumable callback when authentication is missing. |
+| `teams-workspace-identity-010` | Upload replay preserves its pinned destination and text across membership changes and disconnect. The uncertain delivery is attempted once. |
+| `app-factory-075` | Verified the version-only request is accepted when the client-type header is absent. The separately expanded TestFlight and App Store floor rows preserve the actual configured and reported floors. |
