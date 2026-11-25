@@ -357,12 +357,20 @@ describe("GET /api/indicators", () => {
 
     const recent: Record<string, string> = {};
     for (let index = 0; index < 50; index += 1) {
-      const sent = await chat.sendAndLaunch(actor, {
-        prompt: `Later active indicator ${index}`,
-        model: INDICATOR_TEST_MODEL,
-      });
-      recent[sent.threadId] = "active";
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          prompt: `Later active indicator ${index}`,
+          model: INDICATOR_TEST_MODEL,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the chat send to be accepted");
+      }
+      recent[sent.body.threadId] = "active";
     }
+    await flushWaitUntilForTest();
     await seedMembership(actor);
 
     const headers = {
