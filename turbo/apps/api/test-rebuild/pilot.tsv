@@ -361,9 +361,9 @@ remote-access	src/signals/routes/__tests__/remote-control-deletion-versions.test
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-001	planned		
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-004	planned		
 runs	src/signals/routes/__tests__/run-context-diagnostics.test.ts	run-context-diagnostics-005	planned		
-runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-001	planned		
-runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-002	planned		
-runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-005	planned		
+runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-001	planned		unfinished: out of time
+runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-002	rewritten	47.9	
+runs	src/signals/routes/__tests__/run-cron.bdd.test.ts	run-cron.bdd-005	rewritten	14.1	
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-002	planned		
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-003	planned		
 runs	src/signals/routes/__tests__/run-execution.connector-permissions.test.ts	run-execution.connector-permissions-004	planned		
