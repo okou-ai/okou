@@ -118,11 +118,9 @@ internal fun ChatConnectorOptionsButton(
     val showModel =
         modelState != null &&
             (catalog == null || selectedId != null || catalog.choices.any { it.canSelect })
-    val modelEnabled =
-        showModel &&
-            catalog != null &&
-            modelState.record != null &&
-            composerState.canEditDraftModel(target)
+    val modelChoices =
+        if (modelState?.record != null && composerState.journal != null) catalog?.choices else null
+    val modelEnabled = showModel && modelChoices != null && composerState.canEditDraftModel(target)
 
     LaunchedEffect(page, restoreTrigger) {
         if (page == ComposerOptionsPage.Closed && restoreTrigger) {
@@ -185,10 +183,11 @@ internal fun ChatConnectorOptionsButton(
     if (page == ComposerOptionsPage.Model && selection != null) {
         ModelPickerSheet(
             title = stringResource(R.string.chat_options_model),
-            choices = catalog?.choices.orEmpty(),
+            choices = modelChoices,
             selectedId = selectedId,
             effort = choice?.let { selection.effortFor(it) },
             fast = selection.fast && choice?.fastMultiplier != null,
+            catalogUnavailable = catalog == null && modelState?.catalogUnavailable == true,
             select = { id ->
                 val next =
                     if (id == null) selection.copy(model = null, fast = false)

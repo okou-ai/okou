@@ -175,7 +175,7 @@ private fun DefaultModelSheet(
 ) {
     ModelPickerSheet(
         title = title,
-        choices = state.options?.choices.orEmpty(),
+        choices = state.options?.choices,
         selectedId = state.selected?.id,
         effort = state.effort,
         fast = state.fast,
@@ -198,7 +198,7 @@ private fun DefaultModelSheet(
 @Composable
 internal fun ModelPickerSheet(
     title: String,
-    choices: List<DefaultModelChoice>,
+    choices: List<DefaultModelChoice>?,
     selectedId: String?,
     effort: ModelEffort?,
     fast: Boolean,
@@ -212,7 +212,7 @@ internal fun ModelPickerSheet(
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
-    val selected = choices.firstOrNull { it.id == selectedId }
+    val selected = choices?.firstOrNull { it.id == selectedId }
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
         val size =
             if (fullScreen) Modifier.fillMaxHeight()
@@ -220,21 +220,6 @@ internal fun ModelPickerSheet(
                 Modifier.animateContentSize(
                     alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
                 )
-        val initialModel = remember { selected?.takeIf { it.canSelect }?.id }
-        val reveal = remember { BringIntoViewRequester() }
-        val focus = remember { FocusRequester() }
-        val inputMode = LocalInputModeManager.current
-        var positioned by remember { mutableStateOf(false) }
-        val initialRow =
-            Modifier.focusRequester(focus).bringIntoViewRequester(reveal).onGloballyPositioned {
-                positioned = true
-            }
-        LaunchedEffect(positioned) {
-            if (positioned) {
-                if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
-                reveal.bringIntoView()
-            }
-        }
         Column(
             Modifier.fillMaxWidth()
                 .testTag("model-picker")
@@ -263,7 +248,7 @@ internal fun ModelPickerSheet(
             Column(
                 Modifier.weight(1f, fill = false).verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ) body@{
                 if (catalogUnavailable)
                     Text(
                         stringResource(R.string.chat_list_first_load_failed),
@@ -271,6 +256,25 @@ internal fun ModelPickerSheet(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                if (choices == null) {
+                    if (!catalogUnavailable) SettingsPlaceholder()
+                    return@body
+                }
+                val initialModel = remember { selected?.takeIf { it.canSelect }?.id }
+                val reveal = remember { BringIntoViewRequester() }
+                val focus = remember { FocusRequester() }
+                val inputMode = LocalInputModeManager.current
+                var positioned by remember { mutableStateOf(false) }
+                val initialRow =
+                    Modifier.focusRequester(focus)
+                        .bringIntoViewRequester(reveal)
+                        .onGloballyPositioned { positioned = true }
+                LaunchedEffect(positioned) {
+                    if (positioned) {
+                        if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+                        reveal.bringIntoView()
+                    }
+                }
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     ModelOption(
                         stringResource(R.string.settings_auto_model),

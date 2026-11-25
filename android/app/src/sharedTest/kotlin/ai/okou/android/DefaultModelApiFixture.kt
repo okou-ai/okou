@@ -15,6 +15,7 @@ internal class DefaultModelApiFixture(
     @Volatile var codexExecution = false
     @Volatile var gptSortOrder = 1
     @Volatile var planRestricted = false
+    @Volatile var beforeCatalogReturn: (() -> Unit)? = null
     @Volatile
     var preference =
         Json.parseToJsonElement(
@@ -26,7 +27,10 @@ internal class DefaultModelApiFixture(
         val previous = api.commandResponse
         api.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
-                "/api/model-catalog" -> jsonResponse(catalog)
+                "/api/model-catalog" -> {
+                    beforeCatalogReturn?.invoke()
+                    jsonResponse(catalog)
+                }
                 "/api/run-models" -> jsonResponse(models)
                 "/api/feature-switches" ->
                     jsonResponse(

@@ -55,6 +55,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -220,6 +221,50 @@ class ChatComposerRootTest {
             .performClick()
         compose.onNodeWithTag("chat-options-model").assertDoesNotExist()
         compose.onNodeWithText("Chat options").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun restoredModelPickerWaitsForCatalogAndFocusesItsDraftChoice() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        val catalogStarted = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            val scenario = compose.activityRule.scenario
+            scenario.recreate()
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            compose.onNodeWithTag("chat-options-button").performClick()
+            val modelRow = hasTestTag("chat-options-model") and isEnabled()
+            compose.waitUntilExactlyOneExists(modelRow, 8_000)
+            compose.onNode(modelRow).performClick()
+            val claude = hasText("Claude Sonnet 5")
+            compose.onNode(claude).performClick().assertIsSelected()
+            awaitConversation { editor?.uiState?.value?.persistence == ComposerPersistence.Durable }
+
+            app.modelFixture.beforeCatalogReturn = {
+                catalogStarted.countDown()
+                releaseCatalog.await()
+            }
+            compose.runOnIdle { compose.activity.viewModelStore.clear() }
+            scenario.recreate()
+            compose.waitUntilExactlyOneExists(hasTestTag("model-picker"), 8_000)
+            captureOwners()
+            assertTrue(catalogStarted.await(5, TimeUnit.SECONDS))
+            compose.onNodeWithText("Auto").assertDoesNotExist()
+
+            releaseCatalog.countDown()
+            compose.waitUntilExactlyOneExists(claude and isFocused(), 8_000)
+            compose.onNode(claude).assertIsSelected().assertIsDisplayed()
+        } finally {
+            releaseCatalog.countDown()
+            app.modelFixture.beforeCatalogReturn = null
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test
