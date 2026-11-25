@@ -200,11 +200,11 @@ connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-acc
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-022	rewritten	122.5	
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-024	rewritten	134.4	
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-001	planned		
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-005	planned		
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-009	planned		
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-010	planned		
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-011	planned		
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-012	planned		
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-005	rewritten	136.7	
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-009	rewritten	84.6	
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-010	rewritten	105.2	
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-011	rewritten	141.1	
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-012	rewritten	186.8	
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-014	planned		
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-015	planned		
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-016	planned		
