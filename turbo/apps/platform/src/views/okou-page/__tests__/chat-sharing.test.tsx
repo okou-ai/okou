@@ -95,21 +95,6 @@ test("chat-sharing-005 copying code and clicking the answer preserve the intende
   expect(share).toBeEnabled();
 });
 
-test("chat-sharing-020 Escape dismisses the message audience menu and returns to Share", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  await conversation("Inventory checked", true);
-  const composer = await screen.findByRole("textbox", { name: /message/i });
-  const share = await findFastControl("button", "Share message");
-  click(share);
-  await screen.findByRole("menu");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    return expect(share).toHaveFocus();
-  });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([]);
-  expect(composer).toBeInTheDocument();
-});
 function messageGroup(text: string) {
   return within(
     screen

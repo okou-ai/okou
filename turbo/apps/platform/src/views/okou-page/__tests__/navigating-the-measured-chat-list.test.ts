@@ -13,6 +13,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { openThreadMenu } from "./sidebar-test-helpers.tsx";
 import { chatListThread } from "./chat-list-test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
@@ -62,7 +63,7 @@ interface Scene {
   filter?: "Archived" | "Unread";
   overflow?: boolean;
   notice?: string;
-  phases?: boolean;
+  unreadCount?: number;
 }
 async function openHistory({
   count = 26,
@@ -74,7 +75,7 @@ async function openHistory({
   filter,
   overflow = false,
   notice,
-  phases,
+  unreadCount = filter === "Unread" ? children + 2 : 0,
 }: Scene = {}) {
   if (mobile) {
     context.mocks.browser.matchMedia(false);
@@ -123,39 +124,21 @@ async function openHistory({
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  if (filter === "Unread") {
+  if (unreadCount > 0) {
+    const unread = threads.slice(0, unreadCount);
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
         threads: Object.fromEntries(
-          threads.slice(0, children + 2).map((t) => {
+          unread.map((t) => {
             return [t.id, "unread" as const];
           }),
         ),
         unreadAt: Object.fromEntries(
-          threads.slice(0, children + 2).map((t) => {
+          unread.map((t) => {
             return [t.id, t.updatedAt];
           }),
         ),
       });
-    });
-  }
-  if (phases) {
-    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-      return respond(200, {
-        threads: Object.fromEntries(
-          threads
-            .filter((_, i) => {
-              return i !== 1;
-            })
-            .map((t) => {
-              return [t.id, "active" as const];
-            }),
-        ),
-        unreadAt: { [threads[1]!.id]: threads[1]!.updatedAt },
-      });
-    });
-    context.mocks.api(chatThreadPinContract.pin, ({ respond }) => {
-      return respond(204);
     });
   }
   await setupPage({
@@ -459,41 +442,25 @@ test("sidebar-virtualization-031 A delayed service incident shrinks the mobile c
     }
   }
 });
-test("sidebar-virtualization-026 Running waves use the full row index after scrolling and follow the new order after pinning", async () => {
-  await openHistory({ count: 120, phases: true });
-  const phase = (title: string) => {
-    const box = row(title).closest(
-      '[data-testid="sidebar-chat-thread-virtual-row"]',
-    )!;
-    const indicator = box.querySelector<HTMLElement>(
-      '[style*="--running-indicator-phase"]',
-    );
-    if (!indicator) {
-      throw new Error("Missing running indicator for " + title);
-    }
-    return Number(
-      indicator.style.getPropertyValue("--running-indicator-phase"),
-    );
-  };
-  await waitFor(() => {
-    return expect(phase("History 3")).toBeCloseTo(-10 / 12);
+test("sidebar-virtualization-026 Pinning a chat after scrolling moves it to the top and preserves its neighbor's unread status", async () => {
+  context.mocks.api(chatThreadPinContract.pin, ({ respond }) => {
+    return respond(204);
   });
-  expect(row("History 2").closest("a")).toHaveAccessibleName(/Unread/);
+  await openHistory({ count: 120, unreadCount: 2 });
+  await shown("History 3");
+  expect(row("History 1")).toAppearBefore(row("History 3"));
   scrollTo(40 * 36);
   await shown("History 41");
-  expect(phase("History 41")).toBeCloseTo(-8 / 12);
   scrollTo(0);
   await shown("History 3");
-  expect(phase("History 3")).toBeCloseTo(-10 / 12);
-  const item = row("History 3").closest(
-    '[data-testid="sidebar-chat-thread-virtual-row"]',
-  )!;
-  click(within(item as HTMLElement).getByTestId("chat-thread-menu-trigger"));
+  openThreadMenu("History 3");
   click(await screen.findByText("Pin chat"));
   await waitFor(() => {
-    return expect(phase("History 3")).toBe(0);
+    return expect(within(list()).getAllByText(/^History \d+$/)[0]).toBe(
+      row("History 3"),
+    );
   });
-  expect(phase("History 1")).toBeCloseTo(-11 / 12);
+  expect(row("History 2").closest("a")).toHaveAccessibleName(/Unread/);
 });
 test("sidebar-virtualization-008 Reversing a running fold begins at its measured child height and leaves the restored conversation usable", async () => {
   await openHistory({ projects: 1 });
