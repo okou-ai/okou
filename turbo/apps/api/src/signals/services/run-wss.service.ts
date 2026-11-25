@@ -83,7 +83,7 @@ export const bootstrapRunWss$ = command(
         status: 200 as const,
         body: {
           ...ticket.data,
-          wssUrl: `wss://${target.hostname}${runnerPath}/runs/${input.runId}`,
+          wssUrl: `wss://${target.hostname}${runnerPath}/sandbox/runs/${input.runId}`,
         },
       };
     });

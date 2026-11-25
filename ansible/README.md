@@ -26,7 +26,7 @@ existing ancestors, owners, modes, ACLs or symlinks instead of changing private
 live state. Missing sockets return 502 until their Runner starts.
 
 Runner control uses `/runners/<runnerId>/control/...`. Run WebSockets use the
-exact path `/runners/<runnerId>/runs/<runId>`. Paths are unversioned. HTTPS and
+exact path `/runners/<runnerId>/sandbox/runs/<runId>`. Paths are unversioned. HTTPS and
 HTTP/1.1 WebSocket upgrades share TLS, routing and the Unix upstream.
 
 An official non-local Runner binds its listener and requests its own

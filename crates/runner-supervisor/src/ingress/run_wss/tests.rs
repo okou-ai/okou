@@ -73,7 +73,7 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
     let first = Message::Text(json!({"ticket": ticket["ticket"]}).to_string().into());
 
     let other_run = RunId::new_v4();
-    let other_path = format!("{runner_path}/runs/{other_run}");
+    let other_path = format!("{runner_path}/sandbox/runs/{other_run}");
     let mut wrong_run = connect(&socket, &other_path).await;
     wrong_run.send(first.clone()).await.unwrap();
     assert!(
@@ -82,7 +82,7 @@ async fn active_run_websocket_uses_a_single_ticket_on_the_exact_path_and_closes_
             .is_none_or(|message| message.is_err())
     );
 
-    let run_path = format!("{runner_path}/runs/{run}");
+    let run_path = format!("{runner_path}/sandbox/runs/{run}");
     assert_eq!(
         request(
             &socket,

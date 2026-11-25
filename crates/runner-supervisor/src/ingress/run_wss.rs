@@ -265,7 +265,10 @@ impl IngressHandler {
         if !self.matches_host(&request) {
             return response(StatusCode::NOT_FOUND, "");
         }
-        if let Some(run_id) = path.strip_prefix("runs/").and_then(canonical_run_id) {
+        if let Some(run_id) = path
+            .strip_prefix("sandbox/runs/")
+            .and_then(canonical_run_id)
+        {
             if request.method() != Method::GET {
                 return response(StatusCode::METHOD_NOT_ALLOWED, "");
             }

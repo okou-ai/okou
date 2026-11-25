@@ -127,7 +127,7 @@ test("bootstraps a WebSocket only for the Run owner and uses the assigned Runner
   const granted = await accept(bootstrap(f.actor), [200]);
   expect(granted.body).toStrictEqual({
     ...ticket,
-    wssUrl: `wss://${hostname}/runners/${identity.runnerId}/runs/${run.runId}`,
+    wssUrl: `wss://${hostname}/runners/${identity.runnerId}/sandbox/runs/${run.runId}`,
   });
   expect(granted.headers.get("cache-control")).toBe("no-store");
 });
