@@ -50,8 +50,8 @@ function configureClient() {
 function mockGoogle(
   token: () => Response = () => {
     return HttpResponse.json({
-      access_token: "ya29.access",
-      refresh_token: "1//refresh",
+      access_token: "test-google-access-token",
+      refresh_token: "test-google-refresh-token",
       expires_in: 3599,
       token_type: "Bearer",
     });
@@ -178,7 +178,7 @@ describe("Antigravity Google sign-in", () => {
     expect(createHash("sha256").update(verifier).digest("base64url")).toBe(
       params.get("code_challenge"),
     );
-    expect(google.lookups).toStrictEqual(["Bearer ya29.access"]);
+    expect(google.lookups).toStrictEqual(["Bearer test-google-access-token"]);
 
     const listed = await accept(
       app()(personalModelProvidersMainContract).list({ headers }),
@@ -191,7 +191,9 @@ describe("Antigravity Google sign-in", () => {
         accountEmail: "member@gmail.com",
       }),
     ]);
-    expect(JSON.stringify(listed.body)).not.toContain("1//refresh");
+    expect(JSON.stringify(listed.body)).not.toContain(
+      "test-google-refresh-token",
+    );
 
     const replay = await accept(
       complete(sessionToken, redirectAddress(state)),
@@ -273,7 +275,7 @@ describe("Antigravity Google sign-in", () => {
     await enrolledMember();
     configureClient();
     mockGoogle(() => {
-      return HttpResponse.json({ access_token: "ya29.access" });
+      return HttpResponse.json({ access_token: "test-google-access-token" });
     });
     const { sessionToken, browserUrl } = await start();
 
