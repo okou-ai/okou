@@ -267,6 +267,33 @@ test.each([false, true])(
   },
 );
 
+test("The Project page leaves the archive key available when Project Archive is disabled", async () => {
+  context.mocks.browser.userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X)");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 333,
+    threads: [],
+  });
+  installProjects();
+  await setupPage({
+    context,
+    path: `/projects/${launchId}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.ProjectArchive]: false },
+  });
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toBeInTheDocument();
+  });
+
+  expect(
+    fireEvent.keyDown(document, {
+      key: "X",
+      code: "KeyX",
+      metaKey: true,
+      shiftKey: true,
+    }),
+  ).toBeTruthy();
+});
+
 test("The Mac archive shortcut toggles the current Project on its page", async () => {
   context.mocks.browser.userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X)");
   const workspace = installContinuityWorkspace(context, {

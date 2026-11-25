@@ -1,8 +1,6 @@
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { workspaceChatComposerSignals$ } from "./workspace-composer-signals.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
-import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import {
   FOR_YOU_ENTRY_KEY,
@@ -10,9 +8,6 @@ import {
   navigateChatList$,
 } from "../chat-page/chat-list-navigation.ts";
 import { projectRowKey } from "../chat-page/chat-thread-list-rows.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
-import { projects$, setProjectArchived$ } from "../projects/projects.ts";
-import { shouldHandleShortcutPress } from "./nav.ts";
 
 /**
  * Moves a main-pane page to its neighbours in the chat list. `currentKey` is
@@ -75,34 +70,6 @@ export const setupProjectPageKeyboardShortcuts$ = command(
   ({ get, set }, projectId: string, signal: AbortSignal) => {
     setupGlobalShortcut(
       {
-        [GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.binding]: {
-          allowInEditableTarget: true,
-          shouldHandle: (event) => {
-            const menu = document.querySelector<HTMLElement>('[role="menu"]');
-            return (
-              shouldHandleShortcutPress(event) &&
-              (!menu || menu.dataset.projectMenuContentId === projectId)
-            );
-          },
-          run: async () => {
-            const switches = await get(featureSwitches$);
-            signal.throwIfAborted();
-            if (!switches[FeatureSwitchKey.ProjectArchive]) {
-              return;
-            }
-            const project = get(projects$).find((item) => {
-              return item.id === projectId;
-            });
-            if (project) {
-              await set(
-                setProjectArchived$,
-                projectId,
-                !project.archived,
-                signal,
-              );
-            }
-          },
-        },
         [COMPOSER_VOICE_INPUT_SHORTCUT]: {
           allowInEditableTarget: true,
           run: () => {
