@@ -94,6 +94,21 @@ const useBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
+const restartBody$ = bodyResultOf(browserContract.restart);
+const restartBrowserInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const body = await get(restartBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const result = await set(runBrowser.restart$, body.data.instanceId, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: result.value };
+  },
+);
+
 const leaseBody$ = bodyResultOf(browserContract.lease);
 const leaseBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -264,6 +279,10 @@ export const browserRoutes: readonly RouteEntry[] = [
   {
     route: browserContract.use,
     handler: authRoute(browserWriteAuth, useBrowserInner$),
+  },
+  {
+    route: browserContract.restart,
+    handler: authRoute(browserWriteAuth, restartBrowserInner$),
   },
   {
     route: browserContract.lease,

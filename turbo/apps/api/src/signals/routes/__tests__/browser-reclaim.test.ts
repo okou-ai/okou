@@ -40,6 +40,14 @@ function use(chat: Chat) {
     body: {},
   });
 }
+function restart(chat: Chat, instanceId: string) {
+  return client().restart({
+    headers: {
+      authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+    },
+    body: { instanceId },
+  });
+}
 async function open(chat: Chat) {
   const result = await accept(use(chat), [200]);
   const window = result.body.browser.window;
@@ -71,6 +79,85 @@ async function renew(chat: Chat) {
     [200],
   );
 }
+
+describe("explicit shared Browser restart", () => {
+  it("retires all bound chats and reopens using the saved profile and URLs", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      const withoutBrowserAccess = await f.start(false);
+      await accept(
+        restart(withoutBrowserAccess, first.window.instanceId),
+        [403],
+      );
+      expect(f.provider.sessionIds.size).toBe(1);
+      const url = "https://a.example.test/recover";
+      navigate(f, first.window.primaryWindowId, url);
+      await accept(
+        client().close({ headers, params: { threadId: a.threadId }, body: {} }),
+        [200],
+      );
+      f.provider.native.nativeWindowErrors.set(
+        first.window.primaryWindowId,
+        "Browser window not responding",
+      );
+      f.provider.native.nativeWindowErrors.set(
+        sibling.window.primaryWindowId,
+        "Browser window not responding",
+      );
+      await accept(restart(a, first.window.instanceId), [200]);
+      expect(f.provider.sessionIds.size).toBe(0);
+      for (const chat of [a, b]) {
+        const result = await accept(
+          client().get({ headers, params: { threadId: chat.threadId } }),
+          [200],
+        );
+        expect(result.body.browser.status).toBe("suspended");
+      }
+
+      const replacement = await open(a);
+      expect(replacement.window.instanceId).not.toBe(first.window.instanceId);
+      expect(
+        pages(f, replacement.window.primaryWindowId).map((page) => {
+          return page.url;
+        }),
+      ).toStrictEqual([url]);
+      expect(f.provider.createdIds).toHaveLength(1);
+      expect(f.provider.sessionRequests).toHaveLength(2);
+      await accept(restart(a, first.window.instanceId), [409]);
+      const current = await accept(use(a), [200]);
+      expect(current.body.browser.window).toStrictEqual(replacement.window);
+    });
+  });
+
+  it("leaves the instance stopping until the provider confirms shutdown", async () => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      const first = await open(a);
+      let confirmStop = false;
+      server.use(
+        http.patch(`${PROVIDER_URL}/browsers/:id`, () => {
+          return confirmStop
+            ? undefined
+            : HttpResponse.json({ status: "active" }, { status: 202 });
+        }),
+      );
+      await accept(restart(a, first.window.instanceId), [502]);
+      await accept(use(a), [409]);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+
+      confirmStop = true;
+      const replacement = await open(a);
+      expect(replacement.window.instanceId).not.toBe(first.window.instanceId);
+      expect(f.provider.sessionIds.size).toBe(1);
+    });
+  });
+});
 
 describe("shared Browser expiry through public reopen", () => {
   it("saves and restores expired A in the same instance while preserving active B", async () => {
