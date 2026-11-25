@@ -97,7 +97,7 @@ class CacheTest(unittest.TestCase):
         self.command("curl", """#!/bin/bash
 set -eu
 while [[ $1 != -o ]]; do url=$1; shift; done
-case "$url" in *ziglang*) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
+case "$url" in */zig-*-linux-0.15.2.tar.xz) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
 exec cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """

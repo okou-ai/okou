@@ -44,7 +44,9 @@ fetch() {
   fi
   printf '%s  %s\n' "$sha" "$file" | sha256sum --check --status
 }
-fetch "https://ziglang.org/download/0.15.2/zig-$host-linux-0.15.2.tar.xz" "$zig_sha" "$entry/zig.tar.xz"
+# Use an upstream-listed mirror so cold builds finish within the download budget.
+# https://ziglang.org/download/community-mirrors.txt
+fetch "https://pkg.hexops.org/zig/zig-$host-linux-0.15.2.tar.xz" "$zig_sha" "$entry/zig.tar.xz"
 fetch https://kerberos.org/dist/krb5/1.22/krb5-1.22.2.tar.gz "$krb5_sha" "$entry/krb5.tar.gz"
 
 # Extract from the pinned archives each time, rather than trusting cached SDK
