@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1183.0](https://github.com/okou-ai/okou/compare/app-v0.1182.0...app-v0.1183.0) (2026-11-25)
+
+
+### Features
+
+* **app:** ask for the presentation default from send and point to settings ([#50799](https://github.com/okou-ai/okou/issues/50799)) ([c3e0b0d](https://github.com/okou-ai/okou/commit/c3e0b0d16c2f21b10807810f4704566690d1e190))
+* **app:** refine the share popover audience and people layout ([#50788](https://github.com/okou-ai/okou/issues/50788)) ([c279cca](https://github.com/okou-ai/okou/commit/c279cca2c2b2fc8488b6f6e4a1e88f837f3dcaf9))
+
+
+### Bug Fixes
+
+* **billing:** unify feedback surveys and one-time rewards ([#50759](https://github.com/okou-ai/okou/issues/50759)) ([44c32b7](https://github.com/okou-ai/okou/commit/44c32b74189f160fe9d3035465970f9a512a5354))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.127.0
+    * @okouai/core bumped to 8.878.1
+    * @okouai/ui bumped to 1.22.18
+
 ## [0.1182.0](https://github.com/okou-ai/okou/compare/app-v0.1181.0...app-v0.1182.0) (2026-11-25)
 
 

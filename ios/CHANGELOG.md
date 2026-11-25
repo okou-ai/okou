@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.65.10](https://github.com/okou-ai/okou/compare/ios-v0.65.9...ios-v0.65.10) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** try google connector universal links before browser authorization ([#50771](https://github.com/okou-ai/okou/issues/50771)) ([9b3c7f0](https://github.com/okou-ai/okou/commit/9b3c7f08e8a1669d118bf367000a4ec0012120c1))
+
+
+### Refactoring
+
+* **ios:** read the chat list and selection from the session graph ([#50787](https://github.com/okou-ai/okou/issues/50787)) ([1ecc07f](https://github.com/okou-ai/okou/commit/1ecc07f20e600c6943e0b4fe2987cb44cfb1aab2))
+
 ## [0.65.9](https://github.com/okou-ai/okou/compare/ios-v0.65.8...ios-v0.65.9) (2026-11-25)
 
 
