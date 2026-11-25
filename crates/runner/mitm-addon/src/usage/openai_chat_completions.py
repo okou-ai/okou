@@ -20,6 +20,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_IDENTITY_FIELD,
     MODEL_USAGE_QUANTITY_FIELD,
 )
 from .openai_tokens import partition_input_tokens
@@ -57,8 +58,8 @@ _USAGE_PATHS = (_TOP_LEVEL_USAGE_PATH, _FIRST_CHOICE_USAGE_PATH)
 _CACHED_TOKENS_SUFFIX = ("prompt_tokens_details", "cached_tokens")
 
 _CHAT_COMPLETIONS_SCALAR_FIELDS = {
-    ("id",): ScalarField("string", max_bytes=1024),
-    ("model",): ScalarField("string", max_bytes=1024),
+    ("id",): MODEL_USAGE_IDENTITY_FIELD,
+    ("model",): MODEL_USAGE_IDENTITY_FIELD,
     ("service_tier",): ScalarField("string", max_bytes=1024),
     **{
         (*prefix, field): MODEL_USAGE_QUANTITY_FIELD

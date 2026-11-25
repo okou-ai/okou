@@ -13,6 +13,7 @@ MODEL_USAGE_CATEGORY_OUTPUT = "tokens.output"
 MODEL_USAGE_CATEGORY_CACHE_READ = "tokens.cache_read"
 MODEL_USAGE_CATEGORY_CACHE_CREATION = "tokens.cache_creation"
 
+MODEL_USAGE_IDENTITY_FIELD = ScalarField("string", max_bytes=1024)
 MODEL_USAGE_QUANTITY_FIELD = ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY)
 
 # Canonical normalized category keys accepted from provider extractors.
