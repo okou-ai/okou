@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from uuid import uuid4
 
@@ -93,7 +94,8 @@ def test_packaged_runtime_dependencies_match_the_released_lock(tmp_path):
 
 
 @contextmanager
-def launch(
+def _launch(
+    addon_script: Path,
     root: Path,
     generation: str,
     *,
@@ -102,8 +104,6 @@ def launch(
 ):
     directory = root / generation
     directory.mkdir(mode=0o700)
-    addon = directory / "addon"
-    shutil.copytree(Path(__file__).parents[1] / "src", addon)
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
         port = reservation.getsockname()[1]
@@ -121,7 +121,7 @@ def launch(
                 "--mode",
                 mode,
                 "--scripts",
-                str(addon / "mitm_addon.py"),
+                str(addon_script),
                 "--set",
                 f"confdir={directory / 'certificates'}",
                 "--set",
@@ -181,7 +181,15 @@ def launch(
         assert process.returncode == 0, output.read()
 
 
-def test_packaged_addon_status_shutdown_and_fresh_generation(tmp_path):
+@pytest.fixture(scope="module")
+def launch(tmp_path_factory: pytest.TempPathFactory):
+    # Keep the shared source outside each launch's writable runtime directory.
+    addon = tmp_path_factory.mktemp("packaged-addon") / "src"
+    shutil.copytree(Path(__file__).parents[1] / "src", addon)
+    return partial(_launch, addon / "mitm_addon.py")
+
+
+def test_packaged_addon_status_shutdown_and_fresh_generation(tmp_path, launch):
     with launch(tmp_path, "generation-1") as (directory, _):
         assert exchange(directory)["data"] == {"state": "running"}
         with control_connection(directory) as partial:
@@ -194,7 +202,7 @@ def test_packaged_addon_status_shutdown_and_fresh_generation(tmp_path):
         assert exchange(replacement, status_request("generation-2"))["type"] == "result"
 
 
-def test_packaged_addon_flushes_production_network_log_after_unregister(tmp_path):
+def test_packaged_addon_flushes_production_network_log_after_unregister(tmp_path, launch):
     run_id = str(uuid4())
     with launch(tmp_path, "generation-1") as (directory, port):
         log_path = directory / f"network-{run_id}.jsonl"
@@ -266,7 +274,7 @@ def test_packaged_addon_flushes_production_network_log_after_unregister(tmp_path
         assert records[0]["status"] == 403
 
 
-def test_packaged_registry_receipt_matches_catalog_and_http_enforcement(tmp_path):
+def test_packaged_registry_receipt_matches_catalog_and_http_enforcement(tmp_path, launch):
     with launch(tmp_path, "generation-1") as (directory, port):
         path = directory / "registry.json"
         catalog = directory / "catalog.json"
@@ -334,7 +342,9 @@ def test_packaged_registry_receipt_matches_catalog_and_http_enforcement(tmp_path
 
 
 @pytest.mark.parametrize("encoding", ["identity", "zstd"])
-def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_path, encoding):
+def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(
+    tmp_path, launch, encoding
+):
     api = UsageWebhookServer()
     release = threading.Event()
     api.queue_response(
@@ -514,7 +524,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("upload", [False, True], ids=["incomplete-upload", "large-upload"])
-def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, dialect, upload):
+def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, launch, dialect, upload):
     api = FakeAuthEndpoint()
     api.queue_json_response(
         {"error": {"code": "INSUFFICIENT_CREDITS", "message": "Synthetic no credits"}},
@@ -570,7 +580,7 @@ def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, dialect, uplo
 
 
 @pytest.mark.parametrize("upload", [False, True], ids=["incomplete-upload", "large-upload"])
-def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, upload):
+def test_packaged_custom_network_denial_precedes_upload_and_upstream(tmp_path, launch, upload):
     api = FakeAuthEndpoint()
     api.queue_json_response(
         {"error": {"code": "FORBIDDEN", "message": "Custom connector network authority changed"}},
