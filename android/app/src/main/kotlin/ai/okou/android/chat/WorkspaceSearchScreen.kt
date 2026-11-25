@@ -598,28 +598,33 @@ private fun SearchResults(
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
     val position = search.position
-    val (wasAtTop, resultBelowHeader) =
+    val (wasAtTop, previousPosition, firstResult) =
         Snapshot.withoutReadObservation {
+            val previous = search.savedAnchor()
             val atTop =
                 position.firstVisibleItemIndex == 0 && position.firstVisibleItemScrollOffset == 0
-            val measuredItems = position.layoutInfo.visibleItemsInfo
-            val first = measuredItems.firstOrNull { it.index == position.firstVisibleItemIndex }
-            atTop to
-                measuredItems
-                    .firstOrNull { it.contentType == true }
-                    .takeIf { !atTop && first?.contentType == false }
+            val result = position.layoutInfo.visibleItemsInfo.firstOrNull { it.contentType == true }
+            Triple(atTop, previous, result)
         }
     LaunchedEffect(visibleItems) {
         if (anchor != null || pendingFocus != null || position.isScrollInProgress) {
             return@LaunchedEffect
         }
-        if (wasAtTop && visibleItems.isNotEmpty()) {
+        if (visibleItems.isEmpty()) return@LaunchedEffect
+        if (wasAtTop) {
             position.requestScrollToItem(0)
-        } else if (resultBelowHeader != null) {
-            // LazyColumn anchors its first visible item. If that item was a heading,
-            // preserve the result below it even when the heading gets a new first row.
-            val index = visibleItems.indexOfFirst { it.key == resultBelowHeader.key }
-            if (index >= 0) position.requestScrollToItem(index, -resultBelowHeader.offset)
+        } else if (previousPosition != null && firstResult != null) {
+            val index = visibleItems.indexOfFirst { it.key == firstResult.key }
+            when {
+                index < 0 ->
+                    position.requestScrollToItem(
+                        previousPosition.index.coerceAtMost(visibleItems.lastIndex),
+                        previousPosition.offset,
+                    )
+                // LazyColumn tracks the key of its first item, which can be a group heading.
+                previousPosition.key != firstResult.key ->
+                    position.requestScrollToItem(index, -firstResult.offset)
+            }
         }
     }
     val waitingForAnchor = anchor?.let { waitingForResult(it.key) } == true
