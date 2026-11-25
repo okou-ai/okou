@@ -220,8 +220,7 @@ class ScreenshotScenario {
                         check(input.visibleBounds.height() >= minimumFieldHeight) {
                             "Rename input is below the 56 dp minimum"
                         }
-                        val saveButton = By.pkg(app.packageName).text(labels.getString(R.string.chat_project_rename_save))
-                        val save = By.copy(saveButton).enabled(true)
+                        val save = By.pkg(app.packageName).text(labels.getString(R.string.chat_project_rename_save)).enabled(true)
                         if (liveRename) {
                             fun refreshLiveTitle(stage: Int) {
                                 liveStage.set(stage)
@@ -232,7 +231,9 @@ class ScreenshotScenario {
                             }
                             refreshLiveTitle(1)
                             check(device.find(By.copy(focusedEditor).text(firstRemoteTitle)).text == firstRemoteTitle)
-                            device.find(By.copy(saveButton).enabled(false))
+                            check(device.wait(Until.gone(By.copy(save).clickable(true)), 12_000)) {
+                                "Save was still actionable after the clean editor received the confirmed name"
+                            }
                             ScreenshotCapture.capture("phone-chat-live-baseline.png")
 
                             device.find(focusedEditor).text = newName
