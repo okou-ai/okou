@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.WorkspaceToolDirectoryRow
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.ConnectorDirectoryState
@@ -35,7 +36,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -66,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
@@ -82,7 +83,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -676,40 +676,28 @@ private fun ConnectorDirectoryRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(8.dp)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true)
-            .clip(shape)
-            .background(if (selected) colors.surfaceVariant else colors.background)
-            .selectable(selected = selected, role = Role.Button, onClick = open)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ConnectorIcon(entry.icon, large = false, modifier = Modifier.align(Alignment.Top))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(entry.name, style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold))
-            if (entry.description.isNotBlank()) {
-                Text(
-                    entry.description,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = connectorSmallType(),
-                    color = colors.onSurfaceVariant,
-                )
-            }
-            if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts)
+    WorkspaceToolDirectoryRow(
+        title = entry.name,
+        selected = selected,
+        onClick = open,
+        modifier = modifier,
+        leading = { ConnectorMark(entry.icon, 20.dp) },
+    ) { supportingColor ->
+        if (entry.description.isNotBlank()) {
+            Text(
+                entry.description,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = connectorSmallType(),
+                color = supportingColor,
+            )
         }
-        ConnectorChevron()
+        if (accounts.isNotEmpty()) ConnectorDirectoryStatus(accounts, supportingColor)
     }
 }
 
 @Composable
-private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
+private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>, textColor: Color) {
     val available = accounts.count { it.status == ConnectorAccountStatus.Connected }
     val attention = accounts.any { it.status.needsAttention }
     val message =
@@ -752,7 +740,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                     lineHeight = 16.sp,
                     letterSpacing = 0.sp,
                 ),
-            color = colors.onSurfaceVariant,
+            color = textColor,
         )
     }
 }
