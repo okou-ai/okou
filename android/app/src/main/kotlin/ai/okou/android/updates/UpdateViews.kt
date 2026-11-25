@@ -141,11 +141,11 @@ internal fun updateToolbarAction(
     val transfer = state.transfer
     return when {
         transfer is UpdateTransfer.Downloading -> {
-            val fraction = transfer.fraction()
+            val percent = updatePercent(transfer.fraction() ?: 0f)
             UpdateToolbarAction(
-                downloadLabel(fraction),
+                stringResource(R.string.updates_downloading, percent),
                 openDetails,
-                progress = fraction?.let { updatePercent(it) },
+                progress = percent,
             )
         }
         transfer is UpdateTransfer.Ready && state.canInstall ->
