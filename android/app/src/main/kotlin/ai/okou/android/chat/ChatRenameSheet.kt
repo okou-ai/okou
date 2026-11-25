@@ -1,18 +1,19 @@
 package ai.okou.android.chat
 
 import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
-import ai.okou.android.isShortSettingsPanelWindow
 import ai.okou.android.normalizedRenameName
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormOutlineColors
+import ai.okou.android.okouFormSupportingTextStyle
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -39,17 +40,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.filterNotNull
 
 internal enum class RenameStatus {
@@ -101,7 +99,6 @@ internal fun RenameListItemSheet(
     val validation = form.error ?: if (projectName) projectNameError(editor.field) else null
     val notice =
         when {
-            status == RenameStatus.Saving && !projectName -> R.string.settings_saving
             checking && !projectName -> R.string.chat_rename_checking_result
             unconfirmed -> R.string.chat_rename_save_unconfirmed
             status == RenameStatus.Rejected && (submitted == null || submitted.name == name) ->
@@ -124,7 +121,7 @@ internal fun RenameListItemSheet(
                     stringResource(
                         when {
                             projectName && checking -> R.string.chat_project_checking
-                            projectName && status == RenameStatus.Saving -> R.string.settings_saving
+                            status == RenameStatus.Saving -> R.string.settings_saving
                             unconfirmed -> R.string.chat_rename_check_result
                             else -> R.string.chat_project_rename_save
                         },
@@ -146,7 +143,12 @@ internal fun RenameListItemSheet(
                             R.string.chat_project_rename_save,
                             R.string.settings_saving,
                         )
-                    else emptyList(),
+                    else
+                        listOf(
+                            stringResource(R.string.chat_project_rename_save),
+                            stringResource(R.string.settings_saving),
+                            stringResource(R.string.chat_rename_check_result),
+                        ),
                 confirmMinWidth = if (projectName) 89.dp else 0.dp,
                 keepConfirmFocusWhilePending = projectBusy,
             )
@@ -286,12 +288,7 @@ private fun WorkspaceNameFormBody(
         }
     val lineHeightStyle =
         LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
-    val supportingStyle =
-        MaterialTheme.typography.bodySmall.copy(
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            lineHeightStyle = lineHeightStyle,
-        )
+    val supportingStyle = okouFormSupportingTextStyle()
     val inputStyle = okouFormInputStyle().copy(lineHeightStyle = lineHeightStyle)
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
@@ -322,8 +319,10 @@ private fun WorkspaceNameFormBody(
     val inputVerticalPadding = maxOf(fieldPadding, (outlineMinHeight - inputLineHeight) / 2)
     Column {
         var fieldFocused by remember { mutableStateOf(false) }
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(OkouFormLayout.LabelGap))
+        if (projectName) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(OkouFormLayout.LabelGap))
+        }
         OutlinedTextField(
             state = input,
             modifier =
@@ -343,21 +342,21 @@ private fun WorkspaceNameFormBody(
             textStyle = inputStyle,
             readOnly = readOnly,
             supportingText = {
-                Box(
+                OkouFormFieldSupport(
+                    validationMessage ?: notice?.let { stringResource(it) },
+                    if (validationMessage != null || noticeIsError) colors.error
+                    else colors.onSurfaceVariant,
                     Modifier.fillMaxWidth()
                         .animateContentSize(tween(250, easing = ChatListMotionEasing))
                         .heightIn(min = supportingLineHeight),
-                ) {
-                    if (validationMessage != null)
-                        Text(validationMessage, color = colors.error, style = supportingStyle)
-                }
+                )
             },
             isError = validationMessage != null,
             lineLimits = TextFieldLineLimits.SingleLine,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             onKeyboardAction = submit?.let { action -> { action() } },
             shape = MaterialTheme.shapes.medium,
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
+            colors = okouFormOutlineColors(noticeIsError),
             contentPadding =
                 PaddingValues(horizontal = fieldPadding, vertical = inputVerticalPadding),
         )
@@ -375,21 +374,6 @@ private fun WorkspaceNameFormBody(
         if (field.overlongSubmission != null) {
             LaunchedEffect(field) {
                 snapshotFlow { input.text }.collect { field.clearLengthErrorOnEdit() }
-            }
-        }
-        val noticeMotion =
-            if (projectName && !isShortSettingsPanelWindow())
-                Modifier.animateContentSize(tween(250, easing = ChatListMotionEasing))
-            else Modifier
-        Column(Modifier.fillMaxWidth().then(noticeMotion)) {
-            if (notice != null) {
-                Spacer(Modifier.height(OkouFormLayout.GroupGap))
-                Text(
-                    stringResource(notice),
-                    Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    color = if (noticeIsError) colors.error else colors.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
             }
         }
     }

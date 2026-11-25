@@ -2,7 +2,7 @@ package ai.okou.android.connectors
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
-import ai.okou.android.OkouFormFieldError
+import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameDraft
@@ -13,11 +13,13 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGran
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormOutlineColors
 import ai.okou.android.okouFormSupportingTextHeight
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -86,29 +88,51 @@ internal fun ConnectorRenameSheet(
                 stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
             null -> null
         }
+    val saving = action?.busy == true && !action.reconciling
+    val problem = action?.problem
+    val feedback =
+        when {
+            action?.reconciling == true && action.busy ->
+                stringResource(R.string.chat_rename_checking_result)
+            problem != null -> stringResource(connectorActionProblemMessage(problem))
+            else -> null
+        }
+    val definiteFailure = problem == ConnectorProblem.Failed || problem == ConnectorProblem.Network
+    val colors = MaterialTheme.colorScheme
+    val saveLabel = stringResource(R.string.instructions_save)
+    val savingLabel = stringResource(R.string.settings_saving)
     ConnectorSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
         actions = {
-            ConnectorFormActions(
-                stringResource(R.string.instructions_save),
-                enabled = form.canSave,
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.settings_cancel),
+                confirmLabel = if (saving) savingLabel else saveLabel,
                 cancel = cancel,
+                confirm = { save(form.name) },
+                confirmEnabled = form.canSave,
+                modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = action?.busy != true,
-            ) {
-                save(form.name)
-            }
+                confirmLayoutLabels = listOf(saveLabel, savingLabel),
+            )
         },
     ) {
         ConnectorInput(
             stringResource(R.string.connector_account_name),
             draft.input,
             readOnly = !canModify,
-            supportingText = { OkouFormFieldError(errorMessage) },
+            supportingText = {
+                OkouFormFieldSupport(
+                    errorMessage ?: feedback,
+                    if (errorMessage != null || definiteFailure) colors.error
+                    else colors.onSurfaceVariant,
+                    Modifier.animateContentSize(),
+                )
+            },
             errorMessage = errorMessage,
+            requestFailed = definiteFailure,
         )
-        ConnectorActionFeedback(action)
     }
 }
 
@@ -424,8 +448,8 @@ private fun ConnectorInput(
     placeholder: String? = null,
     supportingText: (@Composable () -> Unit)? = null,
     errorMessage: String? = null,
+    requestFailed: Boolean = false,
 ) {
-    val colors = MaterialTheme.colorScheme
     val supportHeight =
         if (supportingText != null)
             okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
@@ -440,7 +464,7 @@ private fun ConnectorInput(
                 if (errorMessage != null) error(errorMessage)
             }
     val shape = MaterialTheme.shapes.medium
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
+    val fieldColors = okouFormOutlineColors(requestFailed)
     val padding = OkouFormLayout.FieldPadding
     val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
         { Text(it, style = connectorBodyType()) }

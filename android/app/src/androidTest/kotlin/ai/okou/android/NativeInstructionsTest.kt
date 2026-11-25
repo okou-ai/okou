@@ -4,9 +4,18 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
+import android.app.Instrumentation
 import android.content.Context
+import android.os.Build
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inspector.WindowInspector
+import androidx.annotation.RequiresApi
+import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -210,6 +219,23 @@ class NativeInstructionsTest {
             editor().click()
             editor(requireFocus = true)
             awaitIme(true)
+            // Use the focused Compose view's platform connection with the system keyboard open.
+            val composition =
+                if (Build.VERSION.SDK_INT < 29) null
+                else
+                    instructionsInputConnection(instrumentation).also { input ->
+                        instrumentation.runOnMainSync {
+                            input.beginBatchEdit()
+                            try {
+                                assertTrue(input.setComposingRegion(0, localDraft.length))
+                                assertTrue(input.setComposingText("zhongwen", 1))
+                            } finally {
+                                input.endBatchEdit()
+                            }
+                        }
+                    }
+            val beforeRefresh = if (composition == null) localDraft else "zhongwen"
+            editor(requireFocus = true, expectedText = beforeRefresh)
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
             scenario.onActivity { model.refresh() }
@@ -222,7 +248,17 @@ class NativeInstructionsTest {
                     10_000,
                 ) == true,
             )
-            assertEquals(localDraft, editor(requireFocus = true).text)
+            assertEquals(beforeRefresh, editor(requireFocus = true).text)
+            if (composition != null) {
+                instrumentation.runOnMainSync {
+                    assertTrue(
+                        "Markdown styling and the readback preserve the platform connection",
+                        composition.setComposingText("中文", 1),
+                    )
+                    assertTrue(composition.finishComposingText())
+                }
+                editor(requireFocus = true, expectedText = "中文")
+            }
             assertTrue(imeVisible())
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitIme(false)
@@ -272,6 +308,24 @@ class NativeInstructionsTest {
         }
         MultipleFailureException.assertEmpty(failures)
     }
+}
+
+@RequiresApi(29)
+private fun instructionsInputConnection(instrumentation: Instrumentation): InputConnection {
+    fun View.activeEditor(): View? =
+        if (onCheckIsTextEditor()) this
+        else (this as? ViewGroup)?.children?.firstNotNullOfOrNull { it.activeEditor() }
+
+    var connection: InputConnection? = null
+    instrumentation.runOnMainSync {
+        connection =
+            WindowInspector.getGlobalWindowViews()
+                .asSequence()
+                .filter(View::hasWindowFocus)
+                .mapNotNull { it.activeEditor() }
+                .firstNotNullOfOrNull { it.onCreateInputConnection(EditorInfo()) }
+    }
+    return checkNotNull(connection) { "The focused Instructions editor has no input connection" }
 }
 
 internal fun UiDevice.confirmInstructionsDiscard(context: Context) {

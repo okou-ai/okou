@@ -13,22 +13,33 @@ internal enum class RenameFieldError {
 
 internal data class RenameForm(val name: String, val error: RenameFieldError?, val canSave: Boolean)
 
-internal class RenameDraft(initialName: String) {
-    val input = TextFieldState(initialText = initialName)
+internal class RenameDraft(
+    initialName: String,
+    val input: TextFieldState = TextFieldState(initialText = initialName),
+) {
     private var confirmed by mutableStateOf(initialName)
 
     private val pristine: Boolean
-        get() = normalizedRenameName(input.text) == normalizedRenameName(confirmed)
+        get() =
+            input.composition == null &&
+                normalizedRenameName(input.text) == normalizedRenameName(confirmed)
 
-    fun receive(name: String) {
-        if (name == confirmed) return
-        if (pristine) {
+    fun receive(name: String, readOnly: Boolean = false): Boolean {
+        if (name == confirmed) return false
+        val replaceInput = !readOnly && pristine
+        if (replaceInput) {
+            val previousSelection = input.selection
             input.edit {
                 replace(0, length, name)
-                selection = TextRange(name.length)
+                selection =
+                    TextRange(
+                        previousSelection.start.coerceAtMost(length),
+                        previousSelection.end.coerceAtMost(length),
+                    )
             }
         }
         confirmed = name
+        return replaceInput
     }
 
     fun form(name: String, enabled: Boolean, maxLength: Int?): RenameForm =

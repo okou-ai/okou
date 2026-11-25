@@ -145,13 +145,25 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
-    fun backgroundFailureKeepsFreshContentButAccessLossEvictsIt() = check { service, _, create, _ ->
+    fun backgroundRetriesKeepOpenContentButAccessLossEvictsIt() = check { service, _, create, _ ->
         val model = create(false)
         model.open()
         runCurrent()
-        service.read = { throw ApiFailure.Network(IOException("refresh unavailable")) }
+        var refreshAttempts = 0
+        service.read = {
+            refreshAttempts++
+            throw ApiFailure.Network(IOException("refresh unavailable"))
+        }
+        advanceTimeBy(599_999)
         model.open()
         runCurrent()
+        assertEquals(1, refreshAttempts)
+        assertEquals(InstructionsRequest.Refreshing, model.uiState.value.request)
+        assertEquals("Original", model.uiState.value.content)
+        assertTrue(model.uiState.value.canEdit)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(3, refreshAttempts)
         assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
         assertEquals(InstructionsRead.RefreshFailed, model.uiState.value.read)
         assertEquals("Original", model.uiState.value.content)
@@ -172,6 +184,9 @@ class PersonalInstructionsModelTest {
         assertEquals(InstructionsPhase.Loading, model.uiState.value.phase)
         assertNull(model.uiState.value.saved)
         response.completeExceptionally(ApiFailure.Network(IOException("cold read unavailable")))
+        runCurrent()
+        assertEquals(InstructionsPhase.Loading, model.uiState.value.phase)
+        advanceTimeBy(6_000)
         runCurrent()
         assertEquals(InstructionsPhase.Failed, model.uiState.value.phase)
     }
@@ -445,6 +460,8 @@ class PersonalInstructionsModelTest {
             service.read = { throw ApiFailure.Network(IOException("offline")) }
             model.open()
             runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
             assertEquals(InstructionsPhase.Failed, model.uiState.value.phase)
             assertEquals("Keep my offline draft 👋", model.uiState.value.content)
             assertEquals("v1", model.uiState.value.draft?.base?.version)
@@ -461,6 +478,8 @@ class PersonalInstructionsModelTest {
             assertNull(store.load(identity).draft)
             service.read = { throw ApiFailure.Network(IOException("offline again")) }
             model.refresh()
+            runCurrent()
+            advanceTimeBy(6_000)
             runCurrent()
             model.edit("Continue editing offline")
             runCurrent()

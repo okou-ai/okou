@@ -60,7 +60,7 @@
     <string name="instructions_loading">Cargando instrucciones…</string>
     <string name="instructions_refresh_failed">No se pudieron actualizar las instrucciones. Se muestran las últimas instrucciones cargadas.</string>
     <string name="instructions_uncertain">El resultado del guardado sigue sin confirmarse. Se conservaron los cambios.</string>
-    <string name="instructions_load_failed">No se pudieron cargar las instrucciones.</string>
+    <string name="instructions_load_failed">No se puede cargar en este momento</string>
     <string name="instructions_unavailable">Las instrucciones personales no están disponibles en este contexto.</string>
     <string name="instructions_unsaved">Tienes cambios sin guardar.</string>
     <string name="instructions_local_failed">No se pudo guardar el borrador local. Inténtalo de nuevo.</string>

@@ -4,16 +4,19 @@ import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouFormActions
-import ai.okou.android.OkouFormFieldError
+import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
-import ai.okou.android.okouFormSupportingTextHeight
+import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormOutlineColors
+import ai.okou.android.okouFormSupportingLineHeight
 import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.rememberJournalTextField
 import ai.okou.android.state.rememberSettingsFlag
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +34,8 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -43,21 +47,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -69,8 +77,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
-
-private val editorMinHeight = 112.dp
 
 /** The native field owns input and selection. The shared owner receives immutable text edits. */
 private class InstructionsInput(val field: TextFieldState) {
@@ -91,7 +97,7 @@ private class InstructionsInput(val field: TextFieldState) {
         withContext(Dispatchers.Main) {
             merge(
                     inputChanges.receiveAsFlow(),
-                    snapshotFlow { field.text.toString() }.map { Unit },
+                    snapshotFlow { field.text.toString() to field.composition }.map { Unit },
                     model.uiState.map { it.content }.distinctUntilChanged().map { Unit },
                 )
                 .collect { synchronize(model, onEdit) }
@@ -106,11 +112,18 @@ private class InstructionsInput(val field: TextFieldState) {
             model.edit(text)
             onEdit()
         }
-        presented = model.uiState.value.content
-        if (text != presented) {
+        val current = model.uiState.value
+        if (text != current.content && current.canEdit && field.composition != null) return
+        presented = current.content
+        if (text != current.content) {
+            val previousSelection = field.selection
             field.edit {
                 replace(0, length, presented)
-                selection = TextRange.Zero
+                selection =
+                    TextRange(
+                        previousSelection.start.coerceAtMost(length),
+                        previousSelection.end.coerceAtMost(length),
+                    )
             }
         }
     }
@@ -150,6 +163,19 @@ internal fun PersonalInstructionsSettings(
         }
     }
     val title = stringResource(R.string.instructions_title)
+    val snackbar = remember { SnackbarHostState() }
+    val refreshFailure =
+        if (
+            state.read == InstructionsRead.RefreshFailed &&
+                state.phase == InstructionsPhase.Ready &&
+                !state.saveRejected
+        )
+            stringResource(R.string.instructions_refresh_failed)
+        else null
+    LaunchedEffect(refreshFailure) {
+        if (refreshFailure != null)
+            snackbar.showSnackbar(refreshFailure, duration = SnackbarDuration.Short)
+    }
     val editing =
         if (
             state.read != InstructionsRead.Unavailable &&
@@ -163,7 +189,32 @@ internal fun PersonalInstructionsSettings(
     val fieldError =
         if (state.content.contains('\u0000')) stringResource(R.string.instructions_invalid)
         else null
-    val supportHeight = okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
+    val saveFailed = state.localFailure || state.saveRejected
+    val requestFeedback =
+        when {
+            state.localFailure -> R.string.instructions_local_failed
+            state.saveRejected -> R.string.instructions_save_rejected
+            state.phase == InstructionsPhase.Checking -> R.string.instructions_checking
+            state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
+            state.read == InstructionsRead.Failed && editing != null ->
+                R.string.instructions_load_failed
+            else -> null
+        }?.let { stringResource(it) }
+    val supportLineHeight =
+        okouFormSupportingLineHeight(stringResource(R.string.instructions_uncertain))
+    val supportHeight = supportLineHeight + OkouFormLayout.SupportingTextGap
+    val inputStyle = okouFormInputStyle()
+    val editorMinHeight =
+        with(LocalDensity.current) {
+            val padding = OkouFormLayout.FieldPadding
+            maxOf(
+                112.dp,
+                inputStyle.lineHeight.toDp() * 2 +
+                    padding.calculateTopPadding() +
+                    padding.calculateBottomPadding() +
+                    2.dp,
+            )
+        }
     fun acceptNativeInput() {
         editing?.synchronize(model) { closeAfterSave = false }
     }
@@ -199,6 +250,7 @@ internal fun PersonalInstructionsSettings(
             if (state.saveInProgress || state.draft != null) ::confirmDismiss else null,
         fullScreenInShortWindow = true,
         actionSpacing = OkouFormLayout.GroupGap,
+        snackbar = snackbar,
         actions = { InstructionsActions(state, model, ::requestDismiss, ::save) },
     ) {
         Column(
@@ -219,7 +271,6 @@ internal fun PersonalInstructionsSettings(
                     if (restoreFocus) focus.requestFocus()
                 }
                 val colors = MaterialTheme.colorScheme
-                val textStyle = MaterialTheme.typography.bodyLarge
                 OutlinedTextField(
                     state = editing.field,
                     inputTransformation = editing.inputTransformation,
@@ -243,19 +294,25 @@ internal fun PersonalInstructionsSettings(
                                 contentDescription = title
                                 if (fieldError != null) error(fieldError)
                             },
-                    textStyle = textStyle.copy(color = colors.onSurface),
+                    textStyle = inputStyle.copy(color = colors.onSurface),
                     placeholder = {
-                        Text(stringResource(R.string.instructions_placeholder), style = textStyle)
+                        Text(stringResource(R.string.instructions_placeholder), style = inputStyle)
                     },
-                    supportingText = { OkouFormFieldError(fieldError) },
+                    supportingText = {
+                        OkouFormFieldSupport(
+                            fieldError ?: requestFeedback,
+                            if (fieldError != null || saveFailed) colors.error
+                            else colors.onSurfaceVariant,
+                            Modifier.animateContentSize().heightIn(min = supportLineHeight),
+                        )
+                    },
                     isError = fieldError != null,
                     lineLimits =
-                        TextFieldLineLimits.MultiLine(minHeightInLines = 3, maxHeightInLines = 8),
+                        TextFieldLineLimits.MultiLine(minHeightInLines = 2, maxHeightInLines = 8),
                     keyboardOptions =
                         KeyboardOptions(showKeyboardOnFocus = !restoreFocus || restoreKeyboard),
                     shape = RoundedCornerShape(12.dp),
-                    colors =
-                        OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
+                    colors = okouFormOutlineColors(saveFailed),
                     contentPadding = OkouFormLayout.FieldPadding,
                     readOnly = !state.canEdit,
                 )
@@ -283,16 +340,14 @@ internal fun PersonalInstructionsSettings(
                     Spacer(Modifier.height(supportHeight))
                 }
             }
-            val message =
-                when {
-                    state.phase == InstructionsPhase.Unavailable ->
-                        R.string.instructions_unavailable
-                    state.phase == InstructionsPhase.Failed -> R.string.instructions_load_failed
-                    else -> null
-                }
-            if (message != null) {
+            if (editing == null && state.phase == InstructionsPhase.Failed) {
+                InstructionsReadFailure(
+                    Modifier.fillMaxWidth().height(editorMinHeight + supportHeight),
+                )
+            }
+            if (state.phase == InstructionsPhase.Unavailable) {
                 Text(
-                    stringResource(message),
+                    stringResource(R.string.instructions_unavailable),
                     Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -319,6 +374,49 @@ internal fun PersonalInstructionsSettings(
 }
 
 @Composable
+private fun InstructionsReadFailure(modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val art =
+        if (colors.surface.luminance() < colors.onSurface.luminance())
+            R.drawable.okou_load_failed_dark
+        else R.drawable.okou_load_failed
+    Layout(
+        modifier = modifier,
+        content = {
+            Image(painterResource(art), contentDescription = null)
+            Text(
+                stringResource(R.string.instructions_load_failed),
+                Modifier.testTag("instructions_read_failure").semantics {
+                    liveRegion = LiveRegionMode.Polite
+                },
+                color = colors.onSurface,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+            )
+        },
+    ) { (illustration, label), constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val text = label.measure(Constraints(maxWidth = width, maxHeight = height))
+        val available = height - text.height
+        val gap = 12.dp.roundToPx().coerceAtMost(available)
+        val image =
+            illustration.measure(
+                Constraints(
+                    maxWidth = 112.dp.roundToPx().coerceAtMost(width),
+                    maxHeight = available - gap,
+                ),
+            )
+        val top = (available - gap - image.height) * 2 / 5
+        layout(width, height) {
+            image.placeRelative((width - image.width) / 2, top)
+            text.placeRelative((width - text.width) / 2, top + image.height + gap)
+        }
+    }
+}
+
+@Composable
 private fun InstructionsActions(
     state: PersonalInstructionsState,
     model: PersonalInstructionsModel,
@@ -326,18 +424,8 @@ private fun InstructionsActions(
     save: () -> Unit,
 ) {
     val saving = state.phase == InstructionsPhase.Saving
-    val operationMessage =
-        when {
-            state.localFailure -> R.string.instructions_local_failed
-            state.saveRejected -> R.string.instructions_save_rejected
-            state.phase == InstructionsPhase.Checking -> R.string.instructions_checking
-            state.phase == InstructionsPhase.Uncertain -> R.string.instructions_uncertain
-            state.read == InstructionsRead.RefreshFailed -> R.string.instructions_refresh_failed
-            else -> null
-        }
     val saveLabel = stringResource(R.string.instructions_save)
     val savingLabel = stringResource(R.string.settings_saving)
-    val statusStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp)
     Column(Modifier.fillMaxWidth()) {
         OkouFormActions(
             cancelLabel = stringResource(R.string.settings_cancel),
@@ -348,39 +436,13 @@ private fun InstructionsActions(
             confirmEnabled = state.canSave,
             confirmLayoutLabels = listOf(saveLabel, savingLabel),
         )
-        Column(Modifier.fillMaxWidth().animateContentSize()) {
-            Box(Modifier.fillMaxWidth()) {
-                for (message in
-                    listOf(
-                        R.string.instructions_checking,
-                        R.string.instructions_uncertain,
-                        R.string.instructions_save_rejected,
-                        R.string.instructions_local_failed,
-                        R.string.instructions_refresh_failed,
-                    )) {
-                    Text(
-                        stringResource(message),
-                        Modifier.clearAndSetSemantics {}.alpha(0f),
-                        style = statusStyle,
-                    )
-                }
-                if (operationMessage != null) {
-                    Text(
-                        stringResource(operationMessage),
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = statusStyle,
-                    )
-                }
-            }
-            if (state.localFailure) {
-                OkouActionButton(
-                    label = stringResource(R.string.retry),
-                    onClick = model::retryLocalDraft,
-                    enabled = !state.busy,
-                    treatment = OkouActionTreatment.Text,
-                )
-            }
+        if (state.localFailure) {
+            OkouActionButton(
+                label = stringResource(R.string.retry),
+                onClick = model::retryLocalDraft,
+                enabled = !state.busy,
+                treatment = OkouActionTreatment.Text,
+            )
         }
     }
 }

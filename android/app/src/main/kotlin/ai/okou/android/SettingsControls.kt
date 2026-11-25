@@ -45,6 +45,8 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -435,6 +437,7 @@ internal fun SettingsSheet(
     dismissible: Boolean = true,
     fullScreenInShortWindow: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
+    snackbar: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
@@ -448,42 +451,59 @@ internal fun SettingsSheet(
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
     ) { centered ->
-        Column(
-            modifier
-                .fillMaxWidth()
-                .padding(settingsPanelContentPadding(compactHeight))
-                .padding(top = if (centered) 16.dp else 0.dp)
-                .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
-        ) {
-            Box(Modifier.fillMaxWidth()) {
-                val compactTitle = compactHeight && fullScreenInShortWindow
-                Text(
-                    title,
-                    Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
-                        .semantics { heading() },
-                    style =
-                        MaterialTheme.typography.titleLarge.copy(
-                            fontSize = if (compactTitle) 16.sp else 22.sp,
-                            lineHeight = if (compactTitle) 24.sp else 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        ),
-                )
-                if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
-            }
-            val body = Modifier.fillMaxWidth()
-            val bodyModifier =
-                when (scroll) {
-                    SettingsSheetScroll.Panel -> body
-                    SettingsSheetScroll.Body -> body.weight(1f, fill = false).then(scrollModifier)
-                    SettingsSheetScroll.None -> body.weight(1f, fill = false)
+        val panel: @Composable () -> Unit = {
+            Column(
+                modifier
+                    .fillMaxWidth()
+                    .padding(settingsPanelContentPadding(compactHeight))
+                    .padding(top = if (centered) 16.dp else 0.dp)
+                    .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
+            ) {
+                Box(Modifier.fillMaxWidth()) {
+                    val compactTitle = compactHeight && fullScreenInShortWindow
+                    Text(
+                        title,
+                        Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
+                            .semantics { heading() },
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontSize = if (compactTitle) 16.sp else 22.sp,
+                                lineHeight = if (compactTitle) 24.sp else 28.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                    )
+                    if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
                 }
-            Column(bodyModifier) {
-                Column(
-                    Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    content = content,
-                )
-                if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
+                val body = Modifier.fillMaxWidth()
+                val bodyModifier =
+                    when (scroll) {
+                        SettingsSheetScroll.Panel -> body
+                        SettingsSheetScroll.Body ->
+                            body.weight(1f, fill = false).then(scrollModifier)
+                        SettingsSheetScroll.None -> body.weight(1f, fill = false)
+                    }
+                Column(bodyModifier) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = content,
+                    )
+                    if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
+                }
+            }
+        }
+        if (snackbar == null) panel()
+        else {
+            Box(propagateMinConstraints = true) {
+                panel()
+                Box(Modifier.matchParentSize()) {
+                    SnackbarHost(
+                        snackbar,
+                        Modifier.align(Alignment.BottomCenter)
+                            .widthIn(max = 504.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
             }
         }
     }

@@ -875,22 +875,22 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
             else R.string.connector_submitting,
         )
     else if (action?.problem != null)
-        ConnectorStatusBanner(
-            when (action.problem) {
-                ConnectorProblem.Failed -> R.string.connector_change_failed
-                ConnectorProblem.Network -> R.string.connector_network_failed
-                ConnectorProblem.BrowserUnavailable -> R.string.connector_browser_unavailable
-                ConnectorProblem.AuthorizationIncomplete -> R.string.connector_incomplete
-                ConnectorProblem.DeviceAuthorizationDenied -> R.string.connector_device_denied
-                ConnectorProblem.DeviceCodeExpired -> R.string.connector_device_expired
-                ConnectorProblem.DeviceAuthorizationFailed -> R.string.connector_device_failed
-                ConnectorProblem.AuthorizationUnconfirmed ->
-                    R.string.connector_authorization_unconfirmed
-                ConnectorProblem.VerificationPending -> R.string.connector_verify_pending
-                ConnectorProblem.VerificationNetwork -> R.string.connector_verify_network
-            },
-        )
+        ConnectorStatusBanner(connectorActionProblemMessage(action.problem))
 }
+
+internal fun connectorActionProblemMessage(problem: ConnectorProblem) =
+    when (problem) {
+        ConnectorProblem.Failed -> R.string.connector_change_failed
+        ConnectorProblem.Network -> R.string.connector_network_failed
+        ConnectorProblem.BrowserUnavailable -> R.string.connector_browser_unavailable
+        ConnectorProblem.AuthorizationIncomplete -> R.string.connector_incomplete
+        ConnectorProblem.DeviceAuthorizationDenied -> R.string.connector_device_denied
+        ConnectorProblem.DeviceCodeExpired -> R.string.connector_device_expired
+        ConnectorProblem.DeviceAuthorizationFailed -> R.string.connector_device_failed
+        ConnectorProblem.AuthorizationUnconfirmed -> R.string.connector_authorization_unconfirmed
+        ConnectorProblem.VerificationPending -> R.string.connector_verify_pending
+        ConnectorProblem.VerificationNetwork -> R.string.connector_verify_network
+    }
 
 @Composable
 internal fun ConnectorProgress(label: Int) {

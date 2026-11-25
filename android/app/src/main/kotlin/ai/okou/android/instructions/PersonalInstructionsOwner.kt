@@ -348,11 +348,10 @@ internal class PersonalInstructionsOwner(
             } catch (error: Exception) {
                 error
             }
-        val error =
-            if (mutable.value.draft?.attempted == true) {
-                mutable.value = mutable.value.copy(request = InstructionsRequest.CheckingSave)
-                retryBoundedRead({ current(op) }, ::attempt)
-            } else attempt()
+        if (mutable.value.draft?.attempted == true) {
+            mutable.value = mutable.value.copy(request = InstructionsRequest.CheckingSave)
+        }
+        val error = retryBoundedRead({ current(op) }, ::attempt)
         if (error != null) failRead(op, error)
         return result
     }
@@ -367,8 +366,9 @@ internal class PersonalInstructionsOwner(
         val read =
             when {
                 denied || state.read == InstructionsRead.Unavailable -> InstructionsRead.Unavailable
-                state.saved != null && store.freshConfirmed(identity) != null ->
-                    InstructionsRead.RefreshFailed
+                state.saved != null &&
+                    (state.request == InstructionsRequest.Refreshing ||
+                        store.freshConfirmed(identity) != null) -> InstructionsRead.RefreshFailed
                 else -> InstructionsRead.Failed
             }
         mutable.value = state.copy(read = read)

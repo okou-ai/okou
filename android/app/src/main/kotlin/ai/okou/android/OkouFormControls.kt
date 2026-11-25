@@ -12,6 +12,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -19,13 +20,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,16 +48,55 @@ internal object OkouFormLayout {
 internal fun okouFormInputStyle() = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
 
 @Composable
+internal fun okouFormOutlineColors(requestFailed: Boolean = false) =
+    OutlinedTextFieldDefaults.colors(
+        focusedBorderColor =
+            if (requestFailed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurface,
+        unfocusedBorderColor =
+            if (requestFailed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.outline,
+    )
+
+@Composable
 internal fun okouFormSupportingTextHeight() = with(LocalDensity.current) { 16.sp.toDp() }
 
 @Composable
-internal fun OkouFormFieldError(message: String?) {
-    Box(Modifier.heightIn(min = okouFormSupportingTextHeight())) {
+internal fun okouFormSupportingTextStyle() =
+    MaterialTheme.typography.bodySmall.copy(
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        lineHeightStyle =
+            LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+    )
+
+@Composable
+internal fun okouFormSupportingLineHeight(reference: String): Dp {
+    val style = okouFormSupportingTextStyle()
+    val measurer = rememberTextMeasurer()
+    return with(LocalDensity.current) {
+        measurer
+            .measure(AnnotatedString(reference), style, softWrap = false, maxLines = 1)
+            .size
+            .height
+            .toDp()
+            .coerceAtLeast(style.lineHeight.toDp())
+    }
+}
+
+@Composable
+internal fun OkouFormFieldSupport(
+    message: String?,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.heightIn(min = okouFormSupportingTextHeight())) {
         if (message != null) {
             Text(
                 message,
-                style =
-                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = color,
+                style = okouFormSupportingTextStyle(),
             )
         }
     }

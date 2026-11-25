@@ -45,15 +45,19 @@ for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
 Opening the editor displays a confirmed snapshot less than 10 minutes old and
 refreshes it in the background. A cold or expired open reserves the editor space
-until data arrives. A window joining an ongoing refresh shares the open editor's
-current text. A refresh updates the saved value and preserves any edited text and
-selection. The latest confirmed value determines whether Save is available and
-what to restore on discard. Discard still requires confirmation.
+through bounded read retries. A final failure shows the load-failure illustration
+in that space, or a Snackbar if confirmed content is already open. Content stays
+usable when the cache expires during an open session. A window joining an ongoing
+refresh shares the open editor's current text. A refresh updates the saved value
+and preserves any edited text, selection, and composition. The latest confirmed
+value determines whether Save is available and what to restore on discard.
+Discard still requires confirmation.
 The Material 3 text field keeps raw Markdown and native selection together.
 Output styling leaves the document and its offsets intact.
 Saving keeps the panel and its edit visible with a disabled saving action until
-the request settles. The panel closes after the save is confirmed, and save
-feedback stays in the operation area. An explicit save uses the latest confirmed
+the request settles. The panel closes after the save is confirmed. Field
+validation, save failures, and readback share the field's supporting line.
+An explicit save uses the latest confirmed
 version. A definitive stale-version rejection reads back the latest value and
 retries once with that version if the text differs. Clearing the field and saving
 clears Instructions. A lost save response reads the server back with the shared

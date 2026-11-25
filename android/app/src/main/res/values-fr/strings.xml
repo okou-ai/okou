@@ -60,7 +60,7 @@
     <string name="instructions_loading">Chargement des instructions…</string>
     <string name="instructions_refresh_failed">Impossible d’actualiser les instructions. Les dernières instructions chargées sont affichées.</string>
     <string name="instructions_uncertain">L’enregistrement reste à confirmer. Vos modifications sont conservées.</string>
-    <string name="instructions_load_failed">Impossible de charger les instructions.</string>
+    <string name="instructions_load_failed">Chargement temporairement indisponible</string>
     <string name="instructions_unavailable">Les instructions personnelles sont indisponibles dans ce contexte.</string>
     <string name="instructions_unsaved">Vous avez des modifications non enregistrées.</string>
     <string name="instructions_local_failed">Impossible de conserver le brouillon local. Réessayez.</string>

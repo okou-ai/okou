@@ -2,7 +2,6 @@ package ai.okou.android.instructions
 
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.AnnotatedString
@@ -30,13 +29,14 @@ import org.commonmark.parser.Parser
 
 @Composable
 internal fun rememberInstructionsMarkdown(source: String): OutputTransformation {
-    val formatted by
+    val formatted =
         produceState<AnnotatedString?>(null, source) {
             value = withContext(Dispatchers.Default) { styleInstructionsMarkdown(source) }
         }
+    // A new transformation identity restarts Compose's active platform input session.
     return remember(formatted) {
         OutputTransformation {
-            val styled = formatted
+            val styled = formatted.value
             if (styled != null && styled.text.contentEquals(asCharSequence())) {
                 styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
             }

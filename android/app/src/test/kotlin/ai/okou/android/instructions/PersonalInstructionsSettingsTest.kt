@@ -320,14 +320,30 @@ class PersonalInstructionsSettingsTest {
             assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
             saveReply.countDown()
             awaitPhase(InstructionsPhase.Checking)
-            compose
-                .onNodeWithText(app.getString(R.string.instructions_checking))
-                .assertIsDisplayed()
+            val checking =
+                compose.onNodeWithText(
+                    app.getString(R.string.instructions_checking),
+                    useUnmergedTree = true,
+                )
+            checking.assertIsDisplayed()
             save.assertIsNotEnabled()
-            assertEquals(idleSaveBounds, save.getUnclippedBoundsInRoot())
+            val checkingBounds = checking.getUnclippedBoundsInRoot()
+            val checkingSaveBounds = save.getUnclippedBoundsInRoot()
+            assertTrue(
+                "Readback feedback $checkingBounds is above Save $checkingSaveBounds",
+                checkingBounds.bottom <= checkingSaveBounds.top,
+            )
+            assertEquals(
+                "The readback message keeps the Save position",
+                idleSaveBounds,
+                save.getUnclippedBoundsInRoot(),
+            )
             assertEquals(idleCancelBounds, cancel.getUnclippedBoundsInRoot())
             assertEquals(idleEditorBounds, input.getUnclippedBoundsInRoot())
-            input.assertTextEquals(markdown)
+            assertEquals(
+                markdown,
+                input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+            )
         } finally {
             saveReply.countDown()
             checkReply.countDown()
@@ -359,9 +375,16 @@ class PersonalInstructionsSettingsTest {
         input.performScrollTo().performClick().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
         save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
-        val rejected = compose.onNodeWithText(app.getString(R.string.instructions_save_rejected))
+        val rejected =
+            compose.onNodeWithText(
+                app.getString(R.string.instructions_save_rejected),
+                useUnmergedTree = true,
+            )
         compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
         rejected.assertExists()
+        assertTrue(
+            rejected.getUnclippedBoundsInRoot().bottom <= save.getUnclippedBoundsInRoot().top,
+        )
         input.assertIsFocused()
         val requestCount = app.fixture.requests.size
         // Recreation also verifies the shared whole-Activity saved-state budget.
@@ -395,6 +418,63 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()
+    }
+
+    @Test
+    fun aFailedColdReadUsesItsReservedSpaceAndABackgroundFailureKeepsTheEditor() {
+        val app = compose.activity.application as InstructionsApplication
+        compose.onNodeWithContentDescription("Chats").assertExists()
+        compose.openChatListSettings()
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
+        val placeholder = compose.onNodeWithContentDescription("Loading Instructions…")
+        val save = compose.onNodeWithText("Save")
+        val cancel = compose.onNodeWithText("Cancel")
+        placeholder.assertExists()
+        val initialSave = save.getUnclippedBoundsInRoot()
+        val initialCancel = cancel.getUnclippedBoundsInRoot()
+        val model = compose.runOnIdle {
+            val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+            checkNotNull(session.uiState.value.ready).instructions.also {
+                editorJob = it.viewModelScope.coroutineContext[Job]
+            }
+        }
+        app.fixture.rejectRead = true
+        app.readGate.countDown()
+        fun awaitRead(read: InstructionsRead) {
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    model.uiState.value.let { !it.busy && it.read == read }
+                }
+            }
+        }
+        awaitRead(InstructionsRead.Failed)
+        compose
+            .onNodeWithTag("instructions_read_failure")
+            .assertIsDisplayed()
+            .assertTextEquals(app.getString(R.string.instructions_load_failed))
+        placeholder.assertDoesNotExist()
+        save.assertIsNotEnabled()
+        assertEquals(initialSave, save.getUnclippedBoundsInRoot())
+        assertEquals(initialCancel, cancel.getUnclippedBoundsInRoot())
+        assertEquals(3, app.fixture.requests.count { it.method == "GET" })
+
+        app.fixture.rejectRead = false
+        compose.runOnIdle { model.refresh() }
+        awaitRead(InstructionsRead.Ready)
+        val input = compose.onNodeWithTag("instructions_editor")
+        input.assertTextEquals(app.fixture.saved.content)
+        assertEquals(initialSave, save.getUnclippedBoundsInRoot())
+        input.performTextReplacement("Keep editing when the read fails")
+        val initialEditor = input.getUnclippedBoundsInRoot()
+        app.fixture.rejectRead = true
+        compose.runOnIdle { model.refresh() }
+        awaitRead(InstructionsRead.RefreshFailed)
+        val feedback = compose.onNodeWithText(app.getString(R.string.instructions_refresh_failed))
+        feedback.assertIsDisplayed()
+        input.assertTextEquals("Keep editing when the read fails")
+        save.assertIsEnabled()
+        assertEquals(initialEditor, input.getUnclippedBoundsInRoot())
+        assertEquals(initialSave, save.getUnclippedBoundsInRoot())
     }
 
     @After
