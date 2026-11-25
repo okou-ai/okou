@@ -235,27 +235,23 @@ impl NbdNetlinkConnectTiming {
     }
 
     fn stage(&self, stage: NbdNetlinkConnectStage) -> StageTiming {
-        let [
-            blocking_task_queue,
-            socket_setup,
-            family_resolve,
-            connect_command,
-        ] = &self.stages;
-        *match stage {
-            NbdNetlinkConnectStage::BlockingTaskQueue => blocking_task_queue,
-            NbdNetlinkConnectStage::SocketSetup => socket_setup,
-            NbdNetlinkConnectStage::FamilyResolve => family_resolve,
-            NbdNetlinkConnectStage::ConnectCommand => connect_command,
-        }
+        *Self::stage_slot(stage, self.stages.each_ref())
     }
 
     fn stage_mut(&mut self, stage: NbdNetlinkConnectStage) -> &mut StageTiming {
+        Self::stage_slot(stage, self.stages.each_mut())
+    }
+
+    fn stage_slot<T>(
+        stage: NbdNetlinkConnectStage,
+        slots: [T; NBD_NETLINK_CONNECT_STAGE_COUNT],
+    ) -> T {
         let [
             blocking_task_queue,
             socket_setup,
             family_resolve,
             connect_command,
-        ] = &mut self.stages;
+        ] = slots;
         match stage {
             NbdNetlinkConnectStage::BlockingTaskQueue => blocking_task_queue,
             NbdNetlinkConnectStage::SocketSetup => socket_setup,
@@ -385,29 +381,14 @@ impl<'a> NbdCowCreateTiming<'a> {
     }
 
     fn stage(&self, stage: NbdCowCreateStage) -> StageTiming {
-        let [
-            cow_layer_create,
-            device_acquire,
-            device_scan,
-            dispatch_setup,
-            netlink_connect,
-            size_verify,
-            retry_cleanup,
-            retry_delay,
-        ] = &self.stages;
-        *match stage {
-            NbdCowCreateStage::CowLayerCreate => cow_layer_create,
-            NbdCowCreateStage::DeviceAcquire => device_acquire,
-            NbdCowCreateStage::DeviceScan => device_scan,
-            NbdCowCreateStage::DispatchSetup => dispatch_setup,
-            NbdCowCreateStage::NetlinkConnect => netlink_connect,
-            NbdCowCreateStage::SizeVerify => size_verify,
-            NbdCowCreateStage::RetryCleanup => retry_cleanup,
-            NbdCowCreateStage::RetryDelay => retry_delay,
-        }
+        *Self::stage_slot(stage, self.stages.each_ref())
     }
 
     fn stage_mut(&mut self, stage: NbdCowCreateStage) -> &mut StageTiming {
+        Self::stage_slot(stage, self.stages.each_mut())
+    }
+
+    fn stage_slot<T>(stage: NbdCowCreateStage, slots: [T; NBD_COW_CREATE_STAGE_COUNT]) -> T {
         let [
             cow_layer_create,
             device_acquire,
@@ -417,7 +398,7 @@ impl<'a> NbdCowCreateTiming<'a> {
             size_verify,
             retry_cleanup,
             retry_delay,
-        ] = &mut self.stages;
+        ] = slots;
         match stage {
             NbdCowCreateStage::CowLayerCreate => cow_layer_create,
             NbdCowCreateStage::DeviceAcquire => device_acquire,
