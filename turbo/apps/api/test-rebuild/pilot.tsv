@@ -18,8 +18,8 @@ account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	planned		
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	rewritten	51.9	
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	rewritten	42.2	
-account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	planned		
-account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	planned		
+account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	rewritten	196.4	
+account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	182.6	
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	planned		
 account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-001	rewritten	81.8	
