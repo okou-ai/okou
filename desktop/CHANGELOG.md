@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/okou-ai/okou/compare/desktop-v0.57.0...desktop-v0.58.0) (2026-11-25)
+
+
+### Features
+
+* deliver opted-in mac app state to the assigned sandbox ([#50748](https://github.com/okou-ai/okou/issues/50748)) ([58beac7](https://github.com/okou-ai/okou/commit/58beac7e0900ba3f87616e7b6068715e2620a0fc))
+
 ## [0.57.0](https://github.com/okou-ai/okou/compare/desktop-v0.56.8...desktop-v0.57.0) (2026-11-25)
 
 

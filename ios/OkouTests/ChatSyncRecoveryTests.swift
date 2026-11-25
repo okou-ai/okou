@@ -284,9 +284,11 @@ final class ChatSyncRecoveryTests: XCTestCase {
       response.open()
       store.setPhase(.active)
       store.requestRefresh()
-      try await waitForBusinessResult(watching: conversation) {
+      try await waitForBusinessResult(watching: store.list.threadsValue, in: store.graph) {
         store.list.threads.first?.title == "After foreground"
-          && conversation.messages.last?.text == "New answer"
+      }
+      try await waitForBusinessResult(watching: conversation) {
+        conversation.messages.last?.text == "New answer"
       }
       XCTAssertNil(store.list.error)
       XCTAssertNil(conversation.error)

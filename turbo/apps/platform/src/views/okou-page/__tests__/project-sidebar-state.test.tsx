@@ -146,6 +146,114 @@ test("project-cache-006 an expired persisted project cursor rebuilds the visible
   await title("Launch restored");
   expect(screen.queryByText("Launch ready")).toBeNull();
 });
+test.each(["projects", "chats"] as const)(
+  "switching workspace cancels the old %s read even when both snapshots have the same cursor",
+  async (dataset) => {
+    const first = createTestRuntime(context);
+    const second = createTestRuntime(context);
+    const auth = chatListAuth(dataset === "projects" ? 981 : 982);
+    const nextOrg = { id: "org_next", name: "Next workspace" };
+    const nextAuth = {
+      ...auth,
+      organization: { activeOrg: nextOrg, memberships: [nextOrg] },
+    };
+    const started = context.mocks.deferred<AbortSignal>();
+    const release = context.mocks.deferred<void>();
+    const replied = context.mocks.deferred<void>();
+    const oldProject = project("Original project");
+    const newProject = project("Next project");
+    const oldChat = chatListThread(41, "Original conversation");
+    const newChat = chatListThread(42, "Next conversation");
+    let nextWorkspace = false;
+    context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+      return respond(200, {
+        projects: [nextWorkspace ? newProject : oldProject],
+        latestSeqId: 1,
+        latestEventId: null,
+      });
+    });
+    context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+      const chat = nextWorkspace ? newChat : oldChat;
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [chat],
+          latestSeqId: 1,
+          latestEventId: chat.id,
+        }),
+      );
+    });
+    async function holdOldRead(
+      name: typeof dataset,
+      request: Request,
+      cursor?: number,
+    ) {
+      if (!nextWorkspace && dataset === name && cursor === 1) {
+        if (!started.settled()) {
+          started.resolve(request.signal);
+        }
+        await release.promise;
+        if (!replied.settled()) {
+          replied.resolve();
+        }
+      }
+    }
+    context.mocks.api(
+      projectsContract.events,
+      async ({ request, query, respond }) => {
+        await holdOldRead("projects", request, query.sinceSeqId);
+        return respond(200, { events: [], hasMore: false });
+      },
+    );
+    context.mocks.api(
+      chatThreadsContract.events,
+      async ({ request, query, respond }) => {
+        await holdOldRead("chats", request, query.sinceSeqId);
+        return respond(200, { events: [], hasMore: false });
+      },
+    );
+    const options = {
+      path: "/",
+      sharedWorkerTestTransport: "message-port",
+    } as const;
+    const page = await startPage({ ...options, context: first, auth });
+    await page.content;
+    const pending = await started.promise;
+    const clerk = context.mocks.clerk();
+    nextWorkspace = true;
+    clerk.organization(nextAuth.organization);
+    clerk.stateChanged();
+    await waitFor(() => {
+      expect(pending.aborted).toBeTruthy();
+    });
+    cleanup();
+
+    await setupPage({ ...options, context: second, auth: nextAuth });
+    await title(newProject.name);
+    await findFastControl("link", /Next conversation/);
+    expect(screen.queryByText(oldProject.name)).toBeNull();
+    expect(screen.queryByText("Original conversation")).toBeNull();
+
+    release.resolve();
+    await replied.promise;
+    first.dispose();
+    second.dispose();
+    cleanup();
+    // A cancelled cold read must fetch a snapshot again when its member returns.
+    // A late commit would instead resume its old, still-valid cursor.
+    snapshot(project("Reopened project"), 1);
+    installChatListStream(context, {
+      caseId: 983,
+      snapshot: [chatListThread(43, "Reopened conversation")],
+    });
+    await setupPage({ ...options, context: createTestRuntime(context), auth });
+    if (dataset === "projects") {
+      await title("Reopened project");
+    } else {
+      await findFastControl("link", /Reopened conversation/);
+    }
+  },
+);
 test.each([
   ["007", "account"],
   ["008", "workspace"],
@@ -487,9 +595,9 @@ test("worker-runtime-012 A project refreshed after cursor expiration is cached a
     }
     return respond(200, { events: [], hasMore: false });
   });
-  const start = (auth: typeof owner) => {
+  const start = (auth: typeof owner, runtime = createTestRuntime(context)) => {
     return startPage({
-      context: createTestRuntime(context),
+      context: runtime,
       path: "/",
       auth,
       sharedWorkerTestTransport: "message-port",
@@ -529,10 +637,13 @@ test("worker-runtime-012 A project refreshed after cursor expiration is cached a
     await network.promise;
     return respond(200, { events: [], hasMore: false });
   });
-  const reopened = await start(owner);
+  const offlineRuntime = createTestRuntime(context);
+  const reopened = await start(owner, offlineRuntime);
   await reopened.content;
   await expect(title(renamed)).resolves.toBeVisible();
   await expect(checked.promise).resolves.toBe(5);
+  offlineRuntime.dispose();
+  await expect(reopened.ready).rejects.toMatchObject({ name: "AbortError" });
   unmount();
   const visitorSeen = context.mocks.deferred<void>();
   context.mocks.api(projectsContract.snapshot, async ({ respond }) => {
@@ -552,7 +663,7 @@ test("worker-runtime-012 A project refreshed after cursor expiration is cached a
     queryFastControl("button", "Show or hide chats in " + renamed),
   ).toBeNull();
   network.resolve();
-  await Promise.all([reopened.ready, visitor.ready]);
+  await visitor.ready;
   expect(
     queryFastControl("button", "Show or hide chats in " + renamed),
   ).toBeNull();

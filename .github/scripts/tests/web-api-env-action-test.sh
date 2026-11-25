@@ -746,6 +746,8 @@ REGISTRY_PID=""
 
 # Custom-domain configuration is scoped to the API and its Doppler environment.
 hosted_domain_keys=(
+  HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64
+  HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST
   HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN
   HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID
   HOSTED_SITE_CUSTOM_DOMAIN_TARGET
@@ -762,6 +764,8 @@ for hosted_domain_mode in api:preview api:production web:production; do
   hosted_domain_dir="$(mktemp -d)"
   TEMP_DIRS+=("$hosted_domain_dir")
   hosted_domain_json="$(build_doppler_secrets_json | jq -c --arg environment "$hosted_domain_environment" '. + {
+    HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64: "ZmFrZS1kb21haW4tY29ubmVjdC1rZXk=",
+    HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST: "_key1",
     HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: ("fixture-domain-token-" + $environment),
     HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     HOSTED_SITE_CUSTOM_DOMAIN_TARGET: ("connect-" + $environment + ".example.test"),
@@ -771,6 +775,7 @@ for hosted_domain_mode in api:preview api:production web:production; do
   hosted_domain_output="$(run_action "$hosted_domain_json" "$hosted_domain_dir" "$hosted_domain_app" "$hosted_domain_environment" 2>&1)"
   hosted_domain_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${hosted_domain_dir}/github-output")"
   assert_not_contains "$hosted_domain_output" "fixture-domain-token-"
+  assert_not_contains "$hosted_domain_output" "ZmFrZS1kb21haW4tY29ubmVjdC1rZXk="
   for hosted_domain_key in "${hosted_domain_keys[@]}"; do
     if [[ "$hosted_domain_app" == "api" ]]; then
       hosted_domain_expected="$(jq -r --arg key "$hosted_domain_key" '.[$key]' <<< "$hosted_domain_json")"

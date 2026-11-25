@@ -207,15 +207,15 @@ test("slack-connect-page-019 Finishing the original account's held verification 
     },
   );
   const startup = await startPage(page(settings));
-  await arrived.promise;
+  await Promise.all([startup.content, arrived.promise]);
   sdk.user(
     { id: "slack-replacement", fullName: "Rowan West" },
     { id: "replacement-session", token: "local-replacement" },
   );
   sdk.stateChanged();
   held.resolve();
-  // The settings route's startup awaits its own verification and launch decision.
-  await startup.ready;
+  // The outgoing document's sidebar can be cancelled while Slack verifies its workspace.
+  await screen.findByRole("heading", { name: "Slack is connected" });
   expect(slack).toStrictEqual([]);
 });
 const legacyFailure =

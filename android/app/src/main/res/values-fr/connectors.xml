@@ -40,7 +40,7 @@
     <string name="connector_rename_required">Saisissez un nom de compte.</string>
     <string name="connector_rename_too_long">Le nom du compte peut contenir jusqu’à %1$d caractères.</string>
     <string name="connector_disconnect">Déconnecter le compte</string>
-    <string name="connector_disconnect_title">Déconnecter ce compte ?</string>
+    <string name="connector_disconnect_title">Déconnecter ce compte\u202F?</string>
     <string name="connector_disconnect_copy">Les chats et automatisations qui utilisent ce compte peuvent nécessiter une autre connexion. Les autres comptes restent disponibles.</string>
     <string name="connector_loading">Chargement des connecteurs…</string>
     <string name="connector_loading_accounts">Chargement des comptes…</string>
@@ -126,11 +126,11 @@
     <string name="connector_access_deny">Refuser</string>
     <string name="connector_access_always">Toujours</string>
     <string name="connector_access_expired">Expiré</string>
-    <string name="connector_access_under_hour">&lt;1 h</string>
-    <string name="connector_access_hours">%d h</string>
-    <string name="connector_access_days">%d j</string>
+    <string name="connector_access_under_hour">&lt;\u00A01\u00A0h</string>
+    <string name="connector_access_hours">%d\u00A0h</string>
+    <string name="connector_access_days">%d\u00A0j</string>
     <string name="connector_access_allow_always">Toujours autoriser</string>
-    <string name="connector_access_allow_hour">Autoriser pendant 1 h</string>
-    <string name="connector_access_allow_day">Autoriser pendant 24 h</string>
-    <string name="connector_access_allow_week">Autoriser pendant 7 jours</string>
+    <string name="connector_access_allow_hour">Autoriser pendant 1\u00A0h</string>
+    <string name="connector_access_allow_day">Autoriser pendant 24\u00A0h</string>
+    <string name="connector_access_allow_week">Autoriser pendant 7\u00A0jours</string>
 </resources>

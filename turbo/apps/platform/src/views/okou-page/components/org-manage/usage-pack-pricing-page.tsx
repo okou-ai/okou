@@ -43,6 +43,7 @@ import { formatLocalizedNumber, formatUsd } from "../../../../i18n/format.ts";
 import { currentLocale, i18n } from "../../../../i18n/index.ts";
 import { currentUserInfo$ } from "../../../../signals/auth.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { mobileChatViewport$ } from "../../../../signals/okou-page/pwa-navigation.ts";
 import { UserAvatar } from "../../../components/avatar.tsx";
 import {
   closeUsagePackSubscriptionChangePreview$,
@@ -427,25 +428,27 @@ function memberName(member: OrgMember): string {
 function MemberIdentity({ member }: { readonly member: MemberDisplay }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <UserAvatar
-        imageUrl={member.imageUrl}
-        initial={member.name.charAt(0).toUpperCase()}
-        name={member.name}
-      />
-      <span className="min-w-0">
+      <div className="hidden shrink-0 md:block">
+        <UserAvatar
+          imageUrl={member.imageUrl}
+          initial={member.name.charAt(0).toUpperCase()}
+          name={member.name}
+        />
+      </div>
+      <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">
             {member.name}
           </span>
           {member.isCurrent && (
-            <Badge className="shrink-0 text-sm text-muted-foreground">
+            <Badge className="shrink-0 text-xs text-muted-foreground md:text-sm">
               {i18n.t(($) => {
                 return $.settings.workspace.members.you;
               })}
             </Badge>
           )}
           {member.isPending && (
-            <Badge className="shrink-0 text-sm text-muted-foreground">
+            <Badge className="shrink-0 text-xs text-muted-foreground md:text-sm">
               {i18n.t(($) => {
                 return $.settings.workspace.members.pending;
               })}
@@ -453,7 +456,7 @@ function MemberIdentity({ member }: { readonly member: MemberDisplay }) {
           )}
         </span>
         {member.email && member.email !== member.name && (
-          <span className="mt-0.5 block truncate text-sm text-muted-foreground">
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground md:text-sm">
             {member.email}
           </span>
         )}
@@ -462,12 +465,14 @@ function MemberIdentity({ member }: { readonly member: MemberDisplay }) {
   );
 }
 
-/* Every ledger row lands on the same three columns: who or what the line is,
+/* Desktop ledger rows share three columns: who or what the line is,
    the control, and the money. The money column is wide enough for the total
    row's 24px figure at five digits -- it is the one number that has to fit,
-   and a shared width is what keeps every amount on one right edge. */
+   and a shared width is what keeps every amount on one right edge. Narrow
+   screens share one text edge and one price edge, with descriptions,
+   controls, and credit totals on full-width second lines. */
 const LEDGER_ROW =
-  "grid min-h-16 grid-cols-[minmax(0,1fr)_minmax(15rem,17rem)_9.5rem] items-center gap-3 py-2.5";
+  "grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-2 py-4 md:min-h-16 md:grid-cols-[minmax(0,1fr)_minmax(15rem,17rem)_9.5rem] md:items-center md:gap-3 md:py-2.5";
 const LEDGER_RULE = "border-t border-[hsl(var(--gray-100))]";
 
 function LedgerPrice({
@@ -483,8 +488,8 @@ function LedgerPrice({
     <span
       className={
         strong
-          ? "text-right text-2xl font-medium tracking-tight tabular-nums text-foreground"
-          : "text-right text-sm font-medium tabular-nums text-foreground"
+          ? "whitespace-nowrap text-right text-xl font-medium tracking-tight tabular-nums text-foreground md:text-2xl"
+          : "whitespace-nowrap text-right text-sm font-medium tabular-nums text-foreground"
       }
     >
       {formatUsd(value, fractionDigits)}
@@ -521,8 +526,8 @@ function usagePackCreditsLabel(item: MemberUsagePackOption): string {
 function LedgerPlanRow({ plan }: { readonly plan: UsagePackPlan }) {
   return (
     <div className={LEDGER_ROW}>
-      <div className="col-span-2 flex min-w-0 items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center">
+      <div className="contents md:col-span-2 md:flex md:min-w-0 md:items-center md:gap-3">
+        <span className="hidden size-10 shrink-0 items-center justify-center md:flex">
           <img
             src={plan.image}
             alt=""
@@ -530,8 +535,8 @@ function LedgerPlanRow({ plan }: { readonly plan: UsagePackPlan }) {
             className="h-10 w-10 max-w-none object-contain"
           />
         </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium leading-5 text-foreground">
+        <span className="contents md:block md:min-w-0">
+          <span className="col-start-1 row-start-1 block min-w-0 truncate text-sm font-medium leading-5 text-foreground">
             {i18n.t(
               ($) => {
                 return $.billing.plans.namedPlan;
@@ -539,14 +544,16 @@ function LedgerPlanRow({ plan }: { readonly plan: UsagePackPlan }) {
               { plan: planName(plan.tier) },
             )}
           </span>
-          <span className="block truncate text-[13px] leading-5 text-muted-foreground">
+          <span className="col-span-2 row-start-2 block min-w-0 text-[13px] leading-5 text-muted-foreground md:truncate">
             {i18n.t(($) => {
               return $.billing.plans.usagePacks.memberExclusive;
             })}
           </span>
         </span>
       </div>
-      <LedgerPrice value={plan.basePriceUsd} />
+      <div className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
+        <LedgerPrice value={plan.basePriceUsd} />
+      </div>
     </div>
   );
 }
@@ -563,13 +570,13 @@ function LedgerTotalRow({
   readonly totalUsd: number;
 }) {
   return (
-    <div className={`${LEDGER_ROW} border-t border-border py-4`}>
-      <span className="text-sm font-medium text-foreground">
+    <div className={`${LEDGER_ROW} border-t border-border py-4 md:py-4`}>
+      <span className="min-w-0 text-sm font-medium text-foreground">
         {i18n.t(($) => {
           return $.billing.plans.usagePacks.monthlyTotal;
         })}
       </span>
-      <span className="truncate px-3 text-sm text-foreground">
+      <span className="col-span-2 row-start-2 min-w-0 text-[13px] leading-5 text-muted-foreground md:col-span-1 md:row-auto md:truncate md:px-3 md:text-sm md:text-foreground">
         {bonusCredits > 0
           ? i18n.t(
               ($) => {
@@ -587,14 +594,16 @@ function LedgerTotalRow({
               { credits: formatLocalizedNumber(credits) },
             )}
       </span>
-      {comparisonRows ? (
-        <ManagedSubscriptionComparisonTooltip
-          rows={comparisonRows}
-          totalUsd={totalUsd}
-        />
-      ) : (
-        <LedgerPrice strong value={totalUsd} />
-      )}
+      <div className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
+        {comparisonRows ? (
+          <ManagedSubscriptionComparisonTooltip
+            rows={comparisonRows}
+            totalUsd={totalUsd}
+          />
+        ) : (
+          <LedgerPrice strong value={totalUsd} />
+        )}
+      </div>
     </div>
   );
 }
@@ -647,7 +656,7 @@ function MemberUsageRow({
   return (
     <div className={LEDGER_ROW}>
       <MemberIdentity member={member} />
-      <div className="min-w-0">
+      <div className="col-span-2 row-start-2 min-w-0 md:col-span-1 md:row-auto">
         <Select
           disabled={disabled}
           value={String(selection)}
@@ -694,7 +703,11 @@ function MemberUsageRow({
           </p>
         )}
       </div>
-      <LedgerPrice value={usagePackCatalogItem(catalog, selection).priceUsd} />
+      <div className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
+        <LedgerPrice
+          value={usagePackCatalogItem(catalog, selection).priceUsd}
+        />
+      </div>
     </div>
   );
 }
@@ -1098,6 +1111,7 @@ function PricingBackButton({ onBack }: { readonly onBack: () => void }) {
               variant="quiet"
               size="icon"
               iconSize="lg"
+              className="-ml-2 md:ml-0"
               aria-label={t(($) => {
                 return $.billing.common.back;
               })}
@@ -1164,8 +1178,9 @@ function pricingStepTitle(step: PricingStep): string {
    dialog keeps the billing overview it is decided against in place behind it.
    Every step shares one dialog frame at one fixed width and height, so moving
    between them only changes the body -- the header band, the step counter and
-   the outer edges hold still. That is also why the review is a step and not a
-   dialog of its own: stacking a third modal on the flow would bury both the
+   the outer edges hold still on desktop. Mobile dialogs fit their content,
+   with a full-width title below the navigation and step counter. The review
+   stays a step rather than a separate dialog: a third modal would bury both the
    billing tab and the packages the review is about. The height is the tallest
    step's (plan selection) measured against its content, so it has to come down
    whenever that step gets shorter -- left at the old figure it would hold a
@@ -1186,6 +1201,7 @@ export function BillingPricingDialog({
   readonly onOpenChangeComplete?: (open: boolean) => void;
   readonly open: boolean;
 }) {
+  const mobile = useGet(mobileChatViewport$);
   return (
     <Dialog
       open={open}
@@ -1200,7 +1216,7 @@ export function BillingPricingDialog({
         aria-describedby={undefined}
         showCloseButton={false}
         maxWidth={860}
-        height={688}
+        height={mobile ? "content" : 688}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         {children}
@@ -1235,19 +1251,30 @@ export function PricingStepContent({
   const { t } = useTranslation();
   return (
     <>
-      {/* The close button shares the header row with its title and steps. */}
-      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+      {/* Mobile titles share the ledger's inset; navigation gets its own row. */}
+      <DialogHeader className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-[hsl(var(--gray-200))] px-5 py-3 text-left md:h-14 md:flex md:flex-row md:gap-3 md:py-0 md:pl-6 md:pr-4">
         {onBack && <PricingBackButton onBack={onBack} />}
-        <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
+        <DialogTitle
+          className={cn(
+            "min-w-0 text-base font-medium leading-snug md:flex-1 md:leading-none",
+            step !== undefined
+              ? "col-span-3 row-start-2"
+              : onBack
+                ? "col-start-2 row-start-1"
+                : "col-span-2 row-start-1",
+          )}
+        >
           {title ?? (step !== undefined && pricingStepTitle(step))}
         </DialogTitle>
         {step !== undefined && (
-          <PricingStepIndicator current={step} total={total} />
+          <div className={cn("min-w-0", !onBack && "col-span-2")}>
+            <PricingStepIndicator current={step} total={total} />
+          </div>
         )}
         <DialogClose
           render={
             <IconButton
-              className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+              className="col-start-3 row-start-1 -mr-2 shrink-0 justify-self-end text-muted-foreground hover:text-foreground md:-ml-1 md:mr-0"
               aria-label={t(($) => {
                 return $.settings.shared.close;
               })}
@@ -1260,7 +1287,11 @@ export function PricingStepContent({
       {/* No bottom inset: a step's action bar sits on the frame's edge. */}
       <DialogBody
         scrollable={!flush}
-        className={cn("flex flex-col", !flush && "overflow-y-auto px-5 pt-5")}
+        className={cn(
+          "flex flex-col",
+          !flush && "overflow-y-auto px-5 pt-5",
+          step === 2 && "pt-0 md:pt-5",
+        )}
       >
         {children}
       </DialogBody>
@@ -2605,7 +2636,7 @@ function PackageConfigurationStep({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-5">
+    <div className="flex flex-1 flex-col md:gap-5">
       <MemberUsageConfiguration
         catalog={catalog}
         comparisonRows={comparisonRows}
@@ -2616,9 +2647,9 @@ function PackageConfigurationStep({
         plan={plan}
         totals={totals}
       />
-      {/* The frame keeps step 1's height, so a short member list leaves slack
-          between the ledger and the action at the foot of the dialog. */}
-      <div className="mt-auto">
+      {/* Desktop keeps step 1's height, with any slack above the action bar.
+          Keep the wrapper sticky so short viewports retain the whole action. */}
+      <div className="sticky bottom-0 mt-auto">
         {management ? (
           <ManagedSubscriptionOrderSummary
             catalog={catalog}

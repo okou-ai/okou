@@ -124,7 +124,7 @@ test("sidebar-controls-007 State labels leave menus available and pinning a regu
   });
   openThreadMenu("Release plan");
   let menu = await screen.findByRole("menu");
-  const pin = within(menu).getByText("Pin chat").closest('[role="menuitem"]')!;
+  const pin = within(menu).getByText("Pin").closest('[role="menuitem"]')!;
   expect(pin).toHaveAttribute(
     "aria-keyshortcuts",
     expect.stringContaining("Control+Shift+D"),
@@ -132,9 +132,7 @@ test("sidebar-controls-007 State labels leave menus available and pinning a regu
   click(pin);
   openThreadMenu("Release plan");
   menu = await screen.findByRole("menu");
-  const unpin = within(menu)
-    .getByText("Unpin chat")
-    .closest('[role="menuitem"]')!;
+  const unpin = within(menu).getByText("Unpin").closest('[role="menuitem"]')!;
   expect(unpin).toHaveAttribute(
     "aria-keyshortcuts",
     expect.stringContaining("Control+Shift+D"),
@@ -143,9 +141,9 @@ test("sidebar-controls-007 State labels leave menus available and pinning a regu
   openThreadMenu("Running analysis");
   menu = await screen.findByRole("menu");
   expect(
-    within(menu).getByText("Rename chat").closest('[role="menuitem"]'),
+    within(menu).getByText("Rename").closest('[role="menuitem"]'),
   ).toHaveAttribute("aria-keyshortcuts", "F2");
-  expect(within(menu).getByText("Delete chat")).toBeVisible();
+  expect(within(menu).getByText("Delete")).toBeVisible();
   expect(
     threadLinkByTitle("Running analysis").parentElement!.querySelector(
       '[aria-label="Open chat menu"]',
@@ -167,7 +165,7 @@ test("sidebar-controls-014 A double-click opens and renames a chat while a later
   click(threadLinkByTitle("Incident notes"));
   await title("Incident notes");
   openThreadMenu("Launch plan");
-  click(await screen.findByText("Rename chat"));
+  click(await screen.findByText("Rename"));
   const dialog = await screen.findByRole("dialog");
   input = within(dialog).getByRole("textbox");
   await fill(input, "Final launch plan");

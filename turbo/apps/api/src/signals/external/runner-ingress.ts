@@ -19,6 +19,7 @@ import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 import { recordSandboxOperation } from "./sandbox-op-log";
 import {
   currentRunnerDispatchTransport,
+  runnerDispatchHeaderTimings,
   runnerDispatchPath,
   type RunnerDispatchEncoding,
   type RunnerDispatchTiming,
@@ -111,7 +112,7 @@ const dispatchTransport = singleton(() => {
       : undefined;
     if (active && ++active.sendCount === 1) {
       active.connection = connection;
-      active.sendHeadersMs = monotonicNow() - active.startedAt;
+      active.sentHeadersAt = monotonicNow();
     }
   });
 
@@ -179,7 +180,12 @@ export function reserveRunnerDispatch(
     runId,
     origin + path,
     (body, connectionSignal) => {
-      const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
+      const timing = {
+        origin,
+        path,
+        sendCount: 0,
+        preconnectStartedAt: monotonicNow(),
+      };
       const options: RequestInit = {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
@@ -272,7 +278,6 @@ export async function postRunnerDispatch(
   const transport: DispatchTransportObservation = {
     origin,
     path,
-    startedAt,
     sendCount: 0,
   };
   const requestTransport = currentRunnerDispatchTransport();
@@ -282,7 +287,7 @@ export async function postRunnerDispatch(
       AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
     ]);
     const url = origin + path;
-    reserved = requestTransport?.take(url, body, startedAt, deadline, encoding);
+    reserved = requestTransport?.take(url, body, deadline, encoding);
     const dispatch = () => {
       const request = requestTransport?.request ?? fetch;
       return request(url, {
@@ -348,8 +353,7 @@ export async function postRunnerDispatch(
             timing.sendCount === 1
               ? (timing.connection ?? "unknown")
               : "unknown",
-          api_send_headers_ms:
-            timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
+          ...runnerDispatchHeaderTimings(timing, startedAt),
           api_preconnect_used:
             reserved === undefined ? undefined : timing.sendCount === 1,
           ...dispatchPoolDimensions(requestTransport, origin),

@@ -5,12 +5,14 @@ import ai.okou.android.OkouFormActions
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.RenameFieldError
+import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.renameForm
+import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -46,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -136,14 +140,16 @@ internal fun ConnectorAuthorizationSheet(
         detail.data?.methods.orEmpty().filter { account == null || it.id == account.authMethod }
     var selectedId by remember(service, account?.id) { mutableStateOf<String?>(null) }
     val method = methods.firstOrNull { it.id == selectedId } ?: methods.firstOrNull()
+    val chosenOptions = remember(method?.id) { mutableStateMapOf<String, String>() }
     val options =
-        remember(method?.id) {
-            mutableStateMapOf<String, String>().apply {
-                method?.startOptions.orEmpty().forEach { option ->
-                    option.defaultValue?.let { put(option.id, it) }
-                }
+        method
+            ?.startOptions
+            .orEmpty()
+            .mapNotNull { option ->
+                val value = chosenOptions[option.id] ?: option.defaultValue
+                option.options.find { it.value == value }?.let { option.id to it.value }
             }
-        }
+            .toMap()
     val fields =
         if (step == null) {
             val fieldIds = method?.manualFields.orEmpty().map { it.id }
@@ -251,7 +257,8 @@ internal fun ConnectorAuthorizationSheet(
                         canModify,
                         fields,
                         options,
-                        detail.data?.googleSecurityWarning == true,
+                        onChooseOption = { id, value -> chosenOptions[id] = value },
+                        googleSecurityWarning = detail.data?.googleSecurityWarning == true,
                     )
                 }
             is ConnectorAuthorization.Browser -> {
@@ -310,7 +317,8 @@ private fun ConnectorMethodFields(
     method: ConnectorDetailConnectorAuthMethodsItem,
     enabled: Boolean,
     fields: Map<String, TextFieldState>,
-    options: MutableMap<String, String>,
+    options: Map<String, String>,
+    onChooseOption: (String, String) -> Unit,
     googleSecurityWarning: Boolean,
 ) {
     if (!method.description.isNullOrBlank())
@@ -353,13 +361,12 @@ private fun ConnectorMethodFields(
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     Text(option.label, style = connectorFeedbackType())
                     for (choice in option.options) {
-                        ConnectorChoice(
+                        SettingsChoiceRow(
                             choice.label,
                             options[option.id] == choice.value,
                             enabled,
-                        ) {
-                            options[option.id] = choice.value
-                        }
+                            onClick = { onChooseOption(option.id, choice.value) },
+                        )
                     }
                 }
             }
@@ -384,9 +391,12 @@ private fun ConnectorChoice(
     enabled: Boolean,
     choose: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = 48.dp)
+            .clip(shape)
+            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface, keyboardOnly = true)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = choose)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),

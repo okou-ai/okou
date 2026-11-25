@@ -48,7 +48,9 @@ final class ChatIndicatorRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult { workspace.list.threads.first?.title == "Indicator fixture" }
+    try await waitForBusinessResult(
+      watching: workspace.list.threadsValue, in: workspace.graph
+    ) { workspace.list.threads.first?.title == "Indicator fixture" }
     gate.open()
     await refresh.value
     XCTAssertEqual(workspace.list.threads.first?.indicator, .active)

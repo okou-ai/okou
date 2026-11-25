@@ -239,6 +239,13 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`, unless a
   glass group draws the glass around them (the sidebar's chat list menu is `.plain()`).
   Paired controls in one bar are the same size.
+- **Glass over a picture is veiled.** Clear glass takes the colour of what is behind it: over
+  For you's sea its dock turned the sea's blue and melted into it. Controls that stand on a
+  strongly coloured scene use `OkouGlassControl(surface: .scene)` (and
+  `OkouGlassPrompt(on: .scene)`): the glass holds an 85% veil of the page's `background`, so
+  they read as controls lifted off the scene in both themes. `Glass.tint` with the background
+  does not do this; a light tint on light glass left the sea's blue as it was. Bars over a page
+  keep the clear glass.
 - **Text on glass takes the glass's vibrancy.** A prompt that stands in for an input on glass
   (`OkouGlassPrompt`, For you's "What do you have in mind?") uses the hierarchical `.secondary`
   style, not the fixed placeholder grey: the system adapts it to whatever the glass picks up, so
@@ -626,7 +633,10 @@ height rather than forcing the editor to move with the candidate count.
 `hasImage` is true; the SDK also supplies generated image URLs, which must not
 be mistaken for custom uploads. Without a custom image, use the exact eight
 Web textures selected by FNV-1a of the workspace ID over UTF-16.
-Default artwork stays the same across themes and clients. Workspace marks are
+Default artwork stays the same across themes and clients, except that Web also
+draws the workspace initial from `core/src/workspace-logo.ts` (`letter`,
+`workspaceInitial`) on the texture; native clients show the texture alone until
+they port it (owner: tongx-blip; native release timing). Workspace marks are
 rounded squares, with a radius of one quarter of their size; people remain a
 separate avatar family. Use the shared logo in workspace chrome, selection,
 and settings. The compact native workspace mark is 32 pt.
@@ -649,7 +659,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouSurfaceStyle`                                                         | Noninteractive card shell; shared fill, border, native radius; add interaction only at the owning semantic control                                                         |
 | `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)` | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                        |
 | `OkouLineIcon`                                                             | A glyph centred on the first line of the text beside it in a `.firstTextBaseline` row (feedback, search results); a bare glyph there rides high because it has no baseline |
-| `OkouGlassControl`                                                         | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                      |
+| `OkouGlassControl`                                                         | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size; `surface: .scene` veils it over a picture           |
 | `OkouGlassPrompt`                                                          | A one-line prompt on a 44 pt glass capsule that opens an input; its text takes the glass's vibrancy (`.secondary`) so it stays legible on any backdrop                     |
 | `OkouFloatingPanelStyle`                                                   | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                            |
 | `okouGroupedBackground()`                                                  | The one ground for grouped List/Form sheets                                                                                                                                |

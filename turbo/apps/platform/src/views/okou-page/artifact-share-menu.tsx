@@ -212,11 +212,13 @@ export function ShareCopyButton({
   copied,
   disabled,
   className,
+  size = "sm",
   onCopy,
 }: {
   readonly copied: boolean;
   readonly disabled: boolean;
   readonly className?: string;
+  readonly size?: "sm" | "default";
   readonly onCopy: () => void;
 }) {
   const { t } = useTranslation();
@@ -227,7 +229,7 @@ export function ShareCopyButton({
     <>
       <Button
         variant="neutral"
-        size="sm"
+        size={size}
         className={cn("min-w-28", className)}
         disabled={disabled}
         onClick={() => {
@@ -257,6 +259,39 @@ function ShareCopyFooter({ children }: { readonly children: ReactNode }) {
   return (
     <div className="-mx-1.5 mt-1.5 border-t border-t-gray-400 px-1.5 pt-1.5">
       {children}
+    </div>
+  );
+}
+
+function ShareMenuFooter({
+  copy,
+  peopleLayout,
+  described,
+}: {
+  readonly copy: {
+    readonly copied: boolean;
+    readonly disabled: boolean;
+    readonly onCopy: () => void;
+  };
+  readonly peopleLayout: boolean;
+  readonly described: boolean;
+}) {
+  if (peopleLayout) {
+    // The people layout sits in the popover's default p-4, so its footer rule
+    // runs edge to edge under the content.
+    return (
+      <div className="-mx-4 mt-4 border-t border-t-gray-400 px-4 pt-4">
+        <ShareCopyButton {...copy} size="default" className="w-full" />
+      </div>
+    );
+  }
+  return described ? (
+    <ShareCopyFooter>
+      <ShareCopyButton {...copy} className="w-full" />
+    </ShareCopyFooter>
+  ) : (
+    <div className="mt-1.5 flex justify-end">
+      <ShareCopyButton {...copy} />
     </div>
   );
 }
@@ -377,7 +412,7 @@ export function ShareMenuContent({
       align="end"
       className={cn("w-80 max-w-[calc(100vw-32px)] p-1.5", className)}
     >
-      {showPermissions && (
+      {showPermissions && !permissions && (
         <div
           aria-hidden="true"
           className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
@@ -407,16 +442,13 @@ export function ShareMenuContent({
           ) : (
             <>
               {errorMessage && <ShareLoadError message={errorMessage} />}
-              {copy &&
-                (described ? (
-                  <ShareCopyFooter>
-                    <ShareCopyButton {...copy} className="w-full" />
-                  </ShareCopyFooter>
-                ) : (
-                  <div className="mt-1.5 flex justify-end">
-                    <ShareCopyButton {...copy} />
-                  </div>
-                ))}
+              {copy && (
+                <ShareMenuFooter
+                  copy={copy}
+                  peopleLayout={!!permissions}
+                  described={!!described}
+                />
+              )}
             </>
           )}
         </>
@@ -466,6 +498,7 @@ function ArtifactPeoplePermissions({
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
 }) {
   const details = useLastResolved(session.details$);
+  const pending = useGet(session.pendingAudience$);
   const signal = useGet(session.signal$);
   const [sharing, share] = useLoadableSet(session.people.share$);
   const [removing, remove] = useLoadableSet(session.people.remove$);
@@ -475,6 +508,7 @@ function ArtifactPeoplePermissions({
   return (
     <ShareAudienceChoices
       selected={details?.audience}
+      pending={pending}
       organizationName={details?.status?.organization.name ?? null}
       saving={saving}
       unavailable={unavailable}
@@ -551,7 +585,7 @@ function ShareSessionMenu({
       </PopoverTrigger>
 
       <ShareMenuContent
-        className={emailSharing ? "w-100 p-3" : undefined}
+        className={emailSharing ? "w-100 p-4" : undefined}
         permissions={
           emailSharing ? (
             <ArtifactPeoplePermissions

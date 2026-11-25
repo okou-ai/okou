@@ -147,6 +147,18 @@ function HostedSiteBannerSetting({
   );
 }
 
+function AccessHeading({ saving }: { readonly saving: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
+      {t(($) => {
+        return $.artifacts.sharing.accessLabel;
+      })}
+      {saving && <Loader2 size={14} className="animate-spin" />}
+    </div>
+  );
+}
+
 function HostedSitePermissions({
   session,
   children,
@@ -154,10 +166,10 @@ function HostedSitePermissions({
   readonly session: HostedSiteShareSession;
   readonly children: ReactNode;
 }) {
-  const { t } = useTranslation();
   const loadable = useLoadable(session.visibility$);
   const current = useLastResolved(session.visibility$);
   const [operation, change] = useLoadableSet(session.changeVisibility$);
+  const pending = useGet(session.pendingVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
   const emailSharing =
     useLastResolved(featureSwitches$)?.[
@@ -171,17 +183,12 @@ function HostedSitePermissions({
   const failed = loadable.state === "hasError";
   return (
     <>
-      <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
-        {t(($) => {
-          return $.artifacts.sharing.accessLabel;
-        })}
-        {saving && <Loader2 size={14} className="animate-spin" />}
-      </div>
+      {!emailSharing && <AccessHeading saving={saving} />}
       {loadable.state === "loading" && !saving ? (
         emailSharing ? (
-          <div aria-busy="true" className="space-y-3">
-            <Skeleton className="h-16 w-full rounded-xl" />
-            <Skeleton className="mx-2 h-5 w-48" />
+          <div aria-busy="true" className="space-y-2">
+            <Skeleton className="h-9 w-full rounded-lg" />
+            <Skeleton className="h-5 w-48" />
           </div>
         ) : (
           <ShareSkeleton showCopyButton={false} />
@@ -190,6 +197,7 @@ function HostedSitePermissions({
         <>
           <ShareAudienceChoices
             selected={current?.visibility}
+            pending={pending}
             organizationName={organization?.name ?? null}
             saving={saving}
             unavailable={failed}
@@ -878,6 +886,11 @@ function HostedSiteShareActions({
         {loadFailedStatus}
         <ShareCopyButton
           className="mt-1.5 w-full"
+          size={
+            features?.[FeatureSwitchKey.HostedSiteEmailSharing]
+              ? "default"
+              : "sm"
+          }
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
           onCopy={copyLink}
@@ -996,18 +1009,21 @@ function HostedSiteShareBody({
   session,
   permissions,
   banner,
+  padded,
   children,
 }: {
   readonly session: HostedSiteShareSession;
   readonly permissions: ReactNode;
   readonly banner: ReactNode;
+  /** The people layout holds a field, so it takes dialog padding throughout. */
+  readonly padded: boolean;
   readonly children: ReactNode;
 }) {
   const editing = useGet(session.editing$);
   return (
-    <div className={editing ? "p-4" : "p-1.5"}>
+    <div className={editing || padded ? "p-4" : "p-1.5"}>
       {!editing && permissions}
-      <div className={cn(!editing && "px-2")}>
+      <div className={cn(!editing && !padded && "px-2")}>
         {!editing && banner}
         {children}
       </div>
@@ -1126,11 +1142,16 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          domainEditor ? "w-105" : emailSharing ? "w-100" : "w-90",
+          domainEditor
+            ? "max-h-[var(--available-height)] w-105 overflow-y-auto overscroll-contain"
+            : emailSharing
+              ? "w-100"
+              : "w-90",
         )}
       >
         <HostedSiteShareBody
           session={session}
+          padded={emailSharing === true}
           permissions={
             <HostedSitePermissions session={session}>
               <SharePeople

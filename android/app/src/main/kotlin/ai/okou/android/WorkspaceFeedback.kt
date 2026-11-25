@@ -445,7 +445,9 @@ private fun WorkspaceRenameForm(
                 }
             RenameListItemSheet(
                 editor = editor,
-                confirmedName = thread.title.orEmpty(),
+                confirmedName =
+                    (list.threads.firstOrNull { it.id == id } ?: thread).title.orEmpty(),
+                confirmedEventId = list.confirmedRenameIds[id],
                 titleRes = R.string.chat_rename,
                 labelRes = R.string.chat_title_field,
                 enabled =
@@ -481,6 +483,7 @@ private fun WorkspaceRenameForm(
             RenameListItemSheet(
                 editor = editor,
                 confirmedName = project.name,
+                confirmedEventId = list.projectList.confirmedRenameIds[id],
                 titleRes = R.string.chat_rename_project,
                 labelRes = R.string.chat_project_name,
                 projectName = true,

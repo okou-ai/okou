@@ -58,7 +58,9 @@ final class WorkspaceStartupTests: XCTestCase {
       await startup.value
     }
     await fulfillment(of: [realtime], timeout: 3)
-    try await waitForBusinessResult { store.list.threads.first?.title == "Existing chat" }
+    try await waitForBusinessResult(
+      watching: store.list.threadsValue, in: store.graph
+    ) { store.list.threads.first?.title == "Existing chat" }
     await startup.value
     XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
     XCTAssertNil(store.selectedThreadID)

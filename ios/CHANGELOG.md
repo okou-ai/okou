@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.66.0](https://github.com/okou-ai/okou/compare/ios-v0.65.10...ios-v0.66.0) (2026-11-25)
+
+
+### Features
+
+* show the workspace initial on default workspace logos ([#50380](https://github.com/okou-ai/okou/issues/50380)) ([1b432c5](https://github.com/okou-ai/okou/commit/1b432c5ccfdb04d7dcddb8ac26ff7f0ce471834a))
+
+
+### Bug Fixes
+
+* **ios:** lift the for you dock off the sea with veiled glass ([#50822](https://github.com/okou-ai/okou/issues/50822)) ([00fc5e9](https://github.com/okou-ai/okou/commit/00fc5e98623ea71fbc6df6c77bd319bd3a3e9b53))
+
+
+### Refactoring
+
+* **ios:** keep confirmed personal subscriptions in the session graph ([#50814](https://github.com/okou-ai/okou/issues/50814)) ([980deec](https://github.com/okou-ai/okou/commit/980deec9750a67b53da3b4ac09df30f81e3496cf))
+
+## [0.65.10](https://github.com/okou-ai/okou/compare/ios-v0.65.9...ios-v0.65.10) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** try google connector universal links before browser authorization ([#50771](https://github.com/okou-ai/okou/issues/50771)) ([9b3c7f0](https://github.com/okou-ai/okou/commit/9b3c7f08e8a1669d118bf367000a4ec0012120c1))
+
+
+### Refactoring
+
+* **ios:** read the chat list and selection from the session graph ([#50787](https://github.com/okou-ai/okou/issues/50787)) ([1ecc07f](https://github.com/okou-ai/okou/commit/1ecc07f20e600c6943e0b4fe2987cb44cfb1aab2))
+
+## [0.65.9](https://github.com/okou-ai/okou/compare/ios-v0.65.8...ios-v0.65.9) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** support connector method switching and direct oauth ([#50742](https://github.com/okou-ai/okou/issues/50742)) ([15898a8](https://github.com/okou-ai/okou/commit/15898a82453dea810807d25dadf545365d4c16df))
+
 ## [0.65.8](https://github.com/okou-ai/okou/compare/ios-v0.65.7...ios-v0.65.8) (2026-11-25)
 
 

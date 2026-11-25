@@ -12,6 +12,7 @@ import {
 } from "./chat-list-test-helpers.ts";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 import {
   click,
   fill,
@@ -19,11 +20,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  projectMenuItem,
-  project,
-  projectEditor,
-} from "./project-editor-fixtures.ts";
+import { project, projectEditor } from "./project-editor-fixtures.ts";
 import {
   findFastControl,
   queryFastControl,
@@ -34,7 +31,10 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { menuItemByText } from "./sidebar-test-helpers.tsx";
+import {
+  menuItemByText,
+  queryMenuItemByText,
+} from "./sidebar-test-helpers.tsx";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadsContract,
@@ -46,7 +46,8 @@ const context = testContext();
 
 async function options(name: string, action: "Rename" | "Delete") {
   click(await screen.findByLabelText("Options for " + name));
-  click(await projectMenuItem(action));
+  await screen.findByRole("menu");
+  click(menuItemByText(action));
   return screen.findByRole("dialog", {
     name: action === "Delete" ? "Delete Project?" : "Rename Project",
   });
@@ -134,10 +135,15 @@ test("projects-049 The optimistic renamed folder appears before its persisted na
     renameGate: gate.promise,
     confirmedName: "Launch confirmed",
   });
-  const rename = await options("Launch", "Rename");
+  click(await screen.findByLabelText("Options for Launch"));
+  await screen.findByRole("menu");
+  await userEvent.keyboard("{F2}");
+  const rename = await screen.findByRole("dialog", { name: "Rename Project" });
+  expect(within(rename).getByRole("textbox")).toHaveValue("Launch");
   await save(rename, "Launch renamed");
   await expect(folder("Launch renamed")).resolves.toBeVisible();
   expect(rename).not.toBeInTheDocument();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   gate.resolve();
   await expect(folder("Launch confirmed")).resolves.toBeVisible();
   expect(
@@ -458,17 +464,13 @@ test.each([true, false])(
     const client = chatListProject("Seaside research", "a0");
     await open([client], [], undefined, enabled);
     click(await findFastControl("button", "Options for Seaside research"));
-    const menu = await screen.findByRole("menu");
-    const actions = queryAllByRoleFast("menuitem", menu).filter((item) => {
-      const label = item.textContent?.trim();
-      return label === "Rename" || label === "Archive";
-    });
-    const labels = actions.map((action) => {
-      expect(action).toBeVisible();
-      return action.textContent?.trim();
-    });
-    expect(labels.sort()).toStrictEqual(
-      enabled ? ["Archive", "Rename"] : ["Rename"],
+    await screen.findByRole("menu");
+    const rename = menuItemByText("Rename");
+    expect(rename).toHaveTextContent("F2");
+    expect(rename).toHaveAttribute("aria-keyshortcuts", "F2");
+    const archiveHint = expect.stringContaining("Ctrl+Shift+X");
+    expect(queryMenuItemByText("Archive")?.textContent).toStrictEqual(
+      enabled ? archiveHint : undefined,
     );
   },
 );
@@ -528,21 +530,29 @@ function pressMacArchiveShortcut() {
   });
 }
 
-test("The Project page leaves the archive key available when Project Archive is disabled", async () => {
+test("The Project page still offers F2 rename when Project Archive is disabled", async () => {
   await openProjectForArchiveShortcut(
     chatListProject("Launch", "a0"),
     chatListProject("Research", "a1"),
     false,
   );
   expect(pressMacArchiveShortcut()).toBeTruthy();
+  await userEvent.keyboard("{F2}");
+  const dialog = await screen.findByRole("dialog", { name: "Rename Project" });
+  expect(within(dialog).getByRole("textbox")).toHaveValue("Launch");
 });
 
-test("The Mac archive shortcut toggles the current Project on its page", async () => {
+test("The Mac archive shortcut toggles the current Project and follows focus to another Project row", async () => {
   const launch = chatListProject("Launch", "a0");
   const research = chatListProject("Research", "a1");
   context.mocks.api(projectsContract.update, ({ params, body, respond }) => {
-    expect(params.id).toBe(launch.id);
-    return respond(200, { ...launch, archived: body.archived });
+    const project = [launch, research].find((item) => {
+      return item.id === params.id;
+    });
+    if (!project) {
+      throw new Error("Unknown Project");
+    }
+    return respond(200, { ...project, archived: body.archived });
   });
   await openProjectForArchiveShortcut(launch, research, true);
 
@@ -553,6 +563,13 @@ test("The Mac archive shortcut toggles the current Project on its page", async (
   await expect(handle(research.name)).resolves.toBeInTheDocument();
 
   pressMacArchiveShortcut();
+  await expect(handle(launch.name)).resolves.toBeInTheDocument();
+
+  (await handle(research.name)).focus();
+  await userEvent.keyboard("{Meta>}{Shift>}x{/Shift}{/Meta}");
+  await waitFor(() => {
+    expect(projectRows(research.id)).toHaveLength(0);
+  });
   await expect(handle(launch.name)).resolves.toBeInTheDocument();
   expect(location.pathname).toBe(`/projects/${launch.id}`);
 });
@@ -656,7 +673,11 @@ test.each([
     });
     click(await findFastControl("button", "Options for Launch"));
     await screen.findByRole("menu");
-    click(menuItemByText("Archive"));
+    if (mobile) {
+      click(menuItemByText("Archive"));
+    } else {
+      await userEvent.keyboard("{Control>}{Shift>}x{/Shift}{/Control}");
+    }
     await waitFor(() => {
       expect(projectRows(launchId)).toHaveLength(0);
     });

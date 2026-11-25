@@ -48,7 +48,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 const THREAD = "c0000000-0000-4000-a000-000000000010";
 const PROVIDER = "wss://browser-window.test/?token=private-provider";
-const SESSION = "chat-window-test";
+const SESSION = "okou-browser";
 const extension = {
   id: "11111111-1111-4111-8111-111111111111",
   runtimeId: "abcdefghijklmnopabcdefghijklmnop",
@@ -75,14 +75,7 @@ describe("Browser proxy attachment and safe tabs", () => {
     };
   };
   const run = (...args: string[]) => {
-    return browserCommand.parseAsync([
-      "node",
-      "okou",
-      ...args,
-      "--agent-session",
-      SESSION,
-      "--json",
-    ]);
+    return browserCommand.parseAsync(["node", "okou", ...args, "--json"]);
   };
 
   beforeEach(() => {

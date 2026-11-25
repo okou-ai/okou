@@ -1,14 +1,24 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
 /// One read graph per authenticated workspace. Confirmed accounts also serve recovery commands.
-@MainActor @Observable
+/// The confirmed accounts live in the graph as `confirmed`; views read it through
+/// CCStateSwiftUI, and `accounts` serves owner logic and tests.
+@MainActor
 final class PersonalSubscriptionResources {
   struct Group: Sendable {
     let type: PersonalSubscriptionType
     let accounts: [PersonalSubscription]
+  }
+
+  /// The confirmed accounts of the latest read. Accounts are not Equatable, so each
+  /// publication's revision decides equality.
+  struct Confirmed: Equatable {
+    var accounts: [PersonalSubscription] = []
+    var revision = 0
+
+    static func == (lhs: Confirmed, rhs: Confirmed) -> Bool { lhs.revision == rhs.revision }
   }
 
   let store: CCState.Store
@@ -19,9 +29,11 @@ final class PersonalSubscriptionResources {
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, Void>
   // This is a confirmed business snapshot, not a second loading/error state.
-  private(set) var accounts: [PersonalSubscription] = []
-  private(set) var accountRevision = 0
-  @ObservationIgnored private var request: (id: UUID, task: Task<[PersonalSubscription], Error>)?
+  private let confirmedState = CCState.State(Confirmed())
+  let confirmed: Computed<Confirmed>
+  var accounts: [PersonalSubscription] { currentConfirmed.accounts }
+  var accountRevision: Int { currentConfirmed.revision }
+  private var request: (id: UUID, task: Task<[PersonalSubscription], Error>)?
   private var lastRead: Date?
   private var pending = false
   private var closed = false
@@ -37,9 +49,11 @@ final class PersonalSubscriptionResources {
     self.didFail = didFail
     let revision = revision
     reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
+    let confirmedState = confirmedState
+    confirmed = Computed { get in try get(confirmedState) }
   }
 
-  @ObservationIgnored lazy var value = makeValue()
+  lazy var value = makeValue()
 
   private func makeValue() -> Computed<Task<[PersonalSubscription], Error>> {
     Computed { [weak self] get, options in
@@ -56,8 +70,7 @@ final class PersonalSubscriptionResources {
           try Task.checkCancellation()
           try signal.checkCancellation()
           guard let self, !closed, request?.id == id else { throw CancellationError() }
-          self.accounts = accounts
-          accountRevision += 1
+          publish(accounts)
           lastRead = now()
           pending = false
           return accounts
@@ -75,7 +88,7 @@ final class PersonalSubscriptionResources {
     }
   }
 
-  @ObservationIgnored lazy var groups: Computed<Task<[Group], Error>> =
+  lazy var groups: Computed<Task<[Group], Error>> =
     computedTask { [value] get, options in
       let pending = try get(value)
       let accounts = try await pending.value
@@ -84,9 +97,7 @@ final class PersonalSubscriptionResources {
       return Self.group(accounts)
     }
 
-  var confirmedGroups: [Group] { Self.group(accounts) }
-
-  private static func group(_ accounts: [PersonalSubscription]) -> [Group] {
+  static func group(_ accounts: [PersonalSubscription]) -> [Group] {
     PersonalSubscriptionType.allCases.map { type in
       Group(type: type, accounts: accounts.filter { $0.type == type.rawValue })
     }
@@ -123,10 +134,23 @@ final class PersonalSubscriptionResources {
     closed = true
     request?.task.cancel()
     request = nil
-    accounts = []
+    publish([])
     lastRead = nil
     pending = false
     do { try store.set(lifetime, false) } catch { didFail(error) }
+  }
+
+  private var currentConfirmed: Confirmed {
+    do { return try store.get(confirmedState) } catch {
+      preconditionFailure("Cannot read the confirmed personal subscriptions: \(error)")
+    }
+  }
+
+  private func publish(_ accounts: [PersonalSubscription]) {
+    let next = Confirmed(accounts: accounts, revision: currentConfirmed.revision + 1)
+    do { try store.set(confirmedState, next) } catch {
+      preconditionFailure("Cannot publish the confirmed personal subscriptions: \(error)")
+    }
   }
 
   isolated deinit { request?.task.cancel() }

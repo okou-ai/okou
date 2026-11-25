@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owner.ts";
+import { listShortcutOwner } from "../../lib/list-shortcut-owner.ts";
 import { selectedProjectId$ } from "../projects/project-navigation.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
@@ -40,7 +40,7 @@ export const setupChatThreadPinShortcuts$ = command(
       ) {
         return false;
       }
-      const owner = projectOrderShortcutOwner(event.target);
+      const owner = listShortcutOwner(event.target);
       if (
         owner?.kind === "project" ||
         (owner === null && get(selectedProjectId$) !== null)

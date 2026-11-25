@@ -19,6 +19,7 @@ export const builtinConnectorAutomaticResponseSchema = discriminatedUnion(
       result: literal("authorization"),
       authorizationUrl: url(),
       oauthAttemptId: uuid(),
+      nativeCallbackUrl: url().optional(),
       connectionId: uuid().optional(),
     }),
   ],

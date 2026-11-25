@@ -48,7 +48,7 @@ import { connectorNativeAppAuthorization } from "./connector-native-app-authoriz
 import {
   connectorHttpsCallbackUrl,
   connectorHttpsReturnState,
-} from "./connector-https-return";
+} from "../services/connector-native-return";
 import {
   buildBuiltinConnectorAuthCodeAuthUrlWithMethod,
   prepareBuiltinConnectorAuthCodeStartWithMethod,
@@ -433,7 +433,6 @@ const startBuiltinConnectorOauthInner$ = command(
     }
     const state = connectorHttpsReturnState({
       state: prepared.state,
-      connectorSlug: resolved.connectorSlug,
       nativeCallback: bodyResult.data.nativeCallback,
     });
     const authorization = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
@@ -609,6 +608,7 @@ const startBuiltinConnectorOpenIdInner$ = command(
     const prepared = prepareBuiltinConnectorOpenIdAuthStartWithMethod({
       connectorSlug: resolved.connectorSlug,
       method: resolved.method,
+      nativeCallback: bodyResult.data.nativeCallback,
       origin: getBuiltinConnectorOpenIdCallbackOriginForMethod({
         request,
         method: resolved.method,
@@ -672,6 +672,10 @@ const startBuiltinConnectorOpenIdInner$ = command(
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
+        nativeCallbackUrl: connectorHttpsCallbackUrl(
+          prepared.state,
+          oauthState.id,
+        ),
         connectionId:
           bodyResult.data.account.intent === "add" ? oauthState.id : undefined,
         oauthAttemptId: oauthState.id,

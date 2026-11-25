@@ -39,6 +39,22 @@ export const AUTO_RUN_MODEL = "okou-1.0";
 export const AUTO_RUN_PROVIDER = "openrouter-codex";
 /** The `built_in_model_keys.vendor` of the managed OpenRouter key Auto runs on. */
 export const AUTO_RUN_KEY_VENDOR = "openrouter";
+/**
+ * The managed OpenRouter key for platform-paid Official Workflow automation
+ * Runs. Its own provider budget cannot exhaust the key serving members' Runs.
+ */
+export const PROACTIVE_RUN_KEY_VENDOR = "openrouter-proactive";
+/** Every managed key vendor that serves Auto through OpenRouter. */
+export const AUTO_RUN_KEY_VENDORS = [
+  AUTO_RUN_KEY_VENDOR,
+  PROACTIVE_RUN_KEY_VENDOR,
+] as const;
+
+export function isAutoRunKeyVendor(vendor: string): boolean {
+  return AUTO_RUN_KEY_VENDORS.some((candidate) => {
+    return candidate === vendor;
+  });
+}
 export const AUTO_RUN_UPSTREAM_MODEL = "@preset/okou-1-0";
 export const AUTO_RUN_PRICING_PROVIDER = "okou-1.0";
 

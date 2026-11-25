@@ -107,7 +107,6 @@
     <string name="chat_row_action_offline_named">„%1$s“ konnte nicht abgeschlossen werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_rename_save_failed">Speichern fehlgeschlagen. Deine Änderungen sind noch da.</string>
     <string name="chat_rename_check_result">Ergebnis prüfen</string>
-    <string name="chat_rename_trim_hint">Leerzeichen am Anfang und Ende werden entfernt.</string>
     <string name="chat_rename_required">Gib einen Namen ein.</string>
     <string name="chat_rename_checking_result">Ergebnis wird geprüft…</string>
     <string name="chat_rename_save_unconfirmed">Das Ergebnis der Speicherung ist noch nicht bestätigt.</string>

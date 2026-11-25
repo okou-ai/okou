@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.0...guest-agent-v0.113.1) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-agent:** reuse the codex app-server event sink ([#50779](https://github.com/okou-ai/okou/issues/50779)) ([e12b940](https://github.com/okou-ai/okou/commit/e12b9404969dcb4272bedc69199ac237041f9d0d))
+
 ## [0.113.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.2...guest-agent-v0.113.0) (2026-11-25)
 
 

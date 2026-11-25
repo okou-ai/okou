@@ -150,6 +150,9 @@ test.each([false, true])(
       const option = menu.getByLabelText(label);
       click(option);
       await waitFor(() => {
+        return expect(amendments).toHaveLength(index + 1);
+      });
+      await waitFor(() => {
         return expect(option).toHaveAttribute("aria-checked", "true");
       });
       click(getButtonByName("Copy link"));

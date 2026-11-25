@@ -1,4 +1,8 @@
 import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
+import {
+  connectorHttpsReturnState,
+  connectorHttpsCallbackUrl,
+} from "./connector-native-return";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
@@ -641,6 +645,7 @@ interface AutomaticOAuthClientPresentation {
 }
 
 interface StartCustomConnectorOAuth2Args {
+  readonly nativeCallback?: "ios-https";
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -689,7 +694,10 @@ function prepareCustomOAuthStart(
   },
   args: StartCustomConnectorOAuth2Args,
 ): Extract<PreparedOAuthStart, { readonly authMode: "oauth" }> {
-  const state = generateConnectorOAuthState();
+  const state = connectorHttpsReturnState({
+    state: generateConnectorOAuthState(),
+    nativeCallback: args.nativeCallback,
+  });
   const codeVerifier =
     connector.oauthConfig.pkceMethod === "S256" ? createPkceVerifier() : null;
   return {
@@ -849,7 +857,10 @@ const prepareAutomaticOAuthStart$ = command(
         response: connectorConnectionMutationFailure(preflight),
       };
     }
-    const state = generateConnectorOAuthState();
+    const state = connectorHttpsReturnState({
+      state: generateConnectorOAuthState(),
+      nativeCallback: args.nativeCallback,
+    });
     const automatic = await settle(
       set(
         prepareCustomConnectorAutomaticOAuthAuthorization$,
@@ -1305,6 +1316,10 @@ export const startCustomConnectorOAuth2$ = command(
       authorizationUrl: prepared.authorizationUrl,
       connectionId: mutationStart.connectionId ?? undefined,
       oauthAttemptId: mutationStart.oauthAttemptId,
+      nativeCallbackUrl: connectorHttpsCallbackUrl(
+        prepared.state,
+        mutationStart.oauthAttemptId,
+      ),
     };
   },
 );

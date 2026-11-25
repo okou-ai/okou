@@ -1,0 +1,19 @@
+{
+  "providerId": "okou.ai",
+  "providerName": "Okou",
+  "serviceId": "hosted-site",
+  "serviceName": "Okou website",
+  "version": 1,
+  "syncPubKeyDomain": "_domainconnect.okou.ai",
+  "syncRedirectDomain": "app.okou.ai",
+  "description": "Connect one website hostname to Okou. Certificate validation TXT records, if requested later, are configured separately.",
+  "records": [
+    { "type": "CNAME", "host": "@", "pointsTo": "%target%", "ttl": 300 },
+    {
+      "type": "TXT",
+      "host": "_okou-challenge",
+      "data": "okou-verification=%verification%",
+      "ttl": 300
+    }
+  ]
+}

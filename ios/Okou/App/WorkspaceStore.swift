@@ -72,19 +72,19 @@ final class WorkspaceStore {
   private var chatLinkThreadID: String? { navigation.openingThreadID }
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
   @ObservationIgnored private let selectThread: Command<Void, String?>
+  /// The selected chat's ID, kept in the workspace session's Store. Views read it through
+  /// CCStateSwiftUI; `selectedThreadID` serves owner logic, actions and tests.
+  @ObservationIgnored let selectedThreadValue: Computed<String?>
   var selectedThreadID: String? {
     get {
-      access(keyPath: \.selectedThreadID)
       do { return try resources.store.get(selectedThread) } catch {
         preconditionFailure("Cannot read workspace selection: \(error)")
       }
     }
     set {
       let previous = selectedConversation
-      withMutation(keyPath: \.selectedThreadID) {
-        do { try resources.store.set(selectThread, newValue) } catch {
-          preconditionFailure("Cannot update workspace selection: \(error)")
-        }
+      do { try resources.store.set(selectThread, newValue) } catch {
+        preconditionFailure("Cannot update workspace selection: \(error)")
       }
       selectedConversation = newValue.flatMap { conversation(for: $0) }
       previous?.reconcileVisibility()
@@ -203,6 +203,7 @@ final class WorkspaceStore {
       guard try context.get(selectedThread) != value else { return }
       try context.set(selectedThread, value)
     }
+    selectedThreadValue = Computed { get in try get(selectedThread) }
     self.client = client
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync

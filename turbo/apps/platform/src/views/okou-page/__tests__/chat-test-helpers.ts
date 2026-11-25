@@ -356,9 +356,6 @@ export function mockChatLifecycle(
      */
     threadGate?: Promise<void>;
     afterInitialEventsList?: () => void;
-    beforeEventRowsResponse?: (
-      rows: ReturnType<typeof mockChatEventRows>,
-    ) => Promise<void>;
     onRunCreate?: (
       body: {
         prompt?: string;
@@ -770,32 +767,26 @@ export function mockChatLifecycle(
       },
     });
   });
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    async ({ query, respond }) => {
-      const remaining = mockChatEventRows(
-        normalizeMockChatEvents(
-          buildCanonicalEvents().map(cloneMockChatEvent),
-          threadId,
-        ),
-      ).filter((row) => {
-        return row.seqId > query.sinceSeqId;
-      });
-      const rows = remaining.slice(0, query.limit ?? 50);
-      if (query.sinceSeqId === 0) {
-        options?.afterInitialEventsList?.();
-      }
-      if (options?.beforeEventRowsResponse) {
-        await options.beforeEventRowsResponse(rows);
-      }
-      return respond(
-        200,
-        chatEventRowsResponse(rows, query, {
-          hasMore: rows.length < remaining.length,
-        }),
-      );
-    },
-  );
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    const remaining = mockChatEventRows(
+      normalizeMockChatEvents(
+        buildCanonicalEvents().map(cloneMockChatEvent),
+        threadId,
+      ),
+    ).filter((row) => {
+      return row.seqId > query.sinceSeqId;
+    });
+    const rows = remaining.slice(0, query.limit ?? 50);
+    if (query.sinceSeqId === 0) {
+      options?.afterInitialEventsList?.();
+    }
+    return respond(
+      200,
+      chatEventRowsResponse(rows, query, {
+        hasMore: rows.length < remaining.length,
+      }),
+    );
+  });
   context.mocks.api(chatThreadByIdContract.get, async ({ respond }) => {
     if (options?.threadGate) {
       await options.threadGate;

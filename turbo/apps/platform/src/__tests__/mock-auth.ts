@@ -9,6 +9,7 @@ import { replaceState } from "../signals/location.ts";
 
 type GetTokenImpl = (options?: {
   skipCache?: boolean;
+  organizationId?: string;
 }) => Promise<string | null>;
 
 type SessionTouchImpl = (options?: { intent?: "focus" }) => Promise<void>;
@@ -497,6 +498,7 @@ export const mockedClerk = {
     if (recoverableSession) {
       return {
         ...recoverableSession,
+        user: { ...internalMockedUser, ...recoverableSession.user },
         get lastActiveOrganizationId() {
           return internalMockedOrganization?.id ?? null;
         },
@@ -507,6 +509,7 @@ export const mockedClerk = {
     return {
       id: internalMockedSession.id ?? "test-session-id",
       status: "active",
+      user: internalMockedUser,
       get lastActiveOrganizationId() {
         return internalMockedOrganization?.id ?? null;
       },

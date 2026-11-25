@@ -23,12 +23,15 @@ private struct ChatWorkspaceHeaderContent: View {
   let height: CGFloat
   let openSidebar: () -> Void
   @LoadableValue private var unreadThreads: Loadable<Bool>
+  /// The selected chat, kept in the workspace session's Store.
+  @ResolvedValue private var selection: String??
 
   init(store: WorkspaceStore, height: CGFloat, openSidebar: @escaping () -> Void) {
     self.store = store
     self.height = height
     self.openSidebar = openSidebar
     _unreadThreads = LoadableValue(store.sidebar.hasUnreadThreads)
+    _selection = ResolvedValue(store.selectedThreadValue)
   }
 
   private var hasUnread: Bool {
@@ -59,7 +62,7 @@ private struct ChatWorkspaceHeaderContent: View {
         .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))
         .accessibilityIdentifier("open-sidebar")
         Spacer(minLength: OkouSpace.sm)
-        if let threadID = store.selectedThreadID {
+        if let threadID = selection ?? store.selectedThreadID {
           ChatThreadMoreButton(store: store, threadID: threadID)
         }
       }

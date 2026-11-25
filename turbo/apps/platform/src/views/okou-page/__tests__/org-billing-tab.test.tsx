@@ -749,7 +749,7 @@ function conversion(scheduled = false) {
     },
   );
 }
-test("org-billing-tab-011 Legacy Team compares each entitlement before reviewing the exact recurring bill", async () => {
+test("org-billing-tab-011 / org-billing-tab-012 Reviewing and confirming the new Team bill keeps Legacy active until September", async () => {
   conversion();
   const config = await chooseCard("Team", "Convert plan");
   await pick("Alex", /^\$20 ·/);
@@ -781,19 +781,9 @@ test("org-billing-tab-011 Legacy Team compares each entitlement before reviewing
   ]) {
     expect(review).toHaveTextContent(value);
   }
-  await expect(action("Confirm", review)).resolves.toBeEnabled();
-});
-test("org-billing-tab-012 Confirming a legacy conversion leaves the old plan in force until September", async () => {
-  conversion();
-  const config = await chooseCard("Team", "Convert plan");
-  await pick("Alex", /^\$20 ·/);
-  await pick("Beck", /^\$50 ·/);
-  click(await action("Review conversion", config));
-  const review = await screen.findByRole("dialog", {
-    name: "Review plan conversion",
-  });
-  expect(review).toHaveTextContent("Sep 1, 2026");
-  click(await action("Confirm", review));
+  const confirm = await action("Confirm", review);
+  expect(confirm).toBeEnabled();
+  click(confirm);
   await expect(
     screen.findByText("Subscription change confirmed."),
   ).resolves.toBeInTheDocument();

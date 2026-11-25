@@ -107,7 +107,6 @@
     <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_rename_save_failed">सेव नहीं हो सका। आपके बदलाव सुरक्षित हैं।</string>
     <string name="chat_rename_check_result">नतीजा देखें</string>
-    <string name="chat_rename_trim_hint">शुरू और आखिर के स्पेस हटा दिए जाते हैं।</string>
     <string name="chat_rename_required">कोई नाम दर्ज करें।</string>
     <string name="chat_rename_checking_result">नतीजे की जाँच हो रही है…</string>
     <string name="chat_rename_save_unconfirmed">सेव करने के नतीजे की अब तक पुष्टि नहीं हुई है।</string>
