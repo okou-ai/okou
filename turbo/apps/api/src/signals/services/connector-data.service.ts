@@ -156,6 +156,7 @@ const oauthScopesSchema = array(string());
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
 interface ExternalUserInfo {
   readonly id: string;
+  readonly identityNamespace?: string;
   readonly username: string | null;
   readonly email: string | null;
 }
@@ -2076,14 +2077,16 @@ async function prepareConnectorTokenState(
 
 function isExplicitReconnectIdentityMismatch(
   account: ConnectorAccountMutationIntent,
-  existing: StoredConnectorRow | null,
+  existing: (StoredConnectorRow & { readonly externalIssuer: string }) | null,
   nextExternalId: string,
+  nextIdentityNamespace?: string,
 ): boolean {
   return (
     account.intent === "reconnect" &&
-    existing?.externalId !== null &&
-    existing?.externalId !== undefined &&
-    existing.externalId !== nextExternalId
+    existing !== null &&
+    ((existing.externalId !== null && existing.externalId !== nextExternalId) ||
+      (existing.externalIssuer !== "" &&
+        existing.externalIssuer !== (nextIdentityNamespace ?? "")))
   );
 }
 
@@ -2135,6 +2138,7 @@ function builtinConnectorTokenConnectionValues(
         connectorSlug: connection.runtimeMethod.connectorSlug,
         identity: {
           kind: "external" as const,
+          issuer: connection.userInfo.identityNamespace,
           externalId: connection.userInfo.id,
           externalUsername: connection.userInfo.username,
           externalEmail: connection.userInfo.email,
@@ -2221,6 +2225,7 @@ export function builtinConnectorTokenMutationValues(
       args.runtimeMethod.connectorSlug,
       args.userInfo.username,
     ),
+    matchExternalIssuer: args.userInfo.identityNamespace,
     matchExternalId:
       args.account.intent === "add" ? args.userInfo.id : undefined,
   };
@@ -2479,6 +2484,7 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
         args.account,
         existing,
         args.userInfo.id,
+        args.userInfo.identityNamespace,
       )
     ) {
       return {
