@@ -175,8 +175,8 @@ mod tests {
 
     fn valid_payload() -> String {
         serde_json::json!({
-            "access_token": "ya29.test-access",
-            "refresh_token": "1//test-refresh",
+            "access_token": "test-access",
+            "refresh_token": "test-refresh",
             "id_token": "header.payload.sig",
             "token_type": "Bearer",
             "scope": "https://www.googleapis.com/auth/cloud-platform",
@@ -198,8 +198,8 @@ mod tests {
     fn parse_preserves_full_payload() {
         let credential = AntigravityCredential::parse(&valid_payload()).unwrap();
         let value: Value = serde_json::from_str(&credential.native_json).unwrap();
-        assert_eq!(value["access_token"], "ya29.test-access");
-        assert_eq!(value["refresh_token"], "1//test-refresh");
+        assert_eq!(value["access_token"], "test-access");
+        assert_eq!(value["refresh_token"], "test-refresh");
         assert_eq!(value["project_id"], "rising-fact-p41fc");
     }
 
@@ -211,16 +211,20 @@ mod tests {
 
     #[test]
     fn parse_rejects_missing_or_empty_tokens() {
-        let missing = serde_json::json!({ "access_token": "ya29.x" }).to_string();
+        let missing = serde_json::json!({ "access_token": "test-access" }).to_string();
         assert!(AntigravityCredential::parse(&missing).is_err());
-        let empty = serde_json::json!({ "access_token": "", "refresh_token": "1//x" }).to_string();
+        let empty =
+            serde_json::json!({ "access_token": "", "refresh_token": "test-refresh" }).to_string();
         assert!(AntigravityCredential::parse(&empty).is_err());
     }
 
     #[test]
     fn parse_allows_minimal_payload() {
-        let payload =
-            serde_json::json!({ "access_token": "ya29.x", "refresh_token": "1//x" }).to_string();
+        let payload = serde_json::json!({
+            "access_token": "test-access",
+            "refresh_token": "test-refresh"
+        })
+        .to_string();
         AntigravityCredential::parse(&payload).unwrap();
     }
 
@@ -250,15 +254,17 @@ mod tests {
         let first = AntigravityCredential::parse(&valid_payload()).unwrap();
         reconcile_credential(home.path().to_str().unwrap(), Some(&first)).unwrap();
 
-        let second_payload =
-            serde_json::json!({ "access_token": "ya29.second", "refresh_token": "1//second" })
-                .to_string();
+        let second_payload = serde_json::json!({
+            "access_token": "test-access-2",
+            "refresh_token": "test-refresh-2"
+        })
+        .to_string();
         let second = AntigravityCredential::parse(&second_payload).unwrap();
         reconcile_credential(home.path().to_str().unwrap(), Some(&second)).unwrap();
 
         let written = std::fs::read_to_string(token_path(home.path())).unwrap();
         let value: Value = serde_json::from_str(&written).unwrap();
-        assert_eq!(value["access_token"], "ya29.second");
+        assert_eq!(value["access_token"], "test-access-2");
     }
 
     #[test]
