@@ -62,9 +62,9 @@ non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	planned
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	planned				
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	planned				B06
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	planned				B06
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	planned				B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	rewritten	9.5		src/signals/external/__tests__/wechat-client.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	rewritten	7.0		src/signals/external/__tests__/wechat-client.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	rewritten	25.0		src/signals/external/__tests__/wechat-client.test.ts	B06
 non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	planned				B06
 non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	planned				B06
 non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	planned				B06
