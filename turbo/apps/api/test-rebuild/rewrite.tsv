@@ -442,21 +442,21 @@ billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-005
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-006	rewritten	57.0		src/signals/routes/__tests__/billing-restore.test.ts	B04	
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-008	rewritten	83.7		src/signals/routes/__tests__/billing-restore.test.ts	B04	
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-009	rewritten	46.2		src/signals/routes/__tests__/billing-restore.test.ts	B04	
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-003	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-004	planned					d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-003	rewritten	133.0		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-004	rewritten	38.5		src/signals/routes/__tests__/billing-status.test.ts		d-other
 billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-005	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("starts a chat Run; the Run's execution carries an Okou agent token"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-006	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-007	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-009	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-013	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-014	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-016	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-017	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-018	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-019	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-021	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-025	planned					d-other
-billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-026	planned					d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-006	rewritten	56.8		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-007	rewritten	45.8		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-009	rewritten	47.2		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-013	rewritten	51.3		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-014	rewritten	68.1		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-016	rewritten	44.7		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-017	rewritten	47.2		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-018	rewritten	81.9		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-019	rewritten	38.0		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-021	rewritten	34.6		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-025	rewritten	24.8		src/signals/routes/__tests__/billing-status.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-026	rewritten	79.7		src/signals/routes/__tests__/billing-status.test.ts		d-other
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-001	rewritten	59.0		src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	B04	
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-002	rewritten	73.3		src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	B04	
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-003	rewritten	34.3		src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	B04	
