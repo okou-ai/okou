@@ -1,0 +1,221 @@
+package ai.okou.android.screenshots
+
+import ai.okou.android.BuildConfig
+import ai.okou.android.CONNECTOR_EXAMPLE_EXTERNAL_CODE
+import ai.okou.android.ComposerApiFixture
+import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.MainActivity
+import ai.okou.android.ScreenshotCapture
+import ai.okou.android.TestAuthentication
+import ai.okou.android.TestOkouApplication
+import ai.okou.android.WorkflowApiFixture
+import ai.okou.android.api.generated.UserPreferencesLocale
+import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.testAuthenticationState
+import ai.okou.android.testPreferences
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.StaleObjectException
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.Until
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ScreenshotScenario {
+    @Test
+    fun compactDirectoryShowsPrimaryTabsInBothStates() =
+        onDevice("connector-tabs", 412, 892) {
+            description("连接器").click()
+            action("Google Calendar")
+            text("推荐")
+            val discover = action("发现")
+            val connected = action("已连接")
+            check(discover.isSelected)
+            check(discover.visibleBounds.height() == 48)
+            check(discover.visibleBounds.width() == connected.visibleBounds.width())
+            capture("phone-connectors-discover.png")
+            connected.click()
+            text("工作日历")
+            check(action("已连接").isSelected)
+            capture("phone-connectors-connected.png")
+        }
+
+    @Test
+    fun compactExternalCodeRemainsVisibleDuringReceiptReadback() =
+        onDevice("connector-external-checking", 412, 892) { fixture ->
+            fixture.externalAccountReplyGate = CountDownLatch(1)
+            openExternalCode()
+            description("授权码").setText("  $CONNECTOR_EXAMPLE_EXTERNAL_CODE  ")
+            val bounds = description("授权码").visibleBounds
+            val cancelBounds = text("取消").visibleBounds
+            action("确认授权码").click()
+            check(fixture.externalAccountReadStarted.await(10, TimeUnit.SECONDS))
+            text("正在核对…")
+            check(description("授权码").visibleBounds == bounds)
+            check(text("取消").visibleBounds == cancelBounds)
+            capture("phone-connector-code-checking.png")
+            fixture.externalAccountReplyGate?.countDown()
+            text("Verified account")
+        }
+
+    @Test
+    fun wideExternalCodeRejectionAppearsBelowTheSameField() =
+        onDevice("connector-external-error", 1180, 820) {
+            openExternalCode()
+            description("授权码").setText("invalid-fixture-code")
+            val bounds = description("授权码").visibleBounds
+            val cancelBounds = text("取消").visibleBounds
+            check(bounds.left > device.displayWidth / 6)
+            action("确认授权码").click()
+            text("授权码核对失败。")
+            check(description("授权码").visibleBounds == bounds)
+            check(text("取消").visibleBounds == cancelBounds)
+            capture("wide-connector-code-rejected.png")
+        }
+
+    private class Controls(
+        val device: UiDevice,
+        private val app: TestOkouApplication,
+    ) {
+        fun text(label: String): UiObject2 =
+            checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).text(label)), 12_000)) {
+                "Missing text $label"
+            }
+
+        fun description(label: String): UiObject2 =
+            checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 12_000)) {
+                "Missing description $label"
+            }
+
+        fun action(label: String): UiObject2 =
+            checkNotNull(device.wait(object : Condition<UiDevice, UiObject2?> {
+                override fun apply(device: UiDevice): UiObject2? =
+                    device.findObjects(By.pkg(app.packageName).text(label)).firstNotNullOfOrNull { node ->
+                        try {
+                            generateSequence(node) { it.parent }.firstOrNull { it.isClickable }
+                                ?.takeIf { it.isEnabled }
+                        } catch (_: StaleObjectException) {
+                            null
+                        }
+                    }
+            }, 12_000)) { "Missing enabled action $label" }
+
+        fun openExternalCode() {
+            description("连接器").click()
+            search("External code")
+            action("External code sample").click()
+            action("连接账号").click()
+            action("前往服务方").click()
+            description("授权码")
+        }
+
+        fun searchField(): UiObject2 =
+            checkNotNull(
+                device.wait(Until.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")), 12_000),
+            ) { "Missing connector search editor" }
+
+        fun search(value: String) {
+            searchField().setText(value)
+            text(value)
+        }
+
+        fun capture(name: String) {
+            device.waitForIdle()
+            ScreenshotCapture.capture(name)
+        }
+    }
+
+    private fun onDevice(
+        scene: String,
+        width: Int,
+        height: Int,
+        exercise: Controls.(ConnectorApiFixture) -> Unit,
+    ) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val oldConnectors = app.connectorService
+        val oldChat = app.chatService
+        val oldComposer = app.composerService
+        val oldWorkflows = app.workflows
+        val oldPreferences = app.snapshotApiPreferences()
+        val oldLocales = AppCompatDelegate.getApplicationLocales()
+        val authentication = app.authentication as TestAuthentication
+        val oldAuthentication = authentication.state.value
+        val size = overrideValue("size", device.executeShellCommand("wm size"))
+        val density = overrideValue("density", device.executeShellCommand("wm density"))
+        val font = device.executeShellCommand("settings get system font_scale").trim()
+        ComposerApiFixture().use { composer ->
+            WorkflowApiFixture(chinese = true).use { workflow ->
+                ConnectorApiFixture(includeGrantExamples = true).use { connector ->
+                    try {
+                        connector.icons = connectorDesignIcons
+                        device.executeShellCommand("wm size ${width}x$height")
+                        device.executeShellCommand("wm density 160")
+                        device.executeShellCommand("settings put system font_scale 1")
+                        app.connectorService = connector.service
+                        app.chatService = composer.service
+                        app.composerService = composer.service
+                        app.workflows = workflow.service
+                        val user = "connector-v366-${UUID.randomUUID()}"
+                        app.restoreApiPreferences(
+                            oldPreferences + (Triple(BuildConfig.API_ORIGIN, user, "org-a") to
+                                testPreferences().copy(
+                                    locale = UserPreferencesLocale.ZH_HANS,
+                                    theme = UserPreferencesTheme.LIGHT,
+                                )),
+                        )
+                        authentication.state.value = testAuthenticationState(user = user)
+                        ActivityScenario.launch(MainActivity::class.java).use {
+                            try {
+                                assertTrue(device.wait(object : Condition<UiDevice, Boolean> {
+                                    override fun apply(device: UiDevice): Boolean =
+                                        device.displayWidth == width && device.displayHeight == height &&
+                                            app.resources.configuration.densityDpi == 160 &&
+                                            app.resources.configuration.fontScale == 1f
+                                }, 12_000))
+                                Controls(device, app).exercise(connector)
+                            } catch (error: Throwable) {
+                                try {
+                                    ScreenshotCapture.capture("failure-$scene.png")
+                                    TestStorage().openOutputFile("failure-$scene-window.xml")
+                                        .use(device::dumpWindowHierarchy)
+                                } catch (diagnostic: Throwable) {
+                                    error.addSuppressed(diagnostic)
+                                }
+                                throw error
+                            }
+                        }
+                    } finally {
+                        instrumentation.resetInTouchMode()
+                        app.connectorService = oldConnectors
+                        app.chatService = oldChat
+                        app.composerService = oldComposer
+                        app.workflows = oldWorkflows
+                        app.restoreApiPreferences(oldPreferences)
+                        authentication.state.value = oldAuthentication
+                        instrumentation.runOnMainSync { AppCompatDelegate.setApplicationLocales(oldLocales) }
+                        device.executeShellCommand("wm size ${size ?: "reset"}")
+                        device.executeShellCommand("wm density ${density ?: "reset"}")
+                        if (font == "null") device.executeShellCommand("settings delete system font_scale")
+                        else device.executeShellCommand("settings put system font_scale $font")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun overrideValue(kind: String, output: String): String? =
+        Regex("Override $kind: ([0-9x]+)").find(output)?.groupValues?.get(1)
+}
