@@ -32,7 +32,7 @@
     <string name="artifact_show_all">सभी दिखाएँ</string>
     <string name="artifact_catalog_load_failed">फ़िलहाल आर्टिफ़ैक्ट लोड नहीं हो पा रहे हैं</string>
     <string name="artifact_catalog_refresh_failed">फ़िलहाल अपडेट नहीं हो पा रहा है। लोड किए गए आर्टिफ़ैक्ट दिख रहे हैं।</string>
-    <string name="artifact_catalog_page_failed">फ़िलहाल और आर्टिफ़ैक्ट लोड नहीं हो पा रहे हैं</string>
+    <string name="artifact_catalog_page_failed">फ़िलहाल और सामग्री लोड नहीं हो पा रही है</string>
     <string name="chat_resources_load_failed">फ़िलहाल चैट संसाधन लोड नहीं हो पा रहे हैं</string>
     <string name="chat_resources_syncing">चैट संसाधन सिंक हो रहे हैं</string>
     <string name="artifact_access_denied">आपके पास इस आर्टिफ़ैक्ट का ऐक्सेस नहीं है</string>

@@ -310,16 +310,14 @@ internal fun ChatArtifactResources(
                         model.select(item.id, item)
                     }
                 }
-                if (failure == ArtifactCatalogFailure.More) {
-                    item(key = "resource-page-failure") {
-                        ArtifactReadNotice(
-                            failure.label(chatResources = true),
-                            Modifier.padding(top = 12.dp),
+                if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
+                    item(key = "resource-page-feedback") {
+                        ArtifactPageFeedback(
+                            failed = failure == ArtifactCatalogFailure.More,
+                            skeletonHeight = 72.dp,
+                            skeletonHorizontalPadding = 16.dp,
                         )
                     }
-                }
-                if (reading == ArtifactCatalogRead.More) {
-                    item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
                 if (external != null && externalTitle != null) {
                     item(key = "origin-heading") {

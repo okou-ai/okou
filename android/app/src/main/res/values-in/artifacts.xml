@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Tampilkan semua</string>
     <string name="artifact_catalog_load_failed">Artefak tidak dapat dimuat untuk sementara</string>
     <string name="artifact_catalog_refresh_failed">Pembaruan tidak dapat dilakukan untuk sementara. Menampilkan artefak yang sudah dimuat.</string>
-    <string name="artifact_catalog_page_failed">Artefak lainnya tidak dapat dimuat untuk sementara</string>
+    <string name="artifact_catalog_page_failed">Untuk sementara tidak dapat memuat lebih banyak</string>
     <string name="chat_resources_load_failed">Sumber daya chat tidak dapat dimuat untuk sementara</string>
     <string name="chat_resources_syncing">Menyinkronkan sumber daya chat</string>
     <string name="artifact_access_denied">Anda tidak memiliki akses ke artefak ini</string>
