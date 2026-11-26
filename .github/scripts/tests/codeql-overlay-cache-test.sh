@@ -43,79 +43,48 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Minimal local fake AWS CLI backed by a directory so real tar/zstd/sha256 run end to end.
     write_exec(bin_dir / 'aws', f'''#!/usr/bin/env python3
-import os, shutil, sys
+import hashlib, json, os, shutil, sys
 from pathlib import Path
 
 root = Path({str(r2_dir)!r})
 args = sys.argv[1:]
+def option(name):
+    return args[args.index(name) + 1]
+
+def reject(code):
+    print(json.dumps({{'Error': {{'Code': code}}}}), file=sys.stderr)
+    sys.exit(254)
+
+def etag(data):
+    return '"' + hashlib.sha256(data).hexdigest() + '"'
+
+path = root / option('--bucket') / option('--key')
 if args[:2] == ['s3api', 'get-object']:
-    bucket = key = None
-    dest = args[-1]
-    i = 2
-    while i < len(args) - 1:
-        if args[i] == '--bucket':
-            bucket = args[i + 1]; i += 2
-        elif args[i] == '--key':
-            key = args[i + 1]; i += 2
-        else:
-            i += 1
-    src = root / bucket / key
-    if not src.exists():
-        sys.stderr.write('NoSuchKey\\n')
-        sys.exit(254)
-    Path(dest).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dest)
-    sys.exit(0)
+    if os.environ.get('FAKE_R2_READ_DENIED') == '1':
+        reject('AccessDenied')
+    if not path.is_file():
+        reject('NoSuchKey')
+    data = path.read_bytes()
+    last = int(option('--range').removeprefix('bytes=0-'))
+    Path(args[-1]).write_bytes(data[:last + 1])
+    print(json.dumps({{'ETag': etag(data)}}))
 elif args[:2] == ['s3api', 'put-object']:
-    bucket = key = body = None
-    i = 2
-    while i < len(args):
-        if args[i] == '--bucket':
-            bucket = args[i + 1]; i += 2
-        elif args[i] == '--key':
-            key = args[i + 1]; i += 2
-        elif args[i] == '--body':
-            body = args[i + 1]; i += 2
-        else:
-            i += 1
-    dst = root / bucket / key
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(body, dst)
-    sys.exit(0)
+    competing = os.environ.get('FAKE_R2_COMPETING_MANIFEST')
+    if competing and path.name == 'manifest.json':
+        shutil.copyfile(competing, path)
+    if '--if-match' in args:
+        if not path.is_file() or option('--if-match') != etag(path.read_bytes()):
+            reject('PreconditionFailed')
+    elif option('--if-none-match') == '*' and path.exists():
+        reject('PreconditionFailed')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(option('--body'), path)
+    if path.name == 'manifest.json' and os.environ.get('FAKE_R2_LOST_ACK') == '1':
+        sys.exit(1)
 elif args[:2] == ['s3api', 'delete-object']:
-    bucket = key = None
-    i = 2
-    while i < len(args):
-        if args[i] == '--bucket':
-            bucket = args[i + 1]; i += 2
-        elif args[i] == '--key':
-            key = args[i + 1]; i += 2
-        else:
-            i += 1
-    dst = root / bucket / key
-    if dst.exists():
-        dst.unlink()
-    sys.exit(0)
-elif args[:2] == ['s3', 'cp']:
-    src, dst = args[-2], args[-1]
-    if src.startswith('s3://'):
-        rel = src[len('s3://'):]
-        p = root / rel
-        if not p.exists():
-            sys.stderr.write('NotFound\\n')
-            sys.exit(1)
-        Path(dst).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(p, dst)
-    elif dst.startswith('s3://'):
-        rel = dst[len('s3://'):]
-        p = root / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, p)
-    else:
-        sys.exit(2)
-    sys.exit(0)
-sys.stderr.write(f'unsupported aws args: {{args}}\\n')
-sys.exit(2)
+    path.unlink(missing_ok=True)
+else:
+    sys.exit(2)
 ''')
 
     # Fake CodeQL CLI verifying resolve database and --cache-cleanup=overlay invocation.
@@ -159,7 +128,7 @@ sys.exit(2)
         env = dict(os.environ)
         env['PATH'] = f"{bin_dir}:{env['PATH']}"
         env.update({
-            'DB_LOCATION': str(db_dir),
+            'RUNNER_TEMP': str(base),
             'GITHUB_REPOSITORY': 'okou-ai/okou',
             'GITHUB_SHA': '1' * 40,
             'GITHUB_RUN_ID': '100',
@@ -226,7 +195,7 @@ sys.exit(2)
     res, env_out, step_out = run_cache('prepare', EVENT_NAME='pull_request', CODEQL_OVERLAY_NOW_EPOCH='1700003600')
     assert res.returncode == 0, res.stderr
     assert env_out['CODEQL_OVERLAY_DATABASE_MODE'] == 'overlay'
-    assert step_out == {'mode': 'overlay', 'publish': 'false', 'status': 'hit'}
+    assert step_out == {'mode': 'overlay', 'publish': 'false', 'status': 'hit', 'cli-version': '2.27.4'}
     assert (db_dir / 'base-database-oids.json').is_file()
     assert (db_dir / 'javascript' / 'cleaned.marker').read_text() == 'overlay'
 
@@ -241,7 +210,7 @@ sys.exit(2)
     assert gen1_blob.exists()  # Still retained as previous generation.
 
     make_db()
-    res, _, step_out = run_cache('publish', GITHUB_RUN_ID='103', CODEQL_OVERLAY_NOW_EPOCH='1700016000')
+    res, _, step_out = run_cache('publish', GITHUB_RUN_ID='103', CODEQL_OVERLAY_NOW_EPOCH='1700016000', FAKE_R2_LOST_ACK='1')
     assert res.returncode == 0 and step_out['status'] == 'published'
     m3 = json.loads(manifest_path.read_text())
     assert m3['previousPayloadKey'] == m2['payloadKey']
@@ -295,6 +264,53 @@ sys.exit(2)
     assert res.returncode == 0
     assert env_out['CODEQL_OVERLAY_DATABASE_MODE'] == 'none'
     assert step_out['status'] == 'miss'
+
+    # A safe in-tree link still does not belong to the regular-file database format.
+    make_db()
+    link_tar = base / 'link.tar'
+    with tarfile.open(link_tar, 'w') as tf:
+        tf.add(db_dir, arcname='.')
+        link = tarfile.TarInfo('metadata-link')
+        link.type = tarfile.SYMTYPE
+        link.linkname = 'base-database-oids.json'
+        tf.addfile(link)
+    subprocess.run(['zstd', '-q', '-f', str(link_tar), '-o', str(gen3_blob)], check=True)
+    link_bytes = gen3_blob.read_bytes()
+    manifest_path.write_text(json.dumps(dict(m3, compressedSizeBytes=len(link_bytes),
+                                             sha256=hashlib.sha256(link_bytes).hexdigest())))
+    res, env_out, step_out = run_cache('prepare', EVENT_NAME='pull_request', CODEQL_OVERLAY_NOW_EPOCH='1700017000')
+    assert res.returncode == 0 and step_out['status'] == 'unsafe-archive'
+    assert env_out['CODEQL_OVERLAY_DATABASE_MODE'] == 'none' and not db_dir.exists()
+
+    # A warm database requires an identifiable, matching CLI bundle.
+    gen3_blob.write_bytes(good_bytes)
+    manifest_path.write_text(json.dumps(dict(m3, codeqlCliVersion='')))
+    res, env_out, step_out = run_cache('prepare', EVENT_NAME='pull_request', CODEQL_OVERLAY_NOW_EPOCH='1700017000')
+    assert res.returncode == 0 and step_out['status'] == 'invalid-manifest'
+    assert env_out['CODEQL_OVERLAY_DATABASE_MODE'] == 'none' and not db_dir.exists()
+
+    # A transient read error cannot replace the current manifest with an initial generation.
+    manifest_path.write_text(json.dumps(m3))
+    make_db()
+    before = {p for p in manifest_path.parent.iterdir()}
+    res, _, out = run_cache('publish', GITHUB_RUN_ID='104', CODEQL_OVERLAY_NOW_EPOCH='1700030000', FAKE_R2_READ_DENIED='1')
+    assert res.returncode == 0 and out['status'] == 'manifest-unavailable'
+    assert json.loads(manifest_path.read_text()) == m3 and set(manifest_path.parent.iterdir()) == before
+
+    # Another main push wins after our read. Its current and previous payloads survive;
+    # the losing writer discards its own immutable upload.
+    winner_key = m3['payloadKey'].replace('db-103-1', 'db-105-1')
+    winner = dict(m3, payloadKey=winner_key, previousPayloadKey=m3['payloadKey'], createdAtEpoch=1700030000)
+    winner_manifest = base / 'competing.json'
+    winner_manifest.write_text(json.dumps(winner))
+    winner_blob = r2_dir / 'ci-cache-bucket' / winner_key
+    winner_blob.write_bytes(good_bytes)
+    res, _, out = run_cache('publish', GITHUB_RUN_ID='104', CODEQL_OVERLAY_NOW_EPOCH='1700030000',
+                            FAKE_R2_COMPETING_MANIFEST=winner_manifest)
+    assert res.returncode == 0 and out['status'] == 'superseded'
+    assert json.loads(manifest_path.read_text()) == winner
+    assert winner_blob.read_bytes() == gen3_blob.read_bytes() == good_bytes
+    assert set(manifest_path.parent.iterdir()) == before | {winner_blob}
 
 print('codeql overlay cache: ok')
 PY

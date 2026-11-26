@@ -44,19 +44,18 @@ while IFS= read -r -d '' path; do
     crates/*) ios_only=false ;;
     *) ios_only=false; crates_only=false ;;
   esac
-  # CodeQL scans JavaScript/TypeScript/HTML inputs; skip only when every changed
-  # file is non-JS/TS/HTML under native or documentation boundaries.
+  # The JS extractor also reads templates, config and extensionless files.
+  # Exempt only known non-inputs so new or unfamiliar formats receive a scan.
   case "$path" in
-    *.[jJ][sS] | *.[jJ][sS][xX] | *.[mM][jJ][sS] | *.[cC][jJ][sS] | \
-    *.[tT][sS] | *.[tT][sS][xX] | *.[mM][tT][sS] | *.[cC][tT][sS] | \
-    *.[hH][tT][mM] | *.[hH][tT][mM][lL])
-      codeql_needed=true
+    */.eslintrc* | .eslintrc*) codeql_needed=true ;;
+    *.[mM][dD]) ;;
+    ios/* | android/* | crates/* | desktop/* | docs/*)
+      case "${path##*.}" in
+        swift | kt | kts | rs | py | c | h | sh | toml | lock | png | jpg | webp | ttf) ;;
+        *) codeql_needed=true ;;
+      esac
       ;;
-    ios/* | android/* | crates/* | desktop/* | docs/* | *.[mM][dD])
-      ;;
-    *)
-      codeql_needed=true
-      ;;
+    *) codeql_needed=true ;;
   esac
 done < "$changed_files"
 

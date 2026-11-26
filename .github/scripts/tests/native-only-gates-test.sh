@@ -64,7 +64,7 @@ def condition(job, values, cancelled=False):
         dependencies = [dependencies]
     if not has_status and any(values[f'needs.{name}.result'] != 'success' for name in dependencies):
         return False
-    expression = re.sub(r'\b(?:github|needs)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
+    expression = re.sub(r'\b(?:github|needs|steps)\.[\w.-]+', lambda m: repr(values[m[0]]), expression)
     expression = expression.replace('cancelled()', str(cancelled)).replace('always()', 'True')
     expression = expression.replace('&&', ' and ').replace('||', ' or ')
     expression = re.sub(r'!(?!=)', 'not ', expression)
@@ -234,6 +234,15 @@ gate(security, 'ci-gate-security', normal, True)
 for job in ['codeql', 'pnpm-audit']:
     assert condition(security[job], normal)
     assert condition(security[job], context(ios=False, ts=True, event='push'))
+
+# Even a requested publication can only run on a push to protected main.
+publish = next(step for step in security['codeql']['steps']
+               if step.get('env', {}).get('CODEQL_PATH'))
+for event, ref, expected in [('pull_request', 'refs/pull/42/merge', False),
+                             ('push', 'refs/heads/topic', False),
+                             ('push', 'refs/heads/main', True)]:
+    assert condition(publish, {'github.event_name': event, 'github.ref': ref,
+                               'steps.overlay-cache.outputs.publish': 'true'}) == expected
 
 queued = context(ios=False, ts=True, event='merge_group')
 assert not condition(security['codeql'], queued)

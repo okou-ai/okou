@@ -181,25 +181,48 @@ jobs:
     if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group' && needs.detect-native-only.outputs.codeql-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CODEQL_OVERLAY_DATABASE_MODE: none
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Select trusted cache helper
+        id: cache-helper
+        if: github.event_name == 'push' || github.base_ref == 'main'
+        env:
+          MAIN_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          helper=.github/scripts/checks/codeql-overlay-cache.sh
+          # A PR that introduces or changes the cache helper takes the cold path.
+          if git diff --quiet --no-ext-diff --no-textconv "$MAIN_SHA" HEAD -- "$helper"; then
+            git show "$MAIN_SHA:$helper" > "$RUNNER_TEMP/codeql-overlay-cache.sh"
+            git show HEAD:.github/workflows/security.yml > "$RUNNER_TEMP/codeql-security.yml"
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Prepare CodeQL overlay cache
         id: overlay-cache
+        if: steps.cache-helper.outputs.available == 'true'
+        working-directory: ${{ runner.temp }}
         env:
           EVENT_NAME: ${{ github.event_name }}
-          DB_LOCATION: ${{ runner.temp }}/codeql_databases
+          SECURITY_WORKFLOW_PATH: ${{ runner.temp }}/codeql-security.yml
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: bash .github/scripts/checks/codeql-overlay-cache.sh prepare
+        run: bash "$RUNNER_TEMP/codeql-overlay-cache.sh" prepare
 
       - name: Initialize CodeQL
         id: init
         uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: javascript-typescript
+          # A restored database must use the producing CLI. Cold scans follow GitHub's recommendation.
+          tools: ${{ steps.overlay-cache.outputs.cli-version && format('https://github.com/github/codeql-action/releases/download/codeql-bundle-v{0}/codeql-bundle-javascript-linux64.tar.zst', steps.overlay-cache.outputs.cli-version) || '' }}
           # Keep GitHub Actions cache free of TRAP caches; overlay bases live in R2.
           trap-caching: false
 
@@ -211,16 +234,17 @@ jobs:
           upload-database: ${{ steps.overlay-cache.outputs.publish != 'true' && 'true' || 'false' }}
 
       - name: Publish CodeQL overlay base to R2
-        if: steps.overlay-cache.outputs.publish == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.overlay-cache.outputs.publish == 'true'
+        working-directory: ${{ runner.temp }}
         env:
-          DB_LOCATION: ${{ runner.temp }}/codeql_databases
+          SECURITY_WORKFLOW_PATH: ${{ runner.temp }}/codeql-security.yml
           CODEQL_PATH: ${{ steps.init.outputs.codeql-path }}
           CODEQL_CLI_VERSION: ${{ steps.init.outputs.codeql-version }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: bash .github/scripts/checks/codeql-overlay-cache.sh publish
+        run: bash "$RUNNER_TEMP/codeql-overlay-cache.sh" publish
 
   pnpm-audit:
     needs: [detect-release, detect-native-only]

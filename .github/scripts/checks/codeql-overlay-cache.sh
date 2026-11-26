@@ -5,21 +5,21 @@ set -euo pipefail
 #
 # Subcommands:
 #   prepare  Select CODEQL_OVERLAY_DATABASE_MODE for pull_request or push runs,
-#            restoring a verified overlay-base archive into DB_LOCATION on PRs
+#            restoring a verified overlay-base archive into the runner-owned database directory on PRs
 #            or scheduling an overlay-base rebuild on main when the cached base
 #            is missing or older than CODEQL_OVERLAY_REFRESH_SECONDS.
 #   publish  Validate, overlay-clean, compress, and atomically publish the
-#            overlay-base database from DB_LOCATION to R2, keeping at most two
+#            overlay-base database from the runner-owned directory to R2, keeping at most two
 #            generations (current + previous) to avoid racing active PR readers.
 #
 # Required environment:
-#   DB_LOCATION             Target CodeQL database cluster directory.
+#   RUNNER_TEMP             Job-owned temp root containing codeql_databases.
 #   GITHUB_REPOSITORY       Repository name-with-owner (owner/repo).
 #
 # Optional / subcommand-specific environment:
 #   EVENT_NAME              GitHub event name (required for prepare).
 #   CODEQL_PATH             CodeQL CLI binary path (required for publish).
-#   CODEQL_CLI_VERSION      CodeQL CLI version string recorded in manifest.
+#   CODEQL_CLI_VERSION      Stable CodeQL CLI version (required for publish).
 #   GITHUB_SHA              40-hex commit SHA (required for publish).
 #   GITHUB_RUN_ID           Positive integer run ID (required for publish).
 #   GITHUB_RUN_ATTEMPT      Positive integer run attempt (required for publish).
@@ -36,11 +36,11 @@ set -euo pipefail
 #   CODEQL_OVERLAY_TRANSFER_TIMEOUT_SECONDS Max transfer seconds (default: 180).
 #   CODEQL_OVERLAY_NOW_EPOCH Override current UTC epoch seconds (for tests).
 #   GITHUB_ENV              GitHub Actions env file (prepare writes CODEQL_OVERLAY_DATABASE_MODE).
-#   GITHUB_OUTPUT           GitHub Actions output file (mode, publish, status).
+#   GITHUB_OUTPUT           GitHub Actions outputs (mode, publish, status, cli-version on a hit).
 #
 # Exit status:
 #   0 on normal completion and fail-safe fallback to CODEQL_OVERLAY_DATABASE_MODE=none.
-#   2 on invalid invocation or unsafe DB_LOCATION.
+#   2 on invalid invocation.
 
 LANGUAGE="javascript-typescript"
 DB_SUBDIR="javascript"
@@ -51,7 +51,6 @@ MAX_ARCHIVE_BYTES="${CODEQL_OVERLAY_MAX_ARCHIVE_BYTES:-3221225472}"
 TRANSFER_TIMEOUT_SECONDS="${CODEQL_OVERLAY_TRANSFER_TIMEOUT_SECONDS:-180}"
 SECURITY_WORKFLOW_PATH="${SECURITY_WORKFLOW_PATH:-.github/workflows/security.yml}"
 ZSTD_COMPRESS_CMD="zstd -q -3 -T0"
-ZSTD_DECOMPRESS_CMD="zstd -q -d -T0"
 
 usage_fail() {
   echo "codeql-overlay-cache error: $*" >&2
@@ -75,16 +74,6 @@ validate_positive_int() {
   [[ "$value" =~ ^[1-9][0-9]*$ ]] || usage_fail "$name must be a positive integer"
 }
 
-validate_db_location() {
-  local dir=$1
-  [ -n "$dir" ] || usage_fail "DB_LOCATION is required"
-  case "$dir" in
-    "/" | "." | ".." | */.. | */../* | ../*)
-      usage_fail "unsafe DB_LOCATION: $dir"
-      ;;
-  esac
-}
-
 clean_db_location() {
   if [ -e "$DB_LOCATION" ] || [ -L "$DB_LOCATION" ]; then
     rm -rf -- "$DB_LOCATION"
@@ -101,6 +90,9 @@ emit_prepare_result() {
       printf 'mode=%s\n' "$mode"
       printf 'publish=%s\n' "$publish"
       printf 'status=%s\n' "$status"
+      if [[ "$mode" == "overlay" ]]; then
+        printf 'cli-version=%s\n' "${4:?missing base CLI version}"
+      fi
     } >> "$GITHUB_OUTPUT"
   fi
 }
@@ -133,7 +125,8 @@ r2_ready() {
     [[ "$R2_ACCOUNT_ID" =~ ^[a-zA-Z0-9_-]+$ ]] &&
     command -v aws >/dev/null 2>&1 &&
     command -v zstd >/dev/null 2>&1 &&
-    command -v jq >/dev/null 2>&1
+    command -v jq >/dev/null 2>&1 &&
+    command -v python3 >/dev/null 2>&1
 }
 
 r2_endpoint() {
@@ -142,12 +135,11 @@ r2_endpoint() {
 
 r2_get_manifest() {
   local key=$1 dest=$2
-  AWS_MAX_ATTEMPTS=2 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
-    AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off AWS_DEFAULT_REGION=auto \
+  AWS_MAX_ATTEMPTS=2 \
     timeout --kill-after=5s 30s aws s3api get-object \
       --endpoint-url "$(r2_endpoint)" \
       --bucket "$R2_BUCKET_NAME" \
-      --key "$key" \
+      --key "$key" --range bytes=0-65536 \
       --cli-connect-timeout 5 --cli-read-timeout 15 \
       "$dest" \
       >"$WORK_DIR/get-manifest.out" 2>"$WORK_DIR/get-manifest.err"
@@ -155,49 +147,42 @@ r2_get_manifest() {
 
 r2_put_manifest() {
   local key=$1 body=$2
-  AWS_MAX_ATTEMPTS=3 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
-    AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off AWS_DEFAULT_REGION=auto \
+  shift 2
+  AWS_MAX_ATTEMPTS=1 \
     timeout --kill-after=5s 30s aws s3api put-object \
       --endpoint-url "$(r2_endpoint)" \
       --bucket "$R2_BUCKET_NAME" \
       --key "$key" \
       --body "$body" \
-      --content-type application/json \
+      --content-type application/json "$@" \
       --cache-control 'private, no-store' \
       --cli-connect-timeout 5 --cli-read-timeout 15 \
       >"$WORK_DIR/put-manifest.out" 2>"$WORK_DIR/put-manifest.err"
 }
 
 r2_download_payload() {
-  local key=$1 dest=$2
-  AWS_MAX_ATTEMPTS=2 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
-    AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off AWS_DEFAULT_REGION=auto \
-    timeout --kill-after=5s "${TRANSFER_TIMEOUT_SECONDS}s" aws s3 cp \
-      --endpoint-url "$(r2_endpoint)" \
-      --only-show-errors \
-      --cli-connect-timeout 5 --cli-read-timeout 60 \
-      "s3://${R2_BUCKET_NAME}/${key}" "$dest" \
-      >"$WORK_DIR/get-payload.out" 2>"$WORK_DIR/get-payload.err"
+  local key=$1 dest=$2 expected_size=$3
+  # Request one extra byte to detect an oversized object without filling the disk.
+  AWS_MAX_ATTEMPTS=2 \
+    timeout --kill-after=5s "${TRANSFER_TIMEOUT_SECONDS}s" aws s3api get-object \
+      --endpoint-url "$(r2_endpoint)" --bucket "$R2_BUCKET_NAME" --key "$key" \
+      --range "bytes=0-${expected_size}" --cli-connect-timeout 5 --cli-read-timeout 60 \
+      "$dest" >"$WORK_DIR/get-payload.out" 2>"$WORK_DIR/get-payload.err"
 }
 
 r2_upload_payload() {
   local body=$1 key=$2
-  AWS_MAX_ATTEMPTS=3 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
-    AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off AWS_DEFAULT_REGION=auto \
-    timeout --kill-after=5s "${TRANSFER_TIMEOUT_SECONDS}s" aws s3 cp \
-      --endpoint-url "$(r2_endpoint)" \
-      --only-show-errors \
-      --content-type application/zstd \
-      --cache-control 'private, no-store' \
-      --cli-connect-timeout 5 --cli-read-timeout 60 \
-      "$body" "s3://${R2_BUCKET_NAME}/${key}" \
+  AWS_MAX_ATTEMPTS=1 \
+    timeout --kill-after=5s "${TRANSFER_TIMEOUT_SECONDS}s" aws s3api put-object \
+      --endpoint-url "$(r2_endpoint)" --bucket "$R2_BUCKET_NAME" --key "$key" \
+      --if-none-match '*' --body "$body" --content-type application/zstd \
+      --cache-control 'private, no-store' --cli-connect-timeout 5 --cli-read-timeout 60 \
       >"$WORK_DIR/put-payload.out" 2>"$WORK_DIR/put-payload.err"
 }
 
 r2_delete_object() {
   local key=$1
-  AWS_MAX_ATTEMPTS=2 AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json \
-    AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off AWS_DEFAULT_REGION=auto \
+  AWS_MAX_ATTEMPTS=2 \
     timeout --kill-after=5s 30s aws s3api delete-object \
       --endpoint-url "$(r2_endpoint)" \
       --bucket "$R2_BUCKET_NAME" \
@@ -221,8 +206,9 @@ validate_manifest() {
       and .repository == $repository
       and .language == $language
       and .codeqlActionSha == $action_sha
+      and (.codeqlCliVersion | type == "string" and test("^[0-9]+[.][0-9]+[.][0-9]+$"))
       and (.baseSha | type == "string" and test("^[0-9a-f]{40}$"))
-      and (.createdAtEpoch | type == "number" and floor == . and . > 0)
+      and (.createdAtEpoch | type == "number" and floor == . and . > 0 and . < 10000000000)
       and (.payloadKey | type == "string" and test($payload_regex))
       and (.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
       and (.compressedSizeBytes | type == "number" and floor == . and . > 0 and . <= $max_size)
@@ -234,16 +220,30 @@ validate_manifest() {
   ' "$manifest" >/dev/null 2>&1
 }
 
-verify_archive_paths() {
-  local archive=$1
-  # Reject absolute paths or parent-directory traversal before extraction.
-  tar -I "$ZSTD_DECOMPRESS_CMD" -tf "$archive" |
-    awk '/^\// || /(^|\/)\.\.(\/|$)/ { exit 1 }'
+extract_archive() {
+  zstd -qdc -- "$1" | python3 -I -c '
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+def regular_files_only(member, destination):
+    path = PurePosixPath(member.name)
+    if path.is_absolute() or ".." in path.parts or member.type not in (
+        tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE
+    ):
+        raise tarfile.FilterError("unexpected member in CodeQL cache archive")
+    return tarfile.data_filter(member, destination)
+
+with tarfile.open(fileobj=sys.stdin.buffer, mode="r|") as archive:
+    archive.extractall(sys.argv[1], filter=regular_files_only)
+# Consume the final tar padding so the decompressor can report its exit status.
+while sys.stdin.buffer.read(65536):
+    pass
+' "$2"
 }
 
 do_prepare() {
   [ -n "${EVENT_NAME:-}" ] || usage_fail "EVENT_NAME is required for prepare"
-  validate_db_location "$DB_LOCATION"
   [ -n "${GITHUB_REPOSITORY:-}" ] || usage_fail "GITHUB_REPOSITORY is required"
   validate_positive_int CODEQL_OVERLAY_REFRESH_SECONDS "$REFRESH_SECONDS"
   validate_positive_int CODEQL_OVERLAY_MAX_AGE_SECONDS "$MAX_AGE_SECONDS"
@@ -318,7 +318,7 @@ do_prepare() {
       expected_size=$(jq -r '.compressedSizeBytes' "$manifest_file")
       local archive="${WORK_DIR}/base.tar.zst"
 
-      if ! r2_download_payload "$payload_key" "$archive"; then
+      if ! r2_download_payload "$payload_key" "$archive" "$expected_size"; then
         warn "overlay-base download failed; falling back to full scan (mode=none)."
         emit_prepare_result none false download-failed
         return 0
@@ -333,32 +333,25 @@ do_prepare() {
         return 0
       fi
 
-      if ! verify_archive_paths "$archive"; then
-        warn "overlay-base archive contained unsafe paths; falling back to full scan (mode=none)."
+      local staging="${WORK_DIR}/staging"
+      mkdir -p "$staging"
+      if ! extract_archive "$archive" "$staging" 2>"$WORK_DIR/extract.err"; then
+        warn "overlay-base archive could not be safely extracted; falling back to full scan."
         emit_prepare_result none false unsafe-archive
         return 0
       fi
 
-      local staging="${WORK_DIR}/staging"
-      mkdir -p "$staging"
-      if ! tar --no-same-owner --no-same-permissions -I "$ZSTD_DECOMPRESS_CMD" -xf "$archive" -C "$staging"; then
-        warn "overlay-base archive extraction failed; falling back to full scan (mode=none)."
-        emit_prepare_result none false extract-failed
-        return 0
-      fi
-
       if [[ ! -f "$staging/base-database-oids.json" || ! -s "$staging/base-database-oids.json" || -L "$staging/base-database-oids.json" ]] ||
-        ! jq -e 'type == "object"' "$staging/base-database-oids.json" >/dev/null 2>&1 ||
+        ! jq -e 'type == "object" and length > 0 and all(.[]; type == "string" and test("^([0-9a-f]{40}|[0-9a-f]{64})$"))' "$staging/base-database-oids.json" >/dev/null 2>&1 ||
         [[ ! -f "$staging/${DB_SUBDIR}/codeql-database.yml" || ! -s "$staging/${DB_SUBDIR}/codeql-database.yml" || -L "$staging/${DB_SUBDIR}/codeql-database.yml" ]]; then
         warn "restored overlay-base database is incomplete; falling back to full scan (mode=none)."
         emit_prepare_result none false incomplete-db
         return 0
       fi
 
-      mkdir -p "$(dirname "$DB_LOCATION")"
       mv "$staging" "$DB_LOCATION"
       info "restored overlay-base (${actual_size} bytes, age=${age}s, baseSha=$(jq -r '.baseSha[0:8]' "$manifest_file")) -> mode=overlay."
-      emit_prepare_result overlay false hit
+      emit_prepare_result overlay false hit "$(jq -r '.codeqlCliVersion' "$manifest_file")"
       return 0
       ;;
 
@@ -371,12 +364,17 @@ do_prepare() {
 }
 
 do_publish() {
-  validate_db_location "$DB_LOCATION"
   [ -n "${GITHUB_REPOSITORY:-}" ] || usage_fail "GITHUB_REPOSITORY is required"
   [ -n "${CODEQL_PATH:-}" ] || usage_fail "CODEQL_PATH is required for publish"
   [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || usage_fail "valid 40-hex GITHUB_SHA is required for publish"
+  if [[ ! "${CODEQL_CLI_VERSION:-}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+    warn "no stable CodeQL bundle version for this database; skipping publish."
+    emit_publish_status unsupported-version
+    return 0
+  fi
   validate_positive_int GITHUB_RUN_ID "${GITHUB_RUN_ID:-}"
   validate_positive_int GITHUB_RUN_ATTEMPT "${GITHUB_RUN_ATTEMPT:-}"
+  validate_positive_int CODEQL_OVERLAY_REFRESH_SECONDS "$REFRESH_SECONDS"
   validate_positive_int CODEQL_OVERLAY_MAX_ARCHIVE_BYTES "$MAX_ARCHIVE_BYTES"
   validate_positive_int CODEQL_OVERLAY_TRANSFER_TIMEOUT_SECONDS "$TRANSFER_TIMEOUT_SECONDS"
 
@@ -420,7 +418,7 @@ do_publish() {
   fi
 
   local archive="${WORK_DIR}/overlay-base.tar.zst"
-  if ! tar -I "$ZSTD_COMPRESS_CMD" -cf "$archive" -C "$DB_LOCATION" .; then
+  if ! tar --hard-dereference -I "$ZSTD_COMPRESS_CMD" -cf "$archive" -C "$DB_LOCATION" .; then
     warn "failed to archive overlay-base database; skipping publish."
     emit_publish_status archive-failed
     return 0
@@ -441,13 +439,31 @@ do_publish() {
   local old_manifest="${WORK_DIR}/old-manifest.json"
   local previous_key="" obsolete_key=""
 
-  if r2_get_manifest "$manifest_key" "$old_manifest" && validate_manifest "$old_manifest" "$action_sha"; then
-    previous_key=$(jq -r '.payloadKey // ""' "$old_manifest")
-    obsolete_key=$(jq -r '.previousPayloadKey // ""' "$old_manifest")
-    if [ "$previous_key" = "$payload_key" ]; then
-      previous_key="$obsolete_key"
-      obsolete_key=""
+  local manifest_condition=(--if-none-match '*')
+  if r2_get_manifest "$manifest_key" "$old_manifest"; then
+    local etag
+    if ! etag=$(jq -er '.ETag | strings | select(length > 0)' "$WORK_DIR/get-manifest.out"); then
+      warn "R2 did not return the manifest ETag; skipping publish."
+      emit_publish_status manifest-unavailable
+      return 0
     fi
+    manifest_condition=(--if-match "$etag")
+    if validate_manifest "$old_manifest" "$action_sha"; then
+      local created_at
+      created_at=$(jq -r '.createdAtEpoch' "$old_manifest")
+      if (( created_at <= now_epoch && now_epoch - created_at < REFRESH_SECONDS )); then
+        info "another main run already refreshed the base."
+        emit_publish_status fresh
+        return 0
+      fi
+      previous_key=$(jq -r '.payloadKey' "$old_manifest")
+      obsolete_key=$(jq -r '.previousPayloadKey // ""' "$old_manifest")
+    fi
+  elif ! jq -e '(.Error.Code // .Code) | IN("NoSuchKey", "404", "NotFound")' \
+    "$WORK_DIR/get-manifest.err" >/dev/null 2>&1; then
+    warn "could not establish the previous manifest state; skipping publish."
+    emit_publish_status manifest-unavailable
+    return 0
   fi
 
   if ! r2_upload_payload "$archive" "$payload_key"; then
@@ -461,7 +477,7 @@ do_publish() {
     --arg repository "$GITHUB_REPOSITORY" \
     --arg language "$LANGUAGE" \
     --arg action_sha "$action_sha" \
-    --arg cli_version "${CODEQL_CLI_VERSION:-}" \
+    --arg cli_version "$CODEQL_CLI_VERSION" \
     --arg base_sha "$GITHUB_SHA" \
     --arg payload_key "$payload_key" \
     --arg previous_key "$previous_key" \
@@ -483,10 +499,22 @@ do_publish() {
     }
   ' >"$new_manifest"
 
-  if ! r2_put_manifest "$manifest_key" "$new_manifest"; then
-    warn "failed to update overlay-base manifest in R2."
-    emit_publish_status manifest-failed
-    return 0
+  if ! r2_put_manifest "$manifest_key" "$new_manifest" "${manifest_condition[@]}"; then
+    if jq -e '(.Error.Code // .Code) | IN("PreconditionFailed", "412", "ConditionalRequestConflict")' \
+      "$WORK_DIR/put-manifest.err" >/dev/null 2>&1; then
+      # The conditional PUT was rejected. Only this run could create this payload.
+      r2_delete_object "$payload_key" || warn "failed to prune superseded payload."
+      emit_publish_status superseded
+      return 0
+    fi
+    # A lost response can follow a committed PUT. Never replay it or delete
+    # potentially referenced bytes. Confirm the candidate before pruning.
+    if ! r2_get_manifest "$manifest_key" "$WORK_DIR/readback.json" ||
+      ! cmp -s "$new_manifest" "$WORK_DIR/readback.json"; then
+      warn "could not confirm the manifest update."
+      emit_publish_status manifest-failed
+      return 0
+    fi
   fi
 
   if [ -n "$obsolete_key" ] && [ "$obsolete_key" != "$payload_key" ] && [ "$obsolete_key" != "$previous_key" ]; then
@@ -498,7 +526,12 @@ do_publish() {
   return 0
 }
 
-WORK_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/codeql-overlay-cache.XXXXXX")
+[ -n "${RUNNER_TEMP:-}" ] || usage_fail "RUNNER_TEMP is required"
+DB_LOCATION="$RUNNER_TEMP/codeql_databases"
+export AWS_DEFAULT_REGION=auto AWS_RETRY_MODE=standard AWS_CLI_ERROR_FORMAT=json
+export AWS_PAGER='' AWS_CLI_AUTO_PROMPT=off
+export AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
+WORK_DIR=$(mktemp -d "$RUNNER_TEMP/codeql-overlay-cache.XXXXXX")
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 
 case "${1:-}" in

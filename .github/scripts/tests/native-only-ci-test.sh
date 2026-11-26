@@ -88,6 +88,11 @@ with tempfile.TemporaryDirectory() as temp:
     commit('crates js script')
     expect(False, False, True)
 
+    branch('crates-yaml')
+    write('crates/lefthook.yml', 'pre-commit: {}\n')
+    commit('CodeQL YAML input')
+    expect(False, False, True)
+
     branch('android-desktop-docs')
     write('android/app/Main.kt', 'class Main\n')
     write('desktop/Sources/App.swift', 'struct App {}\n')
