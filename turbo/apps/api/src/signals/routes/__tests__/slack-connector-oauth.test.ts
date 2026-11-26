@@ -778,6 +778,12 @@ describe("Slack connector accounts", () => {
       }),
     ).toStrictEqual([original?.id]);
 
+    // Slack revokes the deleted account's user token.
+    server.use(
+      http.post("https://slack.com/api/auth.revoke", () => {
+        return HttpResponse.json({ ok: true, revoked: true });
+      }),
+    );
     await accept(
       clients()(connectorAccountsContract).delete({
         headers: await signIn(org.actor),
