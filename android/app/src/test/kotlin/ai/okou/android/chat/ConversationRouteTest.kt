@@ -28,6 +28,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertTouchHeightIsEqualTo
+import androidx.compose.ui.test.assertTouchWidthIsEqualTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -234,9 +236,9 @@ class ConversationRouteTest {
 
     @Test
     fun longPressCopiesTheReplyShownAfterAStreamUpdate() {
-        fun reply(text: String) =
+        fun reply(text: String, id: String = "output") =
             HistoryMessage(
-                "output",
+                id,
                 null,
                 HistoryRole.Assistant,
                 listOf(HistoryBlock(HistoryBlockKind.Text, text)),
@@ -248,6 +250,20 @@ class ConversationRouteTest {
             }
         }
         val header = compose.onNodeWithText(compose.activity.getString(R.string.app_name))
+        val row = compose.onNodeWithTag("conversation_reply_header").getUnclippedBoundsInRoot()
+        val avatar = compose.onNodeWithTag("conversation_reply_avatar").getUnclippedBoundsInRoot()
+        compose
+            .onNode(
+                hasContentDescription(
+                    compose.activity.getString(R.string.conversation_reply_actions),
+                ) and hasClickAction(),
+            )
+            .assertTouchWidthIsEqualTo(48.dp)
+            .assertTouchHeightIsEqualTo(48.dp)
+        assertEquals(48.dp, row.bottom - row.top)
+        assertEquals(32.dp, avatar.right - avatar.left)
+        assertEquals(32.dp, avatar.bottom - avatar.top)
+        assertEquals(8.dp, header.getUnclippedBoundsInRoot().left - avatar.right)
         // Start the same pointer handler before this reply receives more content.
         header.performTouchInput { click() }
         val complete = "First chunk and the [release notes](https://example.org/releases)."
@@ -255,10 +271,17 @@ class ConversationRouteTest {
         compose.runOnIdle { displayed.value = reply(complete) }
         compose.waitUntilExactlyOneExists(hasText(rendered), 5_000)
         compose.onNodeWithText(rendered).assertIsDisplayed()
+        assertEquals(
+            avatar,
+            compose.onNodeWithTag("conversation_reply_avatar").getUnclippedBoundsInRoot(),
+        )
         header.performTouchInput { longClick() }
-        compose
-            .onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
-            .performClick()
+        val copy =
+            compose.onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
+        copy.assertIsDisplayed()
+        // A following reply can receive whitespace before its usable body arrives.
+        compose.runOnIdle { displayed.value = reply(" ", id = "next-output") }
+        copy.assertIsDisplayed().performClick()
         val clipboard =
             checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
         compose.waitUntil(5_000) { clipboard.primaryClip != null }

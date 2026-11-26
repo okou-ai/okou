@@ -1,0 +1,199 @@
+<?xml version='1.0' encoding='utf-8'?>
+<animated-vector xmlns:aapt="http://schemas.android.com/aapt" xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/ic_okou_idle_avatar">
+    <target android:name="breathing">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="scaleX" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="scaleX" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="1" />
+                        <keyframe android:fraction="0.250000" android:value="1.008" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="1.008" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:propertyName="scaleY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="1" />
+                        <keyframe android:fraction="0.250000" android:value="1.045" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="1.045" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="head_float">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="translateY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                    <keyframe android:fraction="0.000000" android:value="0" />
+                    <keyframe android:fraction="0.250000" android:value="-4.2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.500000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.750000" android:value="-4.2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="head_turn">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="rotation" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="0" />
+                    <keyframe android:fraction="0.18" android:value="-3.8" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.32" android:value="-2.3" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.52" android:value="3.5" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.68" android:value="3.8" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.86" android:value="0.7" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="back_hair">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="rotation" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                    <keyframe android:fraction="0.000000" android:value="0" />
+                    <keyframe android:fraction="0.250000" android:value="1.8" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.500000" android:value="-0.7" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.750000" android:value="-1.7" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="bun_bounce">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="rotation" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                    <keyframe android:fraction="0.000000" android:value="0" />
+                    <keyframe android:fraction="0.250000" android:value="4.2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.500000" android:value="-1.5" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.750000" android:value="-3.8" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="bun_stretch">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="scaleX" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="scaleX" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="1" />
+                        <keyframe android:fraction="0.250000" android:value="0.98" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="1.02" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:propertyName="scaleY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="1" />
+                        <keyframe android:fraction="0.250000" android:value="1.025" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="0.985" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="face_idle">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:propertyName="translateX" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="translateX" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="0" />
+                        <keyframe android:fraction="0.250000" android:value="-2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:propertyName="translateY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                    <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                        <keyframe android:fraction="0.000000" android:value="0" />
+                        <keyframe android:fraction="0.250000" android:value="-0.7" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.500000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="0.750000" android:value="0.3" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                        <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="eye_left_blink">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1" />
+                    <keyframe android:fraction="0.235" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.246" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.257" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.271" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.66" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.671" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.682" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.696" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.73" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.741" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.752" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.766" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="eye_right_blink">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="scaleY" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                    <keyframe android:fraction="0" android:value="1" />
+                    <keyframe android:fraction="0.235" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.246" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.257" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.271" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.66" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.671" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.682" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.696" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.73" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.741" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.752" android:value="0.09" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.766" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1" android:value="1" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="smile">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="rotation" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                    <keyframe android:fraction="0.000000" android:value="0" />
+                    <keyframe android:fraction="0.250000" android:value="-1.2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.500000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.750000" android:value="1.2" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+    <target android:name="fringe">
+        <aapt:attr name="android:animation">
+            <objectAnimator android:propertyName="rotation" android:duration="8000" android:repeatCount="-1" android:repeatMode="restart" android:interpolator="@android:interpolator/linear">
+                <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                    <keyframe android:fraction="0.000000" android:value="0" />
+                    <keyframe android:fraction="0.250000" android:value="0.65" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.500000" android:value="-0.25" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="0.750000" android:value="-0.65" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                    <keyframe android:fraction="1.000000" android:value="0" android:interpolator="@interpolator/okou_avatar_idle_easing" />
+                </propertyValuesHolder>
+            </objectAnimator>
+        </aapt:attr>
+    </target>
+</animated-vector>

@@ -59,8 +59,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.LayoutBoundsHolder
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layoutBounds
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -176,6 +178,17 @@ internal fun ConversationRoute(
             }
         }
     val replying = activeMessage?.message?.isOutputReply() == true
+    val animatedReplyId =
+        activeMessage
+            ?.takeIf {
+                visible &&
+                    execution == HistoryExecution.Running &&
+                    it.summary?.phase == ReplyPhase.Replying &&
+                    output.phase != RunOutputPhase.CatchingUp &&
+                    controls?.canStop != false
+            }
+            ?.message
+            ?.id
     val activity =
         when (execution) {
             HistoryExecution.Running ->
@@ -648,6 +661,7 @@ internal fun ConversationRoute(
             if (imageReply != null && !readingReady) artifactActions?.copy(restoreKey = null)
             else artifactActions
         val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
+        val avatarViewport = remember { LayoutBoundsHolder() }
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
@@ -656,6 +670,10 @@ internal fun ConversationRoute(
                         .testTag("conversation")
                         .focusRequester(timelineFocus)
                         .focusable()
+                        .then(
+                            if (animatedReplyId == null) Modifier
+                            else Modifier.layoutBounds(avatarViewport),
+                        )
                         .then(
                             if (awaitingFindPosition)
                                 Modifier.onGloballyPositioned { findViewport = it }
@@ -744,6 +762,10 @@ internal fun ConversationRoute(
                                         artifactActions = visibleArtifacts,
                                         findHighlight = highlight,
                                         links = links,
+                                        animateAvatarIn =
+                                            avatarViewport.takeIf {
+                                                entry.message.id == animatedReplyId
+                                            },
                                         beforeEarlierRepliesResize = {
                                             if (
                                                 !awaitingFindPosition &&
