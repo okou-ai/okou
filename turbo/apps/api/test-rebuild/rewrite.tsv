@@ -568,7 +568,7 @@ browser	src/signals/routes/__tests__/browser-reconcile.test.ts	browser-reconcile
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-002	planned					a-run
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-003	planned					a-run
 browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-005	planned					a-run
-browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-008	planned					d-other
+browser	src/signals/routes/__tests__/browser-recovery.test.ts	browser-recovery-008	revisit		revisit: reclassify to a-run: When calls POST /api/browsers/use from A's Run, which only accepts agent Run execution credentials (browserWriteAuth accept: ["agent"]).			d-other
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-001	planned					d-other
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-002	planned					d-other
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-004	planned					a-run
