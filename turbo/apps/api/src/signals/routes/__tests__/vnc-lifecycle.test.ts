@@ -224,6 +224,150 @@ function workspace() {
   return { member, peer, elsewhere };
 }
 
+function membershipEvent(owner: Owner) {
+  return {
+    id: `orgmem_${owner.orgId}_${owner.userId}`,
+    object: "organization_membership",
+    organization: { id: owner.orgId },
+    public_user_data: { user_id: owner.userId },
+  };
+}
+
+function credentialFreeHost(owner: Owner, displayName: string) {
+  return createHost(owner, {
+    id: randomUUID(),
+    displayName,
+    host: `${displayName.toLowerCase().replaceAll(" ", "-")}.example.com`,
+    credential: { type: "none" },
+    security: { type: "x509_none", trust: { mode: "system" } },
+  });
+}
+
+interface FormerResources {
+  readonly hosts: readonly VncConnectionResponse[];
+  readonly credentials: readonly { id: string; revision: number }[];
+}
+
+/** A member plus a peer and the same user elsewhere, each with an inline-credential host. */
+async function departureScenario() {
+  useSecretKmsProbe();
+  const people = workspace();
+  const directory = clerkDirectory(
+    people.member,
+    people.peer,
+    people.elsewhere,
+  );
+  const peerHost = await inlineHost(people.peer, "Peer desk");
+  const elsewhereHost = await inlineHost(people.elsewhere, "Elsewhere desk");
+  return { ...people, directory, peerHost, elsewhereHost };
+}
+
+type DepartureScenario = Awaited<ReturnType<typeof departureScenario>>;
+
+/** Two hosts sharing a saved password, an unused saved password and a credential-free host. */
+async function mixedResources({
+  member,
+}: DepartureScenario): Promise<FormerResources> {
+  const shared = await createSavedCredential(member, "Shared password");
+  const unused = await createSavedCredential(member, "Unused password");
+  const first = await savedCredentialHost(member, "First desk", shared.id);
+  const second = await savedCredentialHost(member, "Second desk", shared.id);
+  const open = await credentialFreeHost(member, "Open desk");
+  return { hosts: [first, second, open], credentials: [shared, unused] };
+}
+
+async function credentialFreeResources({
+  member,
+}: DepartureScenario): Promise<FormerResources> {
+  const open = await credentialFreeHost(member, "Open desk");
+  return { hosts: [open], credentials: [] };
+}
+
+/** Removes the member in Clerk and delivers the signed departure twice. */
+async function depart({ member, directory }: DepartureScenario) {
+  directory.remove(member);
+  const deliveries: unknown[] = [];
+  for (let delivery = 0; delivery < 2; delivery += 1) {
+    const response = await deliverClerkEvent(
+      "organizationMembership.deleted",
+      membershipEvent(member),
+    );
+    deliveries.push(response.body);
+  }
+  return deliveries;
+}
+
+async function rejoin({ member, directory }: DepartureScenario) {
+  directory.add(member);
+  const delivered = await deliverClerkEvent(
+    "organizationMembership.created",
+    membershipEvent(member),
+  );
+  return delivered.body;
+}
+
+async function ownResourceIds(owner: Owner) {
+  const hosts = await accept(listHosts(owner), [200]);
+  const saved = await accept(listCredentials(owner), [200]);
+  return {
+    hosts: hosts.body.connections.map(({ id }) => {
+      return id;
+    }),
+    credentials: saved.body.credentials.map(({ id }) => {
+      return id;
+    }),
+  };
+}
+
+async function departedListStatuses(member: Owner) {
+  return [
+    (await listHosts(member)).status,
+    (await listCredentials(member)).status,
+  ];
+}
+
+async function renameFormerStatuses(member: Owner, former: FormerResources) {
+  signIn(member);
+  const statuses: number[] = [];
+  for (const host of former.hosts) {
+    const renamed = await connections().update({
+      headers,
+      params: { connectionId: host.id },
+      body: { expectedGeneration: host.generation, displayName: "Renamed" },
+    });
+    statuses.push(renamed.status);
+  }
+  for (const credential of former.credentials) {
+    const renamed = await credentials().update({
+      headers,
+      params: { credentialId: credential.id },
+      body: { expectedRevision: credential.revision, name: "Renamed" },
+    });
+    statuses.push(renamed.status);
+  }
+  return statuses;
+}
+
+async function survivorsAfterRejoin(scenario: DepartureScenario) {
+  return {
+    peer: await ownResourceIds(scenario.peer),
+    elsewhere: await ownResourceIds(scenario.elsewhere),
+  };
+}
+
+function survivingResources(scenario: DepartureScenario) {
+  return {
+    peer: {
+      hosts: [scenario.peerHost.id],
+      credentials: [credentialIdOf(scenario.peerHost)],
+    },
+    elsewhere: {
+      hosts: [scenario.elsewhereHost.id],
+      credentials: [credentialIdOf(scenario.elsewhereHost)],
+    },
+  };
+}
+
 describe("VNC lifecycle", () => {
   it("vnc-lifecycle-007 deleting a user keeps a surviving colleague's VNC host and credential", async () => {
     useSecretKmsProbe();
@@ -337,5 +481,96 @@ describe("VNC lifecycle", () => {
     expect(renamed.body.name).toBe("Rejoined");
 
     await savedCredentialHost(member, "Shared desk", credentialId);
+  });
+
+  it("vnc-lifecycle-001 (1/4) accepts both departure deliveries and refuses the departed member's mixed resource lists", async () => {
+    const scenario = await departureScenario();
+    await mixedResources(scenario);
+
+    const deliveries = await depart(scenario);
+
+    expect({
+      deliveries,
+      departed: await departedListStatuses(scenario.member),
+    }).toStrictEqual({ deliveries: ["OK", "OK"], departed: [404, 404] });
+  });
+
+  it("vnc-lifecycle-001 (2/4) leaves the rejoined member no host or saved credential to list", async () => {
+    const scenario = await departureScenario();
+    await mixedResources(scenario);
+    await depart(scenario);
+
+    const rejoined = await rejoin(scenario);
+
+    expect({
+      rejoined,
+      resources: await ownResourceIds(scenario.member),
+    }).toStrictEqual({
+      rejoined: "OK",
+      resources: { hosts: [], credentials: [] },
+    });
+  });
+
+  it("vnc-lifecycle-001 (3/4) refuses renaming every former host and saved credential after rejoining", async () => {
+    const scenario = await departureScenario();
+    const former = await mixedResources(scenario);
+    await depart(scenario);
+    await rejoin(scenario);
+
+    await expect(
+      renameFormerStatuses(scenario.member, former),
+    ).resolves.toStrictEqual([404, 404, 404, 404, 404]);
+  });
+
+  it("vnc-lifecycle-001 (4/4) keeps the peer's and the other workspace's own hosts", async () => {
+    const scenario = await departureScenario();
+    await mixedResources(scenario);
+    await depart(scenario);
+    await rejoin(scenario);
+
+    await expect(survivorsAfterRejoin(scenario)).resolves.toStrictEqual(
+      survivingResources(scenario),
+    );
+  });
+
+  it("vnc-lifecycle-003 (1/3) accepts both departure deliveries and refuses the departed member's credential-free host lists", async () => {
+    const scenario = await departureScenario();
+    await credentialFreeResources(scenario);
+
+    const deliveries = await depart(scenario);
+
+    expect({
+      deliveries,
+      departed: await departedListStatuses(scenario.member),
+    }).toStrictEqual({ deliveries: ["OK", "OK"], departed: [404, 404] });
+  });
+
+  it("vnc-lifecycle-003 (2/3) leaves the rejoined member no credential-free host to list or rename", async () => {
+    const scenario = await departureScenario();
+    const former = await credentialFreeResources(scenario);
+    await depart(scenario);
+
+    const rejoined = await rejoin(scenario);
+
+    expect({
+      rejoined,
+      resources: await ownResourceIds(scenario.member),
+      renames: await renameFormerStatuses(scenario.member, former),
+    }).toStrictEqual({
+      rejoined: "OK",
+      resources: { hosts: [], credentials: [] },
+      renames: [404],
+    });
+  });
+
+  it("vnc-lifecycle-003 (3/3) keeps the peer's and the other workspace's own hosts", async () => {
+    const scenario = await departureScenario();
+    await credentialFreeResources(scenario);
+    await depart(scenario);
+    await rejoin(scenario);
+
+    await expect(survivorsAfterRejoin(scenario)).resolves.toStrictEqual(
+      survivingResources(scenario),
+    );
   });
 });
