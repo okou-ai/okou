@@ -544,7 +544,7 @@ impl Authority {
         };
         let report = async {
             let body = serde_json::to_value(request).ok()?;
-            let request = self
+            let mut request = self
                 .http
                 .json_request(
                     routes::observations::route(routes::observations::Params {
@@ -554,6 +554,7 @@ impl Authority {
                     &body,
                 )
                 .ok()?;
+            crate::authority_response::advertise_device_policy(&mut request);
             let response = self.transport.execute(request).await.ok()?;
             response.status().is_success().then_some(())
         };
@@ -591,19 +592,22 @@ impl Authority {
         &self,
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
-    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>), Failure> {
+    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>, bool), Failure> {
         let body = serde_json::to_value(body).map_err(|_| Failure::Authority)?;
-        let request = self
+        let mut request = self
             .http
             .json_request(route, &self.token, &body)
             .map_err(|_| Failure::Authority)?;
+        crate::authority_response::advertise_device_policy(&mut request);
         let response = self
             .transport
             .execute(request)
             .await
             .map_err(|_| Failure::Authority)?;
+        let device_policy = crate::authority_response::uses_device_policy(&response);
         crate::authority_response::decode(response, "x-vnc-connection-created-at")
             .await
+            .map(|(body, created_at)| (body, created_at, device_policy))
             .map_err(|_| Failure::Authority)
     }
 
@@ -618,7 +622,7 @@ impl Authority {
             tokio::time::Instant,
         )>,
         diagnostic_identity: &mut crate::diagnostics::Identity,
-    ) -> Result<Credential, Failure> {
+    ) -> Result<(Credential, bool), Failure> {
         let mut supported_profiles = vec![
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::None,
@@ -733,7 +737,7 @@ impl Authority {
             },
             supported_profiles,
         };
-        let (mut response, mut created_at) = self
+        let (mut response, mut created_at, mut device_policy) = self
             .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
@@ -756,7 +760,7 @@ impl Authority {
             request
                 .supported_profiles
                 .extend(super::kerberos::profiles(supports_ssh));
-            (response, created_at) = self
+            (response, created_at, device_policy) = self
                 .call::<ResolveResponse>(
                     routes::resolve::route(routes::resolve::Params {
                         run_id: &run.to_string(),
@@ -808,7 +812,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedRsaAes {
                     host,
@@ -827,7 +832,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedAppleVncPassword {
                     host,
@@ -846,7 +852,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedAppleDh {
                     host,
@@ -865,7 +872,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedAppleSrp {
                     host,
@@ -884,7 +892,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedAppleRsaSrp {
                     host,
@@ -903,7 +912,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(|credential| (credential, device_policy));
                 }
                 ResolveResponse::ResolvedTransport {
                     host,
@@ -1018,29 +1028,32 @@ impl Authority {
                 custom_roots(Zeroizing::new(ca_bundle))?
             }
         };
-        Ok(Credential {
-            created_at: created_at.ok_or(Failure::Authority)?,
-            host,
-            port,
-            generation,
-            transport,
-            native,
-            authentication: match authentication {
-                X509Choice::Legacy(authentication) => Authentication::X509 {
-                    server_name,
-                    authentication,
-                    roots,
-                },
-                X509Choice::Certificate(authentication, identity) => {
-                    Authentication::ClientCertificate {
+        Ok((
+            Credential {
+                created_at: created_at.ok_or(Failure::Authority)?,
+                host,
+                port,
+                generation,
+                transport,
+                native,
+                authentication: match authentication {
+                    X509Choice::Legacy(authentication) => Authentication::X509 {
                         server_name,
                         authentication,
                         roots,
-                        identity,
+                    },
+                    X509Choice::Certificate(authentication, identity) => {
+                        Authentication::ClientCertificate {
+                            server_name,
+                            authentication,
+                            roots,
+                            identity,
+                        }
                     }
-                }
+                },
             },
-        })
+            device_policy,
+        ))
     }
 
     pub(super) async fn check(
@@ -1050,6 +1063,7 @@ impl Authority {
         generation: i64,
         transport: Transport,
         kerberos: Option<super::kerberos::Binding>,
+        expected_created_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<(), Failure> {
         let expected_transport = match transport {
             Transport::Direct => CheckRequestExpectedTransport::Direct,
@@ -1111,16 +1125,20 @@ impl Authority {
                 },
             ),
         };
-        match self
+        let (response, created_at, _) = self
             .call::<CheckResponse>(
                 routes::check::route(routes::check::Params {
                     run_id: &run.to_string(),
                 }),
                 &request,
             )
-            .await?
-            .0
-        {
+            .await?;
+        match response {
+            CheckResponse::Valid
+                if expected_created_at.is_some() && expected_created_at != created_at =>
+            {
+                Err(Failure::ConfigurationChanged)
+            }
             CheckResponse::Valid => Ok(()),
             CheckResponse::Unavailable => Err(Failure::Unavailable),
             CheckResponse::ConfigurationChanged => Err(Failure::ConfigurationChanged),

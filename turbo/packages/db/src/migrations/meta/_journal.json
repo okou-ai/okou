@@ -3935,6 +3935,20 @@
       "when": 1795664181111,
       "tag": "1640_phone_use_operation_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 1641,
+      "version": "7",
+      "when": 1795671256445,
+      "tag": "1641_remote_device_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1642,
+      "version": "7",
+      "when": 1795671303566,
+      "tag": "1642_require_remote_device_association",
+      "breakpoints": true
     }
   ]
 }

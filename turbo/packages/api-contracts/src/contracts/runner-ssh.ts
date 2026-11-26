@@ -135,6 +135,28 @@ const pinResponseSchema = discriminatedUnion("outcome", [
 ]);
 
 export const runnerSshContract = c.router({
+  check: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/ssh/check",
+    pathParams: object({ runId: uuid() }).strict(),
+    headers: authHeadersSchema,
+    body: resolveRequestSchema
+      .extend({
+        expectedGeneration: generationSchema,
+        expectedCreatedAt: iso.datetime(),
+      })
+      .strict(),
+    responses: {
+      200: object({
+        outcome: zEnum(["valid", "unavailable", "configuration_changed"]),
+      }).strict(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Check current authority for retained SSH operations",
+  },
   observe: {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",

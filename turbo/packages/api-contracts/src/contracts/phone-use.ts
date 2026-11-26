@@ -228,7 +228,11 @@ export const phoneUseContract = c.router({
     ...base,
     method: "POST",
     path: "/api/phone-use/operations",
-    body: object({ id: uuid(), action: phoneActionSchema }),
+    body: object({
+      id: uuid(),
+      deviceId: uuid().optional(),
+      action: phoneActionSchema,
+    }),
     responses: { ...errors, 200: phoneOperationResponseSchema },
   },
   get: {

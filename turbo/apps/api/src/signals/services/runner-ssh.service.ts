@@ -20,23 +20,23 @@ import {
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { and, eq, or, sql, isNotNull } from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { commitRunnerSshPinAttempt$ } from "./runner-ssh-pin.service";
 import { commitRunnerSshObservationAttempt$ } from "./runner-ssh-observation.service";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
+import { remoteDeviceMode } from "./remote-device-access";
 import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 
-type SshResolveInput = RunnerSshResolveRequest & {
+interface RunnerSshContext {
   readonly runId: string;
-};
-type SshPinInput = RunnerSshPinRequest & {
-  readonly runId: string;
-};
-type SshObservationInput = RunnerSshObservationRequest & {
-  readonly runId: string;
-};
+  readonly supportsDevicePolicy?: boolean;
+}
+type SshResolveInput = RunnerSshResolveRequest & RunnerSshContext;
+type SshPinInput = RunnerSshPinRequest & RunnerSshContext;
+type SshObservationInput = RunnerSshObservationRequest & RunnerSshContext;
 const unavailable = Object.freeze({ outcome: "unavailable" as const });
 
 // Shared schema selections and predicates are pure data, never query executors.
@@ -44,6 +44,7 @@ const connectionFields = Object.freeze({
   id: sshConnections.id,
   orgId: agentRuns.orgId,
   userId: agentRuns.userId,
+  remoteDeviceMode: remoteDeviceMode(agentRuns),
   host: sshConnections.host,
   port: sshConnections.port,
   username:
@@ -119,9 +120,41 @@ function runAuthority(input: SshResolveInput) {
       agentRuns.runnerHeartbeatGeneration,
       input.runnerIdentity.heartbeatGeneration,
     ),
-    runThreadSshAccess(),
+    runThreadSshAccess(sshConnections, input.supportsDevicePolicy === true),
   );
 }
+
+export const checkRunnerSsh$ = command(
+  async (
+    { get },
+    input: SshResolveInput & {
+      readonly expectedGeneration: number;
+      readonly expectedCreatedAt: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const [row] = await get(db$)
+      .select({
+        configurationMatches:
+          sql`${sshConnections.generation} = ${input.expectedGeneration}
+          AND ${sshConnections.createdAt} = ${input.expectedCreatedAt}::timestamp`.mapWith(
+            pgBooleanDecoder,
+          ),
+      })
+      .from(agentRuns)
+      .innerJoin(sshConnections, connectionAuthority(input))
+      .where(runAuthority(input));
+    signal.throwIfAborted();
+    if (!row) {
+      return unavailable;
+    }
+    return {
+      outcome: row.configurationMatches
+        ? ("valid" as const)
+        : ("configuration_changed" as const),
+    };
+  },
+);
 
 // Connect the request dependency once, before route commands execute. The
 // joined snapshot is the JIT handoff; KMS never runs under authority locks.

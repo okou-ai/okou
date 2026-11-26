@@ -18,6 +18,8 @@ import { number } from "zod";
 import { env } from "../../lib/env";
 import { nowDateSql } from "../../lib/time";
 import { db$ } from "../external/db";
+import { remoteDeviceMode } from "./remote-device-access";
+import { computerUseRunCommandAllowed } from "./computer-use-device-access";
 
 const storedAppStateTransferSchema = appStateRunnerSchema.extend({
   hostGeneration: number().int().nonnegative(),
@@ -53,7 +55,6 @@ export const currentAppStateTransfer$ = command(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.orgId, agentRuns.orgId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.computerUseHostId, computerUseCommands.hostId),
         ),
       )
       .innerJoin(
@@ -71,6 +72,11 @@ export const currentAppStateTransfer$ = command(
           eq(agentRuns.status, "running"),
           eq(computerUseCommands.kind, "app.state"),
           inArray(computerUseCommands.status, ["queued", "running"]),
+          computerUseRunCommandAllowed(computerUseCommands),
+          or(
+            remoteDeviceMode(computerUseCommands),
+            eq(chatThreads.computerUseHostId, computerUseCommands.hostId),
+          ),
           or(
             eq(computerUseCommands.status, "queued"),
             eq(
@@ -146,6 +152,7 @@ export const selectAppStateTransfer$ = command(
       readonly userId: string;
       readonly runId?: string;
       readonly targetHostId?: string;
+      readonly deviceMode?: boolean;
     },
     host:
       | Pick<
@@ -189,7 +196,9 @@ export const selectAppStateTransfer$ = command(
         chatThreads,
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
-          eq(chatThreads.computerUseHostId, host.id),
+          owner.deviceMode
+            ? undefined
+            : eq(chatThreads.computerUseHostId, host.id),
           eq(chatThreads.orgId, owner.orgId),
           eq(chatThreads.userId, owner.userId),
         ),

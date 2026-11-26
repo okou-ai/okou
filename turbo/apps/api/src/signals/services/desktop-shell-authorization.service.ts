@@ -19,6 +19,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-authorization";
+import { remoteDeviceAllowed, remoteDeviceMode } from "./remote-device-access";
 import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { env } from "../../lib/env";
@@ -34,6 +35,14 @@ import {
 const HOUR_MS = 60 * 60 * 1000;
 type Owner = { readonly orgId: string; readonly userId: string };
 type Row = typeof desktopShellAuthorizations.$inferSelect;
+
+function shellHostAllowed(owner: Owner) {
+  return sql`CASE WHEN ${remoteDeviceMode(owner)}
+    THEN ${remoteDeviceAllowed(computerUseHosts)}
+    ELSE ${chatThreads.computerUseHostId} IS NOT DISTINCT FROM ${computerUseHosts.id} END`.mapWith(
+    pgBooleanDecoder,
+  );
+}
 
 function scope(owner: Owner, chatThreadId: string, computerUseHostId: string) {
   return and(
@@ -64,7 +73,7 @@ export const readDesktopShellAuthorization$ = command(
       .select({
         row: desktopShellAuthorizations,
         computerName: computerUseHosts.displayName,
-        computerUseHostId: chatThreads.computerUseHostId,
+        hostAllowed: shellHostAllowed(owner),
         sourceRunStatus: agentRuns.status,
         chatBusy: exists(
           new QueryBuilder()
@@ -112,7 +121,7 @@ export const readDesktopShellAuthorization$ = command(
     if (!context) {
       return null;
     }
-    const { row, computerUseHostId, sourceRunStatus, chatBusy } = context;
+    const { row, hostAllowed, sourceRunStatus, chatBusy } = context;
     const status = effectiveStatus(row, nowDate());
     const approvalBlockedReason: DesktopShellAuthorization["approvalBlockedReason"] =
       status !== "pending"
@@ -123,7 +132,7 @@ export const readDesktopShellAuthorization$ = command(
                 sourceRunStatus,
               )
             ? "run_active"
-            : computerUseHostId !== row.computerUseHostId
+            : !hostAllowed
               ? "computer_changed"
               : chatBusy
                 ? "chat_busy"
@@ -165,7 +174,6 @@ export const createDesktopShellAuthorization$ = command(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
-          eq(chatThreads.computerUseHostId, args.computerUseHostId),
         ),
       )
       .innerJoin(
@@ -183,6 +191,7 @@ export const createDesktopShellAuthorization$ = command(
           eq(agentRuns.orgId, args.orgId),
           eq(agentRuns.userId, args.userId),
           eq(agentRuns.triggerSource, "web"),
+          shellHostAllowed(args),
         ),
       )
       .limit(1);
@@ -273,14 +282,14 @@ function pendingApprovalCondition(
         .from(chatThreads)
         .innerJoin(
           computerUseHosts,
-          eq(computerUseHosts.id, chatThreads.computerUseHostId),
+          eq(computerUseHosts.id, authorization.computerUseHostId),
         )
         .where(
           and(
             eq(chatThreads.id, authorization.chatThreadId),
             eq(chatThreads.userId, owner.userId),
             eq(chatThreads.orgId, owner.orgId),
-            eq(chatThreads.computerUseHostId, authorization.computerUseHostId),
+            shellHostAllowed(owner),
             eq(computerUseHosts.orgId, owner.orgId),
             eq(computerUseHosts.userId, owner.userId),
             isNull(computerUseHosts.revokedAt),

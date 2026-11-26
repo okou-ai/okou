@@ -71,7 +71,10 @@ export const desktopShellAuthorizationContract = c.router({
     method: "POST",
     path: "/api/computer-use/shell/authorizations",
     headers: authHeadersSchema,
-    body: object({ reason: string().trim().min(1).max(500) }).strict(),
+    body: object({
+      reason: string().trim().min(1).max(500),
+      hostId: uuid().optional(),
+    }).strict(),
     responses,
     summary: "Request one-hour Shell access for the current chat and computer",
   },
