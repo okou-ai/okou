@@ -68,6 +68,26 @@ function linkedAccountOf(fixture: TeamsConnectFixture) {
 }
 
 describe("GET /api/integrations/teams/connect", () => {
+  it("teams-connect-004 shows an unlinked member that Teams is installed but not connected", async () => {
+    const fixture = await linkedAdmin();
+    const memberId = `user_member_${fixture.fixtureId}`;
+    await seedMembers([
+      { orgId: fixture.orgId, userId: fixture.userId, role: "admin" },
+      { orgId: fixture.orgId, userId: memberId, role: "member" },
+    ]);
+
+    const status = await readStatus(memberId, fixture.orgId, "org:member");
+
+    expect(status).toMatchObject({
+      isInstalled: true,
+      isConnected: false,
+      isAdmin: false,
+      linkedAccounts: [],
+    });
+    expect(status.connectUrl).toStrictEqual(expect.any(String));
+    expect(status.installUrl ?? null).toBeNull();
+  });
+
   it("teams-connect-006 keeps a linked identity in its own organization across switches", async () => {
     const fixture = await linkedAdmin();
     const otherOrgId = `org_other_${fixture.fixtureId}`;
