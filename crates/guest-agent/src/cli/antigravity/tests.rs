@@ -102,3 +102,12 @@ fn bad_model_session_and_result_order_cannot_claim_success() {
     assert_eq!(terminal["type"], "result");
     assert!(projection.project_line(&result.to_string()).is_err());
 }
+
+#[test]
+fn runs_commands_without_the_terminal_sandbox_or_permission_prompts() {
+    let settings = super::settings();
+    assert_eq!(settings["enableTerminalSandbox"], false);
+    assert_eq!(settings["toolPermission"], "always-proceed");
+    assert_eq!(settings["allowNonWorkspaceAccess"], true);
+    assert_eq!(settings["artifactReviewPolicy"], "always-proceed");
+}
