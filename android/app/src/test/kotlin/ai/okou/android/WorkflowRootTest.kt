@@ -695,6 +695,9 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         val fieldsBounds = fields.getUnclippedBoundsInRoot()
         val cancel = compose.onNodeWithText("Cancel")
         val cancelBounds = cancel.getUnclippedBoundsInRoot()
+        for (label in listOf("Save", "Cancel")) {
+            compose.onNodeWithText(label, useUnmergedTree = true).assertLabelLarge()
+        }
         save.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         val selection =
             instruction.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
