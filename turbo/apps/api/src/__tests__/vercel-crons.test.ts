@@ -12,6 +12,7 @@ import {
   cronComputerUseScreenshotCleanupContract,
   cronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract,
+  cronProactiveContract,
   cronMonitorChatEventQueueContract,
   cronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract,
@@ -83,6 +84,7 @@ const expectedVercelCrons = [
     path: cronRetainChatEventsContract.retain.path,
     schedule: "* * * * *",
   },
+  { path: cronProactiveContract.compare.path, schedule: "* * * * *" },
   {
     path: cronExecuteWorkflowAutomationsContract.execute.path,
     schedule: "* * * * *",

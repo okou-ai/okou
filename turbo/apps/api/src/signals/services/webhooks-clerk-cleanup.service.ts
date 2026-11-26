@@ -6,6 +6,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { proactiveSchedules } from "@okouai/db/schema/proactive-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -68,7 +69,18 @@ const stopClerkDeletedOwnerSchedules$ = command(
   async ({ set }, owner: DeletedOwner, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     const stoppedAt = nowDate();
+    const removedSchedules = db.$with("removed_proactive_schedules").as(
+      db
+        .delete(proactiveSchedules)
+        .where(
+          owner.kind === "user"
+            ? eq(proactiveSchedules.userId, owner.userId)
+            : eq(proactiveSchedules.orgId, owner.orgId),
+        )
+        .returning({ task: proactiveSchedules.task }),
+    );
     await db
+      .with(removedSchedules)
       .update(workflowAutomations)
       .set({ enabled: false, updatedAt: stoppedAt })
       .where(

@@ -3970,6 +3970,13 @@
       "when": 1795674897721,
       "tag": "1645_enable_antigravity_routes",
       "breakpoints": true
+    },
+    {
+      "idx": 1646,
+      "version": "7",
+      "when": 1795679021280,
+      "tag": "1646_prepare_proactive_schedules",
+      "breakpoints": true
     }
   ]
 }
