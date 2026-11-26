@@ -7562,7 +7562,7 @@
       "clearSearch": "Cancella ricerca",
       "createdBy": "Creato da",
       "createInChat": "Crea nella chat",
-      "description": "Una SOP riutilizzabile per un'attività. Scrivine uno da zero o distillalo dal tuo lavoro quotidiano, quindi eseguilo, modificalo o automatizzalo.",
+      "description": "Una SOP riutilizzabile per un'attività. Eseguila, modificala o automatizzala.",
       "empty": {
         "all": "Crea un flusso di lavoro dalla chat o salvane uno da una esecuzione utile.",
         "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",

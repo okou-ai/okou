@@ -7480,7 +7480,7 @@
       "clearSearch": "Suche löschen",
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
-      "description": "Eine wiederverwendbare SOP für eine Aufgabe. Schreiben Sie eines von Grund auf oder destillieren Sie es aus Ihrer täglichen Arbeit und führen Sie es dann aus, bearbeiten oder automatisieren Sie es.",
+      "description": "Eine wiederverwendbare SOP für eine Aufgabe. Ausführen, bearbeiten oder automatisieren.",
       "empty": {
         "all": "Erstellen Sie einen Workflow aus dem Chat oder speichern Sie einen aus einer nützlichen Ausführung.",
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",

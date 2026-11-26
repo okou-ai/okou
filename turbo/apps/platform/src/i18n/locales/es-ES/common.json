@@ -7562,7 +7562,7 @@
       "clearSearch": "Borrar búsqueda",
       "createdBy": "Creado por",
       "createInChat": "Crear en el chat",
-      "description": "Un procedimiento operativo reutilizable para una tarea. Escríbelo desde cero o extráelo de tu trabajo diario; después ejecútalo, edítalo o automatízalo.",
+      "description": "Un procedimiento operativo reutilizable para una tarea. Ejecútalo, edítalo o automatízalo.",
       "empty": {
         "all": "Crea un flujo de trabajo desde el chat o guarda uno a partir de una ejecución útil.",
         "automated": "Si añades una automatización a un flujo de trabajo, aparece aquí.",

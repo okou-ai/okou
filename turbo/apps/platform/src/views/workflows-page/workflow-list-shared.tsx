@@ -537,11 +537,9 @@ export function useImportSkills(): () => void {
 export function WorkflowsHeaderActions({
   onImportSkills,
   redesigned = false,
-  className,
 }: {
   readonly onImportSkills: () => void;
   readonly redesigned?: boolean;
-  readonly className?: string;
 }) {
   const { t } = useTranslation();
   const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
@@ -551,7 +549,6 @@ export function WorkflowsHeaderActions({
       className={cn(
         "flex shrink-0 items-center gap-2",
         redesigned && "max-w-full flex-wrap",
-        className,
       )}
     >
       <Button
