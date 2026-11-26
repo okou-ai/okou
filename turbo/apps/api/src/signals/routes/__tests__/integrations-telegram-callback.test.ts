@@ -1,5 +1,6 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { runInNewContext } from "node:vm";
+import { DomUtils, parseDocument } from "htmlparser2";
 import { expect, test } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -62,7 +63,15 @@ function runCallbackPage(
   url: string,
   opener: OpenerWindow | null,
 ) {
-  const script = /<script>([\s\S]*?)<\/script>/u.exec(html)?.[1];
+  const parsed = parseDocument(html);
+  const scriptElement = DomUtils.findOne(
+    (element) => {
+      return element.name.toLowerCase() === "script";
+    },
+    parsed.children,
+    true,
+  );
+  const script = scriptElement ? DomUtils.textContent(scriptElement) : "";
   if (!script) {
     throw new Error("Expected the callback page to carry its script");
   }
