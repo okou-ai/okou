@@ -1,5 +1,6 @@
 import {
   createHash,
+  createPublicKey,
   generateKeyPairSync,
   type KeyObject,
   randomUUID,
@@ -38,13 +39,24 @@ const rsa2048 = generateKeyPairSync("rsa", {
   publicExponent: 65_537,
 });
 
-const KEYS = Object.freeze({
-  rsa1024Spki: generateKeyPairSync("rsa", {
-    modulusLength: 1024,
-    publicExponent: 65_537,
+function buildRsa1024Spki(): string {
+  const modulus = Buffer.alloc(128, 0x55);
+  modulus[0] = 0x80;
+  modulus[127] = 0x01;
+  return createPublicKey({
+    format: "jwk",
+    key: {
+      kty: "RSA",
+      n: modulus.toString("base64url"),
+      e: "AQAB",
+    },
   })
-    .publicKey.export({ format: "pem", type: "spki" })
-    .toString(),
+    .export({ format: "pem", type: "spki" })
+    .toString();
+}
+
+const KEYS = Object.freeze({
+  rsa1024Spki: buildRsa1024Spki(),
   rsa2048Exp3Spki: generateKeyPairSync("rsa", {
     modulusLength: 2048,
     publicExponent: 3,

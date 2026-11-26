@@ -1096,8 +1096,8 @@ src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concur
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-006	selected	business-rule
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-007	selected	business-rule
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-008	not-selected	
-src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-009	not-selected	
-src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-010	not-selected	
+src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-009	selected	business-rule
+src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-010	selected	business-rule
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-011	not-selected	
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-012	not-selected	
 src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-013	selected	business-rule
@@ -1279,12 +1279,12 @@ src/signals/routes/__tests__/billing-status.test.ts	billing-status-006	selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-007	selected	business-rule
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-008	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-009	selected	business-rule
-src/signals/routes/__tests__/billing-status.test.ts	billing-status-010	not-selected	
+src/signals/routes/__tests__/billing-status.test.ts	billing-status-010	selected	business-rule
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-011	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-012	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-013	selected	business-rule
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-014	selected	visible-result
-src/signals/routes/__tests__/billing-status.test.ts	billing-status-015	not-selected	
+src/signals/routes/__tests__/billing-status.test.ts	billing-status-015	selected	business-rule
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-016	selected	visible-result
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-017	selected	visible-result
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-018	selected	access-isolation
@@ -1296,7 +1296,7 @@ src/signals/routes/__tests__/billing-status.test.ts	billing-status-023	not-selec
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-024	not-selected	
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-025	selected	visible-result
 src/signals/routes/__tests__/billing-status.test.ts	billing-status-026	selected	visible-result
-src/signals/routes/__tests__/billing-status.test.ts	billing-status-027	not-selected	
+src/signals/routes/__tests__/billing-status.test.ts	billing-status-027	selected	visible-result
 src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-001	selected	business-rule
 src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-002	selected	business-rule
 src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-003	selected	access-isolation
@@ -7195,7 +7195,7 @@ src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-work
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-001	selected	core-path
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-002	not-selected	
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-003	selected	business-rule
-src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-004	not-selected	
+src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-004	selected	business-rule
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resource-usage-001	selected	access-isolation
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resource-usage-002	selected	access-isolation
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	webhooks-x-resource-usage-003	selected	access-isolation
