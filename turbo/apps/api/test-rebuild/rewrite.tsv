@@ -1218,15 +1218,15 @@ connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	con
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-004	rewritten	69.7		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-005	rewritten	68.9		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-006	rewritten	173.3		src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-001	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-003	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-004	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-005	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-012	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-013	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-014	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-015	planned				B03
-connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-016	planned				B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-001	rewritten	111.5		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-003	rewritten	76.8		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-004	rewritten	61.3		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-005	rewritten	73.0		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-012	rewritten	63.2		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-013	rewritten	61.6		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-014	rewritten	44.5		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-015	rewritten	75.7		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
+connectors	src/signals/routes/__tests__/connectors-https-return.test.ts	connectors-https-return-016	rewritten	39.4		src/signals/routes/__tests__/connectors-https-return.test.ts	B03
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-001	rewritten	42.2	extension after sandbox reset	src/signals/routes/__tests__/connectors-list.test.ts	pilot
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-002	rewritten	62.4	extension after sandbox reset	src/signals/routes/__tests__/connectors-list.test.ts	pilot
 connectors	src/signals/routes/__tests__/connectors-list.test.ts	connectors-list-003	rewritten	50.4	extension after sandbox reset	src/signals/routes/__tests__/connectors-list.test.ts	pilot
