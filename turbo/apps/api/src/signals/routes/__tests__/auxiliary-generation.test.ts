@@ -169,11 +169,16 @@ test("titles a voice-only conversation from its private recordings in order", as
 
   expect(titleRequests).toHaveLength(1);
   const parts = titleRequests[0]?.contents[0]?.parts ?? [];
-  expect(parts.flatMap((part) => part.inlineData ?? [])).toStrictEqual(
-    recordings.map((recording) => ({
-      mimeType: "audio/wav",
-      data: Buffer.from(recording).toString("base64"),
-    })),
+  const audioParts = parts.flatMap((part) => {
+    return part.inlineData ?? [];
+  });
+  expect(audioParts).toStrictEqual(
+    recordings.map((recording) => {
+      return {
+        mimeType: "audio/wav",
+        data: Buffer.from(recording).toString("base64"),
+      };
+    }),
   );
   expect(parts[0]?.text).not.toContain("okou transcribe");
   await expect(chat.titles()).resolves.toStrictEqual([title]);
