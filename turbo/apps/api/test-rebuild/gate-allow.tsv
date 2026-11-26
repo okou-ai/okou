@@ -58,3 +58,10 @@ mail-039	Unhandled request error: Gmail rejected the draft send \(HTTP 400; reas
 mail-030	Unhandled request error: Failed to read Gmail draft \(HTTP 403\)	Given: Gmail answers the draft read with a non-scope 403; the Then expects the server error
 image-io-generate-048	Fal built-in generation webhook reported failed generation	Given: Fal posts a failure callback with status ERROR and error Invalid status code: 403
 image-io-generate-079	Fal image queue request failed	Given: Fal rejects the image submission with HTTP 429; the Then expects HTTP 502 FAL_IMAGE_REQUEST_FAILED
+integrations.bdd-066	Unhandled request error: AgentPhone send response is missing a message id	Given: AgentPhone omits message id; the Then expects undeclared HTTP 500
+integrations.bdd-066	AgentPhone send message failed	Given: AgentPhone returns HTTP 503; the Then expects HTTP 502 AGENTPHONE_ERROR
+integrations.bdd-066	AgentPhone verification text provider rejected send	Given: AgentPhone returns HTTP 503 during start-link; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
+integrations.bdd-066	Rejected AgentPhone webhook	Given: webhook receives missing message id, missing agent id, and invalid recipient; the Then expects HTTP 500
+agentphone.bdd-063	AgentPhone send message failed	Given: AgentPhone rejects plain-text greeting with HTTP 422 INBOUND_ONLY
+agentphone.bdd-144	AgentPhone conversation lookup failed	Given: AgentPhone roster lookup returns HTTP 404, 503, and network errors
+agentphone.bdd-145	AgentPhone verification text send failed	Given: AgentPhone send fails with network error; the Then expects HTTP 503 PROVIDER_UNAVAILABLE
