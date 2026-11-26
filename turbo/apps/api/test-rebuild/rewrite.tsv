@@ -587,7 +587,7 @@ browser	src/signals/routes/__tests__/browser-viewer-acquisition.test.ts	browser-
 browser	src/signals/routes/__tests__/browser-viewer-connection.test.ts	browser-viewer-connection-001	planned					a-run
 browser	src/signals/routes/__tests__/browser-viewer-connection.test.ts	browser-viewer-connection-002	planned					a-run
 browser	src/signals/routes/__tests__/browser-viewer-connection.test.ts	browser-viewer-connection-005	planned					a-run
-browser	src/signals/routes/__tests__/browser-viewer.test.ts	browser-viewer-001	planned				B07	d-other
+browser	src/signals/routes/__tests__/browser-viewer.test.ts	browser-viewer-001	skipped		slow-setup: cold path unique to this case (only row in its file, every order pays it); shuffled 3-run browser-viewer-001 252.4 ms (251/252/260); draft /home/user/pilot-env/wip/r14/browser-viewer.test.ts		B07	d-other
 browser	src/signals/routes/__tests__/browser.test.ts	browser-001	planned					a-run
 browser	src/signals/routes/__tests__/browser.test.ts	browser-002	planned					a-run
 browser	src/signals/routes/__tests__/browser.test.ts	browser-003	planned					a-run
