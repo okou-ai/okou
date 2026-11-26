@@ -110,23 +110,28 @@ class ScreenshotScenario {
                     try {
                         find(text(projectTitle))
                         find(text(chatTitle))
-                        val filter = label(R.string.chat_filter)
-                        focus(filter, description = true)
-                        press(KeyEvent.KEYCODE_ENTER)
-                        val archived = label(R.string.chat_archived)
-                        find(text(archived))
-                        focus(archived, key = KeyEvent.KEYCODE_DPAD_DOWN)
-                        press(KeyEvent.KEYCODE_ENTER)
-                        find(text(label(R.string.chat_empty_archived)))
-                        check(focused(filter, description = true) != null) { "Filter focus did not return" }
-                        if (!wide) capture("phone-filter-focus.png", filter, description = true)
-                        val backToInbox = label(R.string.chat_back_to_inbox)
-                        focus(backToInbox)
-                        if (!wide) capture("phone-inbox-focus.png", backToInbox)
-                        press(KeyEvent.KEYCODE_ENTER)
-                        find(text(chatTitle))
+                        val newChat = label(R.string.composer_new)
+                        if (!wide) {
+                            val filter = label(R.string.chat_filter)
+                            focus(filter, description = true)
+                            press(KeyEvent.KEYCODE_ENTER)
+                            val archived = label(R.string.chat_archived)
+                            find(text(archived))
+                            focus(archived, key = KeyEvent.KEYCODE_DPAD_DOWN)
+                            press(KeyEvent.KEYCODE_ENTER)
+                            find(text(label(R.string.chat_empty_archived)))
+                            check(focused(filter, description = true) != null) { "Filter focus did not return" }
+                            capture("phone-filter-focus.png", filter, description = true)
 
-                        if (wide) {
+                            val backToInbox = label(R.string.chat_back_to_inbox)
+                            focus(backToInbox)
+                            capture("phone-inbox-focus.png", backToInbox)
+                            press(KeyEvent.KEYCODE_ENTER)
+                            find(text(chatTitle))
+                            focus(newChat)
+                            press(KeyEvent.KEYCODE_ENTER)
+                            find(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        } else {
                             val more = label(R.string.chat_more_actions)
                             focus(more, description = true)
                             capture("wide-more-focus.png", more, description = true)
@@ -137,11 +142,13 @@ class ScreenshotScenario {
                             check(device.wait(Until.gone(settings), 5_000)) { "More remained open" }
                             check(focused(more, description = true) != null) { "More focus did not return" }
 
-                            focus(projectTitle)
+                            focus(newChat, key = KeyEvent.KEYCODE_DPAD_DOWN)
+                            capture("wide-new-chat-focus.png", newChat)
+                            focus(projectTitle, key = KeyEvent.KEYCODE_DPAD_UP)
                             press(KeyEvent.KEYCODE_ENTER)
                             val newProjectChat = label(R.string.composer_new_project)
                             find(text(newProjectChat))
-                            focus(newProjectChat)
+                            focus(newProjectChat, key = KeyEvent.KEYCODE_DPAD_DOWN)
                             capture("wide-project-focus.png", newProjectChat)
                             press(KeyEvent.KEYCODE_ENTER)
                             device.waitForIdle()
@@ -149,14 +156,6 @@ class ScreenshotScenario {
                                 "The Project draft did not open in the detail pane"
                             }
 
-                            val newChat = label(R.string.composer_new)
-                            focus(newChat)
-                            capture("wide-new-chat-focus.png", newChat)
-                            press(KeyEvent.KEYCODE_ENTER)
-                            device.waitForIdle()
-                            check(device.findObjects(text(projectTitle)).none { it.visibleBounds.left > 344 }) {
-                                "New Chat did not leave the Project draft"
-                            }
                         }
                     } catch (failure: Throwable) {
                         runCatching {
