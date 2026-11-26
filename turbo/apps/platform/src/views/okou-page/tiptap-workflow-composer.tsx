@@ -200,8 +200,10 @@ function WorkflowComposerPlaceholder({
  * `rounded-md` radius on the `xs` neutral button's 28px height. On keyboard
  * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`;
  * the Kbd takes `bg-gray-200` because `bg-muted` (gray-100) does not read on
- * the gray-50 control surface. Touch devices have no Tab key, so they keep the
- * plain label.
+ * the gray-50 control surface, and `font-mono` so the key name reads as a key.
+ * The hairline takes `border-border` rather than the control's gray-400, so it
+ * sits at the same weight as the composer frame around it. Touch devices have
+ * no Tab key, so they keep the plain label.
  */
 function FollowupAcceptButton({
   onAccept,
@@ -216,7 +218,7 @@ function FollowupAcceptButton({
       variant="neutral"
       size="xs"
       className={cn(
-        "pointer-events-auto shrink-0 rounded-md text-[13px]",
+        "pointer-events-auto shrink-0 rounded-md border-border text-[13px]",
         !touch && "pr-1",
       )}
       aria-label={t(($) => {
@@ -233,7 +235,7 @@ function FollowupAcceptButton({
           {t(($) => {
             return $.chat.composer.followupAcceptLabel;
           })}
-          <Kbd aria-hidden="true" className="bg-gray-200">
+          <Kbd aria-hidden="true" className="bg-gray-200 font-mono">
             {t(($) => {
               return $.chat.composer.followupTabLabel;
             })}
