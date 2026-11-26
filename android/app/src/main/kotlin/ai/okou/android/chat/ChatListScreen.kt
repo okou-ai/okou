@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -239,9 +240,15 @@ internal fun ChatListScreen(
             else -> immediatePlacement
         }
     SideEffect { previousExpansion.ids = savedExpansion }
+    val hasConfirmedChatList = state.confirmedAt != null
     val sections =
-        remember(groups, expandedProjectIds, pendingByProject) {
-            chatListSections(groups, expandedProjectIds, pendingByProject)
+        remember(groups, expandedProjectIds, pendingByProject, hasConfirmedChatList) {
+            chatListSections(
+                groups,
+                expandedProjectIds,
+                pendingByProject,
+                hasConfirmedChatList = hasConfirmedChatList,
+            )
         }
     val collapsedActivity =
         remember(sections, indicators, unreadChatIds) {
@@ -570,6 +577,7 @@ internal fun ChatListScreen(
                                         R.string.composer_new_project,
                                         icon = R.drawable.ic_add,
                                         enabled = newChatEnabled,
+                                        colors = ButtonDefaults.textButtonColors(),
                                     ) {
                                         newChat(project.id)
                                     }
@@ -699,7 +707,11 @@ private fun ChatListEmptyState(filter: ChatListFilter, showInbox: () -> Unit) {
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
         if (filter != ChatListFilter.Inbox) {
-            ChatListTextAction(R.string.chat_back_to_inbox, onClick = showInbox)
+            ChatListTextAction(
+                R.string.chat_back_to_inbox,
+                colors = ButtonDefaults.textButtonColors(),
+                onClick = showInbox,
+            )
         }
     }
 }
@@ -1321,6 +1333,8 @@ internal fun ChatListTextAction(
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
+    colors: ButtonColors =
+        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     onClick: () -> Unit,
 ) {
     TextButton(
@@ -1329,8 +1343,7 @@ internal fun ChatListTextAction(
         modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        colors =
-            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors = colors,
     ) {
         if (icon != null) {
             Icon(painterResource(icon), null, Modifier.size(16.dp))
