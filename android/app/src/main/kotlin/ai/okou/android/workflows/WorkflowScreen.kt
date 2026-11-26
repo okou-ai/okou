@@ -64,6 +64,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
@@ -74,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -991,20 +993,22 @@ private fun WorkflowUseBar(
     ) {
         if (notice != null) WorkflowNotice(notice, PaddingValues(bottom = 8.dp))
         val actionFocus = rememberWorkflowReturnFocus(restoreFocus, enabled, onFocusRestored)
-        OkouActionButton(
-            stringResource(R.string.workflow_use_in_chat),
-            { onUse(actionFocus.keyboardFocused) },
-            enabled = enabled && !pending,
-            retainDisabledFocus = enabled && pending,
-            modifier =
-                actionFocus.modifier
-                    .updateFocusOutline(
-                        ButtonDefaults.shape,
-                        if (pending) colors.onBackground else colors.onPrimary,
-                    )
-                    .then(if (wide) Modifier else Modifier.fillMaxWidth())
-                    .testTag("workflow_use"),
-        )
+        WorkflowActionRipple(pending) {
+            OkouActionButton(
+                stringResource(R.string.workflow_use_in_chat),
+                { onUse(actionFocus.keyboardFocused) },
+                enabled = enabled && !pending,
+                retainDisabledFocus = enabled && pending,
+                modifier =
+                    actionFocus.modifier
+                        .updateFocusOutline(
+                            ButtonDefaults.shape,
+                            if (pending) colors.onBackground else colors.onPrimary,
+                        )
+                        .then(if (wide) Modifier else Modifier.fillMaxWidth())
+                        .testTag("workflow_use"),
+            )
+        }
     }
 }
 
@@ -1188,7 +1192,7 @@ internal fun WorkflowAction(
     enabled: Boolean = true,
     @StringRes pendingStatus: Int? = null,
     showPendingProgress: Boolean = true,
-) {
+) = WorkflowActionRipple(pendingStatus != null) {
     val colors = MaterialTheme.colorScheme
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     val pending = pendingStatus != null
@@ -1237,6 +1241,16 @@ internal fun WorkflowAction(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkflowActionRipple(pending: Boolean, content: @Composable () -> Unit) {
+    // Pending actions retain the Material button's focus target and draw their own focus outline.
+    CompositionLocalProvider(
+        LocalRippleConfiguration provides if (pending) null else LocalRippleConfiguration.current,
+        content = content,
+    )
 }
 
 @Composable
