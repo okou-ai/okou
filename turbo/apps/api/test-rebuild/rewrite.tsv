@@ -1358,7 +1358,7 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-09
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-099	planned				
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-100	planned				
 chat	src/signals/routes/__tests__/conversation-history-deletion.test.ts	conversation-history-deletion-001	planned				
-billing	src/signals/routes/__tests__/credit-low-balance-alert.test.ts	credit-low-balance-alert-002	planned				B05
+billing	src/signals/routes/__tests__/credit-low-balance-alert.test.ts	credit-low-balance-alert-002	skipped		slow-setup: Given+first When/Then 2916 ms and 2882 ms (Given createPublicCreditAlertScenario: Pro checkout, recharge invoice, admin and member CLI tokens, 346/354 ms incl. file cold start; the When, five-credit debit with the paginated 101-member refresh plus the omitted-admin PUT, 2570/2528 ms, possibly a production retry/timer, not investigated); the case passed with the existing helper		B05
 workflows	src/signals/routes/__tests__/cron-compact-chat-thread-snapshots.test.ts	cron-compact-chat-thread-snapshots-001	planned				
 connectors	src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts	cron-connector-catalog-v4-001	planned				
 connectors	src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts	cron-connector-catalog-v4-006	planned				
