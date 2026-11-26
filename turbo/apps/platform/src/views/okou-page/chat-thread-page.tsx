@@ -6156,6 +6156,11 @@ function RefreshedSelectablePagedGroupRow({
           phase,
           hasSelection,
         })}
+        onClick={(event) => {
+          if (phase === "selecting" && isShareGroupSelectionClick(event)) {
+            toggleGroup();
+          }
+        }}
       >
         <ShareGroupSelectionColumn role={group.role} {...selection} />
         <div className={cn("min-w-0", !nameLine && "@[900px]:pl-[46px]")}>
@@ -6163,6 +6168,31 @@ function RefreshedSelectablePagedGroupRow({
         </div>
       </div>
     </>
+  );
+}
+
+/** Extend the checkbox's hit area while embedded controls, text selection,
+ * and checkbox keyboard activation retain their own behavior. */
+function isShareGroupSelectionClick(event: ReactMouseEvent<HTMLDivElement>) {
+  if (
+    event.defaultPrevented ||
+    !(event.target instanceof Element) ||
+    !event.currentTarget.contains(event.target)
+  ) {
+    return false;
+  }
+  const control = event.target.closest(
+    "a, button, input, select, textarea, label, summary, audio, video, [role=button], [role=link], [tabindex], [contenteditable], [data-chat-share-selection]",
+  );
+  if (control && event.currentTarget.contains(control)) {
+    return false;
+  }
+  const selection = event.currentTarget.ownerDocument.getSelection();
+  return !(
+    selection &&
+    !selection.isCollapsed &&
+    selection.rangeCount > 0 &&
+    selection.getRangeAt(0).intersectsNode(event.currentTarget)
   );
 }
 
@@ -6407,7 +6437,7 @@ function ShareGroupSelectionColumn({
           // Once the link exists the selection is the record of what was
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
-          className="h-5 w-5"
+          className="h-5 w-5 border-1 border-control-border"
           onCheckedChange={onToggle}
         />
       </span>
