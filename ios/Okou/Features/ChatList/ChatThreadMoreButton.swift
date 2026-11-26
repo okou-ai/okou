@@ -7,20 +7,24 @@ struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
   @State private var membershipThread: ChatThread?
-  /// The confirmed chats, kept in the workspace session's Store.
+  /// The confirmed chats and the list status, kept in the workspace session's Store.
   @ResolvedValue private var threads: [ChatThread]?
+  @ResolvedValue private var status: ThreadListStore.Status?
 
   init(store: WorkspaceStore, threadID: String) {
     self.store = store
     self.threadID = threadID
     _threads = ResolvedValue(store.list.threadsValue)
+    _status = ResolvedValue(store.list.statusValue)
   }
 
   var body: some View {
     if let thread = (threads ?? store.list.threads).first(where: { $0.id == threadID }) {
-      // A changed chat rebuilds the menu, since the control receives it as a value.
+      // A changed chat or list status rebuilds the menu, since the control receives them as
+      // values.
       ChatThreadMoreControl(
-        store: store, thread: thread, moveToProject: { membershipThread = $0 }
+        store: store, thread: thread, status: status ?? store.list.status,
+        moveToProject: { membershipThread = $0 }
       )
       .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
       .chatProjectMembershipPicker(workspace: store, thread: $membershipThread)
@@ -31,6 +35,8 @@ struct ChatThreadMoreButton: View {
 private struct ChatThreadMoreControl: UIViewRepresentable {
   let store: WorkspaceStore
   let thread: ChatThread
+  /// The menu's items depend on mark-all-read and rename saving; the menu reads them when built.
+  let status: ThreadListStore.Status
   let moveToProject: (ChatThread) -> Void
 
   func makeUIView(context: Context) -> UIButton {

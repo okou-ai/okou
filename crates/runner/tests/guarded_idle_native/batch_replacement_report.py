@@ -11,7 +11,7 @@ import pressure_report as pressure
 import report
 import status_evidence
 from cleanup_report import COUNTS, accounting, exact_coverage, has_accounting_shape, supplied_policy
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
 CASES = {f"BatchReplacement-{mode}" for mode in ("fresh", "snapshot")}
@@ -74,9 +74,9 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
                 or operation in operations or operation == reuse.removeprefix(report.GUARDED_IDLE_REUSE_KEY_PREFIX)):
             raise ValueError("replacement reused original/incoming operation or physical identity")
         identities.update((new,backing,operation)); operations.add(operation)
-        begin = batch.clock(prep.get("grant_started_ns"),terminal[1]["monotonic_ns"],events[0]["monotonic_ns"])
-        granted = batch.clock(prep.get("grant_finished_ns"),begin,events[0]["monotonic_ns"])
-        prepared = batch.clock(prep.get("prepared_ns"),granted,events[0]["monotonic_ns"])
+        begin = clock(prep.get("grant_started_ns"),terminal[1]["monotonic_ns"],events[0]["monotonic_ns"])
+        granted = clock(prep.get("grant_finished_ns"),begin,events[0]["monotonic_ns"])
+        prepared = clock(prep.get("prepared_ns"),granted,events[0]["monotonic_ns"])
         exact(prep,{"sandbox_id":new,"backing_generation":backing,"operation_id":operation,
             "grant_started_ns":begin,"grant_finished_ns":granted,"prepared_ns":prepared,
             "guest_rpc_completed":True,"phase_settled":True,"separate_incoming_lease":True},
@@ -88,32 +88,32 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             "allocated":[4,8192,2],"original_full_lease_active":True,
             "original_exit_polled_pending":True,"incoming_exit_polled_pending":True},
             "replacement old admission lost original or incoming full custody")
-        insertion = batch.clock(tail.get("insertion_started_ns"),events[0]["monotonic_ns"],terminal[2]["monotonic_ns"])
+        insertion = clock(tail.get("insertion_started_ns"),events[0]["monotonic_ns"],terminal[2]["monotonic_ns"])
         revision = tail.get("revision")
         if not pressure.integer(revision,selected+1):
             raise ValueError("same-key replacement did not change insertion revision")
         covered(tail.get("coverage"),policy)
         exact(tail,{"insertion_started_ns":insertion,"revision":revision,"original_exit_confirmed":True,
             "receiver_polled_pending":True,"coverage":tail["coverage"]},"replacement original exit/custody missing")
-        held = batch.clock(pool.get("pool_held_ns"),events[1]["monotonic_ns"],events[2]["monotonic_ns"])
-        polled = batch.clock(pool.get("heartbeat_pending_ns"),held,events[2]["monotonic_ns"])
+        held = clock(pool.get("pool_held_ns"),events[1]["monotonic_ns"],events[2]["monotonic_ns"])
+        polled = clock(pool.get("heartbeat_pending_ns"),held,events[2]["monotonic_ns"])
         foreground.observer(pool.get("observer"),polled,events[2]["monotonic_ns"])
         covered(pool.get("coverage"),policy)
         exact(pool,{"pool_held_ns":held,"heartbeat_pending_ns":polled,"heartbeat_polled_pending":True,
             "observer":pool["observer"],"coverage":pool["coverage"]},"replacement held-pool observer progress missing")
-        released = batch.clock(progress.get("pool_released_ns"),events[2]["monotonic_ns"],events[3]["monotonic_ns"])
+        released = clock(progress.get("pool_released_ns"),events[2]["monotonic_ns"],events[3]["monotonic_ns"])
         first = foreground.heartbeat(progress.get("heartbeat"),1,released,events[3]["monotonic_ns"],(4,8192))
         covered(progress.get("coverage"),policy)
         exact(progress,{"pool_released_ns":released,"heartbeat":progress["heartbeat"],
             "receiver_polled_pending":True,"coverage":progress["coverage"]},"replacement held-IO heartbeat missing")
-        released = batch.clock(saved.get("io_released_ns"),events[3]["monotonic_ns"],terminal[4]["monotonic_ns"])
-        completed = batch.clock(saved.get("retirement_joined_ns"),terminal[4]["monotonic_ns"],events[4]["monotonic_ns"])
+        released = clock(saved.get("io_released_ns"),events[3]["monotonic_ns"],terminal[4]["monotonic_ns"])
+        completed = clock(saved.get("retirement_joined_ns"),terminal[4]["monotonic_ns"],events[4]["monotonic_ns"])
         exact(saved,{"io_released_ns":released,"retirement_joined_ns":completed,"home_cache_promoted":True,
             "original_exit_confirmed":True,"original_lease_released":True,"incoming_exit_polled_pending":True,
             "receiver_polled_pending":True,"allocated":[2,4096,1]},"original saving consumed incoming or lost required home")
-        held = batch.clock(waiting.get("status_held_ns"),events[4]["monotonic_ns"],events[5]["monotonic_ns"])
-        resumed = batch.clock(waiting.get("source_resumed_ns"),held,events[5]["monotonic_ns"])
-        polled = batch.clock(waiting.get("status_wait_polled_ns"),resumed,events[5]["monotonic_ns"])
+        held = clock(waiting.get("status_held_ns"),events[4]["monotonic_ns"],events[5]["monotonic_ns"])
+        resumed = clock(waiting.get("source_resumed_ns"),held,events[5]["monotonic_ns"])
+        polled = clock(waiting.get("status_wait_polled_ns"),resumed,events[5]["monotonic_ns"])
         before,after = waiting.get("status_waits_before"),waiting.get("status_waits_after")
         if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("replacement final status wait not observed")
@@ -134,16 +134,16 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             "status_waits_before":before,"status_waits_after":after,"heartbeat":waiting["heartbeat"],
             "accounting":zero,"samples":samples,"receiver_polled_pending":True,"allocated":[2,4096,1]},
             "replacement final status progress/custody missing")
-        released = batch.clock(refused.get("status_released_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
-        completed = batch.clock(refused.get("batch_joined_ns"),released,events[6]["monotonic_ns"])
+        released = clock(refused.get("status_released_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
+        completed = clock(refused.get("batch_joined_ns"),released,events[6]["monotonic_ns"])
         status_evidence.current_status(refused.get("published_status"),initial,new,reuse)
         exact(refused,{"status_released_ns":released,"batch_joined_ns":completed,"selected":1,"completed":0,
             "uncertain":0,"not_started":1,"status_error":False,"is_complete":False,
             "refused_sandbox_id":identity[0],"refused_reuse_key":reuse,"error":"AccountingChanged",
             "revision":revision,"published_status":refused["published_status"],"regular_file":True,
             "incoming_exit_polled_pending":True,"allocated":[2,4096,1]},"old batch adopted incoming or changed exact refusal")
-        started = batch.clock(retired.get("started_ns"),events[6]["monotonic_ns"],events[7]["monotonic_ns"])
-        completed = batch.clock(retired.get("joined_ns"),started,events[7]["monotonic_ns"])
+        started = clock(retired.get("started_ns"),events[6]["monotonic_ns"],events[7]["monotonic_ns"])
+        completed = clock(retired.get("joined_ns"),started,events[7]["monotonic_ns"])
         status_evidence.current_status(retired.get("published_status"),refused["published_status"])
         exact(retired,{"started_ns":started,"joined_ns":completed,"selected":1,"completed":1,"uncertain":0,
             "not_started":0,"status_error":False,"is_complete":True,"incoming_exit_confirmed":True,

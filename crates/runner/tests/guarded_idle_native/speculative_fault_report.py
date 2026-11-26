@@ -4,13 +4,12 @@
 import hashlib
 import pathlib
 
-import batch_aba_report as batch
 import progress_report as foreground
 import later_parking_report as later
 import report
 import status_evidence
 from cleanup_report import accounting, coverage, supplied_policy
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_SPECULATIVE_FAULT_WITNESS "
 CASES = {f"Speculative{fault}-{mode}" for fault in ("Drop", "Panic") for mode in ("fresh", "snapshot")}
@@ -25,15 +24,15 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
     coverage(tail.get("coverage"), policy, False)
     exact(tail, {"original_exit_confirmed": True, "receiver_polled_pending": True,
                  "coverage": tail["coverage"]}, "speculative required saving lost original exit/custody")
-    held = batch.clock(pool.get("pool_held_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
-    status_held = batch.clock(pool.get("status_held_ns"), held, events[1]["monotonic_ns"])
-    polled = batch.clock(pool.get("heartbeat_pending_ns"), status_held, events[1]["monotonic_ns"])
+    held = clock(pool.get("pool_held_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
+    status_held = clock(pool.get("status_held_ns"), held, events[1]["monotonic_ns"])
+    polled = clock(pool.get("heartbeat_pending_ns"), status_held, events[1]["monotonic_ns"])
     foreground.observer(pool.get("observer"), polled, events[1]["monotonic_ns"])
     coverage(pool.get("coverage"), policy, False)
     exact(pool, {"pool_held_ns": held, "status_held_ns": status_held, "heartbeat_pending_ns": polled,
         "heartbeat_polled_pending": True, "observer": pool["observer"], "coverage": pool["coverage"]},
         "speculative held-pool progress/custody missing")
-    released = batch.clock(progress.get("pool_released_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
+    released = clock(progress.get("pool_released_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
     runner = foreground.heartbeat(progress.get("heartbeat"), sequence, released, events[2]["monotonic_ns"], (2,4096))
     if expected_runner is not None and runner != expected_runner:
         raise ValueError("native wait and saving changed Runner identity")
@@ -45,13 +44,13 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
     exact(progress, {"pool_released_ns": released, "status_held_ns": status_held,
         "heartbeat": progress["heartbeat"], "receiver_polled_pending": True,
         "coverage": progress["coverage"]}, "speculative held-IO/status heartbeat/custody missing")
-    released = batch.clock(saved.get("io_released_ns"), events[2]["monotonic_ns"], terminal[4]["monotonic_ns"])
-    finished = batch.clock(saved.get("saving_joined_ns"), terminal[4]["monotonic_ns"], events[3]["monotonic_ns"])
+    released = clock(saved.get("io_released_ns"), events[2]["monotonic_ns"], terminal[4]["monotonic_ns"])
+    finished = clock(saved.get("saving_joined_ns"), terminal[4]["monotonic_ns"], events[3]["monotonic_ns"])
     accounting(saved.get("accounting"), True)
     exact(saved, {"io_released_ns": released, "saving_joined_ns": finished, "home_cache_promoted": True,
         "original_lease_released": True, "allocated": [0,0,0], "accounting": saved["accounting"]},
         "speculative required data/lease/accounting did not join")
-    polled = batch.clock(status.get("status_wait_polled_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
+    polled = clock(status.get("status_wait_polled_ns"), events[3]["monotonic_ns"], events[4]["monotonic_ns"])
     before, after = status.get("status_waits_before"), status.get("status_waits_after")
     if not status_evidence.status_wait_advanced(before, after):
         raise ValueError("speculative final status wait not positively observed")
@@ -60,8 +59,8 @@ def validate_saving_progress(events, terminal, baseline, policy, identities, run
     exact(status, {"status_wait_polled_ns": polled, "status_waits_before": before,
         "status_waits_after": after, "heartbeat": status["heartbeat"],
         "publication_polled_pending": True, "allocated": [0,0,0]}, "speculative status wait lost progress")
-    released = batch.clock(published.get("status_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
-    finished = batch.clock(published.get("publication_joined_ns"), released, events[5]["monotonic_ns"])
+    released = clock(published.get("status_released_ns"), events[4]["monotonic_ns"], events[5]["monotonic_ns"])
+    finished = clock(published.get("publication_joined_ns"), released, events[5]["monotonic_ns"])
     status_evidence.current_status(published.get("published_status"), baseline)
     exact(published, {"status_released_ns": released, "publication_joined_ns": finished,
         "published_status": published["published_status"], "regular_file": True, "allocated": [0,0,0]},
@@ -108,8 +107,8 @@ def validate(directory):
             replay_error="speculative callback replayed run or resource identity",
             binding_error="speculative callback lost original history/reuse binding",
         )
-        started = batch.clock(waiting.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
-        rpc = batch.clock(waiting.get("rpc_completed_ns"), started, events[1]["monotonic_ns"])
+        started = clock(waiting.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
+        rpc = clock(waiting.get("rpc_completed_ns"), started, events[1]["monotonic_ns"])
         digest = hashlib.sha256(report.history_payload(history)).hexdigest()
         exact(waiting, {"mode": mode, "history_run_id": history, "operation_run_id": operation,
             "reuse_key": reuse, "prepare_started_ns": started, "rpc_completed_ns": rpc,
@@ -118,8 +117,8 @@ def validate(directory):
             "callback_release_withheld": True, "pool_empty": True, "original_full_lease_active": True,
             "original_exit_polled_pending": True, "allocated": [2,4096,1]},
             "callback boundary lacks actual complete original RPC/full ownership")
-        requested = batch.clock(lost.get("failure_requested_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
-        finished = batch.clock(lost.get("failure_joined_ns"), requested, events[2]["monotonic_ns"])
+        requested = clock(lost.get("failure_requested_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
+        finished = clock(lost.get("failure_joined_ns"), requested, events[2]["monotonic_ns"])
         exact(lost, {"failure_requested_ns": requested, "failure_joined_ns": finished,
             "mode": mode, "panic_caught": mode == "panic", "state": "Uncertain",
             "commit_refused": True, "repark_refused": True, "incoming_refused": True,

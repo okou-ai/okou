@@ -2,7 +2,7 @@ import ChatDomain
 import Foundation
 
 extension ThreadListStore {
-  struct RenameRequest: Identifiable {
+  struct RenameRequest: Identifiable, Equatable {
     let id: UUID
     let threadID: String
     var error: String?

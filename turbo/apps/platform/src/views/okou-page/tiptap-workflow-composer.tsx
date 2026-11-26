@@ -15,6 +15,7 @@ import { useEditorState } from "@tiptap/react";
 import {
   Button,
   InlineReferenceContent,
+  Kbd,
   cn,
   Popover,
   useMediaQuery,
@@ -151,7 +152,6 @@ function WorkflowComposerPlaceholder({
   followup: string | undefined;
   acceptFollowup: () => boolean;
 }) {
-  const { t } = useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
   const presentationFormatLoadable = useLastLoadable(presentationOutputFormat$);
@@ -189,27 +189,60 @@ function WorkflowComposerPlaceholder({
             ? composerCreatePlaceholder(createMode, presentationFormat)
             : workflowComposerPlaceholder(sending))}
       </span>
-      {followup && (
-        <Button
-          type="button"
-          variant="neutral"
-          size="xs"
-          className="pointer-events-auto shrink-0"
-          aria-label={t(($) => {
-            return $.chat.composer.useSuggestion;
-          })}
-          onClick={acceptFollowup}
-        >
-          {isMobileTextInputDevice()
-            ? t(($) => {
-                return $.chat.composer.followupTouchLabel;
-              })
-            : t(($) => {
-                return $.chat.composer.followupTabLabel;
-              })}
-        </Button>
-      )}
+      {followup && <FollowupAcceptButton onAccept={acceptFollowup} />}
     </div>
+  );
+}
+
+/**
+ * The follow-up placeholder's accept action. It sits inline after the
+ * suggestion text, so it takes the inline reference chip's 13px label and
+ * `rounded-md` radius on the `xs` neutral button's 28px height. On keyboard
+ * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`.
+ * The Kbd sits inside a control that takes hover and pressed overlays, so its
+ * fill is `bg-nested-fill` rather than `bg-muted`, which does not read on the
+ * gray-50 control surface. The border takes the template pill's translucent
+ * `border-state-pressed` hairline instead of the control's gray-400. Touch
+ * devices have no Tab key, so they keep the plain label.
+ */
+function FollowupAcceptButton({
+  onAccept,
+}: {
+  readonly onAccept: () => boolean;
+}) {
+  const { t } = useTranslation();
+  const touch = isMobileTextInputDevice();
+  return (
+    <Button
+      type="button"
+      variant="neutral"
+      size="xs"
+      className={cn(
+        "pointer-events-auto shrink-0 rounded-md border-state-pressed text-[13px]",
+        !touch && "pr-1",
+      )}
+      aria-label={t(($) => {
+        return $.chat.composer.useSuggestion;
+      })}
+      onClick={onAccept}
+    >
+      {touch ? (
+        t(($) => {
+          return $.chat.composer.followupTouchLabel;
+        })
+      ) : (
+        <>
+          {t(($) => {
+            return $.chat.composer.followupAcceptLabel;
+          })}
+          <Kbd aria-hidden="true" className="bg-nested-fill">
+            {t(($) => {
+              return $.chat.composer.followupTabLabel;
+            })}
+          </Kbd>
+        </>
+      )}
+    </Button>
   );
 }
 

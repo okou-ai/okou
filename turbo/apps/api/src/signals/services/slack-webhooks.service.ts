@@ -47,6 +47,7 @@ import {
   promptSlackArtifactChannelSharing$,
   slackArtifactShareInteraction,
   applySlackArtifactChannelSharing$,
+  refreshSlackArtifactChannelPreview$,
   type SlackArtifactShareInteraction,
 } from "./slack-artifact-channel-sharing.service";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
@@ -1281,6 +1282,7 @@ const processSlackArtifactSharingAction$ = command(
         },
         signal,
       );
+      await set(refreshSlackArtifactChannelPreview$, result.refresh, signal);
     }
     for (const outboxId of result.outboxIds) {
       await set(sendEmailOutboxItem$, outboxId, signal);

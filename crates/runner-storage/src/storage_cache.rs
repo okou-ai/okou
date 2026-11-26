@@ -10,7 +10,8 @@
 //! archive source is resolved to
 //! `file:///tmp/vm0-storage-cache/<hash(name)>-<hash(version)>.tar.gz`
 //! so `guest-storage-apply` reads the guest-local staged archive instead of
-//! re-fetching.
+//! re-fetching. Blank startup can carry the same source paths and archive
+//! bytes in its ordinary apply request instead of writing temporary files.
 //!
 //! Mixed attempts can hand the complete immutable Guest input to application
 //! after ordinary ready inputs are staged, while the same population owner
@@ -47,9 +48,8 @@
 //! to the guest; this failure does not revoke it or retroactively fail storage
 //! application.
 //!
-//! Runtime contract: `file://` URLs produced here point to guest-local archives
-//! staged under `GUEST_STAGE_DIR`. `guest-storage-apply` supports that scheme and
-//! treats missing local archives as a broken staging contract.
+//! Runtime contract: `file://` URLs produced here identify runner-owned
+//! archives staged under `GUEST_STAGE_DIR` or attached to the apply request.
 
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::fmt;
@@ -141,13 +141,13 @@ const FRESH_DELIVERY_PER_RUN_LIMIT: usize = 4;
 const FRESH_DELIVERY_RUNNER_LIMIT: usize = 8;
 
 /// Maximum number of archives staged in one guest batch write.
-const GUEST_STAGE_BATCH_MAX_FILES: usize = 64;
+const GUEST_STAGE_BATCH_MAX_FILES: usize = guest_contracts::storage_files::MAX_STAGED_ARCHIVES;
 
 /// Maximum total archive bytes staged in one guest batch write.
 const GUEST_STAGE_BATCH_MAX_BYTES: usize = 15 * 1024 * 1024;
 
 /// Guest stage directory for `file://` archives.
-const GUEST_STAGE_DIR: &str = "/tmp/vm0-storage-cache";
+const GUEST_STAGE_DIR: &str = guest_contracts::storage_files::STAGED_ARCHIVE_DIR;
 
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 const STORAGE_CACHE_STAGE_TOTAL: &str = "storage_cache_stage_total";
@@ -1047,6 +1047,50 @@ struct GuestStageBatch {
     content_bytes: usize,
 }
 
+/// A single warm batch still owned by Blank startup. The caller attaches it
+/// to its ordinary apply or settles it through the existing file writer.
+#[derive(Default)]
+pub struct PendingGuestArchives(GuestStageBatch);
+
+impl PendingGuestArchives {
+    /// Whether the caller has any archive delivery work to settle.
+    pub fn is_empty(&self) -> bool {
+        self.0.writes.is_empty()
+    }
+
+    /// Try attaching the held sources within the existing binary input limit.
+    pub fn inline_input(&self, manifest: &[u8]) -> Option<Vec<u8>> {
+        let sources = self
+            .0
+            .writes
+            .iter()
+            .map(|write| (write.guest_path.as_str(), write.bytes.as_ref()))
+            .collect::<Vec<_>>();
+        guest_contracts::storage_files::inline_archives::encode_input(manifest, &sources)
+    }
+
+    /// Write the original staging inputs before applying an ineligible request.
+    pub async fn stage(
+        mut self,
+        sandbox: &dyn Sandbox,
+        telemetry: &mut JobTelemetry,
+    ) -> RunnerResult<()> {
+        let mut metrics = StorageCacheStageMetrics::start();
+        let result = flush_guest_stage_batch(
+            &mut self.0,
+            &mut GuestStageRecorder {
+                sandbox,
+                guest_writes: &GuestWriteLocks::default(),
+                telemetry,
+                metrics: &mut metrics,
+            },
+        )
+        .await;
+        metrics.record_total(telemetry);
+        result
+    }
+}
+
 struct FreshGuestStageEntry {
     group: CacheTargetGroup,
     write: GuestStageWrite,
@@ -1644,14 +1688,43 @@ pub fn populate_cache_with_fresh_delivery<'a>(
             fresh_delivery,
             decoded,
             application: None,
+            pending_archives: None,
         },
     )
+}
+
+/// Prepare the normal Blank Storage plan and retain an eligible warm batch
+/// for the same accepted startup phase to deliver.
+pub async fn populate_cache_for_blank(
+    plan: &mut StoragePlan,
+    sandbox: &dyn Sandbox,
+    home: &HomePaths,
+    telemetry: &mut JobTelemetry,
+    fresh_delivery: Option<&mut FreshArchiveDelivery>,
+    decoded: &decoded::DecodedCache,
+) -> RunnerResult<(Option<DeferredBackgroundFill>, PendingGuestArchives)> {
+    let mut pending = PendingGuestArchives::default();
+    let deferred = populate_cache_inner(
+        plan,
+        sandbox,
+        home,
+        telemetry,
+        PopulationSources {
+            fresh_delivery,
+            decoded: Some(decoded),
+            application: None,
+            pending_archives: Some(&mut pending),
+        },
+    )
+    .await?;
+    Ok((deferred, pending))
 }
 
 struct PopulationSources<'a> {
     fresh_delivery: Option<&'a mut FreshArchiveDelivery>,
     decoded: Option<&'a decoded::DecodedCache>,
     application: Option<&'a mut GuestApplication>,
+    pending_archives: Option<&'a mut PendingGuestArchives>,
 }
 
 async fn populate_cache_inner(
@@ -1665,6 +1738,7 @@ async fn populate_cache_inner(
         mut fresh_delivery,
         decoded,
         mut application,
+        pending_archives,
     } = sources;
     let mut target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
         if let Err(error) = delivery.finish_classification(telemetry).await {
@@ -1757,9 +1831,22 @@ async fn populate_cache_inner(
             Vec::new()
         };
         outcomes.extend(decoded_outcomes);
+        let pending_archives = pending_archives.filter(|_| {
+            owned_keys.is_empty()
+                && target_groups
+                    .iter()
+                    .all(|group| group.targets().all(|target| !target.handle.is_artifact()))
+        });
         outcomes.extend(
-            population::prepare_ordinary(target_groups, home, CONCURRENCY, None, &mut stage)
-                .await?,
+            population::prepare_ordinary(
+                target_groups,
+                home,
+                CONCURRENCY,
+                None,
+                &mut stage,
+                pending_archives,
+            )
+            .await?,
         );
         Ok(outcomes)
     }

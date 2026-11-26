@@ -279,9 +279,11 @@ export function isCatalogRouteExecutable(
   if (isBuiltInModelProviderType(route.providerType)) {
     return route.concreteProviderType === AUTO_RUN_PROVIDER;
   }
+  // Antigravity admission additionally requires the member's staff opt-in.
   return (
     route.providerType === "codex-oauth-token" ||
-    route.providerType === "claude-code-oauth-token"
+    route.providerType === "claude-code-oauth-token" ||
+    route.providerType === "antigravity"
   );
 }
 

@@ -60,8 +60,10 @@ export enum FeatureSwitchKey {
   HostedSiteShareRows = "hostedSiteShareRows",
   HostedSiteEmailSharing = "hostedSiteEmailSharing",
   SlackArtifactChannelSharing = "slackArtifactChannelSharing",
+  FeishuArtifactChannelSharing = "feishuArtifactChannelSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
   WorkflowListRedesign = "workflowListRedesign",
+  ForYouSimplifiedDeck = "forYouSimplifiedDeck",
 }

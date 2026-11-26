@@ -45,18 +45,25 @@ function tabs() {
     return t.getAttribute("aria-label") ?? t.textContent?.trim();
   });
 }
+function expectAdmission(n: number, selected: string) {
+  const toolbar = document.querySelector("[data-browser-tab-budget]");
+  if (!toolbar) {
+    throw new Error("Waiting for the browser tab strip");
+  }
+  const visibleTabs = queryAllByRoleFast("tab", toolbar);
+  expect(visibleTabs).toHaveLength(n);
+  expect(
+    visibleTabs.find((tab) => {
+      return (
+        (tab.getAttribute("aria-label") ?? tab.textContent?.trim()) === selected
+      );
+    }),
+  ).toHaveAttribute("aria-selected", "true");
+}
+
 async function admission(n: number, selected: string) {
   await waitFor(() => {
-    const visibleTabs = queryAllByRoleFast("tab");
-    expect(visibleTabs).toHaveLength(n);
-    expect(
-      visibleTabs.find((tab) => {
-        return (
-          (tab.getAttribute("aria-label") ?? tab.textContent?.trim()) ===
-          selected
-        );
-      }),
-    ).toHaveAttribute("aria-selected", "true");
+    expectAdmission(n, selected);
   });
 }
 async function selectLast() {
@@ -117,22 +124,20 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
   });
   const resize = nativeGeometry(800);
   const readyInput = () => {
-    return waitFor(() => {
-      const surface = document.querySelector<HTMLElement>(
-        "[data-browser-surface]",
-      );
-      if (!surface) {
-        throw new Error("Waiting for the browser viewer surface");
-      }
-      const input = within(surface).getByRole("textbox", {
-        name: "Remote browser input",
-      });
-      expect(input).toBeEnabled();
-      return input;
+    const surface = document.querySelector<HTMLElement>(
+      "[data-browser-surface]",
+    );
+    if (!surface) {
+      throw new Error("Waiting for the browser viewer surface");
+    }
+    const input = within(surface).getByRole("textbox", {
+      name: "Remote browser input",
     });
+    expect(input).toBeEnabled();
+    return input;
   };
   click(open);
-  const field = await readyInput();
+  const field = await waitFor(readyInput);
   await admission(12, "Example");
   disconnected = true;
   cdp.setAutoOpen(false);
@@ -143,15 +148,14 @@ test("chat-navigation-browser-016 Resizing during a disconnected viewer takes ef
   resize(240, 916);
   const replacement = await retry.promise;
   replacement.open();
-  await readyInput();
-  await admission(3, "Example");
+  const resizedViewport = expect.objectContaining({
+    method: "Emulation.setDeviceMetricsOverride",
+    params: expect.objectContaining({ width: 916, height: 600 }),
+  });
   await waitFor(() => {
-    return expect(cdp.requests).toContainEqual(
-      expect.objectContaining({
-        method: "Emulation.setDeviceMetricsOverride",
-        params: expect.objectContaining({ width: 916, height: 600 }),
-      }),
-    );
+    expect(cdp.requests).toContainEqual(resizedViewport);
+    readyInput();
+    expectAdmission(3, "Example");
   });
   resize(800);
   await admission(12, "Example");

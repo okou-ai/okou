@@ -1144,8 +1144,13 @@ describe("official sandbox RPC cancellation", () => {
     }
     rpc.child.send("release-settlement");
     await rpc.settled();
+    // The settlement record arrives on stdout. The HTTP starts arrive over
+    // IPC, which can still have pending messages when stdout is read.
+    const drained = rpc.child.connected
+      ? once(rpc.child, "disconnect")
+      : Promise.resolve();
+    const [memory] = await Promise.all([rpc.reopen(), drained]);
     assertSettlement(rpc, 5, false);
-    const memory = await rpc.reopen();
     const users = memory.buildSessionContext().messages.filter((message) => {
       return message.role === "user";
     });

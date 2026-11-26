@@ -394,13 +394,14 @@ async fn archive_retry_cancellation_during_first_headers_releases_the_owner() {
 
 #[tokio::test]
 async fn archive_retry_recovers_from_transient_http_for_storage_and_artifact() {
-    for (status, artifact) in [
+    let cases = [
         ("429 Too Many Requests", false),
         ("500 Internal Server Error", false),
         ("502 Bad Gateway", false),
         ("503 Service Unavailable", true),
         ("504 Gateway Timeout", false),
-    ] {
+    ];
+    futures_util::future::join_all(cases.into_iter().map(|(status, artifact)| async move {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let body = tarball_bytes();
@@ -437,7 +438,8 @@ async fn archive_retry_recovers_from_transient_http_for_storage_and_artifact() {
         assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_HEADERS, "http-status");
         assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED, true);
         assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED);
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]
@@ -635,11 +637,12 @@ async fn archive_retry_rejects_permanent_statuses_without_another_get() {
 
 #[tokio::test]
 async fn archive_retry_respects_retry_after_before_recovery() {
-    for (hint, minimum_delay) in [
+    let cases = [
         ("1", Duration::from_secs(1)),
         // A comma within one HTTP-date is valid; it is not multiple hints.
         ("Thu, 01 Jan 1970 00:00:00 GMT", OBJECT_DOWNLOAD_RETRY_DELAY),
-    ] {
+    ];
+    futures_util::future::join_all(cases.into_iter().map(|(hint, minimum_delay)| async move {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let body = tarball_bytes();
@@ -663,7 +666,8 @@ async fn archive_retry_respects_retry_after_before_recovery() {
         assert!(server.delays.lock().unwrap()[0] >= minimum_delay);
         server.finish(2).await;
         assert_staged_archive(&home, &sandbox, &plan, &body).await;
-    }
+    }))
+    .await;
 }
 
 #[tokio::test]

@@ -53,13 +53,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.NativeOnboarding]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Native onboarding",
+  [FeatureSwitchKey.ForYouSimplifiedDeck]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Simplified For you deck",
     description:
-      "Choose a role, connect services and run a first task in the iOS app.",
+      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, and size cards from the deck width.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WorkflowListRedesign]: {
     maintainer: "ming@okou.ai",
@@ -67,6 +66,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
     enabled: false,
+  },
+  [FeatureSwitchKey.NativeOnboarding]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Native onboarding",
+    description:
+      "Choose a role, connect services and run a first task in the iOS app.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.IosConnectorManagement]: {
     maintainer: "yuma@okou.ai",
@@ -314,6 +321,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Slack artifact sharing",
     description:
       "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feishu and Lark artifact sharing",
+    description:
+      "Preview artifacts per authorized reader and privately help owners share access with current chat members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

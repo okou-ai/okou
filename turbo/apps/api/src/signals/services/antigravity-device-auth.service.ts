@@ -15,7 +15,6 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeSync, settle, tapError } from "../utils";
@@ -25,6 +24,10 @@ import {
   encryptPersistentSecretValue,
   encryptSecretValue,
 } from "./crypto.utils";
+import {
+  ANTIGRAVITY_TOKEN_URL,
+  antigravityOAuthClient,
+} from "./antigravity-oauth-client";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   upsertPersonalModelProviderAccount$,
@@ -35,7 +38,6 @@ import {
 // Google OAuth for the official Antigravity desktop client, as used by
 // NoeFabris/opencode-antigravity-auth. Internal staff pilot only.
 const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json";
 // The client's registered loopback redirect. Nothing listens there: the
 // member copies the address Google redirects to and pastes it back.
@@ -113,13 +115,6 @@ type CancelResult =
   | { readonly status: "cancelled" }
   | { readonly status: "invalid_token"; readonly message: string }
   | { readonly status: "forbidden"; readonly message: string };
-
-/** Both values come from deployment config; neither is committed. */
-function oauthClient() {
-  const clientId = optionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID");
-  const clientSecret = optionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET");
-  return clientId && clientSecret ? { clientId, clientSecret } : null;
-}
 
 function randomBase64Url(): string {
   return randomBytes(32).toString("base64url");
@@ -208,7 +203,7 @@ export const startAntigravityDeviceAuth$ = command(
     },
     signal: AbortSignal,
   ): Promise<StartResult> => {
-    const client = oauthClient();
+    const client = antigravityOAuthClient();
     if (!client) {
       return { ok: false, message: "Google AI sign-in is not configured" };
     }
@@ -342,7 +337,7 @@ async function exchangeAuthorizationCode(
   },
   signal: AbortSignal,
 ) {
-  const response = await fetch(TOKEN_URL, {
+  const response = await fetch(ANTIGRAVITY_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -432,7 +427,7 @@ const importClaimedSession$ = command(
       );
       return { status: "error", message };
     };
-    const client = oauthClient();
+    const client = antigravityOAuthClient();
     if (!client) {
       return await fail(new Error("Google AI sign-in is not configured"));
     }

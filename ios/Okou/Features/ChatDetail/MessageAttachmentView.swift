@@ -9,19 +9,36 @@ struct MessageAttachmentView: View {
   let loadsThumbnail: Bool
 
   var body: some View {
-    let reads = viewer.reads
-    StoreProvider(reads.store) {
-      if loadsThumbnail, isMedia {
-        MessageAttachmentValue(attachment: attachment, viewer: viewer, reads: reads)
+    // Transcript cells host the row outside the workspace root, so it provides the session Store
+    // that keeps the viewer's current reads.
+    StoreProvider(viewer.graph) { MessageAttachmentReads(row: self) }
+  }
+
+  fileprivate var isMedia: Bool {
+    attachment.contentType.hasPrefix("image/") || attachment.contentType.hasPrefix("video/")
+  }
+}
+
+/// The row under the viewer's current reads, which leaving the detail replaces.
+private struct MessageAttachmentReads: View {
+  let row: MessageAttachmentView
+  @ResolvedValue private var resolvedReads: MessageAttachmentResources?
+
+  init(row: MessageAttachmentView) {
+    self.row = row
+    _resolvedReads = ResolvedValue(row.viewer.readsValue, equals: { $0 === $1 })
+  }
+
+  var body: some View {
+    let reads = resolvedReads ?? row.viewer.reads
+    Group {
+      if row.loadsThumbnail, row.isMedia {
+        MessageAttachmentValue(attachment: row.attachment, viewer: row.viewer, reads: reads)
       } else {
-        MessageAttachmentContent(attachment: attachment, viewer: viewer, value: .loading)
+        MessageAttachmentContent(attachment: row.attachment, viewer: row.viewer, value: .loading)
       }
     }
     .id(ObjectIdentifier(reads))
-  }
-
-  private var isMedia: Bool {
-    attachment.contentType.hasPrefix("image/") || attachment.contentType.hasPrefix("video/")
   }
 }
 
@@ -102,11 +119,51 @@ private struct MessageAttachmentContent: View {
   }
 }
 
+extension View {
+  /// Presents the viewer's open attachment preview, kept in the workspace session's Store.
+  func messageAttachmentPreview(viewer: MessageAttachmentStore) -> some View {
+    modifier(MessageAttachmentPreviewPresentation(viewer: viewer))
+  }
+}
+
+private struct MessageAttachmentPreviewPresentation: ViewModifier {
+  let viewer: MessageAttachmentStore
+  @ResolvedValue private var presentation: MessageAttachmentStore.Presentation?
+
+  init(viewer: MessageAttachmentStore) {
+    self.viewer = viewer
+    _presentation = ResolvedValue(viewer.presentationValue)
+  }
+
+  func body(content: Content) -> some View {
+    let isPresented = (presentation ?? viewer.presentation).preview != nil
+    content.sheet(
+      isPresented: Binding(get: { isPresented }, set: { if !$0 { viewer.dismiss() } })
+    ) {
+      MessageAttachmentPreview(viewer: viewer)
+    }
+  }
+}
+
 struct MessageAttachmentPreview: View {
   let viewer: MessageAttachmentStore
 
   var body: some View {
-    if let preview = viewer.preview {
+    StoreProvider(viewer.graph) { MessageAttachmentPreviewSheet(viewer: viewer) }
+  }
+}
+
+private struct MessageAttachmentPreviewSheet: View {
+  let viewer: MessageAttachmentStore
+  @ResolvedValue private var presentation: MessageAttachmentStore.Presentation?
+
+  init(viewer: MessageAttachmentStore) {
+    self.viewer = viewer
+    _presentation = ResolvedValue(viewer.presentationValue)
+  }
+
+  var body: some View {
+    if let preview = (presentation ?? viewer.presentation).preview {
       StoreProvider(preview.store) {
         MessageAttachmentPreviewValue(preview: preview, dismiss: viewer.dismiss)
       }

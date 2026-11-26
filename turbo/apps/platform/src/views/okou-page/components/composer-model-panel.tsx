@@ -299,17 +299,20 @@ function groupModelsByProvider(
         return runModel.model === null;
       }),
     },
-    ...SUBSCRIPTION_PROVIDERS.map((providerType) => {
-      return {
-        providerType,
-        models: models.filter((runModel) => {
-          return (
-            runModel.model !== null &&
-            runModel.memberEffective.providerType === providerType
-          );
-        }),
-      };
-    }),
+    // Antigravity models reach only staff members with a connected account.
+    ...[...SUBSCRIPTION_PROVIDERS, "antigravity" as const].map(
+      (providerType) => {
+        return {
+          providerType,
+          models: models.filter((runModel) => {
+            return (
+              runModel.model !== null &&
+              runModel.memberEffective.providerType === providerType
+            );
+          }),
+        };
+      },
+    ),
   ].filter((group) => {
     return group.models.length > 0;
   });
@@ -318,13 +321,23 @@ function groupModelsByProvider(
 function usePlanGroupTitle() {
   const { t } = useTranslation();
   return (type: PersonalSubscriptionProviderType) => {
-    return type === "codex-oauth-token"
-      ? t(($) => {
+    switch (type) {
+      case "codex-oauth-token": {
+        return t(($) => {
           return $.settings.models.personal.codexGroup;
-        })
-      : t(($) => {
+        });
+      }
+      case "claude-code-oauth-token": {
+        return t(($) => {
           return $.settings.models.personal.claudeGroup;
         });
+      }
+      case "antigravity": {
+        return t(($) => {
+          return $.settings.models.personal.antigravityGroup;
+        });
+      }
+    }
   };
 }
 

@@ -2,18 +2,32 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 import UIKit
 
-/// Detail-scoped downloads. Leaving the detail or closing its workspace cancels all work.
-@MainActor @Observable
+/// Detail-scoped downloads. Leaving the detail or closing its workspace cancels all work. The
+/// open preview and the current reads are kept in the workspace session's Store.
+@MainActor
 final class MessageAttachmentStore {
-  private(set) var preview: MessageAttachmentPreviewResource?
+  /// What views present: the open preview and the reads attachment rows use. Both compare by
+  /// identity.
+  struct Presentation: Equatable {
+    var preview: MessageAttachmentPreviewResource?
+    var reads: MessageAttachmentResources
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.preview === rhs.preview && lhs.reads === rhs.reads
+    }
+  }
+
+  /// Views resolve it; `preview` and `reads` serve actions and tests.
+  let presentationValue: Computed<Presentation>
+  /// The current reads alone, so transcript rows follow a replacement but not a preview.
+  let readsValue: Computed<MessageAttachmentResources>
+  /// The workspace session's Store, which keeps the reads' graph values and the presentation.
+  let graph: CCState.Store
+  private let presentationState: CCState.State<Presentation>
   private let commands: ChatCommands
-  /// The workspace session's Store, which keeps the reads' graph values.
-  @ObservationIgnored private let graph: CCState.Store
   private let didFail: @MainActor (Error) -> Void
-  private(set) var reads: MessageAttachmentResources
   private var closed = false
 
   init(
@@ -22,7 +36,30 @@ final class MessageAttachmentStore {
     self.commands = commands
     self.graph = graph
     self.didFail = didFail
-    reads = MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)
+    let presentationState = CCState.State(
+      Presentation(
+        reads: MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)))
+    self.presentationState = presentationState
+    presentationValue = Computed { try $0(presentationState) }
+    readsValue = Computed(equals: { $0 === $1 }, { get in try get(presentationState).reads })
+  }
+
+  var presentation: Presentation {
+    // A synchronous local value, not a network or persistence boundary.
+    do { return try graph.get(presentationValue) } catch {
+      preconditionFailure("Cannot read the attachment viewer: \(error)")
+    }
+  }
+  var preview: MessageAttachmentPreviewResource? { presentation.preview }
+  var reads: MessageAttachmentResources { presentation.reads }
+
+  private func update(_ change: (inout Presentation) -> Void) {
+    var next = presentation
+    change(&next)
+    guard next != presentation else { return }
+    do { try graph.set(presentationState, next) } catch {
+      preconditionFailure("Cannot publish the attachment viewer: \(error)")
+    }
   }
 
   func cachedThumbnail(_ attachment: ChatMessageAttachment) -> UIImage? {
@@ -33,21 +70,23 @@ final class MessageAttachmentStore {
   func open(_ attachment: ChatMessageAttachment) {
     guard !closed else { return }
     preview?.close()
-    preview = MessageAttachmentPreviewResource(
+    let next = MessageAttachmentPreviewResource(
       attachment: attachment, thumbnail: cachedThumbnail(attachment),
       commands: commands, graph: graph, didFail: didFail)
+    update { $0.preview = next }
   }
 
   func dismiss() {
     preview?.close()
-    preview = nil
+    update { $0.preview = nil }
   }
 
   func deactivate() {
     dismiss()
     reads.close()
     if !closed {
-      reads = MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)
+      let next = MessageAttachmentResources(commands: commands, graph: graph, didFail: didFail)
+      update { $0.reads = next }
     }
   }
 

@@ -1,3 +1,5 @@
+import { launchFrameworkForProviderType } from "./launch-framework";
+import { mintAntigravityRunCredential$ } from "./antigravity-run-credential.service";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { writeDb$ } from "../external/db";
@@ -181,7 +183,6 @@ import { workflowRewardRunEventInsert } from "./workflow-reward-source-publicati
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -1722,7 +1723,7 @@ export function createThreadClaimRunObjects(
       modelProvider,
       framework:
         modelProvider.piModelConfig === undefined
-          ? getFrameworkForType(modelProvider.type)
+          ? launchFrameworkForProviderType(modelProvider.type)
           : ("pi" as const),
     };
   });
@@ -2204,11 +2205,32 @@ export function createThreadClaimRunObjects(
         return packagePlan;
       }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
+      const antigravityAccountId =
+        args.facts.modelProvider.type === "antigravity"
+          ? args.facts.modelProvider.id
+          : undefined;
+      if (antigravityAccountId === null) {
+        throw new Error("An Antigravity run requires its member account");
+      }
+      const antigravityCredential = antigravityAccountId
+        ? await set(
+            mintAntigravityRunCredential$,
+            {
+              orgId: bootstrap.orgId,
+              userId: bootstrap.userId,
+              accountId: antigravityAccountId,
+              featureSwitchContext: args.featureSwitchContext,
+            },
+            signal,
+          )
+        : undefined;
+      signal.throwIfAborted();
       return {
         launch: prepareRunnerLaunch({
           args,
           packageMounts: packagePlan.packages.mounts,
           okouToken,
+          antigravityCredential,
           disabledPaidTools,
         }),
         memoryMountPath: packagePlan.memoryMountPath,
@@ -3353,6 +3375,7 @@ function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
   readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly okouToken: string;
+  readonly antigravityCredential: string | undefined;
   readonly disabledPaidTools: readonly PaidToolId[];
 }): Omit<PreparedRunnerLaunch, "memoryMount"> {
   const { args } = input;
@@ -3360,6 +3383,9 @@ function prepareRunnerLaunch(input: {
     ...args.facts,
     nativeContinuation: args.nativeContinuation,
     okouToken: input.okouToken,
+    ...(input.antigravityCredential
+      ? { antigravityCredential: input.antigravityCredential }
+      : {}),
     disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
