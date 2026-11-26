@@ -139,7 +139,6 @@ internal enum class ArtifactSearchPaging(
     Idle,
     Loading(isLoading = true),
     Failed(hasFailure = true),
-    RetryAvailable(hasFailure = true),
     Retrying(isLoading = true, hasFailure = true),
 }
 
@@ -215,8 +214,11 @@ internal constructor(
                     previousType != type &&
                     mutable.value.artifactPaging == ArtifactSearchPaging.Failed
             ) {
-                mutable.value =
-                    mutable.value.copy(artifactPaging = ArtifactSearchPaging.RetryAvailable)
+                // The failed page was already requested. Retry even if the list skipped that state.
+                val page = mutable.value.artifacts as? SearchRead.Ready
+                page?.nextCursor?.let {
+                    readMoreArtifacts(keyword, it, ArtifactSearchPaging.Retrying)
+                }
             }
             // A type change or preview return still uses the same query and its loaded pages.
             val retry =
@@ -241,6 +243,11 @@ internal constructor(
     }
 
     internal fun nextArtifacts(keyword: String, cursor: String) {
+        if (mutable.value.artifactPaging == ArtifactSearchPaging.Failed) return
+        readMoreArtifacts(keyword, cursor, ArtifactSearchPaging.Loading)
+    }
+
+    private fun readMoreArtifacts(keyword: String, cursor: String, paging: ArtifactSearchPaging) {
         val current = mutable.value
         val loaded = current.artifacts as? SearchRead.Ready ?: return
         if (
@@ -248,7 +255,6 @@ internal constructor(
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
                 loaded.refreshFailed ||
-                current.artifactPaging == ArtifactSearchPaging.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
@@ -257,10 +263,6 @@ internal constructor(
             val state = mutable.value
             val currentPage = state.artifacts as? SearchRead.Ready ?: return@launch
             if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-            val paging =
-                if (state.artifactPaging == ArtifactSearchPaging.RetryAvailable)
-                    ArtifactSearchPaging.Retrying
-                else ArtifactSearchPaging.Loading
             mutable.value = state.copy(artifactPaging = paging)
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },

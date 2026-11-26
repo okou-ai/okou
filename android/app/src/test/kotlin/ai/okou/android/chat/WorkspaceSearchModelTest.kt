@@ -231,6 +231,7 @@ class WorkspaceSearchModelTest {
         val calls = mutableListOf<Pair<String, String?>>()
         var continuationAttempts = 0
         var terminalAttempts = 0
+        val failContinuation = CompletableDeferred<Unit>()
         val finishRetry = CompletableDeferred<Unit>()
         val service =
             object : WorkspaceSearchService by EmptyWorkspaceSearchService {
@@ -250,7 +251,10 @@ class WorkspaceSearchModelTest {
                         }
                         else -> {
                             terminalAttempts++
-                            if (terminalAttempts == 1) throw ApiFailure.Http(400, null, null, null)
+                            if (terminalAttempts == 1) {
+                                failContinuation.await()
+                                throw ApiFailure.Http(400, null, null, null)
+                            }
                             finishRetry.await()
                             SearchArtifactPage(listOf(third), null)
                         }
@@ -307,17 +311,23 @@ class WorkspaceSearchModelTest {
 
             model.nextArtifacts("release", "page-three")
             runCurrent()
+            model.update(
+                "release",
+                WorkspaceSearchType.Artifacts,
+                artifactsAvailable = true,
+                visible = false,
+            )
+            failContinuation.complete(Unit)
+            runCurrent()
             assertEquals(loaded, model.results.value.artifacts)
             assertEquals(ArtifactSearchPaging.Failed, model.results.value.artifactPaging)
 
-            model.update("release", WorkspaceSearchType.All, artifactsAvailable = true)
             model.update("release", WorkspaceSearchType.Artifacts, artifactsAvailable = true)
-            assertEquals(loaded, model.results.value.artifacts)
-            assertEquals(ArtifactSearchPaging.RetryAvailable, model.results.value.artifactPaging)
-            model.nextArtifacts("release", "page-three")
             runCurrent()
             assertEquals(loaded, model.results.value.artifacts)
             assertEquals(ArtifactSearchPaging.Retrying, model.results.value.artifactPaging)
+            model.nextArtifacts("release", "page-three")
+            runCurrent()
             finishRetry.complete(Unit)
             runCurrent()
             val complete = SearchRead.Ready(listOf(first, second, third))

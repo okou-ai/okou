@@ -165,11 +165,9 @@ class WorkspaceSearchScreenTest {
         results.performScrollToIndex(tailIndex)
         val lastResultAtTail = lastResult.getUnclippedBoundsInRoot()
         val footerAtTail = footer.getUnclippedBoundsInRoot()
-        for (paging in listOf(ArtifactSearchPaging.RetryAvailable, ArtifactSearchPaging.Retrying)) {
-            compose.runOnIdle { remote = remote.copy(artifactPaging = paging) }
-            assertEquals(lastResultAtTail, lastResult.getUnclippedBoundsInRoot())
-            assertEquals(footerAtTail, footer.getUnclippedBoundsInRoot())
-        }
+        compose.runOnIdle { remote = remote.copy(artifactPaging = ArtifactSearchPaging.Retrying) }
+        assertEquals(lastResultAtTail, lastResult.getUnclippedBoundsInRoot())
+        assertEquals(footerAtTail, footer.getUnclippedBoundsInRoot())
 
         val newRow = SearchArtifactHit("next-artifact", "Release notes", ArtifactKind.File)
         compose.runOnIdle {
