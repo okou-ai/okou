@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow, now } from "../../../lib/time";
+import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -21,6 +24,10 @@ const automatic = setupApp({
   context,
   routes: builtinConnectorsAutomaticRoutes,
 })(builtinConnectorAutomaticContract);
+const accountsApi = setupApp({
+  context,
+  routes: connectorAccountRoutes,
+})(connectorAccountsContract);
 
 /** A member with a real membership in `orgId`. */
 async function memberOf(userId: string, orgId: string): Promise<ApiTestUser> {
@@ -58,6 +65,85 @@ async function startAutomatic(
     }),
     statuses,
   );
+}
+
+async function startAutomaticAuthorization(
+  actor: ApiTestUser,
+  connectorSlug: string,
+  account:
+    | { readonly intent: "add" }
+    | { readonly intent: "reconnect"; readonly connectionId: string },
+) {
+  const started = await startAutomatic(actor, connectorSlug, account, [200]);
+  if (!("result" in started.body) || started.body.result !== "authorization") {
+    throw new Error("Expected an OAuth authorization redirect");
+  }
+  const state = new URL(started.body.authorizationUrl).searchParams.get(
+    "state",
+  );
+  if (!state) {
+    throw new Error("Expected OAuth state in authorization URL");
+  }
+  return { state, attemptId: started.body.oauthAttemptId };
+}
+
+async function completeAutomaticCallback(state: string, issuer: string) {
+  return await accept(
+    automatic.callback({
+      query: {
+        state,
+        code: `code-${randomUUID()}`,
+        iss: issuer,
+        responseMode: "json",
+      },
+    }),
+    [200],
+  );
+}
+
+async function readOAuthCompletion(
+  actor: ApiTestUser,
+  connectorSlug: string,
+  attemptId: string,
+  statuses: readonly (200 | 404)[],
+) {
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  return await accept(
+    accountsApi.oauthCompletion({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { attemptId },
+      query: { kind: "builtin", connectorSlug },
+    }),
+    statuses,
+  );
+}
+
+async function connectDcrAccount(
+  actor: ApiTestUser,
+  connectorSlug: string,
+  issuer: string,
+) {
+  const { state, attemptId } = await startAutomaticAuthorization(
+    actor,
+    connectorSlug,
+    { intent: "add" },
+  );
+  const callback = await completeAutomaticCallback(state, issuer);
+  expect(callback.body.status).toBe("success");
+  const receipt = await readOAuthCompletion(
+    actor,
+    connectorSlug,
+    attemptId,
+    [200],
+  );
+  if (!("connectionId" in receipt.body)) {
+    throw new Error("Expected a completed connection ID");
+  }
+  return { callback, connectionId: receipt.body.connectionId };
 }
 
 describe("builtin Automatic account and consent ownership", () => {
@@ -110,5 +196,168 @@ describe("builtin Automatic account and consent ownership", () => {
       connected.body.connectionId,
     );
     expect(account.connectionStatus).toBe("connected");
+  });
+
+  it("connectors-automatic-security-001 (1/2) preserves an existing account after a temporary callback failure", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer: `https://dcr-temp-1-${randomUUID().slice(0, 8)}.example.test`,
+      authorizationCodeErrors: [null, "temporarily_unavailable", null],
+    });
+    const member = await memberOf(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+    );
+
+    const initial = await connectDcrAccount(
+      member,
+      fixture.slug,
+      provider.issuer,
+    );
+    const failedStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: initial.connectionId },
+    );
+    const failedCallback = await completeAutomaticCallback(
+      failedStart.state,
+      provider.issuer,
+    );
+    const failedReceipt = await readOAuthCompletion(
+      member,
+      fixture.slug,
+      failedStart.attemptId,
+      [404],
+    );
+    const account = await connectors.readBuiltinConnectorAccount(
+      member,
+      fixture.slug,
+      initial.connectionId,
+    );
+
+    expect(initial.callback.body.status).toBe("success");
+    expect(failedCallback.body.status).toBe("error");
+    expect(failedReceipt.status).toBe(404);
+    expect(account.id).toBe(initial.connectionId);
+    expect(account.connectionStatus).toBe("connected");
+  });
+
+  it("connectors-automatic-security-001 (2/2) retries reconnect with the same connection ID and one client registration", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer: `https://dcr-temp-2-${randomUUID().slice(0, 8)}.example.test`,
+      authorizationCodeErrors: [null, "temporarily_unavailable", null],
+    });
+    const member = await memberOf(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+    );
+    const initial = await connectDcrAccount(
+      member,
+      fixture.slug,
+      provider.issuer,
+    );
+    const failedStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: initial.connectionId },
+    );
+    const failedCallback = await completeAutomaticCallback(
+      failedStart.state,
+      provider.issuer,
+    );
+    expect(failedCallback.body.status).toBe("error");
+
+    const retryStart = await startAutomaticAuthorization(member, fixture.slug, {
+      intent: "reconnect",
+      connectionId: initial.connectionId,
+    });
+    const retryCallback = await completeAutomaticCallback(
+      retryStart.state,
+      provider.issuer,
+    );
+    const retryReceipt = await readOAuthCompletion(
+      member,
+      fixture.slug,
+      retryStart.attemptId,
+      [200],
+    );
+
+    expect(retryCallback.body.status).toBe("success");
+    expect(retryReceipt.body).toStrictEqual({
+      connectionId: initial.connectionId,
+    });
+    expect(provider.registrationBodies).toHaveLength(1);
+  });
+
+  it("connectors-automatic-security-005 retires an expired linked DCR registration during authorization preparation", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const issuer = `https://dcr-exp-${randomUUID().slice(0, 8)}.example.test`;
+    const baseMs = now();
+    mockNow(baseMs);
+    const initialProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer,
+      dcrClientSecretExpiresAt: Math.floor(baseMs / 1000) + 60,
+    });
+    const member = await memberOf(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+    );
+    const initial = await connectDcrAccount(
+      member,
+      fixture.slug,
+      initialProvider.issuer,
+    );
+
+    mockNow(baseMs + 61_000);
+    const replacementProvider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer,
+    });
+    const reconnectStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: initial.connectionId },
+    );
+    const whilePreparing = await connectors.readBuiltinConnectorAccount(
+      member,
+      fixture.slug,
+      initial.connectionId,
+    );
+    const reconnectCallback = await completeAutomaticCallback(
+      reconnectStart.state,
+      replacementProvider.issuer,
+    );
+    const reconnectReceipt = await readOAuthCompletion(
+      member,
+      fixture.slug,
+      reconnectStart.attemptId,
+      [200],
+    );
+    const afterReconnect = await connectors.readBuiltinConnectorAccount(
+      member,
+      fixture.slug,
+      initial.connectionId,
+    );
+
+    expect(whilePreparing.connectionStatus).toBe("reconnect-required");
+    expect(reconnectCallback.body.status).toBe("success");
+    expect(reconnectReceipt.body).toStrictEqual({
+      connectionId: initial.connectionId,
+    });
+    expect(afterReconnect.connectionStatus).toBe("connected");
+    expect(initialProvider.registrationBodies).toHaveLength(1);
+    expect(replacementProvider.registrationBodies).toHaveLength(1);
   });
 });

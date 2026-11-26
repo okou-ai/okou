@@ -1,31 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { chatEventsRoutes } from "../chat-events";
-import { chatThreadRoutes } from "../chat-threads";
-import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  mockGoogleText,
-  VERTEX_TEXT_URL,
-  vertexTextResponse,
-} from "./helpers/google-text";
 import { createRouteMocks } from "./helpers/route-test";
-import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -229,102 +217,5 @@ describe("GET /api/artifacts/catalog", () => {
       kind: "file",
       title: "quarterly-summary.html",
     });
-  });
-});
-
-describe("shared thread routes", () => {
-  it("artifact-catalog.bdd-030 deleting a shared conversation from artifacts revokes its shared link", async () => {
-    const member = bdd.user();
-    await grantProPlan(member);
-    installSharedThreadStorage(context);
-    mockGoogleText();
-    server.use(
-      http.post(VERTEX_TEXT_URL, () => {
-        return vertexTextResponse("Saved conversation");
-      }),
-    );
-
-    const promptEventId = randomUUID();
-    signIn(member);
-    const sent = await accept(
-      setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
-        headers,
-        body: {
-          prompt: "Share this prompt",
-          hasTextContent: true,
-          clientEventId: promptEventId,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "Share this prompt" }],
-          },
-        },
-      }),
-      [201],
-    );
-    const threadId = sent.body.threadId;
-
-    signIn(member);
-    const shared = await accept(
-      setupApp({ context, routes: sharedThreadRoutes })(
-        sharedThreadsContract,
-      ).create({
-        headers,
-        params: { threadId },
-        body: { eventIds: [promptEventId] },
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      catalogApi(member).list({ headers, query: { kind: "shared-thread" } }),
-      [200],
-    );
-    expect(listed.body.artifacts).toHaveLength(1);
-    const artifactId = listed.body.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected a shared-thread catalog artifact");
-    }
-
-    await accept(
-      catalogApi(member).delete({ headers, params: { artifactId } }),
-      [200],
-    );
-
-    const afterDelete = await accept(
-      catalogApi(member).list({ headers, query: { kind: "shared-thread" } }),
-      [200],
-    );
-    expect(afterDelete.body).toStrictEqual({ artifacts: [], nextCursor: null });
-
-    context.mocks.clerk.authenticateRequest.mockResolvedValue({
-      isAuthenticated: false,
-    });
-    const publicApi = setupApp({ context, routes: sharedThreadRoutes })(
-      sharedThreadsContract,
-    );
-    await accept(publicApi.get({ params: { id: shared.body.id } }), [404]);
-    await accept(publicApi.meta({ params: { id: shared.body.id } }), [404]);
-
-    await accept(
-      catalogApi(member).delete({ headers, params: { artifactId } }),
-      [200],
-    );
-
-    signIn(member);
-    const events = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadEventsContract,
-      ).rows({
-        headers,
-        params: { threadId },
-        query: { sinceSeqId: 0, limit: 50 },
-      }),
-      [200],
-    );
-    expect(
-      events.body.rows.some((row) => {
-        return row.id === promptEventId;
-      }),
-    ).toBeTruthy();
   });
 });

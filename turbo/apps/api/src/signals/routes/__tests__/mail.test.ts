@@ -1197,3 +1197,569 @@ describe("thread email list", () => {
     });
   });
 });
+
+const OUTLOOK_GRAPH = "https://graph.microsoft.com/v1.0/me";
+
+interface OutlookAttachmentFixture {
+  readonly "@odata.type": string;
+  readonly id: string;
+  readonly name: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly isInline: boolean;
+  readonly contentId?: string;
+  readonly contentBytes: string;
+}
+
+function outlookMessageResource(
+  messageId: string,
+  options: {
+    readonly subject?: string;
+    readonly isDraft?: boolean;
+    readonly sentDateTime?: string | null;
+    readonly inReplyTo?: string;
+  } = {},
+) {
+  return {
+    id: messageId,
+    conversationId: `${messageId}-conversation`,
+    isDraft: options.isDraft ?? true,
+    from: {
+      emailAddress: {
+        address: "outlook-sender@example.com",
+        name: "Outlook Sender",
+      },
+    },
+    toRecipients: [{ emailAddress: { address: "recipient@example.com" } }],
+    ccRecipients: [],
+    bccRecipients: [],
+    replyTo: [],
+    subject: options.subject ?? "Outlook review",
+    body: {
+      contentType: "html",
+      content: "<p>Please review the Outlook draft.</p>",
+    },
+    ...(options.sentDateTime === undefined
+      ? {}
+      : { sentDateTime: options.sentDateTime }),
+    internetMessageHeaders: options.inReplyTo
+      ? [{ name: "In-Reply-To", value: options.inReplyTo }]
+      : [],
+  };
+}
+
+interface OutlookRecorder {
+  readonly sends: string[];
+  readonly deletes: string[];
+}
+
+function mockOutlook(
+  token: string,
+  options: {
+    readonly messages: Readonly<Record<string, () => Response>>;
+    readonly attachments?: Readonly<
+      Record<string, readonly OutlookAttachmentFixture[]>
+    >;
+    readonly send?: (messageId: string) => Response;
+  },
+): OutlookRecorder {
+  const recorder: OutlookRecorder = { sends: [], deletes: [] };
+  function owned(request: Request): boolean {
+    return request.headers.get("authorization") === `Bearer ${token}`;
+  }
+  server.use(
+    http.get(`${OUTLOOK_GRAPH}/messages/:messageId`, ({ request, params }) => {
+      if (!owned(request)) {
+        return undefined;
+      }
+      const respond = options.messages[String(params.messageId)];
+      return respond
+        ? respond()
+        : HttpResponse.json(
+            { error: { code: "ErrorItemNotFound" } },
+            { status: 404 },
+          );
+    }),
+    http.get(
+      `${OUTLOOK_GRAPH}/messages/:messageId/attachments`,
+      ({ request, params }) => {
+        if (!owned(request)) {
+          return undefined;
+        }
+        const items = options.attachments?.[String(params.messageId)] ?? [];
+        return HttpResponse.json({
+          value: items.map((item) => {
+            return {
+              "@odata.type": item["@odata.type"],
+              id: item.id,
+              name: item.name,
+              contentType: item.contentType,
+              size: item.size,
+              isInline: item.isInline,
+            };
+          }),
+        });
+      },
+    ),
+    http.get(
+      `${OUTLOOK_GRAPH}/messages/:messageId/attachments/:attachmentId`,
+      ({ request, params }) => {
+        if (!owned(request)) {
+          return undefined;
+        }
+        const items = options.attachments?.[String(params.messageId)] ?? [];
+        const found = items.find((item) => {
+          return item.id === String(params.attachmentId);
+        });
+        return found
+          ? HttpResponse.json(found)
+          : HttpResponse.json(
+              { error: { code: "ErrorItemNotFound" } },
+              { status: 404 },
+            );
+      },
+    ),
+    http.post(
+      `${OUTLOOK_GRAPH}/messages/:messageId/send`,
+      ({ request, params }) => {
+        if (!owned(request)) {
+          return undefined;
+        }
+        const messageId = String(params.messageId);
+        recorder.sends.push(messageId);
+        return options.send
+          ? options.send(messageId)
+          : new HttpResponse(null, { status: 202 });
+      },
+    ),
+    http.delete(
+      `${OUTLOOK_GRAPH}/messages/:messageId`,
+      ({ request, params }) => {
+        if (!owned(request)) {
+          return undefined;
+        }
+        recorder.deletes.push(String(params.messageId));
+        return new HttpResponse(null, { status: 204 });
+      },
+    ),
+  );
+  return recorder;
+}
+
+async function connectOutlook(
+  actor: ApiTestUser,
+  options: { readonly subject?: string; readonly email?: string } = {},
+): Promise<{ readonly connectionId: string; readonly token: string }> {
+  mockEnv("MICROSOFT_OAUTH_CLIENT_ID", "outlook-test-client-id");
+  mockEnv("MICROSOFT_OAUTH_CLIENT_SECRET", "outlook-test-client-secret");
+  const token = `outlook-token-${randomUUID()}`;
+  const subject = options.subject ?? `outlook-${actor.userId}`;
+  const email = options.email ?? "outlook-sender@example.com";
+  server.use(
+    http.post(
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      () => {
+        return HttpResponse.json({
+          access_token: token,
+          refresh_token: `outlook-refresh-${token}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+          scope: "Mail.ReadWrite Mail.Send User.Read offline_access",
+        });
+      },
+    ),
+    http.get(OUTLOOK_GRAPH, ({ request }) => {
+      if (request.headers.get("authorization") !== `Bearer ${token}`) {
+        return undefined;
+      }
+      return HttpResponse.json({
+        id: subject,
+        mail: email,
+        userPrincipalName: email,
+        displayName: "Outlook Sender",
+      });
+    }),
+  );
+  const started = await connectors.startOauth(actor, "outlook-mail", "oauth");
+  const callback = await connectors.completeOauthCallbackResult(
+    "outlook-mail",
+    {
+      code: "authorized",
+      state: oauthState(started.authorizationUrl),
+    },
+  );
+  expect(callback.body.status).toBe("success");
+  const completed = await accept(
+    accounts.oauthCompletion({
+      headers: as(actor),
+      params: { attemptId: started.oauthAttemptId },
+      query: { kind: "builtin", connectorSlug: "outlook-mail" },
+    }),
+    [200],
+  );
+  return { connectionId: completed.body.connectionId, token };
+}
+
+async function outlookMember() {
+  const actor = bdd.user();
+  const outlook = await connectOutlook(actor);
+  const thread = await chats.createThread(actor, { model: null });
+  return { actor, outlook, thread };
+}
+
+async function linkOutlook(
+  actor: ApiTestUser,
+  threadId: string,
+  outlookMessageId: string,
+) {
+  return await accept(
+    mail.linkDraft({
+      headers: as(actor),
+      body: { threadId, provider: "outlook", outlookMessageId },
+    }),
+    [200, 400, 404, 409],
+  );
+}
+
+async function linkedOutlook(
+  actor: ApiTestUser,
+  threadId: string,
+  outlookMessageId: string,
+) {
+  const response = await linkOutlook(actor, threadId, outlookMessageId);
+  if (response.status !== 200) {
+    throw new Error(`Expected a linked Outlook draft, got ${response.status}`);
+  }
+  return response.body;
+}
+
+describe("Outlook mail in chat", () => {
+  it("mail-001 returns an actionable 400 for a malformed message ID (ErrorInvalidIdMalformed)", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    mockOutlook(outlook.token, {
+      messages: {
+        "malformed-id": () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "ErrorInvalidIdMalformed",
+                message: "Sensitive provider detail for malformed-id",
+              },
+            },
+            { status: 400 },
+          );
+        },
+        "real-outlook-draft": () => {
+          return HttpResponse.json(
+            outlookMessageResource("real-outlook-draft"),
+          );
+        },
+      },
+    });
+
+    const invalid = await linkOutlook(actor, thread.id, "malformed-id");
+    expect(invalid.status).toBe(400);
+    expect(invalid.body).toStrictEqual({
+      error: {
+        code: "BAD_REQUEST",
+        message:
+          "Invalid Outlook draft ID. Check for a typo or placeholder, then retry with the exact id returned by Microsoft Graph for the draft.",
+      },
+    });
+
+    const valid = await linkOutlook(actor, thread.id, "real-outlook-draft");
+    expect(valid.status).toBe(200);
+  });
+
+  it("mail-005 links, refreshes and previews the provider draft with its attachments", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    const pdfBytes = new Uint8Array(Buffer.from("%PDF-1.4 outlook proposal"));
+    const pngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 4, 5, 6]);
+    let subject = "Outlook review";
+    mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-5": () => {
+          return HttpResponse.json(
+            outlookMessageResource("outlook-draft-5", {
+              subject,
+              inReplyTo: "<original@example.com>",
+            }),
+          );
+        },
+      },
+      attachments: {
+        "outlook-draft-5": [
+          {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            id: "report",
+            name: "proposal.pdf",
+            contentType: "application/pdf",
+            size: pdfBytes.length,
+            isInline: false,
+            contentBytes: Buffer.from(pdfBytes).toString("base64"),
+          },
+          {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            id: "inline-logo",
+            name: "logo.png",
+            contentType: "image/png",
+            size: pngBytes.length,
+            isInline: true,
+            contentId: "outlook-logo",
+            contentBytes: Buffer.from(pngBytes).toString("base64"),
+          },
+        ],
+      },
+    });
+
+    const first = await linkedOutlook(actor, thread.id, "outlook-draft-5");
+    const second = await linkedOutlook(actor, thread.id, "outlook-draft-5");
+    expect(second.mailDraftId).toBe(first.mailDraftId);
+
+    subject = "Revised Outlook proposal";
+    const draft = await draftOf(actor, first.mailDraftId);
+    expect(draft).toMatchObject({
+      provider: "outlook",
+      outlookMessageId: "outlook-draft-5",
+      subject: "Revised Outlook proposal",
+      status: "draft",
+      inReplyTo: "<original@example.com>",
+      attachments: [
+        {
+          filename: "proposal.pdf",
+          contentType: "application/pdf",
+          size: pdfBytes.length,
+          partId: "report",
+        },
+      ],
+      inlineImages: [
+        {
+          contentId: "outlook-logo",
+          partId: "inline-logo",
+          alt: "logo.png",
+        },
+      ],
+    });
+
+    const downloaded = await download(actor, first.mailDraftId, "report");
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.contentType).toBe("application/pdf");
+    expect(downloaded.content).toStrictEqual(pdfBytes);
+
+    const listed = await listThread(actor, thread.id);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toMatchObject({
+      mails: [
+        {
+          mailDraftId: first.mailDraftId,
+          subject: "Revised Outlook proposal",
+        },
+      ],
+    });
+  });
+
+  it("mail-006 marks a 202 send successful immediately and prevents duplicate sends", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    const providerSentAt = "2026-06-15T12:34:56.000Z";
+    let phase: "draft" | "propagating" | "sent" = "draft";
+    const recorder = mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-6": () => {
+          if (phase === "propagating") {
+            return HttpResponse.json(
+              { error: { code: "ErrorItemNotFound" } },
+              { status: 404 },
+            );
+          }
+          if (phase === "sent") {
+            return HttpResponse.json(
+              outlookMessageResource("outlook-draft-6", {
+                isDraft: false,
+                sentDateTime: providerSentAt,
+              }),
+            );
+          }
+          return HttpResponse.json(outlookMessageResource("outlook-draft-6"));
+        },
+      },
+    });
+    const { mailDraftId } = await linkedOutlook(
+      actor,
+      thread.id,
+      "outlook-draft-6",
+    );
+
+    const [firstSend, secondSend] = await Promise.all([
+      send(actor, mailDraftId),
+      send(actor, mailDraftId),
+    ]);
+    expect([200, 409]).toContain(firstSend.status);
+    expect([200, 409]).toContain(secondSend.status);
+    const winning = [firstSend, secondSend].find((result) => {
+      return result.status === 200;
+    });
+    if (!winning || !("mailDraft" in winning.body)) {
+      throw new Error("Expected one concurrent send to succeed with HTTP 200");
+    }
+    expect(winning.body.mailDraft).toMatchObject({
+      status: "sent",
+      sentAt: expect.any(String),
+    });
+    expect(recorder.sends).toStrictEqual(["outlook-draft-6"]);
+
+    phase = "propagating";
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      status: "sent",
+    });
+
+    const extraSend = await send(actor, mailDraftId);
+    expect(extraSend.status).toBe(409);
+
+    phase = "sent";
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      status: "sent",
+      sentAt: providerSentAt,
+    });
+
+    const deleted = await accept(
+      mail.deleteDraft({ headers: as(actor), params: { mailDraftId } }),
+      [204, 409],
+    );
+    expect(deleted.status).toBe(409);
+    expect(recorder.sends).toStrictEqual(["outlook-draft-6"]);
+  });
+
+  it("mail-010 preserves an uncertain 408 send without retrying and lets explicit rejections be corrected", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    let sendAttempt = 0;
+    const recorder = mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-10": () => {
+          return HttpResponse.json(outlookMessageResource("outlook-draft-10"));
+        },
+      },
+      send: () => {
+        sendAttempt += 1;
+        return sendAttempt === 1
+          ? HttpResponse.json(
+              { error: { code: "ErrorInvalidRequest" } },
+              { status: 400 },
+            )
+          : new HttpResponse(null, { status: 408 });
+      },
+    });
+    const { mailDraftId } = await linkedOutlook(
+      actor,
+      thread.id,
+      "outlook-draft-10",
+    );
+
+    const first = await send(actor, mailDraftId);
+    expect(first.status).toBe(400);
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      status: "draft",
+    });
+
+    const second = await send(actor, mailDraftId);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({
+      mailDraft: { status: "sending" },
+    });
+
+    const third = await send(actor, mailDraftId);
+    expect(third.status).toBe(409);
+    expect(recorder.sends).toStrictEqual([
+      "outlook-draft-10",
+      "outlook-draft-10",
+    ]);
+  });
+
+  it("mail-013 requires reconnect for revoked Outlook access", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    let revoked = false;
+    mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-13": () => {
+          return revoked
+            ? HttpResponse.json(
+                { error: { code: "InvalidAuthenticationToken" } },
+                { status: 401 },
+              )
+            : HttpResponse.json(outlookMessageResource("outlook-draft-13"));
+        },
+      },
+    });
+    const { mailDraftId } = await linkedOutlook(
+      actor,
+      thread.id,
+      "outlook-draft-13",
+    );
+
+    revoked = true;
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      provider: "outlook",
+      accessStatus: "reconnect",
+    });
+  });
+
+  it("mail-014 preserves the sent copy when the user sends an Outlook draft externally", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    let sentExternally = false;
+    const recorder = mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-14": () => {
+          return HttpResponse.json(
+            outlookMessageResource("outlook-draft-14", {
+              isDraft: !sentExternally,
+              sentDateTime: sentExternally
+                ? "2026-06-15T14:00:00.000Z"
+                : undefined,
+            }),
+          );
+        },
+      },
+    });
+    const { mailDraftId } = await linkedOutlook(
+      actor,
+      thread.id,
+      "outlook-draft-14",
+    );
+
+    sentExternally = true;
+    const deleted = await accept(
+      mail.deleteDraft({ headers: as(actor), params: { mailDraftId } }),
+      [204, 409],
+    );
+    expect(deleted.status).toBe(409);
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      status: "sent",
+    });
+    expect(recorder.deletes).toStrictEqual([]);
+    expect(recorder.sends).toStrictEqual([]);
+  });
+
+  it("mail-015 deletes an Outlook draft and keeps its review link unavailable", async () => {
+    const { actor, outlook, thread } = await outlookMember();
+    const recorder = mockOutlook(outlook.token, {
+      messages: {
+        "outlook-draft-15": () => {
+          return HttpResponse.json(outlookMessageResource("outlook-draft-15"));
+        },
+      },
+    });
+    const { mailDraftId } = await linkedOutlook(
+      actor,
+      thread.id,
+      "outlook-draft-15",
+    );
+
+    await accept(
+      mail.deleteDraft({ headers: as(actor), params: { mailDraftId } }),
+      [204],
+    );
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      status: "deleted",
+    });
+    expect(recorder.deletes).toStrictEqual(["outlook-draft-15"]);
+  });
+});

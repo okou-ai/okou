@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { webhookGoogleCalendarContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -7,8 +8,11 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { builtinConnectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import {
@@ -16,11 +20,26 @@ import {
   mockGoogleCalendarConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
-import { now } from "../../../lib/time";
 
 const context = testContext();
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+const calendarAutomations = setupApp({
+  context,
+  routes: workflowAutomationsRoutes,
+})(workflowAutomationsContract);
+const calendarWebhook = setupApp({
+  context,
+  routes: webhooksGoogleCalendarRoutes,
+})(webhookGoogleCalendarContract);
+const calendarOauthStart = setupApp({
+  context,
+  routes: builtinConnectorsRoutes,
+})(builtinConnectorOauthStartContract);
+const calendarOauthCallback = setupApp({
+  context,
+  routes: builtinConnectorsSlugCallbackRoutes,
+})(builtinConnectorsSlugCallbackContract);
 
 interface CalendarEvent {
   readonly id: string;
@@ -223,4 +242,91 @@ describe("POST /api/webhooks/google-calendar", () => {
       }),
     ).resolves.toMatchObject({ status: 204 });
   });
+
+  it("webhooks-google-calendar-021 rejects webhook notifications with the wrong channel token", async () => {
+    const { provider } = await setupFastCalendarAutomation();
+
+    const response = await accept(
+      notifyFast(provider.channel(), { token: "wrong-token" }),
+      [401],
+    );
+
+    expect(response.body).toStrictEqual({ error: "Unauthorized" });
+  });
 });
+
+function notifyFast(
+  channel: { readonly id: string; readonly token: string },
+  overrides: { readonly token?: string; readonly messageNumber?: string } = {},
+) {
+  return calendarWebhook.post({
+    body: "",
+    extraHeaders: {
+      "x-goog-channel-id": channel.id,
+      "x-goog-channel-token": overrides.token ?? channel.token,
+      "x-goog-resource-id": `resource-${channel.id}`,
+      "x-goog-resource-state": "exists",
+      "x-goog-message-number": overrides.messageNumber ?? "2",
+    },
+  });
+}
+
+async function completeCalendarOauth(authorizationUrl: string, code: string) {
+  const state = new URL(authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected Google Calendar OAuth state");
+  }
+  const completed = await accept(
+    calendarOauthCallback.callback({
+      headers: {},
+      params: { connectorSlug: "google-calendar" },
+      query: { code, state, responseMode: "json" },
+    }),
+    [200],
+  );
+  expect(completed.body.status).toBe("success");
+}
+
+async function setupFastCalendarAutomation() {
+  const workflows = createWorkflowsBddApi(context);
+  const actor = workflows.user();
+  mockGoogleCalendarConnectorOAuth({
+    accessToken: "calendar-access-token",
+    subject: `calendar-${randomUUID()}`,
+    email: `calendar-${randomUUID()}@example.com`,
+  });
+  const provider = mockCalendarProvider([]);
+  const mocks = createRouteMocks(context);
+  const authenticate = () => {
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    return { authorization: "Bearer clerk-session" } as const;
+  };
+  const [workflowId, oauthStarted] = await Promise.all([
+    workflows.createWorkflow(actor, {
+      name: `calendar-${randomUUID().slice(0, 8)}`,
+      visibility: "private",
+    }),
+    accept(
+      calendarOauthStart.start({
+        headers: authenticate(),
+        params: { connectorSlug: "google-calendar" },
+        body: { authMethod: "oauth", account: { intent: "add" } },
+      }),
+      [200],
+    ),
+  ]);
+  await completeCalendarOauth(
+    oauthStarted.body.authorizationUrl,
+    `code-${randomUUID()}`,
+  );
+  const created = await accept(
+    calendarAutomations.create({
+      headers: authenticate(),
+      params: { workflowId },
+      body: { kind: "event", eventType: "google-calendar-event-created" },
+    }),
+    [201],
+  );
+  await flushWaitUntilForTest();
+  return { actor, provider, automationId: created.body.id, authenticate };
+}
