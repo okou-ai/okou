@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.3](https://github.com/okou-ai/okou/compare/ios-v0.69.2...ios-v0.69.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** keep single recording sends compact ([#51248](https://github.com/okou-ai/okou/issues/51248)) ([b6e7974](https://github.com/okou-ai/okou/commit/b6e7974d6b9966f048fc82702ce32614cb73375d))
+
 ## [0.69.2](https://github.com/okou-ai/okou/compare/ios-v0.69.1...ios-v0.69.2) (2026-11-26)
 
 
