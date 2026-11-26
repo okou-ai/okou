@@ -62,4 +62,7 @@
     </plurals>
     <string name="conversation_link_unavailable">この会話リンクは利用できません</string>
     <string name="conversation_link_no_browser">このリンクを開けるブラウザがありません</string>
+    <string name="chat_model_check_required">保存済みのモデルを確認できませんでした。送信する前に再確認してください。</string>
+    <string name="chat_model_save_rejected">このチャットのモデルを保存できませんでした。</string>
+    <string name="chat_model_save_unconfirmed">モデルの変更を確認できませんでした。現在の設定を表示しています。</string>
 </resources>

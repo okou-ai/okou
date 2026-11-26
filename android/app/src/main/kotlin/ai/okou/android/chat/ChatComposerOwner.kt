@@ -630,6 +630,8 @@ internal class ChatComposerOwner(
 
     fun send(connection: Connection, target: ComposerTarget, options: DefaultModelOptions? = null) {
         if (!mutable.value.canSend(target) || !connection.current()) return
+        if (target.threadId?.let { connection.chatList?.canSendWithConversationModel(it) } == false)
+            return
         val op = begin(connection, target.key) ?: return
         val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)

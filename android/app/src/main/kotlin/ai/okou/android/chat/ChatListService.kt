@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
+import ai.okou.android.api.generated.SetThreadModelRequest
 
 /** A signed-storage rejection does not revoke the first-party workspace session. */
 class ChatSnapshotUnavailable(val status: Int, val retryAfterSeconds: Long? = null) :
@@ -34,6 +35,8 @@ interface ChatListService : ConversationHistoryService {
     suspend fun deleteProject(projectId: String, eventId: String)
 
     suspend fun renameThread(threadId: String, title: String, eventId: String)
+
+    suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest)
 
     suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String)
 

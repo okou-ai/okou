@@ -1,11 +1,19 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.CanonicalOptional
+import ai.okou.android.api.generated.ChatArchiveChatThreadsItemServiceTier
+import ai.okou.android.api.generated.ChatEventsEventsItemVariant1
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.api.generated.SetThreadModelRequest
+import ai.okou.android.api.generated.SetThreadModelRequestCodexServiceTier
+import ai.okou.android.api.generated.SetThreadModelRequestReasoningEffort
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.contentReadStaleDelayMillis
+import ai.okou.android.settings.ModelEffort
+import ai.okou.android.settings.isAutoDefaultModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.UUID
@@ -199,6 +207,7 @@ data class ChatListUiState(
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
     internal val unconfirmedRenames: Map<String, RenameSubmission> = emptyMap(),
     internal val confirmedRenameIds: Map<String, String> = emptyMap(),
+    internal val conversationModelSaves: Map<String, ConversationModelSave> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
     internal val conversationUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
@@ -398,6 +407,7 @@ class ChatListModel(
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
     private val pendingRenameIds = mutableMapOf<String, String>()
+    private val pendingModelChecks = mutableMapOf<String, Pair<SetThreadModelRequest, Boolean>>()
     private val rowMutations =
         ChatRowMutationOwner(
             service,
@@ -449,7 +459,7 @@ class ChatListModel(
 
     private class ListConfirmation(
         val needsRead: () -> Boolean,
-        val done: CompletableDeferred<Unit>,
+        val done: CompletableDeferred<Boolean>,
     )
 
     private class ReadConfirmation(
@@ -1562,6 +1572,125 @@ class ChatListModel(
         projection.completeOutgoing(pending.send.chatThreadSortEventId)
     }
 
+    internal fun canSendWithConversationModel(threadId: String): Boolean =
+        mutable.value.conversationModelSaves[threadId]?.blocksSend != true
+
+    internal fun saveConversationModel(
+        threadId: String,
+        model: String?,
+        effort: ModelEffort?,
+        fast: Boolean?,
+    ) {
+        if (
+            !current() ||
+                !remoteAccessVerified() ||
+                !canSendWithConversationModel(threadId) ||
+                mutable.value.confirmedThreads.none { it.id == threadId && it.hidden != true }
+        )
+            return
+        val request =
+            SetThreadModelRequest(
+                model = model,
+                reasoningEffort =
+                    effort?.let { SetThreadModelRequestReasoningEffort.valueOf(it.name) },
+                codexServiceTier =
+                    if (fast == null) CanonicalOptional.Absent
+                    else
+                        CanonicalOptional.Present(
+                            SetThreadModelRequestCodexServiceTier.FAST.takeIf { fast },
+                        ),
+                eventId = UUID.randomUUID().toString(),
+                serviceTierEventId = UUID.randomUUID().toString(),
+            )
+        publishModelSave(threadId, ConversationModelSave.Saving)
+        viewModelScope.launch {
+            val accepted =
+                try {
+                    service.setThreadModel(threadId, request)
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: ApiFailure) {
+                    requireCurrent()
+                    onFailure(error)
+                    requireCurrent()
+                    if (
+                        error is ApiFailure.Http &&
+                            error.status in setOf(400, 401, 402, 403, 404) ||
+                            error is ApiFailure.Network && error.connectionFailed ||
+                            error is ApiFailure.Unauthenticated ||
+                            error is ApiFailure.UpdateRequired
+                    ) {
+                        publishModelSave(threadId, ConversationModelSave.Rejected)
+                        return@launch
+                    }
+                    false
+                }
+            requireCurrent()
+            pendingModelChecks[threadId] = request to accepted
+            publishModelSave(threadId, ConversationModelSave.Checking)
+            checkConversationModelWrite(threadId)
+        }
+    }
+
+    internal fun retryConversationModelCheck(threadId: String) {
+        if (
+            !current() ||
+                mutable.value.conversationModelSaves[threadId] != ConversationModelSave.NeedsCheck
+        )
+            return
+        publishModelSave(threadId, ConversationModelSave.Checking)
+        viewModelScope.launch { checkConversationModelWrite(threadId) }
+    }
+
+    private suspend fun checkConversationModelWrite(threadId: String) {
+        val read = readListForConfirmation { true }
+        requireCurrent()
+        if (read) resolveConversationModelWrite(threadId)
+        else publishModelSave(threadId, ConversationModelSave.NeedsCheck)
+    }
+
+    private fun resolveConversationModelWrite(threadId: String) {
+        val (request, accepted) = checkNotNull(pendingModelChecks.remove(threadId))
+        val seen =
+            confirmed?.checkpoint?.events?.any {
+                it is ChatEventsEventsItemVariant1 &&
+                    it.chatThreadId == threadId &&
+                    it.id == request.eventId
+            } == true
+        val row = mutable.value.confirmedThreads.firstOrNull { it.id == threadId }
+        val confirmed = row != null && row.matchesModelWrite(request)
+        publishModelSave(
+            threadId,
+            if (accepted || seen || confirmed || row == null) null
+            else ConversationModelSave.Unconfirmed,
+        )
+    }
+
+    private fun publishModelSave(threadId: String, phase: ConversationModelSave?) {
+        val state = mutable.value
+        val saves =
+            if (phase == null) state.conversationModelSaves - threadId
+            else state.conversationModelSaves + (threadId to phase)
+        mutable.value = state.copy(conversationModelSaves = saves)
+    }
+
+    private fun ConfirmedChat.matchesModelWrite(request: SetThreadModelRequest): Boolean {
+        val tier = request.codexServiceTier
+        return selectedModel.takeUnless(::isAutoDefaultModel) == request.model &&
+            (request.reasoningEffort == null ||
+                modelSettings?.get(selectedModel)?.effort?.name == request.reasoningEffort.name) &&
+            (tier !is CanonicalOptional.Present ||
+                serviceTier ==
+                    when (tier.value) {
+                        SetThreadModelRequestCodexServiceTier.FAST ->
+                            ChatArchiveChatThreadsItemServiceTier.PRIORITY
+                        SetThreadModelRequestCodexServiceTier.ULTRAFAST ->
+                            ChatArchiveChatThreadsItemServiceTier.ULTRAFAST
+                        null -> null
+                    })
+    }
+
     internal fun refreshAfterSendFailure(pending: PendingText, rejected: Boolean) {
         if (!current()) return
         if (projection.completeOutgoing(pending.send.chatThreadSortEventId, rejected)) publishRows()
@@ -1682,11 +1811,15 @@ class ChatListModel(
     }
 
     private suspend fun awaitListRead(needsRead: () -> Boolean) {
-        val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
+        readListForConfirmation(needsRead)
+    }
+
+    private suspend fun readListForConfirmation(needsRead: () -> Boolean): Boolean {
+        val completion = CompletableDeferred<Boolean>(currentCoroutineContext()[Job])
         val batch = listReadBatch()
         batch.confirmations.add(ListConfirmation(needsRead, completion))
         listReadRequests.trySend(Unit)
-        completion.await()
+        return completion.await()
     }
 
     private suspend fun readPendingListBatch() {
@@ -1696,7 +1829,7 @@ class ChatListModel(
             batch?.confirmations.orEmpty().filter { confirmation ->
                 if (confirmation.needsRead()) true
                 else {
-                    confirmation.done.complete(Unit)
+                    confirmation.done.complete(true)
                     false
                 }
             }
@@ -1708,8 +1841,15 @@ class ChatListModel(
             listRebaseJob?.cancel()
             readyListRebase = null
             try {
-                readList(batch)
-                unconfirmed.forEach { it.done.complete(Unit) }
+                val read = readList(batch)
+                // A normal chat refresh can also settle a model write after a failed readback.
+                if (read) {
+                    mutable.value.conversationModelSaves.forEach { (threadId, save) ->
+                        if (save == ConversationModelSave.NeedsCheck)
+                            resolveConversationModelWrite(threadId)
+                    }
+                }
+                unconfirmed.forEach { it.done.complete(read) }
             } finally {
                 unconfirmed.forEach { it.done.cancel() }
             }
@@ -1736,13 +1876,13 @@ class ChatListModel(
         }
     }
 
-    private suspend fun readList(batch: ListReadBatch) {
+    private suspend fun readList(batch: ListReadBatch): Boolean {
         restoreJob?.join()
         requireCurrent()
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
-        try {
+        return try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
             // restore the canonical order for completed attempts after a successful read.
             val reconciliation = completedActivityReconciliation
@@ -1762,6 +1902,7 @@ class ChatListModel(
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)
             }
+            true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -1786,6 +1927,7 @@ class ChatListModel(
                     )
                 }
             }
+            false
         }
     }
 

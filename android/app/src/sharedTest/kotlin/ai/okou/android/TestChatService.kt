@@ -7,6 +7,7 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ConfirmedProject
 import kotlinx.serialization.json.Json
@@ -70,6 +71,9 @@ open class TestChatService : ChatListService {
 
     override suspend fun renameThread(threadId: String, title: String, eventId: String): Unit =
         error("Unexpected rename")
+
+    override suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest): Unit =
+        error("Unexpected model change")
 
     override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String): Unit =
         error("Unexpected pin change")

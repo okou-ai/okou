@@ -62,4 +62,7 @@
     <string name="conversation_find_attachment">附件</string>
     <string name="conversation_link_unavailable">這個對話連結暫時無法使用</string>
     <string name="conversation_link_no_browser">沒有可開啟此連結的瀏覽器</string>
+    <string name="chat_model_check_required">無法核對已儲存的模型。請重新核對後再傳送。</string>
+    <string name="chat_model_save_rejected">無法儲存此聊天的模型。</string>
+    <string name="chat_model_save_unconfirmed">無法確認模型變更。面板顯示目前設定。</string>
 </resources>
