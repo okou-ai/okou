@@ -703,8 +703,8 @@ chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-anno
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-002	skipped		slow-setup: real Feishu setup + browser-connect OAuth + encrypted event via createPublicAnnotationIngress measured 630-681 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	skipped		slow-setup: real Teams install + account connect + channel activity via createPublicAnnotationIngress measured 426-465 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	skipped		slow-setup: real Telegram account link + supergroup webhook via createPublicAnnotationIngress (runner/entitlement setup and run launch) measured 327-358 ms		B01
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	152.3		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	planned		selected in rewrite review		B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	149.9		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	rewritten	64.9	selected in rewrite review	src/signals/routes/__tests__/chat-event-annotations.test.ts	B01
 chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	planned				
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned				pilot
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned				pilot
@@ -1616,9 +1616,9 @@ messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-005	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-006	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-user-deletion.test.ts	feishu-user-deletion-001	planned				
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-001	planned				B02
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-002	planned				B02
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-004	planned				B02
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-001	rewritten	133.2		src/signals/routes/__tests__/friend-referrals.test.ts	B02
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-002	revisit		revisit: paid usage-pack invoice webhook returns undeclared HTTP 500 once a referral reward applies; evidence: purchaseUsagePacks(deliveries 1-3, with or without completeCheckout) for a registered invitee -> POST /api/webhooks/stripe 500 even with the referrer org membership seeded (004 with amount_paid 0 passes); resume: inspect the server error for the reward path (getMemberRoleAndUpdateCache$/referral UPDATE) and the required referrer workspace state, then rewrite with concurrent deliveries, renewal and month-end expiry		B02
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-004	rewritten	121.1		src/signals/routes/__tests__/friend-referrals.test.ts	B02
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-001	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-002	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-004	planned				
