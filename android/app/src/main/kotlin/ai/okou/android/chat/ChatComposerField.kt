@@ -12,6 +12,7 @@ import ai.okou.android.workspaceListPaneWidth
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -31,12 +32,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -52,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -60,6 +59,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -299,23 +299,21 @@ internal fun ChatComposerField(
                         }
                     }
                     val canSend = state.canSend(target)
-                    FilledIconButton(
-                        onClick = {
-                            focus.clearFocus()
-                            beforeSend()
-                            model.send(target, defaultModel?.state?.value?.options)
-                        },
+                    Box(
                         modifier =
-                            Modifier.size(48.dp).semantics { contentDescription = sendLabel },
-                        enabled = canSend,
-                        shape = CircleShape,
-                        colors =
-                            IconButtonDefaults.filledIconButtonColors(
-                                containerColor = Color.Transparent,
-                                contentColor = colors.onPrimary,
-                                disabledContainerColor = Color.Transparent,
-                                disabledContentColor = colors.onSurfaceVariant,
-                            ),
+                            Modifier.size(48.dp)
+                                .clickable(
+                                    interactionSource = null,
+                                    indication = ripple(bounded = false, radius = 20.dp),
+                                    enabled = canSend,
+                                    role = Role.Button,
+                                ) {
+                                    focus.clearFocus()
+                                    beforeSend()
+                                    model.send(target, defaultModel?.state?.value?.options)
+                                }
+                                .semantics { contentDescription = sendLabel },
+                        contentAlignment = Alignment.Center,
                     ) {
                         Box(
                             Modifier.size(40.dp)
@@ -329,6 +327,7 @@ internal fun ChatComposerField(
                                 painterResource(R.drawable.ic_arrow_upward),
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp),
+                                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant,
                             )
                         }
                     }

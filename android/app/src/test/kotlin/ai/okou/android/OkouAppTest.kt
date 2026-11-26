@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -538,6 +539,8 @@ class OkouAppTest {
         render()
         compose.onNodeWithText("New chat").performClick()
         val input = compose.onNodeWithTag("message_input").assertIsDisplayed().assertIsEnabled()
+        val send = compose.onNodeWithContentDescription("Send", useUnmergedTree = true)
+        send.assertIsDisplayed().assertIsNotEnabled().assertWidthIsEqualTo(48.dp)
         fun resize(heightDp: Int) = compose.runOnIdle {
             val density = compose.activity.resources.displayMetrics.density
             windowSize.value = IntSize((400 * density).toInt(), (heightDp * density).toInt())
@@ -562,9 +565,10 @@ class OkouAppTest {
         val compactLayout = compactLayouts.single()
         assertEquals(1, compactLayout.lineCount)
         assertEquals(draft.length, compactLayout.getLineEnd(0))
-        compose
-            .onNodeWithContentDescription("Send")
+        send
             .assertIsDisplayed()
+            .assertIsEnabled()
+            .assertHasClickAction()
             .assertWidthIsEqualTo(48.dp)
             .assertHeightIsEqualTo(48.dp)
         val compactSemantics = input.fetchSemanticsNode().config
