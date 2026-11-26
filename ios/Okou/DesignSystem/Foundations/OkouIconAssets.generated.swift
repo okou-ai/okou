@@ -28,6 +28,7 @@ enum OkouIconAssets {
     "circle-arrow-down",
     "circle-check",
     "circle-minus",
+    "circle-pause",
     "circle-play",
     "circle-stop",
     "circle-user-round",

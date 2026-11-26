@@ -198,9 +198,8 @@ struct ChatDetailView: View {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
               .disabled(syncStatus.isLoading)
-            if syncStatus.historyError == nil && history.canStop {
+            if syncStatus.historyError == nil && !history.activeRunIDs.isEmpty {
               Button("Stop again") { Task { await conversation.stop() } }
-                .disabled(delivery.isStopping)
             }
           }
           .padding(.horizontal, OkouSpace.lg)
@@ -212,20 +211,17 @@ struct ChatDetailView: View {
             .chatFeedbackContentAnchor()
         } else {
           ChatComposerView(
-            isBusy: delivery.isSending || delivery.isStopping
-              || isRecoveringFailure,
-            showsProgress: false, canStop: history.canStop, needsUpgrade: delivery.needsUpgrade,
+            isBusy: delivery.isSending || isRecoveringFailure,
+            showsProgress: false, canStop: !history.activeRunIDs.isEmpty,
+            needsUpgrade: delivery.needsUpgrade,
             error: delivery.error,
             attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
             draftState: conversation.composer,
             submit: {
-              if history.canStop && !conversation.composer.hasContent {
-                await conversation.stop()
-              } else {
-                await scrolling.send()
-                await didSend?()
-              }
+              await scrolling.send()
+              await didSend?()
             }, refresh: { await conversation.refresh() },
+            stopRun: { await conversation.stop() },
             modelSelection: conversation.modelSelection,
             connectorSelection: conversation.modelSelection?.connectors,
             mentionSource: mentionSource,
@@ -329,7 +325,7 @@ struct ChatDetailView: View {
           bottom: 0, trailing: ConversationCollectionRow.messageHorizontalInset))
     case .footer(let executionState, let showsAvatar):
       VStack(alignment: .leading, spacing: OkouSpace.xxl) {
-        if executionState.isActive {
+        if executionState == .queued || executionState == .running {
           HStack(spacing: OkouSpace.sm) {
             if showsAvatar { assistantAvatar }
             ConversationActivityLabel(

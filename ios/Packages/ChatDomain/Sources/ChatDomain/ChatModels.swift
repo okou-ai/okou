@@ -166,7 +166,7 @@ public struct ChatHistory: Equatable, Sendable {
   public let messages: [ChatMessage]
   public let workSections: [ChatWorkSection]
   public private(set) var executionState: ChatExecutionState
-  public let activeRunIDs: [String]
+  public private(set) var activeRunIDs: [String]
   public private(set) var activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
@@ -202,6 +202,19 @@ public struct ChatHistory: Equatable, Sendable {
     self.activityRunID = activityRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
+  }
+
+  public func interrupting(_ runIDs: Set<String>) -> ChatHistory {
+    guard activeRunIDs.contains(where: runIDs.contains) else { return self }
+    var result = self
+    result.activeRunIDs.removeAll(where: runIDs.contains)
+    if result.activeRunIDs.isEmpty {
+      result.executionState = queuedEventIDs.isEmpty ? .idle : .queued
+      result.activityRunID = nil
+    } else if let activityRunID, runIDs.contains(activityRunID) {
+      result.activityRunID = nil
+    }
+    return result
   }
 
   public func withCancellationRecoveryPending(_ pending: Bool) -> ChatHistory {

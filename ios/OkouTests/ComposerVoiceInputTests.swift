@@ -717,3 +717,42 @@ extension XCTestCase {
     return root
   }
 }
+
+@MainActor
+final class ComposerVoiceRecordingInsertionTests: XCTestCase {
+  func testVoiceRecordingInsertsAtCaretAndRetriesWithoutDuplicating() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let composer = fixture.composer(root: root, capture: VoiceCaptureFixture())
+    defer { composer.close() }
+    composer.text = "Before after"
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    input.selectedRange = NSRange(location: 7, length: 0)
+    let target = try XCTUnwrap(composer.editor.voiceInsertion())
+    let recordingID = UUID()
+    let fileID = UUID().uuidString
+    composer.insertVoiceClip(fileID, recordingID: recordingID, at: target)
+    composer.insertVoiceClip(fileID, recordingID: recordingID, at: target)
+
+    XCTAssertEqual(
+      composer.document.parts,
+      [
+        .object(["type": .string("text"), "text": .string("Before ")]),
+        .object([
+          "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
+        ]),
+        .object(["type": .string("text"), "text": .string("after")])
+      ])
+    input.undoManager?.undo()
+    XCTAssertEqual(
+      composer.document.parts,
+      [
+        .object(["type": .string("text"), "text": .string("Before after")])
+      ])
+  }
+}

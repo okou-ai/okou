@@ -19,11 +19,13 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var searchableRanges: (@MainActor () -> [NSRange])?
   var focusRequested: (@MainActor () -> Void)?
   var inputReady: (@MainActor () -> Void)?
-  var placeholder = String(localized: "Message Okou")
+  var placeholder = ""
   var followup: String?
+  var showsFollowupPlaceholder = true
   var identifier = "message-input"
   var expanded = false
   var mentionSource: ComposerMentionSource?
+  var voicePlayback: ComposerVoicePlayback?
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.workspaceChatPresentation) private var presentation
 
@@ -50,6 +52,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     let view = container.textView
     context.coordinator.input = self
     view.mentionEditor = editor
+    view.voicePlayback = voicePlayback
     view.mentionSource = mentionSource
     view.workflowSuggestions = editor?.workflows
     view.updateWorkflows = { [weak coordinator = context.coordinator, weak view] textChanged in
@@ -102,7 +105,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
       view.isApplyingDocument = false
     }
     view.followup = followup
-    view.placeholder.text = followup ?? placeholder
+    view.placeholder.text = showsFollowupPlaceholder ? followup ?? placeholder : placeholder
     view.placeholder.numberOfLines = expanded && followup != nil ? 2 : 1
     view.accessibilityLabel = placeholder.isEmpty ? String(localized: "Message Okou") : placeholder
     view.accessibilityIdentifier = identifier
@@ -121,6 +124,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     container.expandsOnTap = isEnabled && !isFocused && !expanded
     view.prepareFocus(isFocused)
     view.notifyInputReady()
+    container.setNeedsLayout()
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerInputContainer, context: Context)
@@ -128,7 +132,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   {
     guard let width = proposal.width else { return nil }
     let line = uiView.textView.font?.lineHeight ?? 20
-    if followup != nil && uiView.textView.textStorage.length == 0 {
+    if showsFollowupPlaceholder, followup != nil, uiView.textView.textStorage.length == 0 {
       let hint = uiView.textView.placeholder.sizeThatFits(
         CGSize(width: width, height: .greatestFiniteMagnitude))
       return CGSize(width: width, height: max(expanded ? line * 2 : line, ceil(hint.height)))
@@ -139,6 +143,13 @@ struct ChatComposerTextInput: UIViewRepresentable {
     // The surface reserves expansion space. Keep an empty editor's measured height
     // stable on focus so it does not resize the surface in a second layout update.
     // Drafts and feedback still keep at least two lines, up to six before scrolling.
+    let storage = uiView.textView.textStorage
+    if !expanded, storage.length == 1,
+      let clip = storage.attribute(.attachment, at: 0, effectiveRange: nil)
+        as? ComposerReferenceAttachment, !clip.voiceFileIDs.isEmpty
+    {
+      return CGSize(width: width, height: max(line, height))
+    }
     let hasText = !(uiView.textView.text ?? "").isEmpty
     return CGSize(
       width: width,
@@ -272,6 +283,8 @@ final class ComposerTextView: UITextView {
   var isCurrent: @MainActor () -> Bool = { true }
   var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
+  weak var voicePlayback: ComposerVoicePlayback?
+  var layoutVoiceClips: (() -> Void)?
   /// The workspace chats this input was last rendered with, for keyboard mention activation.
   var mentionSource: ComposerMentionSource?
   private(set) var isSettlingComposition = false
@@ -531,6 +544,7 @@ final class ComposerTextView: UITextView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    layoutVoiceClips?()
     // Long placeholders truncate inside the field instead of running under the controls.
     let fitted = placeholder.sizeThatFits(bounds.size)
     placeholder.frame = CGRect(

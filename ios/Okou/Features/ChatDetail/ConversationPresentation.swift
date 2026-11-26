@@ -31,7 +31,6 @@ final class ConversationPresentation {
   private let report: @MainActor (Error) -> Void
   private var closed: Bool { isClosed() }
   private var needsUpgrade: Bool { conversation?.needsUpgrade != false }
-  private var isStopping: Bool { conversation?.isStopping == true }
   private var items: [ConversationItem] { projection.items }
   private var messages: [ChatMessage] { projection.messages }
   private var history: ChatHistory? {
@@ -339,9 +338,9 @@ final class ConversationPresentation {
   }
 
   func reconcileActivitySummary() {
+    let history = projection.currentValue.history
     activitySummary.demand(
       !closed && !needsUpgrade && detailOwner != nil && isVisible()
-        && !isStopping
         && history?.executionState == .running ? history?.activityRunID : nil)
     reconcileStreaming()
   }
@@ -349,6 +348,7 @@ final class ConversationPresentation {
   /// Follows the visible chat's running run; like the web, a chunk 0 starts a message,
   /// later chunks append, and the persisted event with the same id always wins.
   private func reconcileStreaming() {
+    let history = projection.currentValue.history
     let runID =
       !closed && !needsUpgrade && detailOwner != nil && isVisible()
         && history?.executionState == .running ? history?.activityRunID?.lowercased() : nil
