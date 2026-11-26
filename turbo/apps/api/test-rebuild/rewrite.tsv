@@ -2962,14 +2962,14 @@ messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-013	rewri
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-017	rewritten	39.9	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot	
 messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-001	skipped		slow-setup: Given+first When/Then 461 ms and 439 ms (also 437, 420 ms in-test; Vitest row 598-628 ms with fixture teardown; funded Teams member via the public Teams dispatch fixture (limited-free onboarding + runner group + bot install activity + Microsoft OAuth connect) 201-214 ms, the first signed channel mention through admission and dispatch (waitUntil flushed) 211-238 ms, lifecycle read 8-15 ms; without credits the mention only replies 'Insufficient credits' and creates no thread)		B02	
 messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-002	skipped		slow-setup: Given+first When/Then 454 ms and 344 ms (Vitest row 606 ms and 475 ms with fixture teardown; first funded Teams member via the public Teams dispatch fixture 125-162 ms, second identity limited-free onboarding 36-37 ms + Microsoft OAuth connect 67-92 ms, first identity's signed channel mention through admission and dispatch 111-155 ms, lifecycle read 4-8 ms)		B02	
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-001	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-002	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-005	planned				B14	b-install
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-006	planned				B14	b-install
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-008	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-009	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-001	rewritten	70.9		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-002	rewritten	66.2		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-005	rewritten	36.8		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-006	rewritten	81.6		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-008	rewritten	91.1		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-009	rewritten	84.4		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-010	planned					a-run
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-014	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-014	rewritten	106.9		src/signals/routes/__tests__/teams-workspace-identity.test.ts	B14	d-other
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-001	planned					a-run
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-002	planned					a-run
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-011	planned					a-run
