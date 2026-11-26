@@ -3,13 +3,60 @@ import ChatData
 import ChatDomain
 import SwiftUI
 
+extension View {
+  /// Presents the viewer's open result preview, kept in the workspace session's Store.
+  func messageArtifactPreview(
+    viewer: MessageArtifactStore, markdown: MessageMarkdownCache
+  ) -> some View {
+    modifier(MessageArtifactPreviewPresentation(viewer: viewer, markdown: markdown))
+  }
+}
+
+private struct MessageArtifactPreviewPresentation: ViewModifier {
+  let viewer: MessageArtifactStore
+  let markdown: MessageMarkdownCache
+  @ResolvedValue private var presentation: MessageArtifactStore.Presentation?
+
+  init(viewer: MessageArtifactStore, markdown: MessageMarkdownCache) {
+    self.viewer = viewer
+    self.markdown = markdown
+    _presentation = ResolvedValue(viewer.presentationValue)
+  }
+
+  func body(content: Content) -> some View {
+    let isPresented = (presentation ?? viewer.presentation).preview != nil
+    content.sheet(
+      isPresented: Binding(get: { isPresented }, set: { if !$0 { viewer.dismiss() } })
+    ) {
+      MessageArtifactPreview(viewer: viewer, markdown: markdown)
+    }
+  }
+}
+
 struct MessageArtifactPreview: View {
   let viewer: MessageArtifactStore
   let markdown: MessageMarkdownCache
 
   var body: some View {
+    StoreProvider(viewer.graph) { MessageArtifactPreviewSheet(viewer: viewer, markdown: markdown) }
+  }
+}
+
+private struct MessageArtifactPreviewSheet: View {
+  let viewer: MessageArtifactStore
+  let markdown: MessageMarkdownCache
+  @ResolvedValue private var resolvedPresentation: MessageArtifactStore.Presentation?
+
+  init(viewer: MessageArtifactStore, markdown: MessageMarkdownCache) {
+    self.viewer = viewer
+    self.markdown = markdown
+    _resolvedPresentation = ResolvedValue(viewer.presentationValue)
+  }
+
+  var body: some View {
+    let presentation = resolvedPresentation ?? viewer.presentation
     Group {
-      if let preview = viewer.preview {
+      if let preview = presentation.preview {
         StoreProvider(preview.store) {
           if preview.loadsMetadata {
             ArtifactMetadataPreview(viewer: viewer, preview: preview, markdown: markdown)
@@ -21,7 +68,8 @@ struct MessageArtifactPreview: View {
       }
     }
     .sheet(
-      item: Binding(get: { viewer.sharing }, set: { if $0 == nil { viewer.dismissSharing() } })
+      item: Binding(
+        get: { presentation.sharing }, set: { if $0 == nil { viewer.dismissSharing() } })
     ) { share in
       ArtifactShareSheet(file: share.file) { viewer.dismissSharing() }
     }
