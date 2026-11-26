@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1192.0](https://github.com/okou-ai/okou/compare/app-v0.1191.1...app-v0.1192.0) (2026-11-26)
+
+
+### Features
+
+* **app:** add unarchived and all chat filters for staff ([#51226](https://github.com/okou-ai/okou/issues/51226)) ([52a6fe8](https://github.com/okou-ai/okou/commit/52a6fe80fe66dbbef978f19e3a5e96fbbdb6b2f0))
+
+
+### Bug Fixes
+
+* **app:** center display formulas in pdf exports ([#51142](https://github.com/okou-ai/okou/issues/51142)) ([091e76c](https://github.com/okou-ai/okou/commit/091e76cb191e2eaa1114fde437a5cfcad7860129))
+* **app:** hold finished chat avatars upright ([#51110](https://github.com/okou-ai/okou/issues/51110)) ([5d695fd](https://github.com/okou-ai/okou/commit/5d695fdd14cc7f34efeb6f541d271b3d2aff4c48))
+* **app:** let readers retry hosted site access ([#51232](https://github.com/okou-ai/okou/issues/51232)) ([a113ae0](https://github.com/okou-ai/okou/commit/a113ae031b7e1e407f41321c5c1eac828f9f6701))
+
+
+### Refactoring
+
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.136.0
+    * @okouai/core bumped to 8.887.0
+    * @okouai/ui bumped to 1.22.39
+
 ## [0.1191.1](https://github.com/okou-ai/okou/compare/app-v0.1191.0...app-v0.1191.1) (2026-11-26)
 
 

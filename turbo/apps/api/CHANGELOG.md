@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.137.3](https://github.com/okou-ai/okou/compare/api-v2.137.2...api-v2.137.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **api:** generate chat titles from voice-only messages ([#51235](https://github.com/okou-ai/okou/issues/51235)) ([3380039](https://github.com/okou-ai/okou/commit/3380039d50092d5b9a69629f2d37f78c1ed812a3))
+
+
+### Refactoring
+
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.136.0
+    * @okouai/core bumped to 8.887.0
+    * @okouai/db bumped to 2.71.6
+    * @okouai/pi-agent-runtime bumped to 1.52.95
+
 ## [2.137.2](https://github.com/okou-ai/okou/compare/api-v2.137.1...api-v2.137.2) (2026-11-26)
 
 
