@@ -1727,7 +1727,15 @@ class ChatListModel(
     internal fun activityForegroundChanged(foreground: Boolean) {
         val wasReading = needsListRead
         listInForeground = foreground
-        if (foreground) refresh() else if (wasReading) endListReadScope()
+        if (foreground) {
+            // A write's readback can outlive a list visit. Catch up after it finishes.
+            if (!wasReading && indicatorsJob?.isActive == true) {
+                requestIndicators(immediate = true, verifyReadCursors = true)
+            }
+            refresh()
+        } else if (wasReading) {
+            endListReadScope()
+        }
     }
 
     internal fun listVisibilityChanged(visible: Boolean) {
@@ -1998,6 +2006,7 @@ class ChatListModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            requireCurrent()
             val retryAfter = chatReadRetryAfterMillis(error)
             fail(error) { state ->
                 val failed = state.copy(listPhase = ChatReadPhase.Failed)
