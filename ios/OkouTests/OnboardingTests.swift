@@ -154,6 +154,47 @@ final class OnboardingTests: XCTestCase {
     XCTAssertEqual(store.draft.answers.startingPromptDraft, "Compare only the latest two campaigns")
   }
 
+  func testRecommendationArrivingDuringConfirmationCannotReplaceTheReviewedTask() async throws {
+    let held = expectation(description: "Confirmation is checking onboarding status")
+    let gate = ModelResponseGate()
+    let holding = Mutex(false)
+    let remote = OnboardingHTTPFixture(beforeStatus: {
+      if holding.withLock({ value in
+        let hold = value
+        value = false
+        return hold
+      }) {
+        held.fulfill()
+        await gate.wait()
+      }
+    })
+    var draft = OnboardingDraft()
+    draft.step = .ready
+    draft.answers.industry = "marketing"
+    draft.answers.startingPromptDraft = "Draft the launch brief I reviewed"
+    draft.answers.recommendationJobId = "20000000-0000-4000-8000-000000000001"
+    _ = try await remote.service.save(draft)
+    let store = remote.makeStore()
+    await store.prepare()
+    holding.withLock { $0 = true }
+    let confirmation = Task { await store.next() }
+    addTeardownBlock { @MainActor in
+      gate.open()
+      await confirmation.value
+      store.close()
+    }
+    await fulfillment(of: [held], timeout: 3)
+
+    await store.refreshReady()
+    gate.open()
+    await confirmation.value
+
+    XCTAssertNil(store.snapshot.error)
+    XCTAssertEqual(
+      remote.state.value.withLock { $0.messages.values.map(\.prompt) },
+      ["Draft the launch brief I reviewed"])
+  }
+
   func testConflictingDraftDoesNotAdvanceOrDiscardTheMembersSelection() async throws {
     let remote = OnboardingHTTPFixture()
     let store = remote.makeStore()
@@ -200,13 +241,14 @@ private final class OnboardingHTTPFixture: Sendable {
   let fixture: ChatHTTPFixture
   var service: OnboardingService { OnboardingService(client: fixture.client) }
 
-  init() {
+  init(beforeStatus: @escaping @Sendable () async -> Void = {}) {
     let state = StateBox()
     self.state = state
     fixture = ChatHTTPFixture { request in
       let path = request.url!.path
       switch (request.httpMethod!, path) {
       case ("GET", "/api/onboarding/status"):
+        await beforeStatus()
         return ChatHTTPResponse(
           body: state.value.withLock {
             "{\"needsOnboarding\":\(!($0.completed)),\"onboardingComplete\":\($0.completed),\"isAdmin\":false,\"hasOrg\":true}"

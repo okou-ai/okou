@@ -189,7 +189,7 @@ final class OnboardingStore {
   }
 
   func acceptRecommendation(_ recommendation: OnboardingRecommendation?) {
-    guard !closed, snapshot.task == nil, draft.answers.startingPromptKey != "native-edited",
+    guard !closed, snapshot.canEdit, draft.answers.startingPromptKey != "native-edited",
       let recommendation, recommendation.jobId == draft.answers.recommendationJobId,
       let value = recommendation.recommendation
     else { return }
