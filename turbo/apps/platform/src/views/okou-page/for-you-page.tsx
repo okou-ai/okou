@@ -103,12 +103,17 @@ const STACK_LAYERS = [
 ] as const;
 
 const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)]";
+  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)]";
 
 // The simplified deck sizes cards from its own width rather than the
 // viewport: an open chat list can leave a wide window with a narrow deck.
 function stackCardPadding(simplified: boolean) {
   return simplified ? "@min-[32rem]/for-you:p-10" : "sm:p-10";
+}
+
+// The simplified deck uses the For you redesign's 20px card corners.
+function stackCardRadius(simplified: boolean) {
+  return simplified ? "rounded-surface" : "rounded-3xl";
 }
 
 function SuggestionSendStatus({
@@ -166,6 +171,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               className={cn(
                 STACK_CARD,
                 stackCardPadding(simplified),
+                stackCardRadius(simplified),
                 "relative",
                 layer,
               )}
@@ -188,6 +194,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               className={cn(
                 STACK_CARD,
                 stackCardPadding(simplified),
+                stackCardRadius(simplified),
                 outcome
                   ? cn(
                       "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
@@ -680,6 +687,7 @@ export function ForYouPage() {
   const reload = useSet(reloadSuggestionSession$);
   const pageWithKeys = useSet(pageForYouWithKeysOnRef$);
   const signal = useGet(pageSignal$);
+  const simplified = useForYouSimplifiedDeck();
   const hasStack =
     deck.cards.length > 0 || deck.settled.length > 0 || remaining !== undefined;
   return (
@@ -709,13 +717,18 @@ export function ForYouPage() {
             })}
             className="m-auto w-full max-w-160"
           >
-            <Skeleton className="h-125 w-full rounded-3xl" />
+            <Skeleton
+              className={cn("h-125 w-full", stackCardRadius(simplified))}
+            />
           </div>
         ) : null}
         {listState === "hasError" && (
           <div
             role="alert"
-            className="m-auto flex flex-col items-center gap-4 rounded-3xl bg-card p-6"
+            className={cn(
+              "m-auto flex flex-col items-center gap-4 bg-card p-6",
+              stackCardRadius(simplified),
+            )}
           >
             <p className="text-sm text-muted-foreground">
               {t(($) => {

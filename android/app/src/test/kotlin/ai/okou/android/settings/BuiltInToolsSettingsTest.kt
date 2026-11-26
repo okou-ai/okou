@@ -11,12 +11,66 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BuiltInToolsSettingsTest {
+    @Test
+    fun catalogFeedbackFollowsTheVisibleReadAndPreservesConfirmedRows() = runTest {
+        val fixture = ToolFixture()
+        var catalog = CompletableDeferred<List<DataToolFamily>>()
+        var now = 0L
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun catalog() = catalog.await()
+            }
+        val settings = model(service) { now }
+        settings.show()
+        runCurrent()
+        assertFalse(settings.state.value.catalog.refreshing)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+
+        catalog.completeExceptionally(ApiFailure.Http(400, null, null, null))
+        runCurrent()
+        assertTrue(settings.state.value.catalog.initialFailure)
+        assertNull(settings.state.value.catalog.refreshFailure)
+
+        catalog = CompletableDeferred(fixture.families)
+        settings.hidePage()
+        settings.show()
+        runCurrent()
+        assertEquals(fixture.families, settings.state.value.catalog.value)
+
+        now += 600_001L
+        catalog = CompletableDeferred()
+        settings.refresh()
+        runCurrent()
+        assertTrue(settings.state.value.catalog.refreshing)
+        assertEquals(fixture.families, settings.state.value.catalog.value)
+        settings.hidePage()
+        assertFalse(settings.state.value.catalog.refreshing)
+
+        settings.show()
+        runCurrent()
+        catalog.completeExceptionally(ApiFailure.Http(400, null, null, null))
+        runCurrent()
+        assertEquals(fixture.families, settings.state.value.catalog.value)
+        assertFalse(settings.state.value.catalog.refreshing)
+        assertFalse(settings.state.value.catalog.initialFailure)
+        assertNotNull(settings.state.value.catalog.refreshFailure)
+        settings.hidePage()
+        assertNull(settings.state.value.catalog.refreshFailure)
+
+        catalog = CompletableDeferred(fixture.families.reversed())
+        settings.show()
+        runCurrent()
+        assertEquals(fixture.families.reversed(), settings.state.value.catalog.value)
+        assertNull(settings.state.value.catalog.refreshFailure)
+    }
+
     @Test
     fun catalogUsesServerOrderAndDisablingImageGenerationPreservesTheModel() = runTest {
         val service = ToolFixture()
@@ -259,7 +313,10 @@ class BuiltInToolsSettingsTest {
         assertTrue(webSearchTool !in fixture.disabledTools())
     }
 
-    private fun TestScope.model(service: BuiltInToolsService) =
+    private fun TestScope.model(
+        service: BuiltInToolsService,
+        nowMillis: () -> Long = System::currentTimeMillis,
+    ) =
         BuiltInToolsSettings(
             backgroundScope,
             service,
@@ -267,6 +324,7 @@ class BuiltInToolsSettingsTest {
             cache = null,
             authorized = { true },
             onSessionFailure = {},
+            nowMillis = nowMillis,
             notice = {},
         )
 
