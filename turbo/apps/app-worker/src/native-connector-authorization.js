@@ -3,7 +3,16 @@ const APP_ID = "C5UWSXYB67.ai.okou.ios";
 const ASSOCIATION = JSON.stringify({
   applinks: {
     details: [
-      { appIDs: [APP_ID], components: [{ "/": NATIVE_AUTHORIZATION_PATH }] },
+      {
+        appIDs: [APP_ID],
+        components: [
+          { "/": NATIVE_AUTHORIZATION_PATH },
+          {
+            "/": "/connectors/tiktok/callback",
+            "?": { state: "ios-https-v1:app-tiktok:*" },
+          },
+        ],
+      },
     ],
   },
   webcredentials: { apps: [APP_ID] },

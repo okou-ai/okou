@@ -96,6 +96,8 @@ public struct ChatConnectorStatus: Sendable {
 public struct ChatConnectorReceipt: Decodable, Sendable {
   public struct NativeAppAuthorization: Decodable, Sendable {
     public let provider: String
+    public let callbackUrl: URL?
+    public let exchangeUrl: URL?
   }
   public let result: String?
   public let status: String?
@@ -282,7 +284,8 @@ public struct ChatConnectorService: Sendable {
   }
   public func start(
     status: ChatConnectorStatus, method: ChatConnectorMethod?,
-    values: [String: String], options: [String: String], nativeAppAuthorization: Bool = false
+    values: [String: String], options: [String: String], nativeAppAuthorization: Bool = false,
+    nativeAppClientID: String? = nil
   ) async throws -> ChatConnectorReceipt {
     struct Account: Encodable {
       let intent: String
@@ -294,6 +297,7 @@ public struct ChatConnectorService: Sendable {
       var callbackTarget: String?
       var nativeCallback: String?
       var nativeAppAuthorization: String?
+      var nativeAppClientId: String?
       var values: [String: String]?
       var options: [String: String]?
     }
@@ -311,6 +315,7 @@ public struct ChatConnectorService: Sendable {
           ? "ios-https" : nil,
         nativeAppAuthorization: nativeAppAuthorization && method.grantKind == "auth-code"
           ? "ios" : nil,
+        nativeAppClientId: nativeAppClientID,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,
         options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)
@@ -388,6 +393,23 @@ public struct ChatConnectorService: Sendable {
       }
       return response.connectionId.lowercased()
     } catch let error as APIClientError where error.statusCode == 404 { return nil }
+  }
+  public func completeProviderAuthorization(slug: String, parameters: [String: String])
+    async throws
+  {
+    struct Response: Decodable, Sendable {
+      let status: String
+      let message: String?
+    }
+    let query =
+      parameters.map { URLQueryItem(name: $0.key, value: $0.value) }
+      + [URLQueryItem(name: "responseMode", value: "json")]
+    let result: Response = try await client.request(
+      "/api/connectors/\(slug)/callback", query: query)
+    guard result.status == "success" else {
+      throw APIClientError.http(
+        status: 400, message: result.message ?? "Authorization failed. Try again.")
+    }
   }
   public func completeSession(slug: String, receipt: ChatConnectorReceipt, code: String?)
     async throws -> ChatConnectorReceipt

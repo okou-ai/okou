@@ -2275,7 +2275,13 @@ for (const scenario of [
       details: [
         {
           appIDs: ["C5UWSXYB67.ai.okou.ios"],
-          components: [{ "/": "/native/connector-authorization" }],
+          components: [
+            { "/": "/native/connector-authorization" },
+            {
+              "/": "/connectors/tiktok/callback",
+              "?": { state: "ios-https-v1:app-tiktok:*" },
+            },
+          ],
         },
       ],
     },

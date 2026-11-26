@@ -21,14 +21,18 @@
     <key>APIBaseURL</key><string>$(OKOU_API_BASE_URL)</string>
     <key>WebBaseURL</key><string>$(OKOU_WEB_BASE_URL)</string>
     <key>ConnectorCallbackHost</key><string>$(OKOU_CONNECTOR_CALLBACK_HOST)</string>
+    <key>DropboxAppKey</key><string>$(OKOU_DROPBOX_APP_KEY)</string>
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
     <key>SentryDSN</key><string>$(OKOU_SENTRY_DSN)</string>
     <key>LSApplicationQueriesSchemes</key>
-    <array><string>strava</string></array>
+    <array><string>strava</string><string>dbapi-2</string><string>dbapi-8-emm</string><string>spotify</string></array>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
         <key>CFBundleURLSchemes</key><array><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string></array>
+    </dict><dict>
+        <key>CFBundleURLName</key><string>Dropbox</string>
+        <key>CFBundleURLSchemes</key><array><string>db-$(OKOU_DROPBOX_APP_KEY)</string></array>
     </dict></array>
     <key>NSMicrophoneUsageDescription</key><string>Okou uses the microphone when you dictate a message.</string>
     <key>NSPhotoLibraryUsageDescription</key><string>Okou shows your recent photos so you can attach them to a message.</string>
