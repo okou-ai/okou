@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
+import { workflowComposerHasContent } from "../../signals/okou-page/composer-followup.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
@@ -127,31 +128,16 @@ function workflowComposerPlaceholder(sending: boolean | undefined): string {
       });
 }
 
-function workflowComposerHasContent(editor: Editor): boolean {
-  let textblockCount = 0;
-  for (let index = 0; index < editor.state.doc.childCount; index++) {
-    const node = editor.state.doc.child(index);
-    if (!node.isTextblock) {
-      continue;
-    }
-    textblockCount += 1;
-    if (node.content.size > 0 || textblockCount > 1) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function WorkflowComposerPlaceholder({
   composer,
   followup,
-  acceptFollowup,
 }: {
   composer: ComposerSignals;
   followup: string | undefined;
-  acceptFollowup: () => boolean;
 }) {
   const { t } = useTranslation();
+  const acceptFollowup = useSet(composer.followup.accept$);
+  const setShortcutButtonRef = useSet(composer.followup.setShortcutButtonRef$);
   const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
   const presentationFormatLoadable = useLastLoadable(presentationOutputFormat$);
@@ -198,6 +184,8 @@ function WorkflowComposerPlaceholder({
           aria-label={t(($) => {
             return $.chat.composer.useSuggestion;
           })}
+          aria-keyshortcuts="Tab"
+          ref={setShortcutButtonRef}
           onClick={acceptFollowup}
         >
           {isMobileTextInputDevice()
@@ -292,16 +280,6 @@ function crossesSuggestionSubmenu(
     return false;
   }
   return context.crossSuggestionSubmenu(event.key === "ArrowRight" ? 1 : -1);
-}
-
-function isPlainTab(event: KeyboardEvent): boolean {
-  return (
-    event.key === "Tab" &&
-    !event.shiftKey &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    !event.metaKey
-  );
 }
 
 function handleComposerKeyDownCapture(
@@ -945,19 +923,14 @@ function ComposerSuggestionSession({
   );
 }
 
-function useFollowupPlaceholder(
-  composer: ComposerSignals,
-  sessionActive: boolean,
-) {
+function useFollowupPlaceholder(composer: ComposerSignals) {
   const switches = useLastResolved(featureSwitches$);
-  const source = useGet(composer.recommendedFollowupSource$);
+  const prompt = useGet(composer.followup.prompt$);
   const followup = switches
     ? switches[FeatureSwitchKey.FollowupPlaceholder]
-      ? (source?.followups[0]?.prompt ?? "")
+      ? (prompt ?? "")
       : undefined
     : "";
-  const hasInput = useGet(composer.editor.hasInput$);
-  const insertText = useSet(composer.editor.insertText$);
   const { t } = useTranslation();
   const nativePlaceholder =
     followup ??
@@ -965,27 +938,13 @@ function useFollowupPlaceholder(
       return $.chat.composer.placeholder;
     });
   const editor = composer.editor.editor;
-  const acceptFollowup = () => {
-    if (
-      !followup ||
-      hasInput ||
-      editor.view.composing ||
-      workflowComposerHasContent(editor)
-    ) {
-      return false;
-    }
-    insertText(followup);
-    return true;
-  };
-  const tabEnabled = Boolean(followup) && !hasInput && !sessionActive;
   const placeholderRef = (element: HTMLDivElement | null) => {
     const props = editor.options.editorProps;
     const attributes = props.attributes;
     if (
       !element ||
       typeof attributes !== "object" ||
-      (attributes.placeholder === nativePlaceholder &&
-        Boolean(props.handleKeyDown) === tabEnabled)
+      attributes.placeholder === nativePlaceholder
     ) {
       return;
     }
@@ -997,21 +956,10 @@ function useFollowupPlaceholder(
           placeholder: nativePlaceholder,
           "aria-placeholder": nativePlaceholder,
         },
-        handleKeyDown: tabEnabled
-          ? (view, event) => {
-              return (
-                isPlainTab(event) &&
-                event.target === view.dom &&
-                !event.isComposing &&
-                event.keyCode !== 229 &&
-                acceptFollowup()
-              );
-            }
-          : undefined,
       },
     });
   };
-  return { followup, placeholderRef, acceptFollowup };
+  return { followup, placeholderRef };
 }
 
 /**
@@ -1030,10 +978,7 @@ function ComposerSuggestionMenu({
   readonly children: ReactNode;
 }) {
   const sessionActive = useGet(composer.suggestion.sessionActive$);
-  const { followup, placeholderRef, acceptFollowup } = useFollowupPlaceholder(
-    composer,
-    sessionActive,
-  );
+  const { followup, placeholderRef } = useFollowupPlaceholder(composer);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
   const onKeyDown = useComposerKeyboard(composer, actions);
@@ -1066,11 +1011,7 @@ function ComposerSuggestionMenu({
           }
         }}
       >
-        <WorkflowComposerPlaceholder
-          composer={composer}
-          followup={followup}
-          acceptFollowup={acceptFollowup}
-        />
+        <WorkflowComposerPlaceholder composer={composer} followup={followup} />
         {children}
       </div>
       <ComposerVoiceChips editor={composer.editor} />

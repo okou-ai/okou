@@ -4,6 +4,7 @@ import {
   currentLeftThread$,
   currentRightThread$,
 } from "./chat-thread-panes.ts";
+import { focusedChatThread$ } from "./chat-thread-pane-state.ts";
 import { navigateChatList$ } from "./chat-list-navigation.ts";
 import { threadRowKey } from "./chat-thread-list-rows.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
@@ -532,7 +533,7 @@ export const setChatKeyboardScrollRoot$ = onRef(
       activeThreadId = containingThread(event.target)?.threadId ?? null;
     };
     const focusedThread = () => {
-      return containingThread(doc.activeElement) ?? get(currentLeftThread$);
+      return set(focusedChatThread$, doc);
     };
     const navigateAdjacentChatThread = async (
       pane: ChatThreadPane,

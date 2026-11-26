@@ -13,6 +13,8 @@ export type GlobalShortcutBindings = Record<string, GlobalShortcutBinding>;
 
 interface GlobalShortcutSetupOptions {
   readonly doc?: Document;
+  /** Bubble when a focused control must get first use of this key. */
+  readonly capture?: boolean;
   readonly shouldHandleEvent?: (e: KeyboardEvent) => boolean;
 }
 
@@ -25,8 +27,8 @@ function hasOpenDialog(doc: Document): boolean {
  *
  * Callbacks are wrapped with `onDomEventFn` so they can be async (fire-and-forget
  * with proper abort-error handling). Text-entry targets are ignored by default;
- * individual bindings can opt in with `allowInEditableTarget`. Once matched, a
- * shortcut owns the keydown so the focused control cannot handle it again.
+ * individual bindings can opt in with `allowInEditableTarget`. Handlers capture
+ * by default. Bubble-phase handlers yield to controls that consume the key.
  */
 export function setupGlobalShortcut(
   bindings: GlobalShortcutBindings,
@@ -64,8 +66,9 @@ export function setupGlobalShortcut(
       }
     }
   });
-  doc.addEventListener("keydown", onKeyDown, { capture: true, signal });
+  const capture = options.capture ?? true;
+  doc.addEventListener("keydown", onKeyDown, { capture, signal });
   return () => {
-    doc.removeEventListener("keydown", onKeyDown, true);
+    doc.removeEventListener("keydown", onKeyDown, capture);
   };
 }

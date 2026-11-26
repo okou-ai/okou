@@ -1,3 +1,4 @@
+import { createComposerFollowupSignals } from "./composer-followup.ts";
 import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
@@ -265,6 +266,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
+  readonly followup: ReturnType<typeof createComposerFollowupSignals>;
   readonly recommendedFollowupSource$: ChatEventProjectionSignals["recommendedFollowupSource$"];
   readonly setup$: Command<void, [AbortSignal]>;
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
@@ -605,6 +607,7 @@ export function createComposerSignals(
   const draftSignals = composerDraftSignals(options.draft, fileInput);
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
   const connectorCompletion = createComposerConnectorCompletion(connector);
+  const suggestion = composerSuggestionSignals(workflowComposer);
   return {
     threadId: options.threadId,
     recommendedFollowupSource$: options.eventSignals.recommendedFollowupSource$,
@@ -622,7 +625,12 @@ export function createComposerSignals(
     voice,
     feedback: workflowComposer.feedback,
     workflow: composerWorkflowSignals(workflowComposer),
-    suggestion: composerSuggestionSignals(workflowComposer),
+    suggestion,
+    followup: createComposerFollowupSignals(
+      options.eventSignals.recommendedFollowupSource$,
+      workflowComposer,
+      suggestion.sessionActive$,
+    ),
     connector,
     connectorCompletion,
     draft: draftSignals,

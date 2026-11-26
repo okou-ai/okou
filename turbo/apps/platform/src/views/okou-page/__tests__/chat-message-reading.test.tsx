@@ -335,7 +335,7 @@ test("A late follow-up preserves the current draft and appears when cleared", as
   await expect(screen.findByText(PRESENTATION_PROMPT)).resolves.toBeVisible();
 });
 
-test("Switching threads uses the destination's first follow-up for Tab", async () => {
+test("Tab from the transcript fills the destination composer after switching threads", async () => {
   installPlaceholderChats(true);
   await setupPage({
     context,
@@ -348,9 +348,57 @@ test("Switching threads uses the destination's first follow-up for Tab", async (
   expect(suggestion).toBeVisible();
   const editor = await screen.findByPlaceholderText(HANDOFF_PROMPT);
   const user = userEvent.setup({ delay: null });
-  await user.click(editor);
+  await user.click(await screen.findByText("The handoff is ready"));
+  expect(editor).not.toHaveFocus();
   await user.keyboard("{Tab}");
-  expect(editor.textContent).toBe(HANDOFF_PROMPT);
+  expectUnsentDraft(editor, [HANDOFF_PROMPT]);
+});
+
+test("Tab in a split chat uses only the focused pane's suggestion", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query.includes("min-width");
+  });
+  installPlaceholderChats(true);
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const primary = await screen.findByPlaceholderText(PRESENTATION_PROMPT);
+  const side = await screen.findByPlaceholderText(HANDOFF_PROMPT);
+  const sideReply = await screen.findByText("The handoff is ready");
+  const user = userEvent.setup({ delay: null });
+  await user.click(sideReply);
+  await user.keyboard("{Tab}");
+  expect(side).toHaveTextContent(HANDOFF_PROMPT);
+  expect(side).toHaveFocus();
+  expect(primary.textContent).toBe("");
+
+  await user.click(sideReply);
+  const beforeTab = document.activeElement;
+  await user.keyboard("{Tab}");
+  expect(document.activeElement).not.toBe(beforeTab);
+  expect(primary.textContent).toBe("");
+  expect(side.textContent).toBe(HANDOFF_PROMPT);
+});
+
+test("A visible follow-up lets Rename keep its Tab navigation", async () => {
+  installPlaceholderChats(true);
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await screen.findByPlaceholderText(PRESENTATION_PROMPT);
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{F2}");
+  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
+  const name = within(dialog).getByRole("textbox");
+  await user.click(name);
+  await user.keyboard("{Tab}");
+  expect(name).not.toHaveFocus();
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  expect(editor.textContent).toBe("");
 });
 
 test("chat-thread-link-chips-001 preserves the destination and authored label of chat references in the transcript", async () => {

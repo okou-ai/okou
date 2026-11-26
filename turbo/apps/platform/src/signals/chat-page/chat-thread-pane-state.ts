@@ -34,6 +34,14 @@ export const currentRightThread$ = computed((get): ChatPanelSignals | null => {
   return pane?.kind === "thread" ? pane.thread : null;
 });
 
+/** Page shortcuts use the focused pane, falling back to the primary chat. */
+export const focusedChatThread$ = command(({ get }, doc: Document) => {
+  const right = get(currentRightThread$);
+  return right && get(right.containerEl$)?.contains(doc.activeElement)
+    ? right
+    : get(currentLeftThread$);
+});
+
 export const setCurrentLeftPane$ = command(
   ({ set }, pane: ChatThreadPaneState) => {
     set(internalLeftPane$, pane);
