@@ -349,6 +349,7 @@ def _prepare_firewall_metadata(
 
     flow.metadata[metadata_keys.FIREWALL_BASE] = firewall_base
     flow.metadata[metadata_keys.FIREWALL_API_ID] = api_id
+    flow.metadata[metadata_keys.FIREWALL_SOURCE_ID] = api_entry.get("sourceId")
     flow.metadata[metadata_keys.FIREWALL_NAME] = allow.name
     flow.metadata[metadata_keys.FIREWALL_PERMISSION] = allow.permission or ""
     flow.metadata[metadata_keys.FIREWALL_RULE_MATCH] = allow.rule or ""

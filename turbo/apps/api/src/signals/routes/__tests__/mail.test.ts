@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -26,6 +27,7 @@ import { createChatConnectorAccessApi } from "./helpers/chat-connector-access";
 
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
+import { webhooksAgentGmailDraftUpdatedRoutes } from "../webhooks-agent-gmail-draft-updated";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
@@ -1730,7 +1732,7 @@ describe("POST /api/mail/drafts/link", () => {
     },
   );
 
-  it("links without injecting a duplicate card and sends without rebuilding MIME", async () => {
+  it("links and refreshes the active chat draft and sends without rebuilding MIME", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const owned = await publicChatActor(context, {
       optionalEnvironmentNames: [
@@ -1790,6 +1792,38 @@ describe("POST /api/mail/drafts/link", () => {
       expect(linked.body.mailDraftUrl).toBe(
         `https://app.okou.ai/mail/drafts/${linked.body.mailDraftId}`,
       );
+
+      const notify = setupApp({
+        context,
+        routes: webhooksAgentGmailDraftUpdatedRoutes,
+      })(runWebhookContract).gmailDraftUpdated;
+      const change = {
+        headers: { authorization: `Bearer ${execution.sandboxToken}` },
+        body: {
+          runId: source.runId,
+          connectionId: fixture.gmail.id,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
+      };
+      const topic = `mailDraftChanged:${linked.body.mailDraftId}`;
+      await accept(
+        notify({ ...change, body: { ...change.body, runId: randomUUID() } }),
+        [401],
+      );
+      await accept(
+        notify({
+          ...change,
+          body: { ...change.body, connectionId: randomUUID() },
+        }),
+        [204],
+      );
+      expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(topic, null);
+
+      await accept(notify(change), [204]);
+      expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+        `user-org:${owned.actor.userId}:${owned.actor.orgId}`,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(topic, null);
 
       const duplicateLink = await linkDraft(fixture);
       expect(duplicateLink.body).toStrictEqual({

@@ -17,7 +17,12 @@ import {
   createChatCapabilityHelpers,
   readyChat,
   RUN_PATH,
+  SECOND_CAPABILITY_RUN_ID,
 } from "./chat-capability-test-helpers.ts";
+import {
+  createChatRunFixtures,
+  promptEvent,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
@@ -250,6 +255,56 @@ async function findPreview(
     return preview;
   });
 }
+
+test("An open Gmail preview shows a confirmed revision while its chat run is still active", async () => {
+  const id = "a0000000-0000-4000-a000-000000000741";
+  const otherId = "a0000000-0000-4000-a000-000000000742";
+  const original = gmailDraft({
+    subject: "Launch review",
+    body: "Original proposal",
+  });
+  const other = gmailDraft({ subject: "Travel review" });
+  const drafts = new Map([
+    [id, original],
+    [otherId, other],
+  ]);
+  mockMailDrafts(drafts);
+  createChatRunFixtures(context).installRunChat({
+    activeRunIds: [SECOND_CAPABILITY_RUN_ID],
+    chatEvents: [
+      ...completedConversation(`${mailUrl(id)}\n\n${mailUrl(otherId)}`),
+      promptEvent({
+        id: "revise-launch",
+        runId: SECOND_CAPABILITY_RUN_ID,
+        seqId: 3,
+        text: "Revise the launch proposal and keep researching.",
+      }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const panel = await openMail("Open draft email: Launch review");
+  await within(panel).findByText("Original proposal");
+  expect(mailCard("Open draft email: Travel review")).toBeDefined();
+
+  drafts.set(
+    id,
+    gmailDraft({
+      subject: original.subject,
+      gmailMessageId: "message-revised",
+      body: "Revised proposal",
+    }),
+  );
+  drafts.set(otherId, { ...other, subject: "Separate edit" });
+  context.mocks.ably.triggerOnChannel(
+    "user-org:test-user-123:org_default",
+    `mailDraftChanged:${id}`,
+  );
+
+  await expect(
+    within(panel).findByText("Revised proposal"),
+  ).resolves.toBeInTheDocument();
+  expect(mailCard("Open draft email: Travel review")).toBeDefined();
+});
 
 test("Send, revisit, and delete mail drafts from chat", async () => {
   const launchId = "a0000000-0000-4000-a000-000000000731";
