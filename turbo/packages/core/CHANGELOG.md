@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.885.1](https://github.com/okou-ai/okou/compare/core-v8.885.0...core-v8.885.1) (2026-11-26)
+
+
+### Refactoring
+
+* remove slack artifact sharing feature switch ([#51083](https://github.com/okou-ai/okou/issues/51083)) ([50b7d05](https://github.com/okou-ai/okou/commit/50b7d05735afeaefa0cbcc86b33ffa8e4141922f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+
 ## [8.885.0](https://github.com/okou-ai/okou/compare/core-v8.884.0...core-v8.885.0) (2026-11-26)
 
 
