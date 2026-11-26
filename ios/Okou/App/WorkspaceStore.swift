@@ -53,8 +53,9 @@ final class WorkspaceStore {
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   private let didRefreshReadState: @MainActor () -> Void
-  private var notificationReadState: [String: WorkspaceNotificationReadState]?
-  private var notificationReadRevision = 0
+  // Change detection for synchronization, not presentation.
+  @ObservationIgnored private var notificationReadState: [String: WorkspaceNotificationReadState]?
+  @ObservationIgnored private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   @ObservationIgnored lazy var forYou = ForYouStore(
@@ -75,6 +76,11 @@ final class WorkspaceStore {
   /// The selected chat's ID, kept in the workspace session's Store. Views read it through
   /// CCStateSwiftUI; `selectedThreadID` serves owner logic, actions and tests.
   @ObservationIgnored let selectedThreadValue: Computed<String?>
+  /// The selected chat's resident owner, kept next to the selection. Views resolve it;
+  /// `selectedConversation` serves owner logic and tests.
+  @ObservationIgnored let selectedConversationValue: Computed<ConversationStore?>
+  @ObservationIgnored private let selectedConversationState = CCState.State<ConversationStore?>(
+    nil, equals: { $0 === $1 })
   var selectedThreadID: String? {
     get {
       do { return try resources.store.get(selectedThread) } catch {
@@ -204,6 +210,9 @@ final class WorkspaceStore {
       try context.set(selectedThread, value)
     }
     selectedThreadValue = Computed { get in try get(selectedThread) }
+    let selectedConversation = selectedConversationState
+    selectedConversationValue = Computed(
+      equals: { $0 === $1 }, { get in try get(selectedConversation) })
     self.client = client
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
@@ -241,28 +250,6 @@ final class WorkspaceStore {
   func start(userID: String, workspaceID: String) async {
     await synchronization.start(userID: userID, workspaceID: workspaceID)
   }
-
-  private(set) var selectedConversation: ConversationStore?
-
-  /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
-  /// from its own composer, so leaving a chat marks it at once; others use the API's list. A
-  /// view passes the list it resolved from `listedDraftIDs`.
-  func hasDraft(_ threadID: String, listed: Set<String>? = nil) -> Bool {
-    if let composer = residentComposer(threadID) { return composer.hasContent }
-    return (listed ?? sidebarDrafts.threadIDs).contains(threadID)
-  }
-
-  /// The composer of a chat held in memory. Views read its `unsentContent` from the session graph.
-  func residentComposer(_ threadID: String) -> ComposerDraftStore? {
-    // A row tracks the selected owner before consulting the non-observable resident cache.
-    if let conversation = selectedConversation, conversation.thread.id == threadID {
-      return conversation.composer
-    }
-    return conversations[threadID]?.composer
-  }
-
-  /// Whether the API's list marks a chat that is not held in memory as having a draft.
-  func hasListedDraft(_ threadID: String) -> Bool { sidebarDrafts.threadIDs.contains(threadID) }
 
   /// The chats the API's list marks as having a draft, kept in the workspace session's Store.
   var listedDraftIDs: Computed<Set<String>> { sidebarDrafts.threadIDsValue }
@@ -555,7 +542,44 @@ final class WorkspaceStore {
       close()
     }
   }
+}
 
+extension WorkspaceStore {
+  private(set) var selectedConversation: ConversationStore? {
+    get {
+      do { return try resources.store.get(selectedConversationValue) } catch {
+        preconditionFailure("Cannot read the selected chat: \(error)")
+      }
+    }
+    set {
+      do { try resources.store.set(selectedConversationState, newValue) } catch {
+        preconditionFailure("Cannot select the chat: \(error)")
+      }
+    }
+  }
+
+  /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
+  /// from its own composer, so leaving a chat marks it at once; others use the API's list. A
+  /// view passes the list it resolved from `listedDraftIDs`.
+  func hasDraft(_ threadID: String, listed: Set<String>? = nil) -> Bool {
+    if let composer = residentComposer(threadID) { return composer.hasContent }
+    return (listed ?? sidebarDrafts.threadIDs).contains(threadID)
+  }
+
+  /// The composer of a chat held in memory. Views read its `unsentContent` from the session graph.
+  /// A row passes the selected chat's owner it resolved, so a new selection re-renders it before
+  /// it consults the resident cache.
+  func residentComposer(
+    _ threadID: String, selected: ConversationStore? = nil
+  ) -> ComposerDraftStore? {
+    if let conversation = selected ?? selectedConversation, conversation.thread.id == threadID {
+      return conversation.composer
+    }
+    return conversations[threadID]?.composer
+  }
+
+  /// Whether the API's list marks a chat that is not held in memory as having a draft.
+  func hasListedDraft(_ threadID: String) -> Bool { sidebarDrafts.threadIDs.contains(threadID) }
 }
 
 extension WorkspaceStore {
