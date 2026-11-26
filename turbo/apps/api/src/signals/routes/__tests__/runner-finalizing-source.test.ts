@@ -296,6 +296,10 @@ describe("Independent finalizing resource dispatch", () => {
         mockNow(now() + 180_001);
       }
       const sentAt = now();
+      const prompt =
+        scenario === "active-producer"
+          ? 'Café, 中文, and 🧪 with "quotes". '.repeat(9000).trim()
+          : "Continue after terminal cleanup";
       const preferredBytes: string[] = [];
       const preferredDeadlines: number[] = [];
       const alternativeDeadlines: number[] = [];
@@ -303,9 +307,13 @@ describe("Independent finalizing resource dispatch", () => {
         const identity = await f.api.registerDirectRunner(f.group, {
           hostname: `runner-${f.runnerId}.okou.app`,
           maxConcurrent: 1,
-          reply: (envelope, bytes) => {
+          reply: (envelope, bytes, encoding) => {
             preferredBytes.push(bytes);
             preferredDeadlines.push(envelope.notAfter);
+            if (scenario === "active-producer") {
+              expect(encoding).toBe("gzip");
+              expect(envelope.executionContext.prompt).toContain(prompt);
+            }
             const hint = envelope.preferredHomeCheckout;
             if (expectsRetry) {
               expect(hint).toBeDefined();
@@ -372,7 +380,12 @@ describe("Independent finalizing resource dispatch", () => {
         });
         return { identity, alternative };
       });
-      const next = await continuation(f);
+      const next = await f.owned.run(() => {
+        return f.api.createThreadRun(f.actor, {
+          threadId: f.run.threadId,
+          prompt,
+        });
+      });
       expect(next.status).toBe("running");
       const useAlternative = scenario === "drain-expiry";
       const owner = useAlternative
