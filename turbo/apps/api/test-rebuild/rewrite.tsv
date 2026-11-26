@@ -2310,15 +2310,15 @@ account-org	src/signals/routes/__tests__/model-identity-writes.test.ts	model-ide
 account-org	src/signals/routes/__tests__/model-identity-writes.test.ts	model-identity-writes-004	planned				
 account-org	src/signals/routes/__tests__/model-identity-writes.test.ts	model-identity-writes-006	planned				
 account-org	src/signals/routes/__tests__/model-route-capabilities.test.ts	model-route-capabilities-002	planned				
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-001	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-002	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-003	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-004	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-005	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-006	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-007	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-012	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-014	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-001	rewritten	109.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-002	rewritten	68.0	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-003	rewritten	69.3	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-004	rewritten	45.3	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-005	rewritten	12.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-006	rewritten	11.4	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-007	rewritten	13.4	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-012	rewritten	10.7	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
+account-org	src/signals/routes/__tests__/native-oauth.test.ts	native-oauth-014	rewritten	9.2	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/native-oauth.test.ts	B03
 chat	src/signals/routes/__tests__/notifications.test.ts	notifications-001	planned				
 chat	src/signals/routes/__tests__/notifications.test.ts	notifications-002	planned				
 chat	src/signals/routes/__tests__/notifications.test.ts	notifications-007	planned				
