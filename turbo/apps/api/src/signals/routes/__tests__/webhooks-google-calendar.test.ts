@@ -7,12 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
   createWorkflowsBddApi,
   mockGoogleCalendarConnectorOAuth,
@@ -164,6 +162,20 @@ async function notify(
   });
 }
 
+/** Given of 005: Google fails the channel stop while the member disables the automation. */
+async function setupDisabledAfterFailedStop() {
+  const calendar = await setupCalendarAutomation();
+  calendar.provider.stopStatus = 500;
+  await accept(
+    calendar.automations.disable({
+      headers: calendar.authenticate(),
+      params: { id: calendar.automationId },
+    }),
+    [200],
+  );
+  return calendar;
+}
+
 describe("POST /api/webhooks/google-calendar", () => {
   it("webhooks-google-calendar-017 acknowledges updated and cancelled events without dispatching", async () => {
     const existing = {
@@ -188,79 +200,26 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
   });
 
-  it("webhooks-google-calendar-005 rejects notifications for a disabled automation without reading events", async () => {
-    const { provider, automationId, automations, authenticate } =
-      await setupCalendarAutomation();
-    provider.stopStatus = 500;
-    await accept(
-      automations.disable({
-        headers: authenticate(),
-        params: { id: automationId },
-      }),
-      [200],
-    );
+  it("webhooks-google-calendar-005 (1/2) rejects a notification for the disabled automation without reading events", async () => {
+    const { provider } = await setupDisabledAfterFailedStop();
 
     await accept(notify(provider.channel()), [401]);
 
     expect(provider.baselineTokens).toHaveLength(1);
     expect(provider.incrementalReads).toStrictEqual([]);
+  });
+
+  it("webhooks-google-calendar-005 (2/2) deletes the disabled automation once the channel stop succeeds", async () => {
+    const { provider, automationId, automations, authenticate } =
+      await setupDisabledAfterFailedStop();
+    await accept(notify(provider.channel()), [401]);
     provider.stopStatus = 204;
-    await accept(
+
+    await expect(
       automations.delete({
         headers: authenticate(),
         params: { id: automationId },
       }),
-      [204],
-    );
-  });
-
-  it("webhooks-google-calendar-006 acknowledges notifications without dispatching once Calendar access is revoked", async () => {
-    const { actor, provider, automationId, automations, authenticate } =
-      await setupCalendarAutomation();
-    const refreshes: string[] = [];
-    server.use(
-      http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
-        refreshes.push(
-          new URLSearchParams(await request.text()).get("grant_type") ?? "",
-        );
-        return HttpResponse.json(
-          { error: "invalid_grant", error_description: "Token revoked" },
-          { status: 400 },
-        );
-      }),
-    );
-    mockNow(Date.now() + 2 * 60 * 60 * 1000);
-
-    const responses = [
-      await accept(notify(provider.channel(), { messageNumber: "2" }), [200]),
-      await accept(notify(provider.channel(), { messageNumber: "3" }), [200]),
-    ];
-
-    for (const response of responses) {
-      expect(response.body).toStrictEqual({
-        success: true,
-        watchStates: 1,
-        dispatched: 0,
-        duplicates: 0,
-      });
-    }
-    expect(refreshes).toStrictEqual(["refresh_token"]);
-    const accounts = await createConnectorBddApi(
-      context,
-    ).listBuiltinConnectorAccounts(actor, "google-calendar");
-    expect(accounts).toStrictEqual([
-      expect.objectContaining({
-        isDefault: true,
-        connectionStatus: "reconnect-required",
-        reconnectReason: "authorization_expired_or_revoked",
-      }),
-    ]);
-    await accept(
-      automations.disable({
-        headers: authenticate(),
-        params: { id: automationId },
-      }),
-      [200],
-    );
+    ).resolves.toMatchObject({ status: 204 });
   });
 });

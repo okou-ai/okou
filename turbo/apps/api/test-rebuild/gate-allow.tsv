@@ -30,3 +30,8 @@ connector-device-auth-claim-awaiting-001	Unhandled request error: \[	Given: the 
 connector-external-code-claim-completion-001	Unhandled request error: AWS Sign-In token exchange failed	Given: transient provider HTTP 429 and 503 responses; Then: the two transient failures return HTTP 500
 codex-reset-credit-expiry-invalidation-001	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
 codex-reset-credit-expiry-invalidation-002	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
+agentphone-groups.bdd-001	Rejected AgentPhone webhook	When: a signed group webhook with empty content; Then: HTTP 500
+agentphone-groups.bdd-007	Rejected AgentPhone webhook	When: the same signed group webhook with empty content is delivered twice
+agentphone-groups.bdd-014	AgentPhone conversation lookup failed	Given: AgentPhone reports the first group conversation as removed (HTTP 404)
+agentphone-groups.bdd-020	AgentPhone conversation lookup failed	Given: AgentPhone's conversation lookup returns HTTP 503
+webhooks-agent-firewall-auth.bdd-032	test-oauth token refresh failed	Given: the provider token endpoint first returns HTTP 500
