@@ -271,7 +271,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let measuresImmediately =
       source.sendTransition?.hidesBubbleID != nil
       && missing.allSatisfy { row in
-        switch row {
+        switch row.content {
         case .message(let message, _, _, let pendingRetry, _, _, _):
           message.id == source.sendTransition?.messageID
             && pendingRetry != true && message.role == .user && message.attachments.isEmpty
@@ -409,7 +409,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         let indexPath = messageID.flatMap { dataSource.indexPath(for: $0) }
         let cell = indexPath.flatMap { collection.cellForItem(at: $0) }
         var messageFrame = indexPath.flatMap { collection.layoutAttributesForItem(at: $0)?.frame }
-        if let id = messageID, let spacing = displayedRows[id]?.readingContentTopSpacing {
+        if let id = messageID, let spacing = displayedRows[id]?.content?.readingContentTopSpacing {
           messageFrame?.origin.y += spacing
           messageFrame?.size.height -= spacing
         }

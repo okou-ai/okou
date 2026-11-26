@@ -65,7 +65,7 @@ public enum ChatEventProjection {
       latestFailureID: latestFailure(
         rows: rows, messages: messages, revoked: revoked,
         hasQueuedInput: !queuedInputs.isEmpty),
-      recommendedFollowups: ChatFollowupProjection.source(
+      completion: ChatCompletionProjection.completion(
         rows: rows, active: state.isActive),
       usageEventIDs: usageEventIDs, runUsageAnchors: work.usageAnchors)
   }

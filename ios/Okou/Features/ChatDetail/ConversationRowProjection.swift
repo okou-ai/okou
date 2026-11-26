@@ -13,14 +13,19 @@ struct ConversationRowProjection {
   let isSending: Bool
   /// The model selection's graph value for this render, which ChatDetailView also resolves.
   let models: ChatModelSelectionStore.Presentation?
+  var timeline = ConversationTimeline()
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
+    timeline.rows(contents, items: window.items)
+  }
+
+  private var contents: [ConversationCollectionRow.Content] {
     let items = window.items
     if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
-      var rows: [ConversationCollectionRow] = window.hasEarlierMessages ? [.earlier] : []
+      var rows: [ConversationCollectionRow.Content] = window.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
           // The preceding row already reserves the selection background's bottom inset.
@@ -28,7 +33,7 @@ struct ConversationRowProjection {
         }
       return rows
     }
-    var result: [ConversationCollectionRow] = []
+    var result: [ConversationCollectionRow.Content] = []
     if window.hasEarlierMessages {
       result.append(.earlier)
     }
@@ -50,19 +55,22 @@ struct ConversationRowProjection {
         if let failure = message.failure {
           // A provider's own error line from the same short run belongs inside the failure
           // card, so the reader sees one explanation instead of two that may disagree.
+          var showsAvatar = !continuesGroup
           var topSpacing = spacing
           var providerMessage: String?
-          if case .message(let previous, _, let previousSpacing, _, _, _, _) = result.last,
+          if case .message(let previous, let previousAvatar, let previousSpacing, _, _, _, _) =
+            result.last,
             isProviderMessage(previous, failure: message, in: items)
           {
             result.removeLast()
+            showsAvatar = previousAvatar
             providerMessage = previous.text
             topSpacing = previousSpacing
           }
           result.append(
             .failure(
               message, conversation.failureState(failure, models: models),
-              topSpacing: topSpacing, providerMessage: providerMessage))
+              showsAvatar: showsAvatar, topSpacing: topSpacing, providerMessage: providerMessage))
           continue
         }
         let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
@@ -100,15 +108,21 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    if models?.snapshot.usesFollowupPlaceholder != true,
-      let source = transcript.recommendedFollowups
-    {
-      result.append(.followups(source, finishedAt: history.latestRunFinishAt))
-    }
-    let showsActivityAvatar =
-      history.executionState.isActive
+    let statusNeedsAvatar =
+      transcript.streamed.isEmpty
       && items.last(where: { $0.message?.isQueued != true })?.role != .assistant
-    result.append(.footer(history.executionState, showsAvatar: showsActivityAvatar))
+    if let completion = transcript.completion {
+      let source =
+        models?.snapshot.usesFollowupPlaceholder == true ? nil : completion.recommendedFollowups
+      result.append(
+        .finished(
+          label: timeline.finishedLabel(
+            completion, followups: source, finishedAt: history.latestRunFinishAt),
+          followups: source, showsAvatar: statusNeedsAvatar))
+    }
+    result.append(
+      .footer(
+        history.executionState, showsAvatar: history.executionState.isActive && statusNeedsAvatar))
     return result
   }
 

@@ -23,10 +23,9 @@ final class ConversationProjection {
     let items: [ConversationItem]
     let streamed: [ConversationStore.StreamedOutput]
 
-    /// Recommendations stay hidden while the member's own messages are pending.
-    var recommendedFollowups: ChatRecommendedFollowupSource? {
-      pending.isEmpty ? history?.recommendedFollowups : nil
-    }
+    /// Sending a new message retires the previous run's completion and recommendations together.
+    var completion: ChatRunCompletion? { pending.isEmpty ? history?.completion : nil }
+    var recommendedFollowups: ChatRecommendedFollowupSource? { completion?.recommendedFollowups }
   }
 
   /// The workspace session's Store, which keeps this projection's values.
