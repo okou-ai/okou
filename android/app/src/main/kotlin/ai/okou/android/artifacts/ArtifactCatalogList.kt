@@ -269,11 +269,10 @@ internal fun ArtifactCatalogList(
                 }
                 if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
                     item(key = "catalog-page-feedback") {
-                        if (failure == ArtifactCatalogFailure.More) {
-                            ArtifactPageFailureNotice(Modifier.padding(horizontal = 16.dp))
-                        } else {
-                            ArtifactRowSkeleton()
-                        }
+                        ArtifactPageFeedback(
+                            failed = failure == ArtifactCatalogFailure.More,
+                            noticeHorizontalPadding = 16.dp,
+                        )
                     }
                 }
             }
@@ -459,8 +458,27 @@ internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
     }
 
 @Composable
-internal fun ArtifactPageFailureNotice(modifier: Modifier = Modifier) {
-    ArtifactReadNotice(R.string.artifact_catalog_page_failed, modifier.padding(top = 12.dp))
+internal fun ArtifactPageFeedback(
+    failed: Boolean,
+    skeletonHeight: Dp = 80.dp,
+    skeletonHorizontalPadding: Dp = 12.dp,
+    noticeHorizontalPadding: Dp = 0.dp,
+) {
+    if (failed) {
+        // Keep the loading item's height so the list doesn't scroll back at its lower bound.
+        Box(Modifier.heightIn(min = skeletonHeight)) {
+            ArtifactReadNotice(
+                ArtifactCatalogFailure.More.label(),
+                Modifier.padding(
+                    start = noticeHorizontalPadding,
+                    end = noticeHorizontalPadding,
+                    top = 12.dp,
+                ),
+            )
+        }
+    } else {
+        ArtifactRowSkeleton(skeletonHeight, skeletonHorizontalPadding)
+    }
 }
 
 @Composable

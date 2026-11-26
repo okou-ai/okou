@@ -290,11 +290,11 @@ internal fun ChatArtifactResources(
                 }
                 if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
                     item(key = "resource-page-feedback") {
-                        if (failure == ArtifactCatalogFailure.More) {
-                            ArtifactPageFailureNotice()
-                        } else {
-                            ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp)
-                        }
+                        ArtifactPageFeedback(
+                            failed = failure == ArtifactCatalogFailure.More,
+                            skeletonHeight = 72.dp,
+                            skeletonHorizontalPadding = 16.dp,
+                        )
                     }
                 }
                 if (external != null && externalTitle != null) {

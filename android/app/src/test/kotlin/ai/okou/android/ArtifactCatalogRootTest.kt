@@ -411,44 +411,54 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h380dp")
     fun chatResourcesResumesTheSameFailedPageAndEvictsOnConfirmedRevocation() {
         val fixture = ArtifactApiFixture(app.fixture)
-        fixture.pageSize = 2
+        fixture.pageSize = 3
         fixture.install()
         val realtime = app.realtimeService as TestRealtimeService
-        val refuseAppend = AtomicBoolean(true)
         val deny = AtomicBoolean(false)
         val appendRequests = AtomicInteger()
+        val releaseFailure = CountDownLatch(1)
         val respond = app.fixture.commandResponse
         app.fixture.commandResponse = { request ->
             val url = request.requestUrl
             if (url?.encodedPath == "/api/artifacts/catalog" && deny.get()) {
                 MockResponse().setResponseCode(403)
             } else if (
-                url?.encodedPath == "/api/artifacts/catalog" && url.queryParameter("cursor") == "2"
+                url?.encodedPath == "/api/artifacts/catalog" &&
+                    url.queryParameter("cursor") == "3" &&
+                    appendRequests.incrementAndGet() == 1
             ) {
-                appendRequests.incrementAndGet()
-                if (refuseAppend.get()) MockResponse().setResponseCode(400) else respond(request)
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+                MockResponse().setResponseCode(400)
             } else respond(request)
         }
         app.responseGate.countDown()
-        openChatResources(fixture.sourceTitle)
+        val retained = compose.onNodeWithText(fixture.site.title)
+        val before =
+            try {
+                openChatResources(fixture.sourceTitle)
+                awaitText(fixture.summary.title)
+                val list = compose.onNodeWithTag("chat_resources_list")
+                list.performScrollToNode(hasTestTag("artifact_row_skeleton"))
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
+                retained.assertIsDisplayed().getUnclippedBoundsInRoot()
+            } finally {
+                releaseFailure.countDown()
+            }
         val notice = "Temporarily unable to load more"
         awaitText(notice)
-        val previousRow = compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot()
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
         assertEquals(
             12.dp,
-            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - previousRow.bottom,
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - before.bottom,
         )
         assertEquals(1, appendRequests.get())
-        refuseAppend.set(false)
         resumeArtifactRoute()
         awaitText(fixture.slides.title)
         assertEquals(2, appendRequests.get())
-        assertEquals(
-            previousRow,
-            compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot(),
-        )
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
         compose.onNodeWithText(notice).assertDoesNotExist()
 
         deny.set(true)
@@ -464,9 +474,10 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h560dp")
     fun workspaceKeepsTheRetainedPageAndResumesItsFailedCursor() {
         val fixture = ArtifactApiFixture(app.fixture)
-        fixture.pageSize = 2
+        fixture.pageSize = 4
         fixture.install()
         val appendRequests = AtomicInteger()
         val releaseFailure = CountDownLatch(1)
@@ -475,21 +486,24 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
             val url = request.requestUrl
             if (
                 url?.encodedPath == "/api/artifacts/catalog" &&
-                    url.queryParameter("cursor") == "2" &&
+                    url.queryParameter("cursor") == "4" &&
                     appendRequests.incrementAndGet() == 1
             ) {
-                releaseFailure.await()
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
                 MockResponse().setResponseCode(400)
             } else respond(request)
         }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
-        compose.onNodeWithContentDescription("Artifacts").performClick()
-        val retained = compose.onNodeWithText(fixture.summary.title)
+        val retained = compose.onNodeWithText(fixture.slides.title)
         val before =
             try {
+                compose.onNodeWithContentDescription("Artifacts").performClick()
                 awaitText(fixture.summary.title)
-                retained.getUnclippedBoundsInRoot()
+                val list = compose.onNodeWithTag("artifact_list")
+                list.performScrollToNode(hasTestTag("artifact_row_skeleton"))
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
+                retained.assertIsDisplayed().getUnclippedBoundsInRoot()
             } finally {
                 releaseFailure.countDown()
             }
@@ -502,7 +516,7 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         )
         assertEquals(1, appendRequests.get())
         resumeArtifactRoute()
-        awaitText(fixture.site.title)
+        awaitText(fixture.image.title)
         assertEquals(2, appendRequests.get())
         assertEquals(before, retained.getUnclippedBoundsInRoot())
         compose.onNodeWithText(notice).assertDoesNotExist()
