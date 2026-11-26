@@ -6,7 +6,9 @@ root="${RUNNER_TEMP:?}/okou-ios-ci"
 transfer="$RUNNER_TEMP/ios-native-products"
 lock=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 identity() {
-  printf '%s\n' "${GITHUB_RUN_ID:?}" "${GITHUB_RUN_ATTEMPT:?}" "${GITHUB_SHA:?}" "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+  # GitHub can roll out a new image revision with the same macOS build and toolchain.
+  printf 'Runner image version: %s\n' "${ImageVersion:-unknown}" >&2
+  printf '%s\n' "${GITHUB_RUN_ID:?}" "${GITHUB_RUN_ATTEMPT:?}" "${GITHUB_SHA:?}" "${ImageOS:-unknown}"
   sw_vers -buildVersion
   uname -m
 }
