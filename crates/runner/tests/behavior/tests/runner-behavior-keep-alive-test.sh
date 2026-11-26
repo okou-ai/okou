@@ -23,8 +23,6 @@ root = Path(os.environ['KEEP_ALIVE_CASE'])
 scenario = os.environ['KEEP_ALIVE_SCENARIO']
 command = Path(sys.argv[0]).name
 args = sys.argv[1:]
-if command == 'sleep':
-    sys.exit(0)
 assert command == 'sudo', (command, args)
 command, *args = args
 command = Path(command).name
@@ -108,8 +106,8 @@ with tempfile.TemporaryDirectory(prefix='keep-alive-diagnostics-') as temporary:
     peer = binary_dir / 'peer'
     peer.write_text(fixture)
     peer.chmod(0o755)
-    for name in ('sudo', 'sleep'):
-        (binary_dir / name).symlink_to(peer)
+    (binary_dir / 'sudo').symlink_to(peer)
+    (binary_dir / 'sleep').symlink_to('/bin/true')
 
     for scenario in ('turn2-failure', 'journal-failure', 'early-failure',
                      'remove-failure', 'active-stop', 'state-failure'):
