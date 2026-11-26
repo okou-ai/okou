@@ -28,7 +28,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -139,16 +138,9 @@ internal fun OkouActionButton(
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
 ) {
-    val shape = MaterialTheme.shapes.medium
     val size = modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    val style =
-        MaterialTheme.typography.bodySmall.copy(
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            letterSpacing = 0.sp,
-            fontWeight = FontWeight(550),
-        )
+    val style = MaterialTheme.typography.labelLarge
     val text: @Composable () -> Unit = {
         if (layoutLabels.isEmpty()) Text(label, style = style, textAlign = TextAlign.Center)
         else
@@ -170,7 +162,6 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                shape = shape,
                 contentPadding = padding,
                 content = { text() },
             )
@@ -179,7 +170,6 @@ internal fun OkouActionButton(
                 onClick,
                 size,
                 enabled,
-                shape = shape,
                 contentPadding = padding,
                 content = { text() },
             )
@@ -195,7 +185,6 @@ internal fun OkouActionButton(
                         }
                     else size,
                 enabled = enabled || retainDisabledFocus,
-                shape = shape,
                 colors =
                     if (retainDisabledFocus)
                         defaults.copy(
