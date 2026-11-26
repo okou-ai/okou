@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
@@ -672,7 +673,7 @@ private fun ConnectorPermissionSheet(
                             permissions.failure,
                             R.string.connector_permissions_failed,
                             pendingBody,
-                            inPanel = true,
+                            failureLayout = ContentReadFailureLayout.Panel,
                         )
                     else ->
                         Box(pendingBody) {

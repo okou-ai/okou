@@ -53,6 +53,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ForYouSimplifiedDeck]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Simplified For you deck",
+    description:
+      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, and size cards from the deck width.",
+    enabled: false,
+  },
   [FeatureSwitchKey.WorkflowListRedesign]: {
     maintainer: "ming@okou.ai",
     displayName: "Workflow list redesign",
@@ -67,6 +74,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Manage connector accounts and permissions in native iOS Settings.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.IosConnectorAppAuthorization]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS connector app authorization",
+    description:
+      "Authorize TikTok, Dropbox and Spotify through their iOS apps with browser recovery.",
+    enabled: false,
+    staffOptInOnly: true,
   },
   [FeatureSwitchKey.ComposerVoiceMessages]: {
     maintainer: "ethan@okou.ai",

@@ -33,6 +33,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { captureSuggestionCard } from "../../lib/posthog.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
+import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 import { ChatComposer } from "./composer.tsx";
 
 // Option rows and the direction trigger share one shape. The rows and the
@@ -418,6 +419,7 @@ export function AgentSuggestionCard({
   const start = useSet(startAgentSuggestion$);
   const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
   const signal = useGet(pageSignal$);
+  const simplified = useForYouSimplifiedDeck();
   return (
     <article
       aria-labelledby={`suggestion-title-${item.id}`}
@@ -478,7 +480,12 @@ export function AgentSuggestionCard({
         aria-label={t(($) => {
           return $.chat.agentSuggestions.dismiss;
         })}
-        className="absolute top-5.5 right-5 sm:top-8.5 sm:right-8"
+        className={cn(
+          "absolute top-5.5 right-5",
+          simplified
+            ? "@min-[32rem]/for-you:top-8.5 @min-[32rem]/for-you:right-8"
+            : "sm:top-8.5 sm:right-8",
+        )}
         onClick={() => {
           detach(
             submitFeedback(item.id, "dismissed", signal),
@@ -501,6 +508,7 @@ function SuggestionFeedback({
   const { item } = entry;
   const signal = useGet(pageSignal$);
   const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
+  const simplified = useForYouSimplifiedDeck();
   const feedbackActions = [
     {
       kind: "already_done" as const,
@@ -537,7 +545,10 @@ function SuggestionFeedback({
       aria-label={t(($) => {
         return $.chat.agentSuggestions.feedbackPrompt;
       })}
-      className="-mx-4 mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4"
+      className={cn(
+        "-mx-4 mt-auto grid grid-cols-2 gap-2",
+        simplified ? "@min-[42rem]/for-you:grid-cols-4" : "sm:grid-cols-4",
+      )}
     >
       {feedbackActions.map(({ kind, label, Icon }) => {
         return (

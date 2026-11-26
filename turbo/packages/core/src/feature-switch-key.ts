@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   IosConnectorManagement = "iosConnectorManagement",
+  IosConnectorAppAuthorization = "iosConnectorAppAuthorization",
   ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",
@@ -64,4 +65,5 @@ export enum FeatureSwitchKey {
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
   WorkflowListRedesign = "workflowListRedesign",
+  ForYouSimplifiedDeck = "forYouSimplifiedDeck",
 }

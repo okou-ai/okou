@@ -48,12 +48,13 @@ use super::{
 use crate::restored_session_identity::{
     FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionIdentity,
 };
+use crate::storage_cache::{DeferredBackgroundFill, PendingGuestArchives};
 use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::JobTelemetry;
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
 use runner_types::ids::RunId;
-use runner_types::types::{ExecutionContext, HomeReuseResult};
+use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxStartupPath};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const STORAGE_CACHE_POPULATE_FAILED: &str = "storage-cache-populate-failed";
@@ -1331,17 +1332,31 @@ async fn populate_storage_plan(
     config: &ExecutorConfig,
     telemetry: &mut JobTelemetry,
     started: Option<Instant>,
-) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
+    startup_path: SandboxStartupPath,
+) -> RunnerResult<(Option<DeferredBackgroundFill>, PendingGuestArchives)> {
     let cache_started = started.unwrap_or_else(Instant::now);
-    let result = crate::storage_cache::populate_cache_with_fresh_delivery(
-        plan,
-        sandbox,
-        &config.home,
-        telemetry,
-        fresh_delivery,
-        Some(&config.decoded_cache),
-    )
-    .await;
+    let result = if startup_path == SandboxStartupPath::Blank {
+        crate::storage_cache::populate_cache_for_blank(
+            plan,
+            sandbox,
+            &config.home,
+            telemetry,
+            fresh_delivery,
+            &config.decoded_cache,
+        )
+        .await
+    } else {
+        crate::storage_cache::populate_cache_with_fresh_delivery(
+            plan,
+            sandbox,
+            &config.home,
+            telemetry,
+            fresh_delivery,
+            Some(&config.decoded_cache),
+        )
+        .await
+        .map(|deferred| (deferred, PendingGuestArchives::default()))
+    };
     telemetry.record(
         "runner_storage_manifest_cache_populate",
         cache_started.elapsed(),
@@ -1357,16 +1372,18 @@ async fn apply_sequential_storage(
     mut plan: StoragePlan,
     telemetry: &mut JobTelemetry,
     deferred: &mut Option<crate::storage_cache::DeferredBackgroundFill>,
+    pending_archives: PendingGuestArchives,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let files = plan.take_decoded();
     let guest_manifest = plan.into_guest_manifest();
     let started = Instant::now();
-    let result = super::storage::download_storages_with_files(
+    let result = super::storage::download_storages_sequential(
         sandbox,
         context,
         guest_manifest,
         &files,
         telemetry,
+        pending_archives,
     )
     .await;
     telemetry.record(
@@ -1633,13 +1650,14 @@ async fn prepare_guest_storage(
                     let _ = prepared_storage.take();
                     return Ok(deferred);
                 }
-                let mut deferred = populate_storage_plan(
+                let (mut deferred, pending_archives) = populate_storage_plan(
                     &mut prepared.plan,
                     Some(&mut prepared.delivery),
                     sandbox,
                     config,
                     telemetry,
                     Some(cache_started),
+                    start.sandbox_startup_path,
                 )
                 .await?;
                 let prepared = prepared_storage.take().ok_or_else(|| {
@@ -1647,7 +1665,9 @@ async fn prepare_guest_storage(
                         "prepared storage disappeared after cache population".into(),
                     )
                 })?;
-                apply_sequential_storage(sandbox, context, prepared.plan, telemetry, &mut deferred).await
+                apply_sequential_storage(
+                    sandbox, context, prepared.plan, telemetry, &mut deferred, pending_archives,
+                ).await
             }
         } else {
             let mut plan = build_storage_plan(manifest, previous)?;
@@ -1668,9 +1688,12 @@ async fn prepare_guest_storage(
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
                 Ok(None)
             } else {
-                let mut deferred =
-                    populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
-                apply_sequential_storage(sandbox, context, plan, telemetry, &mut deferred).await
+                let (mut deferred, pending_archives) = populate_storage_plan(
+                    &mut plan, None, sandbox, config, telemetry, None, start.sandbox_startup_path,
+                ).await?;
+                apply_sequential_storage(
+                    sandbox, context, plan, telemetry, &mut deferred, pending_archives,
+                ).await
             }
         }
     }

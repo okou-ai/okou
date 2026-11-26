@@ -117,8 +117,8 @@ GO_VERSION="1.27.4"
 RUST_VERSION="1.100.0"
 CLAUDE_CODE_VERSION="2.1.332"
 CODEX_CLI_VERSION="0.172.0"
-AGY_VERSION="1.5.15"
-AGY_BUILD="5514532022517760"
+AGY_VERSION="1.5.17"
+AGY_BUILD="4823843970351104"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
@@ -530,11 +530,11 @@ install_runtimes() {
     case "$(dpkg --print-architecture)" in
       amd64)
         asset=linux-x64/cli_linux_x64.tar.gz
-        digest=af3f0be58b8475940d79f9abea19e762ecc3d265ea9f56cff8dd805e27ba299b44a305a79504a7ffe6ebdfa29a294c56edc4caed1875990bfaf2fef1508ec8b0
+        digest=71a967aa16e0ab5d87196bcd6772130bdab55b2fd768cd24d21b1da401ff9f60280b976cad3dc14a2d646233b0eaf8caf87c490eed73044d54550cbb3d8d67d2
         ;;
       arm64)
         asset=linux-arm/cli_linux_arm64.tar.gz
-        digest=d64ad759781b50dfacfa7d9826c0ad469959d01bdf5a170acd4c83472eba31c677baf0052ac8ab48eef40f0d3f0e26057e752aabd24331c79f4c881d4b872125
+        digest=e4f086d0730b325cfd438ea90396ee78eb23a3110ef7f792824c8817b8d0432462b7b5f91b3d933fc1932a6f4ba73de505e2e96f44448c9fb2427292ead716f7
         ;;
       *) echo "Unsupported Antigravity CLI architecture" >&2; exit 1 ;;
     esac

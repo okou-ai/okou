@@ -151,14 +151,8 @@ private struct ChatSearchContent: View {
           emptyState(hasTitles: !titles.isEmpty)
         }
       )
-      .sheet(
-        isPresented: Binding(
-          get: { workspace.searchArtifacts.preview != nil },
-          set: { if !$0 { workspace.searchArtifacts.dismiss() } })
-      ) {
-        MessageArtifactPreview(
-          viewer: workspace.searchArtifacts, markdown: workspace.messageMarkdown)
-      }
+      .messageArtifactPreview(
+        viewer: workspace.searchArtifacts, markdown: workspace.messageMarkdown)
     }
   }
 

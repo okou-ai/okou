@@ -12,6 +12,10 @@ import {
   getAction,
 } from "./connector-integrations-test-helpers.ts";
 import { providerGroup } from "./personal-account-settings-fixtures.ts";
+import { buildRunModel } from "./chat-model-builders.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
+import { getMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 
 const context = testContext();
 const browserUrl =
@@ -165,4 +169,77 @@ test("hides the Google AI group unless the member opted into the pilot", async (
   expect(
     screen.queryByRole("region", { name: "Google AI (Antigravity)" }),
   ).toBeNull();
+});
+
+// The catalog lists the pilot models only for members who opted in.
+function catalogWithGemini() {
+  const catalog = getMockModelCatalog();
+  const model = catalog.models.find((entry) => {
+    return entry.model === "gpt-6-luna";
+  });
+  const route = catalog.routes.find((entry) => {
+    return entry.model === "gpt-6-luna";
+  });
+  if (!model || !route) {
+    throw new Error("The mock catalog lacks its subscription fixture");
+  }
+  return {
+    ...catalog,
+    models: [
+      ...catalog.models,
+      {
+        ...model,
+        model: "gemini-4-neon",
+        displayName: "Gemini 4 Neon",
+        resolvedModel: "gemini-4-neon",
+        sortOrder: 230,
+      },
+    ],
+    routes: [
+      ...catalog.routes,
+      {
+        ...route,
+        model: "gemini-4-neon",
+        providerType: "antigravity",
+        concreteProviderType: "antigravity",
+        subscriptionType: "antigravity",
+        upstreamModel: "gemini-4-neon",
+      },
+    ],
+  };
+}
+
+test("the composer lists Gemini models under the Google AI plan", async () => {
+  const account = antigravityAccount();
+  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
+    return respond(200, catalogWithGemini());
+  });
+  context.mocks.data.personalModelProviders([account]);
+  context.mocks.data.availableRunModels([
+    buildRunModel({ model: null }),
+    buildRunModel({
+      model: "gemini-4-neon",
+      modelLabel: "Gemini 4 Neon",
+      providerType: "antigravity",
+      modelProviderId: account.id,
+    }),
+  ]);
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.GeminiAntigravity]: true },
+    auth: {
+      user: { id: "user_antigravity_pilot", fullName: "Pilot member" },
+      organization: {
+        activeOrg: { id: staffOrg, name: "Staff" },
+        memberships: [{ id: staffOrg }],
+      },
+    },
+  });
+  click(await composerModelTrigger("Auto"));
+  const panel = within(
+    await screen.findByRole("dialog", { name: "Chat models" }),
+  );
+  expect(panel.getByText("Your Google AI plan")).toBeVisible();
+  expect(panel.getByText("Gemini 4 Neon")).toBeVisible();
 });

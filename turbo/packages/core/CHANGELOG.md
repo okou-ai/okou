@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.884.0](https://github.com/okou-ai/okou/compare/core-v8.883.2...core-v8.884.0) (2026-11-26)
+
+
+### Features
+
+* **app:** simplify the for you deck behind a feature switch ([#51030](https://github.com/okou-ai/okou/issues/51030)) ([3764eac](https://github.com/okou-ai/okou/commit/3764eacaa0223b4c6a41934515f79149910b05a2))
+
+## [8.883.2](https://github.com/okou-ai/okou/compare/core-v8.883.1...core-v8.883.2) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.131.0
+
 ## [8.883.1](https://github.com/okou-ai/okou/compare/core-v8.883.0...core-v8.883.1) (2026-11-26)
 
 

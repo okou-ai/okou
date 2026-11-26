@@ -4,7 +4,6 @@
 import hashlib
 import pathlib
 
-import batch_aba_report as batch
 import later_parking_report as later
 import report
 import speculative_fault_report as saving
@@ -17,7 +16,7 @@ from native_transition_report import (
     wire,
 )
 from cleanup_report import supplied_policy
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_PAUSE_WITNESS "
 FAULTS = ("PauseDrop", "PauseObserverUnwind", "PauseProducerUnwind")
@@ -62,10 +61,10 @@ def validate(directory):
             replay_error="native physical pause replayed run or resource identity",
             binding_error="native physical pause lost original history binding",
         )
-        started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
-        observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
-        verified = batch.clock(captured.get("data_verified_ns"), started, events[1]["monotonic_ns"])
-        reparking = batch.clock(captured.get("repark_started_ns"), verified, observed)
+        started = clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
+        observed = clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
+        verified = clock(captured.get("data_verified_ns"), started, events[1]["monotonic_ns"])
+        reparking = clock(captured.get("repark_started_ns"), verified, observed)
         payload_sha = hashlib.sha256(report.history_payload(history)).hexdigest()
         request_sha = wire(captured.get("request_raw"), state="Paused")
         exact(captured, {"mode":mode,"history_run_id":history,"operation_run_id":operation,"reuse_key":reuse,

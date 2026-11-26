@@ -46,6 +46,7 @@ class NativeUpdateTest {
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
         val gate = CompletableDeferred<Unit>()
+        val reopenedCheck = AtomicReference<CompletableDeferred<Unit>?>(null)
         val firstProgress = CompletableDeferred<Unit>()
         val download = AtomicReference(CompletableDeferred<File>())
         val release =
@@ -67,6 +68,7 @@ class NativeUpdateTest {
 
                     override suspend fun check(): AndroidUpdates {
                         gate.await()
+                        reopenedCheck.get()?.await()
                         if (failFirstCheck.getAndSet(false))
                             throw IOException("fixture check failed")
                         return AndroidUpdates(null, candidate.get())
@@ -237,8 +239,13 @@ class NativeUpdateTest {
             assertSettingsRowSize()
             captureState("settings-current")
             candidate.set(release.copy(minimumSdk = 36))
+            val recheck = CompletableDeferred<Unit>()
+            reopenedCheck.set(recheck)
             click(R.string.updates_title)
-            click(R.string.updates_check)
+            exists(R.string.updates_check_in_progress)
+            assertEquals(initialDetailsBounds, detailsBounds())
+            captureState("details-reopened-checking")
+            recheck.complete(Unit)
             exists(R.string.updates_android_unsupported)
             assertNotNull(text(updateTarget))
             assertNotNull(
@@ -486,6 +493,7 @@ class NativeUpdateTest {
             }
         } finally {
             gate.complete(Unit)
+            reopenedCheck.get()?.complete(Unit)
             firstProgress.complete(Unit)
             for (cleanup in
                 listOf<() -> Unit>(

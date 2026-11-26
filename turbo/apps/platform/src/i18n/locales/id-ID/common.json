@@ -1960,6 +1960,7 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "followupAcceptLabel": "Terima",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Cari obrolan atau proyek…",
@@ -5859,6 +5860,7 @@
       "personal": {
         "accountFallback": "Akun {{number}}",
         "activeAccount": "Aktif",
+        "antigravityGroup": "Paket Google AI Anda",
         "autoCredits": "Memakai kredit Okou",
         "autoDescription": "Hubungkan akun ChatGPT atau Claude Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",

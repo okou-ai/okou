@@ -1,5 +1,6 @@
 package ai.okou.android.settings
 
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
@@ -89,11 +90,7 @@ private fun EmailSubscriptionSheet(
         SettingsDetailStatus(stringResource(R.string.settings_email_scope), indentation)
         val confirmed = state.read.value
         when {
-            state.read.initialFailure ->
-                SettingsDetailStatus(
-                    stringResource(R.string.settings_email_load_failed),
-                    indentation,
-                )
+            state.read.initialFailure -> SettingsReadError(ContentReadFailureLayout.Panel)
             confirmed == null ->
                 SettingsPlaceholder(stringResource(R.string.settings_email_refreshing))
             else -> {

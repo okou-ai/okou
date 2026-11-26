@@ -76,6 +76,7 @@ export async function exchangeTikTokCode(
   args: TikTokClient & {
     readonly code: string;
     readonly redirectUri: string;
+    readonly codeVerifier?: string;
   },
 ) {
   const token = await requestToken(
@@ -84,6 +85,7 @@ export async function exchangeTikTokCode(
       grant_type: "authorization_code",
       code: args.code,
       redirect_uri: args.redirectUri,
+      ...(args.codeVerifier ? { code_verifier: args.codeVerifier } : {}),
     },
     "exchange",
   );

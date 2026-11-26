@@ -1,6 +1,7 @@
 //! Runner-authored explanations. CLI treats the bounded message as opaque text.
 
 use super::{Cause, Handle, Report};
+use crate::vnc::evidence::Role as VncRole;
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
 mod native;
@@ -122,29 +123,31 @@ impl Report {
                 observed(vnc.profile),
                 observed(vnc.kdc_route)
             ));
-            for (role, carrier) in [("RFB", &vnc.rfb_carrier), ("KDC", &vnc.kdc_carrier)] {
-                if let Some(carrier) = carrier {
-                    text.push_str(&format!(
-                        "- VNC {role} carrier: configuration {}; generation {}; attempt {}; resource {}; private connection {}; stream {}; node setup {}; origin TLS {}.\n",
-                        carrier.configuration_id, carrier.generation, carrier.attempt_id,
-                        observed(carrier.resource_id), observed(carrier.connection_id), words(carrier.status)?,
-                        carrier.node_setup.and_then(words).unwrap_or_else(|| "not observed".into()),
-                        carrier.origin_tls.and_then(words).unwrap_or_else(|| "not observed".into()),
-                    ));
-                    if let Some(access) = &carrier.access {
-                        if let Some(failure) = access.access_failure {
-                            text.push_str(&format!(
-                                "- VNC {role} first Cloudflare Access failure: {}.\n",
-                                words(failure)?
-                            ));
-                        }
-                        for step in &access.stages {
-                            text.push_str(&format!(
-                                "- VNC {role} carrier {}: {}.\n",
-                                words(step.stage)?,
-                                words(step.status)?
-                            ));
-                        }
+            for (role, carrier) in vnc.carriers() {
+                let role = match role {
+                    VncRole::Rfb => "RFB",
+                    VncRole::Kdc => "KDC",
+                };
+                text.push_str(&format!(
+                    "- VNC {role} carrier: configuration {}; generation {}; attempt {}; resource {}; private connection {}; stream {}; node setup {}; origin TLS {}.\n",
+                    carrier.configuration_id, carrier.generation, carrier.attempt_id,
+                    observed(carrier.resource_id), observed(carrier.connection_id), words(carrier.status)?,
+                    carrier.node_setup.and_then(words).unwrap_or_else(|| "not observed".into()),
+                    carrier.origin_tls.and_then(words).unwrap_or_else(|| "not observed".into()),
+                ));
+                if let Some(access) = &carrier.access {
+                    if let Some(failure) = access.access_failure {
+                        text.push_str(&format!(
+                            "- VNC {role} first Cloudflare Access failure: {}.\n",
+                            words(failure)?
+                        ));
+                    }
+                    for step in &access.stages {
+                        text.push_str(&format!(
+                            "- VNC {role} carrier {}: {}.\n",
+                            words(step.stage)?,
+                            words(step.status)?
+                        ));
                     }
                 }
             }
@@ -354,10 +357,9 @@ impl Report {
             .and_then(|s| s.access_failure)
             .or_else(|| {
                 let vnc = self.vnc.as_ref()?;
-                [&vnc.kdc_carrier, &vnc.rfb_carrier]
-                    .into_iter()
-                    .flatten()
-                    .find_map(|carrier| carrier.access.as_ref()?.access_failure)
+                vnc.carriers()
+                    .rev()
+                    .find_map(|(_, carrier)| carrier.access.as_ref()?.access_failure)
             })
         {
             return match failure {

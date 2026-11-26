@@ -17,7 +17,6 @@
     <string name="settings_email_receive">接收郵件</string>
     <string name="settings_email_unavailable">郵件無法使用</string>
     <string name="settings_email_check_address">確認帳號電子郵件</string>
-    <string name="settings_email_load_failed">暫時無法載入郵件訂閱。</string>
     <string name="settings_email_refresh_failed">暫時無法同步，正在顯示已儲存的訂閱狀態。</string>
     <string name="settings_email_refreshing">正在同步郵件訂閱</string>
     <string name="settings_email_saving">正在更新郵件訂閱…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">選擇你在「%1$s」使用的訂閱帳號。</string>
     <string name="settings_accounts_scope_empty">「%1$s」的模型帳號</string>
     <string name="settings_workspace_status">「%1$s」 · %2$s</string>
-    <string name="settings_accounts_unavailable">暫時無法查看模型帳號。</string>
     <string name="settings_accounts_update_failed">暫時無法更新，顯示上次同步的資訊。</string>
     <string name="settings_accounts_empty">尚未連接模型帳號</string>
     <string name="settings_accounts_empty_help">連接 ChatGPT 或 Claude 後可查看配額並選擇帳號。</string>

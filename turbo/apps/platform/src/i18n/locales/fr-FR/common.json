@@ -1996,6 +1996,7 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
+      "followupAcceptLabel": "Accepter",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Rechercher des chats ou des projets…",
@@ -5950,6 +5951,7 @@
       "personal": {
         "accountFallback": "Compte {{number}}",
         "activeAccount": "Actif",
+        "antigravityGroup": "Votre forfait Google AI",
         "autoCredits": "Utilise des crédits Okou",
         "autoDescription": "Connectez votre compte ChatGPT ou Claude pour utiliser plus de modèles.",
         "autoTitle": "Utilisez plus de modèles",

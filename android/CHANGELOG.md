@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.58.2](https://github.com/okou-ai/okou/compare/android-v0.58.1...android-v0.58.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** open settings selectors at the current option ([#51016](https://github.com/okou-ai/okou/issues/51016)) ([6bfbe17](https://github.com/okou-ai/okou/commit/6bfbe1798210522f745176f81c824dac6581b492))
+
+## [0.58.1](https://github.com/okou-ai/okou/compare/android-v0.58.0...android-v0.58.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align chat list row hover and keyboard focus ([#51018](https://github.com/okou-ai/okou/issues/51018)) ([1a253c4](https://github.com/okou-ai/okou/commit/1a253c4798571c05b131d1ab095e23651013d755))
+* **android:** show shared feedback for cold artifact read failures ([#51014](https://github.com/okou-ai/okou/issues/51014)) ([8b46e8b](https://github.com/okou-ai/okou/commit/8b46e8b58b50bc4afdf694896213188d3c12ab70))
+
 ## [0.58.0](https://github.com/okou-ai/okou/compare/android-v0.57.4...android-v0.58.0) (2026-11-26)
 
 

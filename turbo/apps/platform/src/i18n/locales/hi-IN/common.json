@@ -1966,6 +1966,7 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
+      "followupAcceptLabel": "स्वीकारें",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "चैट या प्रोजेक्ट खोजें…",
@@ -5882,6 +5883,7 @@
       "personal": {
         "accountFallback": "खाता {{number}}",
         "activeAccount": "सक्रिय",
+        "antigravityGroup": "आपका Google AI प्लान",
         "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना ChatGPT या Claude खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",

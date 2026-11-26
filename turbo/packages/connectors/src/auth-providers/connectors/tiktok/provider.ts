@@ -23,6 +23,7 @@ export const tiktokProvider: AuthCodeConnectorAuthProvider<"tiktok", "oauth"> =
           ...args.authClient,
           code: args.code,
           redirectUri: args.redirectUri,
+          codeVerifier: args.codeVerifier,
         });
       },
     },

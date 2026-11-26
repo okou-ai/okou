@@ -165,22 +165,8 @@ struct ChatDetailView: View {
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
-    .sheet(
-      isPresented: Binding(
-        get: { conversation.attachmentViewer.preview != nil },
-        set: { if !$0 { conversation.attachmentViewer.dismiss() } }
-      )
-    ) {
-      MessageAttachmentPreview(viewer: conversation.attachmentViewer)
-    }
-    .sheet(
-      isPresented: Binding(
-        get: { conversation.artifacts.preview != nil },
-        set: { if !$0 { conversation.artifacts.dismiss() } }
-      )
-    ) {
-      MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
-    }
+    .messageAttachmentPreview(viewer: conversation.attachmentViewer)
+    .messageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(isPresented: $conversation.sharing.showsCreatedLink) {
       ChatSharingCreatedView(sharing: conversation.sharing)

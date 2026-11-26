@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.134.1](https://github.com/okou-ai/okou/compare/api-v2.134.0...api-v2.134.1) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.884.0
+    * @okouai/db bumped to 2.70.1
+    * @okouai/pi-agent-runtime bumped to 1.52.87
+
+## [2.134.0](https://github.com/okou-ai/okou/compare/api-v2.133.1...api-v2.134.0) (2026-11-26)
+
+
+### Features
+
+* **api:** enforce live remote device access ([#50892](https://github.com/okou-ai/okou/issues/50892)) ([df3cad0](https://github.com/okou-ai/okou/commit/df3cad08ac5cc8cfbe7167341149e70ac39ba6d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.131.0
+    * @okouai/core bumped to 8.883.2
+    * @okouai/db bumped to 2.70.0
+    * @okouai/pi-agent-runtime bumped to 1.52.86
+
 ## [2.133.1](https://github.com/okou-ai/okou/compare/api-v2.133.0...api-v2.133.1) (2026-11-26)
 
 

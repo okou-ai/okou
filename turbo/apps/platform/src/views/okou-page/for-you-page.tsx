@@ -47,6 +47,7 @@ import {
   SuggestionSaveErrors,
   SuggestionSentNotice,
 } from "./agent-suggestions.tsx";
+import { useForYouSimplifiedDeck } from "./for-you-deck-switch.ts";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 import {
@@ -102,7 +103,13 @@ const STACK_LAYERS = [
 ] as const;
 
 const STACK_CARD =
-  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)] sm:p-10";
+  "@container/suggestion col-start-1 row-start-1 flex origin-[50%_85%] touch-pan-y flex-col rounded-3xl p-7 shadow-[0_1px_2px_rgb(37_33_33/0.05),0_10px_26px_rgb(37_33_33/0.06)]";
+
+// The simplified deck sizes cards from its own width rather than the
+// viewport: an open chat list can leave a wide window with a narrow deck.
+function stackCardPadding(simplified: boolean) {
+  return simplified ? "@min-[32rem]/for-you:p-10" : "sm:p-10";
+}
 
 function SuggestionSendStatus({
   entry,
@@ -122,6 +129,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
   const minHeight = useGet(forYouCardMinHeight$);
   const measureCard = useSet(measureForYouCardOnRef$);
   const finishPagination = useSet(finishForYouPaginationOnRef$);
+  const simplified = useForYouSimplifiedDeck();
   const { cards, settled } = deck;
   const count = deck.remainingIds?.length;
   const complete = count === 0 && cards.length === 0;
@@ -134,7 +142,12 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
     ...settled,
   ];
   return (
-    <div className="pointer-events-none relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
+    <div
+      className={cn(
+        "pointer-events-none relative mx-auto w-full max-w-176 pb-6",
+        simplified ? "-mt-20 sm:-mt-23" : "-mt-26 sm:-mt-29",
+      )}
+    >
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -150,7 +163,12 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               data-slot="suggestion-stack-layer"
               aria-hidden
               inert
-              className={cn(STACK_CARD, "relative", layer)}
+              className={cn(
+                STACK_CARD,
+                stackCardPadding(simplified),
+                "relative",
+                layer,
+              )}
             />
           );
         })}
@@ -169,6 +187,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
               aria-hidden={!active || undefined}
               className={cn(
                 STACK_CARD,
+                stackCardPadding(simplified),
                 outcome
                   ? cn(
                       "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
@@ -205,7 +224,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
           );
         })}
       </div>
-      {count !== undefined && <ForYouNavigation cards={cards} />}
+      {!simplified && count !== undefined && <ForYouNavigation cards={cards} />}
     </div>
   );
 }
@@ -455,6 +474,118 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
   } as CSSProperties;
 }
 
+function ForYouProgress({
+  steps,
+  firstStep,
+  position,
+  total,
+}: {
+  readonly steps: readonly string[];
+  readonly firstStep: number;
+  readonly position: number;
+  readonly total: number | undefined;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="progressbar"
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.forYou.title;
+      })}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuenow={position + 1}
+      className="flex min-w-0 flex-1 items-center"
+    >
+      {steps.map((id, offset) => {
+        const index = firstStep + offset;
+        return (
+          <span
+            key={id}
+            aria-hidden
+            className="flex h-11 min-w-0 flex-1 items-center px-1.5 sm:px-2"
+          >
+            <span
+              className={cn(
+                "h-1 w-full rounded-full transition-colors",
+                index === position
+                  ? "bg-[rgb(var(--for-you-bar))]"
+                  : "bg-[rgb(var(--for-you-track))]",
+              )}
+            />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ForYouStepLinks({
+  steps,
+  firstStep,
+  position,
+  total,
+}: {
+  readonly steps: readonly string[];
+  readonly firstStep: number;
+  readonly position: number;
+  readonly total: number | undefined;
+}) {
+  const { t } = useTranslation();
+  const browse = useSet(browseForYou$);
+  const signal = useGet(pageSignal$);
+  return (
+    <nav
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.homeCard.navigation;
+      })}
+      className="flex min-w-0 flex-1 items-center"
+    >
+      {steps.map((id, offset) => {
+        const index = firstStep + offset;
+        return (
+          <Link
+            key={id}
+            pathname={ROUTES.forYou}
+            options={{
+              searchParams: new URLSearchParams({
+                suggestion: id,
+              }),
+            }}
+            aria-current={index === position ? "step" : undefined}
+            aria-label={t(
+              ($) => {
+                return $.chat.agentSuggestions.homeCard.show;
+              },
+              {
+                index: index + 1,
+                total,
+              },
+            )}
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                event.preventDefault();
+                browse(id, index < position ? "previous" : "next", signal);
+              }
+            }}
+            className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-1 w-full rounded-full transition-colors",
+                index === position
+                  ? "bg-[rgb(var(--for-you-bar))]"
+                  : "bg-[rgb(var(--for-you-track))]",
+              )}
+            />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 function ForYouHeader({
   ids,
   position,
@@ -463,12 +594,11 @@ function ForYouHeader({
   readonly position: number;
 }) {
   const { t } = useTranslation();
-  // Keep a navigable window around the current card, even for a large feed.
+  // Keep a seven-step window around the current card, even for a large feed.
   const total = ids?.length;
   const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
   const steps = ids?.slice(firstStep, firstStep + 7);
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
+  const simplified = useForYouSimplifiedDeck();
   const cover = useLastResolved(forYouPaintedCover$);
   if (!cover) {
     return null;
@@ -492,60 +622,23 @@ function ForYouHeader({
         </p>
       </div>
       <div className="flex min-w-0 items-center gap-2 sm:gap-5">
-        {steps && steps.length > 0 && (
-          <nav
-            aria-label={t(($) => {
-              return $.chat.agentSuggestions.homeCard.navigation;
-            })}
-            className="flex min-w-0 flex-1 items-center"
-          >
-            {steps.map((id, offset) => {
-              const index = firstStep + offset;
-              return (
-                <Link
-                  key={id}
-                  pathname={ROUTES.forYou}
-                  options={{
-                    searchParams: new URLSearchParams({
-                      suggestion: id,
-                    }),
-                  }}
-                  aria-current={index === position ? "step" : undefined}
-                  aria-label={t(
-                    ($) => {
-                      return $.chat.agentSuggestions.homeCard.show;
-                    },
-                    {
-                      index: index + 1,
-                      total,
-                    },
-                  )}
-                  onClick={(event) => {
-                    if (shouldHandleLinkClick(event)) {
-                      event.preventDefault();
-                      browse(
-                        id,
-                        index < position ? "previous" : "next",
-                        signal,
-                      );
-                    }
-                  }}
-                  className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
-                >
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "h-1 w-full rounded-full transition-colors",
-                      index === position
-                        ? "bg-[rgb(var(--for-you-bar))]"
-                        : "bg-[rgb(var(--for-you-track))]",
-                    )}
-                  />
-                </Link>
-              );
-            })}
-          </nav>
-        )}
+        {steps &&
+          steps.length > 0 &&
+          (simplified ? (
+            <ForYouProgress
+              steps={steps}
+              firstStep={firstStep}
+              position={position}
+              total={total}
+            />
+          ) : (
+            <ForYouStepLinks
+              steps={steps}
+              firstStep={firstStep}
+              position={position}
+              total={total}
+            />
+          ))}
         {position >= 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
             <span className="text-[rgb(var(--for-you-ink)/0.9)]">

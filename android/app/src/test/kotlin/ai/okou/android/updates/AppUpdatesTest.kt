@@ -319,14 +319,14 @@ class AppUpdatesTest {
                     assertEquals(UpdateCheck.Failed, owner.state.value.check)
 
                     service.checkRejection = null
-                    owner.checkAfterFailure()
+                    owner.checkOnDetailsOpen()
                     owner.check(manual = false)
                     advanceTimeBy(7_999)
-                    owner.checkAfterFailure()
+                    owner.checkOnDetailsOpen()
                     runCurrent()
                     assertEquals(3, service.checks)
                     advanceTimeBy(1)
-                    owner.checkAfterFailure()
+                    owner.checkOnDetailsOpen()
                     runCurrent()
                     assertEquals(4, service.checks)
                     assertEquals(UpdateCheck.Checked, owner.state.value.check)
@@ -355,7 +355,7 @@ class AppUpdatesTest {
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                 owner.check(manual = false)
-                owner.checkAfterFailure()
+                owner.checkOnDetailsOpen()
                 runCurrent()
                 assertEquals(1, service.checks)
 

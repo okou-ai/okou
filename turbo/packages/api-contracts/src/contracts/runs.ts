@@ -144,7 +144,7 @@ export const runStorageOutputSchema = object({
 const runResultSchema = object({
   // Only writeback outputs are persisted. Read-only versions belong to launch mounts.
   storageOutputs: array(runStorageOutputSchema).optional(),
-  framework: zEnum(["pi", "claude-code", "codex"]).optional(),
+  framework: zEnum(["pi", "claude-code", "codex", "antigravity"]).optional(),
   frameworkSessionId: string().optional(),
 });
 

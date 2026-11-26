@@ -13,7 +13,7 @@ use std::{
 };
 
 pub(crate) fn extract(
-    source: ArchiveSource,
+    source: ArchiveSource<'_>,
     target: &Path,
     concurrency: usize,
     reference: &TemplateGuidanceReference,

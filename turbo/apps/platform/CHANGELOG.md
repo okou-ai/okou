@@ -13,6 +13,43 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1189.0](https://github.com/okou-ai/okou/compare/app-v0.1188.3...app-v0.1189.0) (2026-11-26)
+
+
+### Features
+
+* **app:** simplify the for you deck behind a feature switch ([#51030](https://github.com/okou-ai/okou/issues/51030)) ([3764eac](https://github.com/okou-ai/okou/commit/3764eacaa0223b4c6a41934515f79149910b05a2))
+* **platform:** show accept label and kbd on follow-up placeholder button ([#51002](https://github.com/okou-ai/okou/issues/51002)) ([44148df](https://github.com/okou-ai/okou/commit/44148df6c72030019bdd079427eb59a14ff50421))
+
+
+### Bug Fixes
+
+* **app:** make share message rows selectable ([#50969](https://github.com/okou-ai/okou/issues/50969)) ([ee57938](https://github.com/okou-ai/okou/commit/ee579380f2bdcb293d7b21e1c126948b4ee310bf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.884.0
+    * @okouai/ui bumped to 1.22.31
+
+## [0.1188.3](https://github.com/okou-ai/okou/compare/app-v0.1188.2...app-v0.1188.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **app:** separate domain setup from verification ([#50988](https://github.com/okou-ai/okou/issues/50988)) ([3bc4f64](https://github.com/okou-ai/okou/commit/3bc4f64619bdd3a20dfad2e975fc9ea7c1ca532e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.131.0
+    * @okouai/core bumped to 8.883.2
+    * @okouai/ui bumped to 1.22.30
+
 ## [0.1188.2](https://github.com/okou-ai/okou/compare/app-v0.1188.1...app-v0.1188.2) (2026-11-26)
 
 

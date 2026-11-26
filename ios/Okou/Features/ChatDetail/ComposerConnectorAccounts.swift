@@ -8,17 +8,39 @@ extension View {
     store: ComposerConnectorStore,
     destination: Binding<ComposerConnectorAccountResources?>
   ) -> some View {
-    navigationDestination(
+    modifier(ConnectorAccountDestination(store: store, destination: destination))
+  }
+}
+
+/// Pushes an account page while it is open. Retiring the page in the workspace session's Store
+/// pops it.
+private struct ConnectorAccountDestination: ViewModifier {
+  let store: ComposerConnectorStore
+  @Binding var destination: ComposerConnectorAccountResources?
+  @ResolvedValue private var open: Bool?
+
+  init(store: ComposerConnectorStore, destination: Binding<ComposerConnectorAccountResources?>) {
+    self.store = store
+    _destination = destination
+    _open = ResolvedValue(
+      destination.wrappedValue?.openValue ?? ComposerConnectorAccountResources.noPage)
+  }
+
+  func body(content: Content) -> some View {
+    let resources = destination
+    // The owner's own flag also closes the page if the graph write did not land.
+    let isOpen = resources.map { (open ?? true) && !$0.isClosed } ?? false
+    content.navigationDestination(
       isPresented: Binding(
-        get: { destination.wrappedValue.map { !$0.isClosed } ?? false },
+        get: { isOpen },
         set: { presented in
           if !presented {
-            destination.wrappedValue?.close()
-            destination.wrappedValue = nil
+            destination?.close()
+            destination = nil
           }
         })
     ) {
-      if let resources = destination.wrappedValue, !resources.isClosed {
+      if let resources, isOpen {
         ComposerConnectorAccounts(store: store, resources: resources)
           .id(ObjectIdentifier(resources))
       }

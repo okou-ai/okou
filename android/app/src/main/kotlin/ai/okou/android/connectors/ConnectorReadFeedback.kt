@@ -1,6 +1,7 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.ContentReadFailure
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.chat.ContentReadFeedback
@@ -55,7 +56,7 @@ internal fun ConnectorReadFailureContent(
     failure: ConnectorReadFailure,
     @StringRes unavailable: Int,
     modifier: Modifier,
-    inPanel: Boolean = false,
+    failureLayout: ContentReadFailureLayout = ContentReadFailureLayout.Viewport,
 ) {
     if (failure == ConnectorReadFailure.Unavailable) {
         ConnectorReadError(unavailable, modifier)
@@ -63,7 +64,7 @@ internal fun ConnectorReadFailureContent(
         ContentReadFailure(
             R.string.chat_list_first_load_failed,
             modifier.fillMaxWidth(),
-            inPanel = inPanel,
+            failureLayout = failureLayout,
         )
     }
 }

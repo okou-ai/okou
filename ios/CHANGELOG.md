@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.66.10](https://github.com/okou-ai/okou/compare/ios-v0.66.9...ios-v0.66.10) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep the attachment and result viewers in the session graph ([#51015](https://github.com/okou-ai/okou/issues/51015)) ([683b716](https://github.com/okou-ai/okou/commit/683b716b2431956524e87d38797c2847a1f3052b))
+
+## [0.66.9](https://github.com/okou-ai/okou/compare/ios-v0.66.8...ios-v0.66.9) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** keep attachment upload progress on composer thumbnails ([#51004](https://github.com/okou-ai/okou/issues/51004)) ([bd65095](https://github.com/okou-ai/okou/commit/bd65095b87d2f95c15bca6b636b43a778532e926))
+
 ## [0.66.8](https://github.com/okou-ai/okou/compare/ios-v0.66.7...ios-v0.66.8) (2026-11-26)
 
 
