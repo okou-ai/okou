@@ -9,18 +9,22 @@ import ai.okou.android.SettingsApiFixture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.OrganizationRole
+import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.NativeAccount
 import ai.okou.android.awaitChatList
 import ai.okou.android.openChatListSettings
+import ai.okou.android.resolvePalette
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.app.LocaleManager
+import android.graphics.Rect
 import android.os.LocaleList
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
+import androidx.compose.ui.graphics.toArgb
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -38,6 +42,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -125,10 +130,7 @@ class ScreenshotScenario {
                 device.waitForIdle()
                 val idlePosition = await(receive).visibleBounds
                 capture("03-email-idle.png")
-                capturePress(
-                    x = idlePosition.exactCenterX(),
-                    y = idlePosition.exactCenterY(),
-                )
+                capturePress(idlePosition)
                 check(fixture.emailWrites.isEmpty())
                 fixture.emailWriteStatus = 400
                 val inlineFailure = holdWrite()
@@ -192,10 +194,34 @@ class ScreenshotScenario {
         ScreenshotCapture.capture(name)
     }
 
-    private fun capturePress(x: Float, y: Float) {
+    private fun capturePress(label: Rect) {
+        val density = app.resources.displayMetrics.density
+        // In the LTR sheet, the track ends after the two 16 dp horizontal insets.
+        // The 16 dp offset from the track start is the center of the off thumb.
+        val thumbX = device.displayWidth - ((16 + 16 + 52 - 16) * density).roundToInt()
+        val idleColor = resolvePalette(UserPreferencesColorTheme.DEFAULT, false).outline.toArgb()
+        val idle = takeScreenshot()
+        val thumbY = try {
+            val padding = (36 * density).roundToInt()
+            val extent = (maxOf(0, label.top - padding)..minOf(idle.height - 1, label.bottom + padding))
+                .filter { idle.getPixel(thumbX, it) == idleColor }
+            check(extent.isNotEmpty()) { "Idle switch thumb was not found" }
+            extent[extent.size / 2]
+        } finally {
+            idle.recycle()
+        }
+        val expected = (28 * density).roundToInt()
+        var measured = 0
         val downAt = SystemClock.uptimeMillis()
         fun dispatch(action: Int) {
-            val event = MotionEvent.obtain(downAt, SystemClock.uptimeMillis(), action, x, y, 0)
+            val event = MotionEvent.obtain(
+                downAt,
+                SystemClock.uptimeMillis(),
+                action,
+                label.exactCenterX(),
+                label.exactCenterY(),
+                0,
+            )
             event.source = InputDevice.SOURCE_TOUCHSCREEN
             try {
                 check(instrumentation.uiAutomation.injectInputEvent(event, true))
@@ -205,6 +231,28 @@ class ScreenshotScenario {
         }
         dispatch(MotionEvent.ACTION_DOWN)
         try {
+            // The scrollable row can defer PressInteraction. Wait for the painted thumb.
+            val expanded = object : Condition<UiDevice, Boolean> {
+                override fun apply(unused: UiDevice): Boolean {
+                    val bitmap = takeScreenshot()
+                    try {
+                        val center = bitmap.getPixel(thumbX, thumbY)
+                        var top = thumbY
+                        var bottom = thumbY
+                        while (top > 0 && bitmap.getPixel(thumbX, top - 1) == center) top--
+                        while (bottom < bitmap.height - 1 &&
+                            bitmap.getPixel(thumbX, bottom + 1) == center
+                        ) bottom++
+                        measured = bottom - top + 1
+                        return measured in (expected - 4)..(expected + 2)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                }
+            }
+            check(device.wait(expanded, 5000) == true) {
+                "Pressed thumb diameter was ${measured}px. Expected ${expected}px."
+            }
             capture("04-email-pressed.png")
         } finally {
             dispatch(MotionEvent.ACTION_CANCEL)
