@@ -1427,10 +1427,10 @@ connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.te
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-018	rewritten	45.6		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-019	rewritten	45.4		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-021	rewritten	126.9		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
-connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-001	planned				B04
-connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-003	planned				B04
-connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-004	planned				B04
-connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-005	planned				B04
+connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-001	rewritten	111.3		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
+connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-003	rewritten	78.5		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
+connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-004	rewritten	73.6		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
+connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-005	rewritten	165.1		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
 account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-001	planned				B04
 account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-004	planned				B04
 account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-005	planned				B04
