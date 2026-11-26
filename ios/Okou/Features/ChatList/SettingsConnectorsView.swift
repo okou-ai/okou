@@ -23,12 +23,27 @@ struct SettingsConnectorsSection: View {
 
 struct SettingsConnectorsView: View {
   let store: ComposerConnectorStore
+
+  var body: some View {
+    // The directory the page opens is read from the connectors' Store.
+    StoreProvider(store.graph) { SettingsConnectorsContent(store: store) }
+  }
+}
+
+private struct SettingsConnectorsContent: View {
+  let store: ComposerConnectorStore
   @State private var tab = "connected"
+  @ResolvedValue private var status: ComposerConnectorStore.Status?
   @Environment(\.scenePhase) private var scenePhase
+
+  init(store: ComposerConnectorStore) {
+    self.store = store
+    _status = ResolvedValue(store.statusValue)
+  }
 
   var body: some View {
     Group {
-      if tab == "discover", let directory = store.directory {
+      if tab == "discover", let directory = (status ?? store.status).directory {
         ComposerConnectorDirectory(store: store, resources: directory, showsCustom: false)
       } else if let resources = store.resources {
         StoreProvider(resources.store) {
@@ -57,12 +72,15 @@ struct SettingsConnectorsView: View {
 private struct SettingsConnectedConnectors: View {
   let store: ComposerConnectorStore
   @LoadableValue private var connected: Loadable<[ChatComposerConnector]>
+  /// The composer's writes, kept in the session Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
   @State private var search = ""
   @State private var detail: ComposerConnectorAccountResources?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     _connected = LoadableValue(task: resources.connected, keepLast: true)
+    _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   var body: some View {
@@ -150,7 +168,7 @@ private struct SettingsConnectedConnectors: View {
           .foregroundStyle(OkouColor.mutedForeground).accessibilityHidden(true)
       }
       .contentShape(Rectangle())
-    }.buttonStyle(.plain).disabled(store.isSaving || store.uncertain)
+    }.buttonStyle(.plain).disabled(!(connectorStatus ?? store.status).canSend)
   }
 
   private func accountCount(_ count: Int) -> Text {

@@ -4,7 +4,7 @@ import ChatData
 import SwiftUI
 
 struct ComposerConnectorSheet: View {
-  @Bindable var store: ComposerConnectorStore
+  let store: ComposerConnectorStore
 
   var body: some View {
     if let resources = store.resources {
@@ -17,7 +17,7 @@ struct ComposerConnectorSheet: View {
 }
 
 private struct ComposerConnectorSheetContent: View {
-  @Bindable var store: ComposerConnectorStore
+  let store: ComposerConnectorStore
   let resources: ComposerConnectorResources
   @LoadableValue private var connected: Loadable<[ChatComposerConnector]>
   @LoadableStatus<[ChatComposerConnector]> private var status: LoadableState
@@ -25,6 +25,8 @@ private struct ComposerConnectorSheetContent: View {
   @State private var accountDestination: ComposerConnectorAccountResources?
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The composer's writes, notices and pushed directory, kept in the same Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -34,17 +36,23 @@ private struct ComposerConnectorSheetContent: View {
     _connected = LoadableValue(task: resources.connected, keepLast: true)
     _status = LoadableStatus(task: resources.connected)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
+  }
 
   var body: some View {
     NavigationStack {
       List {
-        if let error = store.error {
-          ConnectorLoadError(error: error, isLoading: store.isRefreshing) { await store.refresh() }
+        if let error = connectorStatus.error {
+          ConnectorLoadError(error: error, isLoading: connectorStatus.isRefreshing) {
+            await store.refresh()
+          }
         }
-        if let notice = store.notice {
+        if let notice = connectorStatus.notice {
           Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         Section {
@@ -52,7 +60,7 @@ private struct ComposerConnectorSheetContent: View {
           case .loading:
             OkouLoadingRow("Loading connectors…")
           case .hasError(let error):
-            if store.error == nil {
+            if connectorStatus.error == nil {
               ConnectorLoadError(
                 error: ComposerConnectorResources.message(for: error, in: .connected),
                 isLoading: status == .loading
@@ -100,10 +108,10 @@ private struct ComposerConnectorSheetContent: View {
       .connectorAccountDestination(store: store, destination: $accountDestination)
       .navigationDestination(
         isPresented: Binding(
-          get: { store.directory != nil },
+          get: { connectorStatus.directory != nil },
           set: { if !$0 { store.closeDirectory() } })
       ) {
-        if let resources = store.directory {
+        if let resources = connectorStatus.directory {
           ComposerConnectorDirectory(store: store, resources: resources)
             .id(ObjectIdentifier(resources))
         }
@@ -150,7 +158,7 @@ private struct ComposerConnectorSheetContent: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .disabled(store.isSaving)
+    .disabled(connectorStatus.isSaving)
   }
 }
 
@@ -182,6 +190,8 @@ private struct ComposerConnectorReadErrorContent: View {
   let store: ComposerConnectorStore
   let retry: @MainActor () async -> Void
   @LoadableValue private var connected: Loadable<[ChatComposerConnector]>
+  /// The composer's write failure and refresh, kept in the session Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
 
   init(
     store: ComposerConnectorStore, resources: ComposerConnectorResources,
@@ -190,46 +200,56 @@ private struct ComposerConnectorReadErrorContent: View {
     self.store = store
     self.retry = retry
     _connected = LoadableValue(task: resources.connected, keepLast: true)
+    _connectorStatus = ResolvedValue(store.statusValue)
   }
 
   var body: some View {
-    if let error = store.error {
-      ConnectorLoadError(error: error, isLoading: store.isRefreshing, retry: retry)
+    let current = connectorStatus ?? store.status
+    if let error = current.error {
+      ConnectorLoadError(error: error, isLoading: current.isRefreshing, retry: retry)
     } else if case .hasError(let error) = connected {
       ConnectorLoadError(
         error: ComposerConnectorResources.message(for: error, in: .connected),
-        isLoading: store.isRefreshing, retry: retry)
+        isLoading: current.isRefreshing, retry: retry)
     }
   }
 }
 
 struct ComposerRemoteControls: View {
-  @Bindable var store: ComposerConnectorStore
+  let store: ComposerConnectorStore
   @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
   @LoadableStatus<ComposerConnectorResources.Remote> private var status: LoadableState
   @State private var showsDesktopSetup = false
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The composer's writes and a new chat's pending choices, kept in the same Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     _remote = LoadableValue(task: resources.remote, keepLast: true)
     _status = LoadableStatus(task: resources.remote)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
+  }
 
   var body: some View {
     Form {
-      if let error = store.error {
-        ConnectorLoadError(error: error, isLoading: store.isRefreshing) { await store.refresh() }
+      if let error = connectorStatus.error {
+        ConnectorLoadError(error: error, isLoading: connectorStatus.isRefreshing) {
+          await store.refresh()
+        }
       }
       switch remote {
       case .loading:
         OkouLoadingRow("Loading remote access…")
       case .hasError(let error):
-        if store.error == nil {
+        if connectorStatus.error == nil {
           ConnectorLoadError(
             error: ComposerConnectorResources.message(for: error, in: .remote),
             isLoading: status == .loading
@@ -237,10 +257,13 @@ struct ComposerRemoteControls: View {
         }
       case .hasData:
         Section {
-          ForEach(store.visibleComputerUseHosts(in: snapshot)) { host in
+          ForEach(store.visibleComputerUseHosts(in: snapshot, status: connectorStatus)) { host in
             Toggle(
               isOn: Binding(
-                get: { store.computerAccess(in: snapshot).computerUseHostId == host.id },
+                get: {
+                  store.computerAccess(in: snapshot, status: connectorStatus).computerUseHostId
+                    == host.id
+                },
                 set: { enabled in
                   Task {
                     await store.setComputerAccess(
@@ -257,9 +280,9 @@ struct ComposerRemoteControls: View {
             }
             .toggleStyle(.switch)
             .tint(OkouColor.primary400)
-            .disabled(store.isSaving || store.uncertain)
+            .disabled(!connectorStatus.canSend)
           }
-          if store.visibleComputerUseHosts(in: snapshot).isEmpty {
+          if store.visibleComputerUseHosts(in: snapshot, status: connectorStatus).isEmpty {
             Text("No online computers").foregroundStyle(OkouColor.mutedForeground)
           }
           Button("Connect my computer") { showsDesktopSetup = true }
@@ -291,7 +314,7 @@ struct ComposerRemoteControls: View {
                 Text("Off").tag("off")
               }
               .okouValuePicker()
-              .disabled(store.isSaving || store.uncertain)
+              .disabled(!connectorStatus.canSend)
               if proto == .vnc { dependencies(host) }
             }
             Button("Configure \(proto.rawValue.uppercased()) hosts") { store.setupRemote(proto) }
@@ -309,7 +332,8 @@ struct ComposerRemoteControls: View {
     }
   }
   private func choice(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol) -> String {
-    store.choice(host, protocol: `protocol`).map { $0 ? "on" : "off" } ?? "default"
+    store.choice(host, protocol: `protocol`, in: connectorStatus).map { $0 ? "on" : "off" }
+      ?? "default"
   }
   @ViewBuilder private func dependencies(_ host: ChatRemoteHost) -> some View {
     ForEach(
@@ -317,7 +341,7 @@ struct ComposerRemoteControls: View {
       id: \.self
     ) { id in
       let ssh = snapshot.hosts(.ssh).first { $0.connectionId == id }
-      let enabled = ssh.map { store.enabled($0, protocol: .ssh) } ?? false
+      let enabled = ssh.map { store.enabled($0, protocol: .ssh, in: connectorStatus) } ?? false
       Label(
         enabled
           ? "SSH enabled: \(ssh?.displayName ?? id)"

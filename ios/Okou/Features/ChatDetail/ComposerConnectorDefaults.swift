@@ -145,6 +145,8 @@ private struct ConnectorDisconnectConfirmation: View {
   let resources: ComposerConnectorAccountResources
   let account: ChatConnectorAccount
   @LoadableValue private var impact: Loadable<ChatConnectorDeletionImpact?>
+  /// The composer's writes and their failure, kept in the session Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
   @Environment(\.dismiss) private var dismiss
 
   init(
@@ -155,6 +157,11 @@ private struct ConnectorDisconnectConfirmation: View {
     self.resources = resources
     self.account = account
     _impact = LoadableValue(task: resources.deletionImpact)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
+  }
+
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
   }
 
   var body: some View {
@@ -172,19 +179,21 @@ private struct ConnectorDisconnectConfirmation: View {
           Text("\(value.explicitSelectionCount) chats use this account.")
           Text("Disconnecting removes this saved account across the workspace.")
             .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-          if let error = store.error { Text(error).foregroundStyle(OkouColor.destructive) }
+          if let error = connectorStatus.error {
+            Text(error).foregroundStyle(OkouColor.destructive)
+          }
           Button("Disconnect", role: .destructive) {
             Task {
               await resources.apply(.disconnect(account.id))
               if store.error == nil && !store.uncertain { dismiss() }
             }
-          }.disabled(store.isSaving || store.isUpdatingAccounts || store.uncertain)
+          }.disabled(!connectorStatus.canSend || connectorStatus.isUpdatingAccounts)
         }
       }
     }
     .okouGroupedBackground().navigationTitle("Disconnect account?")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { OkouCloseToolbarItem { dismiss() } }
-    .interactiveDismissDisabled(store.isSaving)
+    .interactiveDismissDisabled(connectorStatus.isSaving)
   }
 }

@@ -2,10 +2,9 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// Connector choices have the same owner as the composer, never the presented sheet.
-@MainActor @Observable
+@MainActor
 final class ComposerConnectorStore {
   let service: ChatComposerAccess
   let webURL: URL
@@ -13,7 +12,7 @@ final class ComposerConnectorStore {
   let includesRemote: Bool
   let remoteDevices: RemoteDeviceResources?
   /// The workspace session's Store in production; every connector read keeps its values here.
-  @ObservationIgnored let graph: CCState.Store
+  let graph: CCState.Store
 
   /// What the composer acts on: the last confirmed connector and remote reads, with a new
   /// chat's pending account choices applied. The payloads are not Equatable, so each
@@ -38,22 +37,26 @@ final class ComposerConnectorStore {
       return (`protocol` == .ssh ? remotes?.sshHosts : remotes?.vncHosts) ?? []
     }
   }
-  @ObservationIgnored private let snapshotState = CCState.State(Snapshot())
+  private let snapshotState = CCState.State(Snapshot())
   /// Kept in the composer's Store, where the reads publish it. Views resolve it; `snapshot` and
   /// the accessors below serve actions and tests.
   let snapshotValue: Computed<Snapshot>
-  private(set) var error: String?
-  private(set) var isSaving = false
-  private(set) var uncertain = false
-  private(set) var notice: String?
+  private let statusState = CCState.State(Status())
+  /// The composer's connector writes, a new chat's pending choices and the pages it presents,
+  /// kept in the composer's Store. Views resolve it; `status` and its accessors serve actions
+  /// and tests.
+  let statusValue: Computed<Status>
+  /// The status of a composer without connector choices: idle, with nothing presented.
+  static let noStatus = Computed { _ in Status() }
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
-  private(set) var pendingOptions = ChatComposerOptions()
   private let authorizationService: ChatConnectorService
   private let memberAccessEnabled: @MainActor () -> Bool
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
   private(set) var resources: ComposerConnectorResources?
-  private var refreshTask: Task<Void, Never>?
+  private var refreshTask: Task<Void, Never>? {
+    didSet { updateStatus { $0.isRefreshing = refreshTask != nil } }
+  }
   private var refreshAgain = false
   private var confirmationRevision = 0
   private var closed = false
@@ -62,13 +65,12 @@ final class ComposerConnectorStore {
     let id = UUID()
     let url: URL
   }
-  var webDestination: WebDestination?
-  private(set) var directory: ComposerConnectorDirectoryResources?
-  private(set) var permissions: ComposerConnectorPermissionResources?
   private var permissionWrite: Task<Bool, Never>?
   private var accountPages: [ComposerConnectorAccountResources] = []
-  private var accountWrite: Task<Void, Never>?
-  @ObservationIgnored lazy var authorization = ConnectorActionStore(
+  private var accountWrite: Task<Void, Never>? {
+    didSet { updateStatus { $0.isUpdatingAccounts = accountWrite != nil } }
+  }
+  lazy var authorization = ConnectorActionStore(
     service: authorizationService, graph: graph,
     didContinue: { [weak self] in await self?.refresh() }, didFail: didFail)
 
@@ -94,6 +96,8 @@ final class ComposerConnectorStore {
     self.didFail = didFail
     let snapshotState = snapshotState
     snapshotValue = Computed { try $0(snapshotState) }
+    let statusState = statusState
+    statusValue = Computed { try $0(statusState) }
     resources = makeResources()
   }
 
@@ -117,7 +121,7 @@ final class ComposerConnectorStore {
     }
   }
 
-  var canSend: Bool { !isSaving && !uncertain }
+  var canSend: Bool { status.canSend }
   var usesMemberAccess: Bool { memberAccessEnabled() }
   var submissionOptions: ChatComposerOptions {
     guard usesMemberAccess else { return pendingOptions }
@@ -128,8 +132,8 @@ final class ComposerConnectorStore {
     return options
   }
   // This Task owns write-confirmation orchestration, not the Views’ resource phase.
-  var isRefreshing: Bool { refreshTask != nil }
-  var isUpdatingAccounts: Bool { accountWrite != nil }
+  var isRefreshing: Bool { status.isRefreshing }
+  var isUpdatingAccounts: Bool { status.isUpdatingAccounts }
 
   func canConfigurePermissions(slug: String?) -> Bool {
     canConfigurePermissions(slug: slug, in: snapshot)
@@ -257,14 +261,19 @@ final class ComposerConnectorStore {
   }
 
   func hosts(_ protocol: ChatRemoteProtocol) -> [ChatRemoteHost] { snapshot.hosts(`protocol`) }
-  func choice(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol) -> Bool? {
+  /// A host's explicit choice. A view passes the status it resolved.
+  func choice(
+    _ host: ChatRemoteHost, protocol: ChatRemoteProtocol, in status: Status? = nil
+  ) -> Bool? {
     if threadID != nil { return host.overrideEnabled }
-    return pendingOptions.initialRemoteAccessOverrides.first {
+    return (status ?? self.status).pendingOptions.initialRemoteAccessOverrides.first {
       $0.protocol == `protocol` && $0.connectionId == host.connectionId
     }?.enabled
   }
-  func enabled(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol) -> Bool {
-    choice(host, protocol: `protocol`) ?? host.defaultEnabled
+  func enabled(
+    _ host: ChatRemoteHost, protocol: ChatRemoteProtocol, in status: Status? = nil
+  ) -> Bool {
+    choice(host, protocol: `protocol`, in: status) ?? host.defaultEnabled
   }
   func setRemote(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol, enabled: Bool?) async {
     guard !isSaving, !closed else { return }
@@ -287,14 +296,18 @@ final class ComposerConnectorStore {
   }
 
   var computerAccess: ChatComputerAccess { computerAccess(in: snapshot) }
-  func computerAccess(in snapshot: Snapshot) -> ChatComputerAccess {
-    snapshot.currentComputerAccess ?? pendingOptions.computerAccess
+  /// The chat's computer access, or a new chat's pending choice. A view passes the snapshot and
+  /// status it resolved.
+  func computerAccess(in snapshot: Snapshot, status: Status? = nil) -> ChatComputerAccess {
+    snapshot.currentComputerAccess ?? (status ?? self.status).pendingOptions.computerAccess
       ?? ChatComputerAccess(
         cloudBrowserEnabled: snapshot.remotes?.cloudBrowserEnabledByDefault ?? false)
   }
   var visibleComputerUseHosts: [ChatComputerHost] { visibleComputerUseHosts(in: snapshot) }
-  func visibleComputerUseHosts(in snapshot: Snapshot) -> [ChatComputerHost] {
-    let selectedID = computerAccess(in: snapshot).computerUseHostId
+  func visibleComputerUseHosts(
+    in snapshot: Snapshot, status: Status? = nil
+  ) -> [ChatComputerHost] {
+    let selectedID = computerAccess(in: snapshot, status: status).computerUseHostId
     return (snapshot.remotes?.computerUseHosts ?? []).filter {
       $0.status == "online" || $0.id == selectedID
     }
@@ -520,5 +533,87 @@ final class ComposerConnectorStore {
     generation = UUID()
     authorization.close()
     webDestination = nil
+  }
+}
+
+extension ComposerConnectorStore {
+  /// The composer's connector writes, a new chat's pending choices and the pages it presents.
+  /// Page owners compare by identity.
+  struct Status: Equatable {
+    var error: String?
+    var notice: String?
+    var isSaving = false
+    /// A write may have committed, and no read has confirmed the current choices since.
+    var uncertain = false
+    var isRefreshing = false
+    var isUpdatingAccounts = false
+    var pendingOptions = ChatComposerOptions()
+    var webDestination: WebDestination?
+    var directory: ComposerConnectorDirectoryResources?
+    var permissions: ComposerConnectorPermissionResources?
+
+    var canSend: Bool { !isSaving && !uncertain }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.error == rhs.error && lhs.notice == rhs.notice && lhs.isSaving == rhs.isSaving
+        && lhs.uncertain == rhs.uncertain && lhs.isRefreshing == rhs.isRefreshing
+        && lhs.isUpdatingAccounts == rhs.isUpdatingAccounts
+        && lhs.pendingOptions == rhs.pendingOptions
+        && lhs.webDestination?.id == rhs.webDestination?.id
+        && lhs.directory === rhs.directory && lhs.permissions === rhs.permissions
+    }
+  }
+
+  /// The current value of `statusValue`.
+  var status: Status {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try graph.get(statusValue) } catch {
+      preconditionFailure("Cannot read the connector status: \(error)")
+    }
+  }
+  /// The status of an optional composer's connector choices, for views that may have none.
+  static func status(of store: ComposerConnectorStore?) -> Computed<Status> {
+    store?.statusValue ?? noStatus
+  }
+  private(set) var error: String? {
+    get { status.error }
+    set { updateStatus { $0.error = newValue } }
+  }
+  private(set) var notice: String? {
+    get { status.notice }
+    set { updateStatus { $0.notice = newValue } }
+  }
+  private(set) var isSaving: Bool {
+    get { status.isSaving }
+    set { updateStatus { $0.isSaving = newValue } }
+  }
+  private(set) var uncertain: Bool {
+    get { status.uncertain }
+    set { updateStatus { $0.uncertain = newValue } }
+  }
+  private(set) var pendingOptions: ChatComposerOptions {
+    get { status.pendingOptions }
+    set { updateStatus { $0.pendingOptions = newValue } }
+  }
+  var webDestination: WebDestination? {
+    get { status.webDestination }
+    set { updateStatus { $0.webDestination = newValue } }
+  }
+  private(set) var directory: ComposerConnectorDirectoryResources? {
+    get { status.directory }
+    set { updateStatus { $0.directory = newValue } }
+  }
+  private(set) var permissions: ComposerConnectorPermissionResources? {
+    get { status.permissions }
+    set { updateStatus { $0.permissions = newValue } }
+  }
+
+  private func updateStatus(_ change: (inout Status) -> Void) {
+    var next = status
+    change(&next)
+    guard next != status else { return }
+    do { try graph.set(statusState, next) } catch {
+      preconditionFailure("Cannot publish the connector status: \(error)")
+    }
   }
 }
