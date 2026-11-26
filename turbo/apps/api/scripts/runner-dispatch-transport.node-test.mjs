@@ -29,6 +29,7 @@ const nativeDispatchers = dispatcherKeys.map((key) => {
 });
 const { createRunnerDispatchPool } =
   await import("../src/runner-dispatch-pool.node.ts");
+const { Agent } = await import("undici");
 
 async function createPeerCredentials() {
   const directory = await mkdtemp(join(tmpdir(), "runner-transport-tls-"));
@@ -175,13 +176,7 @@ async function withPeer(signal, run, pool, reply) {
   }
 }
 
-async function waitForFetchClientDrain(origin, signal) {
-  // Observe the default dispatcher shared by native fetch and Undici. Node 22
-  // uses the v1 key, while newer Node versions expose the agent under v2.
-  const dispatcher =
-    globalThis[Symbol.for("undici.globalDispatcher.2")] ??
-    globalThis[Symbol.for("undici.globalDispatcher.1")];
-  assert.ok(dispatcher, "Expected native fetch to initialize its dispatcher");
+async function waitForClientDrain(dispatcher, origin, signal) {
   for await (const [connectedOrigin, targets] of on(dispatcher, "connect", {
     signal,
   })) {
@@ -191,6 +186,16 @@ async function waitForFetchClientDrain(origin, signal) {
     }
   }
   throw new Error("Expected native fetch to connect to the HTTPS peer");
+}
+
+function waitForFetchClientDrain(origin, signal) {
+  // Observe the default dispatcher shared by native fetch and Undici. Node 22
+  // uses the v1 key, while newer Node versions expose the agent under v2.
+  const dispatcher =
+    globalThis[Symbol.for("undici.globalDispatcher.2")] ??
+    globalThis[Symbol.for("undici.globalDispatcher.1")];
+  assert.ok(dispatcher, "Expected native fetch to initialize its dispatcher");
+  return waitForClientDrain(dispatcher, origin, signal);
 }
 
 function reserve(transport, runId, url, signal, encoding = "identity") {
@@ -358,30 +363,32 @@ test(
         t.signal,
         async (peer) => {
           const { transport, origin } = peer;
-          reserve(transport, "retained", origin, t.signal);
-          await peer.firstHandshake;
-          assert.deepEqual(peer.requestPaths, []);
-          const idleTimeout = Promise.withResolvers();
-          const schedule = globalThis.setTimeout;
-          const timerObserver = t.mock.method(
-            globalThis,
-            "setTimeout",
-            (callback, milliseconds, ...args) => {
-              const timer = schedule(callback, milliseconds, ...args);
-              // Undici 7.30.2 uses a native parser timer when HTTP/1.1 becomes idle.
-              if (callback.name === "onParserTimeout") {
-                idleTimeout.resolve(milliseconds);
-              }
-              return timer;
-            },
-          );
+          // Capture the Agent that native Fetch actually dispatches through.
+          const dispatchObserver = t.mock.method(Agent.prototype, "dispatch");
           try {
+            reserve(transport, "retained", origin, t.signal);
+            await awaitWithSignal(peer.firstHandshake, t.signal);
+          } finally {
+            dispatchObserver.mock.restore();
+          }
+          const dispatcher = dispatchObserver.mock.calls[0]?.this;
+          assert.ok(dispatcher, "Expected Fetch to use the Runner Agent");
+          assert.deepEqual(peer.requestPaths, []);
+
+          // Observe the effective idle delay while keeping real timer scheduling.
+          const timerObserver = t.mock.method(globalThis, "setTimeout");
+          try {
+            const reusable = waitForClientDrain(dispatcher, origin, t.signal);
             peer.releaseHandshake();
-            const [, milliseconds] = await Promise.all([
-              send(transport, origin),
-              awaitWithSignal(idleTimeout.promise, t.signal),
-            ]);
-            assert.equal(milliseconds, 120_000);
+            await Promise.all([send(transport, origin), reusable]);
+            assert.ok(
+              timerObserver.mock.calls.some(
+                ({ arguments: [, milliseconds] }) => {
+                  return milliseconds === 120_000;
+                },
+              ),
+              "Expected the Runner Agent to schedule a 120-second idle timeout",
+            );
           } finally {
             timerObserver.mock.restore();
           }
