@@ -31,9 +31,11 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.net.ConnectException
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.days
 import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -122,12 +124,39 @@ internal abstract class ChatComposerModelTestFixture {
         override suspend fun observeInput(threadId: String, eventId: String) =
             read(threadId, eventId)
 
+        fun enableAttachments() {
+            attachmentService =
+                object : ChatAttachmentService {
+                    override suspend fun uploadChatAttachment(
+                        file: File,
+                        attachment: DraftChatAttachment,
+                        progress: (Long) -> Unit,
+                    ) =
+                        ChatAttachmentReference(
+                            attachment.key,
+                            attachment.filename,
+                            attachment.contentType,
+                            file.length(),
+                            "/artifacts/${attachment.key.replace("-", "")}.txt",
+                        )
+
+                    override suspend fun saveAttachmentDraft(
+                        target: ServerDraftTarget,
+                        text: String,
+                        attachments: List<ChatAttachmentReference>,
+                    ) {
+                        drafts[target] = plainDraftDocument(text, attachments)
+                    }
+                }
+        }
+
         fun gate() = CompletableDeferred<Unit>().also { gates += it }
     }
 
     protected fun check(
         blockedDisk: Boolean = false,
         sendClock: TestTimeSource = TestTimeSource(),
+        storageDispatcher: (CoroutineDispatcher) -> CoroutineDispatcher = { it },
         action:
             suspend TestScope.(
                 Service,
@@ -142,7 +171,7 @@ internal abstract class ChatComposerModelTestFixture {
             ComposerJournalStore(
                 ApplicationProvider.getApplicationContext(),
                 if (blockedDisk) temporary.newFile() else temporary.newFolder(),
-                dispatcher,
+                storageDispatcher(dispatcher),
                 sendClock,
             )
         val owners = mutableListOf<ViewModelStore>()
@@ -172,6 +201,41 @@ internal abstract class ChatComposerModelTestFixture {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun refreshedCopiesOfTheSameFileStayIndependentlyRemovable() = check { service, store, create ->
+        service.enableAttachments()
+        val file =
+            ChatAttachmentReference(
+                "926dfbef-07ff-4e5d-9a76-89dd56f0f361",
+                "release.md",
+                "text/markdown",
+                81,
+                "/artifacts/cc81471c8d954c6397aca8272bedd543.md",
+            )
+        val target = ServerDraftTarget(existing.threadId)
+        service.drafts[target] = plainDraftDocument("Compare copies", listOf(file))
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        val original = model.uiState.value.attachments(existing).single()
+
+        service.drafts[target] = plainDraftDocument("Compare copies", listOf(file, file))
+        model.open(existing)
+        runCurrent()
+        val refreshed = model.uiState.value.attachments(existing)
+        assertEquals(listOf(file, file), refreshed.map { it.reference })
+        assertEquals(original.key, refreshed.first().key)
+
+        model.removeAttachment(original.key)
+        advanceUntilIdle()
+        assertEquals(listOf(refreshed.last()), model.uiState.value.attachments(existing))
+        assertEquals(
+            listOf(refreshed.last()),
+            store.load(identity).journal.drafts.getValue(target.key).attachments,
+        )
+        assertEquals(plainDraftDocument("Compare copies", listOf(file)), service.drafts[target])
+    }
+
     @Test
     fun heldHydrationKeepsEditsAndDebouncesTheCanonicalFullValue() =
         check { service, store, create ->
@@ -510,6 +574,60 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun successivePickerResultsKeepTheirOrderWhenMetadataCompletesOutOfOrder() {
+        var holdNextRead = false
+        var resumeFirstRead: (() -> Unit)? = null
+        check(
+            storageDispatcher = { dispatcher ->
+                object : CoroutineDispatcher() {
+                    override fun dispatch(context: CoroutineContext, block: Runnable) {
+                        if (holdNextRead) {
+                            holdNextRead = false
+                            resumeFirstRead = { dispatcher.dispatch(context, block) }
+                        } else {
+                            dispatcher.dispatch(context, block)
+                        }
+                    }
+                }
+            },
+        ) { service, store, create ->
+            service.enableAttachments()
+            val first = Uri.parse("content://test-attachment/first.txt")
+            val second = Uri.parse("content://test-attachment/second.txt")
+            val resolver = shadowOf(store.contentResolver)
+            resolver.registerInputStream(first, "first".byteInputStream())
+            resolver.registerInputStream(second, "second".byteInputStream())
+            val model = create(false, identity)
+            model.open(existing)
+            advanceUntilIdle()
+
+            holdNextRead = true
+            model.addAttachments(existing.key, existing.key, listOf(first))
+            val resume = checkNotNull(resumeFirstRead)
+            try {
+                model.addAttachments(existing.key, existing.key, listOf(second))
+                runCurrent()
+                assertTrue(model.uiState.value.attachments(existing).isEmpty())
+                assertFalse(model.uiState.value.canSend(existing))
+            } finally {
+                resume()
+            }
+
+            val ready = model.uiState.first { it.canSend(existing) }
+            assertEquals(
+                listOf("first.txt", "second.txt"),
+                ready.attachments(existing).map { it.filename },
+            )
+            model.send(existing)
+            runCurrent()
+            assertEquals(
+                ready.attachments(existing).map { it.reference?.part() },
+                service.requests.single().userMessage.parts,
+            )
+        }
+    }
+
     @Test
     fun aPickerResultBlocksOnlyItsDraftUntilTheSelectionCanBeSentOrRemoved() =
         check { service, store, create ->

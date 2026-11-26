@@ -378,21 +378,28 @@ internal class ChatComposerOwner(
         if (!connection.current() || connection.service.attachmentService == null) return
         val contentUris = uris.filter { it.scheme == "content" }
         if (contentUris.isEmpty()) return
-        val target = AttachmentSelectionTarget(draftKey, source)
+        val selection = PendingAttachmentSelection(draftKey, source)
         connection.scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val initial = mutable.value
             mutable.value =
                 initial.copy(
-                    readingAttachmentSelections = initial.readingAttachmentSelections + target,
+                    readingAttachmentSelections = initial.readingAttachmentSelections + selection,
                 )
             try {
                 restoreJournal()
                 restoring?.join()
                 if (!connection.current()) return@launch
                 val selected = store.readAttachmentMetadata(contentUris)
+                // Publish picker results for the same draft in selection order.
+                uiState.first { state ->
+                    val key = selection.destination(state.journal)
+                    state.readingAttachmentSelections.firstOrNull {
+                        it.destination(state.journal) == key
+                    } === selection
+                }
                 if (!connection.current()) return@launch
                 val journal = mutable.value.journal ?: return@launch
-                val key = target.destination(journal)
+                val key = selection.destination(journal)
                 val draft = journal.drafts[key] ?: EditableComposerDraft()
                 val old = draft.attachments
                 val fresh = selected.map { it.second }
@@ -412,7 +419,7 @@ internal class ChatComposerOwner(
                 val state = mutable.value
                 mutable.value =
                     state.copy(
-                        readingAttachmentSelections = state.readingAttachmentSelections - target,
+                        readingAttachmentSelections = state.readingAttachmentSelections - selection,
                     )
             }
         }
@@ -727,6 +734,17 @@ internal class ChatComposerOwner(
                                 local.revision == before.revision &&
                                 (local.text != remote.text || localReferences != remote.attachments)
                         ) {
+                            val unmatched =
+                                local.attachments
+                                    .groupBy { it.reference }
+                                    .mapValues { (_, files) ->
+                                        ArrayDeque(files)
+                                    }
+                            val attachments =
+                                remote.attachments.map { reference ->
+                                    unmatched[reference]?.removeFirstOrNull()
+                                        ?: reference.restoredAttachment()
+                                }
                             replace(
                                 journal.copy(
                                     drafts =
@@ -734,18 +752,11 @@ internal class ChatComposerOwner(
                                             (target.key to
                                                 local.copy(
                                                     text = remote.text,
-                                                    attachments =
-                                                        remote.attachments.map { ref ->
-                                                            local.attachments.firstOrNull {
-                                                                it.reference == ref
-                                                            } ?: ref.restoredAttachment()
-                                                        },
+                                                    attachments = attachments,
                                                 )),
                                 ),
                             )
-                            local.attachments
-                                .filter { it.reference !in remote.attachments }
-                                .forEach { discardAttachment(it.key) }
+                            unmatched.values.flatten().forEach { discardAttachment(it.key) }
                         }
                     }
                     while (current()) {

@@ -136,7 +136,7 @@ data class ComposerTarget(val threadId: String? = null, val projectId: String? =
         get() = threadId?.let { "thread:$it" } ?: "new:${projectId.orEmpty()}"
 }
 
-data class AttachmentSelectionTarget(val draftKey: String, val source: String) {
+class PendingAttachmentSelection(val draftKey: String, val source: String) {
     internal fun destination(journal: ComposerJournal?): String {
         // A new-chat send can move an editable draft while Android owns the picker.
         val created = journal?.entries?.get(source)?.createdThreadId
@@ -178,7 +178,7 @@ data class ComposerState(
     val synchronization: Map<String, ComposerSync> = emptyMap(),
     internal val receiptMessages: Map<String, ComposerMessagePreview> = emptyMap(),
     internal val attachmentProgress: Map<String, Int> = emptyMap(),
-    internal val readingAttachmentSelections: List<AttachmentSelectionTarget> = emptyList(),
+    internal val readingAttachmentSelections: List<PendingAttachmentSelection> = emptyList(),
 ) {
     fun draftKey(target: ComposerTarget): String {
         val redirected = journal?.entries?.get(target.key)?.createdThreadId
