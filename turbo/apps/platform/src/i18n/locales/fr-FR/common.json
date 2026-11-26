@@ -6189,32 +6189,6 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
-        "learning": {
-          "description": "Examinez l’activité récente et actualisez votre mémoire personnelle une fois. Votre programmation nocturne reste inchangée.",
-          "notInstalled": "Activez l’apprentissage dans les préférences avant de le lancer ici.",
-          "openChat": "Ouvrir la conversation",
-          "queued": "Apprentissage en attente.",
-          "requestFailed": "La demande n’a pas pu être confirmée.",
-          "run": "Lancer l’apprentissage",
-          "starting": "Démarrage…",
-          "title": "Apprentissage",
-          "unavailable": "L’apprentissage est indisponible pour le moment."
-        },
-        "morningBrief": {
-          "description": "Exécute une fois le workflow activé de ton compte. Il peut actualiser les suggestions et envoyer un véritable e-mail. Ton horaire quotidien reste inchangé.",
-          "openChat": "Ouvrir la conversation",
-          "requestFailed": "Le résultat de la demande n’a pas pu être confirmé.",
-          "run": "Lancer le brief",
-          "runAgain": "Lancer un autre brief",
-          "starting": "Démarrage…",
-          "status": {
-            "completed": "Le brief est terminé.",
-            "failed": "Le brief a échoué. Ouvre la conversation pour voir les détails.",
-            "queued": "En attente. Ouvre la conversation pour suivre le brief.",
-            "running": "Le brief est en cours."
-          },
-          "title": "Brief du matin"
-        },
         "openrouterPreset": {
           "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",
           "loading": "Chargement…",

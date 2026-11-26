@@ -149,6 +149,8 @@
     "src/signals/services/launch-framework.ts",
     "src/signals/services/thread-claim-run.service.ts",
     "src/signals/services/thread-context.signals.ts",
+    "src/signals/services/proactive-run-context.service.ts",
+    "src/signals/services/official-schedule-activity.service.ts",
     "src/signals/services/thread-connected-accounts.signals.ts",
     "src/signals/services/dispatch-count-bucket.ts",
     "src/signals/services/thread-official-workflow.signals.ts",

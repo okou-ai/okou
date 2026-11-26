@@ -6116,32 +6116,6 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
-        "learning": {
-          "description": "Review recent activity and update your personal memory once. Your nightly schedule stays unchanged.",
-          "notInstalled": "Enable Learning in Preferences before running it here.",
-          "openChat": "Open chat",
-          "queued": "Learning queued.",
-          "requestFailed": "The request could not be confirmed.",
-          "run": "Run learning",
-          "starting": "Starting…",
-          "title": "Learning",
-          "unavailable": "Learning is unavailable right now."
-        },
-        "morningBrief": {
-          "description": "Run Morning Brief once using your account’s enabled workflow. This can update suggestions and send a real email. Your daily schedule stays unchanged.",
-          "openChat": "Open chat",
-          "requestFailed": "The request could not be confirmed.",
-          "run": "Run Morning Brief",
-          "runAgain": "Run another Morning Brief",
-          "starting": "Starting…",
-          "status": {
-            "completed": "Morning Brief completed.",
-            "failed": "Morning Brief failed. Open the chat for details.",
-            "queued": "Queued. Open the chat to follow this Morning Brief.",
-            "running": "Morning Brief is running."
-          },
-          "title": "Morning Brief"
-        },
         "openrouterPreset": {
           "description": "Applies to new Auto and Okou 1.0 Built-in runs for the entire organization. Existing runs are unchanged.",
           "loading": "Loading…",

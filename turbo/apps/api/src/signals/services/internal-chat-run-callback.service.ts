@@ -1634,6 +1634,7 @@ function queuedPromptRejectionChannel(
   };
   const contextType = input.queuedMessage.contextType;
   switch (contextType) {
+    case "proactive":
     case "web":
     case "agent_run": {
       return undefined;

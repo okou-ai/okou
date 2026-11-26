@@ -6189,32 +6189,6 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
-        "learning": {
-          "description": "Esamina le attività recenti e aggiorna la memoria personale una volta. La pianificazione notturna non cambia.",
-          "notInstalled": "Attiva l'apprendimento nelle Preferenze prima di eseguirlo qui.",
-          "openChat": "Apri conversazione",
-          "queued": "Apprendimento in coda.",
-          "requestFailed": "Non è stato possibile confermare la richiesta.",
-          "run": "Esegui apprendimento",
-          "starting": "Avvio…",
-          "title": "Apprendimento",
-          "unavailable": "L'apprendimento non è al momento disponibile."
-        },
-        "morningBrief": {
-          "description": "Esegue una volta il workflow attivo del tuo account. Può aggiornare i suggerimenti e inviare una vera email. La pianificazione giornaliera resta invariata.",
-          "openChat": "Apri conversazione",
-          "requestFailed": "Non è stato possibile confermare l’esito della richiesta.",
-          "run": "Esegui il brief",
-          "runAgain": "Esegui un altro brief",
-          "starting": "Avvio…",
-          "status": {
-            "completed": "Il brief è completato.",
-            "failed": "Il brief non è riuscito. Apri la conversazione per i dettagli.",
-            "queued": "In coda. Apri la conversazione per seguire il brief.",
-            "running": "Il brief è in esecuzione."
-          },
-          "title": "Brief del mattino"
-        },
         "openrouterPreset": {
           "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
           "loading": "Caricamento…",

@@ -4,9 +4,9 @@ import {
 } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { chatThreadEventRows } from "../services/chat-event-row-read.service";
 import {
-  iosEmailChatRowsTransform,
-  iosEmailChatCatchUpTransform,
-} from "@okouai/api-contracts/client-transforms/email-chat-context";
+  iosChatContextTransforms,
+  androidChatContextTransforms,
+} from "@okouai/api-contracts/client-transforms/native-chat-context";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatRelationsRoutes } from "./chat-relations";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
@@ -461,7 +461,10 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.catchUp,
-    responseTransforms: [iosEmailChatCatchUpTransform],
+    responseTransforms: [
+      iosChatContextTransforms.catchUp,
+      androidChatContextTransforms.catchUp,
+    ],
     handler: authRoute(
       {
         requireOrganization: true,
@@ -484,7 +487,10 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.rows,
-    responseTransforms: [iosEmailChatRowsTransform],
+    responseTransforms: [
+      iosChatContextTransforms.rows,
+      androidChatContextTransforms.rows,
+    ],
     handler: authRoute(
       {
         requireOrganization: true,

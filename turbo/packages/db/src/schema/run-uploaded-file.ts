@@ -22,6 +22,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 
 export const RUN_UPLOADED_FILE_SOURCES = [
+  "proactive",
   "automation-schedule",
   "automation-event",
   "web",

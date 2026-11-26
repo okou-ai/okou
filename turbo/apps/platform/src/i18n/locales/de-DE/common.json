@@ -6118,32 +6118,6 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
-        "learning": {
-          "description": "Prüfe die letzten Aktivitäten und aktualisiere deinen persönlichen Speicher einmalig. Dein nächtlicher Zeitplan bleibt unverändert.",
-          "notInstalled": "Aktiviere Lernen zuerst in den Einstellungen.",
-          "openChat": "Gespräch öffnen",
-          "queued": "Lernen wurde eingereiht.",
-          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
-          "run": "Lernen starten",
-          "starting": "Wird gestartet…",
-          "title": "Lernen",
-          "unavailable": "Lernen ist derzeit nicht verfügbar."
-        },
-        "morningBrief": {
-          "description": "Führe das aktivierte Morgenbriefing deines Kontos einmal aus. Dabei können Vorschläge aktualisiert und echte E-Mails versendet werden. Dein täglicher Zeitplan bleibt unverändert.",
-          "openChat": "Gespräch öffnen",
-          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
-          "run": "Morgenbriefing starten",
-          "runAgain": "Erneut starten",
-          "starting": "Wird gestartet…",
-          "status": {
-            "completed": "Das Morgenbriefing ist abgeschlossen.",
-            "failed": "Das Morgenbriefing ist fehlgeschlagen. Details findest du im Gespräch.",
-            "queued": "In der Warteschlange. Verfolge das Briefing im Gespräch.",
-            "running": "Das Morgenbriefing läuft."
-          },
-          "title": "Morgenbriefing"
-        },
         "openrouterPreset": {
           "description": "Gilt für neue Auto- und integrierte Okou 1.0-Ausführungen in der gesamten Organisation. Bestehende Ausführungen bleiben unverändert.",
           "loading": "Wird geladen…",

@@ -26,7 +26,7 @@ export interface BillingRun {
   readonly threadId: string | null;
   readonly status: string;
   readonly billingCompletedAt: string | null;
-  readonly creditChargePolicy?: "standard" | "official_workflow_free";
+  readonly creditChargePolicy?: typeof billingRunAttribution.$inferSelect.creditChargePolicy;
 }
 
 export interface BillingAttribution {
@@ -88,6 +88,7 @@ function billingSource(triggerSource: string | null): string {
     case "automation-event": {
       return "automation";
     }
+    case "proactive":
     case "slack":
     case "wechat":
     case "discord":

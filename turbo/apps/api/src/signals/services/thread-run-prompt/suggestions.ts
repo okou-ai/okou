@@ -22,27 +22,34 @@ export function createSuggestionsPrompt(
       userPromptVariables: {},
     };
     const event = await get(pickedEvent$);
-    if (event?.contextType !== "automation") {
-      return empty;
-    }
-    const workflows = await get(threadContext.officialWorkflowObservation$);
-    const learning = workflows?.definitions.some((item) => {
-      return item.name === PROACTIVE_LEARNING_DEFINITION_NAME;
-    });
-    if (
-      !learning &&
-      !workflows?.definitions.some((item) => {
-        return (
-          item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
-          isMorningBriefDefinitionName(item.name)
-        );
-      })
-    ) {
-      return empty;
-    }
-    const target = await get(threadContext.automationTarget$);
-    if (!target?.proactivePreferences?.suggestionsEnabled) {
-      return empty;
+    if (event?.contextType === "proactive") {
+      const source = await get(threadContext.proactiveInput$);
+      if (!source?.suggestionsEnabled) {
+        return empty;
+      }
+    } else {
+      if (event?.contextType !== "automation") {
+        return empty;
+      }
+      const workflows = await get(threadContext.officialWorkflowObservation$);
+      const learning = workflows?.definitions.some((item) => {
+        return item.name === PROACTIVE_LEARNING_DEFINITION_NAME;
+      });
+      if (
+        !learning &&
+        !workflows?.definitions.some((item) => {
+          return (
+            item.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME ||
+            isMorningBriefDefinitionName(item.name)
+          );
+        })
+      ) {
+        return empty;
+      }
+      const target = await get(threadContext.automationTarget$);
+      if (!target?.proactivePreferences?.suggestionsEnabled) {
+        return empty;
+      }
     }
     const result = await settle(get(feedback$));
     return {

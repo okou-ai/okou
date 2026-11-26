@@ -1,3 +1,7 @@
+import {
+  proactiveDispatchPhase$,
+  legacyProactiveInstallation,
+} from "./proactive-dispatch-ownership.service";
 import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -6114,6 +6118,18 @@ export const enableWorkflowAutomation$ = command(
     if ("kind" in owned) {
       return owned;
     }
+    if (
+      legacyProactiveInstallation(
+        owned.officialDefinitionName,
+        owned.automation.officialBlueprintKey,
+      ) &&
+      (await set(proactiveDispatchPhase$, signal)) !== "automation"
+    ) {
+      return {
+        kind: "conflict",
+        message: "Manage this built-in task in the Proactive settings.",
+      };
+    }
     const { automation } = owned;
     const now = nowDate();
     const nextRunAt =
@@ -6249,6 +6265,18 @@ export const disableWorkflowAutomation$ = command(
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
+    }
+    if (
+      legacyProactiveInstallation(
+        owned.officialDefinitionName,
+        owned.automation.officialBlueprintKey,
+      ) &&
+      (await set(proactiveDispatchPhase$, signal)) !== "automation"
+    ) {
+      return {
+        kind: "conflict",
+        message: "Manage this built-in task in the Proactive settings.",
+      };
     }
     const now = nowDate();
     const nextRunAt =

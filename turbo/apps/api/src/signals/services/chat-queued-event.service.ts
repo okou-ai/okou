@@ -19,6 +19,7 @@ export type QueuedUserMessageContextType = NonNullable<
   (typeof chatEvents.$inferSelect)["contextType"]
 >;
 export type QueuedUserMessageTriggerSource =
+  | "proactive"
   | "web"
   | "agent"
   | "slack"

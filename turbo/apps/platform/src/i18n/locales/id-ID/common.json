@@ -6094,32 +6094,6 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
-        "learning": {
-          "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
-          "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
-          "openChat": "Buka percakapan",
-          "queued": "Pembelajaran masuk antrean.",
-          "requestFailed": "Permintaan belum dapat dikonfirmasi.",
-          "run": "Jalankan pembelajaran",
-          "starting": "Memulai…",
-          "title": "Pembelajaran",
-          "unavailable": "Pembelajaran saat ini tidak tersedia."
-        },
-        "morningBrief": {
-          "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",
-          "openChat": "Buka percakapan",
-          "requestFailed": "Hasil permintaan tidak dapat dikonfirmasi.",
-          "run": "Jalankan ringkasan",
-          "runAgain": "Jalankan lagi",
-          "starting": "Memulai…",
-          "status": {
-            "completed": "Ringkasan selesai.",
-            "failed": "Ringkasan gagal. Buka percakapan untuk detailnya.",
-            "queued": "Dalam antrean. Buka percakapan untuk mengikuti ringkasan ini.",
-            "running": "Ringkasan sedang berjalan."
-          },
-          "title": "Ringkasan pagi"
-        },
         "openrouterPreset": {
           "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
           "loading": "Memuat…",
