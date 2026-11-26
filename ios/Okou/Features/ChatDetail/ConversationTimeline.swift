@@ -13,14 +13,19 @@ struct ConversationTimeline {
     let day: Date
   }
 
-  func rows(_ contents: [ConversationCollectionRow.Content], items: [ConversationItem])
+  func rows(
+    _ contents: [ConversationCollectionRow.Content], items: [ConversationItem], latestRunID: String?
+  )
     -> [ConversationCollectionRow]
   {
-    let dates = Dictionary(
-      uniqueKeysWithValues: items.compactMap(\.message).map { ($0.id, $0.createdAt) })
+    let messages = Dictionary(uniqueKeysWithValues: items.compactMap(\.message).map { ($0.id, $0) })
     var rows = contents.map { ConversationCollectionRow(content: $0) }
     var starts: [DayStart] = []
     var avatar: Int?
+    // A late output from an older run may be the last row delivered to the collection.
+    func setAvatar(_ index: Int?, for runID: String?) {
+      if latestRunID == nil || runID == nil || runID == latestRunID { avatar = index }
+    }
     func record(_ date: Date, at row: Int, inside share: String? = nil) {
       let day = calendar.startOfDay(for: date)
       if starts.last?.day != day {
@@ -30,24 +35,27 @@ struct ConversationTimeline {
     for (index, content) in contents.enumerated() {
       switch content {
       case .share(let group, _):
-        avatar = group.messages.first?.role == .assistant ? index : nil
+        setAvatar(
+          group.messages.first?.role == .assistant ? index : nil, for: group.messages.last?.runID)
         for (offset, message) in group.messages.enumerated() {
           record(message.createdAt, at: index, inside: offset == 0 ? nil : message.id)
         }
       case .work(let section, _, _, _, _):
-        avatar = index
         // A work header belongs to its visible answer, even when the prompt was yesterday.
-        if let date = dates[section.anchorMessageID] { record(date, at: index) }
+        if let answer = messages[section.anchorMessageID] {
+          setAvatar(index, for: answer.runID)
+          record(answer.createdAt, at: index)
+        }
       case .message(let message, let showsAvatar, _, _, _, let workHistory, _):
         if message.role == .user {
-          if !message.isQueued { avatar = nil }
+          if !message.isQueued { setAvatar(nil, for: message.runID) }
           record(message.createdAt, at: index)
         } else if !workHistory && showsAvatar {
-          avatar = index
+          setAvatar(index, for: message.runID)
           record(message.createdAt, at: index)
         }
       case .failure(let message, _, true, _, _):
-        avatar = index
+        setAvatar(index, for: message.runID)
         record(message.createdAt, at: index)
       case .footer(_, true), .finished(_, _, true):
         avatar = index

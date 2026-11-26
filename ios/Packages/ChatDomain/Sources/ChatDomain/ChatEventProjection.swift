@@ -15,7 +15,7 @@ public enum ChatEventProjection {
     // order, not UUID sorting or the most recent event from an older run.
     var seenRuns = Set<String>()
     let orderedRuns = rows.compactMap { row -> String? in
-      guard let runID = row.runId, activeRuns.contains(runID),
+      guard let runID = row.runId,
         !revoked.contains(row.id), row.eventType != .usageRecorded,
         seenRuns.insert(runID).inserted
       else { return nil }
@@ -59,7 +59,8 @@ public enum ChatEventProjection {
     return ChatHistory(
       messages: work.messages, executionState: state,
       activeRunIDs: activeRuns.subtracting(interrupted).sorted(),
-      activityRunID: state == .running ? orderedRuns.last : nil, queuedEventIDs: queuedInputs,
+      activityRunID: state == .running ? orderedRuns.last(where: activeRuns.contains) : nil,
+      latestRunID: orderedRuns.last, queuedEventIDs: queuedInputs,
       persistedEventIDs: Set(rows.map(\.id)), workSections: work.sections,
       latestRunFinishAt: rows.filter { $0.eventType.isTerminal }.map(\.createdAt).max(),
       latestFailureID: latestFailure(

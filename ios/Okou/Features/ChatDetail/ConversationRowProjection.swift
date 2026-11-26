@@ -17,7 +17,7 @@ struct ConversationRowProjection {
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
-    timeline.rows(contents, items: window.items)
+    timeline.rows(contents, items: window.items, latestRunID: history.latestRunID)
   }
 
   private var contents: [ConversationCollectionRow.Content] {
@@ -39,11 +39,7 @@ struct ConversationRowProjection {
     }
     var answerForUsage: ChatMessage?
     for (index, item) in items.enumerated() {
-      let continuesGroup =
-        index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
-        && item.message?.modelChange == nil
-        && item.message?.userMessage?.annotation?.type != "automation"
-        && items[index - 1].message?.userMessage?.annotation?.type != "automation"
+      let continuesGroup = index > 0 && continues(item, after: items[index - 1])
       let spacing: CGFloat = index == 0 ? 20 : (continuesGroup ? 8 : 24)
       switch item {
       case .work(let section, let expanded):
@@ -108,9 +104,12 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    let statusNeedsAvatar =
-      transcript.streamed.isEmpty
-      && items.last(where: { $0.message?.isQueued != true })?.role != .assistant
+    let lastRunMessage = items.last { item in
+      guard let message = item.message, !message.isQueued else { return false }
+      return history.latestRunID == nil || message.runID == nil
+        || message.runID == history.latestRunID
+    }
+    let statusNeedsAvatar = transcript.streamed.isEmpty && lastRunMessage?.role != .assistant
     if let completion = transcript.completion {
       let source =
         models?.snapshot.usesFollowupPlaceholder == true ? nil : completion.recommendedFollowups
@@ -124,6 +123,18 @@ struct ConversationRowProjection {
       .footer(
         history.executionState, showsAvatar: history.executionState.isActive && statusNeedsAvatar))
     return result
+  }
+
+  private func continues(_ item: ConversationItem, after previous: ConversationItem) -> Bool {
+    guard previous.role == item.role, !item.beginsWorkSection,
+      item.message?.modelChange == nil,
+      item.message?.userMessage?.annotation?.type != "automation",
+      previous.message?.userMessage?.annotation?.type != "automation"
+    else { return false }
+    guard item.role == .user, let date = item.message?.createdAt,
+      let previousDate = previous.message?.createdAt
+    else { return true }
+    return timeline.calendar.isDate(date, inSameDayAs: previousDate)
   }
 
   /// The last assistant answer of a turn gets the copy / share / open actions.

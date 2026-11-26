@@ -17,9 +17,10 @@ final class ConversationTimelineTests: XCTestCase {
     let history = try ChatEventProjection.history(
       rows: [
         prompt("question-1", run: "first", at: late), answer("answer-1", run: "first", at: late),
-        ChatEvent(id: "done-1", runId: "first", createdAt: late, eventType: .runCompleted),
         prompt("question-2", run: "next", at: late), answer("answer-2", run: "next", at: early),
-        ChatEvent(id: "done-2", runId: "next", createdAt: early, eventType: .runCompleted)
+        ChatEvent(id: "done-2", runId: "next", createdAt: early, eventType: .runCompleted),
+        answer("delayed-answer", run: "first", at: early),
+        ChatEvent(id: "done-1", runId: "first", createdAt: early, eventType: .runCompleted)
       ], recovering: false)
     let conversation = ConversationHistoryFixture(count: 0).conversation()
     defer { conversation.close() }
@@ -30,8 +31,7 @@ final class ConversationTimelineTests: XCTestCase {
       conversation: conversation, transcript: value,
       window: .init(items: value.items), isSending: false, models: nil, timeline: timeline
     ).rows
-    let headers = history.workSections
-    let newest = try XCTUnwrap(headers.last)
+    let newest = try XCTUnwrap(history.workSections.first { $0.anchorMessageID == "answer-2" })
     XCTAssertEqual(rows.filter(\.animatesAvatar).map(\.id), [newest.id])
     let dates = rows.compactMap { row -> String? in
       guard case .dateDivider(_, let label) = row.content else { return nil }
@@ -51,7 +51,7 @@ final class ConversationTimelineTests: XCTestCase {
       [
         .share(
           .init(id: "answer-2", messages: [try XCTUnwrap(history.messages.last)]), topSpacing: 0)
-      ], items: [])
+      ], items: [], latestRunID: nil)
     XCTAssertFalse(
       todayOnly.contains {
         if case .dateDivider = $0.content { return true }
