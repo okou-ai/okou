@@ -1459,11 +1459,11 @@ messaging	src/signals/routes/__tests__/discord-conversation-parity.test.ts	disco
 messaging	src/signals/routes/__tests__/discord-conversation-parity.test.ts	discord-conversation-parity-006	planned				B04
 messaging	src/signals/routes/__tests__/discord-conversation-parity.test.ts	discord-conversation-parity-007	planned				B04
 messaging	src/signals/routes/__tests__/discord-conversation-parity.test.ts	discord-conversation-parity-011	planned				B04
-messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-003	planned				B04
-messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-011	planned				B04
-messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-012	planned				B04
-messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-013	planned				B04
-messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-014	planned				B04
+messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-003	rewritten	15.5		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-011	rewritten	11.7		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-012	rewritten	6.1		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-013	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-014	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-gateway-identity.test.ts	discord-gateway-identity-001	planned				
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-004	planned				
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-005	planned				
