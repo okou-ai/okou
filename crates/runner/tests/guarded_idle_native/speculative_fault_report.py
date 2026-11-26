@@ -5,7 +5,6 @@ import hashlib
 import pathlib
 
 import progress_report as foreground
-import later_parking_report as later
 import report
 import status_evidence
 from cleanup_report import accounting, coverage, supplied_policy
@@ -102,7 +101,7 @@ def validate(directory):
             path_error="invalid or replayed speculative private status path",
             receipt_error="speculative fault changed original inputs",
         )
-        history, operation, reuse = later.bind_history_operation(
+        history, operation, reuse = status_evidence.bind_history_operation(
             waiting, identities, baseline, identity[0],
             replay_error="speculative callback replayed run or resource identity",
             binding_error="speculative callback lost original history/reuse binding",

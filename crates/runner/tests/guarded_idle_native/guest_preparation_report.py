@@ -12,10 +12,9 @@ from typing import Callable
 import cleanup_report as cleanup
 import ext4_superblock
 import progress_report as foreground
-import later_parking_report as later
 import pressure_report as pressure
 import report
-from report import exact, validate_batch_phase_clock as clock
+from report import exact, validate_batch_phase_clock as clock, validate_evidence_uuid
 
 
 @dataclass(frozen=True)
@@ -126,7 +125,7 @@ def validate(directory, contract):
     case = terminals[0]["case"]
     if case not in CASES:
         raise ValueError("unexpected fixed restore case")
-    identity = tuple(later.identifier(terminals[1][key]) for key in ("sandbox_id", "backing_generation"))
+    identity = tuple(validate_evidence_uuid(terminals[1][key]) for key in ("sandbox_id", "backing_generation"))
     if identity[0] == identity[1]:
         raise ValueError("fixed backing identity collapsed")
     ordered = [terminals[0], continuation[0], *events[:2], terminals[1], *events[2:]]
@@ -139,7 +138,7 @@ def validate(directory, contract):
     exact(terminals[0]["evidence"], {"artifacts": artifacts}, "fixed source/artifact binding changed")
     exact(terminals[1]["evidence"], {}, "fixed terminal start changed")
     session, durable, captured, waiting, lost, progress, joined, refused, owners = [e["evidence"] for e in events]
-    history, thread = (later.identifier(session.get(k)) for k in ("history_run_id", "thread_id"))
+    history, thread = (validate_evidence_uuid(session.get(k)) for k in ("history_run_id", "thread_id"))
     original = blob(session.get("history_hex"), 4*1024**2)
     if not original or history in identity or thread in {*identity,history}:
         raise ValueError("complete original native session identity/bytes absent")
@@ -164,7 +163,7 @@ def validate(directory, contract):
     payload = report.history_payload(history)
     exact(durable, {"history_run_id":history,"payload_sha256":hashlib.sha256(payload).hexdigest(),"payload_bytes":report.HISTORY_PAYLOAD_BYTES,
                     "original_private_and_home_verified":True,"guest_sync_completed":True}, "required data was not durable before fixed loss")
-    operation = later.identifier(captured.get("operation_run_id"))
+    operation = validate_evidence_uuid(captured.get("operation_run_id"))
     if operation in {*identity,history,thread}:
         raise ValueError("fixed operation identity reused")
     started = clock(captured.get("prepare_started_ns"),terminals[1]["monotonic_ns"],events[2]["monotonic_ns"])
@@ -252,7 +251,8 @@ def validate(directory, contract):
     exact(refused, {"error":error,contract.field("normal_operations_not_parkable", "normal_operations_not_parkable", "park_policy_dirty"):True,"completed_lease_refused":True,
                     "required_saving_complete":False,"cleanup_complete":False,"original_home":home}|LEASE,
           "fixed refused saving was credited as complete")
-    attempt,attempt_sandbox = (later.identifier(owners.get(key)) for key in ("promotion_probe_run_id","promotion_probe_sandbox_id"))
+    attempt, attempt_sandbox = (validate_evidence_uuid(owners.get(key)) for key in (
+        "promotion_probe_run_id", "promotion_probe_sandbox_id"))
     if len({*identity,history,thread,operation,runner,attempt,attempt_sandbox}) != 8:
         raise ValueError("fixed original promotion probe reused identity")
     accounting = dict.fromkeys(cleanup.COUNTS,0)|{"registered_operations":2,"uncertain":2,
