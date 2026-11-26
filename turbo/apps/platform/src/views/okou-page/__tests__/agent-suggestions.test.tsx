@@ -524,7 +524,7 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
     await refresh.promise;
     await expect(activeCard(three)).resolves.toBeVisible();
     expect(screen.getByText("2 to go")).toBeInTheDocument();
-    click(await findFastControl("link", "Next suggestion"));
+    click(await findFastControl("link", "Show suggestion 2 of 2"));
     await expect(activeCard(four)).resolves.toBeVisible();
     await expect(
       findFastControl("link", "Show suggestion 2 of 2"),
@@ -537,7 +537,7 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   );
   const alert = await screen.findByRole("alert");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  click(await findFastControl("link", "Previous suggestion"));
+  click(await findFastControl("link", "Show suggestion 1 of 2"));
   await expect(activeCard(three)).resolves.toBeVisible();
   click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
@@ -1426,7 +1426,7 @@ test("Opening For you shows the summary card and keeps its draft and read receip
     findFastControl("link", "Show suggestion 2 of 2"),
   ).resolves.toHaveAttribute("aria-current", "step");
   expect(screen.getByText("2 to go")).toBeInTheDocument();
-  expect(queryFastControl("link", "Previous suggestion")).toHaveAttribute(
+  expect(queryFastControl("link", "Show suggestion 1 of 2")).toHaveAttribute(
     "href",
     "/for-you?suggestion=" + second.id,
   );
@@ -1562,7 +1562,7 @@ test("A direct link reads its card on the next page without displaying the summa
   });
 });
 
-test("Arrow keys page the deck like its arrows, except while a direction is written", async () => {
+test("Arrow keys page the deck without arrow controls, except while a direction is written", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);
   const three = proposal("Freight quote", 0);
@@ -1575,12 +1575,11 @@ test("Arrow keys page the deck like its arrows, except while a direction is writ
   await activeCard(two);
   await user.keyboard("{ArrowLeft}");
   await activeCard(one);
-  // Paging wraps round at either end, as the arrows do.
+  // Paging wraps round at either end.
   await user.keyboard("{ArrowLeft}");
   const card = await activeCard(three);
-  await expect(
-    findFastControl("link", "Previous suggestion"),
-  ).resolves.toHaveAttribute("aria-keyshortcuts", "ArrowLeft");
+  expect(queryFastControl("link", "Previous suggestion")).toBeNull();
+  expect(queryFastControl("link", "Next suggestion")).toBeNull();
 
   click(await findFastControl("button", "What do you have in mind?", card));
   const region = await screen.findByRole("region", {

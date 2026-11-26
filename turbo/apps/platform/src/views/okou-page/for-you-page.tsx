@@ -7,7 +7,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, ChevronRight, ImageIcon, Loader2 } from "lucide-react";
+import { ImageIcon, Loader2 } from "lucide-react";
 import {
   Button,
   Card,
@@ -16,7 +16,6 @@ import {
   PopoverTrigger,
   Radio,
   RadioGroup,
-  buttonVariants,
   cn,
 } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
@@ -205,7 +204,6 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
           );
         })}
       </div>
-      {count !== undefined && <ForYouNavigation cards={cards} />}
     </div>
   );
 }
@@ -227,83 +225,6 @@ function ForYouCardContents({
         {children}
       </div>
     </div>
-  );
-}
-
-function ForYouNavigation({ cards }: { readonly cards: ForYouDeck["cards"] }) {
-  const { t } = useTranslation();
-  const browse = useSet(browseForYou$);
-  const signal = useGet(pageSignal$);
-  return (
-    <>
-      {cards.length > 1 && (
-        <nav
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.homeCard.navigation;
-          })}
-          className={cn(
-            // Paging moves through the whole stack, so the controls sit
-            // outside the card: on its flanks when the page has room, below
-            // it otherwise.
-            "-mt-3 flex items-center justify-end gap-2",
-            "@min-[56rem]/for-you:pointer-events-none @min-[56rem]/for-you:absolute @min-[56rem]/for-you:inset-0 @min-[56rem]/for-you:m-0",
-          )}
-        >
-          {[
-            {
-              card: cards.at(-1),
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.previous;
-              }),
-              Icon: ChevronLeft,
-              direction: "previous" as const,
-              keys: "ArrowLeft",
-            },
-            {
-              card: cards[1],
-              label: t(($) => {
-                return $.chat.agentSuggestions.forYou.next;
-              }),
-              Icon: ChevronRight,
-              direction: "next" as const,
-              keys: "ArrowRight",
-            },
-          ].map(({ card, label, Icon, direction, keys }) => {
-            return card ? (
-              <Link
-                key={label}
-                pathname={ROUTES.forYou}
-                options={{
-                  searchParams: new URLSearchParams({
-                    suggestion: card.entry.item.id,
-                  }),
-                }}
-                aria-label={label}
-                aria-keyshortcuts={keys}
-                onClick={(event) => {
-                  if (shouldHandleLinkClick(event)) {
-                    // This changes the reading position in the current
-                    // visit; Router navigation would reload its snapshot.
-                    event.preventDefault();
-                    browse(card.entry.item.id, direction, signal);
-                  }
-                }}
-                className={cn(
-                  buttonVariants({ variant: "neutral", size: "icon-lg" }),
-                  "pointer-events-auto rounded-full bg-card shadow-surface",
-                  "@min-[56rem]/for-you:absolute @min-[56rem]/for-you:top-[calc(50%-0.75rem)] @min-[56rem]/for-you:-translate-y-1/2",
-                  direction === "previous"
-                    ? "@min-[56rem]/for-you:-left-17"
-                    : "@min-[56rem]/for-you:-right-17",
-                )}
-              >
-                <Icon aria-hidden className="size-4" />
-              </Link>
-            ) : null;
-          })}
-        </nav>
-      )}
-    </>
   );
 }
 
