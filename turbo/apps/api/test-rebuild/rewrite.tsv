@@ -3186,7 +3186,7 @@ account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-009	planned					a
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-010	planned					a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-011	planned					a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-012	planned					a-run
-account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-014	planned					d-other
+account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-014	rewritten	91.7		src/signals/routes/__tests__/wallet.test.ts		d-other
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-015	planned					a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-017	planned					a-run
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-018	planned					a-run
