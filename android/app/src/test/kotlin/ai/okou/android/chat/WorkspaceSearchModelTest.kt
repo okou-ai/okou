@@ -226,8 +226,10 @@ class WorkspaceSearchModelTest {
         val store = ViewModelStore()
         val first = SearchArtifactHit("first", "Release plan", ArtifactKind.File)
         val second = SearchArtifactHit("second", "Release site", ArtifactKind.Website)
+        val third = SearchArtifactHit("third", "Release overview", ArtifactKind.Presentation)
         val calls = mutableListOf<Pair<String, String?>>()
         var continuationAttempts = 0
+        var terminalAttempts = 0
         val service =
             object : WorkspaceSearchService by EmptyWorkspaceSearchService {
                 override suspend fun searchArtifacts(
@@ -238,11 +240,16 @@ class WorkspaceSearchModelTest {
                     return when {
                         keyword != "release" -> SearchArtifactPage(emptyList(), null)
                         cursor == null -> SearchArtifactPage(listOf(first), "page-two")
-                        else -> {
+                        cursor == "page-two" -> {
                             continuationAttempts++
                             if (continuationAttempts == 1)
                                 throw ApiFailure.Http(503, null, null, null)
-                            SearchArtifactPage(listOf(first, second), null)
+                            SearchArtifactPage(listOf(first, second), "page-three")
+                        }
+                        else -> {
+                            terminalAttempts++
+                            if (terminalAttempts == 1) throw ApiFailure.Http(400, null, null, null)
+                            SearchArtifactPage(listOf(third), null)
                         }
                     }
                 }
@@ -291,8 +298,29 @@ class WorkspaceSearchModelTest {
                 artifactsAvailable = true,
             )
             runCurrent()
-            assertEquals(SearchRead.Ready(listOf(first, second)), model.results.value.artifacts)
+            val loaded = SearchRead.Ready(listOf(first, second), "page-three")
+            assertEquals(loaded, model.results.value.artifacts)
             assertEquals(ArtifactSearchPaging.Idle, model.results.value.artifactPaging)
+
+            model.nextArtifacts("release", "page-three")
+            runCurrent()
+            assertEquals(loaded, model.results.value.artifacts)
+            assertEquals(ArtifactSearchPaging.Failed, model.results.value.artifactPaging)
+
+            model.update("release", WorkspaceSearchType.All, artifactsAvailable = true)
+            model.update("release", WorkspaceSearchType.Artifacts, artifactsAvailable = true)
+            assertEquals(loaded, model.results.value.artifacts)
+            assertEquals(ArtifactSearchPaging.Idle, model.results.value.artifactPaging)
+            model.nextArtifacts("release", "page-three")
+            runCurrent()
+            val complete = SearchRead.Ready(listOf(first, second, third))
+            assertEquals(complete, model.results.value.artifacts)
+
+            model.update("release", WorkspaceSearchType.Chats, artifactsAvailable = true)
+            model.update("release", WorkspaceSearchType.Artifacts, artifactsAvailable = true)
+            advanceTimeBy(300)
+            runCurrent()
+            assertEquals(complete, model.results.value.artifacts)
 
             model.update(
                 "history",
@@ -311,6 +339,8 @@ class WorkspaceSearchModelTest {
                     "release" to null,
                     "release" to "page-two",
                     "release" to "page-two",
+                    "release" to "page-three",
+                    "release" to "page-three",
                     "history" to null,
                 ),
                 calls,

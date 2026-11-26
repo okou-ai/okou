@@ -414,8 +414,7 @@ private fun SearchResults(
     val artifactCursor = artifactPage?.nextCursor
     val artifactPaging = currentRemote?.artifactPaging
     val moreArtifactsFailed =
-        type.includes(WorkspaceSearchType.Artifacts) &&
-            artifactPaging == ArtifactSearchPaging.Failed
+        type == WorkspaceSearchType.Artifacts && artifactPaging == ArtifactSearchPaging.Failed
     val nextArtifactPage =
         artifactPage
             ?.takeIf {

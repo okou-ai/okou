@@ -66,6 +66,41 @@ class WorkspaceSearchScreenTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>(ComposeUiTestConfig(motion))
 
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun focusedSearchUsesTheSameMaterialSurfaceAndBounds() {
+        val search = ChatSearchState(TextFieldValue("Launch"))
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                )
+            }
+        }
+
+        val field = compose.onNodeWithTag("chat_search_query")
+        val bounds = field.getUnclippedBoundsInRoot()
+        assertEquals(48.dp, bounds.bottom - bounds.top)
+        val colors = resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false)
+        fun assertSurface() {
+            val pixels = field.captureToImage().toPixelMap()
+            assertEquals(colors.surfaceContainerHigh.toArgb(), pixels[pixels.width / 2, 0].toArgb())
+        }
+        assertSurface()
+
+        field.performSemanticsAction(SemanticsActions.RequestFocus)
+        field.assertIsFocused()
+        assertEquals(bounds, field.getUnclippedBoundsInRoot())
+        assertSurface()
+    }
+
+    @Test
     fun shortcutsKeepTheKeywordAndMoveFocusToTheDestinationFilter() {
         val search = ChatSearchState(TextFieldValue("Launch"))
         val artifacts =

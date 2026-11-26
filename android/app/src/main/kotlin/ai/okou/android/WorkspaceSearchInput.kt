@@ -16,13 +16,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -46,17 +42,11 @@ internal fun WorkspaceSearchInput(
     clearLabel: String = stringResource(R.string.chat_search_clear),
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
-    var focused by remember { mutableStateOf(false) }
     val style = workspaceSearchTextStyle().copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier =
-            modifier
-                .onFocusChanged { focused = it.isFocused }
-                .semantics {
-                    contentDescription = label
-                },
+        modifier = modifier.semantics { contentDescription = label },
         textStyle = style,
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -68,7 +58,6 @@ internal fun WorkspaceSearchInput(
                 label,
                 clearLabel,
                 style,
-                focused,
                 onClear,
                 input,
             )
@@ -85,17 +74,11 @@ internal fun WorkspaceSearchInput(
     inputTransformation: InputTransformation? = null,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
-    var focused by remember { mutableStateOf(false) }
     val style = workspaceSearchTextStyle().copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
         state = state,
         inputTransformation = inputTransformation,
-        modifier =
-            modifier
-                .onFocusChanged { focused = it.isFocused }
-                .semantics {
-                    contentDescription = label
-                },
+        modifier = modifier.semantics { contentDescription = label },
         textStyle = style,
         lineLimits = TextFieldLineLimits.SingleLine,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -107,7 +90,6 @@ internal fun WorkspaceSearchInput(
                 label,
                 stringResource(R.string.chat_search_clear),
                 style,
-                focused,
                 onClear,
                 input,
             )
@@ -121,15 +103,12 @@ private fun SearchInputDecoration(
     label: String,
     clearLabel: String,
     style: TextStyle,
-    focused: Boolean,
     onClear: () -> Unit,
     input: @Composable () -> Unit,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    var clearFocused by remember { mutableStateOf(false) }
     WorkspaceSearchField(
         Modifier.fillMaxWidth(),
-        focused = focused || (hasText && clearFocused),
         hasTrailingAction = hasText,
     ) {
         Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
@@ -145,10 +124,7 @@ private fun SearchInputDecoration(
             input()
         }
         if (hasText) {
-            IconButton(
-                onClick = onClear,
-                modifier = Modifier.onFocusChanged { clearFocused = it.isFocused },
-            ) {
+            IconButton(onClick = onClear) {
                 Icon(
                     painterResource(R.drawable.ic_close),
                     clearLabel,

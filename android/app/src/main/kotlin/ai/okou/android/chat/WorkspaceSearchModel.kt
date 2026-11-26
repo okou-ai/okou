@@ -204,16 +204,19 @@ internal constructor(
                 state.copy(messages = state.messages.updated(read))
             }
         }
-        if (
-            artifactsAvailable &&
-                type.includes(WorkspaceSearchType.Artifacts) &&
-                artifactPageJob?.isActive != true
-        ) {
-            // A preview return must retain any pages needed to restore the selected result.
-            val refresh =
+        if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
+            if (
+                type == WorkspaceSearchType.Artifacts &&
+                    previousType != type &&
+                    mutable.value.artifactPaging == ArtifactSearchPaging.Failed
+            ) {
+                mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Idle)
+            }
+            // A type change or preview return still uses the same query and its loaded pages.
+            val retry =
                 previousType?.includes(WorkspaceSearchType.Artifacts) != true &&
-                    (previousType != null || mutable.value.artifacts.hasFailure)
-            request(WorkspaceSearchType.Artifacts, refresh, { artifactPage(keyword, null) }) {
+                    mutable.value.artifacts.hasFailure
+            request(WorkspaceSearchType.Artifacts, retry, { artifactPage(keyword, null) }) {
                 state,
                 read ->
                 state.copy(
