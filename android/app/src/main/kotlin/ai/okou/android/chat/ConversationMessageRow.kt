@@ -8,7 +8,6 @@ import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -49,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -58,6 +56,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutBoundsHolder
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -104,6 +103,7 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
+    animateAvatarIn: LayoutBoundsHolder? = null,
     beforeEarlierRepliesResize: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
         AssistantFailureText(it.failureReason)
@@ -159,7 +159,7 @@ internal fun ConversationMessageRow(
             }
         message.isReply() ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                ConversationReplyHeader(message, artifactActions)
+                ConversationReplyHeader(message, artifactActions, animateAvatarIn)
                 if (entry.summary != null) {
                     var expanded by rememberEarlierRepliesExpanded()
                     if (findHighlight?.reveal != null) {
@@ -261,8 +261,8 @@ private fun EarlierReplyArtifacts(
 internal fun ConversationReplyHeader(
     message: HistoryMessage? = null,
     artifacts: ChatArtifactActions? = null,
+    animateAvatarIn: LayoutBoundsHolder? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
     var menuMessage by remember { mutableStateOf<HistoryMessage?>(null) }
     val focus = remember { FocusRequester() }
     var keyboardFocused by remember { mutableStateOf(false) }
@@ -273,7 +273,7 @@ internal fun ConversationReplyHeader(
     val label = stringResource(R.string.conversation_reply_actions)
     val imageLabel = stringResource(R.string.artifact_image)
     val copyableReply = message?.takeIf {
-        it.blocks.any { block -> block.kind == HistoryBlockKind.Text }
+        it.blocks.any { block -> block.kind == HistoryBlockKind.Text && block.text.isNotBlank() }
     }
     val openMenu by rememberUpdatedState {
         restoreFocus = keyboardFocused
@@ -283,6 +283,7 @@ internal fun ConversationReplyHeader(
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 48.dp)
+                .testTag("conversation_reply_header")
                 .then(
                     if (copyableReply == null) Modifier
                     else
@@ -293,11 +294,7 @@ internal fun ConversationReplyHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painterResource(R.drawable.okou_conversation_avatar),
-                null,
-                Modifier.size(24.dp).clip(RoundedCornerShape(8.dp)),
-            )
+            ConversationReplyAvatar(animateAvatarIn.takeIf { copyableReply != null })
             Text(
                 stringResource(R.string.app_name),
                 Modifier.weight(1f),
@@ -308,17 +305,15 @@ internal fun ConversationReplyHeader(
                 Box {
                     IconButton(
                         onClick = openMenu,
-                        shape = RoundedCornerShape(12.dp),
                         modifier =
-                            Modifier.size(48.dp).focusRequester(focus).onFocusChanged {
+                            Modifier.focusRequester(focus).onFocusChanged {
                                 keyboardFocused = it.isFocused
                             },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_more_vert),
                             label,
-                            Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
+                            Modifier.size(24.dp),
                         )
                     }
                     menuMessage?.let { selected ->
