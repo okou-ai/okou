@@ -984,8 +984,9 @@ feature; the catalog shows each one.
   actions, so the actions stay at the bottom; the dock's room is held on a paused automation and
   while the first cards load, so the deck's top edge never moves. A card that fits never moves
   vertically; only one taller than the room scrolls, and only the caught-up panel pulls to
-  refresh. The layers under the front card are solid cards, each a little more shaded than the
-  one above it, so the deck runs out as the cards do. While the first cards load, a skeleton
+  refresh. The layers under the front card are the card's own fill and hairline, each a little
+  narrower and fainter than the one above it rather than darker, under one soft shadow for the
+  whole stack, as a stack of notifications or passes reads; the deck runs out as the cards do. While the first cards load, a skeleton
   stands in the card's exact place and height, drawn as the card it stands for: two lines of
   title, four of reason, and two directions at the foot.
 - **Haptics**: success when a card is handled, error on a failure.
@@ -1004,8 +1005,10 @@ feature; the catalog shows each one.
 - **Caught up** is the rest picture, "All caught up", one line, and Back to chats.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the
   composer's glass and the keyboard read plain. The card stays above the input as its context:
-  its heading only, as tall as it is up to the room under the header, scrolling and fading there
-  like a dense card, with its directions and source set aside so the draft is never left behind. The card already says what the direction answers, so the input
+  its heading only, as tall as it is up to the room under the header. The card hangs from its top
+  edge, so as the input grows out of its pill and the keyboard rises only its foot moves, up and
+  back down, while its top stays just under the header. Its heading scrolls and fades there like
+  a dense card's, with its directions and source set aside so the draft is never left behind. The card already says what the direction answers, so the input
   carries no quote of it. A tap around the card puts the input away; the card itself stays
   readable.
 

@@ -241,6 +241,13 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   @State private var actionsHeight: CGFloat = 0
   @State private var hasMoreBelow = false
   @State private var hasMoreAbove = false
+  /// Whether the actions sat at the foot while they last showed.
+  @State private var lastPinned = true
+  /// Where the actions go when they come back after a direction is put away: where they were
+  /// before it opened, until the card has grown back enough to agree. The card grows back as the
+  /// keyboard goes down, so a placement judged on its first, short height would set the actions
+  /// under the heading for a moment before they drop to the foot, and both would flash.
+  @State private var returningPinned: Bool?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// The height over which the text fades out at an edge more lies beyond.
   private var fade: CGFloat { OkouSpace.xxxl }
@@ -260,7 +267,8 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
 
   var body: some View {
     if let height {
-      let pinsActions = showsActions && height - actionsHeight - spacing >= height * headingShare
+      let fits = height - actionsHeight - spacing >= height * headingShare
+      let pinsActions = showsActions && (returningPinned ?? fits)
       VStack(alignment: .leading, spacing: spacing) {
         scrolling(
           below: pinsActions
@@ -278,6 +286,14 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
       // source leaving as a direction opens), so the card eases to it rather than cutting the
       // text still on its way up.
       .animation(reduceMotion ? nil : OkouMotion.transition, value: headingHeight)
+      .onChange(of: fits, initial: true) { _, fits in
+        if returningPinned == fits { returningPinned = nil }
+        if showsActions && returningPinned == nil { lastPinned = fits }
+      }
+      .onChange(of: showsActions) { _, shows in
+        // Set as the actions leave, so it already holds on the frame they come back.
+        returningPinned = shows ? (returningPinned == fits ? nil : returningPinned) : lastPinned
+      }
     } else {
       VStack(alignment: .leading, spacing: spacing) {
         measuredHeading
@@ -301,7 +317,7 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     }
     .contentMargins(.top, above, for: .scrollIndicators)
     .contentMargins(.bottom, below, for: .scrollIndicators)
-    // The page keeps its card at the bottom; the card's own text opens at its title and stays
+    // The page hangs its card from the top; the card's own text opens at its title and stays
     // put as a reason opens.
     .defaultScrollAnchor(.top, for: .initialOffset)
     .defaultScrollAnchor(.top, for: .alignment)
