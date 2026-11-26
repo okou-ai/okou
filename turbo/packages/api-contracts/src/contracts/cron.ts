@@ -661,7 +661,7 @@ export const cronProactiveContract = c.router({
       401: apiErrorSchema,
     },
     summary:
-      "Compare or dispatch built-in task slots according to the global handoff",
+      "Advance the proactive handoff and dispatch due built-in task slots",
   },
 });
 

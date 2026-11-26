@@ -1,12 +1,12 @@
 import { bodyResultOf } from "../context/request";
 import { handoffProactiveDispatch$ } from "../services/proactive-handoff.service";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import { proactiveDispatchPhase$ } from "../services/proactive-dispatch-ownership.service";
 import { dispatchProactiveSchedules$ } from "../services/proactive-dispatch.service";
 import { cronProactiveContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 import type { RouteEntry } from "../route-entry";
-import { compareProactiveSchedules$ } from "../services/proactive-schedule-shadow.service";
+import { recordApiOperationTimings } from "../external/sandbox-op-log";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 export const cronProactiveRoutes: readonly RouteEntry[] = [
@@ -34,13 +34,38 @@ export const cronProactiveRoutes: readonly RouteEntry[] = [
         return cronUnauthorized();
       }
       const phase = await set(proactiveDispatchPhase$, signal);
-      const body =
-        phase === "automation"
-          ? await set(compareProactiveSchedules$, signal)
-          : phase === "draining"
-            ? { phase, minute: nowDate().toISOString() }
-            : await set(dispatchProactiveSchedules$, signal);
-      return { status: 200 as const, body };
+      signal.throwIfAborted();
+      if (phase !== "standalone") {
+        const action = phase === "automation" ? "drain" : "activate";
+        const started = monotonicNow();
+        const handoff = await set(
+          handoffProactiveDispatch$,
+          { action, apply: true },
+          signal,
+        );
+        signal.throwIfAborted();
+        recordApiOperationTimings([
+          {
+            actionType: "proactive_schedule_handoff",
+            durationMs: monotonicNow() - started,
+            success: true,
+            dimensions: { action, ...handoff },
+          },
+        ]);
+        if (handoff.phase !== "standalone") {
+          return {
+            status: 200 as const,
+            body: {
+              phase: "draining" as const,
+              minute: nowDate().toISOString(),
+            },
+          };
+        }
+      }
+      return {
+        status: 200 as const,
+        body: await set(dispatchProactiveSchedules$, signal),
+      };
     }),
   },
 ];
