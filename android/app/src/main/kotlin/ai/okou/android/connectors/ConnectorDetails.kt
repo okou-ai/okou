@@ -90,6 +90,7 @@ internal fun ConnectorDetails(
     val detailUnavailable = detailFailure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
     if (entry == null && detailFailure != null) {
+        val pane = Modifier.widthIn(max = 666.dp)
         Box(
             Modifier.fillMaxSize().testTag("connector-detail"),
             contentAlignment = Alignment.TopCenter,
@@ -97,9 +98,8 @@ internal fun ConnectorDetails(
             ConnectorReadFailureContent(
                 detailFailure,
                 R.string.connector_load_failed,
-                Modifier.widthIn(max = 666.dp)
-                    .fillMaxHeight()
-                    .padding(horizontal = if (wide) 32.dp else 20.dp),
+                if (detailUnavailable) pane
+                else pane.fillMaxHeight().padding(horizontal = if (wide) 32.dp else 20.dp),
             )
         }
         return
@@ -613,24 +613,26 @@ internal fun ConnectorSheet(
                             titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
                     )
                 }
-                Column(
-                    if (scrollAll) Modifier.fillMaxWidth()
-                    else
-                        Modifier.weight(1f, fill = fullScreen)
-                            .fillMaxWidth()
-                            .verticalScroll(scroll),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    content = content,
-                )
-                actions?.invoke()
-            }
-            if (feedback != null) {
                 Box(
-                    Modifier.matchParentSize().padding(bottom = 8.dp),
-                    contentAlignment = Alignment.BottomCenter,
+                    if (scrollAll) Modifier.fillMaxWidth()
+                    else Modifier.weight(1f, fill = fullScreen).fillMaxWidth(),
+                    propagateMinConstraints = true,
                 ) {
-                    feedback()
+                    Column(
+                        if (scrollAll) Modifier else Modifier.verticalScroll(scroll),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = content,
+                    )
+                    if (feedback != null) {
+                        Box(
+                            Modifier.matchParentSize().padding(bottom = 8.dp),
+                            contentAlignment = Alignment.BottomCenter,
+                        ) {
+                            feedback()
+                        }
+                    }
                 }
+                actions?.invoke()
             }
         }
     }
@@ -643,6 +645,8 @@ private fun ConnectorPermissionSheet(
     announcements: ConnectorReadAnnouncements,
     close: () -> Unit,
 ) {
+    val pendingHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+    val pendingBody = Modifier.fillMaxWidth().heightIn(min = pendingHeight)
     ConnectorSheet(
         stringResource(R.string.connector_permissions_title, service),
         close,
@@ -667,13 +671,15 @@ private fun ConnectorPermissionSheet(
                         ConnectorReadFailureContent(
                             permissions.failure,
                             R.string.connector_permissions_failed,
-                            Modifier.heightIn(min = 208.dp),
+                            pendingBody,
                         )
                     else ->
-                        ConnectorSkeleton(
-                            stringResource(R.string.connector_loading_permissions),
-                            rows = 1,
-                        )
+                        Box(pendingBody) {
+                            ConnectorSkeleton(
+                                stringResource(R.string.connector_loading_permissions),
+                                rows = 1,
+                            )
+                        }
                 }
             permissions.data.isEmpty() ->
                 Text(

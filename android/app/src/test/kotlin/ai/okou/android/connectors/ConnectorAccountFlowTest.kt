@@ -232,7 +232,10 @@ class ConnectorAccountFlowTest {
             val rowBounds = calendar.getUnclippedBoundsInRoot()
             fixture.discoveryRetryAfterSeconds = 0
             fixture.failDiscovery = true
-            compose.runOnIdle { model.resume() }
+            compose.runOnIdle {
+                model.pause()
+                model.resume()
+            }
             val feedback = hasText("Could not refresh connectors.")
             compose.waitUntilAtLeastOneExists(feedback, 10_000)
             compose

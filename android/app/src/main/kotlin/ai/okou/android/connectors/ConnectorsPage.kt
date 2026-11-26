@@ -390,10 +390,12 @@ private fun ConnectorDirectory(
             setCategory,
         )
         if (entries == null && failure != null) {
+            val viewport =
+                if (failure == ConnectorReadFailure.Unavailable) Modifier else Modifier.weight(1f)
             ConnectorReadFailureContent(
                 failure,
                 R.string.connector_load_failed,
-                Modifier.weight(1f).testTag("connector-directory"),
+                viewport.testTag("connector-directory"),
             )
             return@Column
         }

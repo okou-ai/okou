@@ -78,6 +78,7 @@ internal class ConnectorApiFixture(
     @Volatile var offerLiveDeviceEnvironment = true
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
+    @Volatile var failPermissionReads = false
     @Volatile var denyPermissionReads = false
     @Volatile var memberAccess = false
     @Volatile var devicePollStatus = "pending"
@@ -411,6 +412,7 @@ internal class ConnectorApiFixture(
                 val entry = entries.find { it.slug == slug } ?: return rejected(404)
                 if (parts.getOrNull(3) == "permissions") {
                     if (denyPermissionReads) return rejected(403)
+                    if (failPermissionReads) return rejected(503).setHeader("Retry-After", 0)
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
