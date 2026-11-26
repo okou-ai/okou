@@ -798,18 +798,21 @@ internal fun DeleteChatDialog(
     dismiss: () -> Unit,
     confirm: () -> Unit,
 ) {
-    DeleteOrganizationDialog(
+    OkouConfirmationDialog(
         title = stringResource(R.string.chat_delete_title),
-        description =
+        confirm = stringResource(R.string.chat_delete),
+        onDismiss = dismiss,
+        onConfirm = confirm,
+        confirmEnabled = enabled,
+        destructive = true,
+    ) {
+        Text(
             stringResource(
                 R.string.chat_delete_description,
                 chatName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             ),
-        confirmRes = R.string.chat_delete,
-        enabled = enabled,
-        dismiss = dismiss,
-        confirm = confirm,
-    )
+        )
+    }
 }
 
 @Composable
@@ -821,84 +824,57 @@ internal fun DeleteProjectDialog(
     dismiss: () -> Unit,
     confirm: () -> Unit,
 ) {
-    DeleteOrganizationDialog(
-        title = stringResource(R.string.chat_project_delete_title),
-        description = stringResource(R.string.chat_project_delete_description, projectName),
-        confirmRes = R.string.chat_project_delete,
-        enabled = enabled,
-        dismiss = dismiss,
-        confirm = confirm,
-        pending = pending,
-        projectDeleteStatus = status,
-    )
-}
-
-@Composable
-private fun DeleteOrganizationDialog(
-    title: String,
-    description: String,
-    @StringRes confirmRes: Int,
-    enabled: Boolean,
-    dismiss: () -> Unit,
-    confirm: () -> Unit,
-    pending: Boolean = false,
-    projectDeleteStatus: ProjectDeleteStatus? = null,
-) {
-    val projectDelete = confirmRes == R.string.chat_project_delete
     val noticeRes =
         if (pending) null
         else
-            when (projectDeleteStatus) {
+            when (status) {
                 ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
                 ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
                 ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
-                else -> null
+                ProjectDeleteStatus.Confirmed,
+                null -> null
             }
     OkouConfirmationDialog(
-        title = title,
-        confirm = stringResource(confirmRes),
+        title = stringResource(R.string.chat_project_delete_title),
+        confirm = stringResource(R.string.chat_project_delete),
         onDismiss = dismiss,
         onConfirm = confirm,
         confirmEnabled = enabled,
         destructive = true,
-        pendingConfirmLabel =
-            if (projectDelete) stringResource(R.string.chat_delete_pending) else null,
+        pendingConfirmLabel = stringResource(R.string.chat_delete_pending),
         confirmPending = pending,
-        actionStatus =
-            if (projectDelete) {
-                {
-                    Box(Modifier.fillMaxWidth()) {
-                        val style = MaterialTheme.typography.bodyMedium
-                        for (message in
-                            listOf(
-                                R.string.chat_project_delete_rejected,
-                                R.string.chat_action_connection_failed,
-                                R.string.chat_project_delete_unconfirmed,
-                            )) {
-                            if (message != noticeRes) {
-                                Text(
-                                    stringResource(message),
-                                    Modifier.clearAndSetSemantics {}.alpha(0f),
-                                    style = style,
-                                )
-                            }
-                        }
-                        if (noticeRes != null) {
-                            Text(
-                                stringResource(noticeRes),
-                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                color =
-                                    if (projectDeleteStatus != ProjectDeleteStatus.Unconfirmed)
-                                        MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = style,
-                            )
-                        }
+        actionStatus = {
+            Box(Modifier.fillMaxWidth()) {
+                val style = MaterialTheme.typography.bodyMedium
+                for (message in
+                    listOf(
+                        R.string.chat_project_delete_rejected,
+                        R.string.chat_action_connection_failed,
+                        R.string.chat_project_delete_unconfirmed,
+                    )) {
+                    if (message != noticeRes) {
+                        Text(
+                            stringResource(message),
+                            Modifier.clearAndSetSemantics {}.alpha(0f),
+                            style = style,
+                        )
                     }
                 }
-            } else null,
+                if (noticeRes != null) {
+                    Text(
+                        stringResource(noticeRes),
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color =
+                            if (status == ProjectDeleteStatus.Unconfirmed)
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.error,
+                        style = style,
+                    )
+                }
+            }
+        },
     ) {
-        Text(description)
+        Text(stringResource(R.string.chat_project_delete_description, projectName))
     }
 }
 
