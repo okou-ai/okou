@@ -22,6 +22,8 @@ use std::time::{Duration, Instant};
 const LOCAL_CONCURRENT: usize = 4;
 const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 #[cfg(target_os = "linux")]
+const MIN_INLINE_ARTIFACT_BATCH_TASKS: usize = 17;
+#[cfg(target_os = "linux")]
 const WIDE_LOCAL_INFLATE_TASKS: usize = 32;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
@@ -512,6 +514,23 @@ fn download_concurrency(remote_count: usize, task_count: usize) -> usize {
     remote_count.clamp(LOCAL_CONCURRENT, limit).min(task_count)
 }
 
+#[cfg(target_os = "linux")]
+fn single_inline_artifact<'input>(tasks: &[PreparedDownloadTask<'input>]) -> Option<&'input [u8]> {
+    let mut artifact = None;
+    for prepared in tasks {
+        let task = &prepared.task;
+        let archive = task.inline_archive?;
+        if !task.telemetry.is_artifact() {
+            continue;
+        }
+        if artifact.is_some() || task.template_guidance.is_some() {
+            return None;
+        }
+        artifact = Some(archive);
+    }
+    artifact
+}
+
 fn download_with_readiness(
     mut tasks: Vec<PreparedDownloadTask<'_>>,
     readiness: Option<Readiness>,
@@ -529,11 +548,23 @@ fn download_with_readiness(
         .iter()
         .filter(|task| task.task.telemetry.is_remote())
         .count();
-    let concurrency = download_concurrency(remote_count, tasks.len());
-    // Local archives compete for CPU. Prefer longer ready work without changing
-    // the original pending order used to enforce logical and physical ownership.
     let local_only = remote_count == 0;
     let allow_artifact_priority = local_only && readiness.is_none();
+    let concurrency = download_concurrency(remote_count, tasks.len());
+    // Two ready archive writers leave fewer threads competing with the dense
+    // Artifact on a two-CPU Guest. Keep the other delivery paths at their
+    // existing budgets, including wider batches that can read ahead.
+    #[cfg(target_os = "linux")]
+    let concurrency = if allow_artifact_priority
+        && (MIN_INLINE_ARTIFACT_BATCH_TASKS..WIDE_LOCAL_INFLATE_TASKS).contains(&tasks.len())
+        && single_inline_artifact(&tasks).is_some_and(archive::inflate::prefers_two_workers)
+    {
+        2
+    } else {
+        concurrency
+    };
+    // Local archives compete for CPU. Prefer longer ready work without changing
+    // the original pending order used to enforce logical and physical ownership.
     let pending = tasks
         .into_iter()
         .enumerate()

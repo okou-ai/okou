@@ -54,7 +54,7 @@ impl InflateLoad {
         // fractional CPU quota rounds down in available_parallelism.
         has_expanded_work(&read_exact_at, compressed_bytes, min_expanded_bytes)
             && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() >= 2)
-            && (matches!(self, Self::Light) || has_small_file_prefix(read_exact_at))
+            && (matches!(self, Self::Light) || has_small_file_prefix(read_exact_at, 16, 8 * 1024))
     }
 }
 
@@ -154,11 +154,32 @@ fn has_expanded_work(
     read_exact_at(&mut size, offset).is_ok() && u32::from_le_bytes(size) >= min_expanded_bytes
 }
 
-fn has_small_file_prefix(read_exact_at: impl Fn(&mut [u8], u64) -> io::Result<()>) -> bool {
+pub(crate) fn prefers_two_workers(archive: &[u8]) -> bool {
+    inline_archive_size_is_eligible(archive)
+        && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() == 2)
+        && has_small_file_prefix(
+            |output, offset| read_inline_at(archive, output, offset),
+            8,
+            16 * 1024,
+        )
+}
+
+fn inline_archive_size_is_eligible(archive: &[u8]) -> bool {
+    // Use the gzip length hint to stay within the measured Memory size range.
+    // Full extraction still owns gzip validation.
+    (1024 * 1024..4 * 1024 * 1024).contains(&archive.len())
+        && archive.last_chunk::<4>().is_some_and(|size| {
+            (8 * 1024 * 1024..16 * 1024 * 1024).contains(&u32::from_le_bytes(*size))
+        })
+}
+
+fn has_small_file_prefix(
+    read_exact_at: impl Fn(&mut [u8], u64) -> io::Result<()>,
+    sample_files: usize,
+    max_file_bytes: u64,
+) -> bool {
     const COMPRESSED_PREFIX_BYTES: usize = 16 * 1024;
     const TAR_PREFIX_BYTES: u64 = 128 * 1024;
-    const SAMPLE_FILES: usize = 16;
-    const SMALL_FILE_BYTES: u64 = 8 * 1024;
 
     let mut compressed = [0; COMPRESSED_PREFIX_BYTES];
     if read_exact_at(&mut compressed, 0).is_err() {
@@ -171,14 +192,14 @@ fn has_small_file_prefix(read_exact_at: impl Fn(&mut [u8], u64) -> io::Result<()
     sample.entries().is_ok_and(|entries| {
         entries
             .raw(true)
-            .take(SAMPLE_FILES)
+            .take(sample_files)
             .take_while(|entry| {
                 entry.as_ref().is_ok_and(|entry| {
-                    entry.header().entry_type().is_file() && entry.size() <= SMALL_FILE_BYTES
+                    entry.header().entry_type().is_file() && entry.size() <= max_file_bytes
                 })
             })
             .count()
-            == SAMPLE_FILES
+            == sample_files
     })
 }
 
