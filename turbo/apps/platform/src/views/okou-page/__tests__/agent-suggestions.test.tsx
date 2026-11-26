@@ -3,7 +3,7 @@ import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-model
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   feedContract,
-  type Suggestion,
+  type SuggestionCard,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
 import {
@@ -62,7 +62,7 @@ test("agent-suggestions-039 the empty For you destination reports zero remaining
   expect(location.pathname).toBe("/for-you");
 });
 
-function proposal(title: string, priority = 10): Suggestion {
+function proposal(title: string, priority = 10): SuggestionCard {
   const created = nowDate();
   const stamp = created.toISOString();
   return {
@@ -112,7 +112,7 @@ function proposal(title: string, priority = 10): Suggestion {
   };
 }
 
-function feed(items: Suggestion[]) {
+function feed(items: SuggestionCard[]) {
   context.mocks.api(feedContract.list, ({ respond }) => {
     return respond(200, { items });
   });
@@ -126,7 +126,7 @@ function openDeck(path = "/for-you", simplified = true) {
   });
 }
 
-function activeCard(item: Suggestion) {
+function activeCard(item: SuggestionCard) {
   return screen.findByRole("article", { name: item.content.title });
 }
 
@@ -932,7 +932,7 @@ test.each([
   },
 );
 
-function prefetchReadSummary(firstItem: Suggestion | null) {
+function prefetchReadSummary(firstItem: SuggestionCard | null) {
   const bootstrap = document.createElement("script");
   bootstrap.type = "application/json";
   bootstrap.dataset.okouApiBootstrap = "";
@@ -956,7 +956,7 @@ function prefetchReadSummary(firstItem: Suggestion | null) {
 test("The For you entry shows a prefetched read card and follows live feed changes", async () => {
   const first = proposal("Check the harbor lights");
   prefetchReadSummary(first);
-  let current: Suggestion | null = null;
+  let current: SuggestionCard | null = null;
   context.mocks.api(feedContract.summary, ({ respond }) => {
     return respond(200, { hasUnread: current !== null, firstItem: current });
   });

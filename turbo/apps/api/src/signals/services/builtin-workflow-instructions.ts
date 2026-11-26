@@ -108,8 +108,9 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 - Learning says the user works on integrations, but a connector fix is assigned to a teammate and progressing normally: do not recommend that the user take it over. If the teammate is waiting for this user's final review, suggest that review only after verifying the current request.
 - A review was completed in an already-read Chat while its issue stayed open: remove the review card; do not invent a documentation follow-up.
 - The user said "proceed" and the Agent is fixing an execution error: remove "approve/start this"; do not call the work finished or ask the user to repeat authorization.
-- The user marked an action Already done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
-- The user chose Not planned: do not return the same proposal with a new title or identity; a genuinely new event still needs independent assessment.
+- The user marked an action Done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
+- The user chose Won't do: do not return the same proposal with a new title or identity; a genuinely new event still needs independent assessment.
+- The user chose Later: consider their request in a subsequent check when revisiting it would be useful. Keep the same identity for the same action and respect terminal receipts.
 - A referenced Chat is unreadable: check other relevant current sources; if the action still cannot be verified, remove the old card as unverified.
 - That Chat becomes readable again: re-evaluate the action and feedback; if the same action is unchanged, do not republish it.
 - A pending action was previously offered and has no new deadline, risk or request: do not publish it again under a new title or identity.

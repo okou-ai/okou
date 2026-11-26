@@ -1,5 +1,6 @@
 import {
   suggestionStatus,
+  cardState,
   suggestionFeedbackEvents,
   liveSuggestion,
   retainedSuggestion,
@@ -523,7 +524,10 @@ export const consumeSuggestion$ = command(
       );
     }
     return item
-      ? { status: 200 as const, body: item }
+      ? {
+          status: 200 as const,
+          body: { ...item, state: cardState(item.state) },
+        }
       : conflict("Suggestion or selected option is no longer available.");
   },
 );
