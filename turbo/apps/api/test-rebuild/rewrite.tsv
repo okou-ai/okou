@@ -777,8 +777,8 @@ chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-histor
 chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-003	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-media.test.ts	chat-events-media-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-001	planned				B07	d-other
-chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-002	planned				B07	d-other
+chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-001	revisit		revisit: no public setup found that leaves a paid member with a personal Claude Fable 5.1 subscription but no saved model preference; evidence: after Pro entitlement and the personal claude-code-oauth-token provider upsert, GET /api/user-model-preference already returns a non-null updatedAt, so the first Then fails; the single row took 246 ms and 266 ms as the file's first entitled test (warm entitled actor + send + metadata measured 166-168 ms); resume: find which setup write pins the default model (candidate: onboarding.service.ts member metadata inserts) and build the entitlement without it		B07	d-other
+chat	src/signals/routes/__tests__/chat-events-member-defaults.test.ts	chat-events-member-defaults-002	revisit		revisit: not written after 001 was blocked; evidence: one warm entitled actor + one send + metadata read costs 166-168 ms, and this case needs two preference writes, three sends and four reads; resume: split per BRIEF7 into rows per thread readback (first thread, continuation, new thread)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-003	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-message-queue.test.ts	chat-events-message-queue-005	planned					a-run
