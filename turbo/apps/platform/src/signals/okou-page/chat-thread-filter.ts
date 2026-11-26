@@ -1,6 +1,9 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
+import {
+  availableFeatureSwitchKeys$,
+  featureSwitches$,
+} from "../external/feature-switch.ts";
 
 export type ChatThreadFilter =
   "unarchived" | "withArchived" | "unread" | "muted";
@@ -18,12 +21,11 @@ export const setChatThreadFilter$ = command(
 // The same menu entry opens Archived or All according to the current workspace.
 export const archiveListFilter$ = computed(
   async (get): Promise<"all" | "archived"> => {
-    // Keep the existing Archived filter usable if the rollout configuration is unavailable.
-    const [features] = await Promise.allSettled([get(featureSwitches$)]);
-    return features.status === "fulfilled" &&
-      features.value[FeatureSwitchKey.ChatListAllFilter]
-      ? "all"
-      : "archived";
+    const key = FeatureSwitchKey.ChatListAllFilter;
+    if (!(await get(availableFeatureSwitchKeys$)).includes(key)) {
+      return "archived";
+    }
+    return (await get(featureSwitches$))[key] ? "all" : "archived";
   },
 );
 

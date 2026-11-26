@@ -312,9 +312,12 @@ test("project-chat-list-001 expanding active and empty projects keeps inbox-empt
   });
   inbox();
 });
-test("project-chat-list-005 an empty Inbox opens its archived conversation", async () => {
+test("project-chat-list-005 a staff workspace with All disabled opens its archived conversation from an empty Inbox", async () => {
   const old = chatListThread(13, "Winter plan", { archived: true });
-  await open([], [old]);
+  await open([], [old], {
+    auth: staffAuth(),
+    featureSwitches: { [FeatureSwitchKey.ChatListAllFilter]: false },
+  });
   await screen.findByText("Your inbox is empty");
   click(await findFastControl("button", "Show archived chats"));
   await expect(
@@ -433,7 +436,9 @@ test("The archive shows both chats in a retired project and only the archived ch
       archived: true,
     }),
   ];
-  await open([retired, current], threads);
+  await open([retired, current], threads, {
+    featureSwitches: { [FeatureSwitchKey.ChatListAllFilter]: true },
+  });
   await handle(current.name);
   expect(
     queryFastControl("button", "Show or hide chats in Harbor maps"),
