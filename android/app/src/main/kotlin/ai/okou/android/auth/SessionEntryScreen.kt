@@ -163,7 +163,7 @@ internal fun SessionEntryScreen(
                 waiting = state.signingOut || state.working,
             )
             if (choosing && !noWorkspace) {
-                SettingsGroup {
+                SettingsGroup(color = MaterialTheme.colorScheme.surface) {
                     state.memberships.forEachIndexed { index, workspace ->
                         key(workspace.id) {
                             if (index != 0) {
