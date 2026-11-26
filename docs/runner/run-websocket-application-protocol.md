@@ -15,29 +15,33 @@ text message and waits for the Runner's `auth.ok`.
 The client then sends one application `hello` with the common schema version
 and the category versions it supports. The endpoint replies with a correlated
 `response` once it can serve the exact live Run. A successful hello response
-returns the highest shared version for each category and omits categories
-without a shared version. The client verifies each selection against its
-offer. An empty selection is valid.
+echoes the accepted `schemaVersion` and returns the highest shared version
+for each category in `result.categories`. It omits categories without a shared
+version. The client verifies the schema version and each category selection
+against its offer. An empty selection is valid.
 
 Both peers install their local roles before the exchange. The endpoint sends
 the hello response before any application call or event. The client applies
 the selection before dispatching subsequent messages. The handshake has a
 deadline. Repeated hello, an invalid handshake, or an unsupported common
-schema version ends the connection. Selections remain fixed for its lifetime.
+schema version ends the connection. The common schema version and category
+selections remain fixed for its lifetime. Subsequent messages use those
+versions from the connection state.
 
 ## Messages and ownership
 
 Each complete WebSocket binary message carries one UTF-8 JSON object without
 a byte-order mark. WebSocket fragmentation is transparent to the application.
-Each message carries `schemaVersion` (initially 1), `type`, and a freshly
-generated canonical lowercase UUID v4 `id`.
+Each message carries `type` and a freshly generated canonical lowercase UUID
+v4 `id`. Only the hello and its successful response carry `schemaVersion`
+(initially 1).
 
-| Type       | Sender                                  | Additional required fields                                          |
-| ---------- | --------------------------------------- | ------------------------------------------------------------------- |
-| `hello`    | Client                                  | `categories`, mapping names to nonempty lists of supported versions |
-| `request`  | Either peer                             | `category`, `categoryVersion`, `operation`, `params`                |
-| `response` | Either peer                             | `requestId` and exactly one of `result` or `error`                  |
-| `event`    | Either peer, as allowed by the category | `category`, `categoryVersion`, `event`, `data`                      |
+| Type       | Sender                                  | Additional required fields                                                                                 |
+| ---------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `hello`    | Client                                  | `schemaVersion` and `categories`, mapping names to nonempty lists of supported versions                    |
+| `request`  | Either peer                             | `category`, `operation`, `params`                                                                          |
+| `response` | Either peer                             | `requestId` and exactly one of `result` or `error`. Successful hello responses also carry `schemaVersion`. |
+| `event`    | Either peer, as allowed by the category | `category`, `event`, `data`                                                                                |
 
 A response uses `requestId` to identify the hello or request it answers.
 Inbound work and outbound waits use separate maps. A duplicate active
@@ -46,8 +50,8 @@ correlations are discarded. The reader can dispatch responses while an
 inbound handler waits on a reverse call.
 
 The category contract defines allowed directions, parameters, results and
-event payloads. A request for an unselected category or a category version
-different from the selection returns `unsupported_category` before dispatch.
+event payloads for the negotiated version. A request for an unselected
+category returns `unsupported_category` before dispatch.
 Unknown operations return `unsupported_method`. Invalid parameters return
 `invalid_params`. Errors carry a stable string `code`. An invalid result
 fails the corresponding call. Invalid common envelopes close the channel.
@@ -95,11 +99,11 @@ and sends an advisory notice. These JSON lines represent binary messages.
 ```jsonl
 {"schemaVersion":1,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"diagnostics":[1,2],"run":[1]}}
 {"schemaVersion":1,"type":"response","id":"00000000-0000-4000-8000-000000000002","requestId":"00000000-0000-4000-8000-000000000001","result":{"categories":{"diagnostics":2,"run":1}}}
-{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000003","category":"diagnostics","categoryVersion":2,"operation":"echo","params":{"message":"hello"}}
-{"schemaVersion":1,"type":"response","id":"00000000-0000-4000-8000-000000000004","requestId":"00000000-0000-4000-8000-000000000003","result":{"message":"hello"}}
-{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-000000000005","category":"diagnostics","categoryVersion":2,"operation":"echo","params":{"message":"from endpoint"}}
-{"schemaVersion":1,"type":"response","id":"00000000-0000-4000-8000-000000000006","requestId":"00000000-0000-4000-8000-000000000005","result":{"message":"from endpoint"}}
-{"schemaVersion":1,"type":"event","id":"00000000-0000-4000-8000-000000000007","category":"diagnostics","categoryVersion":2,"event":"notice","data":{"message":"snapshot available"}}
+{"type":"request","id":"00000000-0000-4000-8000-000000000003","category":"diagnostics","operation":"echo","params":{"message":"hello"}}
+{"type":"response","id":"00000000-0000-4000-8000-000000000004","requestId":"00000000-0000-4000-8000-000000000003","result":{"message":"hello"}}
+{"type":"request","id":"00000000-0000-4000-8000-000000000005","category":"diagnostics","operation":"echo","params":{"message":"from endpoint"}}
+{"type":"response","id":"00000000-0000-4000-8000-000000000006","requestId":"00000000-0000-4000-8000-000000000005","result":{"message":"from endpoint"}}
+{"type":"event","id":"00000000-0000-4000-8000-000000000007","category":"diagnostics","event":"notice","data":{"message":"snapshot available"}}
 ```
 
 A client offering only diagnostics version 1 uses that version if the endpoint
