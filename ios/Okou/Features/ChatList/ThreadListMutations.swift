@@ -267,11 +267,15 @@ final class ThreadListMutations {
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
-    onFailure: (@MainActor (String) -> Void)? = nil,
+    retry: Bool = false, onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
     guard canUpdate(thread.id), !Task.isCancelled else { return false }
-    if !optimisticChanges.contains(where: { $0.id == eventID }) {
+    if !retry, !optimisticChanges.contains(where: { $0.id == eventID }) {
+      // An explicit choice from Archived supersedes a previous unconfirmed archive on this chat.
+      optimisticChanges.removeAll {
+        $0.change.chatThreadId == thread.id && [.archived, .unarchived].contains($0.change.kind)
+      }
       optimisticChanges.append(
         (
           eventID,
@@ -281,10 +285,16 @@ final class ThreadListMutations {
         ))
     }
     projectThreads(threads)
-    didBegin()
     return await updateThread(
-      thread.id, includingIndicators: true, onFailure: onFailure
-    ) { [commands] in
+      thread.id, includingIndicators: true, onFailure: onFailure, didBegin: didBegin
+    ) { [self] in
+      if retry {
+        // A lost response may already have a confirmed event. Refresh before replaying its ID.
+        await refresh(waitForCurrent: true, includingIndicators: false)
+        try Task.checkCancellation()
+        guard !closed, !blocked else { throw CancellationError() }
+        guard optimisticChanges.contains(where: { $0.id == eventID }) else { return }
+      }
       try await commands.setArchived(threadID: thread.id, archived: archived, eventID: eventID)
     }
   }

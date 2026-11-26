@@ -121,6 +121,7 @@ final class ThreadActionsFixture: Sendable {
     XCTAssertEqual(
       request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
     XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Type"), "iOS")
+    let threadID = String(try XCTUnwrap(path.split(separator: "/").dropFirst(2).first))
     let action =
       request.httpMethod == "DELETE" ? "delete" : String(path.split(separator: "/").last ?? "")
     let renameBody =
@@ -179,7 +180,7 @@ final class ThreadActionsFixture: Sendable {
       state.events.append(
         Self.event(
           kind: kind, id: eventID ?? UUID().uuidString, seq: state.events.count + 1,
-          extra: extra))
+          extra: extra, threadID: threadID))
     }
     return ChatHTTPResponse(status: 204, body: "")
   }
@@ -306,17 +307,24 @@ final class ThreadActionsFixture: Sendable {
       status: 404, body: #"{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}"#)
   }
 
-  func remote(kind: String, extra: String = "") {
+  func remote(
+    kind: String, extra: String = "", threadID: String = ThreadActionsFixture.thread,
+    eventID: String = UUID().uuidString
+  ) {
     state.value.withLock {
       if kind == "archived" { $0.archived = true }
       if kind == "unarchived" { $0.archived = false }
       $0.events.append(
-        Self.event(kind: kind, id: UUID().uuidString, seq: $0.events.count + 1, extra: extra))
+        Self.event(
+          kind: kind, id: eventID, seq: $0.events.count + 1, extra: extra, threadID: threadID))
     }
   }
 
-  private static func event(kind: String, id: String, seq: Int, extra: String) -> String {
-    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"createdAt\":\"\(date)\"\(extra)}"
+  private static func event(
+    kind: String, id: String, seq: Int, extra: String,
+    threadID: String = ThreadActionsFixture.thread
+  ) -> String {
+    "{\"id\":\"\(id.lowercased())\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(threadID)\",\"createdAt\":\"\(date)\"\(extra)}"
   }
 
   private static func messageID(_ seq: Int) -> String {

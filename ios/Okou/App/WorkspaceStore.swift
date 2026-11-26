@@ -88,6 +88,9 @@ final class WorkspaceStore {
       }
     }
     set {
+      if sidebarInteraction.showsChat, selectedThreadID != newValue {
+        sidebarInteraction.beginVisit()
+      }
       let previous = selectedConversation
       do { try resources.store.set(selectThread, newValue) } catch {
         preconditionFailure("Cannot update workspace selection: \(error)")
@@ -170,7 +173,11 @@ final class WorkspaceStore {
     lifecycleTasks: lifecycleTasks)
   lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue,
-    projects: projects.confirmedValue)
+    projects: projects.confirmedValue,
+    didChangeFilter: { [weak self] in
+      guard let self, sidebarInteraction.isOpen else { return }
+      sidebarInteraction.beginVisit()
+    })
   private var realtime: RealtimeService? { synchronization.realtime }
 
   private var refreshGeneration: UUID { synchronization.refreshGeneration }

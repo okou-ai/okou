@@ -501,7 +501,12 @@ single floating line, and colour is a small accent for status only.
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
   foregrounding; it stays available while VoiceOver is enabled. Pending operations and
-  errors do not expire.
+  errors do not expire. A direct Archive or Unarchive offers one Undo on the originating
+  page, including the list shown automatically after archiving the open chat. Choosing a
+  different chat, list filter, or page ends that Undo. An immediate Undo from the automatic
+  return reopens the chat with its draft. VoiceOver announces the result. Show the result
+  without an action only when the restored row or chat is out of view. A failed change
+  offers Retry on its source page.
   The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
