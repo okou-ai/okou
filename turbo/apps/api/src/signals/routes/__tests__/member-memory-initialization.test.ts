@@ -20,10 +20,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -115,14 +112,7 @@ async function observeMemory(
   });
   await runs.heartbeatRunner(runnerGroup);
   const receivedExecution = await owner.executionInput(actor, run.runId);
-  const memories =
-    expectCanonicalStorageManifest(
-      receivedExecution.storageManifest,
-    )?.storageMounts.filter((mount) => {
-      return mount.name === "memory";
-    }) ?? [];
-  expect(memories).toHaveLength(1);
-  const memory = memories[0];
+  const memory = receivedExecution.startupInputs.memory;
   if (!memory) {
     throw new Error("Expected the member's real Memory mount");
   }
@@ -189,7 +179,7 @@ describe("member memory account initialization", () => {
           }
         },
       );
-      const [waitingRun, firstMounts] = await joinAll([
+      const [waitingRun, firstMemory] = await joinAll([
         sending,
         (async () => {
           await entered.promise;
@@ -201,8 +191,7 @@ describe("member memory account initialization", () => {
           });
           const execution = await owner.executionInput(actor, run.runId);
           await owner.cancelRun(actor, run.runId);
-          return expectCanonicalStorageManifest(execution.storageManifest)
-            ?.storageMounts;
+          return execution.startupInputs.memory;
         })().finally(() => {
           if (!release.settled()) {
             release.resolve(undefined);
@@ -210,16 +199,10 @@ describe("member memory account initialization", () => {
         }),
       ]);
       const execution = await owner.executionInput(actor, waitingRun.runId);
-      const mounts = expectCanonicalStorageManifest(
-        execution.storageManifest,
-      )?.storageMounts;
-      expect(mounts).toStrictEqual(firstMounts);
-      expect(mounts).toHaveLength(1);
-      const memory = mounts?.[0];
+      const memory = execution.startupInputs.memory;
+      expect(memory).toStrictEqual(firstMemory);
       expect(memory).toMatchObject({
-        name: "memory",
         empty: true,
-        writeback: true,
         missingRootPolicy: "preserveParentVersion",
       });
       if (!memory?.storageId) {
@@ -270,7 +253,7 @@ describe("member memory account initialization", () => {
         const initial = await observeMemory(owner, actor);
         expect(initial).toMatchObject({
           empty: true,
-          name: "memory",
+
           storageId: expect.any(String),
           versionId: expect.any(String),
         });
@@ -312,7 +295,7 @@ describe("member memory account initialization", () => {
       }
       await expect(memoryInitialized(actor)).resolves.toBeTruthy();
       const initial = await observeMemory(owner, actor);
-      expect(initial).toMatchObject({ empty: true, name: "memory" });
+      expect(initial).toMatchObject({ empty: true });
       await completeOnboarding(actor);
       await membershipCreated(actor);
       const repeated = await observeMemory(owner, actor);
@@ -346,7 +329,7 @@ describe("member memory account initialization", () => {
         const initial = await observeMemory(owner, actor);
         expect(initial).toMatchObject({
           empty: true,
-          name: "memory",
+
           storageId: expect.any(String),
           versionId: expect.any(String),
         });
@@ -376,7 +359,7 @@ describe("member memory account initialization", () => {
       const initial = await observeMemory(owner, actor);
       expect(initial).toMatchObject({
         empty: true,
-        name: "memory",
+
         storageId: expect.any(String),
         versionId: expect.any(String),
       });

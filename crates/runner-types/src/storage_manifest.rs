@@ -1,8 +1,4 @@
-use api_contracts::generated::types::runners::storage::{
-    ArtifactEntryMissingRootPolicy, StorageMountEntry,
-};
-use guest_contracts::storage_manifest::validate_unique_mount_paths;
-use serde::Deserialize;
+use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 
 /// Business cache namespace for complete Workflow packages.
 pub const WORKFLOW_STORAGE_NAME: &str = "workflow";
@@ -20,17 +16,6 @@ pub struct InstructionFile {
 pub struct StorageManifest {
     pub storages: Vec<StorageEntry>,
     pub artifacts: Vec<ArtifactEntry>,
-}
-
-/// Derive a skill destination from its name in the legacy wire field.
-pub fn workflow_mount_path(mut mount_path: String, skill_prefix: &str) -> Result<String, String> {
-    let (directory, name) = mount_path
-        .rsplit_once('/')
-        .ok_or("Missing Workflow skill name")?;
-    validate_workflow_skill_name(name)?;
-    let name_offset = directory.len() + 1;
-    mount_path.replace_range(..name_offset, skill_prefix);
-    Ok(mount_path)
 }
 
 /// A Workflow or Skill name occupies exactly one directory component.
@@ -70,78 +55,4 @@ pub struct ArtifactEntry {
     pub archive_size: Option<u64>,
     pub empty: Option<bool>,
     pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CanonicalStorageManifest {
-    storage_mounts: Vec<StorageMountEntry>,
-}
-
-impl<'de> Deserialize<'de> for StorageManifest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let canonical = CanonicalStorageManifest::deserialize(deserializer)?;
-        normalize_storage_mounts(canonical.storage_mounts).map_err(serde::de::Error::custom)
-    }
-}
-
-fn normalize_storage_mounts(
-    storage_mounts: Vec<StorageMountEntry>,
-) -> Result<StorageManifest, String> {
-    validate_unique_mount_paths(storage_mounts.iter().map(|mount| mount.mount_path.as_str()))?;
-
-    let mut storages = Vec::new();
-    let mut artifacts = Vec::new();
-
-    for mount in storage_mounts {
-        let writeback = mount.writeback.unwrap_or(false);
-        if writeback {
-            if mount.empty != Some(true) && mount.archive_url.is_none() {
-                return Err(
-                    "storage manifest writeback mount requires archiveUrl unless empty is true"
-                        .to_string(),
-                );
-            }
-            artifacts.push(ArtifactEntry {
-                mount_path: mount.mount_path,
-                vas_storage_name: mount.name,
-                vas_storage_id: mount.storage_id,
-                vas_version_id: mount.version_id,
-                archive_url: mount.archive_url,
-                archive_size: mount.archive_size,
-                empty: mount.empty,
-                missing_root_policy: mount.missing_root_policy,
-            });
-            continue;
-        }
-
-        if mount.empty == Some(true) {
-            return Err("storage manifest read-only mount cannot be empty".to_string());
-        }
-        if mount.missing_root_policy.is_some() {
-            return Err(
-                "storage manifest read-only mount cannot contain missingRootPolicy".to_string(),
-            );
-        }
-        let archive_url = mount
-            .archive_url
-            .ok_or_else(|| "storage manifest read-only mount requires archiveUrl".to_string())?;
-        storages.push(StorageEntry {
-            template_guidance: None,
-            name: mount.name.clone(),
-            mount_path: mount.mount_path,
-            vas_storage_name: mount.name,
-            vas_version_id: mount.version_id,
-            archive_url,
-            archive_size: mount.archive_size,
-        });
-    }
-
-    Ok(StorageManifest {
-        storages,
-        artifacts,
-    })
 }

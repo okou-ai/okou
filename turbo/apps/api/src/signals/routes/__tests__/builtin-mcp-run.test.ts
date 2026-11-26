@@ -117,15 +117,13 @@ describe("builtin MCP Run admission", () => {
     expect(execution.appendSystemPrompt).toContain("# MCP Connectors");
     expect(execution.appendSystemPrompt).toContain("`manual-mcp`");
     expect(execution.appendSystemPrompt).toContain("`public-mcp`");
-    const mountPaths =
-      execution.storageManifest?.storageMounts.map((mount) => {
-        return mount.mountPath;
-      }) ?? [];
-    expect(
-      mountPaths.some((path) => {
-        return path.endsWith("/manual-mcp") || path.endsWith("/public-mcp");
-      }),
-    ).toBeFalsy();
+    const skillNames = execution.startupInputs.contentBundles.skills.map(
+      ({ name }) => {
+        return name;
+      },
+    );
+    expect(skillNames).not.toContain("manual-mcp");
+    expect(skillNames).not.toContain("public-mcp");
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the admitted Run authentication context");

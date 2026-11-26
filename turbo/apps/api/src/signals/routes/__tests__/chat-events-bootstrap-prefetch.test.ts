@@ -5,7 +5,6 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { testContext } from "../../../__tests__/test-context";
@@ -91,11 +90,7 @@ describe("chat agent bootstrap prefetch", () => {
       prompt: "publish my memory",
     });
     const seedExecution = await runExecution(seed.runId);
-    const initialMemory = expectCanonicalStorageManifest(
-      seedExecution.execution.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
+    const initialMemory = seedExecution.execution.startupInputs.memory;
     if (!initialMemory) {
       throw new Error("Expected a writable memory root");
     }
@@ -130,11 +125,7 @@ describe("chat agent bootstrap prefetch", () => {
       prompt: "mount the published memory",
     });
     const firstExecution = await runExecution(first.runId);
-    const memory = expectCanonicalStorageManifest(
-      firstExecution.execution.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
+    const memory = firstExecution.execution.startupInputs.memory;
     expect(memory).toMatchObject({
       storageId: initialMemory.storageId,
       versionId: prepared.body.versionId,
@@ -169,11 +160,7 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected independent memory promotion");
     }
     const nextExecution = await runExecution(promoted.runId);
-    const nextMemory = expectCanonicalStorageManifest(
-      nextExecution.execution.storageManifest,
-    )?.storageMounts.find((mount) => {
-      return mount.name === "memory";
-    });
+    const nextMemory = nextExecution.execution.startupInputs.memory;
     expect(nextMemory).toMatchObject({
       storageId: initialMemory.storageId,
       versionId: prepared.body.versionId,
@@ -272,15 +259,19 @@ describe("chat agent bootstrap prefetch", () => {
       })().finally(attachment.release),
     ]);
     const firstExecution = await runExecution(first.runId);
-    const firstMount = firstExecution.execution.contentBundles.skills.find(
-      (mount) => {
-        return mount.mountPath.endsWith(`/${workflow.body.name}`);
-      },
-    );
+    const firstMount =
+      firstExecution.execution.startupInputs.contentBundles.skills.find(
+        (mount) => {
+          return mount.name === workflow.body.name;
+        },
+      );
     if (!firstMount) {
       throw new Error("Expected the prefetched Workflow bundle");
     }
-    const firstDownload = readExecutionContentBundle(s3.objects, firstMount);
+    const firstDownload = readExecutionContentBundle(
+      s3.objects,
+      firstMount.bundle,
+    );
     expect(firstDownload.get("SKILL.md")?.toString()).toContain(
       "Keep this published skill mounted.",
     );
@@ -315,17 +306,18 @@ describe("chat agent bootstrap prefetch", () => {
       throw new Error("Expected independently prepared queued run");
     }
     const nextExecution = await runExecution(promoted.runId);
-    const nextMount = nextExecution.execution.contentBundles.skills.find(
-      (mount) => {
-        return mount.mountPath === firstMount.mountPath;
-      },
-    );
+    const nextMount =
+      nextExecution.execution.startupInputs.contentBundles.skills.find(
+        (mount) => {
+          return mount.name === firstMount.name;
+        },
+      );
     if (!nextMount) {
       throw new Error("Expected the independently selected Workflow bundle");
     }
-    expect(nextMount.sha256).not.toBe(firstMount.sha256);
+    expect(nextMount.bundle.sha256).not.toBe(firstMount.bundle.sha256);
     expect(
-      readExecutionContentBundle(s3.objects, nextMount)
+      readExecutionContentBundle(s3.objects, nextMount.bundle)
         .get("SKILL.md")
         ?.toString(),
     ).toContain("Mount the newer Workflow on the next independent pick.");
@@ -518,7 +510,7 @@ describe("chat agent bootstrap prefetch", () => {
           {
             runId: first.runId,
             sandboxHeaders,
-            storageManifest: execution.storageManifest,
+            memory: execution.startupInputs.memory,
           },
           [
             {
@@ -550,13 +542,7 @@ describe("chat agent bootstrap prefetch", () => {
       sessionId,
       generationRunId: first.runId,
     });
-    expect(
-      expectCanonicalStorageManifest(
-        next.execution.storageManifest,
-      )?.storageMounts.find((mount) => {
-        return mount.name === "memory";
-      }),
-    ).toMatchObject({
+    expect(next.execution.startupInputs.memory).toMatchObject({
       storageId: memory.storageId,
       versionId: memory.versionId,
     });

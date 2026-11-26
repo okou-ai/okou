@@ -101,6 +101,7 @@ type ResolvedSkillVolume =
   | {
       readonly contentBundle: ContentBundle;
       readonly mountPath: string;
+      readonly skillName: string;
     };
 
 /** Bind runtime skill paths at run assembly; template paths are already fixed. */
@@ -119,6 +120,7 @@ export function resolveRunSkillVolumes(
     return {
       contentBundle: volume.contentBundle,
       mountPath: `${skillsRoot}/${volume.skillName}`,
+      skillName: volume.skillName,
     };
   });
 }

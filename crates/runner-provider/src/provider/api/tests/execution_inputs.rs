@@ -3,60 +3,15 @@ use super::*;
 mod raw_json;
 
 #[test]
-fn explicit_startup_inputs_work_alone_and_take_precedence() {
-    let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    let mut packages = fixture["contentBundles"].clone();
-    let mut bundle = packages["skills"][0].as_object().unwrap().clone();
-    bundle.remove("mountPath").unwrap();
-    bundle.insert("futureReference".into(), Value::Bool(true));
-    packages["skills"] =
-        serde_json::json!([{"name": "named-skill", "bundle": bundle, "futureSkill": true}]);
-    packages["futurePackages"] = Value::Bool(true);
-    packages["instructions"]["futureInstructions"] = Value::Bool(true);
-    let explicit = serde_json::json!({
-        "memory": {
-            "storageId": "member-memory-id",
-            "versionId": "accepted-memory-version",
-            "empty": true,
-            "missingRootPolicy": "preserveParentVersion",
-            "futureMemory": true,
-        },
-        "contentBundles": packages,
-        "futureInput": true,
-    });
-    for retain_legacy in [true, false] {
-        let mut body = fixture.clone();
-        body["startupInputs"] = explicit.clone();
-        if !retain_legacy {
-            let object = body.as_object_mut().unwrap();
-            object.remove("contentBundles");
-            object.remove("storageManifest");
-        }
-        let context = decode_execution_publication(body.to_string().as_bytes()).unwrap();
-        let manifest = context.storage_manifest.unwrap();
-        assert_eq!(manifest.storages.len(), 2);
-        assert_eq!(
-            manifest.storages[0].mount_path,
-            "/home/user/.codex/skills/named-skill"
-        );
-        let [memory] = manifest.artifacts.as_slice() else {
-            panic!("expected exactly one Memory mount");
-        };
-        assert_eq!(memory.mount_path, "/home/user/.codex/memories");
-        assert_eq!(memory.vas_storage_id, "member-memory-id");
-        assert_eq!(memory.vas_version_id, "accepted-memory-version");
-        assert_eq!(memory.empty, Some(true));
-    }
-}
-
-#[test]
-fn malformed_explicit_startup_inputs_do_not_use_legacy_packages() {
+fn dual_publication_uses_explicit_startup_inputs() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    body["startupInputs"] = Value::Null;
-    assert_eq!(
-        decode_execution_publication(body.to_string().as_bytes()).unwrap_err(),
-        "Invalid content bundles",
-    );
+    // A preceding API sends both fields. Only startupInputs contributes to the plan.
+    body["contentBundles"] = serde_json::json!({"format":"tar-gzip-v1","skills":[]});
+    body["storageManifest"] = serde_json::json!({"storageMounts":[]});
+    let context = decode_execution_publication(body.to_string().as_bytes()).unwrap();
+    let manifest = context.storage_manifest.unwrap();
+    assert_eq!(manifest.storages.len(), 2);
+    assert_eq!(manifest.artifacts[0].vas_storage_id, "fixture-storage-id");
 }
 
 #[test]
@@ -92,7 +47,7 @@ fn complete_publication_preserves_canonical_execution_inputs() {
         context.vars.as_ref().unwrap()["FIXTURE_REGION"],
         "test-region"
     );
-    assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 3);
+    assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 2);
     let native = context
         .native_continuation
         .as_ref()
@@ -155,62 +110,48 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
         "url",
         "mount",
         "duplicate",
-        "memory-conflict",
-        "storage-conflict",
-        "instruction-conflict",
+        "memory-archive",
     ] {
         let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         match kind {
             "missing" => {
-                body.as_object_mut().unwrap().remove("contentBundles");
+                body.as_object_mut().unwrap().remove("startupInputs");
             }
-            "format" => body["contentBundles"]["format"] = serde_json::json!("invalid"),
-            "null" => body["contentBundles"]["instructions"] = Value::Null,
+            "format" => {
+                body["startupInputs"]["contentBundles"]["format"] = serde_json::json!("invalid")
+            }
+            "null" => body["startupInputs"]["contentBundles"]["instructions"] = Value::Null,
             "hash" => {
-                body["contentBundles"]["instructions"]["sha256"] = serde_json::json!("invalid")
+                body["startupInputs"]["contentBundles"]["instructions"]["sha256"] =
+                    serde_json::json!("invalid")
             }
             "size" => {
-                body["contentBundles"]["instructions"]["archiveBytes"] =
+                body["startupInputs"]["contentBundles"]["instructions"]["archiveBytes"] =
                     serde_json::json!(32 * 1024 * 1024 + 1)
             }
             "url" => {
-                body["contentBundles"]["instructions"]["downloadUrl"] = serde_json::json!(
+                body["startupInputs"]["contentBundles"]["instructions"]["downloadUrl"] = serde_json::json!(
                     "https://user:secret-fixture@storage.fixture.invalid/private?signature=secret-fixture"
                 )
             }
             "mount" => {
-                body["contentBundles"]["skills"][0]["mountPath"] =
-                    serde_json::json!("/home/user/.codex/skills/")
+                body["startupInputs"]["contentBundles"]["skills"][0]["name"] =
+                    serde_json::json!("bad/name")
             }
-            "memory-conflict" => {
-                let mounts = body["storageManifest"]["storageMounts"]
-                    .as_array_mut()
-                    .unwrap();
-                mounts[0]["mountPath"] = serde_json::json!("/home/user/.codex/memories");
-                mounts[1]["name"] = serde_json::json!("memory");
+            "memory-archive" => {
+                body["startupInputs"]["memory"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("archiveUrl");
             }
             "duplicate" => {
-                let mut duplicate = body["contentBundles"]["skills"][0].clone();
-                duplicate["mountPath"] =
-                    serde_json::json!("/home/user/.claude/skills/fixture-skill");
-                body["contentBundles"]["skills"]
+                let duplicate = body["startupInputs"]["contentBundles"]["skills"][0].clone();
+                body["startupInputs"]["contentBundles"]["skills"]
                     .as_array_mut()
                     .unwrap()
                     .push(duplicate);
             }
-            _ => {
-                let mount = if kind == "instruction-conflict" {
-                    "/home/user/.vm0/agent-instructions/codex"
-                } else {
-                    "/home/user/.codex/skills/fixture-skill"
-                };
-                let mut conflict = body["storageManifest"]["storageMounts"][0].clone();
-                conflict["mountPath"] = serde_json::json!(mount);
-                body["storageManifest"]["storageMounts"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(conflict);
-            }
+            _ => unreachable!(),
         }
         let error = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap_err();
         assert!(!error.contains("secret-fixture"));
@@ -237,17 +178,12 @@ fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
         let skill_path = format!("{skill_root}/fixture-skill");
         let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         body["cliAgentType"] = serde_json::json!(framework);
-        body["contentBundles"]["skills"][0]["mountPath"] =
-            serde_json::json!("/previous/framework/skills/fixture-skill");
-        body["storageManifest"]["storageMounts"] = serde_json::json!([{
-            "name": "memory",
+        body["startupInputs"]["memory"] = serde_json::json!({
             "storageId": "member-memory-id",
             "versionId": "accepted-memory-version",
-            "mountPath": "/previous/framework/memory",
-            "writeback": true,
             "missingRootPolicy": "preserveParentVersion",
             "empty": true,
-        }]);
+        });
         let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
         let manifest = context.storage_manifest.unwrap();
         assert!(
@@ -282,8 +218,7 @@ fn publication_normalizes_framework_paths_and_ignores_forged_application_metadat
     body["instructionFile"] = serde_json::json!({"storageMount":"/home/user/.ssh"});
     body["localResumeSessionId"] = serde_json::json!("forged-local-session");
     body["localSecretEnvKeys"] = serde_json::json!(["FORGED_SECRET"]);
-    body["contentBundles"]["skills"][0]["mountPath"] =
-        serde_json::json!("/home/user/.codex/skills/x");
+    body["startupInputs"]["contentBundles"]["skills"][0]["name"] = serde_json::json!("x");
     let context = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     assert_eq!(
         context.instruction_file.unwrap().storage_mount,

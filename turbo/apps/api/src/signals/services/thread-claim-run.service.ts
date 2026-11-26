@@ -2137,8 +2137,8 @@ export function createThreadClaimRunObjects(
         officialWorkflow,
       });
     const officialMountPaths = mounts.officialWorkflowBundles.map(
-      ({ mountPath }) => {
-        return mountPath;
+      ({ mount }) => {
+        return mount.mountPath;
       },
     );
     const selected = selectExecutionPackages(packageSources?.sources ?? null, {
@@ -2154,10 +2154,7 @@ export function createThreadClaimRunObjects(
       prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
-        bundles: selectExecutionContentBundles(selected, {
-          skillRoot,
-          ...mounts,
-        }),
+        bundles: selectExecutionContentBundles(selected, mounts),
       },
     };
   });

@@ -485,7 +485,6 @@ export {
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   storageMountEntrySchema,
   storedStorageMountEntrySchema,
-  storageManifestSchema,
   type RunnersConnectorRuntimeSyncContract,
   type RunnersBuiltinFirewallsResolveContract,
   type RunnersHeartbeatContract,
@@ -498,10 +497,8 @@ export {
   type ConnectorRuntimeCustomAbsentReason,
   type ConnectorRuntimeSyncResult,
   type SecretConnectorMetadata,
-  type CanonicalStorageManifest,
   type StorageMountEntry,
   type StoredStorageMountEntry,
-  type StorageManifest,
   type RunnerBuiltinFirewallsResolveBody,
   type RunnerBuiltinFirewallsResolveResponse,
 } from "./runners";

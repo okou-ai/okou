@@ -23,6 +23,7 @@ desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/deskto
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
 registry_archive_reader_floor=$(<"${repo_root}/.github/rollback-floors/registry-archive-reader")
+startup_inputs_floor=$(<"${repo_root}/.github/rollback-floors/startup-inputs")
 template_guidance_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-reader")
 template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-writer")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
@@ -76,6 +77,12 @@ case "${1:-}" in
       else
         [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "$MOCK_STARTUP_INPUTS_FLOOR" ]; then
+      case "${4:-}" in
+        origin/main) [ "${MOCK_STARTUP_INPUTS_ON_MAIN:-1}" = "1" ] ;;
+        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) [ "${MOCK_STARTUP_INPUTS_RUNNER_VALID:-1}" = "1" ] ;;
+        *) [ "${MOCK_STARTUP_INPUTS_API_VALID:-1}" = "1" ] ;;
+      esac
     elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR" ] || [ "${3:-}" = "6363636363636363636363636363636363636363" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
@@ -540,6 +547,10 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/startup-inputs" ]; then
+      printf '%s\n' "$MOCK_STARTUP_INPUTS_FLOOR"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/template-guidance-bundle-reader" ]; then
       [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR}"
@@ -737,6 +748,7 @@ run_resolver() {
     MOCK_CONNECTOR_SKILL_VIEW_FLOOR="$connector_skill_view_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
+    MOCK_STARTUP_INPUTS_FLOOR="$startup_inputs_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR="$template_guidance_bundle_writer_floor" \
     MOCK_BUILT_IN_SKILL_CATALOG_API_FLOOR=9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d \
@@ -2335,6 +2347,11 @@ for template_reader_case in \
 done
 
 : >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback API target predates startup inputs" \
+  run_resolver "${tmp_dir}/startup-api.output" MOCK_STARTUP_INPUTS_API_VALID=0
+assert_failure "predates startup inputs" \
+  run_resolver "${tmp_dir}/startup-runner.output" MOCK_STARTUP_INPUTS_RUNNER_VALID=0
+
 assert_failure "predates template guidance bundle readers" \
   run_resolver "${tmp_dir}/template-runner.output" MOCK_TEMPLATE_GUIDANCE_BUNDLE_RUNNER_VALID=0
 [ ! -s "${tmp_dir}/template-runner.output" ] || fail "incompatible template Runner must not publish rollback outputs"

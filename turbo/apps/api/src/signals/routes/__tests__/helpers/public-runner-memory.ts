@@ -2,12 +2,13 @@ import { gzipSync } from "node:zlib";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { http, HttpResponse } from "msw";
 import { Header } from "tar";
+import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { server } from "../../../../mocks/server";
 import { mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
-import { createRunsApi, expectCanonicalStorageManifest } from "./api-bdd-runs";
+import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createFirewallApi } from "./api-bdd-firewall";
 import { createPublicFirewallFixture } from "./public-firewall-fixture";
@@ -125,18 +126,14 @@ export function createPublicRunnerMemory(
   async function readExecution(run: Awaited<ReturnType<typeof enqueue>>) {
     const execution = await api.executionInput(run.runId);
     fixture.registerExecution(run.runId, execution.sandboxToken);
-    const manifest = expectCanonicalStorageManifest(execution.storageManifest);
-    const memories =
-      manifest?.storageMounts.filter((mount) => {
-        return mount.name === "memory";
-      }) ?? [];
-    if (memories.length !== 1 || !memories[0]?.storageId) {
-      throw new Error("Expected exactly one real Memory mount");
+    const { memory } = execution.startupInputs;
+    if (!memory) {
+      throw new Error("Expected dispatched Memory");
     }
     return {
       run,
       execution,
-      memory: memories[0],
+      memory,
       headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   }
@@ -209,8 +206,8 @@ export function createPublicRunnerMemory(
           cliAgentSessionHistoryDisposition: "native_only",
           storageOutputs: [
             {
-              name: execution.memory.name,
-              mountPath: execution.memory.mountPath,
+              name: "memory",
+              mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
               version: versionId,
               ...(execution.memory.missingRootPolicy === undefined
                 ? {}

@@ -113,12 +113,12 @@ async function finish(runId: string, sandboxToken: string) {
 }
 
 test.each([
-  { framework: "claude-code", root: "/home/user/.claude/skills" },
-  { framework: "codex", root: "/home/user/.codex/skills" },
-  { framework: "pi", root: "/home/user/.pi/agent/skills" },
+  { framework: "claude-code" },
+  { framework: "codex" },
+  { framework: "pi" },
 ] as const)(
   "pins complete $framework Workflow bundles at dispatch, including Workflows added while queued",
-  async ({ framework, root }) => {
+  async ({ framework }) => {
     const { actor, group, s3 } = await fixture(framework);
     await saveInstructions(actor, "Dispatch-time personal Instructions");
     const workflow = await createWorkflow(actor, {
@@ -156,35 +156,35 @@ test.each([
         }),
       }),
     );
-    const skill = execution.contentBundles.skills.find((entry) => {
-      return entry.mountPath.endsWith(`/${workflow.name}`);
-    })!;
-    expect(skill.mountPath).toBe(`${root}/${workflow.name}`);
+    const skill = execution.startupInputs.contentBundles.skills.find(
+      (entry) => {
+        return entry.name === workflow.name;
+      },
+    )!;
     expect(
       readExecutionContentBundle(
         s3.objects,
-        execution.contentBundles.instructions!,
+        execution.startupInputs.contentBundles.instructions!,
       )
         .get("instructions.md")
         ?.toString(),
     ).toBe("Dispatch-time personal Instructions");
-    expect(Object.keys(skill).sort()).toStrictEqual([
-      "archiveBytes",
-      "downloadUrl",
-      "mountPath",
-      "sha256",
-    ]);
-    const selected = readExecutionContentBundle(s3.objects, skill);
+    expect(Object.keys(skill).sort()).toStrictEqual(["bundle", "name"]);
+    const selected = readExecutionContentBundle(s3.objects, skill.bundle);
     expect(selected.get("SKILL.md")?.toString()).toContain(
       "execution-selected body",
     );
     expect(selected.get("reference.md")?.toString()).toBe("new attachment");
     expect(selected.get("资料/说明.md")?.toString()).toBe("附件内容");
-    const added = execution.contentBundles.skills.find((entry) => {
-      return entry.mountPath.endsWith(`/${second.name}`);
-    })!;
+    const added = execution.startupInputs.contentBundles.skills.find(
+      (entry) => {
+        return entry.name === second.name;
+      },
+    )!;
     expect(
-      readExecutionContentBundle(s3.objects, added).get("SKILL.md")?.toString(),
+      readExecutionContentBundle(s3.objects, added.bundle)
+        .get("SKILL.md")
+        ?.toString(),
     ).toContain("newly available");
     await accept(
       detailClient().update({
@@ -197,7 +197,7 @@ test.each([
       }),
       [200],
     );
-    expect(readExecutionContentBundle(s3.objects, skill)).toStrictEqual(
+    expect(readExecutionContentBundle(s3.objects, skill.bundle)).toStrictEqual(
       selected,
     );
     await finish(run.runId, execution.sandboxToken);
@@ -205,11 +205,13 @@ test.each([
       prompt: "Use the next published version",
     });
     const subsequent = await runs.executionInput(next.runId);
-    const later = subsequent.contentBundles.skills.find((entry) => {
-      return entry.mountPath.endsWith(`/${workflow.name}`);
-    })!;
-    expect(later.sha256).not.toBe(skill.sha256);
-    const laterFiles = readExecutionContentBundle(s3.objects, later);
+    const later = subsequent.startupInputs.contentBundles.skills.find(
+      (entry) => {
+        return entry.name === workflow.name;
+      },
+    )!;
+    expect(later.bundle.sha256).not.toBe(skill.bundle.sha256);
+    const laterFiles = readExecutionContentBundle(s3.objects, later.bundle);
     expect(laterFiles.get("SKILL.md")?.toString()).toContain("later body");
     expect(laterFiles.get("reference.md")?.toString()).toBe("later attachment");
     expect(laterFiles.has("资料/说明.md")).toBeFalsy();
@@ -239,15 +241,19 @@ test("shares a complete package hash across distinct Workflow owners", async () 
       prompt: "Use the shared package",
     });
     const execution = await runs.executionInput(run.runId);
-    const skill = execution.contentBundles.skills[0]!;
+    const skill = execution.startupInputs.contentBundles.skills[0]!;
     expect(
-      readExecutionContentBundle(s3.objects, skill).get("notes.md")?.toString(),
+      readExecutionContentBundle(s3.objects, skill.bundle)
+        .get("notes.md")
+        ?.toString(),
     ).toBe("Identical attachment");
     references.push(skill);
     await finish(run.runId, execution.sandboxToken);
   }
-  expect(references[0]!.sha256).toBe(references[1]!.sha256);
-  expect(references[0]!.archiveBytes).toBe(references[1]!.archiveBytes);
+  expect(references[0]!.bundle.sha256).toBe(references[1]!.bundle.sha256);
+  expect(references[0]!.bundle.archiveBytes).toBe(
+    references[1]!.bundle.archiveBytes,
+  );
 });
 
 test("re-evaluates private/public precedence without exposing another member's private Workflow", async () => {
@@ -273,12 +279,15 @@ test("re-evaluates private/public precedence without exposing another member's p
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(run.runId);
   expect(
-    execution.contentBundles.skills.map((entry) => {
-      return entry.mountPath.split("/").at(-1);
+    execution.startupInputs.contentBundles.skills.map((entry) => {
+      return entry.name;
     }),
   ).toStrictEqual([privateWorkflow.name, ...BUILT_IN_SKILLS]);
   expect(
-    readExecutionContentBundle(s3.objects, execution.contentBundles.skills[0]!)
+    readExecutionContentBundle(
+      s3.objects,
+      execution.startupInputs.contentBundles.skills[0]!.bundle,
+    )
       .get("SKILL.md")
       ?.toString(),
   ).toContain("private body");
@@ -358,19 +367,21 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
         throw new Error("Expected the admitted prompt to identify its Run");
       }
       const accepted = await owner.executionInput(runId);
-      const mounted = accepted.contentBundles.skills.find((entry) => {
-        return entry.mountPath.endsWith(`/${workflow.name}`);
-      });
+      const mounted = accepted.startupInputs.contentBundles.skills.find(
+        (entry) => {
+          return entry.name === workflow.name;
+        },
+      );
       if (!mounted) {
         throw new Error("Expected the accepted Workflow mount");
       }
       expect(
-        readExecutionContentBundle(s3.objects, mounted)
+        readExecutionContentBundle(s3.objects, mounted.bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Content whose sharing can be withdrawn by its author");
       if (change === "rename") {
-        const instructions = accepted.contentBundles.instructions;
+        const instructions = accepted.startupInputs.contentBundles.instructions;
         if (!instructions) {
           throw new Error("Expected the accepted Instructions bundle");
         }
@@ -388,12 +399,13 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       });
       const execution = await owner.executionInput(next.runId);
       expect(
-        execution.contentBundles.skills.some((skill) => {
-          return skill.mountPath.endsWith(`/${workflow.name}`);
+        execution.startupInputs.contentBundles.skills.some((skill) => {
+          return skill.name === workflow.name;
         }),
       ).toBeFalsy();
       if (change === "rename") {
-        const instructions = execution.contentBundles.instructions;
+        const instructions =
+          execution.startupInputs.contentBundles.instructions;
         if (!instructions) {
           throw new Error("Expected the updated Instructions bundle");
         }
@@ -402,14 +414,16 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
             .get("instructions.md")
             ?.toString(),
         ).toBe("Updated personal Instructions");
-        const nextMount = execution.contentBundles.skills.find((entry) => {
-          return entry.mountPath.endsWith(`/${renamed}`);
-        });
+        const nextMount = execution.startupInputs.contentBundles.skills.find(
+          (entry) => {
+            return entry.name === renamed;
+          },
+        );
         if (!nextMount) {
           throw new Error("Expected the latest Workflow mount");
         }
         expect(
-          readExecutionContentBundle(s3.objects, nextMount)
+          readExecutionContentBundle(s3.objects, nextMount.bundle)
             .get("SKILL.md")
             ?.toString(),
         ).toContain("Updated Workflow instructions");
@@ -441,11 +455,13 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
   await runs.heartbeatRunner(group);
   // Execution preparation mounts this slug's current winner.
   const execution = await runs.executionInput(run.runId);
-  const skill = execution.contentBundles.skills.find((entry) => {
-    return entry.mountPath.endsWith(`/${name}`);
+  const skill = execution.startupInputs.contentBundles.skills.find((entry) => {
+    return entry.name === name;
   })!;
   expect(
-    readExecutionContentBundle(s3.objects, skill).get("SKILL.md")?.toString(),
+    readExecutionContentBundle(s3.objects, skill.bundle)
+      .get("SKILL.md")
+      ?.toString(),
   ).toContain("private body");
   await finish(run.runId, execution.sandboxToken);
 });
@@ -513,14 +529,16 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     const runId = await chatFixture.lastThreadPiAutomationRun(actor, threadId);
     const execution = await owner.executionInput(runId);
     expect(execution.prompt.split("\n", 1)[0]).toBe("/morning-brief");
-    const mounted = execution.contentBundles.skills.find((bundle) => {
-      return bundle.mountPath === `/home/user/.claude/skills/${shared.name}`;
-    });
+    const mounted = execution.startupInputs.contentBundles.skills.find(
+      (bundle) => {
+        return bundle.name === shared.name;
+      },
+    );
     if (!mounted) {
       throw new Error("Expected the Automation's selected Workflow mount");
     }
     expect(
-      readExecutionContentBundle(s3.objects, mounted)
+      readExecutionContentBundle(s3.objects, mounted.bundle)
         .get("SKILL.md")
         ?.toString(),
     ).toContain("Shared Automation workflow");
@@ -543,16 +561,15 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     expect(queuedRunId).not.toBe(runId);
     const queuedExecution = await owner.executionInput(queuedRunId);
     expect(queuedExecution.prompt.split("\n", 1)[0]).toBe(`/${renamed}`);
-    const renamedPackage = queuedExecution.contentBundles.skills.find(
-      (bundle) => {
-        return bundle.mountPath === `/home/user/.claude/skills/${renamed}`;
-      },
-    );
+    const renamedPackage =
+      queuedExecution.startupInputs.contentBundles.skills.find((bundle) => {
+        return bundle.name === renamed;
+      });
     if (!renamedPackage) {
       throw new Error("Expected the renamed Workflow mount");
     }
     expect(
-      readExecutionContentBundle(s3.objects, renamedPackage)
+      readExecutionContentBundle(s3.objects, renamedPackage.bundle)
         .get("SKILL.md")
         ?.toString(),
     ).toContain("Renamed Automation Workflow");
@@ -577,8 +594,8 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(run.runId);
   expect(
-    execution.contentBundles.skills.map((entry) => {
-      return entry.mountPath.split("/").at(-1);
+    execution.startupInputs.contentBundles.skills.map((entry) => {
+      return entry.name;
     }),
   ).toStrictEqual([...BUILT_IN_SKILLS]);
   await finish(run.runId, execution.sandboxToken);
@@ -606,16 +623,20 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
   const run = await queued.launch();
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(run.runId);
-  const invoked = execution.contentBundles.skills.find((entry) => {
-    return entry.mountPath.endsWith(`/${workflow.name}`);
-  })!;
+  const invoked = execution.startupInputs.contentBundles.skills.find(
+    (entry) => {
+      return entry.name === workflow.name;
+    },
+  )!;
   expect(
-    readExecutionContentBundle(s3.objects, invoked).get("SKILL.md")?.toString(),
+    readExecutionContentBundle(s3.objects, invoked.bundle)
+      .get("SKILL.md")
+      ?.toString(),
   ).toContain("different invocation target");
-  expect(execution.contentBundles.skills).toStrictEqual(
+  expect(execution.startupInputs.contentBundles.skills).toStrictEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        mountPath: expect.stringMatching(new RegExp(`/${renamed}$`, "u")),
+        name: renamed,
       }),
     ]),
   );
@@ -631,11 +652,11 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
   });
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(run.runId);
-  const skill = execution.contentBundles.skills.find((entry) => {
-    return entry.mountPath.endsWith(`/${workflow.name}`);
+  const skill = execution.startupInputs.contentBundles.skills.find((entry) => {
+    return entry.name === workflow.name;
   })!;
   expect(Buffer.byteLength(JSON.stringify(skill))).toBeLessThan(2048);
-  const skillMd = readExecutionContentBundle(s3.objects, skill)
+  const skillMd = readExecutionContentBundle(s3.objects, skill.bundle)
     .get("SKILL.md")!
     .toString();
   expect(skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();

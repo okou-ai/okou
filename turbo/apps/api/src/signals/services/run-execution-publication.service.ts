@@ -91,7 +91,7 @@ export function buildExecutionContext(args: {
   readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly networkPolicyInputs: PreparedNetworkPolicyRefreshInputs | null;
-  readonly contentBundles: ExecutionContext["contentBundles"];
+  readonly contentBundles: ExecutionContext["startupInputs"]["contentBundles"];
 }) {
   const refreshes = args.networkPolicyInputs
     ? activeNetworkPolicyRefreshesAt(args.networkPolicyInputs, nowDate())
@@ -104,14 +104,7 @@ export function buildExecutionContext(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
-  const storageMounts = args.preparedContext.storageMounts.map(
-    (storageMount) => {
-      const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-      return mount;
-    },
-  );
-  // Only Member Memory uses storageMounts on the current API producer.
-  const [mount] = storageMounts;
+  const [mount] = args.preparedContext.storageMounts;
   const memory = mount
     ? {
         storageId: mount.storageId,
@@ -124,28 +117,16 @@ export function buildExecutionContext(args: {
     : null;
   return {
     ...runnerContext,
-    // Older Runners read the legacy projection below. Remove it in #51111 after
-    // those Runners have drained and left the rollback set.
     startupInputs: {
       memory,
-      contentBundles: {
-        ...args.contentBundles,
-        skills: args.contentBundles.skills.map(({ mountPath, ...bundle }) => {
-          return {
-            name: mountPath.slice(mountPath.lastIndexOf("/") + 1),
-            bundle,
-          };
-        }),
-      },
+      contentBundles: args.contentBundles,
     },
-    contentBundles: args.contentBundles,
     isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: { ...args.run.vars, ...args.preparedContext.vars },
-    storageManifest: { storageMounts },
     sandboxToken: generateSandboxToken(
       args.run.userId,
       args.run.id,

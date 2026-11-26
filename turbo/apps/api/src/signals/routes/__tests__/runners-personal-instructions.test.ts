@@ -50,7 +50,7 @@ describe("Captured personal Instructions in direct Runs", () => {
       await save(owned.actor, "latest after Run admission");
 
       const { execution } = await owned.runExecution(queued.runId);
-      const selected = execution.contentBundles.instructions!;
+      const selected = execution.startupInputs.contentBundles.instructions!;
       expect(
         readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
@@ -92,7 +92,7 @@ describe("Captured personal Instructions in direct Runs", () => {
       const { execution } = await owned.runExecution(queued.runId);
       const files = readExecutionContentBundle(
         s3.objects,
-        execution.contentBundles.instructions!,
+        execution.startupInputs.contentBundles.instructions!,
       );
       expect([...files.keys()]).toStrictEqual(["instructions.md"]);
       expect(files.get("instructions.md")?.byteLength).toBe(0);
@@ -126,7 +126,7 @@ describe("Captured personal Instructions in direct Runs", () => {
       expect(
         readExecutionContentBundle(
           s3.objects,
-          initial.execution.contentBundles.instructions!,
+          initial.execution.startupInputs.contentBundles.instructions!,
         )
           .get("instructions.md")
           ?.toString(),
@@ -155,7 +155,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         expect(
           readExecutionContentBundle(
             s3.objects,
-            aliceExecution.execution.contentBundles.instructions!,
+            aliceExecution.execution.startupInputs.contentBundles.instructions!,
           )
             .get("instructions.md")
             ?.toString(),
@@ -163,7 +163,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         expect(
           readExecutionContentBundle(
             s3.objects,
-            bobExecution.contentBundles.instructions!,
+            bobExecution.startupInputs.contentBundles.instructions!,
           )
             .get("instructions.md")
             ?.toString(),

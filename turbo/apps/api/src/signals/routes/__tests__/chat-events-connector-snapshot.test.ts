@@ -312,7 +312,10 @@ describe("accepted Connector preparation", () => {
         throw sent.error;
       }
       const first = await owned.runExecution(sent.value.runId);
-      const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`;
+      const skillName = getCustomConnectorSkillName(
+        connector.slug,
+        connector.id,
+      );
       const firewall = first.execution.firewalls?.find((entry) => {
         return (
           entry.kind === "inline" && entry.customConnectorId === connector.id
@@ -329,14 +332,16 @@ describe("accepted Connector preparation", () => {
         sourceId: connectionId,
         baseUrlVars: {},
       });
-      const skill = first.execution.contentBundles.skills.find((bundle) => {
-        return bundle.mountPath === mountPath;
-      });
+      const skill = first.execution.startupInputs.contentBundles.skills.find(
+        (bundle) => {
+          return bundle.name === skillName;
+        },
+      );
       if (!skill) {
         throw new Error("Expected the accepted Connector Skill");
       }
       expect(
-        readExecutionContentBundle(s3.objects, skill)
+        readExecutionContentBundle(s3.objects, skill.bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain(body.skillMarkdown);
@@ -358,9 +363,9 @@ describe("accepted Connector preparation", () => {
             customConnectorId: connector.id,
           }),
         );
-        expect(execution.execution.contentBundles.skills).not.toContainEqual(
-          expect.objectContaining({ mountPath }),
-        );
+        expect(
+          execution.execution.startupInputs.contentBundles.skills,
+        ).not.toContainEqual(expect.objectContaining({ name: skillName }));
         return;
       }
       expect(
@@ -378,17 +383,18 @@ describe("accepted Connector preparation", () => {
           ],
         },
       });
-      const nextSkill = execution.execution.contentBundles.skills.find(
-        (bundle) => {
-          return bundle.mountPath === mountPath;
-        },
-      );
+      const nextSkill =
+        execution.execution.startupInputs.contentBundles.skills.find(
+          (bundle) => {
+            return bundle.name === skillName;
+          },
+        );
       if (!nextSkill) {
         throw new Error("Expected the later Connector Skill");
       }
-      expect(nextSkill.sha256).not.toBe(skill.sha256);
+      expect(nextSkill.bundle.sha256).not.toBe(skill.bundle.sha256);
       expect(
-        readExecutionContentBundle(s3.objects, nextSkill)
+        readExecutionContentBundle(s3.objects, nextSkill.bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Later Connector instructions.");

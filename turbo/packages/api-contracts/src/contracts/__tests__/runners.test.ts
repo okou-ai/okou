@@ -23,7 +23,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   sandboxReuseResultSchema as runnersSandboxReuseResultSchema,
   storageMountEntrySchema,
-  storageManifestSchema,
   preparedExecutionContextSchema,
   homeReuseResultSchema as runnersHomeReuseResultSchema,
   runnerPreferenceSchema,
@@ -218,21 +217,23 @@ describe("runner execution context contract", () => {
     });
   });
 
-  it.each([".claude", ".codex", ".pi/agent"])(
-    "accepts the X Connector Skill in the %s execution context",
-    (root) => {
-      const context = executionContextSchema.parse(
-        loadRunnerExecutionContextFixture(),
-      );
-      const mountPath = `/home/user/${root}/skills/x`;
-      const bundle = { ...context.contentBundles.skills[0]!, mountPath };
-      const execution = executionContextSchema.parse({
-        ...context,
-        contentBundles: { ...context.contentBundles, skills: [bundle] },
-      });
-      expect(execution.contentBundles.skills).toStrictEqual([bundle]);
-    },
-  );
+  it("accepts a one-character Skill name", () => {
+    const context = executionContextSchema.parse(
+      loadRunnerExecutionContextFixture(),
+    );
+    const contentBundles = context.startupInputs.contentBundles;
+    const skill = { ...contentBundles.skills[0]!, name: "x" };
+    const execution = executionContextSchema.parse({
+      ...context,
+      startupInputs: {
+        ...context.startupInputs,
+        contentBundles: { ...contentBundles, skills: [skill] },
+      },
+    });
+    expect(execution.startupInputs.contentBundles.skills).toStrictEqual([
+      skill,
+    ]);
+  });
 
   it("accepts the shared execution context fixture", () => {
     const context = executionContextSchema.parse(
@@ -245,10 +246,12 @@ describe("runner execution context contract", () => {
       modelUsageProvider: "fixture-model",
       modelUsageLongContextMinTotalInputTokens: 272_001,
       platformEnvironment: { OKOU_CHAT_THREAD_ID: "fixture-thread-id" },
-      contentBundles: {
-        format: "tar-gzip-v1",
-        instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
-        skills: [{ mountPath: "/home/user/.codex/skills/fixture-skill" }],
+      startupInputs: {
+        contentBundles: {
+          format: "tar-gzip-v1",
+          instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
+          skills: [{ name: "fixture-skill" }],
+        },
       },
     });
     expect(context.environment).not.toHaveProperty("OKOU_CHAT_THREAD_ID");
@@ -1024,47 +1027,6 @@ describe("runner storage manifest contract", () => {
         ...base,
         archiveUrl: "https://storage.example/workspace.tar.gz",
         missingRootPolicy: "fail",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("accepts only the canonical wire representation", () => {
-    const canonical = {
-      storageMounts: [
-        {
-          name: "workspace",
-          storageId: "storage-id-1",
-          versionId: "version-1",
-          mountPath: "/workspace",
-          archiveUrl: "https://storage.example/workspace.tar.gz",
-        },
-      ],
-    };
-    const legacy = { storages: [], artifacts: [] };
-
-    expect(storageManifestSchema.parse(canonical)).toEqual(canonical);
-    expect(storageManifestSchema.safeParse(legacy).success).toBe(false);
-    expect(storageManifestSchema.safeParse({}).success).toBe(false);
-    expect(
-      storageManifestSchema.parse({
-        ...canonical,
-        futureRunnerField: true,
-      }),
-    ).toEqual(canonical);
-  });
-
-  it("rejects duplicate canonical mount paths", () => {
-    const mount = {
-      name: "workspace",
-      storageId: "storage-id-1",
-      versionId: "version-1",
-      mountPath: "/workspace",
-      archiveUrl: "https://storage.example/workspace.tar.gz",
-    };
-
-    expect(
-      storageManifestSchema.safeParse({
-        storageMounts: [mount, { ...mount, name: "replacement" }],
       }).success,
     ).toBe(false);
   });
