@@ -1501,11 +1501,11 @@ messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-010	planned				B04
 messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-001	planned				
 messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-006	planned				
-messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-001	planned				B04
-messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-002	planned				B04
-messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-003	planned				B04
-messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-004	planned				B04
-messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-005	planned				B04
+messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-001	rewritten	48.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-002	rewritten	22.7		src/signals/routes/__tests__/discord-interactions.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-003	rewritten	21.9		src/signals/routes/__tests__/discord-interactions.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-004	rewritten	12.6		src/signals/routes/__tests__/discord-interactions.test.ts	B04
+messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-005	rewritten	11.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	planned				
 messaging	src/signals/routes/__tests__/discord-oauth-export.test.ts	discord-oauth-export-001	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-001	planned				
