@@ -351,30 +351,30 @@ billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-0
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-020	rewritten	6.9		src/signals/routes/__tests__/billing-checkout.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-021	rewritten	6.4		src/signals/routes/__tests__/billing-checkout.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-checkout.test.ts	billing-checkout-022	rewritten	5.3		src/signals/routes/__tests__/billing-checkout.test.ts	pilot	
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-001	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-003	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-005	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-006	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-007	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-013	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-014	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-020	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-021	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-022	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-023	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-027	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-028	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-029	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-030	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-031	planned					d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-001	rewritten	54.2		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-003	rewritten	35.5		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-005	rewritten	40.0		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-006	rewritten	47.2		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-007	rewritten	40.7		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-013	rewritten	81.2		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-014	rewritten	74.7		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-020	rewritten	68.0		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-021	rewritten	58.8		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-022	rewritten	50.5		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-023	rewritten	49.0		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-027	rewritten	66.7		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-028	rewritten	79.3		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-029	rewritten	77.1		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-030	rewritten	74.2		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-031	rewritten	51.1		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
 billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-034	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("A thread run executed on a Runner issues the agent token"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-035	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-040	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-041	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-042	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-044	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-046	planned					d-other
-billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-048	planned					d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-035	rewritten	51.1		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-040	rewritten	56.6		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-041	rewritten	56.1		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-042	rewritten	50.0		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-044	rewritten	66.9		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-046	rewritten	85.6		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
+billing	src/signals/routes/__tests__/billing-concurrency-checkout.test.ts	billing-concurrency-checkout-048	rewritten	41.3		src/signals/routes/__tests__/billing-concurrency-checkout.test.ts		d-other
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-001	rewritten	33.4		src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-003	rewritten	118.3		src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	billing-credit-checkout-auto-recharge-006	rewritten	83.6		src/signals/routes/__tests__/billing-credit-checkout-auto-recharge.test.ts	pilot	
