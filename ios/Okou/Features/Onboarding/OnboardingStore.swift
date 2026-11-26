@@ -172,7 +172,6 @@ final class OnboardingStore {
       $0.draft.answers.recommendationJobId = nil
       $0.draft.answers.recommendationStartedAt = nil
     }
-    do { try resources.showRecommendation(nil) } catch { didFail(error) }
   }
 
   func editPrompt(_ value: String) {
