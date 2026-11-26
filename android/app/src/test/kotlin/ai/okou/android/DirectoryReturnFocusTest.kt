@@ -107,9 +107,9 @@ class DirectoryReturnFocusTest {
 @Composable
 private fun Directory(
     ready: Boolean,
+    modifier: Modifier = Modifier,
     hasRow: Boolean = true,
     rowEnabled: Boolean = true,
-    modifier: Modifier = Modifier,
     onRestored: () -> Unit,
 ) {
     val position = rememberLazyListState()

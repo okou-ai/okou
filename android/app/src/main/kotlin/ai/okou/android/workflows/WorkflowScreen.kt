@@ -362,9 +362,10 @@ private fun WorkflowToolbar(
     title: String,
     onBack: () -> Unit,
     backEnabled: Boolean,
-    backModifier: Modifier = Modifier,
+    backFocus: FocusRequester? = null,
     action: (@Composable () -> Unit)? = null,
 ) {
+    val backModifier = if (backFocus == null) Modifier else Modifier.focusRequester(backFocus)
     Column {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
@@ -496,7 +497,7 @@ private fun WorkflowDirectory(
             stringResource(R.string.workspace_workflows),
             onBack,
             backEnabled = inputEnabled && !state.writing,
-            backModifier = Modifier.focusRequester(backFocus),
+            backFocus = backFocus,
         ) {
             val enabled =
                 (canNavigate || keepCreateFocus) &&
