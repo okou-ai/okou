@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.R
+import ai.okou.android.SettingsChoiceList
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
@@ -12,6 +13,7 @@ import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.rememberSettingsChoicePosition
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
 import androidx.compose.foundation.background
@@ -23,9 +25,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
@@ -39,19 +38,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -93,7 +87,7 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(appearanceTitle, dismiss) {
+                SettingsSheet(appearanceTitle, dismiss, scroll = SettingsSheetScroll.None) {
                     SettingsRadioOptions(
                         options = UserPreferencesTheme.entries,
                         selected = state.theme,
@@ -132,7 +126,7 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null && state.supportedLocales.size > 1,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(languageTitle, dismiss) {
+                SettingsSheet(languageTitle, dismiss, scroll = SettingsSheetScroll.None) {
                     SettingsRadioOptions(
                         options = state.supportedLocales,
                         selected = state.locale,
@@ -184,37 +178,24 @@ internal fun TimezoneSelectionSheet(
     SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
         val locale = LocalConfiguration.current.locales[0]
         val utcName = stringResource(R.string.settings_timezone_utc)
+        val openingTime = remember { System.currentTimeMillis() }
         val options =
-            remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
-        val initialZone = remember { current }
-        val list =
-            rememberLazyListState(
-                initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
-            )
-        val focus = remember { FocusRequester() }
-        val input = LocalInputModeManager.current
-        var positioned by remember { mutableStateOf(false) }
-        LaunchedEffect(positioned) {
-            if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
-        }
-        LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
-            items(options, key = { it.id }) { zone ->
-                SettingsChoiceRow(
-                    timezoneLabel(zone),
-                    selected = zone.id == current,
-                    enabled = true,
-                    onClick = {
-                        dismiss()
-                        onSelect(zone.id)
-                    },
-                    modifier =
-                        if (zone.id == initialZone)
-                            Modifier.focusRequester(focus).onGloballyPositioned {
-                                positioned = true
-                            }
-                        else Modifier,
-                )
+            remember(current, locale, utcName) {
+                timezoneOptions(current, locale, utcName, atMillis = openingTime)
             }
+        SettingsChoiceList(options, options.indexOfFirst { it.id == current }, { it.id }) {
+            zone,
+            position ->
+            SettingsChoiceRow(
+                timezoneLabel(zone),
+                selected = zone.id == current,
+                enabled = true,
+                onClick = {
+                    dismiss()
+                    onSelect(zone.id)
+                },
+                modifier = position,
+            )
         }
     }
 }
@@ -287,20 +268,25 @@ private fun PaletteOptions(
     dark: Boolean,
     onSelect: (UserPreferencesColorTheme) -> Unit,
 ) {
+    val initial = remember { selected }
+    val position = rememberSettingsChoicePosition(reveal = true)
     BoxWithConstraints(Modifier.fillMaxWidth().selectableGroup()) {
         val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             UserPreferencesColorTheme.entries.chunked(columns).forEach { choices ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     choices.forEach { palette ->
-                        SettingsChoiceRow(
-                            stringResource(paletteLabel(palette)),
-                            selected = palette == selected,
-                            enabled = true,
-                            onClick = { onSelect(palette) },
-                            modifier = Modifier.weight(1f),
-                            leading = { PaletteSwatch(palette, dark) },
-                        )
+                        key(palette) {
+                            val anchor = if (palette == initial) position else Modifier
+                            SettingsChoiceRow(
+                                stringResource(paletteLabel(palette)),
+                                selected = palette == selected,
+                                enabled = true,
+                                onClick = { onSelect(palette) },
+                                modifier = Modifier.weight(1f).then(anchor),
+                                leading = { PaletteSwatch(palette, dark) },
+                            )
+                        }
                     }
                 }
             }

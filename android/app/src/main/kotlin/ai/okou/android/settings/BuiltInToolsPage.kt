@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.R
+import ai.okou.android.SettingsChoiceList
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
@@ -13,29 +14,16 @@ import ai.okou.android.api.generated.imageToolOptions
 import ai.okou.android.api.generated.publicImageToolOptions
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -161,43 +149,26 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
                 if (selected != null && selected !in publicImageToolOptions)
                     publicImageToolOptions + selected
                 else publicImageToolOptions
-            val index = options.indexOf(selected).coerceAtLeast(0)
             SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-                val initialId = remember { options[index].id }
-                val focus = remember { FocusRequester() }
-                val input = LocalInputModeManager.current
-                var positioned by remember { mutableStateOf(false) }
-                LaunchedEffect(positioned) {
-                    if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
-                }
-                LazyColumn(
-                    Modifier.fillMaxWidth().selectableGroup(),
-                    state = rememberLazyListState(index),
-                ) {
-                    items(options, key = { it.id }) { option ->
-                        SettingsChoiceRow(
-                            option.title,
-                            selected = option.id == selected?.id,
-                            enabled = true,
-                            onClick = {
-                                dismiss()
-                                model.chooseImage(option.id)
-                            },
-                            modifier =
-                                if (option.id == initialId)
-                                    Modifier.focusRequester(focus).onGloballyPositioned {
-                                        positioned = true
-                                    }
-                                else Modifier,
-                            trailing = { foreground ->
-                                Text(
-                                    option.price,
-                                    color = foreground,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            },
-                        )
-                    }
+                SettingsChoiceList(options, options.indexOf(selected), { it.id }) { option, position
+                    ->
+                    SettingsChoiceRow(
+                        option.title,
+                        selected = option.id == selected?.id,
+                        enabled = true,
+                        onClick = {
+                            dismiss()
+                            model.chooseImage(option.id)
+                        },
+                        modifier = position,
+                        trailing = { foreground ->
+                            Text(
+                                option.price,
+                                color = foreground,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        },
+                    )
                 }
             }
         }

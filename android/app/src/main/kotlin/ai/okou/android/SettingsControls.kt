@@ -27,6 +27,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -72,10 +77,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -732,23 +740,63 @@ internal fun OkouConfirmationDialog(
 }
 
 @Composable
-internal fun <T> SettingsRadioOptions(
+internal fun <T : Enum<T>> SettingsRadioOptions(
     options: List<T>,
     selected: T,
     label: (T) -> Int,
     enabled: Boolean,
     onSelect: (T) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().selectableGroup()) {
-        options.forEach { option ->
-            SettingsChoiceRow(
-                stringResource(label(option)),
-                selected = option == selected,
-                enabled = enabled,
-                onClick = { onSelect(option) },
-            )
+    SettingsChoiceList(options, options.indexOf(selected), { it.name }) { option, position ->
+        SettingsChoiceRow(
+            stringResource(label(option)),
+            selected = option == selected,
+            enabled = enabled,
+            onClick = { onSelect(option) },
+            modifier = position,
+        )
+    }
+}
+
+@Composable
+internal fun <T> SettingsChoiceList(
+    options: List<T>,
+    selectedIndex: Int,
+    optionKey: (T) -> Any,
+    choice: @Composable (T, Modifier) -> Unit,
+) {
+    val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
+    val initialKey = remember { options.getOrNull(initialIndex)?.let(optionKey) }
+    val position = rememberSettingsChoicePosition()
+    LazyColumn(
+        Modifier.fillMaxWidth().selectableGroup(),
+        state = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex),
+    ) {
+        items(options, key = optionKey) { option ->
+            choice(option, if (optionKey(option) == initialKey) position else Modifier)
         }
     }
+}
+
+@Composable
+internal fun rememberSettingsChoicePosition(reveal: Boolean = false): Modifier {
+    val focus = remember { FocusRequester() }
+    val requester = remember { BringIntoViewRequester() }
+    val inputMode = LocalInputModeManager.current
+    var positioned by remember { mutableStateOf(false) }
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    LaunchedEffect(coordinates) {
+        if (!positioned && coordinates?.isAttached == true) {
+            positioned = true
+            if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+            if (reveal) requester.bringIntoView()
+        }
+    }
+    return Modifier.focusRequester(focus)
+        .then(if (reveal) Modifier.bringIntoViewRequester(requester) else Modifier)
+        .onGloballyPositioned {
+            if (!positioned && coordinates?.isAttached != true) coordinates = it
+        }
 }
 
 private val settingsChoiceRipple = ripple(enableFocusIndication = false)
