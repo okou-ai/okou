@@ -1733,13 +1733,13 @@ artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-genera
 artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-078	planned				
 artifacts	src/signals/routes/__tests__/image-io-generate.test.ts	image-io-generate-079	planned				
 artifacts	src/signals/routes/__tests__/image-io-responses-recovery.test.ts	image-io-responses-recovery-001	planned				
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-002	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-004	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-005	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-009	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-010	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-011	planned				B04
-artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-013	planned				B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-002	revisit		revisit: cron reconcile plus realtime publish and private-artifacts upload not reached within first-pass budget; evidence: createDurableImageFixture sets CRON_SECRET and ably/s3 doubles; resume: submit queued, call GET /api/cron/reconcile-image-generations, then complete the retrieval with usage and image bytes, likely split per BRIEF7		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-004	planned		unfinished: out of time		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-005	planned		unfinished: out of time		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-009	revisit		revisit: needs a second workspace member with credits next to the owner's fixture; evidence: createDurableImageFixture costs about 150 ms per member, so two fixtures likely exceed 200 ms; resume: measure Given+first When/Then twice and record slow-setup or write it		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-010	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); evidence: idle gate run image-io-responses-013 289.1 ms; image-io-responses-010 160.5 ms; image-io-responses-011 170.4 ms; over 200 ms only on the first row to reach its path; draft /home/user/pilot-env/wip/r11/image-io-responses.test.ts		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-011	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); evidence: idle gate run image-io-responses-013 289.1 ms; image-io-responses-010 160.5 ms; image-io-responses-011 170.4 ms; over 200 ms only on the first row to reach its path; draft /home/user/pilot-env/wip/r11/image-io-responses.test.ts		B04
+artifacts	src/signals/routes/__tests__/image-io-responses.test.ts	image-io-responses-013	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); evidence: idle gate run image-io-responses-013 289.1 ms; image-io-responses-010 160.5 ms; image-io-responses-011 170.4 ms; over 200 ms only on the first row to reach its path; draft /home/user/pilot-env/wip/r11/image-io-responses.test.ts		B04
 artifacts	src/signals/routes/__tests__/image-io-run-lifetime.test.ts	image-io-run-lifetime-001	planned				
 account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-001	rewritten	48.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
 account-org	src/signals/routes/__tests__/instructions.test.ts	instructions-002	rewritten	57.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/instructions.test.ts	B03
