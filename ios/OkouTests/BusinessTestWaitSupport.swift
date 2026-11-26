@@ -92,6 +92,19 @@ extension XCTestCase {
       file: file, line: line, message: message(), predicate)
   }
 
+  /// Waits for a predicate over a connector authorization: its attempt, notices and activation
+  /// failure, and the attempt's own form and phases.
+  func waitForBusinessResult(
+    watching store: ConnectorActionStore,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: store.presentationValue, in: store.graph, timeout: timeout, file: file,
+      line: line, message: message(), predicate)
+  }
+
   /// Waits for a predicate over a composer's draft, upload, voice phase or synchronization state.
   func waitForBusinessResult(
     watching composer: ComposerDraftStore,

@@ -9,21 +9,27 @@ struct ComposerConnectorDetail: View {
   @State private var accountDestination: ComposerConnectorAccountResources?
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The authorization attempt, kept in the same Store.
+  @ResolvedValue private var resolvedAuthorization: ConnectorActionStore.Presentation?
 
   init(store: ComposerConnectorStore, connector: ChatCatalogConnector) {
     self.store = store
     self.connector = connector
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _resolvedAuthorization = ResolvedValue(store.authorization.presentationValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+  private var authorization: ConnectorActionStore.Presentation {
+    resolvedAuthorization ?? store.authorization.presentation
+  }
 
   private var added: Bool {
     snapshot.connectors.contains { $0.target.connectorSlug == connector.slug }
   }
 
   private var isAuthorizing: Bool {
-    store.authorization.isAuthorizing(target: .builtin(connector.slug))
+    authorization.isAuthorizing(target: .builtin(connector.slug))
   }
 
   var body: some View {
@@ -108,7 +114,7 @@ struct ComposerConnectorDetail: View {
           }
         }
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
-        .disabled(store.authorization.active != nil)
+        .disabled(authorization.active != nil)
         .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions

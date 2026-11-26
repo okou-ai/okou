@@ -171,7 +171,7 @@ class SavedUiStateTest {
             }
         }
         val noMatches = compose.onNodeWithText("No matching messages")
-        val unavailable = compose.onNodeWithText("Couldn’t search messages")
+        val unavailable = compose.onNodeWithText("Temporarily unable to load")
         noMatches.assertDoesNotExist()
         compose.mainClock.advanceTimeBy(280)
         compose.onNodeWithContentDescription("Searching…").assertIsDisplayed()
@@ -226,12 +226,14 @@ class SavedUiStateTest {
             }
         }
         compose.onNodeWithText("Release notes").assertIsDisplayed()
-        compose.onNodeWithText("Some results couldn’t load").assertIsDisplayed()
+        compose
+            .onNodeWithText("Some search results are temporarily unavailable")
+            .assertIsDisplayed()
         val retry = compose.onNodeWithText(compose.activity.getString(R.string.retry))
         retry.assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()
-        compose
-            .onNodeWithText("Couldn’t search messages")
+        val unavailable = compose.onNodeWithText("Temporarily unable to load")
+        unavailable
             .assertIsDisplayed()
             .assert(
                 SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
@@ -249,21 +251,22 @@ class SavedUiStateTest {
             .onNodeWithContentDescription("Searching…")
             .assertIsDisplayed()
             .assert(!searchProgress)
-        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
+        unavailable.assertDoesNotExist()
 
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
         compose.onNodeWithText("No matching messages").assertIsDisplayed()
         compose.onNodeWithText("Search all types").assertIsDisplayed()
-        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
+        unavailable.assertDoesNotExist()
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
 
         compose.runOnIdle {
             remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshing = true))
         }
+        compose.waitForIdle()
         compose.mainClock.advanceTimeBy(280)
         compose.onNodeWithText("No matching messages").assertIsDisplayed()
         compose.onNodeWithText("Search all types").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+        compose.onNode(searchProgress).assertIsDisplayed()
 
         compose.onNodeWithText("Search all types").performClick()
         compose.mainClock.advanceTimeBy(280)
@@ -291,11 +294,24 @@ class SavedUiStateTest {
         compose.onNodeWithContentDescription("Loading chats…").assertIsDisplayed()
         compose.onNodeWithText("No matching chats").assertDoesNotExist()
         retry.assertDoesNotExist()
+
+        compose.runOnIdle {
+            search.edit(TextFieldValue("Release"))
+            chats =
+                chats.copy(
+                    confirmedAt = 1L,
+                    threadsByRecency = listOf(savedChat),
+                    listRetryProgressVisible = true,
+                )
+        }
+        compose.onNodeWithText("Release notes").assertIsDisplayed()
+        compose.onNode(searchProgress).assertIsDisplayed()
+        compose.onNodeWithTag("chat_search_feedback").assertDoesNotExist()
     }
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h400dp")
-    fun searchInsertsPartialFailureAboveResultsAndKeepsTheScrolledRowInPlace() {
+    fun searchOverlaysPartialFailureAndKeepsTheScrolledRowInPlace() {
         val search = ChatSearchState(TextFieldValue("Release"))
         var chats by
             mutableStateOf(List(3) { index -> searchResult("chat-$index", "Release chat $index") })
@@ -328,7 +344,7 @@ class SavedUiStateTest {
             }
         }
         val progress = compose.onNode(searchProgress)
-        val notice = compose.onNodeWithText("Some results couldn’t load")
+        val notice = compose.onNodeWithText("Some search results are temporarily unavailable")
         val first = compose.onNodeWithText("Release chat 0")
         val scrolled = compose.onNodeWithText("Release chat 2")
         val results = compose.onNodeWithTag("chat_search_results")
@@ -343,6 +359,7 @@ class SavedUiStateTest {
         progress.assertIsDisplayed()
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Failed) }
         progress.assertDoesNotExist()
+        notice.assertIsDisplayed()
         assertEquals(top, scrolled.fetchSemanticsNode().boundsInRoot.top)
 
         results.performScrollToIndex(0)
@@ -352,8 +369,8 @@ class SavedUiStateTest {
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Failed) }
         notice.assertIsDisplayed()
         assertTrue(
-            notice.fetchSemanticsNode().boundsInRoot.top <
-                first.fetchSemanticsNode().boundsInRoot.top,
+            notice.fetchSemanticsNode().boundsInRoot.top >=
+                first.fetchSemanticsNode().boundsInRoot.bottom,
         )
 
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
@@ -465,7 +482,9 @@ class SavedUiStateTest {
         compose.runOnIdle { remote = remote.copy(artifactPaging = ArtifactSearchPaging.Failed) }
         progress.assertDoesNotExist()
         row.assertIsDisplayed()
-        compose.onNodeWithText("Couldn’t refresh. Showing previous results.").assertIsDisplayed()
+        compose
+            .onNodeWithText("Some search results are temporarily unavailable")
+            .assertIsDisplayed()
 
         compose.runOnIdle {
             remote =

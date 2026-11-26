@@ -65,6 +65,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -78,9 +79,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -105,11 +109,14 @@ internal fun SettingsSection(title: String, content: @Composable ColumnScope.() 
 }
 
 @Composable
-internal fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsGroup(
+    color: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = color,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(content = content)
@@ -580,6 +587,9 @@ internal fun OkouConfirmationDialog(
     destructive: Boolean = false,
     dismissLabel: String = stringResource(R.string.settings_cancel),
     keepActionsVisible: Boolean = false,
+    pendingConfirmLabel: String? = null,
+    confirmPending: Boolean = false,
+    actionStatus: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -628,36 +638,60 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        WithButtonFocusOutline(colors.onBackground) {
-                            FlowRow(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                val buttonPadding =
-                                    if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                                    else ButtonDefaults.TextButtonContentPadding
-                                TextButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    enabled = dismissEnabled,
-                                    contentPadding = buttonPadding,
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            actionStatus?.invoke()
+                            WithButtonFocusOutline(colors.onBackground) {
+                                FlowRow(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement =
+                                        Arrangement.spacedBy(8.dp, Alignment.End),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text(dismissLabel)
-                                }
-                                TextButton(
-                                    onClick = onConfirm,
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    enabled = confirmEnabled,
-                                    contentPadding = buttonPadding,
-                                    colors =
-                                        if (destructive)
-                                            ButtonDefaults.textButtonColors(
-                                                contentColor = colors.error,
-                                            )
-                                        else ButtonDefaults.textButtonColors(),
-                                ) {
-                                    Text(confirm)
+                                    val buttonPadding =
+                                        if (compact)
+                                            PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                        else ButtonDefaults.TextButtonContentPadding
+                                    TextButton(
+                                        onClick = onDismiss,
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                        enabled = dismissEnabled,
+                                        contentPadding = buttonPadding,
+                                    ) {
+                                        Text(dismissLabel)
+                                    }
+                                    TextButton(
+                                        onClick = onConfirm,
+                                        modifier =
+                                            Modifier.heightIn(min = 48.dp).semantics {
+                                                if (confirmPending) {
+                                                    liveRegion = LiveRegionMode.Polite
+                                                }
+                                            },
+                                        enabled = confirmEnabled && !confirmPending,
+                                        contentPadding = buttonPadding,
+                                        colors =
+                                            if (destructive)
+                                                ButtonDefaults.textButtonColors(
+                                                    contentColor = colors.error,
+                                                )
+                                            else ButtonDefaults.textButtonColors(),
+                                    ) {
+                                        if (pendingConfirmLabel == null) {
+                                            Text(confirm)
+                                        } else {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                val hidden =
+                                                    Modifier.clearAndSetSemantics {}.alpha(0f)
+                                                if (confirmPending) {
+                                                    Text(confirm, hidden)
+                                                    Text(pendingConfirmLabel)
+                                                } else {
+                                                    Text(pendingConfirmLabel, hidden)
+                                                    Text(confirm)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

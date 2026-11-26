@@ -49,6 +49,8 @@ private struct ComposerConnectorAccountsContent: View {
   @LoadableStatus<Void> private var paginationStatus: LoadableState
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The authorization attempt, kept in the same Store.
+  @ResolvedValue private var authorization: ConnectorActionStore.Presentation?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorAccountResources) {
     self.store = store
@@ -59,6 +61,7 @@ private struct ComposerConnectorAccountsContent: View {
     _status = LoadableStatus(task: resources.page)
     _paginationStatus = LoadableStatus(task: resources.pagination)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _authorization = ResolvedValue(store.authorization.presentationValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
@@ -131,7 +134,7 @@ private struct ComposerConnectorAccountsContent: View {
       enabled: accountCount > 6 || !search.isEmpty, prompt: "Find accounts"
     )
     .refreshable { await resources.retry() }
-    .onChange(of: store.authorization.active?.id) { _, flowID in
+    .onChange(of: (authorization ?? store.authorization.presentation).active?.id) { _, flowID in
       if flowID == nil { Task { await resources.refresh() } }
     }
   }

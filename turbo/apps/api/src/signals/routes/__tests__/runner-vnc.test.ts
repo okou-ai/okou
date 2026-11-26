@@ -8,6 +8,7 @@ import {
   type RunnerVncObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -17,6 +18,7 @@ import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { vncAccessRoutes } from "../vnc-access";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -127,21 +129,29 @@ describe("private Runner VNC authority", () => {
         [200],
       );
     });
-    const sandboxToken = input.sandboxToken;
-    if (!sandboxToken) {
-      throw new Error("Expected execution input to include its sandbox token");
+    const { sandboxToken } = input;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
+    if (!sandboxToken || !agentToken) {
+      throw new Error(
+        "Expected execution input to include its Run credentials",
+      );
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
     });
     api.authenticate(owner);
-    return { runId, threadId, runnerIdentity, sandboxToken };
+    return { runId, threadId, runnerIdentity, sandboxToken, agentToken };
   }
 
   /** Ordinary chat Runs use production launch and dispatch. */
   async function executionFixture(
     options: { readonly defaultEnabled?: boolean } = {},
-  ): Promise<VncRuntimeFixture & { readonly connectionCreatedAt: string }> {
+  ): Promise<
+    VncRuntimeFixture & {
+      readonly connectionCreatedAt: string;
+      readonly agentToken: string;
+    }
+  > {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
@@ -578,27 +588,98 @@ describe("private Runner VNC authority", () => {
     },
   );
 
-  it("checks current membership and chat access before recording or handing off VNC authority", async () => {
+  it("uses current chat access for Runner operations when the Clerk membership lookup is unavailable", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await executionFixture();
-    await api.setDefault(f, "vnc", f.connectionId, false);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await api.setDefault(f, "vnc", f.connectionId, true);
+    const membership =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const unavailable = new Error("Clerk membership lookup is unavailable");
+    membership.mockRejectedValue(unavailable);
     const { generation } = await api.resolved(f);
-    const kms = useSecretKmsProbe();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [], totalCount: 0 },
-    );
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
+    expect((await check(f, generation)).body).toStrictEqual({
+      outcome: "valid",
     });
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+
+    await api.setDefault(f, "vnc", f.connectionId, false);
+    membership.mockRejectedValue(unavailable);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await check(f, generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
-    expect(kms.decryptCalls).toBe(0);
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
   });
+
+  it.each([
+    "self-leave",
+    "administrator removal",
+    "membership-deletion webhook",
+  ] as const)(
+    "denies an existing Run's VNC authority after %s",
+    async (entry) => {
+      const f = await executionFixture();
+      const { generation } = await api.resolved(f);
+      const inventory = setupApp({ context, routes: vncAccessRoutes })(
+        vncHostsContract,
+      );
+      const headers = { authorization: `Bearer ${f.agentToken}` };
+      const before = await accept(inventory.list({ headers }), [200]);
+      expect(before.body.hosts).toMatchObject([{ id: f.connectionId }]);
+
+      const auth = createAuthOrgBddApi(context);
+      const member = auth.user({ ...f, orgRole: "org:member" });
+      const admin = auth.user({ orgId: f.orgId, orgRole: "org:admin" });
+      const membershipId = `orgmem_${randomUUID()}`;
+      auth.mockClerkOrg(admin, {
+        members: [{ actor: admin }, { actor: member, membershipId }],
+      });
+      const membership =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      if (entry === "self-leave") {
+        await auth.leaveOrg(member);
+      } else if (entry === "administrator removal") {
+        await auth.removeMember(admin, { email: member.email });
+      } else {
+        // Clerk has deleted the membership, but local revocation has yet to arrive.
+        membership.mockResolvedValue({ data: [], totalCount: 0 });
+        const pending = await accept(inventory.list({ headers }), [200]);
+        expect(pending.body.hosts).toMatchObject([{ id: f.connectionId }]);
+        expect((await check(f, generation)).body).toStrictEqual({
+          outcome: "valid",
+        });
+
+        const webhooks = createWebhookCallbackApi(context);
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type: "organizationMembership.deleted",
+          data: {
+            id: membershipId,
+            organization_id: f.orgId,
+            user_id: f.userId,
+          },
+        });
+        await webhooks.requestClerkWebhook("{}", {}, [200]);
+        await flushWaitUntilForTest();
+      }
+
+      membership.mockRejectedValue(
+        new Error("Clerk membership lookup is unavailable"),
+      );
+      const after = await accept(inventory.list({ headers }), [404]);
+      expect(after.body.error.code).toBe("VNC_UNAVAILABLE");
+      expect((await check(f, generation)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(api.resolve(f)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(runs.readRun(member, f.runId)).resolves.toMatchObject({
+        status: "cancelled",
+      });
+    },
+  );
 
   it("admits exact online Kerberos capabilities before KMS and independently fences source revision and KDC route", async () => {
     const f = await executionFixture();

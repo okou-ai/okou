@@ -67,7 +67,7 @@
     <string name="chat_unpin">チャットの固定を解除する</string>
     <string name="chat_move_pin_up">上に移動</string>
     <string name="chat_move_pin_down">下に移動</string>
-    <string name="chat_title_field">チャットのタイトル</string>
+    <string name="chat_title_field">新しい名前</string>
     <string name="chat_rename_confirm">名前の変更</string>
     <string name="chat_rename_cancel">キャンセル</string>
     <string name="chat_delete">チャットを削除する</string>
@@ -98,6 +98,7 @@
     <string name="chat_project_delete_title">プロジェクトを削除しますか？</string>
     <string name="chat_project_delete_description">「%1$s」内のチャットはプロジェクト外に移動します。実行中のタスクは続行されます。</string>
     <string name="chat_project_delete_pending">プロジェクトを削除しています…</string>
+    <string name="chat_delete_pending">削除中…</string>
     <string name="chat_project_deleted">プロジェクトを削除し、チャットをプロジェクト外に移動しました。</string>
     <string name="chat_project_delete_rejected">プロジェクトを削除できませんでした。</string>
     <string name="chat_project_delete_unconfirmed">プロジェクトの削除を確認できませんでした。</string>

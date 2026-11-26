@@ -594,10 +594,11 @@ pub(crate) fn extract_claude_tool_info(event: &Value) -> Vec<ClaudeToolEvent<'_>
 
 /// Capture session metadata needed by finalization.
 ///
-/// Both frameworks emit a single id-bearing event near the top of their
+/// Each framework emits a single id-bearing event near the top of its
 /// JSONL stream:
 /// - Claude Code: `{type: system, subtype: init, session_id: <uuid>}`
 /// - Codex:       `{type: thread.started, thread_id: <uuid>}`
+/// - Antigravity: the projected `{type: system, subtype: init, session_id: <conversation uuid>}`
 /// - Pi:          `{type: system, subtype: init, session_id: <chat-thread-id>, session_file: <path>}`
 ///
 pub(crate) struct SessionMetadataCapture {
@@ -626,8 +627,8 @@ impl SessionMetadataCapture {
         let session_id = match self.framework {
             Framework::ClaudeCode => extract_claude_session_id(event),
             Framework::Codex => extract_codex_thread_id(event),
-            Framework::Pi => extract_claude_session_id(event),
-            Framework::Antigravity => None,
+            // Antigravity output is projected into the Claude stream-json shape.
+            Framework::Pi | Framework::Antigravity => extract_claude_session_id(event),
         };
         let Some(session_id) = session_id else {
             return;

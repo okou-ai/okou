@@ -73,7 +73,6 @@ internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWork
                 else -> SearchRead.Failed
             }
     val matches = rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } }
-    if (catalogRefreshing && matches.isEmpty()) return SearchRead.Loading
     return SearchRead.Ready(
         matches,
         refreshing = catalogRefreshing,

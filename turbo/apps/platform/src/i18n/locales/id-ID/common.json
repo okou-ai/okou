@@ -7446,6 +7446,7 @@
       "sort": {
         "alphabetical": "Alfabetis",
         "created": "Terbaru dibuat",
+        "heading": "Urutkan menurut",
         "label": "Urutkan workflow",
         "nextRun": "Eksekusi berikutnya"
       },

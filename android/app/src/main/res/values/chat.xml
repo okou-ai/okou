@@ -69,7 +69,7 @@
     <string name="chat_unpin">Unpin chat</string>
     <string name="chat_move_pin_up">Move up</string>
     <string name="chat_move_pin_down">Move down</string>
-    <string name="chat_title_field">Chat title</string>
+    <string name="chat_title_field">New name</string>
     <string name="chat_rename_confirm">Rename</string>
     <string name="chat_rename_cancel">Cancel</string>
     <string name="chat_delete">Delete chat</string>
@@ -101,6 +101,7 @@
     <string name="chat_project_delete_title">Delete Project?</string>
     <string name="chat_project_delete_description">Chats in “%1$s” will move outside Projects. Running tasks will continue.</string>
     <string name="chat_project_delete_pending">Deleting Project…</string>
+    <string name="chat_delete_pending">Deleting…</string>
     <string name="chat_project_deleted">Project deleted and its chats moved outside Projects.</string>
     <string name="chat_project_delete_rejected">Could not delete the Project.</string>
     <string name="chat_project_delete_unconfirmed">Could not confirm Project deletion.</string>

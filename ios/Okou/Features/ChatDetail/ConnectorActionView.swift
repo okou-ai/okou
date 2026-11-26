@@ -91,6 +91,19 @@ private struct ConnectorActionCardContent: View {
   let store: ConnectorActionStore
   let state: State
   @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
+  /// The authorization attempt and confirmed notices, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedPresentation: ConnectorActionStore.Presentation?
+
+  init(action: ChatConnectorAction, store: ConnectorActionStore, state: State) {
+    self.action = action
+    self.store = store
+    self.state = state
+    _resolvedPresentation = ResolvedValue(store.presentationValue)
+  }
+
+  private var presentation: ConnectorActionStore.Presentation {
+    resolvedPresentation ?? store.presentation
+  }
 
   var body: some View {
     Group {
@@ -115,7 +128,7 @@ private struct ConnectorActionCardContent: View {
           case .ready(let status):
             HStack {
               Button(button(status)) { store.activate(action) }
-                .disabled(complete(status) || store.active != nil)
+                .disabled(complete(status) || presentation.active != nil)
               if complete(status) {
                 OkouIcon("circle-check").foregroundStyle(OkouStatusColor.success)
               }
@@ -154,7 +167,7 @@ private struct ConnectorActionCardContent: View {
       ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
         Text(status.account?.label ?? String(localized: "Connect an account"))
           .lineLimit(1, reservesSpace: true).textSelection(.enabled)
-        (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
+        (presentation.notices[action.id].map { Text($0) } ?? Text(reason(status)))
           .lineLimit(2, reservesSpace: true)
       }
     }

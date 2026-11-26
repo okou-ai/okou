@@ -76,6 +76,7 @@ final class ChatArtifactTests: XCTestCase {
       ChatArtifactReference.parse(
         sourceURL.absoluteString, webURL: webURL, apiURL: fixture.baseURL))
     XCTAssertEqual(artifact.source, .hostedSite(sourceURL))
+    XCTAssertEqual(artifact.source.websiteShareURL, sourceURL)
     let resolved = try await commands(fixture).artifacts.resolve(artifact)
     XCTAssertEqual(resolved.artifact, artifact)
     XCTAssertEqual(
@@ -100,6 +101,26 @@ final class ChatArtifactTests: XCTestCase {
     let resolved = try await commands(fixture).artifacts.resolve(artifact)
     XCTAssertEqual(resolved.contentURL, sourceURL)
     XCTAssertNil(resolved.expiresAt)
+    XCTAssertEqual(artifact.source.websiteShareURL, sourceURL)
+  }
+
+  func testOnlyStableWebsiteAddressesCanBeSharedAsLinks() throws {
+    let api = URL(string: "https://api.okou.ai")!
+    for address in [
+      "https://guide.sites.vm0.io/map?day=2#coffee", "https://coastal-hotel-example.okou.app"
+    ] {
+      let site = try XCTUnwrap(ChatArtifactReference.parse(address, webURL: webURL, apiURL: api))
+      XCTAssertEqual(site.source.websiteShareURL?.absoluteString, address)
+    }
+    for address in [
+      "https://pv-token.okou.app/page", "https://ps-token.sites.vm0.io/",
+      "https://sh-token.okou.app/", "/artifacts/abcdefgh12.pdf",
+      "https://cdn.okou.io/artifacts/user/id/index.html"
+    ] {
+      let artifact = try XCTUnwrap(
+        ChatArtifactReference.parse(address, webURL: webURL, apiURL: api))
+      XCTAssertNil(artifact.source.websiteShareURL, address)
+    }
   }
 
   func testPublishedCapabilitiesAndLegacyResourcesResolveTheirContentAddresses() async throws {

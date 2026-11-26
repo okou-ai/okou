@@ -69,7 +69,7 @@
     <string name="chat_unpin">चैट अनपिन करें</string>
     <string name="chat_move_pin_up">ऊपर ले जाएँ</string>
     <string name="chat_move_pin_down">नीचे ले जाएँ</string>
-    <string name="chat_title_field">चैट शीर्षक</string>
+    <string name="chat_title_field">नया नाम</string>
     <string name="chat_rename_confirm">नाम बदलें</string>
     <string name="chat_rename_cancel">रद्द करें</string>
     <string name="chat_delete">चैट हटाएं</string>
@@ -100,6 +100,7 @@
     <string name="chat_project_delete_title">प्रोजेक्ट हटाएँ?</string>
     <string name="chat_project_delete_description">“%1$s” की चैट प्रोजेक्ट से बाहर चली जाएँगी। चल रहे काम जारी रहेंगे।</string>
     <string name="chat_project_delete_pending">प्रोजेक्ट हटाया जा रहा है…</string>
+    <string name="chat_delete_pending">हटाया जा रहा है…</string>
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>
     <string name="chat_project_delete_rejected">प्रोजेक्ट हटाया नहीं जा सका।</string>
     <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>

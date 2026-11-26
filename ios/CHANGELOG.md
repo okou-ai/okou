@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.66.7](https://github.com/okou-ai/okou/compare/ios-v0.66.6...ios-v0.66.7) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** open connector oauth in the default browser ([#50955](https://github.com/okou-ai/okou/issues/50955)) ([4f36183](https://github.com/okou-ai/okou/commit/4f3618352c844513ac47b64b5f269b74a3c01dd5))
+* **ios:** share website links from chat previews ([#50977](https://github.com/okou-ai/okou/issues/50977)) ([f902c7b](https://github.com/okou-ai/okou/commit/f902c7b6ff7f46ee7cdb9e1f22ee97ab4429d317))
+* **ios:** show credit usage alongside reply actions ([#50996](https://github.com/okou-ai/okou/issues/50996)) ([bc1c783](https://github.com/okou-ai/okou/commit/bc1c783e7646cd34bb234dde28a6faf154a0f7c6))
+
 ## [0.66.6](https://github.com/okou-ai/okou/compare/ios-v0.66.5...ios-v0.66.6) (2026-11-26)
 
 

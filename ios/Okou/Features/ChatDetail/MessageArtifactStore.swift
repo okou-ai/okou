@@ -89,7 +89,7 @@ final class MessageArtifactStore {
     case .reference, .file, .hostedSite:
       open(content.artifact, images: content.images, renewedHTMLSignature: true)
       return true
-    case .published: return false
+    case .publishedSite, .published: return false
     }
   }
 

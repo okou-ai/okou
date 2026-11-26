@@ -18,17 +18,7 @@ private struct ComposerConnectorPresentation: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .alert(
-        "Could not open connector",
-        isPresented: Binding(
-          get: { store.authorization.activationError != nil },
-          set: { if !$0 { store.authorization.activationError = nil } })
-      ) {
-        Button("OK") { store.authorization.activationError = nil }
-      } message: {
-        Text(store.authorization.activationError ?? "")
-      }
-      .connectorAuthorization(store: store.authorization)
+      .connectorAuthorization(store: store.authorization, failureTitle: "Could not open connector")
       .sheet(
         item: Binding(get: { store.webDestination }, set: { store.webDestination = $0 }),
         onDismiss: { Task { await store.refresh() } },
