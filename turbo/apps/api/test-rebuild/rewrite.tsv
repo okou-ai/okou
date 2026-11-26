@@ -176,8 +176,8 @@ account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-002	rewritten	73.7		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-003	rewritten	23.7		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-006	rewritten	27.9		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
-artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-002	planned				B06
-artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-004	planned				B06
+artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-002	skipped		slow-setup: Given prefix alone 429 ms and 232 ms (cold and warm rows of one measurement run), before the Run upload, Drive connections and thread selections: Pro member entitlement via Stripe invoice webhook + personal model 212/121 ms, Runner group + member Chat Run to dispatched execution 216/111 ms		B06
+artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-004	skipped		slow-setup: Given prefix alone 429 ms and 232 ms (same measurement run as 002; identical first Given step), before the Run upload, Drive connection and peer thread: Pro member entitlement via Stripe invoice webhook + personal model 212/121 ms, Runner group + member Chat Run to dispatched execution 216/111 ms		B06
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-002	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-003	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-005	planned				
