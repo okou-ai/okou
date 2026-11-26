@@ -272,9 +272,14 @@ function WorkflowListPanel({
  * every theme, so the toolbar reads as one row of controls and stays lighter
  * than the header's page actions. The fill is opaque, so the open state is an
  * overlay like `neutral`'s hover and press.
+ *
+ * Below a 520px toolbar the labels drop out and each trigger becomes a 36px
+ * square beside the search field (`min-w-9` with `px-2`); the active filter
+ * count stays visible.
  */
 const TOOLBAR_TRIGGER_CLASS =
-  "shrink-0 gap-1.5 bg-input px-3 aria-expanded:bg-state-hover-overlay";
+  "min-w-9 shrink-0 gap-1.5 bg-input px-2 aria-expanded:bg-state-hover-overlay @[520px]:px-3";
+const TOOLBAR_LABEL_CLASS = "hidden @[520px]:inline";
 
 function MenuRadioSection<T extends string>({
   label,
@@ -343,9 +348,11 @@ function FilterDropdown() {
         }
       >
         <Filter size={16} aria-hidden />
-        {t(($) => {
-          return $.workflows.list.filters;
-        })}
+        <span className={TOOLBAR_LABEL_CLASS}>
+          {t(($) => {
+            return $.workflows.list.filters;
+          })}
+        </span>
         {count > 0 ? (
           <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-nested-fill px-1 text-xs font-medium tabular-nums">
             {count}
@@ -478,10 +485,12 @@ function SortDropdown({
         }
       >
         <ArrowUpDown size={16} aria-hidden />
-        {current?.label ??
-          i18n.t(($) => {
-            return $.workflows.list.sort.label;
-          })}
+        <span className={TOOLBAR_LABEL_CLASS}>
+          {current?.label ??
+            i18n.t(($) => {
+              return $.workflows.list.sort.label;
+            })}
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <MenuRadioSection
@@ -552,9 +561,9 @@ function WorkflowFilterBar({
       aria-label={t(($) => {
         return $.workflows.common.workflows;
       })}
-      className="flex flex-wrap items-center gap-2"
+      className="@container flex items-center gap-2"
     >
-      <div className="relative w-full min-w-0 sm:w-72 sm:max-w-sm sm:flex-1">
+      <div className="relative min-w-0 flex-1 @[520px]:max-w-sm">
         <Search
           size={15}
           aria-hidden
@@ -571,7 +580,7 @@ function WorkflowFilterBar({
           className="pl-9"
         />
       </div>
-      <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <FilterDropdown />
         <SortDropdown value={sortMode} onChange={setSortMode} />
       </div>
