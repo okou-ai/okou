@@ -20,7 +20,8 @@ final class FailureBillingRecoveryTests: XCTestCase {
     let initial = await conversation.readFailureState(failure)
     let transcript = ConversationRowProjection(
       conversation: conversation, transcript: conversation.currentTranscript,
-      window: conversation.currentWindow, isSending: conversation.isSending
+      window: conversation.currentWindow, isSending: conversation.isSending,
+      models: conversation.modelSelection?.presentation
     ).rows
     XCTAssertTrue(transcript.contains { $0.message?.text == "Already generated content." })
     XCTAssertFalse(try XCTUnwrap(initial.billing).hasCredits)

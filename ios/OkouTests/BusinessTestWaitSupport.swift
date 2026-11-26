@@ -79,6 +79,19 @@ extension XCTestCase {
       file: file, line: line)
   }
 
+  /// Waits for a predicate over a model selection: its confirmed choice and mutation phases, and
+  /// the workspace model configuration and feature switches it presents.
+  func waitForBusinessResult(
+    watching selection: ChatModelSelectionStore,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: selection.presentationValue, in: selection.models.stateStore, timeout: timeout,
+      file: file, line: line, message: message(), predicate)
+  }
+
   /// Waits for a predicate over a composer's draft, upload, voice phase or synchronization state.
   func waitForBusinessResult(
     watching composer: ComposerDraftStore,

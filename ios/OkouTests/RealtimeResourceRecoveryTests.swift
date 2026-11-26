@@ -423,7 +423,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 
     fixture.http.setRemoteModel("claude-model")
     sdk.connect()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: fixture.workspace.newModelSelection) {
       fixture.workspace.newModelSelection.selection.model == "claude-model"
     }
 
@@ -470,7 +470,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 
     try fixture.server.attached(fixture.channel, resumed: true)
     try fixture.server.notify("userPreferenceChanged", channel: fixture.channel)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: fixture.workspace.newModelSelection) {
       fixture.workspace.newModelSelection.selection.model == "claude-model"
     }
 

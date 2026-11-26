@@ -8,9 +8,21 @@ struct ComposerConnectorDefaults: View {
   let resources: ComposerConnectorAccountResources
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
+  @ResolvedValue private var managesAccounts: Bool?
   @State private var renaming: ChatConnectorAccount?
   @State private var name = ""
   @State private var disconnecting: ChatConnectorAccount?
+
+  init(
+    store: ComposerConnectorStore, resources: ComposerConnectorAccountResources,
+    page: ComposerConnectorAccountResources.Page, busy: Bool
+  ) {
+    self.store = store
+    self.resources = resources
+    self.page = page
+    self.busy = busy
+    _managesAccounts = ResolvedValue(store.managementValue)
+  }
 
   private var isAuthorizing: Bool {
     store.authorization.isAuthorizing(target: resources.connector.target)
@@ -30,7 +42,7 @@ struct ComposerConnectorDefaults: View {
             }
           }
           Spacer(minLength: 0)
-          if store.canManageAccounts {
+          if managesAccounts ?? store.canManageAccounts {
             Menu {
               Button("Reconnect") {
                 store.connect(target: resources.connector.target, accountID: account.id)

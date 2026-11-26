@@ -79,8 +79,8 @@ final class ConversationFailureRecovery {
   }
 
   func failureState(
-    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
-    accounts: [PersonalSubscription]? = nil,
+    _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     guard let conversation = conversation else {
@@ -93,7 +93,7 @@ final class ConversationFailureRecovery {
         && conversation.pending.isEmpty
         && conversation.history?.latestFailureID == failure.id
         && (context == nil || failureContext === context),
-      selection: conversation.modelSelection, accounts: accounts,
+      selection: conversation.modelSelection, models: models, accounts: accounts,
       busy: isRecoveringFailure || conversation.isSending,
       accountsError: accountsError.map(ChatRequestFailure.message(for:)))
     if state.isCurrent {
@@ -253,13 +253,14 @@ final class ConversationFailureRecovery {
 extension ConversationStore {
   var isRecoveringFailure: Bool { failureRecoveryActions.isRecoveringFailure }
   var failureContext: FailureRecoveryResources? { failureRecoveryActions.failureContext }
+  /// Views pass the model selection's graph value they resolved for this render.
   func failureState(
-    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
-    accounts: [PersonalSubscription]? = nil,
+    _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     failureRecoveryActions.failureState(
-      failure, context: context, accounts: accounts, accountsError: accountsError,
+      failure, models: models, context: context, accounts: accounts, accountsError: accountsError,
       billing: billing, billingError: billingError)
   }
   func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {

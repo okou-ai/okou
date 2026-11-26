@@ -48,7 +48,11 @@ final class ComposerConnectorStore {
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private(set) var pendingOptions = ChatComposerOptions()
   private let authorizationService: ChatConnectorService
-  private let managementEnabled: @MainActor () -> Bool
+  /// Whether members can manage connector accounts here. Views resolve it; actions use
+  /// `canManageAccounts`.
+  let managementValue: Computed<Bool>
+  static let managementDisabled = Computed { _ in false }
+  static let managementEnabled = Computed { _ in true }
   private let memberAccessEnabled: @MainActor () -> Bool
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
@@ -75,7 +79,7 @@ final class ComposerConnectorStore {
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
     graph: CCState.Store, threadID: String? = nil, includesRemote: Bool = true,
-    managementEnabled: @escaping @MainActor () -> Bool = { false },
+    management: Computed<Bool> = ComposerConnectorStore.managementDisabled,
     memberAccessEnabled: @escaping @MainActor () -> Bool = { false },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -89,7 +93,7 @@ final class ComposerConnectorStore {
     self.graph = graph
     self.threadID = threadID
     self.includesRemote = includesRemote
-    self.managementEnabled = managementEnabled
+    managementValue = management
     self.memberAccessEnabled = memberAccessEnabled
     self.didFail = didFail
     let snapshotState = snapshotState
@@ -118,7 +122,12 @@ final class ComposerConnectorStore {
   }
 
   var canSend: Bool { !isSaving && !uncertain }
-  var canManageAccounts: Bool { managementEnabled() }
+  var canManageAccounts: Bool {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try graph.get(managementValue) } catch {
+      preconditionFailure("Cannot read connector account management: \(error)")
+    }
+  }
   var usesMemberAccess: Bool { memberAccessEnabled() }
   var submissionOptions: ChatComposerOptions {
     guard usesMemberAccess else { return pendingOptions }

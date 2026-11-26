@@ -20,23 +20,29 @@ struct AssistantFailureRecoveryCard: View {
   }
 }
 
-/// Reads the recovery state in the session Store. A failure context's own reads may live in
-/// another Store, so the state is handed to the cards below as values.
+/// Reads the recovery and model selection state in the session Store. A failure context's own
+/// reads may live in another Store, so that state is handed to the cards below as values.
 private struct FailureRecoveryCardContent: View {
   let failure: ChatFailure
   let conversation: ConversationStore
   let providerMessage: String?
   @LoadableValue private var recovery: Loadable<ConversationFailureRecovery.Recovery>
+  @ResolvedValue private var resolvedModels: ChatModelSelectionStore.Presentation??
 
   init(failure: ChatFailure, conversation: ConversationStore, providerMessage: String?) {
     self.failure = failure
     self.conversation = conversation
     self.providerMessage = providerMessage
     _recovery = LoadableValue(conversation.failureRecoveryActions.recovery)
+    _resolvedModels = ResolvedValue(
+      ChatModelSelectionStore.presentation(of: conversation.modelSelection))
   }
 
   private var current: ConversationFailureRecovery.Recovery {
     recovery.data ?? conversation.failureRecoveryActions.currentRecovery
+  }
+  private var models: ChatModelSelectionStore.Presentation? {
+    resolvedModels ?? conversation.modelSelection?.presentation
   }
 
   var body: some View {
@@ -45,11 +51,13 @@ private struct FailureRecoveryCardContent: View {
         if let accounts = context.accounts {
           FailureAccountCard(
             failure: failure, conversation: conversation, providerMessage: providerMessage,
-            context: context, accounts: accounts, isRecovering: current.isRecovering)
+            context: context, accounts: accounts, models: models,
+            isRecovering: current.isRecovering)
         } else if let billing = context.billing {
           FailureBillingCard(
             failure: failure, conversation: conversation, providerMessage: providerMessage,
-            context: context, billing: billing, isRecovering: current.isRecovering)
+            context: context, billing: billing, models: models,
+            isRecovering: current.isRecovering)
         } else {
           content
         }
@@ -61,7 +69,7 @@ private struct FailureRecoveryCardContent: View {
 
   private var content: some View {
     AssistantFailureCard(
-      state: conversation.failureState(failure), conversation: conversation,
+      state: conversation.failureState(failure, models: models), conversation: conversation,
       providerMessage: providerMessage, isRecovering: current.isRecovering)
   }
 }
@@ -71,18 +79,20 @@ private struct FailureAccountCard: View {
   let conversation: ConversationStore
   let providerMessage: String?
   let context: FailureRecoveryResources
+  let models: ChatModelSelectionStore.Presentation?
   let isRecovering: Bool
   @LoadableValue private var accounts: Loadable<[PersonalSubscription]>
 
   init(
     failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
     context: FailureRecoveryResources, accounts: Signal<Task<[PersonalSubscription], Error>>,
-    isRecovering: Bool
+    models: ChatModelSelectionStore.Presentation?, isRecovering: Bool
   ) {
     self.failure = failure
     self.conversation = conversation
     self.providerMessage = providerMessage
     self.context = context
+    self.models = models
     self.isRecovering = isRecovering
     _accounts = LoadableValue(task: accounts)
   }
@@ -90,7 +100,8 @@ private struct FailureAccountCard: View {
   var body: some View {
     AssistantFailureCard(
       state: conversation.failureState(
-        failure, context: context, accounts: accounts.data, accountsError: accounts.error),
+        failure, models: models, context: context, accounts: accounts.data,
+        accountsError: accounts.error),
       conversation: conversation, providerMessage: providerMessage, isRecovering: isRecovering)
   }
 }
@@ -100,18 +111,20 @@ private struct FailureBillingCard: View {
   let conversation: ConversationStore
   let providerMessage: String?
   let context: FailureRecoveryResources
+  let models: ChatModelSelectionStore.Presentation?
   let isRecovering: Bool
   @LoadableValue private var billing: Loadable<ChatBillingRecovery>
 
   init(
     failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
     context: FailureRecoveryResources, billing: Signal<Task<ChatBillingRecovery, Error>>,
-    isRecovering: Bool
+    models: ChatModelSelectionStore.Presentation?, isRecovering: Bool
   ) {
     self.failure = failure
     self.conversation = conversation
     self.providerMessage = providerMessage
     self.context = context
+    self.models = models
     self.isRecovering = isRecovering
     _billing = LoadableValue(task: billing)
   }
@@ -119,7 +132,8 @@ private struct FailureBillingCard: View {
   var body: some View {
     AssistantFailureCard(
       state: conversation.failureState(
-        failure, context: context, billing: billing.data, billingError: billing.error),
+        failure, models: models, context: context, billing: billing.data,
+        billingError: billing.error),
       conversation: conversation, providerMessage: providerMessage, isRecovering: isRecovering)
   }
 }

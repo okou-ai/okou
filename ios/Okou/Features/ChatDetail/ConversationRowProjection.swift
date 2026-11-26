@@ -11,6 +11,8 @@ struct ConversationRowProjection {
   let window: ConversationPresentation.Window
   /// Whether a send is in flight, from the delivery state ChatDetailView resolves.
   let isSending: Bool
+  /// The model selection's graph value for this render, which ChatDetailView also resolves.
+  let models: ChatModelSelectionStore.Presentation?
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
@@ -58,8 +60,8 @@ struct ConversationRowProjection {
           }
           result.append(
             .failure(
-              message, conversation.failureState(failure), topSpacing: topSpacing,
-              providerMessage: providerMessage))
+              message, conversation.failureState(failure, models: models),
+              topSpacing: topSpacing, providerMessage: providerMessage))
           continue
         }
         let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
@@ -91,7 +93,7 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    if conversation.modelSelection?.models.usesFollowupPlaceholder != true,
+    if models?.snapshot.usesFollowupPlaceholder != true,
       let source = transcript.recommendedFollowups
     {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))
