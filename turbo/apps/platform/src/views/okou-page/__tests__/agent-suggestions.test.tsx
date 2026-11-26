@@ -334,7 +334,7 @@ test("agent-suggestions-020 changing cards discards the first inline direction",
   expect(next).not.toHaveTextContent("Expedite shipping");
 });
 
-test("agent-suggestions-023 undo restores the second suggestion after Not planned", async () => {
+test("agent-suggestions-023 undo restores the second suggestion after Won't do", async () => {
   const first = proposal("Produce order", 30),
     second = proposal("Bread order", 20),
     third = proposal("Dairy order", 10);
@@ -345,9 +345,7 @@ test("agent-suggestions-023 undo restores the second suggestion after Not planne
   await openDeck();
   await activeCard(first);
   swipeCard(await activeCard(first), "next");
-  click(
-    await findFastControl("button", "Not planned", await activeCard(second)),
-  );
+  click(await findFastControl("button", "Won't do", await activeCard(second)));
   await activeCard(third);
   click(await findFastControl("button", "Undo"));
   await expect(
@@ -652,9 +650,7 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   await screen.findByText("Suggestion dismissed");
   withdrawn = true;
   try {
-    click(
-      await findFastControl("button", "Already done", await activeCard(two)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(two)));
     await refresh.promise;
     await expect(activeCard(three)).resolves.toBeVisible();
     expect(screen.getByText("2 to go")).toBeInTheDocument();
@@ -697,9 +693,7 @@ test("agent-suggestions-026 an unavailable card clears its feedback error on ret
         });
   });
   await openDeck();
-  click(
-    await findFastControl("button", "Already done", await activeCard(first)),
-  );
+  click(await findFastControl("button", "Done", await activeCard(first)));
   const error = await screen.findByRole("alert");
   expect(error).toHaveTextContent(first.content.title);
   withdrawn = true;
@@ -740,18 +734,16 @@ test("agent-suggestions-027 feedback on two independent cards can finish in oppo
     },
   );
   await openDeck();
-  click(await findFastControl("button", "Not planned", await activeCard(one)));
+  click(await findFastControl("button", "Won't do", await activeCard(one)));
   try {
     await started.promise;
-    click(
-      await findFastControl("button", "Already done", await activeCard(two)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(two)));
     await expect(activeCard(three)).resolves.toBeVisible();
     await screen.findByText("Noted — this is already done");
   } finally {
     gate.resolve();
   }
-  const firstReceipt = await screen.findByText("Noted — this is not planned");
+  const firstReceipt = await screen.findByText("Noted — you won't do this");
   const toast = firstReceipt.closest<HTMLElement>("[data-sonner-toast]")!;
   click(await findFastControl("button", "Undo", toast));
   await expect(activeCard(one)).resolves.toBeVisible();
@@ -1620,9 +1612,7 @@ test("Retrying a failed list preserves feedback and Undo from the preview", asyn
   });
   try {
     await openDeck();
-    click(
-      await findFastControl("button", "Already done", await activeCard(first)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(first)));
     await findFastControl("button", "Undo");
     expect(screen.queryByText("All caught up")).toBeNull();
   } finally {
