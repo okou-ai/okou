@@ -123,7 +123,7 @@ src/signals/routes/__tests__/chat-activity-summary.test.ts	33	17	16	fewer	Remain
 src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	82	41	41	none	
 src/signals/routes/__tests__/chat-connector-access.test.ts	6	3	3	none	
 src/signals/routes/__tests__/chat-connector-execution.test.ts	10	5	5	none	
-src/signals/routes/__tests__/chat-event-annotations.test.ts	10	5	5	none	
+src/signals/routes/__tests__/chat-event-annotations.test.ts	10	5	6	more	Rewrite review added chat-event-annotations-009 (a GitHub pull request source keeps its exact link (B01 review; 008 covers issue comments only)).
 src/signals/routes/__tests__/chat-event-snapshot.test.ts	1	1	1	none	
 src/signals/routes/__tests__/chat-events-admission.test.ts	13	7	7	none	
 src/signals/routes/__tests__/chat-events-attachment-lookups.test.ts	7	4	4	none	
@@ -368,7 +368,7 @@ src/signals/routes/__tests__/integrations-discord-files.test.ts	31	16	16	none
 src/signals/routes/__tests__/integrations-discord-native.test.ts	54	27	27	none	
 src/signals/routes/__tests__/integrations-discord.test.ts	38	19	19	none	
 src/signals/routes/__tests__/integrations-email.test.ts	77	39	40	more	Spot check of unselected cases added integrations-email-066 (a DMARC-failing sender cannot link an address).
-src/signals/routes/__tests__/integrations-feishu-message.test.ts	26	13	13	none	
+src/signals/routes/__tests__/integrations-feishu-message.test.ts	26	13	15	more	Rewrite review added integrations-feishu-message-009 (the access check must read every page of the chat member list (B01 review)); integrations-feishu-message-023 (a member removed from the chat cannot complete a stored upload (B01 review; 024 is its variant)).
 src/signals/routes/__tests__/integrations-github-files.test.ts	5	3	3	none	
 src/signals/routes/__tests__/integrations-github-status.test.ts	3	2	2	none	
 src/signals/routes/__tests__/integrations-slack-message.test.ts	29	15	15	none	

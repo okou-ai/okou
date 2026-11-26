@@ -1791,7 +1791,7 @@ src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotatio
 src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-006	not-selected	
 src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-007	not-selected	
 src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	selected	visible-result
-src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	not-selected	
+src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	selected	visible-result
 src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-010	not-selected	
 src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	selected	visible-result
 src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	selected	business-rule
@@ -4161,7 +4161,7 @@ src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-fe
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-006	not-selected	
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-007	selected	access-isolation
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-008	not-selected	
-src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-009	not-selected	
+src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-009	selected	business-rule
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-010	selected	business-rule
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-011	not-selected	
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-012	not-selected	
@@ -4175,7 +4175,7 @@ src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-fe
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-020	not-selected	
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-021	selected	core-path
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-022	not-selected	
-src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-023	not-selected	
+src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-023	selected	access-isolation
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-024	not-selected	
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-025	selected	visible-result
 src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-026	not-selected	

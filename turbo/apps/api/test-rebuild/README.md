@@ -404,3 +404,21 @@ When every selected ID of a pilot file is rewritten or skipped, the file's tempo
 ## Step 4: Full rewrite (in progress)
 
 `rewrite.tsv` replaces `pilot.tsv` and covers all 3,517 selected IDs. Each row records the domain, frozen test file and case ID. It also records the status (`planned`, `rewritten`, `skipped` or `revisit`), the accepted local Vitest duration, a note, the new test file and the batch. Pilot results are carried over unchanged with batch `pilot`. A `revisit` ID is blocked in the first pass, and its note records the blocker, evidence and where to resume. `reconcile.mjs` treats a frozen file as settled once all of its selected IDs are `rewritten` or `skipped`.
+
+### Batch B01 follow-up and B02
+
+**Where dispatched-Run setup spends its time.** Representative `slow-setup` cases share one preparation: a real Runner group, a Pro entitlement and a dispatched chat Run, used directly or for its Okou or sandbox token. These include calendar-webhook dispatch, `connector-check` and `banking`. A probe segmented that preparation on an idle machine; these are medians of 4 warm runs:
+
+| Step                                                                         |           Median |
+| ---------------------------------------------------------------------------- | ---------------: |
+| Pro entitlement via Stripe webhooks                                          |          72.5 ms |
+| Run send and admission                                                       |          90.3 ms |
+| Case teardown (Run cancellation and cleanup, counted in the case's duration) |          78.3 ms |
+| Runner group, preferences, thread, heartbeat and dispatch, execution read    |      about 38 ms |
+| Total per case                                                               | about 250–350 ms |
+
+The first case of a file took 1,171 ms. Dispatch itself took 5 ms. In the normal path, production waits on no timer: backoff applies only when a Runner reports busy or uncertain delivery. Running independent steps in parallel saves at most about 30 ms. These cases therefore stay `slow-setup`, not `timer`, with this measurement as evidence.
+
+**First-test warm-up.** The B01 drafts were rerun three times on an idle machine. Most cases still over 200 ms by median are the first case of their file, at medians of 204–266 ms. Later cases of the same flows take 90–150 ms. Unless the shared test infrastructure warms each file before its first case, these cases are recorded as `revisit`.
+
+**`NO_SHAREABLE_MESSAGES` is not caused by apostrophes.** A probe sent six single-message threads with an apostrophe and six without, then shared each one immediately. Shares were rejected with `NO_SHAREABLE_MESSAGES` in 4 of 6 runs with an apostrophe and 5 of 6 without. The draft shared the thread right after sending, in a workspace that cannot launch a Run. The input's asynchronous admission races the share. This is a test preparation gap, not a product defect. `shared-threads-013` stays `revisit`.
