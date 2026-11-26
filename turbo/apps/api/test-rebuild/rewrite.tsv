@@ -630,7 +630,7 @@ browser	src/signals/routes/__tests__/browser.test.ts	browser-077	planned
 browser	src/signals/routes/__tests__/browser.test.ts	browser-078	planned				
 browser	src/signals/routes/__tests__/browser.test.ts	browser-079	planned				
 browser	src/signals/routes/__tests__/browser.test.ts	browser-080	planned				
-account-org	src/signals/routes/__tests__/built-in-generation.test.ts	built-in-generation-001	planned				B05
+account-org	src/signals/routes/__tests__/built-in-generation.test.ts	built-in-generation-001	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: idle gate run built-in-generation-001 297.3 ms; draft /home/user/pilot-env/wip/r12/built-in-generation.test.ts		B05
 connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	rewritten	125.6		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02
 connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	rewritten	199.0		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02
 connectors	src/signals/routes/__tests__/builtin-mcp-discovery.test.ts	builtin-mcp-discovery-001	planned				
