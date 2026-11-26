@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.67.0](https://github.com/okou-ai/okou/compare/ios-v0.66.10...ios-v0.67.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Refactoring
+
+* **ios:** keep the connector account page's lifetime in the graph ([#51034](https://github.com/okou-ai/okou/issues/51034)) ([e72339f](https://github.com/okou-ai/okou/commit/e72339f4f24242df267ee4d5af099d2b8e771d21))
+
+## [0.66.10](https://github.com/okou-ai/okou/compare/ios-v0.66.9...ios-v0.66.10) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep the attachment and result viewers in the session graph ([#51015](https://github.com/okou-ai/okou/issues/51015)) ([683b716](https://github.com/okou-ai/okou/commit/683b716b2431956524e87d38797c2847a1f3052b))
+
+## [0.66.9](https://github.com/okou-ai/okou/compare/ios-v0.66.8...ios-v0.66.9) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** keep attachment upload progress on composer thumbnails ([#51004](https://github.com/okou-ai/okou/issues/51004)) ([bd65095](https://github.com/okou-ai/okou/commit/bd65095b87d2f95c15bca6b636b43a778532e926))
+
 ## [0.66.8](https://github.com/okou-ai/okou/compare/ios-v0.66.7...ios-v0.66.8) (2026-11-26)
 
 

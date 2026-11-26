@@ -1,10 +1,9 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
 /// A native account destination owns its reads and accumulated pages, never account writes.
-@MainActor @Observable
+@MainActor
 final class ComposerConnectorAccountResources {
   enum Action: Sendable {
     case access(String, Bool?)
@@ -58,15 +57,20 @@ final class ComposerConnectorAccountResources {
   private let setPagination: Command<Void, Task<Void, Error>>
   private let service: ChatComposerAccess
   private let didFail: @MainActor (Error) -> Void
-  @ObservationIgnored private weak var composer: ComposerConnectorStore?
-  // Native navigation observes retirement; all request phases remain in the resource Tasks.
+  private weak var composer: ComposerConnectorStore?
+  // All request phases remain in the resource Tasks.
   private(set) var isClosed = false
-  @ObservationIgnored private var generation = UUID()
-  @ObservationIgnored private var catalogTask: Task<ChatCatalogConnector, Error>?
-  @ObservationIgnored private var impactTask: Task<ChatConnectorDeletionImpact?, Error>?
-  @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
-  @ObservationIgnored private var detailsTask: Task<Controls, Error>?
-  @ObservationIgnored private var moreTask: Task<Void, Error>?
+  /// Whether this page is still open, kept in the workspace session's Store. Native navigation
+  /// resolves it, so retiring the page pops it.
+  let openValue: Computed<Bool>
+  /// `openValue` for a destination with no page.
+  static let noPage = Computed { _ in false }
+  private var generation = UUID()
+  private var catalogTask: Task<ChatCatalogConnector, Error>?
+  private var impactTask: Task<ChatConnectorDeletionImpact?, Error>?
+  private var firstTask: Task<ChatConnectorAccounts, Error>?
+  private var detailsTask: Task<Controls, Error>?
+  private var moreTask: Task<Void, Error>?
 
   init(
     composer: ComposerConnectorStore, connector: ChatComposerConnector,
@@ -78,6 +82,8 @@ final class ComposerConnectorAccountResources {
     store = composer.graph
     service = composer.service
     self.didFail = didFail
+    let lifetime = lifetime
+    openValue = Computed { try $0(lifetime) }
     let deletionID = deletionID
     selectDeletion = Command { context, value in try context.set(deletionID, value) }
     let catalogRevision = catalogRevision
@@ -108,7 +114,7 @@ final class ComposerConnectorAccountResources {
     setPagination = Command { context, value in try context.set(more, value) }
   }
 
-  @ObservationIgnored lazy var catalog = makeCatalog()
+  lazy var catalog = makeCatalog()
 
   private func makeCatalog() -> Computed<Task<ChatCatalogConnector, Error>> {
     Computed { [weak self] get, options in
@@ -133,7 +139,7 @@ final class ComposerConnectorAccountResources {
     }
   }
 
-  @ObservationIgnored private lazy var first = makeFirst()
+  private lazy var first = makeFirst()
 
   private func makeFirst() -> Computed<Task<ChatConnectorAccounts, Error>> {
     Computed { [weak self] get, options in
@@ -160,7 +166,7 @@ final class ComposerConnectorAccountResources {
     }
   }
 
-  @ObservationIgnored private lazy var details = makeDetails()
+  private lazy var details = makeDetails()
 
   private func makeDetails() -> Computed<Task<Controls, Error>> {
     Computed { [weak self] get, options in
@@ -194,7 +200,7 @@ final class ComposerConnectorAccountResources {
     }
   }
 
-  @ObservationIgnored lazy var page = makePage()
+  lazy var page = makePage()
 
   private func makePage() -> Computed<Task<Page, Error>> {
     computedTask { [weak self] get, options in
@@ -250,7 +256,7 @@ final class ComposerConnectorAccountResources {
     }
   }
 
-  @ObservationIgnored lazy var deletionImpact = makeDeletionImpact()
+  lazy var deletionImpact = makeDeletionImpact()
 
   private func makeDeletionImpact() -> Computed<Task<ChatConnectorDeletionImpact?, Error>> {
     Computed { [weak self] get, options in

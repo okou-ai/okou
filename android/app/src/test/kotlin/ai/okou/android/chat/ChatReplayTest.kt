@@ -361,13 +361,15 @@ class ChatReplayTest {
                 project.id to listOf(ProvisionalChat("pending", project.id)),
             )
 
-        val (open, afterOpen) = chatListSections(groups, setOf(project.id), provisional)
+        val (open, afterOpen) =
+            chatListSections(groups, setOf(project.id), provisional, hasConfirmedChatList = true)
         assertFalse(open.collapsed)
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
         assertEquals(4, afterOpen.firstChatRow)
 
-        val (folded, afterFolded) = chatListSections(groups, emptySet(), provisional)
+        val (folded, afterFolded) =
+            chatListSections(groups, emptySet(), provisional, hasConfirmedChatList = true)
         assertTrue(folded.collapsed)
         assertEquals(1, afterFolded.firstChatRow)
     }

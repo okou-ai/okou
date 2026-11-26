@@ -313,22 +313,25 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         }
         val refreshing = compose.onNodeWithContentDescription("Syncing chat resources")
         val resource = compose.onNodeWithText(item.title)
-        try {
-            openChatResources(fixture.sourceTitle)
-            awaitText(item.title)
-            refreshing.assertIsDisplayed()
-            val progress = refreshing.getUnclippedBoundsInRoot()
-            assertTrue(progress.bottom <= resource.getUnclippedBoundsInRoot().top)
-        } finally {
-            release.countDown()
-        }
+        val resourceBounds =
+            try {
+                openChatResources(fixture.sourceTitle)
+                awaitText(item.title)
+                refreshing.assertIsDisplayed()
+                val progress = refreshing.getUnclippedBoundsInRoot()
+                val bounds = resource.getUnclippedBoundsInRoot()
+                assertTrue(progress.bottom <= bounds.top)
+                bounds
+            } finally {
+                release.countDown()
+            }
         val failure = "Temporarily unable to update. Showing loaded artifacts."
         awaitText(failure)
         resource.assertIsDisplayed()
-        assertTrue(
-            compose.onNodeWithText(failure).getUnclippedBoundsInRoot().bottom <=
-                resource.getUnclippedBoundsInRoot().top,
-        )
+        assertEquals(resourceBounds, resource.getUnclippedBoundsInRoot())
+        val pane = compose.onNodeWithTag("chat_resources_list").getUnclippedBoundsInRoot()
+        val snackbar = compose.onNodeWithTag("artifact_refresh_feedback").getUnclippedBoundsInRoot()
+        assertEquals(8.dp, pane.bottom - snackbar.bottom)
         refreshing.assertDoesNotExist()
         assertEquals(
             item,
@@ -337,11 +340,17 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     }
 
     @Test
-    fun recentlyConfirmedEmptyChatCatalogRemainsVisibleDuringSilentRefresh() {
+    fun recentlyConfirmedEmptyChatCatalogRemainsVisibleThroughRefreshFailure() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         val release = CountDownLatch(1)
-        fixture.beforeCatalog = { release.await() }
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog") {
+                release.await()
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
         seedChatCatalog(emptyList(), ageMinutes = 9)
@@ -358,8 +367,47 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         } finally {
             release.countDown()
         }
+        val failure = "Temporarily unable to update. Showing loaded artifacts."
+        awaitText(failure)
+        compose.onNodeWithText("No artifacts yet").assertIsDisplayed()
+        compose.onNodeWithTag("artifact_refresh_feedback").assertIsDisplayed()
+        app.fixture.commandResponse = respond
+        resumeArtifactRoute()
         awaitText(fixture.summary.title)
         compose.onNodeWithText("No artifacts yet").assertDoesNotExist()
+        compose.onNodeWithText(failure).assertDoesNotExist()
+    }
+
+    @Test
+    fun workspaceRefreshFeedbackFollowsTheActiveFilter() {
+        val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.summary.title)
+        val respond = app.fixture.commandResponse
+        val failRefresh = AtomicBoolean(true)
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath == "/api/artifacts/catalog" &&
+                    failRefresh.getAndSet(false)
+            ) {
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+
+        resumeArtifactRoute()
+        val failure = "Temporarily unable to update. Showing loaded artifacts."
+        awaitText(failure)
+        compose.onNodeWithText(fixture.summary.title).assertIsDisplayed()
+        compose.onNodeWithTag("artifact_refresh_feedback").assertIsDisplayed()
+
+        val videos = compose.onNodeWithText("Videos")
+        videos.performClick()
+        awaitText(fixture.video.title)
+        videos.assertIsSelected()
+        compose.onNodeWithText(failure).assertDoesNotExist()
     }
 
     @Test

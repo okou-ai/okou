@@ -11,7 +11,7 @@ import {
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import type { ExecutionPackageSources } from "./execution-package-sources";
+import type { ExecutionPackageObservation } from "./execution-package-sources";
 import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
@@ -69,7 +69,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly automationPayload$: ReturnType<typeof createThreadAutomationPayload>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
   readonly executionPackageSources$: Computed<
-    Promise<ExecutionPackageSources | null>
+    Promise<ExecutionPackageObservation | null>
   >;
   /** Event-resolved raw rows, independent of guidance/paid-tool assembly. */
   readonly templateSources$: ReturnType<typeof createRunTemplates>["sources$"];
@@ -389,7 +389,9 @@ function createThreadExecutionPackageSources(
     }
     if (event.contextType === "automation") {
       const target = await get(automationTarget$);
-      return target?.packageSources ?? null;
+      return target?.packageSources
+        ? { sources: target.packageSources, prefetchedUrls: null }
+        : null;
     }
     const { result, durationMs, finishedAt } = await get(
       bootstrap.executionPackageSources$,

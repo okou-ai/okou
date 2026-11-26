@@ -1,3 +1,5 @@
+import { launchFrameworkForProviderType } from "./launch-framework";
+import { mintAntigravityRunCredential$ } from "./antigravity-run-credential.service";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { writeDb$ } from "../external/db";
@@ -181,7 +183,6 @@ import { workflowRewardRunEventInsert } from "./workflow-reward-source-publicati
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { getFrameworkForType } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -258,7 +259,7 @@ import {
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
-import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import {
@@ -493,11 +494,13 @@ type AutonomyBudgetResult =
       readonly error: { readonly code: string; readonly message: string };
     };
 
+type LaunchAutomation = ThreadAutomationTarget["automation"];
+
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
-  readonly automation: AutomationRow;
+  readonly automation: LaunchAutomation;
   readonly chatThreadId: string;
 }): WorkflowAutomationQueuedLaunchMaterial | null {
   if (
@@ -523,7 +526,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
 }
 
 function workflowAutomationRunMetadata(
-  automation: AutomationRow,
+  automation: LaunchAutomation,
   triggerBrief: string | undefined,
   autonomyBudget: number,
 ) {
@@ -542,7 +545,7 @@ type RejectedQueueRunAssembly = Extract<
 type QueuedAutomationLaunch =
   | {
       readonly kind: "launch";
-      readonly automation: AutomationRow;
+      readonly automation: LaunchAutomation;
       readonly chatThreadId: string;
       readonly apiStartTime: number;
       readonly triggerBrief: string | undefined;
@@ -685,7 +688,7 @@ interface WorkflowAutomationQueuedLaunchMaterial {
 }
 
 function buildWorkflowAutomationCallbacks(
-  automation: AutomationRow,
+  automation: LaunchAutomation,
   chatThreadId: string,
   eventType: WorkflowAutomationEventType,
 ): RunLaunchCallbackRecord[] {
@@ -1722,7 +1725,7 @@ export function createThreadClaimRunObjects(
       modelProvider,
       framework:
         modelProvider.piModelConfig === undefined
-          ? getFrameworkForType(modelProvider.type)
+          ? launchFrameworkForProviderType(modelProvider.type)
           : ("pi" as const),
     };
   });
@@ -2141,7 +2144,7 @@ export function createThreadClaimRunObjects(
         return mountPath;
       },
     );
-    const selected = selectExecutionPackages(packageSources, {
+    const selected = selectExecutionPackages(packageSources?.sources ?? null, {
       skillRoot,
       protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
       ordinaryAutomation,
@@ -2151,6 +2154,7 @@ export function createThreadClaimRunObjects(
     }
     return {
       memoryMountPath,
+      prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
         bundles: selectExecutionContentBundles(selected, {
@@ -2187,7 +2191,12 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
+    return isRouteError(packagePlan)
+      ? null
+      : {
+          bundles: packagePlan.packages.bundles,
+          prefetchedUrls: packagePlan.prefetchedUrls,
+        };
   });
   const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */
@@ -2204,11 +2213,32 @@ export function createThreadClaimRunObjects(
         return packagePlan;
       }
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
+      const antigravityAccountId =
+        args.facts.modelProvider.type === "antigravity"
+          ? args.facts.modelProvider.id
+          : undefined;
+      if (antigravityAccountId === null) {
+        throw new Error("An Antigravity run requires its member account");
+      }
+      const antigravityCredential = antigravityAccountId
+        ? await set(
+            mintAntigravityRunCredential$,
+            {
+              orgId: bootstrap.orgId,
+              userId: bootstrap.userId,
+              accountId: antigravityAccountId,
+              featureSwitchContext: args.featureSwitchContext,
+            },
+            signal,
+          )
+        : undefined;
+      signal.throwIfAborted();
       return {
         launch: prepareRunnerLaunch({
           args,
           packageMounts: packagePlan.packages.mounts,
           okouToken,
+          antigravityCredential,
           disabledPaidTools,
         }),
         memoryMountPath: packagePlan.memoryMountPath,
@@ -3353,6 +3383,7 @@ function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
   readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly okouToken: string;
+  readonly antigravityCredential: string | undefined;
   readonly disabledPaidTools: readonly PaidToolId[];
 }): Omit<PreparedRunnerLaunch, "memoryMount"> {
   const { args } = input;
@@ -3360,6 +3391,9 @@ function prepareRunnerLaunch(input: {
     ...args.facts,
     nativeContinuation: args.nativeContinuation,
     okouToken: input.okouToken,
+    ...(input.antigravityCredential
+      ? { antigravityCredential: input.antigravityCredential }
+      : {}),
     disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,

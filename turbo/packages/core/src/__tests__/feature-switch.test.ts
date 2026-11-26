@@ -22,15 +22,29 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps native connector authorization opt-in for staff until provider registration is verified", () => {
+    const key = FeatureSwitchKey.IosConnectorAppAuthorization;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(key, staff)).toBe(false);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: true } }),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(key, {
+        orgId: "external-org",
+        overrides: { [key]: true },
+      }),
+    ).toBe(false);
+  });
   it.each([
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
+    FeatureSwitchKey.HideEmptyForYou,
     FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
-    FeatureSwitchKey.SlackArtifactChannelSharing,
     FeatureSwitchKey.FeishuArtifactChannelSharing,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };

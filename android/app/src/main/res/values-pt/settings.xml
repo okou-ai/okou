@@ -17,7 +17,6 @@
     <string name="settings_email_receive">Receber e-mails</string>
     <string name="settings_email_unavailable">E-mail indisponível</string>
     <string name="settings_email_check_address">Verificar o e-mail da conta</string>
-    <string name="settings_email_load_failed">As configurações de e-mail estão temporariamente indisponíveis.</string>
     <string name="settings_email_refresh_failed">Não foi possível sincronizar. Exibindo a última assinatura salva.</string>
     <string name="settings_email_refreshing">Sincronizando a assinatura por e-mail</string>
     <string name="settings_email_saving">Atualizando a assinatura por e-mail…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Escolha as contas de assinatura usadas em “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Contas de modelos em “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_unavailable">Não foi possível exibir as contas de modelos agora.</string>
     <string name="settings_accounts_update_failed">Não foi possível atualizar as contas. Exibindo as últimas informações conhecidas.</string>
     <string name="settings_accounts_empty">Nenhuma conta de modelo vinculada</string>
     <string name="settings_accounts_empty_help">Conecte o ChatGPT ou Claude para ver as cotas e escolher uma conta.</string>

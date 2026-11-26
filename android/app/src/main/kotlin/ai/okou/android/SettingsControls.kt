@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.state.rememberSettingsChoiceFocus
 import ai.okou.android.state.rememberSettingsFlag
 import ai.okou.android.updates.updateFocusOutline
 import androidx.activity.compose.BackHandler
@@ -17,16 +18,21 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -72,10 +78,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -367,6 +376,7 @@ internal fun SettingsModal(
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
+    reserveTopInset: Boolean = false,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -397,6 +407,12 @@ internal fun SettingsModal(
         val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            modifier =
+                if (reserveTopInset)
+                    Modifier.windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+                    )
+                else Modifier,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -407,7 +423,6 @@ internal fun SettingsModal(
                 ),
             sheetGesturesEnabled = dismissible,
             dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
-            containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible && confirmDismiss == null,
@@ -463,6 +478,8 @@ internal fun SettingsSheet(
         fullScreen = compactHeight && fullScreenInShortWindow,
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
+        // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
+        reserveTopInset = scroll == SettingsSheetScroll.None,
     ) { centered ->
         var panelBottom by remember { mutableFloatStateOf(0f) }
         var actionTop by remember { mutableStateOf<Float?>(null) }
@@ -731,21 +748,85 @@ internal fun OkouConfirmationDialog(
 }
 
 @Composable
-internal fun <T> SettingsRadioOptions(
+internal fun <T : Enum<T>> SettingsRadioSheet(
+    title: String,
+    dismiss: () -> Unit,
     options: List<T>,
     selected: T,
     label: (T) -> Int,
-    enabled: Boolean,
     onSelect: (T) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().selectableGroup()) {
-        options.forEach { option ->
-            SettingsChoiceRow(
-                stringResource(label(option)),
-                selected = option == selected,
-                enabled = enabled,
-                onClick = { onSelect(option) },
-            )
+    SettingsChoiceSheet(title, dismiss, options, options.indexOf(selected), { it.name }) {
+        option,
+        position ->
+        SettingsChoiceRow(
+            stringResource(label(option)),
+            selected = option == selected,
+            enabled = true,
+            onClick = {
+                dismiss()
+                onSelect(option)
+            },
+            modifier = position,
+        )
+    }
+}
+
+@Composable
+internal fun <T> SettingsChoiceSheet(
+    title: String,
+    dismiss: () -> Unit,
+    options: List<T>,
+    selectedIndex: Int,
+    optionKey: (T) -> String,
+    choice: @Composable (T, Modifier) -> Unit,
+) {
+    val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
+    val scroll = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    SettingsChoicePanel(
+        title,
+        dismiss,
+        initialKey = options.getOrNull(initialIndex)?.let(optionKey),
+        isAvailable = { key -> options.any { optionKey(it) == key } },
+    ) { position ->
+        LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = scroll) {
+            items(options, key = optionKey) { option ->
+                choice(option, position(optionKey(option)))
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SettingsChoicePanel(
+    title: String,
+    dismiss: () -> Unit,
+    initialKey: String?,
+    isAvailable: (String) -> Boolean,
+    content: @Composable ((String) -> Modifier) -> Unit,
+) {
+    var focusedKey by rememberSettingsChoiceFocus()
+    val inputMode = LocalInputModeManager.current
+    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+        // Reattach focus when resizing replaces the bottom sheet with a dialog or vice versa.
+        val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
+        val focus = remember { FocusRequester() }
+        var positioned by remember { mutableStateOf(false) }
+        var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+        LaunchedEffect(coordinates) {
+            if (!positioned && coordinates?.isAttached == true) {
+                positioned = true
+                if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+            }
+        }
+        val anchor =
+            Modifier.focusRequester(focus).onGloballyPositioned {
+                if (!positioned && coordinates?.isAttached != true) coordinates = it
+            }
+        content { key ->
+            (if (key == openingKey) anchor else Modifier).onFocusChanged {
+                if (it.isFocused) focusedKey = key
+            }
         }
     }
 }

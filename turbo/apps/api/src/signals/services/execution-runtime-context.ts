@@ -42,7 +42,7 @@ export type ExecutionContextRun = Pick<
   readonly modelProvider: ModelFirstPin["modelProviderType"];
   readonly selectedModel: string;
   readonly chatThreadId: string;
-  readonly framework: "claude-code" | "codex" | "pi";
+  readonly framework: "claude-code" | "codex" | "pi" | "antigravity";
   readonly vars: Record<string, string>;
 };
 
@@ -82,6 +82,26 @@ function executionPlatform({ run, facts }: ExecutionInput) {
   };
 }
 
+/** `agy` reads its model and native credential from trusted platform entries. */
+function antigravityEnvironment(
+  facts: ExecutionInput["facts"],
+): ReturnType<typeof emptyEnvironment> {
+  if (facts.modelProvider.type !== "antigravity") {
+    return emptyEnvironment();
+  }
+  if (!facts.antigravityCredential) {
+    throw new Error("An Antigravity run requires its minted credential");
+  }
+  return {
+    ...emptyEnvironment(),
+    platformEnvironment: {
+      OKOU_ANTIGRAVITY_MODEL: facts.modelProvider.upstreamModel,
+      OKOU_ANTIGRAVITY_OAUTH_TOKEN: facts.antigravityCredential,
+    },
+    reservedSecretAliases: ["OKOU_ANTIGRAVITY_OAUTH_TOKEN"],
+  };
+}
+
 function executionEnvironment(input: ExecutionInput) {
   const { run, facts } = input;
   const { connectorEnvironment } = facts;
@@ -98,9 +118,24 @@ function executionEnvironment(input: ExecutionInput) {
     platformEnvironment: { OKOU_TOKEN: token },
     reservedSecretAliases: ["OKOU_TOKEN"],
   };
+  const antigravity = antigravityEnvironment(facts);
   const environment = mergeEnvironments(
-    [connectorEnvironment, modelEnvironment, platform, data, tokenEnvironment],
-    [data, modelEnvironment, connectorEnvironment, platform, tokenEnvironment],
+    [
+      connectorEnvironment,
+      modelEnvironment,
+      platform,
+      data,
+      tokenEnvironment,
+      antigravity,
+    ],
+    [
+      data,
+      modelEnvironment,
+      connectorEnvironment,
+      platform,
+      tokenEnvironment,
+      antigravity,
+    ],
   );
   const untrustedEnvironment = Object.fromEntries(
     Object.entries(environment.environment ?? {}).filter(([key]) => {

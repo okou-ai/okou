@@ -118,10 +118,12 @@ extension XCTestCase {
   }
 
   /// Waits for a predicate over a conversation's graph state: its transcript (confirmed
-  /// history, pending messages, streamed output and their items), its render window and scroll
-  /// target, its delivery and failure recovery state and its composer's draft.
+  /// history, pending messages, streamed output and their items), its render window, scroll
+  /// target and earlier-page loading, its history and read-mark synchronization, its delivery
+  /// and failure recovery state and its composer's draft.
   /// It is checked again whenever one of these values changes, and whenever an
-  /// Observation-tracked value it reads changes.
+  /// Observation-tracked value it reads changes; the conversation owners themselves are not
+  /// Observable, but nested owners such as sharing are.
   func waitForBusinessResult(
     watching conversation: ConversationStore,
     timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
@@ -162,6 +164,14 @@ extension XCTestCase {
     let navigation = try store.watch(conversation.navigation) { check() }
     defer {
       do { try navigation.cancel() } catch { XCTFail("Navigation waiter cleanup: \(error)") }
+    }
+    let earlier = try store.watch(conversation.loadsEarlier) { check() }
+    defer {
+      do { try earlier.cancel() } catch { XCTFail("Earlier page waiter cleanup: \(error)") }
+    }
+    let sync = try store.watch(conversation.syncStatus) { check() }
+    defer {
+      do { try sync.cancel() } catch { XCTFail("Synchronization waiter cleanup: \(error)") }
     }
     let observation = Task {
       for await result in Observations({ predicate() }) where result {

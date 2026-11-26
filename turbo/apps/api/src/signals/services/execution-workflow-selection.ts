@@ -132,6 +132,12 @@ const frameworkMountPaths = {
     skillRoot: PI_SKILLS_ROOT,
     memoryMountPath: CANONICAL_PI_MEMORY_MOUNT_PATH,
   },
+  // agy has no skill loader; packages and Memory keep the Claude locations
+  // that the Claude-compatible run prompt describes.
+  antigravity: {
+    skillRoot: `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`,
+    memoryMountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  },
 } as const;
 
 export function prepareRunPackageMounts(args: {

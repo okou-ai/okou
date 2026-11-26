@@ -65,6 +65,7 @@ export async function exchangeDropboxCode(
   clientSecret: string,
   code: string,
   redirectUri: string,
+  codeVerifier?: string,
 ): Promise<DropboxTokenResult> {
   const response = await fetch(DROPBOX_TOKEN_URL, {
     method: "POST",
@@ -76,6 +77,7 @@ export async function exchangeDropboxCode(
       client_secret: clientSecret,
       code,
       redirect_uri: redirectUri,
+      ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
       grant_type: "authorization_code",
     }),
   });

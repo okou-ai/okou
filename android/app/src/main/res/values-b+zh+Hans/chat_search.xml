@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">部分搜索结果暂时不可用</string>
     <string name="chat_search_message_unavailable">此消息已不可用</string>
     <string name="chat_search_workflow_add_draft">加入新聊天草稿</string>
+    <string name="chat_search_workflow_opening_draft">正在打开新聊天草稿…</string>
     <string name="chat_search_workflow_details">查看工作流详情</string>
     <string name="chat_search_workflow_shadowed">此命令当前用于同名私有工作流</string>
     <string name="chat_search_artifact_preview">成果预览</string>

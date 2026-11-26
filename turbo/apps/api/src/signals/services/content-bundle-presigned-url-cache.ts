@@ -27,6 +27,11 @@ export interface ContentBundleUrlCacheSnapshot {
   readonly rows: readonly output<typeof cachedContentBundleUrlSchema>[];
 }
 
+export interface PrefetchedContentBundleUrls {
+  readonly hashes: readonly string[];
+  readonly rows: ContentBundleUrlCacheSnapshot["rows"];
+}
+
 export const contentBundleUrlCacheContext$ = computed(
   (): ContentBundleUrlCacheContext => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
@@ -90,15 +95,30 @@ export function contentBundleUrlCacheSnapshotSql(
   const keys = [...new Set(hashes)].map((hash) => {
     return cacheKey(context, hash);
   });
+  return selectCachedBundleUrlsSql(
+    sql`SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS cache_key`,
+  );
+}
+
+/** Look up immutable hashes selected by the surrounding package statement. */
+export function prefetchedContentBundleUrlsSql(
+  context: ContentBundleUrlCacheContext,
+  hashes: SQL,
+): SQL {
+  return selectCachedBundleUrlsSql(sql`
+    SELECT encode(sha256(convert_to(${context.keyPrefix} || ':' || sha256, 'UTF8')), 'hex') AS cache_key
+    FROM (${hashes}) AS bundle_hashes
+  `);
+}
+
+function selectCachedBundleUrlsSql(keys: SQL): SQL {
   return sql`(
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'sha256', ${systemStoragePresignedUrlCache.storageVersionId},
       'url', ${systemStoragePresignedUrlCache.presignedUrl},
       'expiresAtMs', (EXTRACT(EPOCH FROM ${systemStoragePresignedUrlCache.expiresAt}) * 1000)::double precision
     )), '[]'::jsonb)
-    FROM (
-      SELECT jsonb_array_elements_text(${JSON.stringify(keys)}::jsonb) AS cache_key
-    ) AS selected_bundles
+    FROM (${keys}) AS selected_bundles
     INNER JOIN ${systemStoragePresignedUrlCache}
       ON ${eq(systemStoragePresignedUrlCache.cacheKey, sql`selected_bundles.cache_key`)}
     WHERE ${and(

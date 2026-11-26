@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.33.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.33.0...runner-remote-v0.33.1) (2026-11-26)
+
+
+### Refactoring
+
+* **runner-remote:** share vnc carrier progress traversal ([#51044](https://github.com/okou-ai/okou/issues/51044)) ([d017b79](https://github.com/okou-ai/okou/commit/d017b79290d573bb47b0a05eb2fa231cb0497c02))
+
+## [0.33.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.32.2...runner-remote-v0.33.0) (2026-11-26)
+
+
+### Features
+
+* **api:** enforce live remote device access ([#50892](https://github.com/okou-ai/okou/issues/50892)) ([df3cad0](https://github.com/okou-ai/okou/commit/df3cad08ac5cc8cfbe7167341149e70ac39ba6d2))
+
 ## [0.32.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.32.1...runner-remote-v0.32.2) (2026-11-26)
 
 ## [0.32.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.32.0...runner-remote-v0.32.1) (2026-11-25)

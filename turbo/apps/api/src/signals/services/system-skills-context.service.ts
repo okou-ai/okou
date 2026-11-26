@@ -3,27 +3,30 @@ import { logger } from "../../lib/log";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import type { ThreadContext } from "./thread-context.signals";
 import type { SeedSkillVolume } from "./run-prompt-and-skills";
 
 const log = logger("api:system-skills");
 
 export function createSystemSkillVolumes(
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-  seedSkills$: AgentRunContextSignals["seedSkills$"],
+  executionPackages$: ThreadContext["executionPackageSources$"],
 ) {
   return computed(async (get) => {
-    const [disabledPaidTools, published] = await Promise.all([
+    const [disabledPaidTools, packages] = await Promise.all([
       get(disabledPaidTools$),
-      get(seedSkills$),
+      get(executionPackages$),
     ]);
+    if (!packages) {
+      return [];
+    }
     // The external gen skill unconditionally teaches managed image execution.
     // Other generation types retain their CLI and Agent Tools guidance.
     const skills = BUILT_IN_SKILLS.filter((name) => {
       return name !== "gen" || !disabledPaidTools.includes("image-generation");
     });
     const byUrl = new Map(
-      published.map((skill) => {
+      packages.sources.seedSkills.map((skill) => {
         return [skill.url, skill];
       }),
     );

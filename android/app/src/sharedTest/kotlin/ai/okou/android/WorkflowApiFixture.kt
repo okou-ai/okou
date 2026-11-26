@@ -79,6 +79,7 @@ internal class WorkflowApiFixture(
     @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var beforeInstructionSave: () -> Unit = {}
     @Volatile var disconnectDraftRead = false
+    @Volatile var rejectDraftRead = false
     @Volatile var disconnectInstructionSave = false
     @Volatile var instructionSaveConflict = false
     @Volatile var previousDraft = if (chinese) "保留原有草稿" else "Keep my existing draft"
@@ -223,6 +224,12 @@ internal class WorkflowApiFixture(
                     beforeDraftRead()
                     if (disconnectDraftRead)
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                    if (rejectDraftRead) {
+                        return jsonResponse(
+                                """{"error":{"code":"BAD_REQUEST","message":"Draft unavailable"}}""",
+                            )
+                            .setResponseCode(400)
+                    }
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 } else {
                     val document =

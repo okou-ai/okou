@@ -21,7 +21,9 @@ fn bounded_vnc_text_keeps_critical_timing_and_distinguishes_zero_from_unavailabl
         step.status = trace::Progress::Passed;
         step.timing.elapsed_ms = u64::MAX;
     }
-    let carrier = || {
+    let carrier = |failure| {
+        let mut access = access.clone();
+        access.access_failure = Some(failure);
         Box::new(Carrier {
             configuration_id: Uuid::new_v4(),
             generation: i64::MAX,
@@ -31,11 +33,11 @@ fn bounded_vnc_text_keeps_critical_timing_and_distinguishes_zero_from_unavailabl
             status: trace::Progress::Passed,
             node_setup: Some(trace::Progress::Reused),
             origin_tls: Some(trace::Progress::Passed),
-            access: Some(access.clone()),
+            access: Some(access),
         })
     };
-    vnc.rfb_carrier = Some(carrier());
-    vnc.kdc_carrier = Some(carrier());
+    vnc.rfb_carrier = Some(carrier(crate::cloudflare::Failure::Rejected));
+    vnc.kdc_carrier = Some(carrier(crate::cloudflare::Failure::Tls));
     let report = handle
         .record(Record {
             effects: None,
@@ -57,10 +59,19 @@ fn bounded_vnc_text_keeps_critical_timing_and_distinguishes_zero_from_unavailabl
             <= MAX_REPORT_BYTES
     );
     let full = report.message().unwrap();
+    let rfb = full.find("- VNC RFB carrier:").unwrap();
+    let kdc = full.find("- VNC KDC carrier:").unwrap();
+    assert!(rfb < kdc, "{full}");
+    assert!(full.contains("Check the Access gateway certificate and TLS trust."));
     let budget = full.len() - 200;
     let compact = report.message_with_budget(budget).unwrap();
     assert!(compact.len() <= budget && compact.len() <= MAX_REPORT_BYTES);
     assert!(compact.contains("Noncritical VNC stages and timing may be omitted."));
+    for role in ["RFB", "KDC"] {
+        let passed = format!("- VNC {role} carrier authority: passed.");
+        assert!(full.contains(&passed), "{full}");
+        assert!(!compact.contains(&passed), "{compact}");
+    }
     for stage in [
         "authentication",
         "initialization",

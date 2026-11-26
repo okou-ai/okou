@@ -43,7 +43,12 @@ pub(super) fn apply(
             instruction_cleanups: Vec::new(),
             archive_readiness: None,
         };
-        run_manifest_with_files_in_runtime(batch, files.by_ref().take(size).collect(), runtime_dir)
+        run_manifest_with_files_in_runtime(
+            batch,
+            files.by_ref().take(size).collect(),
+            None,
+            runtime_dir,
+        )
     })
 }
 

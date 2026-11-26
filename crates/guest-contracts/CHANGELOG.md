@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.33.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.4...guest-contracts-v0.33.5) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** deliver member instructions to antigravity runs ([#51071](https://github.com/okou-ai/okou/issues/51071)) ([a62e7e4](https://github.com/okou-ai/okou/commit/a62e7e45026cea7ea7dc4fca79146226360961ee))
+
+## [0.33.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.3...guest-contracts-v0.33.4) (2026-11-26)
+
 ## [0.33.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.2...guest-contracts-v0.33.3) (2026-11-25)
 
 ## [0.33.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.33.1...guest-contracts-v0.33.2) (2026-11-24)

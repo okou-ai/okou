@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.12.0](https://github.com/okou-ai/okou/compare/app-worker-v1.11.4...app-worker-v1.12.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.132.0
+    * @okouai/core bumped to 8.885.0
+
+## [1.11.4](https://github.com/okou-ai/okou/compare/app-worker-v1.11.3...app-worker-v1.11.4) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.884.0
+
+## [1.11.3](https://github.com/okou-ai/okou/compare/app-worker-v1.11.2...app-worker-v1.11.3) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.131.0
+    * @okouai/core bumped to 8.883.2
+
 ## [1.11.2](https://github.com/okou-ai/okou/compare/app-worker-v1.11.1...app-worker-v1.11.2) (2026-11-26)
 
 

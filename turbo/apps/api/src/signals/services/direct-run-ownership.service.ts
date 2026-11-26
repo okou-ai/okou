@@ -115,7 +115,6 @@ export const selectDirectRunOwner$ = command(
     const [row] = await db
       .with(changed, slot, thread)
       .select({
-        id: changed.id,
         // An invariant failure rolls back the whole statement, not just its result.
         guard:
           sql`(CASE WHEN ${slot.runId} IS NULL OR (${args.previous === null} AND ${thread.id} IS NULL) THEN '__DIRECT_RUN_OWNER__' ELSE '0' END)::integer`.mapWith(

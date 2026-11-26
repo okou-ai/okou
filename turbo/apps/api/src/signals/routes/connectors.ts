@@ -1,4 +1,7 @@
 import { command, computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { and, eq } from "drizzle-orm";
 import {
   builtinConnectorManualGrantContract,
@@ -377,17 +380,58 @@ const builtinOauthStartAccountSelection$ = computed(async (get) => {
 
 const accountMutationLog = logger("api:connector-account-mutation");
 
+function logBuiltinAccountMutation(
+  intent: "add" | "reconnect",
+  selectionCardinality: string,
+  missing: boolean,
+) {
+  accountMutationLog.debug("Resolved connector account mutation", {
+    targetKind: "builtin",
+    intent,
+    selectionCardinality,
+    outcome: missing ? "missing" : intent === "add" ? "insert" : "update",
+  });
+}
+
+const builtinNativeAppAuthorization$ = command(
+  async (
+    { get, set },
+    args: Parameters<typeof connectorNativeAppAuthorization>[0],
+    signal: AbortSignal,
+  ) => {
+    const requested =
+      args.platform === "ios" &&
+      args.callbackTarget === "app" &&
+      ["tiktok", "dropbox", "spotify"].includes(args.connectorSlug);
+    const auth = get(organizationAuthContext$);
+    const appAuthorizationEnabled = requested
+      ? isFeatureEnabled(
+          FeatureSwitchKey.IosConnectorAppAuthorization,
+          await set(
+            loadUserFeatureSwitchContext$,
+            auth.orgId,
+            auth.userId,
+            signal,
+          ),
+        )
+      : false;
+    signal.throwIfAborted();
+    return connectorNativeAppAuthorization({
+      ...args,
+      appAuthorizationEnabled,
+    });
+  },
+);
+
 const startBuiltinConnectorOauthInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const params = get(builtinOauthStartParams$);
+    const { connectorSlug } = get(builtinOauthStartParams$);
     const bodyResult = await get(builtinOauthStartBodyResult$);
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const request = get(request$).raw;
     const auth = get(authContext$);
-    const connectorSlug = params.connectorSlug;
     if (!auth.orgId) {
       return badRequestMessage(
         "Explicit org context required — ensure active org in session",
@@ -418,7 +462,7 @@ const startBuiltinConnectorOauthInner$ = command(
     }
 
     const redirectUri = getBuiltinConnectorOAuthCallbackUrlForMethod({
-      request,
+      request: get(request$).raw,
       method,
       connectorSlug: resolved.connectorSlug,
       callbackTarget: bodyResult.data.callbackTarget,
@@ -444,14 +488,21 @@ const startBuiltinConnectorOauthInner$ = command(
       state,
     });
     signal.throwIfAborted();
-    const authResult = connectorNativeAppAuthorization({
-      authorization,
-      platform: bodyResult.data.nativeAppAuthorization,
-      callbackTarget: bodyResult.data.callbackTarget,
-      connectorSlug: resolved.connectorSlug,
-      authMethodId: resolved.authMethodId,
-    });
+    const authResult = await set(
+      builtinNativeAppAuthorization$,
+      {
+        authorization,
+        platform: bodyResult.data.nativeAppAuthorization,
+        callbackTarget: bodyResult.data.callbackTarget,
+        connectorSlug: resolved.connectorSlug,
+        authMethodId: resolved.authMethodId,
+        nativeAppClientId: bodyResult.data.nativeAppClientId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
+    const storedState = authResult.state ?? state;
     const selection = await get(builtinOauthStartAccountSelection$);
     signal.throwIfAborted();
     if (!selection.ok) {
@@ -460,16 +511,11 @@ const startBuiltinConnectorOauthInner$ = command(
     const missing =
       bodyResult.data.account.intent === "reconnect" &&
       selection.selectedCount === 0;
-    accountMutationLog.debug("Resolved connector account mutation", {
-      targetKind: "builtin",
-      intent: bodyResult.data.account.intent,
-      selectionCardinality: selection.selectionCardinality,
-      outcome: missing
-        ? "missing"
-        : bodyResult.data.account.intent === "add"
-          ? "insert"
-          : "update",
-    });
+    logBuiltinAccountMutation(
+      bodyResult.data.account.intent,
+      selection.selectionCardinality,
+      missing,
+    );
     if (missing) {
       return connectorAccountMutationFailureResponse("missing");
     }
@@ -478,12 +524,12 @@ const startBuiltinConnectorOauthInner$ = command(
     const [oauthState] = await writeDb
       .insert(connectorOauthStates)
       .values({
-        state,
+        state: storedState,
         connectorSlug: resolved.connectorSlug,
         authMethod: resolved.authMethodId,
         userId: auth.userId,
         orgId: auth.orgId,
-        redirectUri: prepared.redirectUri,
+        redirectUri: authResult.redirectUri ?? prepared.redirectUri,
         authorizationUrl: authResult.url,
         oauthRequestedScopes: requestedScopeSnapshot(resolved.method.grant),
         codeVerifier: authResult.codeVerifier,
@@ -501,7 +547,10 @@ const startBuiltinConnectorOauthInner$ = command(
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
-        nativeCallbackUrl: connectorHttpsCallbackUrl(state, oauthState.id),
+        nativeCallbackUrl: connectorHttpsCallbackUrl(
+          storedState,
+          oauthState.id,
+        ),
         nativeAppAuthorization: authResult.nativeAppAuthorization,
         connectionId:
           bodyResult.data.account.intent === "add" ? oauthState.id : undefined,
@@ -632,16 +681,11 @@ const startBuiltinConnectorOpenIdInner$ = command(
     const missing =
       bodyResult.data.account.intent === "reconnect" &&
       selection.selectedCount === 0;
-    accountMutationLog.debug("Resolved connector account mutation", {
-      targetKind: "builtin",
-      intent: bodyResult.data.account.intent,
-      selectionCardinality: selection.selectionCardinality,
-      outcome: missing
-        ? "missing"
-        : bodyResult.data.account.intent === "add"
-          ? "insert"
-          : "update",
-    });
+    logBuiltinAccountMutation(
+      bodyResult.data.account.intent,
+      selection.selectionCardinality,
+      missing,
+    );
     if (missing) {
       return connectorAccountMutationFailureResponse("missing");
     }

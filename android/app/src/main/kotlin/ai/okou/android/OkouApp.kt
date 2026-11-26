@@ -446,7 +446,6 @@ internal fun OkouApp(
     var restoreWorkflowFocus by remember { mutableStateOf(false) }
     var handoff by remember { mutableStateOf<Job?>(null) }
     var handoffPending by remember { mutableStateOf(false) }
-    var workflowHandoffFailed by remember { mutableStateOf(false) }
     var workflowDraftError by remember { mutableStateOf<WorkflowDraftError?>(null) }
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
@@ -532,7 +531,6 @@ internal fun OkouApp(
         workflowOrigin = navigation
         workflowQuery.reset()
         workflowDraftError = null
-        workflowHandoffFailed = false
         changeWorkflowRoute(
             WorkflowsRoute(
                 mode = WorkflowsMode.Directory,
@@ -832,7 +830,6 @@ internal fun OkouApp(
                     }
                     ComposerPrefillResult.NetworkFailed,
                     ComposerPrefillResult.Unavailable -> {
-                        if (fromSearch) workflowHandoffFailed = true
                         workflowDraftError =
                             WorkflowDraftError(workflowId, R.string.workflow_draft_unavailable)
                     }
@@ -1759,7 +1756,7 @@ internal fun OkouApp(
                                         else
                                             { hit ->
                                                 releaseSearchFocus()
-                                                workflowHandoffFailed = false
+                                                workflowDraftError = null
                                                 searchWorkflowId = hit.id
                                             },
                                     onOpenArtifact =
@@ -1771,7 +1768,7 @@ internal fun OkouApp(
                                         intro,
                                         canStartDraft = workspaceReady,
                                         pending = handoffPending,
-                                        failed = workflowHandoffFailed,
+                                        failed = workflowDraftError?.workflowId == intro.id,
                                         onClose = ::dismissWorkflowIntro,
                                         onUse = {
                                             workflowDraft(

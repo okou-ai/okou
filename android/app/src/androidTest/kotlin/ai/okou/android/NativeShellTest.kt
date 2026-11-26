@@ -21,6 +21,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +86,7 @@ class NativeShellTest {
     @Test
     fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
+            val minChoiceHeight = (56 * app.resources.displayMetrics.density).roundToInt()
             fun button(id: Int) =
                 reveal(
                     By.pkg(app.packageName)
@@ -96,17 +98,16 @@ class NativeShellTest {
                 )
             fun option(id: Int, firstChoice: Int) =
                 reveal(appearanceOption(id).enabled(true), app.getString(id), firstChoice)
-            fun openPicker(row: Int, firstChoice: Int) {
+            fun openPicker(row: Int, selected: Int) {
                 button(row).click()
-                await("Preference picker is open") {
-                    findCurrent(appearanceOption(firstChoice)) != null
+                await(
+                    "Selected preference is fully visible on opening: ${app.getString(selected)}",
+                ) {
+                    val choice = findCurrent(appearanceOption(selected))
+                    choice?.isChecked == true && choice.visibleBounds.height() >= minChoiceHeight
                 }
             }
-            fun dismissPicker(firstChoice: Int, selected: Int) {
-                assertTrue(
-                    "Confirmed preference selection: ${app.getString(selected)}",
-                    option(selected, firstChoice).isChecked,
-                )
+            fun dismissPicker(selected: Int) {
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 await("Preference picker is dismissed") {
                     findCurrent(appearanceOption(selected)) == null
@@ -122,27 +123,27 @@ class NativeShellTest {
             }
             openPicker(R.string.preference_color_theme, R.string.palette_default)
             option(R.string.palette_blue_horizon, R.string.palette_default).click()
-            openPicker(R.string.preference_color_theme, R.string.palette_default)
-            dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
+            openPicker(R.string.preference_color_theme, R.string.palette_blue_horizon)
+            dismissPicker(R.string.palette_blue_horizon)
             openPicker(R.string.language_en_us, R.string.language_en_us)
             option(R.string.language_zh_hant, R.string.language_en_us).click()
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            openPicker(R.string.language_zh_hant, R.string.language_en_us)
-            dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
+            openPicker(R.string.language_zh_hant, R.string.language_zh_hant)
+            dismissPicker(R.string.language_zh_hant)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
             closeActivity()
             launch()
             device.openChatListSettings(app)
-            openPicker(R.string.palette_blue_horizon, R.string.palette_default)
-            dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
+            openPicker(R.string.palette_blue_horizon, R.string.palette_blue_horizon)
+            dismissPicker(R.string.palette_blue_horizon)
             await("Restored palette label is Traditional Chinese") {
                 findCurrent(By.pkg(app.packageName).text("藍色地平線")) != null
             }
-            openPicker(R.string.language_zh_hant, R.string.language_en_us)
-            dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
+            openPicker(R.string.language_zh_hant, R.string.language_zh_hant)
+            dismissPicker(R.string.language_zh_hant)
         }
 
     private fun launch() {

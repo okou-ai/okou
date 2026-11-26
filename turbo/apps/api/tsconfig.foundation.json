@@ -142,6 +142,7 @@
     "src/signals/external/clerk-users.ts",
     "src/signals/services/agent-run-context.signals.ts",
     "src/signals/services/execution-package-sources.ts",
+    "src/signals/services/content-bundle-presigned-url-cache.ts",
     "src/signals/services/run-template-sources.service.ts",
     "src/signals/services/thread-connector-sources.service.ts",
     "src/signals/services/agent-run-variables.ts",

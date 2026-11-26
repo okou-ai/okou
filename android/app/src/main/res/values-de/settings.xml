@@ -17,7 +17,6 @@
     <string name="settings_email_receive">E-Mails erhalten</string>
     <string name="settings_email_unavailable">E-Mail nicht verfügbar</string>
     <string name="settings_email_check_address">E-Mail-Adresse des Kontos prüfen</string>
-    <string name="settings_email_load_failed">E-Mail-Einstellungen sind vorübergehend nicht verfügbar.</string>
     <string name="settings_email_refresh_failed">Synchronisierung fehlgeschlagen. Das zuletzt gespeicherte Abonnement wird angezeigt.</string>
     <string name="settings_email_refreshing">E-Mail-Abonnement wird synchronisiert</string>
     <string name="settings_email_saving">E-Mail-Abonnement wird aktualisiert…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Wähle die Abokonten für „%1$s“.</string>
     <string name="settings_accounts_scope_empty">Modellkonten in „%1$s“</string>
     <string name="settings_workspace_status">„%1$s“ · %2$s</string>
-    <string name="settings_accounts_unavailable">Modellkonten sind momentan nicht verfügbar.</string>
     <string name="settings_accounts_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekannte Informationen werden angezeigt.</string>
     <string name="settings_accounts_empty">Keine Modellkonten verbunden</string>
     <string name="settings_accounts_empty_help">Verbinde ChatGPT oder Claude, um Kontingente zu sehen und ein Konto auszuwählen.</string>

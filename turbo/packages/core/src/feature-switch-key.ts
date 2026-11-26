@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   IosConnectorManagement = "iosConnectorManagement",
+  IosConnectorAppAuthorization = "iosConnectorAppAuthorization",
   ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",
@@ -58,10 +59,10 @@ export enum FeatureSwitchKey {
   HostedSiteCustomDomains = "hostedSiteCustomDomains",
   HostedSiteShareRows = "hostedSiteShareRows",
   HostedSiteEmailSharing = "hostedSiteEmailSharing",
-  SlackArtifactChannelSharing = "slackArtifactChannelSharing",
   FeishuArtifactChannelSharing = "feishuArtifactChannelSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
   WorkflowListRedesign = "workflowListRedesign",
+  ForYouSimplifiedDeck = "forYouSimplifiedDeck",
 }

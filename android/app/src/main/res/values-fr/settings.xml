@@ -17,7 +17,6 @@
     <string name="settings_email_receive">Recevoir les e-mails</string>
     <string name="settings_email_unavailable">E-mail indisponible</string>
     <string name="settings_email_check_address">Vérifier l’adresse e-mail du compte</string>
-    <string name="settings_email_load_failed">Les paramètres d’e-mail sont temporairement indisponibles.</string>
     <string name="settings_email_refresh_failed">Synchronisation impossible. Le dernier abonnement enregistré est affiché.</string>
     <string name="settings_email_refreshing">Synchronisation de l’abonnement par e-mail</string>
     <string name="settings_email_saving">Mise à jour de l’abonnement par e-mail…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Choisissez les comptes d’abonnement utilisés dans «\u00A0%1$s\u00A0».</string>
     <string name="settings_accounts_scope_empty">Comptes de modèle dans «\u00A0%1$s\u00A0»</string>
     <string name="settings_workspace_status">«\u00A0%1$s\u00A0» · %2$s</string>
-    <string name="settings_accounts_unavailable">Impossible d’afficher les comptes de modèle pour le moment.</string>
     <string name="settings_accounts_update_failed">L’actualisation a échoué. Dernières données connues affichées.</string>
     <string name="settings_accounts_empty">Aucun compte de modèle associé</string>
     <string name="settings_accounts_empty_help">Associez ChatGPT ou Claude pour consulter les quotas et choisir un compte.</string>

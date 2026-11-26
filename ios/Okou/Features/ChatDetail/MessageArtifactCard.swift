@@ -20,12 +20,29 @@ struct MessageArtifactCard: View {
   }
 
   var body: some View {
-    let reads = viewer.reads
-    StoreProvider(reads.store) {
-      if loadsContent {
-        MessageArtifactCardValue(card: self, reads: reads)
+    // Transcript cells host the card outside the workspace root, so it provides the session
+    // Store that keeps the viewer's current reads.
+    StoreProvider(viewer.graph) { MessageArtifactCardReads(card: self) }
+  }
+}
+
+/// The card under the viewer's current reads, which leaving the detail replaces.
+private struct MessageArtifactCardReads: View {
+  let card: MessageArtifactCard
+  @ResolvedValue private var resolvedReads: MessageArtifactResources?
+
+  init(card: MessageArtifactCard) {
+    self.card = card
+    _resolvedReads = ResolvedValue(card.viewer.readsValue, equals: { $0 === $1 })
+  }
+
+  var body: some View {
+    let reads = resolvedReads ?? card.viewer.reads
+    Group {
+      if card.loadsContent {
+        MessageArtifactCardValue(card: card, reads: reads)
       } else {
-        MessageArtifactCardContent(card: self, value: .loading, retry: nil)
+        MessageArtifactCardContent(card: card, value: .loading, retry: nil)
       }
     }
     .id(ObjectIdentifier(reads))

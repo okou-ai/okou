@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">कुछ नतीजे लोड नहीं हो सके</string>
     <string name="chat_search_message_unavailable">यह संदेश अब उपलब्ध नहीं है</string>
     <string name="chat_search_workflow_add_draft">नई चैट के ड्राफ़्ट में जोड़ें</string>
+    <string name="chat_search_workflow_opening_draft">नई चैट का ड्राफ़्ट खुल रहा है…</string>
     <string name="chat_search_workflow_details">वर्कफ़्लो की जानकारी देखें</string>
     <string name="chat_search_workflow_shadowed">यह कमांड एक निजी वर्कफ़्लो उपयोग करता है</string>
     <string name="chat_search_artifact_preview">आर्टिफ़ैक्ट का पूर्वावलोकन</string>

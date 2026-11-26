@@ -53,6 +53,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +103,7 @@ private data class ArtifactCatalogListState(
 internal fun ArtifactCatalogList(
     model: ArtifactCatalogModel,
     state: ArtifactCatalogState,
+    refreshSnackbar: SnackbarHostState,
     input: TextFieldState,
     query: ArtifactQuery,
     onFilter: (ArtifactFilter) -> Unit,
@@ -205,71 +207,75 @@ internal fun ArtifactCatalogList(
                     onFocusRestored()
                 }
             } else Modifier
-        LazyColumn(
-            modifier =
-                Modifier.widthIn(max = 730.dp)
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .then(restoreAfterLayout)
-                    .testTag("artifact_list"),
-            state = position,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
-        ) {
-            if (showSkeleton) items(4) { ArtifactRowSkeleton() }
-            if (page?.items?.isEmpty() == true) {
-                item {
-                    ArtifactEmpty(
-                        hasKeyword = query.keyword.isNotBlank(),
-                        filtered = filter != ArtifactFilter.All,
-                        onClear = clearQuery,
-                        onShowAll = {
-                            onFilter(ArtifactFilter.All)
-                            allFilterFocus.requestFocus()
-                        },
-                    )
-                }
-            }
-            groups.entries.forEachIndexed { index, (day, rows) ->
-                if (day != ArtifactDay.Search) {
-                    item(key = day.name) {
-                        Text(
-                            stringResource(day.label),
-                            Modifier.padding(
-                                    start = 12.dp,
-                                    top = if (index == 0) 8.dp else 16.dp,
-                                    bottom = 4.dp,
-                                )
-                                .semantics { heading() },
-                            style = artifactSmallText(),
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            LazyColumn(
+                modifier =
+                    Modifier.widthIn(max = 730.dp)
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .align(Alignment.TopCenter)
+                        .then(restoreAfterLayout)
+                        .testTag("artifact_list"),
+                state = position,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+            ) {
+                if (showSkeleton) items(4) { ArtifactRowSkeleton() }
+                if (page?.items?.isEmpty() == true) {
+                    item {
+                        ArtifactEmpty(
+                            hasKeyword = query.keyword.isNotBlank(),
+                            filtered = filter != ArtifactFilter.All,
+                            onClear = clearQuery,
+                            onShowAll = {
+                                onFilter(ArtifactFilter.All)
+                                allFilterFocus.requestFocus()
+                            },
                         )
                     }
                 }
-                items(rows, key = { it.id }) { item ->
-                    ArtifactRow(
-                        item = item,
-                        date =
-                            localDates.timestamp(
-                                checkNotNull(item.createdAt),
-                                showDay = day == ArtifactDay.Search,
-                            ),
-                        selected = item.id == selectedId,
-                        thumbnail = model::thumbnail,
-                        modifier =
-                            if (item.id == restoreRow) Modifier.focusRequester(rowFocus)
-                            else Modifier,
-                    ) {
-                        onSelect(item)
+                groups.entries.forEachIndexed { index, (day, rows) ->
+                    if (day != ArtifactDay.Search) {
+                        item(key = day.name) {
+                            Text(
+                                stringResource(day.label),
+                                Modifier.padding(
+                                        start = 12.dp,
+                                        top = if (index == 0) 8.dp else 16.dp,
+                                        bottom = 4.dp,
+                                    )
+                                    .semantics { heading() },
+                                style = artifactSmallText(),
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(rows, key = { it.id }) { item ->
+                        ArtifactRow(
+                            item = item,
+                            date =
+                                localDates.timestamp(
+                                    checkNotNull(item.createdAt),
+                                    showDay = day == ArtifactDay.Search,
+                                ),
+                            selected = item.id == selectedId,
+                            thumbnail = model::thumbnail,
+                            modifier =
+                                if (item.id == restoreRow) Modifier.focusRequester(rowFocus)
+                                else Modifier,
+                        ) {
+                            onSelect(item)
+                        }
                     }
                 }
-            }
-            if (failure != null) {
-                item(key = "catalog-read-failure") {
-                    ArtifactReadNotice(failure.label(), noticePadding)
+                if (failure != null && failure != ArtifactCatalogFailure.Refresh) {
+                    item(key = "catalog-read-failure") {
+                        ArtifactReadNotice(failure.label(), noticePadding)
+                    }
                 }
+                if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
-            if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
+            ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
 }

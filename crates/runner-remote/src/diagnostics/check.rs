@@ -57,10 +57,9 @@ impl Handle {
         report.operation = Operation::ActiveCheck;
         report.assignment_id = self.assignment;
         let native_admission_blocked = report.vnc.as_ref().is_some_and(|snapshot| {
-            [&snapshot.rfb_carrier, &snapshot.kdc_carrier]
-                .into_iter()
-                .flatten()
-                .any(|carrier| carrier.status == Progress::NotReached)
+            snapshot
+                .carriers()
+                .any(|(_, carrier)| carrier.status == Progress::NotReached)
         });
         let status = if report.cause.is_none() && cleanup == Progress::Passed {
             "passed"

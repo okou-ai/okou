@@ -80,10 +80,13 @@ internal enum class ArtifactCatalogFailure {
 
 internal data class ConfirmedArtifactCatalog(val page: ArtifactPage, val confirmedAt: Long)
 
+internal class ArtifactRefreshFailure
+
 internal data class ArtifactCatalogState(
     val query: ArtifactQuery = ArtifactQuery(),
     val catalog: ConfirmedArtifactCatalog? = null,
     val failedRead: ArtifactCatalogFailure? = null,
+    val refreshFailure: ArtifactRefreshFailure? = null,
     val reading: ArtifactCatalogRead? = null,
     val relatedChats: RelatedChatResourcesState = RelatedChatResourcesState(),
     val workflows: WorkflowResourcesState = WorkflowResourcesState(),
@@ -183,6 +186,7 @@ internal constructor(
             mutable.update {
                 it.copy(
                     reading = null,
+                    refreshFailure = null,
                     relatedChats = it.relatedChats.copy(syncingStale = false),
                     workflows = it.workflows.copy(checking = false, syncingStale = false),
                 )
@@ -200,6 +204,7 @@ internal constructor(
                 query = next,
                 catalog = catalogs[next],
                 failedRead = null,
+                refreshFailure = null,
                 reading = null,
                 relatedChats = RelatedChatResourcesState(),
                 workflows = WorkflowResourcesState(),
@@ -507,7 +512,9 @@ internal constructor(
         val cursor = if (append) current.page?.nextCursor ?: return else null
         val threadId = query.chatThreadId
         if (threadId != null && threadId == missingThread) {
-            mutable.update { it.copy(failedRead = ArtifactCatalogFailure.ChatUnavailable) }
+            mutable.update {
+                it.copy(failedRead = ArtifactCatalogFailure.ChatUnavailable, refreshFailure = null)
+            }
             return
         }
         catalogJob?.cancel()
@@ -562,7 +569,14 @@ internal constructor(
                     storeCatalog { cache.saveArtifactCatalog(threadId, snapshot, appendedTo) }
                 }
                 catalogs.remember(query, snapshot, 8)
-                mutable.update { it.copy(catalog = snapshot, failedRead = null, reading = null) }
+                mutable.update {
+                    it.copy(
+                        catalog = snapshot,
+                        failedRead = null,
+                        refreshFailure = null,
+                        reading = null,
+                    )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -603,15 +617,19 @@ internal constructor(
             catalogs.remove(query)
         }
         mutable.update {
+            val failure =
+                when {
+                    removed -> ArtifactCatalogFailure.Missing
+                    append -> ArtifactCatalogFailure.More
+                    it.catalog == null -> ArtifactCatalogFailure.Initial
+                    else -> ArtifactCatalogFailure.Refresh
+                }
             it.copy(
                 catalog = it.catalog.takeUnless { removed },
-                failedRead =
-                    when {
-                        removed -> ArtifactCatalogFailure.Missing
-                        append -> ArtifactCatalogFailure.More
-                        it.catalog == null -> ArtifactCatalogFailure.Initial
-                        else -> ArtifactCatalogFailure.Refresh
-                    },
+                failedRead = failure,
+                refreshFailure =
+                    if (failure == ArtifactCatalogFailure.Refresh) ArtifactRefreshFailure()
+                    else null,
                 reading = null,
             )
         }
@@ -652,6 +670,7 @@ internal constructor(
                     else it.preview,
                 reading = null,
                 failedRead = failure,
+                refreshFailure = null,
             )
         }
     }
@@ -681,6 +700,7 @@ internal constructor(
                         ArtifactPreviewState(preview.id, null, problem = ArtifactProblem.Denied)
                     },
                 failedRead = ArtifactCatalogFailure.Denied,
+                refreshFailure = null,
                 reading = null,
             )
         }

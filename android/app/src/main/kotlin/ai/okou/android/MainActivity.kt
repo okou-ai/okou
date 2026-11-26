@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 UpdateHost(
                     updateState.copy(required = updateRequired),
-                    updates::checkAfterFailure,
+                    updates::checkOnDetailsOpen,
                     { updates.check() },
                     { updateInstall.download(it, advanceRetry = true) },
                     ::installUpdate,

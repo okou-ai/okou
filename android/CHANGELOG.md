@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.59.0](https://github.com/okou-ai/okou/compare/android-v0.58.2...android-v0.59.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Bug Fixes
+
+* **android:** align settings first-read failure feedback ([#51062](https://github.com/okou-ai/okou/issues/51062)) ([3f87e23](https://github.com/okou-ai/okou/commit/3f87e23b88d3165835b3b5c7ecca62c85f3d212a))
+* **android:** recheck on reopening update details without a compatible release ([#51046](https://github.com/okou-ai/okou/issues/51046)) ([a901f5e](https://github.com/okou-ai/okou/commit/a901f5e839ad57514709e9db4dd04a1c73cc852d))
+
+## [0.58.2](https://github.com/okou-ai/okou/compare/android-v0.58.1...android-v0.58.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** open settings selectors at the current option ([#51016](https://github.com/okou-ai/okou/issues/51016)) ([6bfbe17](https://github.com/okou-ai/okou/commit/6bfbe1798210522f745176f81c824dac6581b492))
+
+## [0.58.1](https://github.com/okou-ai/okou/compare/android-v0.58.0...android-v0.58.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align chat list row hover and keyboard focus ([#51018](https://github.com/okou-ai/okou/issues/51018)) ([1a253c4](https://github.com/okou-ai/okou/commit/1a253c4798571c05b131d1ab095e23651013d755))
+* **android:** show shared feedback for cold artifact read failures ([#51014](https://github.com/okou-ai/okou/issues/51014)) ([8b46e8b](https://github.com/okou-ai/okou/commit/8b46e8b58b50bc4afdf694896213188d3c12ab70))
+
 ## [0.58.0](https://github.com/okou-ai/okou/compare/android-v0.57.4...android-v0.58.0) (2026-11-26)
 
 
