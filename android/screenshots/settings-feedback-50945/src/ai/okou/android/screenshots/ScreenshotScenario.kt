@@ -116,6 +116,7 @@ class ScreenshotScenario {
                 backToOverview()
 
                 open(R.string.settings_email_updates)
+                await(By.pkg(app.packageName).textContains(SettingsApiFixture.emailAddress))
                 subscriptionSwitch(checked = false, enabled = true)
                 device.waitForIdle()
                 val idlePosition = subscriptionSwitch(checked = false, enabled = true).visibleBounds
@@ -143,7 +144,7 @@ class ScreenshotScenario {
                 subscriptionSwitch(checked = false, enabled = true).click()
                 await(label(app.getString(R.string.settings_email_saving)))
                 subscriptionSwitch(checked = true, enabled = false)
-                check(device.pressBack())
+                device.pressBack()
                 check(device.wait(Until.gone(subscriptionSelector().enabled(false)), 10_000) == true)
                 device.waitForIdle()
                 releaseWrite(afterClose)
@@ -209,7 +210,7 @@ class ScreenshotScenario {
     }
 
     private fun backToOverview() {
-        check(device.pressBack())
+        await(By.pkg(app.packageName).desc(app.getString(R.string.back)).enabled(true)).click()
         await(label(app.getString(R.string.settings)))
     }
 
