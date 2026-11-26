@@ -83,8 +83,8 @@ internal fun <T : Any> WorkspaceFilterRow(
             }
         }
     val visibleOption = focused ?: selected
-    LaunchedEffect(visibleOption, scroll.maxValue) {
-        reveal.getValue(visibleOption).bringIntoView()
+    LaunchedEffect(enabled, visibleOption, scroll.maxValue) {
+        if (enabled) reveal.getValue(visibleOption).bringIntoView()
     }
     CompositionLocalProvider(LocalBringIntoViewSpec provides revealSpec) {
         Row(
@@ -109,7 +109,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                         )
                     }
                 }
-                .horizontalScroll(scroll)
+                .horizontalScroll(scroll, enabled = enabled)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
