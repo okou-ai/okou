@@ -499,6 +499,7 @@ class ChatListModel(
     private var listFailures = 0
     private var listIsVisible = true
     private var listInForeground = initiallyInForeground
+    private var listReadScope = Any()
     private val needsListRead: Boolean
         get() = listIsVisible && listInForeground
 
@@ -1756,6 +1757,7 @@ class ChatListModel(
     }
 
     private fun endListReadScope() {
+        listReadScope = Any()
         val listRefresh = listRefreshJob
         val indicatorRefresh = indicatorsJob.takeIf { indicatorsRetry != null }
         listRebaseJob?.cancel()
@@ -1971,6 +1973,8 @@ class ChatListModel(
     private suspend fun readList(batch: ListReadBatch): Boolean {
         restoreJob?.join()
         requireCurrent()
+        // Explicit readbacks can outlive the visit that started them.
+        val retryScope = listReadScope.takeIf { needsListRead }
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         val previous = mutable.value
@@ -2016,7 +2020,7 @@ class ChatListModel(
                         listReadFailure = ChatListReadFailure.NeedsRetry,
                         listRetryProgressVisible = false,
                     )
-                } else if (needsListRead) {
+                } else if (needsListRead && retryScope === listReadScope) {
                     recordListReadFailure(retryAfter)
                     failed.copy(
                         listReadFailure = ChatListReadFailure.Retrying,

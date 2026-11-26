@@ -116,6 +116,42 @@ internal class ChatListReadScopeModelTest : ChatListModelTestFixture() {
     }
 
     @Test
+    fun aWriteReadbackFromBeforeBackgroundingCannotDelayTheResumedListRead() = runTest {
+        val service = ArchiveService()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+
+            val readbackStarted = CompletableDeferred<Unit>()
+            val readback = CompletableDeferred<Unit>()
+            service.beforeEvents = {
+                readbackStarted.complete(Unit)
+                readback.await()
+            }
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            runCurrent()
+            assertTrue(readbackStarted.isCompleted)
+
+            model.activityForegroundChanged(false)
+            model.activityForegroundChanged(true)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertFalse(
+                model.uiState.value.confirmedThreads.first { it.id == CHAT_PERSONAL }.archived,
+            )
+
+            service.beforeEvents = {}
+            readback.completeExceptionally(ApiFailure.Http(503, null, null, 60))
+            runCurrent()
+
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(
+                model.uiState.value.confirmedThreads.first { it.id == CHAT_PERSONAL }.archived,
+            )
+        }
+    }
+
+    @Test
     fun resumingQueuesFreshIndicatorsBehindAnExplicitWriteReadback() = runTest {
         val initialUnread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val updatedUnread = mapOf(CHAT_PERSONAL to "2026-11-14T00:00:00.000Z")
