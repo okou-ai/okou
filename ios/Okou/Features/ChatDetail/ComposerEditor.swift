@@ -36,10 +36,7 @@ final class ComposerEditor {
   }
 
   func insertVoiceText(_ text: String, at target: VoiceInsertion) -> Bool {
-    guard let view = target.view, let input = inputs[ObjectIdentifier(view)],
-      input.isCurrent(), view.window != nil, view.isEditable,
-      view.markedTextRange == nil, !view.isSettlingComposition,
-      view.text == target.text, view.composerDocument == target.document
+    guard let view = voiceInputView(for: target), let input = inputs[ObjectIdentifier(view)]
     else { return false }
     view.replaceCharacters(
       in: target.range,
@@ -50,6 +47,26 @@ final class ComposerEditor {
     input.focusRequested()
     view.scrollRangeToVisible(view.selectedRange)
     return true
+  }
+
+  func insertVoiceClip(_ part: MessageJSON, at target: VoiceInsertion) -> Bool {
+    guard let view = voiceInputView(for: target) else { return false }
+    let insertion = NSMaxRange(target.range)
+    view.replaceCharacters(
+      in: NSRange(location: insertion, length: 0),
+      with: ComposerAttributedDocument.attributed(ChatDraftDocument(parts: [part])),
+      selection: NSRange(location: insertion + 1, length: 0))
+    view.undoManager?.setActionName("Voice recording")
+    return true
+  }
+
+  private func voiceInputView(for target: VoiceInsertion) -> ComposerTextView? {
+    guard let view = target.view, let input = inputs[ObjectIdentifier(view)],
+      input.isCurrent(), view.window != nil, view.isEditable,
+      view.markedTextRange == nil, !view.isSettlingComposition,
+      view.text == target.text, view.composerDocument == target.document
+    else { return nil }
+    return view
   }
 
   let workflows: ComposerWorkflowSuggestions

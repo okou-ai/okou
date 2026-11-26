@@ -24,6 +24,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var identifier = "message-input"
   var expanded = false
   var mentionSource: ComposerMentionSource?
+  var voicePlayback: ComposerVoicePlayback?
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.workspaceChatPresentation) private var presentation
 
@@ -50,6 +51,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     let view = container.textView
     context.coordinator.input = self
     view.mentionEditor = editor
+    view.voicePlayback = voicePlayback
     view.mentionSource = mentionSource
     view.workflowSuggestions = editor?.workflows
     view.updateWorkflows = { [weak coordinator = context.coordinator, weak view] textChanged in
@@ -139,6 +141,13 @@ struct ChatComposerTextInput: UIViewRepresentable {
     // The surface reserves expansion space. Keep an empty editor's measured height
     // stable on focus so it does not resize the surface in a second layout update.
     // Drafts and feedback still keep at least two lines, up to six before scrolling.
+    let storage = uiView.textView.textStorage
+    if !expanded, storage.length == 1,
+      let clip = storage.attribute(.attachment, at: 0, effectiveRange: nil)
+        as? ComposerReferenceAttachment, !clip.voiceFileIDs.isEmpty
+    {
+      return CGSize(width: width, height: max(line, height))
+    }
     let hasText = !(uiView.textView.text ?? "").isEmpty
     return CGSize(
       width: width,
@@ -272,6 +281,7 @@ final class ComposerTextView: UITextView {
   var isCurrent: @MainActor () -> Bool = { true }
   var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
+  weak var voicePlayback: ComposerVoicePlayback?
   /// The workspace chats this input was last rendered with, for keyboard mention activation.
   var mentionSource: ComposerMentionSource?
   private(set) var isSettlingComposition = false

@@ -351,7 +351,7 @@ final class ComposerVoiceInputStore {
     owner: UUID
   ) async throws {
     guard generation == owner, composer.canEditVoice else { return }
-    composer.appendVoiceClip(fileID, recordingID: id)
+    composer.insertVoiceClip(fileID, recordingID: id, at: insertion)
     guard !composer.hasLocalFailure else {
       error = "Save the draft on this device before discarding the recording."
       return

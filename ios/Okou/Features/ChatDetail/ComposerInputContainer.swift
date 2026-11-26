@@ -30,6 +30,16 @@ final class ComposerInputContainer: UIView {
     expansionButton.frame = bounds
   }
 
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let hit = super.hitTest(point, with: event)
+    guard hit === expansionButton else { return hit }
+    let editorPoint = textView.convert(point, from: self)
+    if let clip = textView.hitTest(editorPoint, with: event) as? ComposerVoiceClipControl {
+      return clip
+    }
+    return hit
+  }
+
   private func expand() {
     guard expandsOnTap, textView.isCurrent(), textView.isEditable,
       textView.becomeFirstResponder()

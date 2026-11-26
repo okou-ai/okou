@@ -136,7 +136,7 @@ enum ComposerAttributedDocument {
         .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
       switch part["type"]?.string {
       case "chat_thread": return "[\(escaped)](/chats/\(part["threadId"]?.string ?? ""))"
-      case "voice": return String(localized: "Voice message")
+      case "voice": return String(localized: "Voice recording")
       case "text": return part["text"]?.string ?? ""
       default: return name
       }
@@ -169,10 +169,16 @@ enum ComposerAttributedDocument {
 
 /// TextKit provides atomic selection, deletion and native editing geometry.
 final class ComposerReferenceAttachment: NSTextAttachment {
+  private static let voiceType = "ai.okou.composer.recording"
   let part: MessageJSON
+
+  var voiceFileIDs: [String] {
+    guard part["type"]?.string == "voice", case .array(let clips) = part["clips"] else { return [] }
+    return clips.compactMap { $0["fileId"]?.string }
+  }
   var referenceFont = ComposerAttributedDocument.font
   var title: String {
-    if part["type"]?.string == "voice" { return String(localized: "Voice message") }
+    if part["type"]?.string == "voice" { return String(localized: "Voice recording") }
     return part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? ""
   }
   var symbol: String {
@@ -187,6 +193,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     self.part = part
     referenceFont = font
     super.init(data: nil, ofType: nil)
+    configureVoiceView()
   }
 
   override var accessibilityLabel: String? {
@@ -204,6 +211,23 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     else { return nil }
     self.part = part
     super.init(coder: coder)
+    configureVoiceView()
+  }
+
+  private func configureVoiceView() {
+    guard !voiceFileIDs.isEmpty else { return }
+    NSTextAttachment.registerViewProviderClass(
+      ComposerVoiceAttachmentProvider.self, forFileType: Self.voiceType)
+    fileType = Self.voiceType
+    allowsTextAttachmentView = true
+  }
+
+  func voiceBounds(availableWidth: CGFloat) -> CGRect {
+    let font = referenceFont
+    let height = max(ComposerVoiceClipControl.visualHeight, ceil(font.lineHeight))
+    let width = min(ComposerVoiceClipControl.preferredWidth(font: font), availableWidth)
+    return CGRect(
+      x: 0, y: (font.ascender + font.descender - height) / 2, width: width, height: height)
   }
 
   override func encode(with coder: NSCoder) {
@@ -217,6 +241,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect,
     glyphPosition position: CGPoint, characterIndex charIndex: Int
   ) -> CGRect {
+    if !voiceFileIDs.isEmpty { return voiceBounds(availableWidth: lineFrag.width) }
     let font = referenceFont
     let height = ceil(font.lineHeight + 4)
     let width = min(

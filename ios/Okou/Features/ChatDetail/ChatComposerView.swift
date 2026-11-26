@@ -144,8 +144,12 @@ private struct ChatComposerContent: View {
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
+  private var hasMultipleVoiceParts: Bool {
+    current.draft.document.parts.lazy.filter { $0["type"]?.string == "voice" }.prefix(2).count == 2
+  }
+
   private var expandsInput: Bool {
-    writesDirection || showsEditingLayout || hasText
+    writesDirection || showsEditingLayout || hasText || hasMultipleVoiceParts
       || current.draft.document.hasFeedback || voiceActive || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
@@ -314,7 +318,9 @@ private struct ChatComposerContent: View {
       .animation(
         !reduceMotion && sendTransition?.hidesBubbleID != nil
           ? sendTransition?.composerAnimation : nil,
-        value: hasText)
+        value: hasText
+      )
+      .animation(focusAnimation, value: hasMultipleVoiceParts)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
     .padding(.horizontal, writesDirection ? 0 : OkouControl.pageInset)

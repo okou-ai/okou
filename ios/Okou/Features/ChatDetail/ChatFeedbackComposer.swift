@@ -92,7 +92,7 @@ struct ChatFeedbackComposer: View {
                   followup: block.isFeedback ? nil : followup,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: expanded || presentation.draft.document.hasFeedback || isFocused,
-                  mentionSource: mentionSource
+                  mentionSource: mentionSource, voicePlayback: state.voicePlayback
                 )
               }
               .id(block.id)
