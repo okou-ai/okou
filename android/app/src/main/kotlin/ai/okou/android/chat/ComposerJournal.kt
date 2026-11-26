@@ -2,7 +2,9 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant9
 import ai.okou.android.connectors.ChatConnectorOverride
+import java.io.File
 import kotlin.time.TimeMark
 import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
@@ -21,6 +23,8 @@ data class PendingText(
     @Transient val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
     @Transient val started: TimeMark? = null,
     @Transient val draftModel: DraftModelSelection? = null,
+    @Transient val attachmentReferences: List<ChatAttachmentReference> = emptyList(),
+    @Transient val attachmentFiles: Map<String, File> = emptyMap(),
 )
 
 internal val PendingText.awaitingConnectorSetup: Boolean
@@ -66,6 +70,8 @@ data class ComposerMessagePreview(
     val disposition: TextDisposition? = null,
     val pendingDelivery: PendingDelivery? = null,
     val sequence: Long? = null,
+    val attachments: List<ChatAttachmentReference> = emptyList(),
+    val attachmentFiles: Map<String, File> = emptyMap(),
 )
 
 @Serializable
@@ -88,6 +94,7 @@ data class ComposerJournal(
     val newChatModel: DraftModelSelection? = null,
     // A recorded null restores server-default inheritance for a rejected new chat.
     val retainedDraftModels: Map<String, DraftModelSelection?> = emptyMap(),
+    val retainedDraftAttachments: Map<String, List<ChatAttachmentReference>> = emptyMap(),
 )
 
 internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
@@ -162,6 +169,7 @@ data class ComposerState(
     val unobserved: Set<String> = emptySet(),
     val synchronization: Map<String, ComposerSync> = emptyMap(),
     internal val receiptMessages: Map<String, ComposerMessagePreview> = emptyMap(),
+    internal val attachmentProgress: Map<String, Int> = emptyMap(),
 ) {
     fun draftKey(target: ComposerTarget): String {
         val redirected = journal?.entries?.get(target.key)?.createdThreadId
@@ -194,6 +202,9 @@ data class ComposerState(
         key in failed && journal?.entries?.get(key)?.pending?.awaitingConnectorSetup == true
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
+
+    internal fun attachments(target: ComposerTarget): List<DraftChatAttachment> =
+        journal?.drafts?.get(draftKey(target))?.attachments.orEmpty()
 
     internal fun canEditDraftModel(target: ComposerTarget) =
         journal != null &&
@@ -231,18 +242,39 @@ data class ComposerState(
             ProvisionalChat(pending.threadId, create.projectId)
         }
 
-    fun canSend(target: ComposerTarget): Boolean =
-        journal != null &&
+    fun canSend(target: ComposerTarget): Boolean {
+        val entry = entry(target)
+        val attachments = attachments(target)
+        return journal != null &&
             persistence != ComposerPersistence.Failed &&
             (target.key !in busy || target.key in checking) &&
-            entry(target).pending == null &&
+            entry.pending == null &&
             target.threadId?.let(::pendingNewChat) == null &&
-            entry(target).createdThreadId == null &&
-            !entry(target).text.isBlankWebDraft()
+            entry.createdThreadId == null &&
+            attachments.all { it.reference != null } &&
+            (!entry.text.isBlankWebDraft() || attachments.isNotEmpty())
+    }
 }
+
+internal val PendingText.displayText: String
+    get() = send.prompt.takeUnless { send.hasTextContent == false }.orEmpty()
 
 internal fun PendingText.preview(
     disposition: TextDisposition? = null,
     pendingDelivery: PendingDelivery? = null,
     sequence: Long? = null,
-) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery, sequence)
+) =
+    ComposerMessagePreview(
+        eventId,
+        threadId,
+        displayText,
+        disposition,
+        pendingDelivery,
+        sequence,
+        attachmentReferences.ifEmpty {
+            send.userMessage.parts
+                .filterIsInstance<SendRequestVariant1UserMessagePartsItemVariant9>()
+                .map { ChatAttachmentReference(it.fileId, it.filenameSnapshot, it.contentType) }
+        },
+        attachmentFiles.takeIf { pendingDelivery != null }.orEmpty(),
+    )

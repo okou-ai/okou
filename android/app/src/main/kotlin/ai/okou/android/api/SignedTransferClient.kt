@@ -12,6 +12,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /** Signed assets/storage have no access to API tokens, cookies or client identity. */
@@ -49,8 +50,15 @@ class SignedTransferClient(
         }
 
     suspend fun upload(url: HttpUrl, bytes: ByteArray, headers: Map<String, String> = emptyMap()) =
+        upload(url, bytes.toRequestBody(), headers)
+
+    internal suspend fun upload(
+        url: HttpUrl,
+        body: RequestBody,
+        headers: Map<String, String> = emptyMap(),
+    ) =
         withContext(dispatcher) {
-            val request = Request.Builder().url(url).put(bytes.toRequestBody())
+            val request = Request.Builder().url(url).put(body)
             for ((name, value) in headers) {
                 require(
                     !name.equals("authorization", true) &&

@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
@@ -95,10 +96,15 @@ internal fun ChatComposerField(
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    attachmentPicker: ChatAttachmentPicker? = null,
+    openUploadedAttachment: ((ChatAttachmentReference) -> Unit)? = null,
+    attachmentImages: InlineArtifactImages? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
+    val attachments = state.attachments(target)
+    val draftKey = state.draftKey(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
@@ -174,13 +180,13 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
-            Row(
+            Column(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")
                     .background(colors.surface, cardShape)
                     .border(
                         width = if (inputFocused) 2.dp else cardOutline,
-                        color = if (inputFocused) colors.onSurface else colors.outline,
+                        color = if (inputFocused) colors.primary else colors.outline,
                         shape = cardShape,
                     )
                     .padding(
@@ -189,96 +195,132 @@ internal fun ChatComposerField(
                         end = 6.dp,
                         bottom = cardVerticalPadding,
                     ),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.Bottom,
             ) {
-                if (connectorOptions != null || defaultModel != null)
-                    ChatConnectorOptionsButton(
-                        connectorOptions,
+                val attachmentContent: @Composable () -> Unit = {
+                    ChatDraftAttachments(
                         model,
-                        state,
-                        target,
-                        inputFocused,
-                        editorFocus,
-                        manageConnectors,
-                        defaultModel,
-                        conversationModel,
+                        attachments,
+                        state.attachmentProgress,
+                        reselect = {
+                            attachmentPicker?.pick(
+                                it.contentType.isAttachmentImage ||
+                                    it.contentType.isAttachmentVideo,
+                                draftKey,
+                                target.key,
+                                it.key,
+                            )
+                        },
+                        expanded = shortWindow,
+                        openUploaded = openUploadedAttachment,
+                        remoteImages = attachmentImages,
+                        threadId = target.threadId.orEmpty(),
                     )
-                // Scroll state saved by Compose belongs to this orientation.
-                key(shortWindow) {
-                    BasicTextField(
-                        value = input.value,
-                        onValueChange = {
-                            // A retiring field can clear its selection while focus moves.
-                            if (shortWindow == currentShortWindow) {
-                                input.edit(it)
-                                model.edit(target, it.text)
-                            }
+                }
+                if (!shortWindow && attachments.isNotEmpty())
+                    Box(Modifier.padding(top = 4.dp, bottom = 4.dp)) { attachmentContent() }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    if (
+                        connectorOptions != null || defaultModel != null || attachmentPicker != null
+                    )
+                        ChatConnectorOptionsButton(
+                            connectorOptions,
+                            model,
+                            state,
+                            target,
+                            inputFocused,
+                            editorFocus,
+                            manageConnectors,
+                            defaultModel,
+                            conversationModel,
+                            attachmentPickerActive = attachmentPicker?.active == true,
+                            pickAttachment =
+                                attachmentPicker?.let { picker ->
+                                    { photos -> picker.pick(photos, draftKey, target.key, null) }
+                                },
+                        )
+                    if (shortWindow && attachments.isNotEmpty())
+                        ChatDraftAttachmentCount(attachments, attachmentContent)
+                    // Scroll state saved by Compose belongs to this orientation.
+                    key(shortWindow) {
+                        BasicTextField(
+                            value = input.value,
+                            onValueChange = {
+                                // A retiring field can clear its selection while focus moves.
+                                if (shortWindow == currentShortWindow) {
+                                    input.edit(it)
+                                    model.edit(target, it.text)
+                                }
+                            },
+                            modifier =
+                                Modifier.weight(1f)
+                                    .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                                    .focusRequester(editorFocus)
+                                    .onFocusChanged { inputFocused = it.isFocused }
+                                    .testTag("message_input")
+                                    .semantics { contentDescription = label },
+                            enabled = state.journal != null,
+                            textStyle = textStyle,
+                            cursorBrush = SolidColor(colors.onSurface),
+                            singleLine = shortWindow,
+                            visualTransformation =
+                                if (shortWindow) CompactDraftDisplay else VisualTransformation.None,
+                            decorationBox = { editor ->
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .padding(
+                                            start = 2.dp,
+                                            top = textPadding,
+                                            end = 10.dp,
+                                            bottom = textPadding,
+                                        ),
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    if (input.value.text.isEmpty()) {
+                                        Text(
+                                            label,
+                                            modifier = Modifier.clearAndSetSemantics {},
+                                            color = colors.onSurfaceVariant,
+                                            style = textStyle,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    editor()
+                                }
+                            },
+                        )
+                        if (restoreFocusOnResize) {
+                            LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
+                        }
+                    }
+                    FilledIconButton(
+                        onClick = {
+                            focus.clearFocus()
+                            beforeSend()
+                            model.send(target, defaultModel?.state?.value?.options)
                         },
                         modifier =
-                            Modifier.weight(1f)
-                                .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                                .focusRequester(editorFocus)
-                                .onFocusChanged { inputFocused = it.isFocused }
-                                .testTag("message_input")
-                                .semantics { contentDescription = label },
-                        enabled = state.journal != null,
-                        textStyle = textStyle,
-                        cursorBrush = SolidColor(colors.onSurface),
-                        singleLine = shortWindow,
-                        visualTransformation =
-                            if (shortWindow) CompactDraftDisplay else VisualTransformation.None,
-                        decorationBox = { editor ->
-                            Box(
-                                Modifier.fillMaxWidth()
-                                    .padding(
-                                        start = 2.dp,
-                                        top = textPadding,
-                                        end = 10.dp,
-                                        bottom = textPadding,
-                                    ),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                if (input.value.text.isEmpty()) {
-                                    Text(
-                                        label,
-                                        modifier = Modifier.clearAndSetSemantics {},
-                                        color = colors.onSurfaceVariant,
-                                        style = textStyle,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                editor()
-                            }
-                        },
-                    )
-                    if (restoreFocusOnResize) {
-                        LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
+                            Modifier.size(48.dp).semantics { contentDescription = sendLabel },
+                        enabled = state.canSend(target),
+                        shape = CircleShape,
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = colors.primary,
+                                contentColor = colors.onPrimary,
+                                disabledContainerColor = colors.surfaceVariant,
+                                disabledContentColor = colors.onSurfaceVariant,
+                            ),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_upward),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
-                }
-                FilledIconButton(
-                    onClick = {
-                        focus.clearFocus()
-                        beforeSend()
-                        model.send(target, defaultModel?.state?.value?.options)
-                    },
-                    modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
-                    enabled = state.canSend(target),
-                    shape = CircleShape,
-                    colors =
-                        IconButtonDefaults.filledIconButtonColors(
-                            containerColor = colors.primary,
-                            contentColor = colors.onPrimary,
-                            disabledContainerColor = colors.surfaceVariant,
-                            disabledContentColor = colors.onSurfaceVariant,
-                        ),
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_arrow_upward),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
                 }
             }
         }
@@ -355,10 +397,18 @@ private fun ComposerFeedback(
         }
     }
     state.journal?.retainedDrafts?.forEach { (key, text) ->
-        Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val files = state.journal.retainedDraftAttachments[key].orEmpty()
+        Text(
+            listOf(text)
+                .filter { it.isNotEmpty() }
+                .plus(files.map { it.filename })
+                .joinToString("\n"),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
         TextButton(
             onClick = { model.restoreDraft(target, key) },
-            enabled = entry.text.isEmpty(),
+            enabled = entry.text.isEmpty() && state.attachments(target).isEmpty(),
             colors = actionColors,
         ) {
             Text(stringResource(R.string.composer_restore_draft))

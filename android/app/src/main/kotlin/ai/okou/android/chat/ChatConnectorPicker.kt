@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -92,6 +93,8 @@ internal fun ChatConnectorOptionsButton(
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
     defaultModel: DefaultModelSettings? = null,
     conversationModel: ConversationModelControls? = null,
+    attachmentPickerActive: Boolean = false,
+    pickAttachment: ((photos: Boolean) -> Unit)? = null,
 ) {
     var presentation by rememberComposerOptions(target.key)
     val buttonFocus = remember { FocusRequester() }
@@ -111,8 +114,8 @@ internal fun ChatConnectorOptionsButton(
         if (open) defaultModel?.showComposerOptions(true)
         onDispose { if (open) defaultModel?.showComposerOptions(false) }
     }
-    LaunchedEffect(page, restoreTrigger) {
-        if (page == ComposerOptionsPage.Closed && restoreTrigger) {
+    LaunchedEffect(page, restoreTrigger, attachmentPickerActive) {
+        if (page == ComposerOptionsPage.Closed && restoreTrigger && !attachmentPickerActive) {
             withFrameNanos {}
             if (presentation.restoreEditor) {
                 editorFocus.requestFocus()
@@ -318,12 +321,35 @@ internal fun ChatConnectorOptionsButton(
                     modifier = Modifier.onGloballyPositioned { positioned = true },
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        stringResource(R.string.chat_options_settings),
-                        modifier = Modifier.padding(start = 12.dp).semantics { heading() },
-                        style = connectorSmallType(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (pickAttachment != null) {
+                        ChatOptionsHeading(R.string.chat_attachments)
+                        ConnectorOptionRow(
+                            stringResource(R.string.chat_attachment_photos),
+                            onClick = {
+                                pickAttachment(true)
+                                back()
+                            },
+                            modifier = Modifier.testTag("chat-options-photos"),
+                            enabled = composerState.journal != null,
+                            icon = R.drawable.ic_image,
+                            chevron = false,
+                        )
+                        ConnectorOptionRow(
+                            stringResource(R.string.chat_attachment_files),
+                            onClick = {
+                                pickAttachment(false)
+                                back()
+                            },
+                            modifier = Modifier.testTag("chat-options-files"),
+                            enabled = composerState.journal != null,
+                            icon = R.drawable.ic_folder,
+                            chevron = false,
+                        )
+                        if (showModel || options != null)
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    }
+                    if (showModel || options != null)
+                        ChatOptionsHeading(R.string.chat_options_settings)
                     if (showModel) {
                         val value =
                             choice?.label
@@ -494,6 +520,16 @@ internal fun ChatConnectorOptionsButton(
 }
 
 @Composable
+private fun ChatOptionsHeading(label: Int) {
+    Text(
+        stringResource(label),
+        modifier = Modifier.padding(start = 12.dp).semantics { heading() },
+        style = connectorSmallType(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
 private fun ChatConnectorRow(
     row: ChatConnectorAccount,
     enabled: Boolean,
@@ -570,6 +606,7 @@ private fun ConnectorOptionRow(
     enabled: Boolean = true,
     icon: Int = R.drawable.ic_extension,
     supportingText: String? = null,
+    chevron: Boolean = true,
 ) {
     Row(
         modifier
@@ -597,7 +634,7 @@ private fun ConnectorOptionRow(
                 )
             }
         }
-        ConnectorChevron()
+        if (chevron) ConnectorChevron()
     }
 }
 

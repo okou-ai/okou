@@ -43,6 +43,19 @@ class ComposerJournalStore(
             override fun read() = SystemClock.elapsedRealtimeNanos()
         },
 ) {
+    internal val contentResolver = context.applicationContext.contentResolver
+    private val attachmentCache = context.cacheDir.resolve("chat-attachments")
+
+    internal fun attachmentDirectory(identity: WorkspaceIdentity) =
+        attachmentCache.resolve(identity.workspaceStorageKey())
+
+    internal suspend fun pruneAttachmentCache(identity: WorkspaceIdentity, retained: Set<String>) =
+        withContext(dispatcher) {
+            attachmentDirectory(identity).listFiles()?.forEach {
+                if (it.name.removeSuffix(".copy") !in retained) it.delete()
+            }
+        }
+
     private class Write(val journal: ComposerJournal) {
         val done = CompletableDeferred<ComposerCommit>()
     }

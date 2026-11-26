@@ -603,6 +603,36 @@ internal interface CanonicalApi {
         @Body body: RenameThreadRequest,
     ): Response<Unit>
 
+    @POST("/api/uploads/prepare")
+    suspend fun `prepareChatUpload`(
+        @Header("Authorization") token: String,
+        @Body body: PrepareChatUploadRequest,
+    ): Response<PrepareChatUploadResult>
+
+    @POST("/api/uploads/complete")
+    suspend fun `completeChatUpload`(
+        @Header("Authorization") token: String,
+        @Body body: CompleteChatUploadRequest,
+    ): Response<CompleteChatUploadResult>
+
+    @POST("/api/uploads/multipart/complete")
+    suspend fun `completeChatMultipartUpload`(
+        @Header("Authorization") token: String,
+        @Body body: CompleteChatMultipartUploadRequest,
+    ): Response<CompleteChatMultipartUploadResult>
+
+    @POST("/api/uploads/multipart/abort")
+    suspend fun `abortChatMultipartUpload`(
+        @Header("Authorization") token: String,
+        @Body body: AbortChatMultipartUploadRequest,
+    ): Response<AbortChatMultipartUploadResult>
+
+    @GET("/api/web/file-url")
+    suspend fun `chatUploadedFile`(
+        @Header("Authorization") token: String,
+        @Query("file_id") `queryFile_id`: String,
+    ): Response<ChatUploadedFile>
+
     @POST("/api/chat-threads/{id}/model-selection")
     suspend fun `setThreadModel`(
         @Header("Authorization") token: String,

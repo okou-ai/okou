@@ -6,6 +6,8 @@ import { emailSubscriptionContract } from "../contracts/email-subscription";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
+import { uploadsContract } from "../contracts/uploads";
+import { webFilesContract } from "../contracts/web-files";
 import {
   chatThreadsContract,
   chatSearchContract,
@@ -632,6 +634,35 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "prepareChatUpload",
+    request: "PrepareChatUploadRequest",
+    response: "PrepareChatUploadResult",
+    route: uploadsContract.prepare,
+  },
+  {
+    name: "completeChatUpload",
+    request: "CompleteChatUploadRequest",
+    response: "CompleteChatUploadResult",
+    route: uploadsContract.complete,
+  },
+  {
+    name: "completeChatMultipartUpload",
+    request: "CompleteChatMultipartUploadRequest",
+    response: "CompleteChatMultipartUploadResult",
+    route: uploadsContract.completeMultipart,
+  },
+  {
+    name: "abortChatMultipartUpload",
+    request: "AbortChatMultipartUploadRequest",
+    response: "AbortChatMultipartUploadResult",
+    route: uploadsContract.abortMultipart,
+  },
+  {
+    name: "chatUploadedFile",
+    response: "ChatUploadedFile",
+    route: webFilesContract.fileUrl,
+  },
+  {
     name: "setThreadModel",
     request: "SetThreadModelRequest",
     response: "Unit",
@@ -862,6 +893,51 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "DeleteProjectRequest",
     schema: projectsContract.delete.body,
     direction: "input",
+  },
+  {
+    name: "PrepareChatUploadRequest",
+    schema: uploadsContract.prepare.body,
+    direction: "input",
+  },
+  {
+    name: "PrepareChatUploadResult",
+    schema: uploadsContract.prepare.responses[200],
+    direction: "output",
+  },
+  {
+    name: "CompleteChatUploadRequest",
+    schema: uploadsContract.complete.body,
+    direction: "input",
+  },
+  {
+    name: "CompleteChatUploadResult",
+    schema: uploadsContract.complete.responses[200],
+    direction: "output",
+  },
+  {
+    name: "CompleteChatMultipartUploadRequest",
+    schema: uploadsContract.completeMultipart.body,
+    direction: "input",
+  },
+  {
+    name: "CompleteChatMultipartUploadResult",
+    schema: uploadsContract.completeMultipart.responses[200],
+    direction: "output",
+  },
+  {
+    name: "AbortChatMultipartUploadRequest",
+    schema: uploadsContract.abortMultipart.body,
+    direction: "input",
+  },
+  {
+    name: "AbortChatMultipartUploadResult",
+    schema: uploadsContract.abortMultipart.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ChatUploadedFile",
+    schema: webFilesContract.fileUrl.responses[200],
+    direction: "output",
   },
   {
     name: "RenameThreadRequest",

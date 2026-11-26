@@ -802,6 +802,7 @@ internal constructor(
                     if (revoked && !detailAuthorized) {
                         val source =
                             if (externalImage) id
+                            else if (chatAttachment(id) != null) id
                             else messageArtifactLink(id)?.takeIf { it.startsWith("/artifacts/") }
                         source?.let(inlineImages::revoke)
                     }

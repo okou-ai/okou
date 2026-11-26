@@ -4,10 +4,13 @@ import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
+import ai.okou.android.artifacts.attachmentPreviewId
+import ai.okou.android.artifacts.chatAttachment
 import ai.okou.android.chat.AssistantFailureText
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
+import ai.okou.android.chat.ChatAttachmentReference
 import ai.okou.android.chat.ChatComposerField
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatComposerTopInset
@@ -56,6 +59,7 @@ import ai.okou.android.chat.WorkspaceSearchScreen
 import ai.okou.android.chat.conversationRunControls
 import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
+import ai.okou.android.chat.rememberChatAttachmentPicker
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
 import ai.okou.android.connectors.ConnectorAccountTarget
@@ -205,6 +209,12 @@ internal fun OkouApp(
             )
     val list by rememberWorkspaceChatNavigation(listState)
     var navigation by rememberWorkspaceNavigation()
+    val attachmentPicker =
+        composer
+            ?.takeIf { it.acceptsAttachments }
+            ?.let {
+                key(it.attachmentPickerKey) { rememberChatAttachmentPicker(it) }
+            }
     var linkReturns by rememberConversationLinkReturns()
     var linkPosition by rememberConversationLinkPosition()
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
@@ -355,7 +365,12 @@ internal fun OkouApp(
             RetainedExternalImagePreview -> chatArtifacts?.retainedExternalImageId()
             else -> link
         }.takeIf {
-            thread != null &&
+            val composerPreview =
+                it != null &&
+                    chatAttachment(it) != null &&
+                    (target is WorkspaceTarget.NewChat ||
+                        listWidth != null && target == WorkspaceTarget.List)
+            (thread != null || composerPreview) &&
                 chatArtifacts != null &&
                 settings == null &&
                 !showArtifacts &&
@@ -413,6 +428,18 @@ internal fun OkouApp(
     val missingMessage = stringResource(R.string.chat_search_message_unavailable)
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val openComposerAttachment: ((ChatAttachmentReference) -> Unit)? =
+        if (chatArtifacts == null) null
+        else
+            { attachment ->
+                focus.clearFocus()
+                keyboard?.hide()
+                navigation =
+                    navigation.copy(
+                        chatArtifactLink = attachment.attachmentPreviewId(),
+                        chatArtifactFocusKey = null,
+                    )
+            }
 
     fun closeFind(returnToActions: Boolean = false) {
         val find = findVisit ?: return
@@ -2076,6 +2103,11 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         composerTarget,
+                                                        attachmentPicker = attachmentPicker,
+                                                        openUploadedAttachment =
+                                                            openComposerAttachment,
+                                                        attachmentImages =
+                                                            chatArtifacts?.inlineImages,
                                                         followup = followup,
                                                         onFollowupInserted = { followup = null },
                                                         defaultModel = defaultModel,
@@ -2137,6 +2169,11 @@ internal fun OkouApp(
                                                     ChatComposerField(
                                                         composer,
                                                         newTarget,
+                                                        attachmentPicker = attachmentPicker,
+                                                        openUploadedAttachment =
+                                                            openComposerAttachment,
+                                                        attachmentImages =
+                                                            chatArtifacts?.inlineImages,
                                                         defaultModel = defaultModel,
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {

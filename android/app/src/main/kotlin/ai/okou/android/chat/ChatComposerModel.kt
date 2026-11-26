@@ -1,9 +1,12 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.scopeHash
+import ai.okou.android.auth.workspaceStorageKey
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.settings.DefaultModelOptions
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -20,6 +23,11 @@ class ChatComposerModel(
     chatList: ChatListModel? = null,
     connectors: ConnectorService? = null,
 ) : ViewModel() {
+    internal val acceptsAttachments = service.attachmentService != null
+    internal val attachmentPickerKey =
+        scopeHash(
+            listOf(identity.workspaceStorageKey(), identity.sessionId, identity.authorizationScope),
+        )
     private val connection =
         ChatComposerOwner.Connection(
             service,
@@ -70,6 +78,19 @@ class ChatComposerModel(
         owner.prefillNew(connection, prefix)
 
     fun edit(target: ComposerTarget, text: String) = owner.edit(connection, target, text)
+
+    internal fun addAttachments(
+        draftKey: String,
+        source: String,
+        uris: List<Uri>,
+        replacing: String? = null,
+    ) = owner.addAttachments(connection, draftKey, source, uris, replacing)
+
+    internal fun removeAttachment(key: String) = owner.removeAttachment(connection, key)
+
+    internal fun retryAttachment(key: String) = owner.retryAttachment(connection, key)
+
+    internal fun attachmentFile(key: String) = owner.attachmentFile(key)
 
     internal fun editConnectorOverride(target: ComposerTarget, choice: ChatConnectorOverride?) =
         owner.editConnectorOverride(connection, target, choice)

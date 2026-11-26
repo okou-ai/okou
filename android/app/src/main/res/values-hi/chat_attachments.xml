@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">अटैचमेंट</string>
+    <string name="chat_attachment_photos">फ़ोटो और वीडियो</string>
+    <string name="chat_attachment_files">फ़ाइलें</string>
+    <string name="chat_attachment_count">अटैचमेंट की संख्या %1$d</string>
+    <string name="chat_attachment_done">हो गया</string>
+    <string name="chat_attachment_remove">%1$s हटाएँ</string>
+    <string name="chat_attachment_uploading">%1$d%% अपलोड हुआ</string>
+    <string name="chat_attachment_waiting">अपलोड का इंतज़ार है</string>
+    <string name="chat_attachment_failed">अपलोड नहीं हुआ</string>
+    <string name="chat_attachment_reselect">फ़ाइल फिर से चुनें</string>
+    <string name="chat_attachment_too_large">फ़ाइल 512 MiB से बड़ी है</string>
+    <string name="chat_attachment_type_file">फ़ाइल</string>
+    <string name="chat_attachment_type_image">इमेज</string>
+    <string name="chat_attachment_type_video">वीडियो</string>
+    <string name="chat_attachment_type_text">टेक्स्ट</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">प्रीव्यू उपलब्ध नहीं है</string>
+    <string name="chat_attachment_save">सेव करें</string>
+    <string name="chat_attachment_open">इसमें खोलें</string>
+</resources>
