@@ -329,13 +329,6 @@ struct ConnectorAuthorizationSheet: View {
         flow.values = [:]
         flow.options = [:]
       }
-      .sheet(
-        isPresented: Binding(
-          get: { flow.browserURL != nil && !flow.usesSystemAuthenticationSession },
-          set: { if !$0, !flow.usesSystemAuthenticationSession { store.browserDismissed() } })
-      ) {
-        if let url = flow.browserURL { ConnectorSafariView(url: url) { store.browserDismissed() } }
-      }
     }
   }
   private var showsMethodDetails: Bool {

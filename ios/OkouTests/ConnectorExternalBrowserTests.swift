@@ -14,7 +14,7 @@ private let githubAuthorizationCatalog = """
   """
 
 @MainActor
-final class ConnectorSystemAuthenticationTests: XCTestCase {
+final class ConnectorExternalBrowserTests: XCTestCase {
   func testExactHttpsReconnectStartsDirectlyAndRequiresItsBackendReceipt() async throws {
     let scheduled = (1...2).map { expectation(description: "Attempt \($0) is waiting") }
     let starts = Mutex(0)
@@ -109,14 +109,13 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     XCTAssertEqual(nextFlow.browserURL, nextBrowser)
     let nextReturn = try XCTUnwrap(nextFlow.session?.nativeCallbackUrl)
     connected.withLock { $0 = true }
-    store.authenticationFinished(
-      flow: nextFlow, url: nextBrowser, callbackURL: nextReturn, error: nil)
+    store.receiveProviderReturn(nextReturn)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
   }
 
-  func testSystemAuthenticationFailureCanRetryAndIgnoresTheRetiredSession() async throws {
+  func testExternalBrowserLaunchFailureCanRetryAndIgnoresTheRetiredAttempt() async throws {
     let scheduled = (1...2).map { expectation(description: "Authorization \($0) polling started") }
     let sleeps = Mutex(0)
     let clock = ConnectorPollingClock(didSchedule: { _ in
@@ -157,7 +156,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     await fulfillment(of: [scheduled[0]], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let retiredURL = try XCTUnwrap(flow.browserURL)
-    store.authenticationFinished(flow: flow, url: retiredURL, error: APIClientError.invalidResponse)
+    store.browserOpenFailed(flow: flow, url: retiredURL)
     XCTAssertTrue(flow.canSubmit)
     XCTAssertNotNil(flow.error)
     XCTAssertFalse(continued.withLock { $0 })
@@ -165,7 +164,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     await fulfillment(of: [scheduled[1]], timeout: 3)
     let retryURL = try XCTUnwrap(flow.browserURL)
     XCTAssertNotEqual(retryURL, retiredURL)
-    store.authenticationFinished(flow: flow, url: retiredURL, error: APIClientError.invalidResponse)
+    store.browserOpenFailed(flow: flow, url: retiredURL)
     XCTAssertEqual(flow.browserURL, retryURL)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
