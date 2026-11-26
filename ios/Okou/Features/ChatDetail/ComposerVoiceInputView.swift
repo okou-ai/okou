@@ -93,16 +93,16 @@ struct ComposerVoiceInputTray: View {
       .disabled(state.phase == .processing)
 
       Group {
-        switch state.phase {
-        case .processing:
+        if state.phase == .recording || state.audioUpload != nil {
+          OkouLiveWaveform(
+            levels: state.levels, lastSampleAt: lastSampleAt, interval: sampleInterval,
+            isLive: state.phase == .recording)
+        } else if state.phase == .processing {
           HStack(spacing: OkouSpace.sm) {
             ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
-            Text(state.uploadingAudio ? "Uploading recording…" : "Preparing text…")
+            Text("Preparing text…")
           }
-        case .recording:
-          OkouLiveWaveform(
-            levels: state.levels, lastSampleAt: lastSampleAt, interval: sampleInterval)
-        default:
+        } else if state.phase == .saved {
           Text("Recording saved")
         }
       }
@@ -111,7 +111,15 @@ struct ComposerVoiceInputTray: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .frame(height: OkouControl.waveformHeight)
 
-      if state.phase != .processing {
+      if state.audioUpload != nil {
+        ProgressView()
+          .controlSize(.small)
+          .tint(OkouColor.mutedForeground)
+          .accessibilityLabel("Uploading recording…")
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          // Reserve the transcription button's space so the spinner replaces the send arrow.
+          .padding(.trailing, OkouControl.minimumTarget + OkouSpace.xs)
+      } else if state.phase == .recording || state.phase == .saved {
         if state.asVoiceMessage {
           Button {
             Task { await voice.finish(asAudio: true, send: send) }
