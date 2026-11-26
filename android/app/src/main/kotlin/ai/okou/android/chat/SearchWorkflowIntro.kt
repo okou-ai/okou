@@ -3,18 +3,25 @@ package ai.okou.android.chat
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
-import androidx.compose.foundation.layout.PaddingValues
+import ai.okou.android.WithButtonFocusOutline
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun SearchWorkflowIntro(
@@ -28,44 +35,56 @@ internal fun SearchWorkflowIntro(
 ) {
     val colors = MaterialTheme.colorScheme
     val action = Modifier.heightIn(min = 48.dp)
-    val shape = RoundedCornerShape(12.dp)
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    val hidden = Modifier.clearAndSetSemantics {}.alpha(0f)
+    val live = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
     SettingsSheet(title = workflow.title, onDismiss = onClose, scroll = SettingsSheetScroll.Panel) {
         workflow.description
             ?.takeIf { it.isNotBlank() }
-            ?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-        Button(
-            onClick = onUse,
-            enabled = workflow.canUse && canStartDraft && !pending,
-            modifier = action,
-            shape = shape,
-            contentPadding = padding,
-        ) {
-            Text(stringResource(R.string.chat_search_workflow_add_draft))
+            ?.let {
+                Text(
+                    it,
+                    color = colors.onSurfaceVariant,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                        ),
+                )
+            }
+        // Measure the localized failure in the idle state so readback cannot move the actions.
+        Text(
+            stringResource(
+                if (workflow.canUse) R.string.workflow_draft_unavailable
+                else R.string.chat_search_workflow_shadowed,
+            ),
+            modifier = if (failed || !workflow.canUse) live else hidden,
+            color = if (failed && workflow.canUse) colors.error else colors.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        WithButtonFocusOutline(colors.onPrimary) {
+            Button(
+                onClick = onUse,
+                enabled = workflow.canUse && canStartDraft && !pending,
+                modifier = if (pending) action.then(live) else action,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        stringResource(R.string.chat_search_workflow_add_draft),
+                        modifier = if (pending) hidden else Modifier,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        stringResource(R.string.chat_search_workflow_opening_draft),
+                        modifier = if (pending) Modifier else hidden,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
-        if (failed) {
-            Text(
-                stringResource(R.string.workflow_draft_unavailable),
-                color = colors.error,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        if (!workflow.canUse) {
-            Text(
-                stringResource(R.string.chat_search_workflow_shadowed),
-                color = colors.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-        TextButton(
-            onClick = onOpenDetails,
-            enabled = !pending,
-            modifier = action,
-            shape = shape,
-            contentPadding = padding,
-            colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-        ) {
-            Text(stringResource(R.string.chat_search_workflow_details))
+        WithButtonFocusOutline(colors.onSurface) {
+            TextButton(onClick = onOpenDetails, enabled = !pending, modifier = action) {
+                Text(stringResource(R.string.chat_search_workflow_details))
+            }
         }
     }
 }

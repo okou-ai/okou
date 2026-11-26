@@ -407,7 +407,6 @@ internal fun SettingsModal(
                 ),
             sheetGesturesEnabled = dismissible,
             dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
-            containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible && confirmDismiss == null,
