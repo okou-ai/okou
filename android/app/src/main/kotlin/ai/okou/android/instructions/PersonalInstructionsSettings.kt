@@ -129,7 +129,7 @@ internal fun PersonalInstructionsSettings(
     DisposableEffect(model, lifecycle) {
         val read = model.uiState.value.read
         val restoring = opened && read == InstructionsRead.Ready
-        if (!restoring) model.open()
+        model.open(restoring)
         opened = true
         var firstResume = true
         val observer = LifecycleEventObserver { _, event ->
@@ -139,7 +139,10 @@ internal fun PersonalInstructionsSettings(
             }
         }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            model.closePanel()
+        }
     }
     var closeAfterSave by rememberSettingsFlag()
     var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }

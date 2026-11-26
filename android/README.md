@@ -47,8 +47,8 @@ Opening the editor displays a confirmed snapshot less than 10 minutes old and
 refreshes it in the background. A cold or expired open reserves the editor space
 through bounded read retries. A final failure shows the load-failure illustration
 in that space, or a Snackbar if confirmed content is already open. Content stays
-usable when the cache expires during an open session. A window joining an ongoing
-refresh shares the open editor's current text. A refresh updates the saved value
+usable when the cache expires during an open session. Another window joining the
+session immediately shows the current text. A refresh updates the saved value
 and preserves any edited text, selection, and composition. The latest confirmed
 value determines whether Save is available and what to restore on discard.
 Discard still requires confirmation.

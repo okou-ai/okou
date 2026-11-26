@@ -17,7 +17,9 @@ class PersonalInstructionsModel(
     private val editor = store.attach(identity, connection)
     val uiState = editor.uiState
 
-    fun open() = editor.open(connection)
+    fun open(restoring: Boolean = false) = editor.open(connection, restoring)
+
+    internal fun closePanel() = editor.closePanel(connection)
 
     fun refreshFromForeground() = editor.refreshFromForeground(connection)
 

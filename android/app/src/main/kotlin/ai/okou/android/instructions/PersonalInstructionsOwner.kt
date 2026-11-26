@@ -46,6 +46,7 @@ internal class PersonalInstructionsOwner(
     val uiState = mutable.asStateFlow()
     private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val connections = mutableSetOf<Connection>()
+    private val openPanels = mutableSetOf<Connection>()
     private var operation: Operation? = null
     private var restored = false
     private var journalPresent = false
@@ -57,6 +58,7 @@ internal class PersonalInstructionsOwner(
     }
 
     fun detach(connection: Connection): Boolean {
+        closePanel(connection)
         operation
             ?.takeIf { it.connection === connection }
             ?.let {
@@ -143,10 +145,13 @@ internal class PersonalInstructionsOwner(
         if (started) refresh(connection)
     }
 
-    fun open(connection: Connection) {
+    fun open(connection: Connection, restoring: Boolean) {
+        if (!connection.current()) return
+        val joining = openPanels.any { it !== connection && it.current() }
+        openPanels += connection
         val state = mutable.value
-        if (!connection.current() || state.busy) return
-        if (state.draft == null) {
+        if (restoring || state.busy) return
+        if (!joining && state.draft == null) {
             val cached = if (restored) store.freshConfirmed(identity) else null
             mutable.value =
                 state.copy(
@@ -155,6 +160,10 @@ internal class PersonalInstructionsOwner(
                 )
         }
         refresh(connection)
+    }
+
+    fun closePanel(connection: Connection) {
+        openPanels -= connection
     }
 
     fun refresh(connection: Connection) {

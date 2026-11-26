@@ -102,7 +102,7 @@ class PersonalInstructionsModelTest {
     }
 
     @Test
-    fun freshReopenAllowsAnEditDuringRefreshAndExpiryAppliesOnNextOpen() =
+    fun freshReopenAndJoiningAnOpenPanelKeepContentButExpiredReopenLoads() =
         check { service, store, create, _ ->
             val model = create(false)
             model.open()
@@ -110,6 +110,7 @@ class PersonalInstructionsModelTest {
             advanceTimeBy(599_999)
             val response = CompletableDeferred<PersonalInstructions>()
             service.read = { response.await() }
+            model.closePanel()
             model.open()
             runCurrent()
             assertEquals("Original", model.uiState.value.content)
@@ -131,17 +132,33 @@ class PersonalInstructionsModelTest {
             assertTrue(model.discardEdits(checkNotNull(model.uiState.value.draft)))
             assertEquals("Updated elsewhere", model.uiState.value.content)
 
+            other.closePanel()
             advanceTimeBy(600_000)
             val next = CompletableDeferred<PersonalInstructions>()
             service.read = { next.await() }
+            other.open()
+            runCurrent()
+            assertEquals(InstructionsRequest.Refreshing, model.uiState.value.request)
+            assertEquals("Updated elsewhere", model.uiState.value.content)
+            assertEquals("Updated elsewhere", other.uiState.value.content)
+            assertTrue(model.uiState.value.canEdit)
+            next.complete(service.saved.copy(content = "Latest", version = "v3"))
+            runCurrent()
+            assertEquals("Latest", model.uiState.value.content)
+
+            model.closePanel()
+            other.closePanel()
+            advanceTimeBy(600_000)
+            val reopened = CompletableDeferred<PersonalInstructions>()
+            service.read = { reopened.await() }
             model.open()
             runCurrent()
             assertEquals(InstructionsPhase.Loading, model.uiState.value.phase)
             assertNull(model.uiState.value.saved)
             assertFalse(model.uiState.value.canEdit)
-            next.complete(service.saved.copy(content = "Latest", version = "v3"))
+            reopened.complete(service.saved.copy(content = "Reopened", version = "v4"))
             runCurrent()
-            assertEquals("Latest", model.uiState.value.content)
+            assertEquals("Reopened", model.uiState.value.content)
         }
 
     @Test
