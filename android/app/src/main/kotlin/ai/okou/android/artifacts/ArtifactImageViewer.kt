@@ -5,6 +5,7 @@ import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.ArtifactImageViewpoint
 import ai.okou.android.state.rememberArtifactImageViewerState
 import android.graphics.Bitmap
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -34,6 +36,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -63,8 +66,11 @@ import com.github.panpf.zoomimage.compose.zoom.ZoomableState
 import com.github.panpf.zoomimage.compose.zoom.keyZoom
 import com.github.panpf.zoomimage.subsampling.ImageSource
 import com.github.panpf.zoomimage.subsampling.fromByteArray
+import com.github.panpf.zoomimage.util.IntSizeCompat
+import com.github.panpf.zoomimage.zoom.ContentScaleCompat
 import com.github.panpf.zoomimage.zoom.GestureType
-import kotlinx.coroutines.flow.filterNotNull
+import com.github.panpf.zoomimage.zoom.ScalesCalculator
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -108,33 +114,18 @@ internal fun ArtifactImageViewer(
             result
         }
     }
-    val decoded = source?.let { DecodeArtifactImage(it.bytes, imageSize) }
+    val decoded = source?.let { rememberDecodedArtifactImage(it.bytes, imageSize) }
     val original = decoded as? AsyncImagePainter.State.Success
     val fallback = (bitmap ?: thumbnail).takeUnless { unavailable }
     val fallbackPainter = remember(fallback) { fallback?.let { BitmapPainter(it.asImageBitmap()) } }
     val image = original?.painter ?: fallbackPainter
-    val replacedViewpoint =
-        remember(original?.painter) {
-            if (original != null && fallback != null) zoom.zoomable.viewpoint() else null
-        }
 
-    // The same painter and zoom state survive the move between the pane and full-screen dialog.
-    SideEffect { zoom.zoomable.setKeepTransformWhenSameAspectRatioContentSizeChanged(true) }
     val tileSource = remember(source) { source?.let { ImageSource.fromByteArray(it.bytes) } }
     LaunchedEffect(zoom, source, original) {
         zoom.setSubsamplingImage(tileSource.takeIf { original != null })
         val decodedBitmap = (original?.result?.image as? BitmapImage)?.bitmap
         if (source != null && decodedBitmap != null)
             model.retainDecodedImage(preview.id, source, decodedBitmap)
-        // The library retains the viewpoint for equal aspect ratios. Preserve it when a cover
-        // is cropped differently or an oriented original changes the aspect ratio.
-        if (replacedViewpoint != null && zoom.zoomable.userTransform.scaleX <= 1f)
-            zoom.zoomable.restoreViewpoint(replacedViewpoint)
-    }
-    LaunchedEffect(viewer, zoom) {
-        val point = viewer.pendingViewpoint ?: return@LaunchedEffect
-        zoom.zoomable.restoreViewpoint(point)
-        viewer.pendingViewpoint = null
     }
     val problem =
         when {
@@ -172,17 +163,20 @@ internal fun ArtifactImageViewer(
                 onSourceFocusRestored,
             )
             ImageViewport(
-                image,
-                preview.item?.title,
-                zoom,
-                imageSize,
-                problem,
-                loading,
-                preview.access?.previewOnly == true,
-                saveResult,
-                shareSnackbar,
-                Modifier.weight(1f),
-            )
+                hasImage = image != null,
+                problem = problem,
+                loading = loading,
+                previewOnly = preview.access?.previewOnly == true,
+                saveResult = saveResult,
+                shareSnackbar = shareSnackbar,
+                modifier = Modifier.weight(1f),
+            ) {
+                val viewport = IntSize(constraints.maxWidth, constraints.maxHeight)
+                Box(Modifier.fillMaxSize().then(imageSize)) {
+                    if (image != null)
+                        ZoomableArtifactImage(image, preview.item?.title, zoom, viewport, viewer)
+                }
+            }
         }
     }
     if (wide && viewer.expanded) {
@@ -320,7 +314,7 @@ private fun ImageViewerButton(
 }
 
 @Composable
-private fun DecodeArtifactImage(
+private fun rememberDecodedArtifactImage(
     bytes: ByteArray,
     size: ConstraintsSizeResolver,
 ): AsyncImagePainter.State? {
@@ -348,50 +342,69 @@ private fun DecodeArtifactImage(
 private fun ZoomableState.viewpoint(): ArtifactImageViewpoint? {
     val size = contentSize
     val viewport = containerSize
-    if (size == IntSize.Zero || viewport == IntSize.Zero || userTransform.scaleX <= 1f) return null
+    if (size == IntSize.Zero || viewport == IntSize.Zero || !isZoomed) return null
     val center = touchPointToContentPointF(Offset(viewport.width / 2f, viewport.height / 2f))
     return ArtifactImageViewpoint(
-        userTransform.scaleX,
+        transform.scaleX / minScale,
         center.x / size.width,
         center.y / size.height,
     )
 }
 
+private val ZoomableState.isZoomed: Boolean
+    get() = transform.scaleX > minScale * 1.001f
+
 private suspend fun ZoomableState.restoreViewpoint(point: ArtifactImageViewpoint) {
-    val size = snapshotFlow {
-        contentSize.takeIf { it != IntSize.Zero && containerSize != IntSize.Zero }
-    }
-        .filterNotNull()
-        .first()
     locate(
-        Offset(point.centerX * size.width, point.centerY * size.height),
+        Offset(point.centerX * contentSize.width, point.centerY * contentSize.height),
         targetScale = minScale * point.scale,
     )
 }
 
+private class InsetFitImageScales(private val inset: Int) :
+    ScalesCalculator by ScalesCalculator.Dynamic {
+    override fun calculateWithBase(
+        containerSize: IntSizeCompat,
+        contentSize: IntSizeCompat,
+        contentOriginSize: IntSizeCompat,
+        contentScale: ContentScaleCompat,
+        baseScale: Float,
+        initialScale: Float,
+    ): ScalesCalculator.Result {
+        val fitWidth = (containerSize.width - 2 * inset).coerceAtLeast(1)
+        val fitHeight = (containerSize.height - 2 * inset).coerceAtLeast(1)
+        val fit =
+            minOf(fitWidth / contentSize.width.toFloat(), fitHeight / contentSize.height.toFloat())
+        return ScalesCalculator.Dynamic.calculateWithBase(
+            containerSize,
+            contentSize,
+            contentOriginSize,
+            contentScale,
+            baseScale = fit,
+            initialScale = fit,
+        )
+    }
+}
+
 @Composable
 private fun ImageViewport(
-    image: Painter?,
-    description: String?,
-    zoom: ZoomState,
-    imageSize: ConstraintsSizeResolver,
+    hasImage: Boolean,
     @StringRes problem: Int?,
     loading: Boolean,
     previewOnly: Boolean,
     saveResult: ArtifactSaveResult?,
     shareSnackbar: SnackbarHostState,
     modifier: Modifier,
+    content: @Composable BoxWithConstraintsScope.() -> Unit,
 ) {
     BoxWithConstraints(
         modifier.fillMaxWidth().clipToBounds().testTag("artifact_preview_surface"),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.fillMaxSize().padding(16.dp).then(imageSize)) {
-            if (image != null) ZoomableArtifactImage(image, description, zoom)
-        }
-        if (image == null && problem != null) {
+        content()
+        if (!hasImage && problem != null) {
             ContentReadFailure(problem, Modifier.fillMaxSize())
-        } else if (image == null && loading) {
+        } else if (!hasImage && loading) {
             val skeletonWidth =
                 minOf(
                     260.dp,
@@ -426,7 +439,7 @@ private fun ImageViewport(
                 ArtifactSaveResult.Denied -> R.string.artifact_save_denied
                 ArtifactSaveResult.Failed -> R.string.artifact_save_failed
                 null ->
-                    if (image != null) {
+                    if (hasImage) {
                         problem ?: R.string.artifact_preview_only.takeIf { previewOnly }
                     } else null
             }
@@ -456,6 +469,8 @@ private fun ZoomableArtifactImage(
     image: Painter,
     description: String?,
     zoom: ZoomState,
+    viewport: IntSize,
+    viewer: ArtifactImageViewerState,
 ) {
     val zoomIn = stringResource(R.string.artifact_image_zoom_in)
     val zoomOut = stringResource(R.string.artifact_image_zoom_out)
@@ -464,7 +479,28 @@ private fun ZoomableArtifactImage(
     val scope = rememberCoroutineScope()
     val zoomable = zoom.zoomable
     val reducedMotion = scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f
-    val zoomed = zoomable.userTransform.scaleX > 1f
+    val zoomed = zoomable.isZoomed
+    val inset = with(LocalDensity.current) { 16.dp.roundToPx() }
+    val fitScales = remember(inset) { InsetFitImageScales(inset) }
+    val imageDimensions =
+        with(image.intrinsicSize) {
+            if (isSpecified) IntSize(width.roundToInt(), height.roundToInt()) else IntSize.Zero
+        }
+    val previousPoint =
+        remember(zoomable, viewport, imageDimensions, fitScales) {
+            viewer.pendingViewpoint ?: zoomable.viewpoint()
+        }
+    LaunchedEffect(zoomable, viewport, imageDimensions, fitScales) {
+        snapshotFlow {
+            zoomable.containerSize == viewport && zoomable.contentSize == imageDimensions
+        }
+            .first { it }
+        // Limit the fit scale while letting ZoomImage clip and pan within the full viewport.
+        zoomable.setScalesCalculator(fitScales)
+        if (previousPoint == null) zoomable.scale(zoomable.minScale)
+        else zoomable.restoreViewpoint(previousPoint)
+        viewer.pendingViewpoint = null
+    }
     fun changeScale(target: Float) {
         scope.launch { zoomable.scale(target, animated = true) }
     }
