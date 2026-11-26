@@ -14,14 +14,40 @@ private final class ProviderApplication: ConnectorProviderApplication {
   let opens: Bool
   var openedURL: URL?
   var request: ConnectorProviderRequest?
-  init(opens: Bool) { self.opens = opens }
+  private let holdsLaunch: Bool
+  private let launchStarted: () -> Void
+  private let launchFinished: () -> Void
+  private var launch: CheckedContinuation<ConnectorProviderLaunch, Never>?
+  init(
+    opens: Bool, holdsLaunch: Bool = false,
+    launchStarted: @escaping () -> Void = {}, launchFinished: @escaping () -> Void = {}
+  ) {
+    self.opens = opens
+    self.holdsLaunch = holdsLaunch
+    self.launchStarted = launchStarted
+    self.launchFinished = launchFinished
+  }
   func supports(_ target: ChatConnectorTarget) -> Bool { true }
   func receive(_ url: URL) -> Bool { false }
   func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch {
     self.request = request
     openedURL = request.appURLs.first
+    if holdsLaunch {
+      // UIApplication's launch completion can arrive after the provider's URL.
+      // This boundary deliberately models an OS callback that ignores Task cancellation.
+      defer { launchFinished() }
+      return await withCheckedContinuation { continuation in
+        launch = continuation
+        launchStarted()
+      }
+    }
     if request.provider == "spotify" { return .code("provider-code") }
     return opens ? .opened : .unavailable
+  }
+  func finishLaunch() {
+    let pending = launch
+    launch = nil
+    pending?.resume(returning: opens ? .opened : .unavailable)
   }
 }
 
@@ -135,6 +161,44 @@ private final class ProviderAuthorizationFixture: Sendable {
 
 @MainActor
 final class ConnectorProviderAuthorizationTests: XCTestCase {
+  func testProviderReturnBeforeLaunchCompletionRetainsItsBackendReceipt() async throws {
+    let launched = expectation(description: "OS accepted the launch request")
+    let finished = expectation(description: "OS delivered the launch completion")
+    let exchanged = expectation(description: "Provider callback exchanged before launch completes")
+    let clock = ConnectorPollingClock(didSchedule: { _ in exchanged.fulfill() })
+    let provider = ProviderApplication(
+      opens: true, holdsLaunch: true,
+      launchStarted: { launched.fulfill() }, launchFinished: { finished.fulfill() })
+    let responses = ProviderAuthorizationFixture(slug: "tiktok")
+    let fixture = ChatHTTPFixture { try responses.response($0) }
+    let continued = Mutex(false)
+    let store = ConnectorActionStore(
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: { continued.withLock { $0 = true } },
+      didFail: { _ in XCTFail("Canceled launch must not fail the callback") },
+      providerApplication: provider, pollSleep: clock.sleep)
+    defer {
+      provider.finishLaunch()
+      store.close()
+    }
+    store.activate(.configuration(target: .builtin("tiktok"), threadID: nil))
+    try await waitForBusinessResult { store.active != nil }
+    store.submit()
+    await fulfillment(of: [launched], timeout: 3)
+    store.receiveProviderReturn(
+      URL(
+        string:
+          "https://app.okou.ai/connectors/tiktok/callback?state=server-state&code=provider-code")!)
+    await fulfillment(of: [exchanged], timeout: 3)
+    provider.finishLaunch()
+    await fulfillment(of: [finished], timeout: 3)
+    clock.advance(.seconds(2))
+    try await waitForBusinessResult { store.active == nil }
+    XCTAssertTrue(continued.withLock { $0 })
+    XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+    XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
+  }
+
   func testNativeProvidersExchangeCodesBeforeConfirmingTheExactAccount() async throws {
     for slug in ["tiktok", "dropbox", "spotify"] {
       let initial = expectation(description: "\(slug) launched")

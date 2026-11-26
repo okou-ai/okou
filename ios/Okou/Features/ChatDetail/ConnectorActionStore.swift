@@ -211,7 +211,7 @@ final class ConnectorActionStore {
       try await startAuthorization(flow, status: current)
     } catch is CancellationError {
     } catch {
-      guard active === flow, !closed else { return }
+      guard active === flow, !closed, !Task.isCancelled else { return }
       flow.error = ChatRequestFailure.message(for: error)
       flow.presentsForm = true
       didFail(error)
@@ -276,7 +276,9 @@ final class ConnectorActionStore {
             try check(flow)
           }
         } catch {
-          flow.session = nil
+          // A provider callback can take over before the OS launch completes.
+          // Its canceled predecessor must not erase the current attempt.
+          if !Task.isCancelled { flow.session = nil }
           throw error
         }
       } else {
@@ -317,7 +319,7 @@ final class ConnectorActionStore {
             return
           }
         } catch is CancellationError { return } catch {
-          guard active === flow, !closed else { return }
+          guard active === flow, !closed, !Task.isCancelled else { return }
           flow.error = ChatRequestFailure.message(for: error)
           flow.presentsForm = true
           flow.session = nil
@@ -458,7 +460,7 @@ final class ConnectorActionStore {
           startPolling(flow)
         } catch is CancellationError {
         } catch {
-          guard active === flow, !closed else { return }
+          guard active === flow, !closed, !Task.isCancelled else { return }
           flow.session = nil
           flow.error = ChatRequestFailure.message(for: error)
           flow.presentsForm = true
