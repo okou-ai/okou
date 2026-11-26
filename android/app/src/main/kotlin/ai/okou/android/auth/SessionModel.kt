@@ -675,6 +675,7 @@ class SessionModel(
             remoteAccessVerified = {
                 verification == null || (verification.isCompleted && !verification.isCancelled)
             },
+            initiallyInForeground = foreground.value,
         )
     }
 
@@ -938,14 +939,20 @@ class SessionModel(
     fun foregroundChanged(active: Boolean) {
         foreground.value = active
         mutable.value.ready?.settings?.defaultModel?.foreground(active)
-        if (!active) return
-        if (workspaceSetupReturn != null) {
+        if (active && workspaceSetupReturn != null) {
             reconcile(authentication.state.value)
             workspaceSetupReturn?.let(::retry)
         }
         val state = mutable.value
+        val openingChats =
+            when (val opening = state.opening) {
+                is OpeningWorkspace.Authorized -> opening.chats
+                is OpeningWorkspace.Cached -> opening.chats
+                else -> null
+            }
+        (state.ready?.chats ?: openingChats)?.activityForegroundChanged(active)
+        if (!active) return
         state.ready?.preferences?.refreshFromForeground()
-        (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
         if (state.ready != null) observed?.let { loadRemainingMemberships(state.generation, it) }
     }
 

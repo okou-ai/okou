@@ -58,12 +58,12 @@ internal class ChatDependencyRetry {
 
     suspend fun <T> read(
         isCurrent: () -> Boolean,
-        continuous: () -> Boolean = { false },
+        continuous: Boolean = false,
         onRetry: (Int) -> Unit = {},
         fetch: suspend () -> T,
     ): T {
         var retries = 0
-        fun canRetry() = isCurrent() && (retries < ChatDependencyRetryCount || continuous())
+        fun canRetry() = isCurrent() && (retries < ChatDependencyRetryCount || continuous)
         while (true) {
             try {
                 return fetch()
