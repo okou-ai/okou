@@ -50,7 +50,7 @@ final class ChatThreadPinTests: XCTestCase {
     }
     await fulfillment(of: [readStarted], timeout: 3)
     queueToggle(in: store, fixture: fixture)
-    try await waitForBusinessResult { !self.isPinned(store) }
+    try await waitForPin(false, in: store)
     XCTAssertTrue(store.list.canPin(PinFixture.target))
     XCTAssertEqual(fixture.writes.count, 1)
     readGate.open()
@@ -64,7 +64,7 @@ final class ChatThreadPinTests: XCTestCase {
     XCTAssertNil(fixture.writes.dropFirst().first?.rank)
     XCTAssertFalse(isPinned(store))
     let latest = queueToggle(in: store, fixture: fixture)
-    try await waitForBusinessResult { self.isPinned(store) }
+    try await waitForPin(true, in: store)
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.confirm(1)
     fixture.gates[1].open()
@@ -118,19 +118,19 @@ final class ChatThreadPinTests: XCTestCase {
     await fulfillment(of: [writes[0]], timeout: 3)
     XCTAssertTrue(isPinned(store))
     queueToggle(in: store, fixture: fixture)
-    try await waitForBusinessResult { !self.isPinned(store) }
+    try await waitForPin(false, in: store)
     XCTAssertEqual(fixture.writes.count, 1)
 
     fixture.gates[0].open()
     await fulfillment(of: [writes[1]], timeout: 3)
-    try await waitForBusinessResult(watching: store.list.statusValue, in: store.graph) {
+    try await waitForBusinessResult(watching: store.list.mutationsValue, in: store.graph) {
       store.list.error != nil
     }
     XCTAssertEqual(store.list.error, "Pin save unavailable")
     XCTAssertFalse(isPinned(store))
     XCTAssertTrue(store.list.canPin(PinFixture.target))
     let latest = queueToggle(in: store, fixture: fixture)
-    try await waitForBusinessResult { self.isPinned(store) }
+    try await waitForPin(true, in: store)
     XCTAssertEqual(fixture.writes.count, 2)
     fixture.gates[1].open()
     await fulfillment(of: [writes[2]], timeout: 3)
@@ -197,9 +197,11 @@ final class ChatThreadPinTests: XCTestCase {
     queueToggle(in: store, fixture: fixture)
     await fulfillment(of: [written], timeout: 3)
     queueToggle(in: store, fixture: fixture)
-    try await waitForBusinessResult { !self.isPinned(store) }
+    try await waitForPin(false, in: store)
     fixture.gates[0].open()
-    try await waitForBusinessResult { store.needsUpgrade && !store.list.canPin(PinFixture.target) }
+    try await waitForBusinessResult(watching: store) {
+      store.needsUpgrade && !store.list.canPin(PinFixture.target)
+    }
     fixture.releaseAll()
     await store.list.togglePinned(PinFixture.target)
     XCTAssertEqual(fixture.writes.count, 1)
@@ -252,6 +254,15 @@ final class ChatThreadPinTests: XCTestCase {
 
   private func isPinned(_ store: WorkspaceStore) -> Bool {
     store.list.threads.first(where: { $0.id == PinFixture.target })?.pinnedAt != nil
+  }
+
+  /// Waits for the target's pin as the confirmed chats publish it.
+  private func waitForPin(
+    _ pinned: Bool, in store: WorkspaceStore, file: StaticString = #filePath, line: UInt = #line
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: store.list.threadsValue, in: store.graph, file: file, line: line
+    ) { self.isPinned(store) == pinned }
   }
 
   func testMovingAPinWritesItsNewRankAndTheSidebarKeepsTheConfirmedOrder() async throws {

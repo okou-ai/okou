@@ -78,7 +78,9 @@ final class ChatSearchUnreadTests: XCTestCase {
       gate.open()
       await manual.value
     }
-    try await waitForBusinessResult { store.list.updatingThreads.contains(thread.id) }
+    try await waitForBusinessResult(watching: store.list.mutationsValue, in: store.graph) {
+      store.list.updatingThreads.contains(thread.id)
+    }
     gate.open()
     await refresh.value
     await manual.value
