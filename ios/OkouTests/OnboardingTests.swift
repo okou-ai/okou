@@ -124,6 +124,10 @@ final class OnboardingTests: XCTestCase {
     let status = try await remote.service.status()
     XCTAssertTrue(status.needsOnboarding)
     store.editPrompt("A different task")
+    let remoteDraft = try await remote.service.draft()
+    var webDraft = try XCTUnwrap(remoteDraft)
+    webDraft.answers.startingPromptDraft = "Another device's draft"
+    _ = try await remote.service.save(webDraft)
     await store.next()
     XCTAssertNil(store.snapshot.error)
     let completed = try await remote.service.status()

@@ -289,7 +289,7 @@ final class OnboardingStore {
     try checkCurrent()
     if !before.needsOnboarding { update { $0.completionConfirmed = true } }
     var saved = draft
-    if before.needsOnboarding {
+    if before.needsOnboarding, snapshot.task == nil {
       saved.revision = try await saveDraft(saved)
       try checkCurrent()
       update { $0.draft = saved }
