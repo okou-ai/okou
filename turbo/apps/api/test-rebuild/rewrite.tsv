@@ -261,8 +261,8 @@ account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	skipped		slow-setup: twenty-two sequential device-auth connects (eleven Codex, eleven Claude Code) measure 784 ms		B01
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	rewritten	51.9		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	rewritten	42.2		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
-account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-001	planned				B02
-account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-002	planned				B02
+account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-001	rewritten	45.0		src/signals/routes/__tests__/auth-me.test.ts	B02
+account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-002	rewritten	14.4		src/signals/routes/__tests__/auth-me.test.ts	B02
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	rewritten	196.4		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	182.6		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		unfinished: out of time		B01
