@@ -14,14 +14,15 @@ final class OnboardingResources {
     uniqueKeysWithValues: Resource.allCases.map { ($0, CCState.State(0)) })
   private let alive = CCState.State(true)
   private var cancellations: [Resource: () -> Void] = [:]
-  private let jobID = CCState.State<String?>(nil)
+  private let jobID: Computed<String?>
   private let didFail: @MainActor (Error) -> Void
 
   init(
-    client: APIClient, graph: CCState.Store,
+    client: APIClient, graph: CCState.Store, recommendationJob: Computed<String?>,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     store = graph
+    jobID = recommendationJob
     service = OnboardingService(client: client)
     self.didFail = didFail
   }
@@ -78,10 +79,6 @@ final class OnboardingResources {
     guard try store.get(alive) else { throw CancellationError() }
     cancellations[resource]?()
     try store.set(revisions[resource]!, update: { $0 + 1 })
-  }
-
-  func showRecommendation(_ id: String?) throws {
-    try store.set(jobID, id)
   }
 
   func close() {

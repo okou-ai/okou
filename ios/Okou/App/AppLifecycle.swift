@@ -1,4 +1,5 @@
 import ChatData
+import ChatDomain
 import Foundation
 import Observation
 import SwiftUI

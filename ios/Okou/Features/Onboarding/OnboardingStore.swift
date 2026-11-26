@@ -82,7 +82,13 @@ final class OnboardingStore {
   ) {
     self.client = client
     self.locale = locale
-    resources = OnboardingResources(client: client, graph: graph, didFail: didFail)
+    let state = state
+    let value = Computed { try $0(state) }
+    self.value = value
+    replace = Command { context, snapshot in try context.set(state, snapshot) }
+    let recommendationJob = Computed { try $0(value).draft.answers.recommendationJobId }
+    resources = OnboardingResources(
+      client: client, graph: graph, recommendationJob: recommendationJob, didFail: didFail)
     connectors = ComposerConnectorStore(
       service: ChatComposerAccess(client: client),
       authorizationService: ChatConnectorService(client: client), webURL: webURL, graph: graph,
@@ -91,9 +97,6 @@ final class OnboardingStore {
     self.didFail = didFail
     signOutAction = signOut
     self.didComplete = didComplete
-    let state = state
-    value = Computed { try $0(state) }
-    replace = Command { context, snapshot in try context.set(state, snapshot) }
   }
 
   var snapshot: Snapshot {
@@ -151,7 +154,6 @@ final class OnboardingStore {
       let draft =
         try await self.resources.store.get(self.resources.draft).value ?? OnboardingDraft()
       try self.checkCurrent()
-      try self.resources.showRecommendation(draft.answers.recommendationJobId)
       self.update {
         $0.draft = draft
         $0.isPrepared = true
@@ -240,7 +242,6 @@ final class OnboardingStore {
       let id = try await resources.service.startRecommendation(industry: industry, locale: locale)
       try checkCurrent()
       update { $0.draft.answers.recommendationJobId = id }
-      try resources.showRecommendation(id)
     } catch is CancellationError {} catch {
       // Personalization is optional; the role's editable starter task remains available.
       if !closed { didFail(error) }

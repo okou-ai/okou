@@ -35,8 +35,16 @@ final class OnboardingTests: XCTestCase {
 
   func testThreeStepSetupSuggestsATaskAndRunsTheReviewedTextOnConfirmation() async throws {
     let remote = OnboardingHTTPFixture()
-    let opened = Mutex<String?>(nil)
-    let store = remote.makeStore { thread in opened.withLock { $0 = thread } }
+    let workspace = WorkspaceStore(client: remote.fixture.client, webURL: remote.fixture.baseURL)
+    defer { workspace.close() }
+    let store = OnboardingStore(
+      client: remote.fixture.client, webURL: remote.fixture.baseURL, graph: workspace.graph,
+      didFail: { _ in },
+      didComplete: { thread in
+        let id = try XCTUnwrap(thread)
+        let opened = await workspace.openChatLink(.thread(id: id, runID: nil))
+        XCTAssertTrue(opened)
+      })
     defer { store.close() }
     await store.prepare()
     store.selectIndustry("research")
@@ -48,7 +56,7 @@ final class OnboardingTests: XCTestCase {
     store.editPrompt("Compare the launch plans in my connected documents")
     await store.next()
     XCTAssertNil(store.snapshot.error)
-    let threadID = try XCTUnwrap(opened.withLock { $0 })
+    let threadID = try XCTUnwrap(workspace.selectedThreadID)
     let messages = remote.state.value.withLock { Array($0.messages.values) }
     XCTAssertEqual(messages.map(\.prompt), ["Compare the launch plans in my connected documents"])
     XCTAssertEqual(messages.map(\.threadID), [threadID])
@@ -122,6 +130,24 @@ final class OnboardingTests: XCTestCase {
     XCTAssertFalse(completed.needsOnboarding)
     XCTAssertEqual(
       remote.state.value.withLock { $0.messages.values.map(\.prompt) }, ["Draft a launch brief"])
+  }
+
+  func testPersonalizedRecommendationFillsTheTaskAndPreservesSubsequentEdits() async throws {
+    let remote = OnboardingHTTPFixture()
+    var draft = OnboardingDraft()
+    draft.step = .ready
+    draft.answers.industry = "marketing"
+    draft.answers.recommendationJobId = "20000000-0000-4000-8000-000000000001"
+    _ = try await remote.service.save(draft)
+    let store = remote.makeStore()
+    defer { store.close() }
+    await store.prepare()
+    await store.refreshReady()
+    XCTAssertEqual(
+      store.draft.answers.startingPromptDraft, "Review recent campaigns in my documents")
+    store.editPrompt("Compare only the latest two campaigns")
+    await store.refreshReady()
+    XCTAssertEqual(store.draft.answers.startingPromptDraft, "Compare only the latest two campaigns")
   }
 
   func testConflictingDraftDoesNotAdvanceOrDiscardTheMembersSelection() async throws {
@@ -208,6 +234,21 @@ private final class OnboardingHTTPFixture: Sendable {
           }
           return ChatHTTPResponse(body: "{\"onboardingComplete\":true,\"needsOnboarding\":false}")
         }
+      case ("GET", "/api/onboarding/recommendations/20000000-0000-4000-8000-000000000001"):
+        return ChatHTTPResponse(
+          body: """
+            {"jobId":"20000000-0000-4000-8000-000000000001","status":"completed","recommendation":{"title":"Review campaigns","outcome":"Compare recent results","prompt":"Review recent campaigns in my documents","profile":{"overview":"Marketing"}}}
+            """)
+      case ("GET", "/api/chat-threads/snapshot"):
+        let threads = state.value.withLock { $0.threads }.map { id in
+          "{\"id\":\"\(id)\",\"title\":\"First task\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\",\"sortAt\":\"2026-01-01T00:00:00Z\"}"
+        }.joined(separator: ",")
+        return ChatHTTPResponse(
+          body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
+      case ("GET", "/api/chat-threads/events"):
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case ("GET", "/api/indicators"):
+        return ChatHTTPResponse(body: "{\"unreadAt\":{},\"threads\":{}}")
       case ("GET", "/api/user-model-preference"):
         return ChatHTTPResponse(
           body:
