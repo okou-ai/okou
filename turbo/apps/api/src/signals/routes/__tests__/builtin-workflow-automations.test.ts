@@ -192,6 +192,7 @@ async function saveFeedback(
     | "less_like_this"
     | "option_selected"
     | "dismissed"
+    | "not_planned"
     | "later" = "less_like_this",
   completedActionTitles: readonly string[] = [],
 ) {
@@ -257,12 +258,17 @@ async function saveFeedback(
           id: feedbackId,
           kind,
           targetId: null,
-          note: kind === "less_like_this" ? "Initial preference" : "",
+          note: {
+            less_like_this: "Initial preference",
+            not_planned: "Do not nudge me about this again.",
+            later: "",
+            dismissed: "",
+          }[kind],
         },
       }),
       [200],
     );
-    if (kind === "less_like_this") {
+    if (kind === "less_like_this" || kind === "not_planned") {
       await accept(
         api.feedback({
           headers,
@@ -291,6 +297,7 @@ async function saveFeedback(
         less_like_this: `Show me fewer suggestions like this. My reason: ${reason}`,
         option_selected: "I chose this direction: Review",
         later: "I want to look at this later. Remind me after a while.",
+        not_planned: `Do not nudge me about this again. My reason: ${reason}`,
         dismissed: "",
       }[kind],
     },
@@ -368,7 +375,15 @@ async function prepareWorkflowFeedback(
     );
   });
   if (learning) {
-    return { initial: [existing] };
+    const legacy = await withFeedbackRun(owned, (token) => {
+      return saveFeedback(
+        token,
+        "A suggestion dismissed by an older client",
+        "I already have a reminder",
+        "not_planned",
+      );
+    });
+    return { initial: [existing, legacy.expected] };
   }
   const startedAt = now();
   return withMockNowForTest(startedAt, () => {
