@@ -147,6 +147,34 @@ describe("AgentPhone connection status and explicit phone switching", () => {
     await expect(linkedHandle(member)).resolves.toBe(phone);
   });
 
+  it("agentphone-connect.bdd-006 rejects a stale confirmation after the current number changes", async () => {
+    const capture = configureSignedAgentPhone();
+    const firstPhone = uniquePhoneHandle();
+    const secondPhone = uniquePhoneHandle();
+    const member = await connectedMember(capture, firstPhone);
+    const secondProof = await agentPhone.requestConnectLink(
+      secondPhone,
+      capture,
+    );
+    const thirdProof = await agentPhone.requestConnectLink(
+      uniquePhoneHandle(),
+      capture,
+    );
+
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...secondProof, replacePhoneHandle: firstPhone },
+      [200],
+    );
+    await integrations.requestConnectAgentPhone(
+      member,
+      { ...thirdProof, replacePhoneHandle: firstPhone },
+      [409],
+    );
+
+    await expect(linkedHandle(member)).resolves.toBe(secondPhone);
+  });
+
   it("agentphone-connect.bdd-007 rejects a tampered proof for status and switching without removing the old number", async () => {
     const capture = configureSignedAgentPhone();
     const firstPhone = uniquePhoneHandle();
