@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">मैसेज</string>
     <string name="artifact_preview_loading">प्रीव्यू लोड हो रहा है…</string>
     <string name="artifact_image_unavailable">चित्र उपलब्ध नहीं है</string>
+    <string name="artifact_image_actions">इमेज की कार्रवाइयाँ</string>
+    <string name="artifact_image_expand">इमेज व्यूअर बड़ा करें</string>
+    <string name="artifact_image_collapse">इमेज व्यूअर छोटा करें</string>
+    <string name="artifact_image_loading">इमेज लोड हो रही है…</string>
+    <string name="artifact_image_load_failed">फ़िलहाल इमेज लोड नहीं हो पा रही है</string>
+    <string name="artifact_image_zoom_in">ज़ूम इन करें</string>
+    <string name="artifact_image_zoom_out">ज़ूम आउट करें</string>
+    <string name="artifact_image_fit">इमेज फ़िट करें</string>
 </resources>

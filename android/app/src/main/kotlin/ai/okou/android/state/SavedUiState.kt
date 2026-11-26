@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,8 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 
@@ -642,6 +645,56 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
 
 @Composable
 internal fun rememberArtifactPageHolder(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberArtifactImageViewerState(): ArtifactImageViewerState =
+    rememberSaveable(saver = ArtifactImageViewerState.Saver) { ArtifactImageViewerState() }
+
+internal class ArtifactImageViewerState(
+    initialScale: Float = 1f,
+    initialOffset: Offset = Offset.Zero,
+    initialExpanded: Boolean = false,
+) {
+    var expanded by mutableStateOf(initialExpanded)
+    var scale by mutableFloatStateOf(initialScale)
+        private set
+
+    private var offset by mutableStateOf(initialOffset)
+
+    fun translation(viewport: Size, fit: Size): Offset =
+        clamp(Offset(offset.x * fit.width, offset.y * fit.height), scale, viewport, fit)
+
+    fun change(zoom: Float, pan: Offset, origin: Offset, viewport: Size, fit: Size) {
+        val next = (scale * zoom).coerceIn(1f, 8f)
+        val before = translation(viewport, fit)
+        val pivot = origin - Offset(viewport.width / 2, viewport.height / 2)
+        val after = clamp(before + pan + (before - pivot) * (next / scale - 1), next, viewport, fit)
+        scale = next
+        offset = Offset(after.x / fit.width, after.y / fit.height)
+    }
+
+    private fun clamp(offset: Offset, zoom: Float, viewport: Size, fit: Size): Offset {
+        val x = ((fit.width * zoom - viewport.width) / 2).coerceAtLeast(0f)
+        val y = ((fit.height * zoom - viewport.height) / 2).coerceAtLeast(0f)
+        return Offset(offset.x.coerceIn(-x, x), offset.y.coerceIn(-y, y))
+    }
+
+    companion object {
+        val Saver =
+            listSaver<ArtifactImageViewerState, Any>(
+                save = { view ->
+                    listOf(view.scale, view.offset.x, view.offset.y, view.expanded)
+                },
+                restore = {
+                    ArtifactImageViewerState(
+                        it[0] as Float,
+                        Offset(it[1] as Float, it[2] as Float),
+                        it[3] as Boolean,
+                    )
+                },
+            )
+    }
+}
 
 @Composable
 internal fun rememberArtifactWebScroll(): MutableIntState = rememberSaveable {
