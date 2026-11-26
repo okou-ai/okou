@@ -11,6 +11,7 @@ import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.awaitKeyboardFocus
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
@@ -26,6 +27,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -159,12 +161,17 @@ class ScreenshotScenario {
                             find(text(newProjectChat))
                             check(focused(projectTitle) != null) { "Expanding the Project lost its keyboard focus" }
                             press(KeyEvent.KEYCODE_DPAD_DOWN)
-                            device.waitForIdle()
-                            check(focused(newProjectChat) != null) { "Down from the Project did not focus its new-chat button" }
+                            device.awaitKeyboardFocus(text(newProjectChat))
                             capture("wide-project-focus.png", newProjectChat)
                             press(KeyEvent.KEYCODE_ENTER)
-                            device.waitForIdle()
-                            check(device.findObjects(text(projectTitle)).any { it.visibleBounds.left > 344 }) {
+                            val projectDraft =
+                                object : Condition<UiDevice, Boolean> {
+                                    override fun apply(device: UiDevice) =
+                                        device.findObjects(text(projectTitle)).any {
+                                            it.visibleBounds.left > 344
+                                        }
+                                }
+                            check(device.wait(projectDraft, 5_000)) {
                                 "The Project draft did not open in the detail pane"
                             }
 
