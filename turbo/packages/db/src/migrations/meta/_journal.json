@@ -3928,6 +3928,13 @@
       "when": 1795659795482,
       "tag": "1639_connector_account_external_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1640,
+      "version": "7",
+      "when": 1795664181111,
+      "tag": "1640_phone_use_operation_generation",
+      "breakpoints": true
     }
   ]
 }

@@ -56,6 +56,10 @@ import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { notifyPhoneUseOwner$ } from "../services/phone-use-notifications.service";
+import {
+  phoneOperationGenerationMatches,
+  phoneOperationRegistrationEnded,
+} from "../services/phone-use-operation-generation";
 
 type OrganizationAuthContext = AuthContext & { readonly orgId: string };
 class PhoneUseError extends Error {
@@ -195,6 +199,7 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
     .select({
       id: grants.id,
       deviceId: grants.deviceId,
+      deviceGeneration: devices.generation,
       sessionId: devices.sessionId,
     })
     .from(grants)
@@ -236,7 +241,12 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
   if (!valid) {
     deny("The owner's Phone Use session has ended");
   }
-  return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
+  return {
+    id: grant.id,
+    deviceId: grant.deviceId,
+    deviceGeneration: grant.deviceGeneration,
+    runId: auth.runId,
+  };
 });
 function deviceView(value: typeof devices.$inferSelect, present = false) {
   const online =
@@ -347,19 +357,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(operations.deviceId, device.id),
         inArray(operations.status, ["queued", "running", "approval_required"]),
-        not(
-          exists(
-            get(db$)
-              .select({ id: grants.id })
-              .from(grants)
-              .where(
-                and(
-                  eq(grants.id, operations.grantId),
-                  gt(grants.deviceGeneration, device.generation - 1),
-                ),
-              ),
-          ),
-        ),
+        phoneOperationRegistrationEnded(device.generation - 1),
       ),
     )
     .returning({
@@ -466,19 +464,7 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(operations.deviceId, path.deviceId),
         inArray(operations.status, ["queued", "running", "approval_required"]),
-        not(
-          exists(
-            get(db$)
-              .select({ id: grants.id })
-              .from(grants)
-              .where(
-                and(
-                  eq(grants.id, operations.grantId),
-                  gt(grants.deviceGeneration, body.data.generation),
-                ),
-              ),
-          ),
-        ),
+        phoneOperationRegistrationEnded(body.data.generation),
       ),
     )
     .returning({
@@ -772,6 +758,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         owned(auth),
         eq(devices.id, grant.deviceId),
+        eq(devices.generation, grant.deviceGeneration),
         stopping ? undefined : eq(devices.ready, true),
         stopping ? undefined : gt(devices.lastSeenAt, new Date(now() - 45_000)),
       ),
@@ -793,6 +780,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       runId: grant.runId,
       grantId: grant.id,
       deviceId: device.id,
+      deviceGeneration: device.generation,
       action: body.data.action,
       payloadHash,
       status: stopping ? "succeeded" : "queued",
@@ -976,6 +964,7 @@ const retireEndedOperations$ = command(
           ]),
           or(
             lte(operations.expiresAt, nowDate()),
+            not(phoneOperationGenerationMatches(device.generation)),
             not(
               exists(
                 get(db$)
@@ -1082,30 +1071,33 @@ const claimPhoneOperation$ = command(
     if (running) {
       return { status: 200 as const, body: { operation: null } };
     }
-    const liveGrant = exists(
-      get(db$)
-        .select({ id: grants.id })
-        .from(grants)
-        .innerJoin(
-          agentRuns,
-          and(
-            eq(agentRuns.id, operations.runId),
-            eq(agentRuns.chatThreadId, grants.threadId),
-            eq(agentRuns.status, "running"),
+    const liveGrant = and(
+      phoneOperationGenerationMatches(device.generation),
+      exists(
+        get(db$)
+          .select({ id: grants.id })
+          .from(grants)
+          .innerJoin(
+            agentRuns,
+            and(
+              eq(agentRuns.id, operations.runId),
+              eq(agentRuns.chatThreadId, grants.threadId),
+              eq(agentRuns.status, "running"),
+            ),
+          )
+          .where(
+            and(
+              eq(grants.id, operations.grantId),
+              eq(grants.deviceId, device.id),
+              eq(grants.deviceGeneration, device.generation),
+              eq(grants.orgId, device.orgId),
+              eq(grants.userId, device.userId),
+              eq(agentRuns.orgId, device.orgId),
+              eq(agentRuns.userId, device.userId),
+              claim.threadId ? eq(grants.threadId, claim.threadId) : undefined,
+            ),
           ),
-        )
-        .where(
-          and(
-            eq(grants.id, operations.grantId),
-            eq(grants.deviceId, device.id),
-            eq(grants.deviceGeneration, device.generation),
-            eq(grants.orgId, device.orgId),
-            eq(grants.userId, device.userId),
-            eq(agentRuns.orgId, device.orgId),
-            eq(agentRuns.userId, device.userId),
-            claim.threadId ? eq(grants.threadId, claim.threadId) : undefined,
-          ),
-        ),
+      ),
     );
     const [candidate] = await get(db$)
       .select()
@@ -1393,6 +1385,7 @@ const validate$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(operations.id, body.data.operationId),
         eq(operations.deviceId, device.id),
         eq(operations.claimedGeneration, device.generation),
+        phoneOperationGenerationMatches(device.generation),
         inArray(operations.status, ["running", "approval_required"]),
         gt(operations.expiresAt, nowDate()),
       ),

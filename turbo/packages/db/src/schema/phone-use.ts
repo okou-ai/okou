@@ -106,6 +106,7 @@ export const phoneUseOperations = pgTable(
     action: jsonb("action").$type<PhoneUseObject>().notNull(),
     payloadHash: text("payload_hash").notNull(),
     status: text("status").notNull().default("queued"),
+    deviceGeneration: integer("device_generation"),
     claimedGeneration: integer("claimed_generation"),
     result: jsonb("result").$type<PhoneUseObject>(),
     error: text("error"),
