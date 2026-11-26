@@ -43,11 +43,14 @@ internal val RecoverySubscriptionsSubscriptionsItem.provider: ModelAccountProvid
             RecoverySubscriptionsSubscriptionsItemType.BUILT_IN -> null
         }
 
+internal class SettingsRefreshFailure
+
 internal data class SettingsRead<T>(
     val value: T? = null,
     val unavailable: Boolean = false,
     val readAt: Long? = null,
     val refreshing: Boolean = false,
+    val refreshFailure: SettingsRefreshFailure? = null,
 ) {
     val initialFailure: Boolean
         get() = value == null && unavailable
@@ -166,6 +169,7 @@ internal constructor(
     internal fun visible(destination: SettingsDestination?) {
         if (visible == destination) return
         visible = destination
+        if (destination != SettingsDestination.ModelAccounts) clearAccountRefreshFailure()
         if (
             destination != SettingsDestination.ModelAccounts &&
                 mutable.value.switching.values.none { it.phase == AccountSwitchPhase.Confirming }
@@ -289,6 +293,7 @@ internal constructor(
             return
         if (accountsRead?.isActive == true) return
         accountsRead = viewModelScope.launch {
+            clearAccountRefreshFailure()
             read(
                 WorkspaceSettingsResource.Accounts,
                 accountsSerializer,
@@ -312,7 +317,16 @@ internal constructor(
                 if (result.unavailable) {
                     mutable.value =
                         state.copy(
-                            accounts = result,
+                            accounts =
+                                result.copy(
+                                    refreshFailure =
+                                        if (
+                                            incoming != null &&
+                                                visible == SettingsDestination.ModelAccounts
+                                        )
+                                            SettingsRefreshFailure()
+                                        else null,
+                                ),
                             switching =
                                 state.switching.mapValues { (_, intent) ->
                                     if (intent.phase == AccountSwitchPhase.Confirming)
@@ -343,6 +357,10 @@ internal constructor(
                 }
             }
         }
+    }
+
+    private fun clearAccountRefreshFailure() {
+        mutable.update { it.copy(accounts = it.accounts.copy(refreshFailure = null)) }
     }
 
     internal fun activate(accountId: String) {

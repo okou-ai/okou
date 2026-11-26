@@ -4,6 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.SettingsApiFixture
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalOptional
+import ai.okou.android.api.generated.RecoverySubscriptions
 import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
@@ -46,6 +47,47 @@ import org.junit.rules.TemporaryFolder
 class WorkspaceSettingsModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val presentationJobs = mutableListOf<Job>()
+
+    @Test
+    fun failedRefreshRetainsConfirmedEmptyAccountsAndReportsOnlyForThisVisit() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                var fail = false
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoverySubscriptions(): RecoverySubscriptions {
+                            if (fail) throw ApiFailure.Http(400, null, null, null)
+                            return RecoverySubscriptions(emptyList())
+                        }
+                    }
+                val model = settings(store, api, service = service)
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                assertEquals(emptyList<Any>(), model.uiState.value.accounts.value)
+                assertNull(model.uiState.value.accounts.refreshFailure)
+
+                model.visible(null)
+                fail = true
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                val failed = model.uiState.value.accounts
+                assertEquals(emptyList<Any>(), failed.value)
+                assertTrue(failed.refreshFailure != null)
+                assertFalse(failed.initialFailure)
+
+                model.visible(null)
+                assertNull(model.uiState.value.accounts.refreshFailure)
+                model.visible(SettingsDestination.ModelAccounts)
+                runCurrent()
+                val nextFailure = checkNotNull(model.uiState.value.accounts.refreshFailure)
+                assertTrue(nextFailure !== failed.refreshFailure)
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
 
     @Test
     fun preservesAccountOrderAndReconcilesAnUnconfirmedSwitchWithoutResending() = runTest {
