@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
@@ -116,9 +117,9 @@ internal fun ConnectorsPage(
     val filter =
         if (route.connected) ConnectorBrowseFilter.of("", route.category)
         else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
-    var restoreRow by
+    val returnFocus =
         remember(route, route.connected, filter, route.committedQuery.text.trim()) {
-            mutableStateOf<String?>(null)
+            DirectoryReturnFocus()
         }
     val wide = listWidth != null
     val selected = route.slug
@@ -149,7 +150,7 @@ internal fun ConnectorsPage(
         focus.clearFocus()
         keyboard?.hide()
         if (initialSlug == null && !wide && selected != null) {
-            restoreRow = selected.takeIf { inputMode.inputMode == InputMode.Keyboard }
+            returnFocus.returningFrom("connector-$selected", inputMode.inputMode)
             route.slug = null
         } else {
             closePage()
@@ -185,13 +186,12 @@ internal fun ConnectorsPage(
                 if (route.connected) connectedPosition else discoverPosition,
                 directoryAnnouncements,
                 selected = selected.takeIf { wide },
-                restoreRow = restoreRow,
-                onReturnFocusFinished = { restoreRow = null },
+                returnFocus = returnFocus,
                 onBack = ::back,
                 editQuery = ::setQuery,
                 setCategory = ::setCategory,
                 open = { entry ->
-                    restoreRow = null
+                    returnFocus.cancel()
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     route.slug = entry.slug
@@ -293,8 +293,7 @@ private fun ConnectorDirectory(
     position: LazyListState,
     announcements: ConnectorReadAnnouncements,
     selected: String?,
-    restoreRow: String?,
-    onReturnFocusFinished: () -> Unit,
+    returnFocus: DirectoryReturnFocus,
     onBack: () -> Unit,
     editQuery: (TextFieldValue) -> Unit,
     setCategory: (String?) -> Unit,
@@ -302,6 +301,7 @@ private fun ConnectorDirectory(
     modifier: Modifier = Modifier,
 ) {
     val query = route.committedQuery.text.trim()
+    val restoreRow = returnFocus.pending?.rowKey
     val searchFocus = remember { FocusRequester() }
     val clearQuery = searchClearAction(searchFocus) { editQuery(TextFieldValue()) }
     val directory =
@@ -387,13 +387,13 @@ private fun ConnectorDirectory(
     val selectedTab = if (route.connected) 1 else 0
     Column(
         modifier.restoreDirectoryFocus(
-            restoreRow?.let { "connector-$it" },
+            returnFocus,
             entries != null || failure != null,
             position,
             restoreFocus,
             tabFocus[selectedTab],
-            onReturnFocusFinished,
-            rowEnabled = restoreRow != null && entries?.any { it.slug == restoreRow } == true,
+            rowEnabled =
+                restoreRow != null && entries?.any { "connector-${it.slug}" == restoreRow } == true,
         ),
     ) {
         ConnectorTopBar(stringResource(R.string.connector_title), onBack)
@@ -469,7 +469,7 @@ private fun ConnectorDirectory(
                             }
                         }
                         items(entries, key = { "connector-${it.slug}" }) { entry ->
-                            val restoring = restoreRow == entry.slug
+                            val restoring = restoreRow == "connector-${entry.slug}"
                             ConnectorDirectoryRow(
                                 entry,
                                 directory.accountsFor(entry.slug),

@@ -33,7 +33,8 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,17 +50,15 @@ class DirectoryReturnFocusTest {
     fun waitsForTheRowAndRestoresItOnlyOnceAcrossLayoutChanges() = withKeyboard {
         var loaded by mutableStateOf(false)
         var width by mutableStateOf(320.dp)
-        var restorations = 0
+        val returnFocus = pendingReturn()
         compose.setContent {
-            Directory(ready = loaded, hasRow = loaded, modifier = Modifier.width(width)) {
-                restorations++
-            }
+            Directory(loaded, returnFocus, hasRow = loaded, modifier = Modifier.width(width))
         }
 
         val fallback = compose.onNodeWithTag("fallback")
         fallback.assertIsNotFocused()
         compose.runOnIdle {
-            assertEquals(0, restorations)
+            assertNotNull(returnFocus.pending)
             width = 730.dp
             loaded = true
         }
@@ -68,13 +67,13 @@ class DirectoryReturnFocusTest {
         fallback.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         compose.runOnIdle { width = 540.dp }
         fallback.assertIsFocused()
-        compose.runOnIdle { assertEquals(1, restorations) }
     }
 
     @Test
     fun usesTheFallbackWhenTheRowDisappearsBeforeLayout() = withKeyboard {
         var ready by mutableStateOf(false)
-        compose.setContent { Directory(ready = ready, hasRow = !ready) {} }
+        val returnFocus = pendingReturn()
+        compose.setContent { Directory(ready, returnFocus, hasRow = !ready) }
         compose.onNodeWithTag("row").assertExists()
 
         compose.runOnIdle { ready = true }
@@ -86,7 +85,8 @@ class DirectoryReturnFocusTest {
     @Test
     fun usesTheFallbackWhenTheRowIsDisabled() = withKeyboard {
         var ready by mutableStateOf(false)
-        compose.setContent { Directory(ready = ready, rowEnabled = false) {} }
+        val returnFocus = pendingReturn()
+        compose.setContent { Directory(ready, returnFocus, rowEnabled = false) }
 
         compose.runOnIdle { ready = true }
 
@@ -97,7 +97,7 @@ class DirectoryReturnFocusTest {
     @Test
     fun touchCancelsReturnFocusWhileTheDirectoryIsLoading() = withKeyboard {
         var loaded by mutableStateOf(false)
-        var pending by mutableStateOf(true)
+        val returnFocus = pendingReturn()
         var mode by mutableStateOf(InputMode.Keyboard)
         val inputMode =
             object : InputModeManager {
@@ -108,9 +108,7 @@ class DirectoryReturnFocusTest {
             }
         compose.setContent {
             CompositionLocalProvider(LocalInputModeManager provides inputMode) {
-                Directory(ready = loaded, hasRow = loaded, restoreRow = "row".takeIf { pending }) {
-                    pending = false
-                }
+                Directory(loaded, returnFocus, hasRow = loaded)
             }
         }
 
@@ -124,18 +122,16 @@ class DirectoryReturnFocusTest {
         val row = compose.onNodeWithTag("row").assertIsNotFocused()
         compose.onNodeWithTag("fallback").assertIsNotFocused()
 
-        compose.runOnIdle { pending = true }
+        compose.runOnIdle { returnFocus.returningFrom("row", InputMode.Keyboard) }
         row.assertIsFocused()
     }
 
     @Test
     fun keepsKeyboardFocusMovedWhileTheDirectoryIsLoading() = withKeyboard {
         var loaded by mutableStateOf(false)
-        var pending by mutableStateOf(true)
+        val returnFocus = pendingReturn()
         compose.setContent {
-            Directory(ready = loaded, hasRow = loaded, restoreRow = "row".takeIf { pending }) {
-                pending = false
-            }
+            Directory(loaded, returnFocus, hasRow = loaded)
         }
 
         compose.onRoot().performKeyInput { pressKey(Key.Tab) }
@@ -146,6 +142,18 @@ class DirectoryReturnFocusTest {
 
         compose.onNodeWithTag("row").assertExists()
         other.assertIsFocused()
+    }
+
+    @Test
+    fun anOldCallbackCannotClearANewReturnToTheSameRow() {
+        val returnFocus = pendingReturn()
+        val first = checkNotNull(returnFocus.pending)
+        returnFocus.returningFrom("row", InputMode.Keyboard)
+        val latest = checkNotNull(returnFocus.pending)
+
+        returnFocus.finish(first)
+
+        assertSame(latest, returnFocus.pending)
     }
 
     private fun withKeyboard(test: () -> Unit) {
@@ -160,14 +168,16 @@ class DirectoryReturnFocusTest {
     }
 }
 
+private fun pendingReturn() =
+    DirectoryReturnFocus().apply { returningFrom("row", InputMode.Keyboard) }
+
 @Composable
 private fun Directory(
     ready: Boolean,
+    returnFocus: DirectoryReturnFocus,
     modifier: Modifier = Modifier,
     hasRow: Boolean = true,
     rowEnabled: Boolean = true,
-    restoreRow: String? = "row",
-    onFinished: () -> Unit,
 ) {
     val position = rememberLazyListState()
     val row = remember { FocusRequester() }
@@ -175,12 +185,11 @@ private fun Directory(
     OkouTheme(false) {
         Column(
             modifier.restoreDirectoryFocus(
-                restoreRow,
+                returnFocus,
                 ready,
                 position,
                 row,
                 fallback,
-                onFinished,
                 rowEnabled,
             ),
         ) {
