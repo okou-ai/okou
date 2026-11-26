@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension EnvironmentValues {
+  @Entry var imagePreviewPan: (@MainActor (UIPanGestureRecognizer) -> Void)?
+}
+
 /// Keep the presenting chat under the image as it follows a one-finger vertical drag.
 struct ImagePreviewSwipeDismiss<Content: View>: View {
   let dismiss: () -> Void
@@ -11,6 +15,7 @@ struct ImagePreviewSwipeDismiss<Content: View>: View {
   var body: some View {
     GeometryReader { geometry in
       content()
+        .environment(\.imagePreviewPan, { handle($0, height: geometry.size.height) })
         .background(OkouColor.background)
         .offset(y: reduceMotion ? 0 : dragOffset)
         .opacity(reduceMotion && isLeaving ? 0 : 1)
@@ -64,9 +69,7 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
 
   func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
     let pan = UIPanGestureRecognizer()
-    pan.maximumNumberOfTouches = 1
-    pan.cancelsTouchesInView = false
-    pan.delegate = context.coordinator
+    context.coordinator.configure(pan)
     return pan
   }
 
@@ -82,6 +85,12 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
   }
 
   final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    func configure(_ pan: UIPanGestureRecognizer) {
+      pan.maximumNumberOfTouches = 1
+      pan.cancelsTouchesInView = false
+      pan.delegate = self
+    }
+
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
       guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
       let direction = pan.velocity(in: pan.view)
@@ -102,6 +111,9 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
       var ancestor = touch.view
       while let view = ancestor {
         if view is UIControl { return false }
+        if view is QuickLookImageCanvas, gestureRecognizer.view?.isDescendant(of: view) != true {
+          return false
+        }
         if let scroll = view as? UIScrollView,
           scroll.isZooming || scroll.zoomScale > scroll.minimumZoomScale * 1.01
         {

@@ -142,19 +142,24 @@ struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerReprese
     // same local zoom surface that owns pinch, pan and swipe for a decoded image.
     let container = UIViewController()
     container.addChild(preview)
+    let canvas = QuickLookImageCanvas(renderer: preview.view)
+    canvas.handlePan = context.environment.imagePreviewPan
+    context.coordinator.canvas = canvas
     container.view = MessageImageScrollView(
-      content: preview.view,
+      content: canvas,
       accessibilityLabel: String(localized: "Image. Pinch to zoom, or double tap."))
     preview.didMove(toParent: container)
     return container
   }
   func updateUIViewController(_ controller: UIViewController, context: Context) {
+    context.coordinator.canvas?.handlePan = context.environment.imagePreviewPan
     guard context.coordinator.file.url != file.url else { return }
     context.coordinator.file = file
     context.coordinator.preview.reloadData()
   }
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
     let preview = QLPreviewController()
+    weak var canvas: QuickLookImageCanvas?
     var file: File
     init(_ file: File) { self.file = file }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
@@ -164,4 +169,32 @@ struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerReprese
       file.url as NSURL
     }
   }
+}
+
+/// A remote Quick Look surface can receive touches directly from the window server.
+/// Put a local input view above it so the image scroll view receives pinches and drags.
+final class QuickLookImageCanvas: UIView {
+  var handlePan: (@MainActor (UIPanGestureRecognizer) -> Void)?
+  private let panDelegate = ImagePreviewPan.Coordinator()
+
+  init(renderer: UIView) {
+    super.init(frame: .zero)
+    let display = UIView()
+    let input = UIView()
+    display.isUserInteractionEnabled = false
+    display.addSubview(renderer)
+    addSubview(display)
+    addSubview(input)
+    let pan = UIPanGestureRecognizer(target: self, action: #selector(didPan(_:)))
+    panDelegate.configure(pan)
+    input.addGestureRecognizer(pan)
+    for view in [display, renderer, input] {
+      view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      view.frame = bounds
+    }
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  @objc private func didPan(_ pan: UIPanGestureRecognizer) { handlePan?(pan) }
 }

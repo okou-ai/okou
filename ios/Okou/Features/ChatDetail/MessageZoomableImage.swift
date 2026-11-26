@@ -33,7 +33,6 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
     delegate = self
     contentInsetAdjustmentBehavior = .never
     content.frame = CGRect(origin: .zero, size: imageSize ?? .zero)
-    content.isUserInteractionEnabled = false
     content.isAccessibilityElement = true
     content.accessibilityLabel = accessibilityLabel
     content.accessibilityCustomActions = [

@@ -28,12 +28,16 @@ final class ImagePreviewSwipeTests: XCTestCase {
   }
 
   func testSystemRenderedImageFitsAndZoomsInTheLocalScrollView() {
-    let rendered = UIView()
+    let renderer = UIView()
+    let rendered = QuickLookImageCanvas(renderer: renderer)
     let canvas = MessageImageScrollView(content: rendered, accessibilityLabel: "Image")
     canvas.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
     canvas.layoutIfNeeded()
     XCTAssertEqual(rendered.bounds.size, canvas.bounds.size)
-    XCTAssertTrue(canvas.hitTest(CGPoint(x: 195, y: 350), with: nil) === canvas)
+    XCTAssertEqual(renderer.frame.size, canvas.bounds.size)
+    let target = canvas.hitTest(CGPoint(x: 195, y: 350), with: nil)
+    XCTAssertEqual(target?.superview, rendered)
+    XCTAssertFalse(target?.isDescendant(of: renderer) == true)
 
     canvas.setZoomScale(2, animated: false)
     XCTAssertEqual(rendered.frame.size, CGSize(width: 780, height: 1400))
