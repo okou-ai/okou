@@ -1639,19 +1639,20 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
             assertEquals(rowTop, row.getUnclippedBoundsInRoot().top)
 
             query.performTextReplacement("unmatched query")
+            val empty = compose.onNodeWithText("No matching workflows").assertIsDisplayed()
             compose.waitForIdle()
             compose.mainClock.advanceTimeBy(280)
-            compose.onNode(loading and !progressSemantics).assertIsDisplayed()
-            progress.assertDoesNotExist()
-            compose.onNodeWithText("No matching workflows").assertDoesNotExist()
+            compose.onNode(loading and !progressSemantics).assertDoesNotExist()
+            progress.assertIsDisplayed()
+            empty.assertIsDisplayed()
 
             val updatedTitle = "Launch planning"
             app.fixture.releaseTitle = updatedTitle
             releaseCatalog.countDown()
-            waitFor("No matching workflows")
+            compose.waitUntilDoesNotExist(loading, 5_000)
             query.assertTextContains("unmatched query")
             scope.assertIsSelected()
-            compose.onNode(loading).assertDoesNotExist()
+            empty.assertIsDisplayed()
 
             query.performTextReplacement("launch")
             waitFor(updatedTitle)

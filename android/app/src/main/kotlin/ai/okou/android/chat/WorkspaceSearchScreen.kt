@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -601,7 +602,8 @@ private fun SearchResults(
             }
         }
     }
-    Box(modifier) {
+    BoxWithConstraints(modifier) {
+        val viewportHeight = maxHeight
         LazyColumn(
             Modifier.fillMaxSize()
                 .focusRequester(resultFocus)
@@ -704,7 +706,10 @@ private fun SearchResults(
             if (showFailure) {
                 item(key = "search_status") {
                     if (accessFailure == null) {
-                        ContentReadFailure(failureLabel, Modifier.fillParentMaxSize())
+                        ContentReadFailure(
+                            failureLabel,
+                            Modifier.fillMaxWidth().heightIn(min = viewportHeight),
+                        )
                     } else {
                         ContentReadFeedback(
                             accessFailure,

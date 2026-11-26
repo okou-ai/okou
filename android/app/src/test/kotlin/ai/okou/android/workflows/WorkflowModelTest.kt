@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
 import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.searchCatalog
 import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModelProvider
@@ -244,6 +245,8 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             model.visibilityChanged(false)
             val saved = listOf(service.summary)
+            val noMatches = SearchRead.Ready(emptyList<SearchWorkflowHit>())
+            assertEquals(noMatches, model.state.value.searchCatalog("unmatched"))
             val refresh = CompletableDeferred<Unit>()
             service.catalogRead = {
                 refresh.await()
@@ -256,7 +259,10 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             val matches = model.state.value.searchCatalog("release") as SearchRead.Ready
             assertTrue(matches.refreshing)
             assertEquals(listOf(service.summary.id), matches.rows.map { it.id })
-            assertEquals(SearchRead.Loading, model.state.value.searchCatalog("unmatched"))
+            assertEquals(
+                noMatches.copy(refreshing = true),
+                model.state.value.searchCatalog("unmatched"),
+            )
             assertEquals(2, service.catalogReads)
             assertEquals(1, service.ruleReads)
             assertEquals(1, service.connectionReads)
