@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.137.2](https://github.com/okou-ai/okou/compare/api-v2.137.1...api-v2.137.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **api:** complete the proactive cutover from the minute cron ([#51207](https://github.com/okou-ai/okou/issues/51207)) ([3743211](https://github.com/okou-ai/okou/commit/37432116e7617cc1b185907d1669aa8600d7df1b))
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+
+### Refactoring
+
+* **api:** remove hardcoded agentSuggestion feature switch ([#51200](https://github.com/okou-ai/okou/issues/51200)) ([9b08a6a](https://github.com/okou-ai/okou/commit/9b08a6ab106941ed505e626245c4e7e701fc0138))
+* **runner:** retire legacy startup dispatch fields ([#51189](https://github.com/okou-ai/okou/issues/51189)) ([ae83fa7](https://github.com/okou-ai/okou/commit/ae83fa732618ccd8d0fa0d1bd3172c7c4c7ecd41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/db bumped to 2.71.5
+    * @okouai/pi-agent-runtime bumped to 1.52.94
+
 ## [2.137.1](https://github.com/okou-ai/okou/compare/api-v2.137.0...api-v2.137.1) (2026-11-26)
 
 

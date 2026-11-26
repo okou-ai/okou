@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.62.1](https://github.com/okou-ai/okou/compare/android-v0.62.0...android-v0.62.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align search read feedback and group actions ([#51194](https://github.com/okou-ai/okou/issues/51194)) ([1eb2d12](https://github.com/okou-ai/okou/commit/1eb2d1250f9cd405532be0e17bc821787c9a1d68))
+* **android:** align update installation handoff with design ([#51182](https://github.com/okou-ai/okou/issues/51182)) ([797b075](https://github.com/okou-ai/okou/commit/797b075d9f3fdedea06b701181a7f280ea57a725))
+* **android:** end chat list reads with their foreground scope ([#51175](https://github.com/okou-ai/okou/issues/51175)) ([7729309](https://github.com/okou-ai/okou/commit/7729309653cc736d26fc1765f962b6d4a54362c3))
+* **android:** keep the model picker stable on refresh failure ([#51192](https://github.com/okou-ai/okou/issues/51192)) ([c173f4a](https://github.com/okou-ai/okou/commit/c173f4a26361f15b07666b297eb9463f4810f741))
+* **android:** stabilize workflow loading and pending controls ([#51174](https://github.com/okou-ai/okou/issues/51174)) ([d11e96c](https://github.com/okou-ai/okou/commit/d11e96c084cd6fb13e8ca9cf82f7896c31f37e60))
+
 ## [0.62.0](https://github.com/okou-ai/okou/compare/android-v0.61.1...android-v0.62.0) (2026-11-26)
 
 
