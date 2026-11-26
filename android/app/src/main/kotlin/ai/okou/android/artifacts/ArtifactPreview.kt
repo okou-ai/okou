@@ -47,6 +47,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -103,6 +105,9 @@ internal fun ArtifactPreview(
     saveEnabled: Boolean,
     onSave: (ArtifactSave) -> Unit,
     saveResult: ArtifactSaveResult?,
+    onShare: (() -> Unit)?,
+    sharing: Boolean,
+    shareSnackbar: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -195,6 +200,14 @@ internal fun ArtifactPreview(
                         }
                     }
                     if (save != null) {
+                        if (onShare != null) {
+                            ArtifactAction(
+                                R.string.artifact_share_file,
+                                icon = R.drawable.ic_share,
+                                enabled = saveEnabled,
+                                onClick = onShare,
+                            )
+                        }
                         ArtifactAction(
                             R.string.artifact_save,
                             icon = R.drawable.ic_download,
@@ -222,6 +235,12 @@ internal fun ArtifactPreview(
                             }
                         }
                     }
+                    if (sharing) {
+                        PreviewFeedback(
+                            R.string.artifact_share_preparing,
+                            Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
             val feedback =
@@ -244,14 +263,15 @@ internal fun ArtifactPreview(
                 }
             }
         }
+        SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
     }
 }
 
 @Composable
-private fun PreviewFeedback(@StringRes label: Int) {
+private fun PreviewFeedback(@StringRes label: Int, modifier: Modifier = Modifier) {
     Text(
         stringResource(label),
-        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

@@ -119,6 +119,7 @@ internal fun ConversationRoute(
     stopPlacement: ConversationStopPlacement? = null,
     paneFeedbackVisible: Boolean = false,
     queueOpen: Boolean = false,
+    queuePosition: LazyListState? = null,
     dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
@@ -851,6 +852,7 @@ internal fun ConversationRoute(
                 queue,
                 controls,
                 controlSnackbar.takeIf { showQueueFeedback },
+                queuePosition ?: rememberLazyListState(),
                 dismissQueue,
             )
     }

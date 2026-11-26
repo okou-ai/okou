@@ -11,7 +11,7 @@ import mitm_addon
 import response_streaming
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import response_stream
-from tests.repeated_bytes_helpers import repeat_bytes
+from tests.repeated_bytes_helpers import join_repeated_bytes, repeat_bytes
 from tests.stream_buffer_helpers import response_stream_capture
 from tests.x_flow_helpers import (
     json_body_that_exceeds_x_json_work_limit,
@@ -483,7 +483,7 @@ class TestXJsonFinalize:
     async def test_protocol_shaped_data_array_stays_within_work_limit(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
         data_item = b'{"id":"123456"}'
-        body = b'{"data":[' + b",".join([data_item] * 3_600) + b"]}"
+        body = join_repeated_bytes(b",", data_item, 3_600, prefix=b'{"data":[', suffix=b"]}")
 
         mitm_addon.responseheaders(flow)
         assert response_stream(flow)(body) == body

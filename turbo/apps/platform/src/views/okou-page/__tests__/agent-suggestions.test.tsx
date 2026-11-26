@@ -188,6 +188,115 @@ test("agent-suggestions-001 a removed feed item sends the choice with its origin
   expect(location.pathname).toBe("/for-you");
 });
 
+test("agent-suggestions-042 dragging across an option's text selects it instead of choosing it", async () => {
+  const base = proposal("Vendor renewals");
+  const [prepare] = base.content.options;
+  if (!prepare) {
+    throw new Error("The proposal fixture has an option");
+  }
+  const item: SuggestionCard = {
+    ...base,
+    content: {
+      ...base.content,
+      options: [
+        prepare,
+        { ...prepare, id: "summarize", label: "Summarize Vendor renewals" },
+      ],
+    },
+  };
+  feed([item]);
+  createChatRunFixtures(context).installRunChat();
+  const choice = context.mocks.deferred<string | null>();
+  context.mocks.api(feedContract.consume, ({ body, respond }) => {
+    choice.resolve(body.optionId);
+    return respond(200, item);
+  });
+  await openDeck();
+  const card = await activeCard(item);
+  const selected = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    card,
+  );
+  act(() => {
+    document
+      .getSelection()
+      ?.selectAllChildren(
+        within(selected).getByText("Prepare Vendor renewals"),
+      );
+  });
+  fireEvent.pointerDown(selected, { button: 0 });
+  fireEvent.click(selected, { detail: 1 });
+  act(() => {
+    document.getSelection()?.removeAllRanges();
+  });
+  click(await findFastControl("button", "Summarize Vendor renewals", card));
+
+  await expect(choice.promise).resolves.toBe("summarize");
+});
+
+test("agent-suggestions-043 each option says whether it sends to a new chat or drafts in its chat", async () => {
+  const base = proposal("Vendor renewals");
+  const [prepare] = base.content.options;
+  if (!prepare) {
+    throw new Error("The proposal fixture has an option");
+  }
+  const threadId = crypto.randomUUID();
+  const item: SuggestionCard = {
+    ...base,
+    content: {
+      ...base.content,
+      options: [
+        prepare,
+        {
+          ...prepare,
+          id: "continue",
+          label: "Continue Vendor renewals",
+          threadId,
+          draft: {
+            draftAttachments: null,
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "chat_thread",
+                  threadId,
+                  titleSnapshot: "Renewals chat",
+                },
+                { type: "text", text: "Continue" },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  };
+  feed([item]);
+  await openDeck();
+  const card = await activeCard(item);
+
+  await expect(
+    findFastControl("button", "Prepare Vendor renewals", card),
+  ).resolves.toHaveTextContent(/^Send to a new chat/);
+  await expect(
+    findFastControl("button", "Continue Vendor renewals", card),
+  ).resolves.toHaveTextContent(/^Draft in Renewals chat/);
+});
+
+test("agent-suggestions-044 without the simplified deck, options keep their label alone", async () => {
+  const item = proposal("Vendor renewals");
+  feed([item]);
+  await openDeck("/for-you", false);
+  const option = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    await activeCard(item),
+  );
+
+  expect(option).toHaveTextContent(/^Prepare Vendor renewals/);
+  expect(option).not.toHaveTextContent("Send to a new chat");
+});
+
 test("agent-suggestions-020 changing cards discards the first inline direction", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);
@@ -225,7 +334,7 @@ test("agent-suggestions-020 changing cards discards the first inline direction",
   expect(next).not.toHaveTextContent("Expedite shipping");
 });
 
-test("agent-suggestions-023 undo restores the second suggestion after Not planned", async () => {
+test("agent-suggestions-023 undo restores the second suggestion after Won't do", async () => {
   const first = proposal("Produce order", 30),
     second = proposal("Bread order", 20),
     third = proposal("Dairy order", 10);
@@ -236,9 +345,7 @@ test("agent-suggestions-023 undo restores the second suggestion after Not planne
   await openDeck();
   await activeCard(first);
   swipeCard(await activeCard(first), "next");
-  click(
-    await findFastControl("button", "Not planned", await activeCard(second)),
-  );
+  click(await findFastControl("button", "Won't do", await activeCard(second)));
   await activeCard(third);
   click(await findFastControl("button", "Undo"));
   await expect(
@@ -543,9 +650,7 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   await screen.findByText("Suggestion dismissed");
   withdrawn = true;
   try {
-    click(
-      await findFastControl("button", "Already done", await activeCard(two)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(two)));
     await refresh.promise;
     await expect(activeCard(three)).resolves.toBeVisible();
     expect(screen.getByText("2 to go")).toBeInTheDocument();
@@ -588,9 +693,7 @@ test("agent-suggestions-026 an unavailable card clears its feedback error on ret
         });
   });
   await openDeck();
-  click(
-    await findFastControl("button", "Already done", await activeCard(first)),
-  );
+  click(await findFastControl("button", "Done", await activeCard(first)));
   const error = await screen.findByRole("alert");
   expect(error).toHaveTextContent(first.content.title);
   withdrawn = true;
@@ -631,18 +734,16 @@ test("agent-suggestions-027 feedback on two independent cards can finish in oppo
     },
   );
   await openDeck();
-  click(await findFastControl("button", "Not planned", await activeCard(one)));
+  click(await findFastControl("button", "Won't do", await activeCard(one)));
   try {
     await started.promise;
-    click(
-      await findFastControl("button", "Already done", await activeCard(two)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(two)));
     await expect(activeCard(three)).resolves.toBeVisible();
     await screen.findByText("Noted — this is already done");
   } finally {
     gate.resolve();
   }
-  const firstReceipt = await screen.findByText("Noted — this is not planned");
+  const firstReceipt = await screen.findByText("Noted — you won't do this");
   const toast = firstReceipt.closest<HTMLElement>("[data-sonner-toast]")!;
   click(await findFastControl("button", "Undo", toast));
   await expect(activeCard(one)).resolves.toBeVisible();
@@ -1511,9 +1612,7 @@ test("Retrying a failed list preserves feedback and Undo from the preview", asyn
   });
   try {
     await openDeck();
-    click(
-      await findFastControl("button", "Already done", await activeCard(first)),
-    );
+    click(await findFastControl("button", "Done", await activeCard(first)));
     await findFastControl("button", "Undo");
     expect(screen.queryByText("All caught up")).toBeNull();
   } finally {

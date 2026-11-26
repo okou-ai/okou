@@ -86,6 +86,7 @@ import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
+import ai.okou.android.state.rememberConversationQueueFlag
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberSearchWorkflowId
 import ai.okou.android.state.rememberWorkflowConnectorVisit
@@ -1362,18 +1363,24 @@ internal fun OkouApp(
             maxOf(TopAppBarDefaults.TopAppBarExpandedHeight, textHeight + 16.dp)
         }
     val stopPlacement = remember(controlThreadId) { ConversationStopPlacement() }
-    var queueOpen by remember(controlThreadId) { mutableStateOf(false) }
+    // A resource visit owns its list position while its workflow is open.
+    val canOpenQueue = controlThreadId != null && navigation.chatResourcesId == null
+    val queueOpenState = if (canOpenQueue) rememberConversationQueueFlag(controlThreadId) else null
+    val queueOpen = queueOpenState?.value == true
+    val queuePosition = if (queueOpen) key(controlThreadId) { rememberLazyListState() } else null
     val queueTrigger = remember(controlThreadId) { FocusRequester() }
     var queueTriggerFocused by remember(controlThreadId) { mutableStateOf(false) }
-    var restoreQueueTrigger by remember(controlThreadId) { mutableStateOf(false) }
+    val restoreQueueTrigger =
+        if (canOpenQueue) rememberConversationQueueFlag(controlThreadId) else null
 
-    val queueCount = runActions?.takeUnless { conversationMissing }?.presentation?.queue?.size ?: 0
+    val queueCount =
+        runActions?.takeIf { canOpenQueue && !conversationMissing }?.presentation?.queue?.size ?: 0
     LaunchedEffect(conversationMissing) {
-        if (conversationMissing) queueOpen = false
+        if (conversationMissing) queueOpenState?.value = false
     }
     LaunchedEffect(queueOpen, queueCount) {
-        if (!queueOpen && restoreQueueTrigger) {
-            restoreQueueTrigger = false
+        if (!queueOpen && restoreQueueTrigger?.value == true) {
+            restoreQueueTrigger.value = false
             if (queueCount > 0) queueTrigger.requestFocus()
         }
     }
@@ -1435,8 +1442,8 @@ internal fun OkouApp(
                 ConversationQueueButton(
                     queueCount,
                     onClick = {
-                        restoreQueueTrigger = queueTriggerFocused
-                        queueOpen = true
+                        restoreQueueTrigger?.value = queueTriggerFocused
+                        queueOpenState?.value = true
                     },
                     modifier =
                         Modifier.focusRequester(queueTrigger).onFocusChanged {
@@ -2002,7 +2009,8 @@ internal fun OkouApp(
                                                         conversationSnackbar.currentSnackbarData !=
                                                             null,
                                                 queueOpen = queueOpen,
-                                                dismissQueue = { queueOpen = false },
+                                                queuePosition = queuePosition,
+                                                dismissQueue = { queueOpenState?.value = false },
                                                 onFollowup =
                                                     if (canEdit) { prompt -> followup = prompt }
                                                     else null,
@@ -2151,7 +2159,10 @@ internal fun OkouApp(
                                                     controls = runActions,
                                                     stopPlacement = stopPlacement,
                                                     queueOpen = queueOpen,
-                                                    dismissQueue = { queueOpen = false },
+                                                    queuePosition = queuePosition,
+                                                    dismissQueue = {
+                                                        queueOpenState?.value = false
+                                                    },
                                                 )
                                             }
                                         } else {

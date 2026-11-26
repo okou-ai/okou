@@ -6,7 +6,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
 async function openDebug(role: "member" | "admin") {
   const org = { id: "org_test", name: "Debug workshop" };
@@ -81,7 +80,7 @@ test("debug-openrouter-preset-001 the administrator switches organization preset
 test("debug-openrouter-preset-002 member Debug opens without reading the organization preset", async () => {
   const read = presets(null);
   await openDebug("member");
-  await findFastControl("button", "Run Morning Brief");
+  await screen.findByRole("heading", { name: "Debug" });
   expect(
     screen.queryByRole("combobox", { name: "OpenRouter preset" }),
   ).toBeNull();

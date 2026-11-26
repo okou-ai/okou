@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import Photos
 import SwiftUI
@@ -17,6 +18,8 @@ struct ComposerAddSheet: View {
   let connectorSelection: ComposerConnectorStore?
   let clearDraft: (() -> Void)?
   let choose: (ComposerAddAction) -> Void
+  /// Whether a connector write still needs confirmation, kept in the session Store.
+  @ResolvedValue private var connectorStatus: ComposerConnectorStore.Status?
   @Environment(\.dismiss) private var dismiss
   @State private var library = RecentPhotoLibrary()
   @State private var picked: [String] = []
@@ -112,11 +115,22 @@ struct ComposerAddSheet: View {
     .frame(height: OkouControl.mediaTile)
   }
 
+  init(
+    attachments: AttachmentDraftStore, connectorSelection: ComposerConnectorStore?,
+    clearDraft: (() -> Void)?, choose: @escaping (ComposerAddAction) -> Void
+  ) {
+    self.attachments = attachments
+    self.connectorSelection = connectorSelection
+    self.clearDraft = clearDraft
+    self.choose = choose
+    _connectorStatus = ResolvedValue(ComposerConnectorStore.status(of: connectorSelection))
+  }
+
   private func connectorsRow(_ store: ComposerConnectorStore) -> some View {
     OkouActionRow("Connectors", icon: "plug") {
       choose(.connectors)
     } trailing: {
-      if store.uncertain {
+      if (connectorStatus ?? store.status).uncertain {
         // The draft cannot be sent until the connector settings are confirmed.
         Text("Confirm settings")
           .font(.okou(.subheadline))

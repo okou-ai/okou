@@ -73,6 +73,8 @@ private struct ComposerConnectorAccountsContent: View {
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
   /// The authorization attempt, kept in the same Store.
   @ResolvedValue private var authorization: ConnectorActionStore.Presentation?
+  /// The composer's writes, kept in the same Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorAccountResources) {
     self.store = store
@@ -84,13 +86,17 @@ private struct ComposerConnectorAccountsContent: View {
     _paginationStatus = LoadableStatus(task: resources.pagination)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
     _authorization = ResolvedValue(store.authorization.presentationValue)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
+  }
 
   private var busy: Bool {
-    status == .loading || paginationStatus == .loading || store.isSaving
-      || store.isUpdatingAccounts || store.uncertain
+    status == .loading || paginationStatus == .loading || connectorStatus.isSaving
+      || connectorStatus.isUpdatingAccounts || connectorStatus.uncertain
   }
 
   var body: some View {
@@ -110,7 +116,7 @@ private struct ComposerConnectorAccountsContent: View {
       case .hasError(let error):
         ConnectorLoadError(
           error: ChatRequestFailure.message(for: error),
-          isLoading: status == .loading || store.isRefreshing
+          isLoading: status == .loading || connectorStatus.isRefreshing
         ) { await resources.retry() }
       case .hasData(let value):
         if resources.managesDefaults {

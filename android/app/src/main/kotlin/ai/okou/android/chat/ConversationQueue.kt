@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -31,10 +32,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -52,6 +55,8 @@ import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
@@ -61,7 +66,20 @@ internal data class ConversationContent(
     val completion: ConversationCompletion?,
 )
 
-private data class QueueFocus(val id: String, val index: Int)
+private data class QueueFocus(
+    val id: String,
+    val index: Int,
+    val entries: List<ConversationMessage>,
+) {
+    fun adjacentIndexIn(remaining: List<ConversationMessage>): Int {
+        val indexById = remaining.withIndex().associate { it.value.message.id to it.index }
+        return (index + 1..entries.lastIndex).firstNotNullOfOrNull {
+            indexById[entries[it].message.id]
+        }
+            ?: (index - 1 downTo 0).firstNotNullOfOrNull { indexById[entries[it].message.id] }
+            ?: index.coerceAtMost(remaining.lastIndex)
+    }
+}
 
 internal fun conversationContent(
     transcript: HistoryTranscript?,
@@ -178,19 +196,22 @@ internal fun ConversationQueueModal(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
     snackbar: SnackbarHostState?,
+    position: LazyListState,
     onDismiss: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
     val fullScreen = window.height < 480
     val density = LocalDensity.current
     val titleFocus = remember { FocusRequester() }
-    // Keep the first displayed height when the server changes the queue. Reflow on window changes.
+    // Restoration can show an empty queue before history loads. Hold the first populated height.
     var openedHeight by remember(window, density) { mutableIntStateOf(0) }
     val panelHeight =
         when {
             fullScreen -> Modifier.fillMaxHeight()
             openedHeight > 0 -> Modifier.height(with(density) { openedHeight.toDp() })
-            else -> Modifier.onSizeChanged { if (openedHeight == 0) openedHeight = it.height }
+            entries.isNotEmpty() ->
+                Modifier.onSizeChanged { if (openedHeight == 0) openedHeight = it.height }
+            else -> Modifier
         }
     SettingsModal(onDismiss, fullScreen = fullScreen) {
         Box(Modifier.fillMaxWidth().then(panelHeight)) {
@@ -226,7 +247,7 @@ internal fun ConversationQueueModal(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                ConversationQueue(entries, controls, titleFocus)
+                ConversationQueue(entries, controls, titleFocus, position)
             }
             if (snackbar != null) {
                 Box(Modifier.align(Alignment.BottomCenter)) {
@@ -246,20 +267,33 @@ private fun ConversationQueue(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
     titleFocus: FocusRequester,
+    position: LazyListState,
 ) {
     var focused by remember { mutableStateOf<QueueFocus?>(null) }
     val latestEntries by rememberUpdatedState(entries)
-    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    val requesters = remember { mutableStateMapOf<String, FocusRequester>() }
     LaunchedEffect(entries) {
         val previous = focused ?: return@LaunchedEffect
         val currentIndex = entries.indexOfFirst { it.message.id == previous.id }
         if (currentIndex >= 0) {
-            focused = previous.copy(index = currentIndex)
+            focused = previous.copy(index = currentIndex, entries = entries)
             return@LaunchedEffect
         }
-        focused = null
-        val nextId = entries.getOrNull(previous.index.coerceAtMost(entries.lastIndex))?.message?.id
-        if (requesters[nextId]?.requestFocus() != true) titleFocus.requestFocus()
+        if (entries.isEmpty()) {
+            focused = null
+            titleFocus.requestFocus()
+            return@LaunchedEffect
+        }
+        val nextIndex = previous.adjacentIndexIn(entries)
+        val nextId = entries[nextIndex].message.id
+        if (position.layoutInfo.visibleItemsInfo.none { it.key == nextId }) {
+            position.scrollToItem(nextIndex)
+        }
+        val nextFocus = snapshotFlow { requesters[nextId] }.filterNotNull().first()
+        if (!nextFocus.requestFocus()) {
+            focused = null
+            titleFocus.requestFocus()
+        }
     }
     if (entries.isEmpty()) return
     val label = stringResource(R.string.conversation_queue)
@@ -267,6 +301,7 @@ private fun ConversationQueue(
         Modifier.fillMaxWidth().testTag("conversation_queue").semantics {
             contentDescription = label
         },
+        state = position,
     ) {
         itemsIndexed(entries, key = { _, entry -> entry.message.id }) { index, entry ->
             val id = entry.message.id
@@ -282,7 +317,7 @@ private fun ConversationQueue(
                 modifier =
                     Modifier.focusRequester(focus)
                         .onFocusChanged { state ->
-                            if (state.hasFocus) focused = QueueFocus(id, index)
+                            if (state.hasFocus) focused = QueueFocus(id, index, entries)
                             else if (focused?.id == id && latestEntries.any { it.message.id == id })
                                 focused = null
                         }

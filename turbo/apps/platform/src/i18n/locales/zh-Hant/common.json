@@ -1571,16 +1571,16 @@
     },
     "agentSuggestions": {
       "addReason": "補充原因",
-      "alreadyDone": "已經處理了",
       "closeFeedback": "關閉回饋",
       "customDirection": "我想……",
       "customDirectionDescription": "提出問題，或說說你想做什麼。",
       "customPlaceholder": "你有什麼想法？",
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
+      "done": "完成",
       "doneRecorded": "已記下，這件事已經處理了",
-      "dontNudge": "別催了",
-      "dontNudgeRecorded": "已記錄，請不要再催這件事",
+      "draftIn": "在「{{title}}」中起草",
+      "draftInChat": "在原對話中起草",
       "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
       "feedbackPrompt": "這則建議怎麼樣？",
@@ -1615,11 +1615,11 @@
         "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
       "label": "建議",
+      "later": "晚點再看",
+      "laterRecorded": "已記下，晚點再看",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",
       "messageSent": "訊息已傳送",
-      "notPlanned": "暫無計劃",
-      "notPlannedRecorded": "已記下，這件事暫無計劃",
       "openChat": "開啟聊天",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
@@ -1629,7 +1629,9 @@
       "sentToChat": "已傳送到該聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
       "undoFeedback": "復原",
-      "viewSource": "查看來源"
+      "viewSource": "查看來源",
+      "wontDo": "不做了",
+      "wontDoRecorded": "已記下，這件事不做了"
     },
     "attachments": {
       "attach": "新增附件",
@@ -6092,32 +6094,6 @@
           "title": "IndexedDB 儲存",
           "unavailable": "IndexedDB 儲存不可用。"
         },
-        "learning": {
-          "description": "立即回顧近期活動並更新個人記憶，不變更夜間執行排程。",
-          "notInstalled": "請先在偏好設定中開啟學習，再於此執行。",
-          "openChat": "開啟對話",
-          "queued": "學習已加入佇列。",
-          "requestFailed": "無法確認請求結果。",
-          "run": "執行學習",
-          "starting": "正在啟動…",
-          "title": "學習",
-          "unavailable": "學習暫時無法使用。"
-        },
-        "morningBrief": {
-          "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
-          "openChat": "開啟對話",
-          "requestFailed": "請求未完成。",
-          "run": "執行晨間簡報",
-          "runAgain": "再次執行晨間簡報",
-          "starting": "正在啟動…",
-          "status": {
-            "completed": "晨間簡報已完成。",
-            "failed": "晨間簡報執行失敗，請開啟對話查看詳情。",
-            "queued": "已加入佇列，可開啟對話查看進度。",
-            "running": "晨間簡報正在執行。"
-          },
-          "title": "晨間簡報"
-        },
         "openrouterPreset": {
           "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
           "loading": "載入中…",
@@ -7452,6 +7428,7 @@
       "createdBy": "建立者",
       "createInChat": "在對話中建立",
       "description": "把一項任務沉澱成可複用的標準流程。可以從零編寫，也可以從日常工作中提煉，然後隨時執行、編輯或自動化。",
+      "directoryDescription": "可複用的標準流程（SOP），可隨時執行、編輯或自動化。其他產品中也叫技能（Skills）。",
       "empty": {
         "all": "在對話中建立工作流，或把一次好用的執行儲存下來。",
         "automated": "給工作流新增自動化後，它就會出現在這裡。",

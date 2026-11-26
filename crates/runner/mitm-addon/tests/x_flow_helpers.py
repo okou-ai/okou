@@ -10,6 +10,7 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import http_network_log
 from tests.flow_helpers import header_map
+from tests.repeated_bytes_helpers import join_repeated_bytes
 from tests.stream_buffer_helpers import set_response_stream_buffer
 
 RealFlowFactory = Callable[..., http.HTTPFlow]
@@ -61,9 +62,12 @@ def json_body_that_exceeds_integer_digit_limit() -> bytes:
 
 
 def json_body_that_exceeds_x_json_work_limit() -> bytes:
-    return (
-        b'{"data":{"id":"blocked"},"includes":{"users":[{},{},{}]},'
-        b'"matching_rules":[' + b",".join([b"{}"] * _X_DENSE_OBJECT_COUNT) + b"]}"
+    return join_repeated_bytes(
+        b",",
+        b"{}",
+        _X_DENSE_OBJECT_COUNT,
+        prefix=b'{"data":{"id":"blocked"},"includes":{"users":[{},{},{}]},"matching_rules":[',
+        suffix=b"]}",
     )
 
 

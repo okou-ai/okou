@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.62.0](https://github.com/okou-ai/okou/compare/android-v0.61.1...android-v0.62.0) (2026-11-26)
+
+
+### Features
+
+* **android:** share authorized artifact originals ([#51167](https://github.com/okou-ai/okou/issues/51167)) ([e032b8b](https://github.com/okou-ai/okou/commit/e032b8bdc923214ef42c2cf1f15d82248e987656))
+
+
+### Bug Fixes
+
+* **android:** align search focus and retain artifact pages ([#51138](https://github.com/okou-ai/okou/issues/51138)) ([0960de9](https://github.com/okou-ai/okou/commit/0960de99534726404ee8e4d4ff7eb586bf0683c3))
+* **android:** keep connector account refresh feedback in the active surface ([#51161](https://github.com/okou-ai/okou/issues/51161)) ([05cc659](https://github.com/okou-ai/okou/commit/05cc659fad7fa17db7cb4cbb9c78fe9abaae29fb))
+* **android:** let unavailable default models reset to auto ([#51183](https://github.com/okou-ai/okou/issues/51183)) ([3197413](https://github.com/okou-ai/okou/commit/31974138f441e2ba817f4ba7757f684b4bc03d5b))
+* **android:** retain chat queue position across layout changes ([#51155](https://github.com/okou-ai/okou/issues/51155)) ([c7ddc41](https://github.com/okou-ai/okou/commit/c7ddc418167181360f2eb29701c540286db9eb41))
+
 ## [0.61.1](https://github.com/okou-ai/okou/compare/android-v0.61.0...android-v0.61.1) (2026-11-26)
 
 

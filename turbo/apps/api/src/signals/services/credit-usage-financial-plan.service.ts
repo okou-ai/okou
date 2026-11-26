@@ -1,4 +1,7 @@
-import type { PricedUsageEvent } from "./credit-usage-pricing";
+import {
+  isPlatformPaidPolicy,
+  type PricedUsageEvent,
+} from "./credit-usage-pricing";
 import { planUsageCharges } from "./credit-usage-settlement-plan";
 
 /** Prepare prices; select current member and organization cash at commit. */
@@ -10,7 +13,7 @@ export function usageFinancialPlan(
   const freeOnly =
     priced.length > 0 &&
     priced.every((event) => {
-      return event.record.creditChargePolicy === "official_workflow_free";
+      return isPlatformPaidPolicy(event.record.creditChargePolicy);
     });
   return { at, priced, charges, freeOnly };
 }

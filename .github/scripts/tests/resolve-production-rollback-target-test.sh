@@ -28,6 +28,7 @@ template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/t
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
+later_feedback_floor=$(<"${repo_root}/.github/rollback-floors/suggestion-later-feedback")
 widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
 agent_connector_schema_floor=$(<"${repo_root}/.github/rollback-floors/agent-connector-schema-independent-api")
 agent_api_profile_floor=$(<"${repo_root}/.github/rollback-floors/agent-api-profile-independent-api")
@@ -258,6 +259,8 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_LATER_FEEDBACK_FLOOR" ]; then
+      [ "${MOCK_LATER_FEEDBACK_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_WIDGET_PUSH_COLUMNS_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_WIDGET_PUSH_COLUMNS_ON_MAIN:-1}" = "1" ]
@@ -560,6 +563,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/suggestion-later-feedback" ]; then
+      [ "${MOCK_LATER_FEEDBACK_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_LATER_FEEDBACK_COMMIT-$MOCK_LATER_FEEDBACK_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/ios-widget-push-columns-independent-api" ]; then
       [ "${MOCK_WIDGET_PUSH_COLUMNS_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_WIDGET_PUSH_COLUMNS_COMMIT-$MOCK_WIDGET_PUSH_COLUMNS_FLOOR}"
@@ -731,6 +739,7 @@ run_resolver() {
     MOCK_DATA_ROUTER_STATELESS_MCP_API_FLOOR="$data_router_stateless_mcp_api_floor" \
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
+    MOCK_LATER_FEEDBACK_FLOOR="$later_feedback_floor" \
     MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
     MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR="$agent_connector_schema_floor" \
     MOCK_AGENT_API_PROFILE_FLOOR="$agent_api_profile_floor" \
@@ -2514,6 +2523,18 @@ for widget_case in \
   [ ! -s "${tmp_dir}/widget-push-policy.output" ] || fail "invalid widget push columns floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Widget push columns floor must reject before provider or host access"
+  fi
+done
+for later_feedback_case in \
+  "MOCK_LATER_FEEDBACK_AVAILABLE=0|Cannot read the Later suggestion feedback rollback floor from main" \
+  "MOCK_LATER_FEEDBACK_COMMIT=invalid|Missing or invalid Later suggestion feedback rollback floor" \
+  "MOCK_LATER_FEEDBACK_TARGET_VALID=0|Rollback target predates Later suggestion feedback support"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${later_feedback_case#*|}" \
+    run_resolver "${tmp_dir}/suggestion-later.output" "${later_feedback_case%%|*}"
+  [ ! -s "${tmp_dir}/suggestion-later.output" ] || fail "an incompatible feedback API must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "an incompatible feedback API must fail before provider or host access"
   fi
 done
 for connector_schema_case in \

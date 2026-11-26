@@ -510,10 +510,12 @@ single floating line, and colour is a small accent for status only.
   moves under the text. Routine synchronization is silent — no "Updating chats…" line —
   and a failure shows only after it has lasted 300 ms. Confirm in place first where
   possible (a copy glyph turning into a check).
-- **Running** uses `OkouRunningIndicator`, the web's breathing dot: a `running`
+- **Thinking** uses `OkouThinkingMark` beside the transcript's current activity. The
+  brand mark uses Web's brush texture, four-color cycle, breathing scale and light sweep.
+  Reduce Motion holds the orange mark with its texture visible.
+- **Running** in a chat preview uses `OkouRunningIndicator`, the web's breathing dot: a `running`
   (sky-600) dot breathing between 0.64× / 34 % and 0.88× / 52 % with a ring that
-  spreads to 1.56× once per 2.4 s cycle. All indicators share one clock. It is the
-  transcript's "working" line.
+  spreads to 1.56× once per 2.4 s cycle. All indicators share one clock.
 - **A working chat** in the sidebar uses `OkouRunningSpinner`: a 14 pt `running` arc
   over 28 % of a circle on a 20 % track of the same blue, one turn per second
   (`OkouMotion.runningSpin`), every spinner on one clock. It is drawn rather than a system
@@ -714,7 +716,8 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 | Component                                | Use / states                                                                                                                                                                                                                                                       |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `OkouRunningIndicator`                   | Web's breathing running dot, the transcript's working line                                                                                                                                                                                                         |
+| `OkouThinkingMark`                       | The transcript's current activity: textured brand motion, still under Reduce Motion                                                                                                                                                                                |
+| `OkouRunningIndicator`                   | Breathing running dot in a chat preview                                                                                                                                                                                                                            |
 | `OkouRunningSpinner`                     | A working chat in the sidebar: a `running` arc turning on a faint track, still under Reduce Motion                                                                                                                                                                 |
 | `OkouRunningBadge`                       | A 10 pt `OkouRunningSpinner` over a folded project's folder corner, with a cut ring, where `OkouUnreadBadge` puts its dot                                                                                                                                          |
 | `OkouUnreadBadge`                        | An 8 pt `running` dot over a glyph's top-right corner, as an iOS badged symbol: a ring cut out of the glyph keeps a gap between them. It marks something unread inside (the menu button, a folded project's folder); the control's accessibility value says Unread |

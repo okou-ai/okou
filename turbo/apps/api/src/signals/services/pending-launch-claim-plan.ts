@@ -8,6 +8,12 @@ export interface PendingLaunchClaim {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly claimId: string;
+  readonly proactive?: {
+    readonly id: string;
+    readonly userId: string;
+    readonly cardDeliveryEnabled: boolean;
+    readonly suggestionsEnabled: boolean;
+  };
   readonly automationQueueEventId: string | null;
 }
 

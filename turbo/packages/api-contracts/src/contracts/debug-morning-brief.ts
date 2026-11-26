@@ -16,22 +16,6 @@ const response = object({
 export type DebugMorningBriefResponse = output<typeof response>;
 
 export const debugMorningBriefContract = c.router({
-  run: {
-    method: "POST",
-    path: "/api/debug/morning-brief",
-    headers: authHeadersSchema,
-    body: object({ requestId: requestIdSchema }).strict(),
-    responses: {
-      200: response,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      409: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary:
-      "Run the member's Morning Brief once without changing its schedule",
-  },
   get: {
     method: "GET",
     path: "/api/debug/morning-brief/:id",

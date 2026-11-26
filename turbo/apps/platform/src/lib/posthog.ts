@@ -1,4 +1,5 @@
 import { BILLING_FEEDBACK_SURVEYS } from "@okouai/core/billing-feedback";
+import type { SuggestionFeedbackRequest } from "@okouai/api-contracts/contracts/feed";
 import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
@@ -634,12 +635,10 @@ export type SuggestionImpression = Pick<
   SuggestionPreset,
   "suggestion_id" | "impression_id"
 >;
-export type SuggestionFeedbackKind =
-  | "already_done"
-  | "not_planned"
-  | "dont_nudge"
-  | "less_like_this"
-  | "dismissed";
+export type SuggestionFeedbackKind = Exclude<
+  SuggestionFeedbackRequest["kind"],
+  "undo" | "reason"
+>;
 export type SuggestionDirection =
   | (SuggestionImpression & { direction_type: "custom" })
   | (SuggestionPreset & { direction_type: "preset" });

@@ -618,10 +618,9 @@ const submitAgentSuggestionFeedback$ = command(
         kind,
         request: {
           id,
-          kind: kind === "dont_nudge" ? "not_planned" : kind,
+          kind,
           targetId: null,
-          note:
-            kind === "dont_nudge" ? "Do not nudge me about this again." : "",
+          note: "",
         },
       },
       get(rootSignal$),
@@ -693,8 +692,8 @@ export const submitSuggestionFeedbackWithUndo$ = command(
     const message = {
       dismissed: messages.dismissRecorded,
       already_done: messages.doneRecorded,
-      not_planned: messages.notPlannedRecorded,
-      dont_nudge: messages.dontNudgeRecorded,
+      not_planned: messages.wontDoRecorded,
+      later: messages.laterRecorded,
       less_like_this: messages.lessRecorded,
     }[kind];
     toast.success(message, {

@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">ज़ूम इन करें</string>
     <string name="artifact_image_zoom_out">ज़ूम आउट करें</string>
     <string name="artifact_image_fit">इमेज फ़िट करें</string>
+    <string name="artifact_share_file">फ़ाइल शेयर करें</string>
+    <string name="artifact_share_image">इमेज शेयर करें</string>
+    <string name="artifact_save_image">इमेज सेव करें</string>
+    <string name="artifact_share_preparing">शेयर करने की तैयारी हो रही है…</string>
+    <string name="artifact_share_denied">यह फ़ाइल शेयर नहीं की जा सकती</string>
+    <string name="artifact_share_failed">फ़ाइल शेयर करने के लिए तैयार नहीं हो सकी</string>
 </resources>

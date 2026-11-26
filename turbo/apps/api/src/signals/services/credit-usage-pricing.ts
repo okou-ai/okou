@@ -1,3 +1,4 @@
+import type { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { isAutoRunPreset } from "@okouai/core/auto-run-model";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { logger } from "../../lib/log";
@@ -29,7 +30,7 @@ export interface ProcessOrgUsageEventsResult {
 export interface UsageEventRecord {
   readonly id: string;
   readonly runId: string | null;
-  readonly creditChargePolicy?: "standard" | "official_workflow_free";
+  readonly creditChargePolicy?: typeof billingRunAttribution.$inferSelect.creditChargePolicy;
   readonly billingAnchorAt: Date | null;
   readonly idempotencyKey: string;
   readonly userId: string;
@@ -131,4 +132,11 @@ export function priceUsageEvents(
     });
   }
   return pricedEvents;
+}
+
+export function isPlatformPaidPolicy(
+  policy:
+    typeof billingRunAttribution.$inferSelect.creditChargePolicy | undefined,
+) {
+  return policy === "platform_proactive" || policy === "official_workflow_free";
 }

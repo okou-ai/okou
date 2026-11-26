@@ -28,9 +28,9 @@ You own the email decision. Send only when the verified briefing contains useful
 
 Use only \`okou notify mail --kind morning-brief\` to send to the user's account email. The platform does not send a second completion email for this revision. Do not create Gmail or Outlook drafts, send through a connector, send chat messages, or make other provider-side updates. If the notification command or capability is unavailable, keep the briefing in the Chat and report that email was unavailable; do not substitute another delivery channel or notification kind.
 
-## Send once per automation event
+## Send once per occurrence
 
-Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
+Okou sends at most one Morning Brief email per scheduled occurrence and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
@@ -99,7 +99,7 @@ Do not republish a previously offered action whose underlying state has not mate
 
 Before mutations, re-read the pool and recent receipts so concurrent user choices or withdrawals win. Recheck affected sources when newer progress makes an earlier read stale. Follow the reference for stable identities and publication; never evade a terminal receipt by changing the key. Keep title, rationale, options and neutral background consistent with the latest verified state. Write concise cards in the user's language; keep evidence and technical details in self-contained drafts. Do not overwrite the live composer or execute proposed work.
 
-Leave a concise diagnostic account in this workflow's Chat: each old card's disposition and reason, any new action and why it merits attention, and coverage gaps or unfinished checks. If curation is unavailable, report it without another publication channel.
+Leave a concise diagnostic account in this task's Chat: each old card's disposition and reason, any new action and why it merits attention, and coverage gaps or unfinished checks. If curation is unavailable, report it without another publication channel.
 
 ### Decision examples
 

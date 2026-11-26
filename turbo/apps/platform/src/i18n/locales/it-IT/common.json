@@ -1600,16 +1600,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "Vorrei…",
       "customDirectionDescription": "Fai una domanda o descrivi cosa vorresti fare.",
       "customPlaceholder": "Cosa hai in mente?",
       "dismiss": "Ignora",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "Non insistere",
-      "dontNudgeRecorded": "Annotato: non insistere più su questo",
+      "done": "Fatto",
+      "doneRecorded": "Annotato, è già fatto",
+      "draftIn": "Bozza in {{title}}",
+      "draftInChat": "Bozza nella chat esistente",
       "editDraft": "Prepara una bozza nella chat esistente",
       "editReason": "Edit reason",
       "feedbackPrompt": "Cosa pensi di questo suggerimento?",
@@ -1644,11 +1644,11 @@
         "show": "Mostra il suggerimento {{index}} di {{total}}"
       },
       "label": "Suggerimenti",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "Più tardi",
+      "laterRecorded": "Annotato per dopo",
+      "lessLikeThis": "Meno suggerimenti simili",
+      "lessRecorded": "Vedrai meno suggerimenti di questo tipo.",
       "messageSent": "Messaggio inviato",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "Apri chat",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1658,7 +1658,9 @@
       "sentToChat": "Inviato alla chat",
       "unavailable": "Questo suggerimento non è più disponibile. I suggerimenti sono stati aggiornati.",
       "undoFeedback": "Undo",
-      "viewSource": "Vedi origine"
+      "viewSource": "Vedi origine",
+      "wontDo": "Non lo farò",
+      "wontDoRecorded": "Annotato, non lo farai"
     },
     "attachments": {
       "attach": "Allega",
@@ -6187,32 +6189,6 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
-        "learning": {
-          "description": "Esamina le attività recenti e aggiorna la memoria personale una volta. La pianificazione notturna non cambia.",
-          "notInstalled": "Attiva l'apprendimento nelle Preferenze prima di eseguirlo qui.",
-          "openChat": "Apri conversazione",
-          "queued": "Apprendimento in coda.",
-          "requestFailed": "Non è stato possibile confermare la richiesta.",
-          "run": "Esegui apprendimento",
-          "starting": "Avvio…",
-          "title": "Apprendimento",
-          "unavailable": "L'apprendimento non è al momento disponibile."
-        },
-        "morningBrief": {
-          "description": "Esegue una volta il workflow attivo del tuo account. Può aggiornare i suggerimenti e inviare una vera email. La pianificazione giornaliera resta invariata.",
-          "openChat": "Apri conversazione",
-          "requestFailed": "Non è stato possibile confermare l’esito della richiesta.",
-          "run": "Esegui il brief",
-          "runAgain": "Esegui un altro brief",
-          "starting": "Avvio…",
-          "status": {
-            "completed": "Il brief è completato.",
-            "failed": "Il brief non è riuscito. Apri la conversazione per i dettagli.",
-            "queued": "In coda. Apri la conversazione per seguire il brief.",
-            "running": "Il brief è in esecuzione."
-          },
-          "title": "Brief del mattino"
-        },
         "openrouterPreset": {
           "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
           "loading": "Caricamento…",
@@ -7563,6 +7539,7 @@
       "createdBy": "Creato da",
       "createInChat": "Crea nella chat",
       "description": "Una SOP riutilizzabile per un'attività. Scrivine uno da zero o distillalo dal tuo lavoro quotidiano, quindi eseguilo, modificalo o automatizzalo.",
+      "directoryDescription": "Una SOP riutilizzabile da eseguire, modificare o automatizzare. Altrove si chiama skill.",
       "empty": {
         "all": "Crea un flusso di lavoro dalla chat o salvane uno da una esecuzione utile.",
         "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",

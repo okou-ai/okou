@@ -1600,16 +1600,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "Eu gostaria de…",
       "customDirectionDescription": "Faça uma pergunta ou descreva o que gostaria de fazer.",
       "customPlaceholder": "O que você tem em mente?",
       "dismiss": "Dispensar",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "Não insista",
-      "dontNudgeRecorded": "Anotado: não insistir mais nisso",
+      "done": "Concluído",
+      "doneRecorded": "Anotado, isso já está pronto",
+      "draftIn": "Rascunho em {{title}}",
+      "draftInChat": "Rascunho no chat existente",
       "editDraft": "Preparar um rascunho na conversa existente",
       "editReason": "Edit reason",
       "feedbackPrompt": "O que achou desta sugestão?",
@@ -1644,11 +1644,11 @@
         "show": "Mostrar sugestão {{index}} de {{total}}"
       },
       "label": "Sugestões",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "Mais tarde",
+      "laterRecorded": "Anotado para mais tarde",
+      "lessLikeThis": "Menos sugestões assim",
+      "lessRecorded": "Você verá menos sugestões desse tipo.",
       "messageSent": "Mensagem enviada",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "Abrir conversa",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1658,7 +1658,9 @@
       "sentToChat": "Enviado para o chat",
       "unavailable": "Essa sugestão não está mais disponível. As sugestões foram atualizadas.",
       "undoFeedback": "Undo",
-      "viewSource": "Ver origem"
+      "viewSource": "Ver origem",
+      "wontDo": "Não vou fazer",
+      "wontDoRecorded": "Anotado, você não vai fazer isso"
     },
     "attachments": {
       "attach": "Anexar",
@@ -6187,32 +6189,6 @@
           "title": "Armazenamento do IndexedDB",
           "unavailable": "O armazenamento do IndexedDB não está disponível."
         },
-        "learning": {
-          "description": "Revise a atividade recente e atualize sua memória pessoal uma vez. O agendamento noturno permanece igual.",
-          "notInstalled": "Ative o aprendizado nas Preferências antes de executá-lo aqui.",
-          "openChat": "Abrir conversa",
-          "queued": "Aprendizado na fila.",
-          "requestFailed": "Não foi possível confirmar a solicitação.",
-          "run": "Executar aprendizado",
-          "starting": "Iniciando…",
-          "title": "Aprendizado",
-          "unavailable": "O aprendizado não está disponível no momento."
-        },
-        "morningBrief": {
-          "description": "Execute uma vez o fluxo ativado da sua conta. Ele pode atualizar sugestões e enviar um email real. Seu horário diário não muda.",
-          "openChat": "Abrir conversa",
-          "requestFailed": "Não foi possível confirmar o resultado da solicitação.",
-          "run": "Executar resumo",
-          "runAgain": "Executar outro resumo",
-          "starting": "Iniciando…",
-          "status": {
-            "completed": "O resumo foi concluído.",
-            "failed": "O resumo falhou. Abra a conversa para ver os detalhes.",
-            "queued": "Na fila. Abra a conversa para acompanhar o resumo.",
-            "running": "O resumo está em execução."
-          },
-          "title": "Resumo da manhã"
-        },
         "openrouterPreset": {
           "description": "Aplica-se às novas execuções de Auto e Okou 1.0 integrado em toda a organização. As execuções existentes não mudam.",
           "loading": "Carregando…",
@@ -7563,6 +7539,7 @@
       "createdBy": "Criado por",
       "createInChat": "Criar no chat",
       "description": "Um procedimento operacional padrão reutilizável para uma tarefa. Crie um do zero ou extraia-o do seu trabalho diário; depois, execute, edite ou automatize.",
+      "directoryDescription": "Um procedimento reutilizável para executar ou automatizar. Em outros produtos: skills.",
       "empty": {
         "all": "Crie um fluxo de trabalho no chat ou salve um de uma execução útil.",
         "automated": "Adicione uma automação a um fluxo de trabalho para que ele apareça aqui.",

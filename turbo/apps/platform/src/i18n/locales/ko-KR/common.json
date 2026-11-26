@@ -1571,16 +1571,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "이렇게 하고 싶어요…",
       "customDirectionDescription": "질문하거나 하고 싶은 일을 알려주세요.",
       "customPlaceholder": "어떤 생각을 하고 계신가요?",
       "dismiss": "무시",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "재촉하지 마세요",
-      "dontNudgeRecorded": "이 일은 더 이상 재촉하지 않도록 기록했어요",
+      "done": "완료",
+      "doneRecorded": "이미 마쳤다고 기록했어요",
+      "draftIn": "'{{title}}'에서 초안 작성",
+      "draftInChat": "기존 채팅에서 초안 작성",
       "editDraft": "기존 채팅에 초안 준비",
       "editReason": "Edit reason",
       "feedbackPrompt": "이 제안은 어떤가요?",
@@ -1615,11 +1615,11 @@
         "show": "제안 {{index}}/{{total}} 보기"
       },
       "label": "제안",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "나중에",
+      "laterRecorded": "나중에 다시 보겠다고 기록했어요",
+      "lessLikeThis": "비슷한 제안 줄이기",
+      "lessRecorded": "앞으로 비슷한 제안을 줄일게요.",
       "messageSent": "메시지를 보냈습니다",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "채팅 열기",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1629,7 +1629,9 @@
       "sentToChat": "채팅에 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
       "undoFeedback": "Undo",
-      "viewSource": "출처 보기"
+      "viewSource": "출처 보기",
+      "wontDo": "하지 않을래요",
+      "wontDoRecorded": "이 일은 하지 않겠다고 기록했어요"
     },
     "attachments": {
       "attach": "첨부",
@@ -6092,32 +6094,6 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
-        "learning": {
-          "description": "최근 활동을 검토하고 개인 메모리를 한 번 업데이트합니다. 야간 실행 일정은 변경되지 않습니다.",
-          "notInstalled": "먼저 환경설정에서 학습을 켜세요.",
-          "openChat": "대화 열기",
-          "queued": "학습이 대기열에 추가되었습니다.",
-          "requestFailed": "요청 결과를 확인할 수 없습니다.",
-          "run": "학습 실행",
-          "starting": "시작 중…",
-          "title": "학습",
-          "unavailable": "현재 학습을 사용할 수 없습니다."
-        },
-        "morningBrief": {
-          "description": "계정에서 활성화한 워크플로로 한 번 실행합니다. 제안을 업데이트하고 실제 이메일을 보낼 수 있습니다. 매일 실행 일정은 바뀌지 않습니다.",
-          "openChat": "대화 열기",
-          "requestFailed": "요청 결과를 확인할 수 없습니다.",
-          "run": "모닝 브리핑 실행",
-          "runAgain": "다시 실행",
-          "starting": "시작 중…",
-          "status": {
-            "completed": "모닝 브리핑이 완료되었습니다.",
-            "failed": "실행에 실패했습니다. 대화에서 자세한 내용을 확인하세요.",
-            "queued": "대기열에 추가되었습니다. 대화에서 진행 상황을 확인하세요.",
-            "running": "모닝 브리핑 실행 중입니다."
-          },
-          "title": "모닝 브리핑"
-        },
         "openrouterPreset": {
           "description": "조직 전체의 새 Auto 및 기본 제공 Okou 1.0 실행에 적용됩니다. 기존 실행은 변경되지 않습니다.",
           "loading": "불러오는 중…",
@@ -7452,6 +7428,7 @@
       "createdBy": "작성자",
       "createInChat": "채팅에서 생성",
       "description": "작업을 위한 재사용 가능한 SOP입니다. 처음부터 작성하거나 일상 업무에서 추출한 후 실행, 편집 또는 자동화하세요.",
+      "directoryDescription": "실행, 편집, 자동화할 수 있는 재사용 가능한 SOP입니다. 다른 제품에서는 스킬이라고도 합니다.",
       "empty": {
         "all": "채팅에서 워크플로를 생성하거나 유용한 실행에서 저장하세요.",
         "automated": "워크플로에 자동화를 추가하면 여기에 표시됩니다.",

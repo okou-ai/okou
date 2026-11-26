@@ -60,17 +60,22 @@ fn body_len(event: &Value) -> usize {
     .unwrap()
 }
 
-fn text_event(framework: Framework, text: &str) -> Value {
+fn text_event(framework: Framework, text: impl Into<String>) -> Value {
     text_event_at_sequence(framework, text, 19)
 }
 
-fn text_event_at_sequence(framework: Framework, text: &str, sequence: u32) -> Value {
+fn text_event_at_sequence(framework: Framework, text: impl Into<String>, sequence: u32) -> Value {
+    let text = Value::String(text.into());
     let event = match framework {
         Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
-            json!({"type":"assistant","message":{"id":"message","role":"assistant","model":"test","usage":{"input_tokens":2},"content":[{"type":"text","text":text}]}})
+            let mut event = json!({"type":"assistant","message":{"id":"message","role":"assistant","model":"test","usage":{"input_tokens":2},"content":[{"type":"text","text":null}]}});
+            event["message"]["content"][0]["text"] = text;
+            event
         }
         _ => {
-            json!({"type":"item.completed","thread_id":"thread","turn_id":"turn","item":{"id":"item","type":"agent_message","text":text}})
+            let mut event = json!({"type":"item.completed","thread_id":"thread","turn_id":"turn","item":{"id":"item","type":"agent_message","text":null}});
+            event["item"]["text"] = text;
+            event
         }
     };
     events::prepare_event_for_delivery(event, sequence, &SecretMasker::from_raw(""))
@@ -161,22 +166,23 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
         (Framework::Codex, false),
         (Framework::Codex, true),
     ] {
-        let make_event = |text: &str| {
+        let make_event = |text: String| {
             if collaboration {
-                collaboration_event(json!({
-                    "status": {"status": "errored", "message": text},
+                let mut states = json!({
+                    "status": {"status": "errored", "message": null},
                     "null-child": {"status": "running", "message": null},
                     "empty-child": {"status": "completed", "message": ""},
-                }))
-                .unwrap()
+                });
+                states["status"]["message"] = Value::String(text);
+                collaboration_event(states).unwrap()
             } else {
                 text_event(framework, text)
             }
         };
         for overflow in [None, Some(0), Some(1)] {
-            let empty = make_event("");
+            let empty = make_event(String::new());
             let retained = overflow.map_or(5, |extra| LIMIT - body(&empty).len() + extra);
-            let event = make_event(&"x".repeat(retained));
+            let event = make_event("x".repeat(retained));
             let expected_body = (overflow != Some(1)).then(|| body(&event));
             if let Some(extra) = overflow {
                 assert_eq!(
@@ -457,7 +463,7 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
         .sender()
         .try_send_for_framework(
             19,
-            text_event(Framework::Pi, &"x".repeat(LIMIT)),
+            text_event(Framework::Pi, "x".repeat(LIMIT)),
             Framework::Pi,
             &SecretMasker::from_raw(""),
         )

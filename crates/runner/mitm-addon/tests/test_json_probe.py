@@ -4,7 +4,7 @@ from typing import SupportsIndex
 
 import pytest
 
-from tests.repeated_bytes_helpers import repeat_bytes
+from tests.repeated_bytes_helpers import join_repeated_bytes, repeat_bytes
 from usage.json_probe import probe_top_level_string_field
 
 
@@ -167,9 +167,13 @@ def test_probe_repeated_literals_do_not_copy_growing_body_suffixes(literal: byte
     maximum_slice_lengths: list[int] = []
     for repeat_count in (128, 256):
         body = _SliceTrackingBytes(
-            b'{"padding":['
-            + b",".join([literal] * repeat_count)
-            + b'],"type":"response.completed"}'
+            join_repeated_bytes(
+                b",",
+                literal,
+                repeat_count,
+                prefix=b'{"padding":[',
+                suffix=b'],"type":"response.completed"}',
+            )
         )
 
         result = probe_top_level_string_field(body)

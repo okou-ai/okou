@@ -101,6 +101,7 @@ internal fun DefaultModelSetting(
     model: DefaultModelSettings?,
     snackbar: SnackbarHostState,
     onFeedbackInOverlay: (Boolean) -> Unit,
+    fallbackFocus: FocusRequester? = null,
 ) {
     val title = stringResource(R.string.settings_default_model)
     val auto = stringResource(R.string.settings_auto_model)
@@ -110,22 +111,33 @@ internal fun DefaultModelSetting(
     }
     val state by model.state.collectAsStateWithLifecycle()
     val options = state.options
-    if (options == null || state.record == null) {
+    val record = state.record
+    if (options == null || record == null) {
         val status =
             when {
                 state.catalogUnavailable -> stringResource(R.string.chat_list_first_load_failed)
                 else -> null
             }
-        val value =
-            state.record?.let {
-                if (isAutoDefaultModel(it.confirmed.selectedModel)) auto else it.confirmedLabel
-            }
+        val value = record?.let {
+            if (isAutoDefaultModel(it.confirmed.selectedModel)) auto
+            else it.confirmedLabel ?: it.confirmed.selectedModel
+        }
         DefaultModelUnavailableRow(title, value, status)
         return
     }
-    val selected = state.selected
-    if (options.choices.none { it.canSelect } && selected == null) return
+    val selectedId = state.selectedModel
+    val usingAuto = isAutoDefaultModel(selectedId)
+    val confirmedAuto = isAutoDefaultModel(record.confirmed.selectedModel)
+    val value =
+        if (usingAuto) auto
+        else
+            state.selected?.label
+                ?: record.confirmedLabel?.takeIf { record.confirmed.selectedModel == selectedId }
+                ?: selectedId
     SettingsTrigger(
+        visible = !usingAuto || !confirmedAuto || options.choices.any { it.canSelect },
+        fallbackFocus = fallbackFocus,
+        keepOpenWhenHidden = true,
         content = { dismiss ->
             DefaultModelSheet(title, state, model, snackbar, onFeedbackInOverlay, dismiss)
         },
@@ -134,11 +146,11 @@ internal fun DefaultModelSetting(
             title,
             leading = { SettingsIcon(R.drawable.ic_memory) },
             modifier = modifier,
-            value = selected?.label ?: auto,
+            value = value,
             onClick = open,
         )
+        HorizontalDivider()
     }
-    HorizontalDivider()
 }
 
 @Composable
@@ -175,7 +187,7 @@ private fun DefaultModelSheet(
     ModelPickerSheet(
         title = title,
         choices = state.options?.choices,
-        selectedId = state.selected?.id,
+        selectedId = state.selected?.id ?: state.selectedModel.takeUnless(::isAutoDefaultModel),
         effort = state.effort,
         fast = state.fast,
         catalogUnavailable = state.catalogUnavailable,

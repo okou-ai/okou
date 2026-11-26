@@ -36,11 +36,10 @@ internal class ConnectorReadAnnouncements {
 }
 
 @Composable
-internal fun ConnectorReadFeedbackHost(
+internal fun rememberConnectorReadFeedback(
     notice: ConnectorReadNotice?,
     announcements: ConnectorReadAnnouncements,
-    modifier: Modifier = Modifier,
-) {
+): SnackbarHostState {
     val snackbar = remember { SnackbarHostState() }
     val message = notice?.let { stringResource(it.message) }
     LaunchedEffect(notice, message) {
@@ -48,6 +47,16 @@ internal fun ConnectorReadFeedbackHost(
             snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
         }
     }
+    return snackbar
+}
+
+@Composable
+internal fun ConnectorReadFeedbackHost(
+    notice: ConnectorReadNotice?,
+    announcements: ConnectorReadAnnouncements,
+    modifier: Modifier = Modifier,
+) {
+    val snackbar = rememberConnectorReadFeedback(notice, announcements)
     Box(modifier) { WorkspaceFeedbackHost(snackbar, Modifier) }
 }
 

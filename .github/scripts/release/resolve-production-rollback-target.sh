@@ -1283,6 +1283,17 @@ if ! git merge-base --is-ancestor "$widget_push_columns_floor" "$TARGET_COMMIT";
   fail "Rollback target predates the iOS widget push columns retirement: ${widget_push_columns_floor}."
 fi
 
+# Web and installed iOS clients may submit Later after a client rollback.
+if ! later_feedback_floor=$(git show origin/main:.github/rollback-floors/suggestion-later-feedback); then
+  fail "Cannot read the Later suggestion feedback rollback floor from main."
+fi
+if [[ ! "$later_feedback_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Later suggestion feedback rollback floor."
+fi
+if ! git merge-base --is-ancestor "$later_feedback_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Later suggestion feedback support: ${later_feedback_floor}."
+fi
+
 # Only artifacts with Agent connector SQL retirement support the contracted schema.
 agent_connector_schema_floor_path=.github/rollback-floors/agent-connector-schema-independent-api
 if ! agent_connector_schema_floor=$(git show "origin/main:${agent_connector_schema_floor_path}"); then

@@ -134,6 +134,9 @@ function cancellationOwnerCondition(
     eq(agentRuns.userId, owner.userId),
     eq(agentRuns.orgId, owner.orgId),
     owner.userRequested
+      ? sql`${agentRuns.triggerSource} IS DISTINCT FROM 'proactive'`
+      : undefined,
+    owner.userRequested
       ? or(
           isNull(agentRuns.officialWorkflowProvenance),
           notInArray(agentRuns.triggerSource, [

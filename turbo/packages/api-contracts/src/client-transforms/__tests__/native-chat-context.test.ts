@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { fromJSONSchema, type core } from "zod";
 import {
-  iosEmailChatRowsTransform,
-  iosEmailChatCatchUpTransform,
-} from "../email-chat-context";
+  iosChatContextTransforms,
+  androidChatContextTransforms,
+} from "../native-chat-context";
 import previousRowsJsonSchema from "./fixtures/email-chat-rows-2026-11-09.json";
 import previousCatchUpJsonSchema from "./fixtures/email-chat-catch-up-2026-11-09.json";
 
@@ -41,7 +41,7 @@ const legacyEmailRow = { ...emailRow, contextType: "web", contextId: null };
 describe.each([
   {
     name: "raw event rows",
-    transform: iosEmailChatRowsTransform,
+    transform: iosChatContextTransforms.rows,
     previousSchema: previousRowsJsonSchema,
     current: {
       rows: [emailRow, webRow],
@@ -56,7 +56,7 @@ describe.each([
   },
   {
     name: "batch event catch-up",
-    transform: iosEmailChatCatchUpTransform,
+    transform: iosChatContextTransforms.catchUp,
     previousSchema: previousCatchUpJsonSchema,
     current: {
       events: { [threadId]: [emailRow, webRow] },
@@ -78,6 +78,51 @@ describe.each([
       const transformed = transform.transform(current);
       expect(previous.safeParse(transformed).success).toBeTruthy();
       expect(transformed).toStrictEqual(expected);
+    });
+  },
+);
+
+describe.each([iosChatContextTransforms, androidChatContextTransforms])(
+  "native proactive history",
+  ({ rows, catchUp }) => {
+    it("projects both history routes to a readable prompt and preserves the occurrence contents, cursor and other rows", () => {
+      const proactive = {
+        ...emailRow,
+        contextType: "proactive",
+        contextId: emailRow.id,
+      };
+      const projected = { ...proactive, contextType: "web", contextId: null };
+      const currentRows = {
+        rows: [proactive, webRow],
+        cursor: { lastEventId: webRow.id, lastSeqId: 2 },
+        hasMore: false,
+      };
+      const currentCatchUp = {
+        events: { [threadId]: [proactive, webRow] },
+        notFoundThreads: [],
+      };
+      for (const [transform, previousSchema, current, expected] of [
+        [
+          rows,
+          previousRowsJsonSchema,
+          currentRows,
+          { ...currentRows, rows: [projected, webRow] },
+        ],
+        [
+          catchUp,
+          previousCatchUpJsonSchema,
+          currentCatchUp,
+          { ...currentCatchUp, events: { [threadId]: [projected, webRow] } },
+        ],
+      ] as const) {
+        const previous = fromJSONSchema(
+          previousSchema as core.JSONSchema.JSONSchema,
+        );
+        expect(previous.safeParse(current).success).toBeFalsy();
+        const result = transform.transform(current);
+        expect(previous.safeParse(result).success).toBeTruthy();
+        expect(result).toStrictEqual(expected);
+      }
     });
   },
 );

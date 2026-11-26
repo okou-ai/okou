@@ -14,7 +14,8 @@ export function createComputerUsePrompt(
   return computed(async (get): Promise<RunPrompt> => {
     const [event, features] = await Promise.all([get(event$), get(features$)]);
     const host = event?.preparation.computerUseHostGrant;
-    const automation = event?.contextType === "automation";
+    const automation =
+      event?.contextType === "automation" || event?.contextType === "proactive";
     return {
       systemPromptVariables: {
         computerUseContext: host

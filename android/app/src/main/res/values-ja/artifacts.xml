@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">拡大</string>
     <string name="artifact_image_zoom_out">縮小</string>
     <string name="artifact_image_fit">画面に合わせる</string>
+    <string name="artifact_share_file">ファイルを共有</string>
+    <string name="artifact_share_image">画像を共有</string>
+    <string name="artifact_save_image">画像を保存</string>
+    <string name="artifact_share_preparing">共有の準備中…</string>
+    <string name="artifact_share_denied">このファイルを共有できません</string>
+    <string name="artifact_share_failed">共有用にファイルを準備できませんでした</string>
 </resources>

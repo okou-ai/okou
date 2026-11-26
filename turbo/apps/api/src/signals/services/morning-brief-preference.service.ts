@@ -1,3 +1,9 @@
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
+import { proactiveDispatchPhase$ } from "./proactive-dispatch-ownership.service";
+import {
+  standalonePreference$,
+  setStandalonePreferences$,
+} from "./proactive-dispatch-state.service";
 import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
 import type {
   MorningBriefPreferenceErrorCode,
@@ -140,6 +146,17 @@ export const morningBriefPreference$ = command(
   ): Promise<MorningBriefPreferenceResult> => {
     signal.throwIfAborted();
     const owner = morningBriefOwner(args);
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      return {
+        kind: "ok",
+        preference: await set(
+          standalonePreference$,
+          owner,
+          "morning-brief",
+          signal,
+        ),
+      };
+    }
     const state = await set(loadMorningBriefState$, owner, signal);
     signal.throwIfAborted();
     const preference = await set(
@@ -212,6 +229,38 @@ export const updateMorningBriefPreference$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
     const identity = morningBriefOwner(args);
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      const { timezone } = await set(
+        loadProactivePreferences$,
+        identity,
+        signal,
+      );
+      const saved = await set(
+        setStandalonePreferences$,
+        {
+          owner: identity,
+          tasks: ["morning-brief"],
+          enabled: args.enabled,
+          timezone,
+        },
+        signal,
+      );
+      if (!saved) {
+        return conflict(
+          "MORNING_BRIEF_STATE_CONFLICT",
+          MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
+        );
+      }
+      return {
+        kind: "ok",
+        preference: await set(
+          standalonePreference$,
+          identity,
+          "morning-brief",
+          signal,
+        ),
+      };
+    }
     let state = await set(loadMorningBriefState$, identity, signal);
     signal.throwIfAborted();
 

@@ -3,9 +3,11 @@ package ai.okou.android.artifacts
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.rememberArtifactImageViewerState
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,6 +40,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -52,6 +56,9 @@ internal fun ArtifactImageViewer(
     saveEnabled: Boolean,
     onSave: (() -> Unit)?,
     saveResult: ArtifactSaveResult?,
+    onShare: (() -> Unit)?,
+    sharing: Boolean,
+    shareSnackbar: SnackbarHostState,
     onSource: (() -> Unit)?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
@@ -101,6 +108,8 @@ internal fun ArtifactImageViewer(
                 { transform.expanded = !fullWindow },
                 saveEnabled,
                 onSave,
+                onShare,
+                sharing,
                 onSource,
                 restoreSourceFocus,
                 onSourceFocusRestored,
@@ -113,6 +122,7 @@ internal fun ArtifactImageViewer(
                 loading,
                 preview.access?.previewOnly == true,
                 saveResult,
+                shareSnackbar,
                 Modifier.weight(1f),
             )
         }
@@ -145,6 +155,8 @@ private fun ImageViewerToolbar(
     onExpand: () -> Unit,
     saveEnabled: Boolean,
     onSave: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    sharing: Boolean,
     onSource: (() -> Unit)?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
@@ -166,7 +178,20 @@ private fun ImageViewerToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ImageViewerButton(R.drawable.ic_arrow_back, backLabel, onBack)
-        Spacer(Modifier.weight(1f))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            if (sharing) {
+                Text(
+                    stringResource(R.string.artifact_share_preparing),
+                    Modifier.padding(horizontal = 8.dp).semantics {
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         if (wide) {
             ImageViewerButton(
                 if (expanded) R.drawable.ic_close_fullscreen else R.drawable.ic_open_in_full,
@@ -182,25 +207,41 @@ private fun ImageViewerToolbar(
                     { menu = true },
                     Modifier.focusRequester(actionsFocus),
                 )
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (onSave != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.artifact_save)) },
+                val menuWidth = (currentWindowSizeDp().width - 24).coerceIn(0, 244).dp
+                DropdownMenu(
+                    expanded = menu,
+                    onDismissRequest = { menu = false },
+                    modifier = Modifier.width(menuWidth),
+                    offset = DpOffset(0.dp, 4.dp),
+                ) {
+                    if (onShare != null) {
+                        ImageViewerMenuItem(
+                            R.string.artifact_share_image,
+                            R.drawable.ic_share,
                             enabled = saveEnabled,
-                            onClick = {
-                                menu = false
-                                onSave()
-                            },
-                        )
+                        ) {
+                            menu = false
+                            onShare()
+                        }
+                    }
+                    if (onSave != null) {
+                        ImageViewerMenuItem(
+                            R.string.artifact_save_image,
+                            R.drawable.ic_download,
+                            enabled = saveEnabled,
+                        ) {
+                            menu = false
+                            onSave()
+                        }
                     }
                     if (onSource != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.artifact_view_source)) },
-                            onClick = {
-                                menu = false
-                                onSource()
-                            },
-                        )
+                        ImageViewerMenuItem(
+                            R.string.artifact_view_source,
+                            R.drawable.ic_chevron_right,
+                        ) {
+                            menu = false
+                            onSource()
+                        }
                     }
                 }
             } else {
@@ -211,8 +252,23 @@ private fun ImageViewerToolbar(
 }
 
 @Composable
+private fun ImageViewerMenuItem(
+    @StringRes label: Int,
+    @DrawableRes icon: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(stringResource(label), style = MaterialTheme.typography.labelLarge) },
+        leadingIcon = { Icon(painterResource(icon), null, Modifier.size(24.dp)) },
+        enabled = enabled,
+        onClick = onClick,
+    )
+}
+
+@Composable
 private fun ImageViewerButton(
-    @androidx.annotation.DrawableRes icon: Int,
+    @DrawableRes icon: Int,
     @StringRes label: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -236,6 +292,7 @@ private fun ImageViewport(
     loading: Boolean,
     previewOnly: Boolean,
     saveResult: ArtifactSaveResult?,
+    shareSnackbar: SnackbarHostState,
     modifier: Modifier,
 ) {
     BoxWithConstraints(
@@ -319,6 +376,7 @@ private fun ImageViewport(
                 )
             }
         }
+        SnackbarHost(shareSnackbar, Modifier.align(Alignment.BottomCenter))
     }
 }
 

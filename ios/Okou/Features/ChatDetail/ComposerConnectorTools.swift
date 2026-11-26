@@ -12,6 +12,8 @@ struct ComposerConnectorTools: View {
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
   private static let disabled = Computed<Bool> { _ in false }
+  /// The composer's writes and a new chat's pending choices, kept in the same Store.
+  @ResolvedValue private var resolvedConnectorStatus: ComposerConnectorStore.Status?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
@@ -19,9 +21,13 @@ struct ComposerConnectorTools: View {
     _remote = LoadableValue(task: resources.remote, keepLast: true)
     _remoteDevicesEnabled = ResolvedValue(store.remoteDevices?.enabled ?? Self.disabled)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _resolvedConnectorStatus = ResolvedValue(store.statusValue)
   }
 
   private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+  private var connectorStatus: ComposerConnectorStore.Status {
+    resolvedConnectorStatus ?? store.status
+  }
 
   var body: some View {
     Section {
@@ -34,7 +40,9 @@ struct ComposerConnectorTools: View {
       case .hasData(let value):
         Toggle(
           isOn: Binding(
-            get: { store.computerAccess(in: snapshot).cloudBrowserEnabled },
+            get: {
+              store.computerAccess(in: snapshot, status: connectorStatus).cloudBrowserEnabled
+            },
             set: { enabled in
               Task {
                 await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: enabled))
@@ -42,7 +50,7 @@ struct ComposerConnectorTools: View {
             })
         ) { OkouRowLabel("Cloud browser", okouSymbol: "globe") }
         .tint(OkouColor.primary400)
-        .disabled(store.isSaving || store.uncertain || !value.overview.cloudBrowserAvailable)
+        .disabled(!connectorStatus.canSend || !value.overview.cloudBrowserAvailable)
       }
       if remoteDevicesEnabled != true {
         NavigationLink {

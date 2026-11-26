@@ -1571,16 +1571,16 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "alreadyDone": "Already done",
       "closeFeedback": "Close feedback",
       "customDirection": "こんなことがしたい…",
       "customDirectionDescription": "質問や、やりたいことを入力できます。",
       "customPlaceholder": "どんなことを考えていますか？",
       "dismiss": "非表示にする",
       "dismissRecorded": "Suggestion dismissed",
-      "doneRecorded": "Noted — this is already done",
-      "dontNudge": "急かさないで",
-      "dontNudgeRecorded": "この件を急かさないように記録しました",
+      "done": "完了",
+      "doneRecorded": "すでに完了したと記録しました",
+      "draftIn": "「{{title}}」で下書き",
+      "draftInChat": "既存のチャットで下書き",
       "editDraft": "既存のチャットに下書きを作成",
       "editReason": "Edit reason",
       "feedbackPrompt": "この提案はいかがですか？",
@@ -1615,11 +1615,11 @@
         "show": "提案 {{index}}/{{total}} を表示"
       },
       "label": "提案",
-      "lessLikeThis": "Less like this",
-      "lessRecorded": "You’ll see fewer suggestions like this.",
+      "later": "あとで",
+      "laterRecorded": "あとで見直すと記録しました",
+      "lessLikeThis": "このような提案を減らす",
+      "lessRecorded": "このような提案を減らします。",
       "messageSent": "メッセージを送信しました",
-      "notPlanned": "Not planned",
-      "notPlannedRecorded": "Noted — this is not planned",
       "openChat": "チャットを開く",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1629,7 +1629,9 @@
       "sentToChat": "チャットに送信しました",
       "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
       "undoFeedback": "Undo",
-      "viewSource": "参照元を見る"
+      "viewSource": "参照元を見る",
+      "wontDo": "やらない",
+      "wontDoRecorded": "この件はやらないと記録しました"
     },
     "attachments": {
       "attach": "添付する",
@@ -6092,32 +6094,6 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
-        "learning": {
-          "description": "最近の活動を確認し、個人メモリを一度更新します。夜間の実行スケジュールは変わりません。",
-          "notInstalled": "先に環境設定で学習を有効にしてください。",
-          "openChat": "会話を開く",
-          "queued": "学習をキューに追加しました。",
-          "requestFailed": "リクエストの結果を確認できませんでした。",
-          "run": "学習を実行",
-          "starting": "開始中…",
-          "title": "学習",
-          "unavailable": "現在、学習を利用できません。"
-        },
-        "morningBrief": {
-          "description": "アカウントで有効なワークフローを使って一度実行します。提案の更新や実際のメール送信が行われる場合があります。毎日のスケジュールは変わりません。",
-          "openChat": "会話を開く",
-          "requestFailed": "リクエストの結果を確認できませんでした。",
-          "run": "ブリーフを実行",
-          "runAgain": "もう一度実行",
-          "starting": "開始中…",
-          "status": {
-            "completed": "完了しました。",
-            "failed": "実行に失敗しました。会話で詳細を確認してください。",
-            "queued": "キューに追加しました。会話で進捗を確認できます。",
-            "running": "実行中です。"
-          },
-          "title": "モーニングブリーフ"
-        },
         "openrouterPreset": {
           "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
           "loading": "読み込み中…",
@@ -7452,6 +7428,7 @@
       "createdBy": "作成者",
       "createInChat": "チャットで作成",
       "description": "タスク用の再利用可能なSOP。ゼロから作成するか、日常業務から抽出して実行、編集、自動化します。",
+      "directoryDescription": "実行・編集・自動化できる再利用可能なSOP。他の製品ではスキルとも呼ばれます。",
       "empty": {
         "all": "チャットからワークフローを作成するか、有用な実行からワークフローを保存します。",
         "automated": "ワークフローにオートメーションを追加すると、ここに表示されます。",

@@ -5,12 +5,10 @@ import XCTest
 @testable import ChatData
 
 final class ForYouFeedTests: XCTestCase {
-  func testFeedbackMatchesWebIncludingDontNudgeNote() {
+  func testFeedbackReasonsMatchTheFourWebActions() {
     XCTAssertEqual(
-      ForYouFeedback.allCases.map(\.wireKind),
-      ["already_done", "not_planned", "not_planned", "less_like_this"])
-    XCTAssertEqual(ForYouFeedback.dontNudge.note, "Do not nudge me about this again.")
-    XCTAssertTrue(ForYouFeedback.notPlanned.note.isEmpty)
+      ForYouFeedback.allCases.map(\.rawValue),
+      ["already_done", "not_planned", "later", "less_like_this"])
   }
 
   func testCustomDirectionKeepsTheSignedSnapshotQuoteAndFile() throws {

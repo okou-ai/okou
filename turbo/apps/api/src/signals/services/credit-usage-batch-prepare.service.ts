@@ -14,15 +14,23 @@ import {
 
 function settlementUsageRecords(
   events: readonly PendingUsageSnapshot[],
-  freeOfficialRunOwners: ReadonlyMap<string, string>,
+  platformRuns: ReadonlyMap<
+    string,
+    Pick<
+      typeof billingRunAttribution.$inferSelect,
+      "userId" | "creditChargePolicy"
+    >
+  >,
 ) {
   return events.map(({ event }) => {
+    const payer = event.billingRunId
+      ? platformRuns.get(event.billingRunId)
+      : undefined;
     return {
       ...event,
       creditChargePolicy:
-        event.billingRunId &&
-        freeOfficialRunOwners.get(event.billingRunId) === event.userId
-          ? ("official_workflow_free" as const)
+        payer && payer.userId === event.userId
+          ? payer.creditChargePolicy
           : ("standard" as const),
     };
   });
@@ -73,25 +81,26 @@ export const prepareUsageSettlementBatch$ = command(
             .select({
               runId: billingRunAttribution.runId,
               userId: billingRunAttribution.userId,
+              creditChargePolicy: billingRunAttribution.creditChargePolicy,
             })
             .from(billingRunAttribution)
             .where(
               and(
                 eq(billingRunAttribution.orgId, args.orgId),
                 inArray(billingRunAttribution.runId, runIds),
-                eq(
-                  billingRunAttribution.creditChargePolicy,
+                inArray(billingRunAttribution.creditChargePolicy, [
                   "official_workflow_free",
-                ),
+                  "platform_proactive",
+                ]),
               ),
             );
     signal.throwIfAborted();
-    const freeOfficialRunOwners = new Map(
+    const platformRuns = new Map(
       freeRuns.map((run) => {
-        return [run.runId, run.userId];
+        return [run.runId, run];
       }),
     );
-    const records = settlementUsageRecords(events, freeOfficialRunOwners);
+    const records = settlementUsageRecords(events, platformRuns);
     const priced = priceUsageEvents(records, prices, args.orgId, false);
     return { events, prices, records, priced };
   },

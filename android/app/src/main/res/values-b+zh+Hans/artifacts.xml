@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">放大</string>
     <string name="artifact_image_zoom_out">缩小</string>
     <string name="artifact_image_fit">适屏</string>
+    <string name="artifact_share_file">分享文件</string>
+    <string name="artifact_share_image">分享图片</string>
+    <string name="artifact_save_image">保存图片</string>
+    <string name="artifact_share_preparing">正在准备分享…</string>
+    <string name="artifact_share_denied">无权分享此文件</string>
+    <string name="artifact_share_failed">暂时无法准备分享文件</string>
 </resources>
