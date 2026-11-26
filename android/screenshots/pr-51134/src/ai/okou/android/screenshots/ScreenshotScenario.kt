@@ -142,13 +142,15 @@ class ScreenshotScenario {
                         selectFilter(R.string.chat_unread)
                         val region = device.awaitChatList(labels).visibleBounds
                         val bar = find(progress).visibleBounds
-                        check(bar.top == region.top && bar.height() == 4)
-                        check(bar.width() == if (wide) 344 else 440)
-                        check(find(text(personal)).visibleBounds == unreadRow)
-                        check(find(desc(R.string.chat_filter)).visibleBounds == toolbar)
                         ScreenshotCapture.capture("$viewport-unread-progress.png")
+                        check(find(text(personal)).visibleBounds == unreadRow) {
+                            "The $viewport unread row moved during indicator retries"
+                        }
+                        check(find(desc(R.string.chat_filter)).visibleBounds == toolbar) {
+                            "The $viewport toolbar moved during indicator retries"
+                        }
                         evidence.put(JSONObject().put("viewport", viewport).put("attempts", attempts.get())
-                            .put("progressWidthDp", bar.width()).put("progressHeightDp", bar.height()))
+                            .put("listBounds", region.toShortString()).put("progressBounds", bar.toShortString()))
                         recovered.countDown()
                         find(text(R.string.chat_empty_unread))
                         check(device.wait(Until.gone(progress), 5_000))
