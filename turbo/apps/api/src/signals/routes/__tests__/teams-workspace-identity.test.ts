@@ -239,7 +239,7 @@ async function botInstalled(
       type: "installationUpdate",
       action: "add",
       id: activityId,
-      timestamp: "2026-06-30T09:15:00.000Z",
+      timestamp: "2026-07-14T08:30:00.000Z",
       serviceUrl: fixture.serviceUrl,
       channelId: "msteams",
       conversation: {
