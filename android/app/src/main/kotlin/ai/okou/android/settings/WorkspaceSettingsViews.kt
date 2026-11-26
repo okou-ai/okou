@@ -2,6 +2,7 @@ package ai.okou.android.settings
 
 import ai.okou.android.BuildConfig
 import ai.okou.android.ContentReadFailure
+import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
@@ -195,11 +196,13 @@ internal fun SettingsDetailStatus(
 }
 
 @Composable
-internal fun SettingsReadError() {
+internal fun SettingsReadError(
+    failureLayout: ContentReadFailureLayout = ContentReadFailureLayout.Section,
+) {
     ContentReadFailure(
         R.string.chat_list_first_load_failed,
         Modifier.fillMaxWidth(),
-        fillViewport = false,
+        failureLayout,
     )
 }
 
