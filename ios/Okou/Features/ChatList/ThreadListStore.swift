@@ -76,7 +76,10 @@ final class ThreadListStore {
   private var appliedIndicatorsRevision = 0
   // Online running state can arrive before its list event. Keep the current
   // server set so later metadata can project it; running state is never persisted.
-  private(set) var activeThreadIDs: Set<String> = []
+  private let runningState = CCState.State<Set<String>>([])
+  /// The server's running chats from the last indicators read, kept in the workspace session's
+  /// Store; `activeThreadIDs` serves owner logic and tests.
+  let activeThreadIDsValue: Computed<Set<String>>
   private var creationRevision = 0
   private let listDemand = CCState.State<UUID?>(nil)
   private let listLifetime = CCState.State(true)
@@ -107,6 +110,8 @@ final class ThreadListStore {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let statusState = statusState
     statusValue = Computed { try $0(statusState) }
+    let runningState = runningState
+    activeThreadIDsValue = Computed { try $0(runningState) }
     let confirmedThreads = confirmedThreads
     threadsValue = Computed { try $0(confirmedThreads) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
@@ -612,6 +617,16 @@ extension ThreadListStore {
   var renameTitle: String {
     get { status.renameTitle }
     set { updateStatus { $0.renameTitle = newValue } }
+  }
+
+  private(set) var activeThreadIDs: Set<String> {
+    get { confirmed(activeThreadIDsValue) }
+    set {
+      guard newValue != activeThreadIDs else { return }
+      do { try stateStore.set(runningState, newValue) } catch {
+        preconditionFailure("Cannot publish running chats: \(error)")
+      }
+    }
   }
 
   private func updateStatus(_ change: (inout Status) -> Void) {
