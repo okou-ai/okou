@@ -19,6 +19,7 @@ import android.app.LocaleManager
 import android.content.res.Configuration
 import android.os.LocaleList
 import android.view.View
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -60,10 +61,13 @@ class ScreenshotScenario {
         val started = CountDownLatch(1)
         val fixture = ChatListApiFixture()
         fun label(id: Int) = By.pkg(app.packageName).text(labels.getString(id))
-        fun politeStatus(id: Int) = device.find(label(id)).also { status ->
-            val liveRegion = status.accessibilityNodeInfo.liveRegion
-            check(liveRegion == View.ACCESSIBILITY_LIVE_REGION_POLITE) {
-                "Expected a polite live region for ${labels.getString(id)}, got $liveRegion"
+        fun politeStatus(id: Int): AccessibilityNodeInfo {
+            val nodes = generateSequence(device.find(label(id)).accessibilityNodeInfo) { it.parent }
+                .takeWhile { it.packageName?.toString() == app.packageName }
+                .toList()
+            return checkNotNull(nodes.firstOrNull { it.liveRegion == View.ACCESSIBILITY_LIVE_REGION_POLITE }) {
+                val observed = nodes.joinToString { "${it.className} live=${it.liveRegion}" }
+                "Expected a polite live region for ${labels.getString(id)}, got [$observed]"
             }
         }
         try {
@@ -117,7 +121,8 @@ class ScreenshotScenario {
                         ScreenshotCapture.capture("wide-delete-ready.png")
                         confirm.click()
                         check(started.await(10, TimeUnit.SECONDS))
-                        check(!politeStatus(R.string.chat_delete_pending).isEnabled)
+                        val pending = politeStatus(R.string.chat_delete_pending)
+                        check(pending.className?.toString() == "android.widget.Button" && !pending.isEnabled)
                         check(!device.hasObject(label(R.string.chat_project_delete)))
                         ScreenshotCapture.capture("wide-delete-pending.png")
                         release.countDown()
