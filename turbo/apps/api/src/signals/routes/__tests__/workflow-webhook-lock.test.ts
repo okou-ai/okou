@@ -17,6 +17,7 @@ import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -29,6 +30,7 @@ const routes = [
   ...chatThreadDeleteRoutes,
 ];
 const app = setupApp({ context, routes });
+const rethrowingApp = setupApp({ context, routes, rethrowErrors: true });
 const webhook = {
   kind: "event" as const,
   eventType: "webhook-received" as const,
@@ -127,6 +129,24 @@ async function feedThreadIds() {
 }
 
 describe("webhook credential preparation lock isolation", () => {
+  it("workflow-webhook-lock-007 (1/2) fails the webhook creation when KMS call 1 fails", async () => {
+    const { workflowId } = await kmsFailingTeamMember();
+
+    await expect(createFailingWebhook(workflowId)).rejects.toThrow(
+      "KMS unavailable",
+    );
+  });
+
+  it("workflow-webhook-lock-007 (2/2) leaves no automation and only the unrelated thread", async () => {
+    const { workflowId, threadId } = await kmsFailingTeamMember();
+    await createFailingWebhook(workflowId).catch(() => {
+      return undefined;
+    });
+
+    await expect(listAutomations(workflowId)).resolves.toStrictEqual([]);
+    await expect(feedThreadIds()).resolves.toStrictEqual([threadId]);
+  });
+
   it("workflow-webhook-lock-001 shares one conversation between concurrent webhook credentials", async () => {
     const { workflowId, threadId } = await teamMember({
       unrelatedThread: true,
@@ -208,3 +228,22 @@ describe("webhook credential preparation lock isolation", () => {
     expect(threads).toHaveLength(2);
   });
 });
+
+/** A Team member's Workflow and unrelated Thread, with KMS failing its first call. */
+async function kmsFailingTeamMember() {
+  const owned = await teamMember({ unrelatedThread: true });
+  useSecretKmsProbe((_request, callNumber) => {
+    return callNumber === 1
+      ? Promise.reject(new Error("KMS unavailable"))
+      : undefined;
+  });
+  return owned;
+}
+
+function createFailingWebhook(workflowId: string) {
+  return rethrowingApp(workflowAutomationsContract).create({
+    headers,
+    params: { workflowId },
+    body: webhook,
+  });
+}
