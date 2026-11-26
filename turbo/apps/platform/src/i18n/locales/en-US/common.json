@@ -7473,6 +7473,7 @@
       "sort": {
         "alphabetical": "Alphabetical",
         "created": "Newest created",
+        "heading": "Sort by",
         "label": "Sort workflows",
         "nextRun": "Next run"
       },

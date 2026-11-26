@@ -162,7 +162,12 @@ describe("Browser proxy attachment and safe tabs", () => {
   it("attaches the driver through a managed proxy and keeps connection details private", async () => {
     await run("use");
     expect(external.configs).toStrictEqual([
-      { cdpUrl: PROVIDER, runtimeId: extension.runtimeId, windowId: 0 },
+      {
+        cdpUrl: PROVIDER,
+        runtimeId: extension.runtimeId,
+        windowId: 0,
+        instanceId: "d0000000-0000-4000-a000-000000000010",
+      },
     ]);
     expect(external.driver).toHaveBeenCalledWith(
       "agent-browser",

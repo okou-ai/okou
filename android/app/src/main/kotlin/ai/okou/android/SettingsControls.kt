@@ -7,6 +7,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -64,6 +65,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -77,9 +79,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -223,6 +228,7 @@ internal fun SettingsSwitchRow(
     modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
+    val interactions = remember { MutableInteractionSource() }
     val action =
         if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
@@ -231,9 +237,14 @@ internal fun SettingsSwitchRow(
                     RoundedCornerShape(12.dp),
                     MaterialTheme.colorScheme.onSurface,
                 )
-                .toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
-                    onCheckedChange?.invoke(it)
-                }
+                .toggleable(
+                    checked,
+                    interactionSource = interactions,
+                    indication = null,
+                    enabled = onCheckedChange != null,
+                    role = Role.Switch,
+                    onValueChange = { onCheckedChange?.invoke(it) },
+                )
         }
     Row(
         modifier
@@ -257,15 +268,28 @@ internal fun SettingsSwitchRow(
         }
         Box(Modifier.width(52.dp)) {
             if (checked != null) {
-                OkouSwitch(checked, enabled = onCheckedChange != null)
+                OkouSwitch(
+                    checked,
+                    enabled = onCheckedChange != null,
+                    interactionSource = interactions,
+                )
             }
         }
     }
 }
 
 @Composable
-internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
-    Switch(checked = checked, enabled = enabled, onCheckedChange = null)
+internal fun OkouSwitch(
+    checked: Boolean,
+    enabled: Boolean,
+    interactionSource: MutableInteractionSource,
+) {
+    Switch(
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = null,
+        interactionSource = interactionSource,
+    )
 }
 
 @Composable
@@ -560,6 +584,9 @@ internal fun OkouConfirmationDialog(
     destructive: Boolean = false,
     dismissLabel: String = stringResource(R.string.settings_cancel),
     keepActionsVisible: Boolean = false,
+    pendingConfirmLabel: String? = null,
+    confirmPending: Boolean = false,
+    actionStatus: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Dialog(
@@ -608,36 +635,60 @@ internal fun OkouConfirmationDialog(
                         ) {
                             ProvideTextStyle(bodyStyle, content)
                         }
-                        WithButtonFocusOutline(colors.onBackground) {
-                            FlowRow(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                val buttonPadding =
-                                    if (compact) PaddingValues(horizontal = 8.dp, vertical = 8.dp)
-                                    else ButtonDefaults.TextButtonContentPadding
-                                TextButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    enabled = dismissEnabled,
-                                    contentPadding = buttonPadding,
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            actionStatus?.invoke()
+                            WithButtonFocusOutline(colors.onBackground) {
+                                FlowRow(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement =
+                                        Arrangement.spacedBy(8.dp, Alignment.End),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text(dismissLabel)
-                                }
-                                TextButton(
-                                    onClick = onConfirm,
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    enabled = confirmEnabled,
-                                    contentPadding = buttonPadding,
-                                    colors =
-                                        if (destructive)
-                                            ButtonDefaults.textButtonColors(
-                                                contentColor = colors.error,
-                                            )
-                                        else ButtonDefaults.textButtonColors(),
-                                ) {
-                                    Text(confirm)
+                                    val buttonPadding =
+                                        if (compact)
+                                            PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                                        else ButtonDefaults.TextButtonContentPadding
+                                    TextButton(
+                                        onClick = onDismiss,
+                                        modifier = Modifier.heightIn(min = 48.dp),
+                                        enabled = dismissEnabled,
+                                        contentPadding = buttonPadding,
+                                    ) {
+                                        Text(dismissLabel)
+                                    }
+                                    TextButton(
+                                        onClick = onConfirm,
+                                        modifier =
+                                            Modifier.heightIn(min = 48.dp).semantics {
+                                                if (confirmPending) {
+                                                    liveRegion = LiveRegionMode.Polite
+                                                }
+                                            },
+                                        enabled = confirmEnabled && !confirmPending,
+                                        contentPadding = buttonPadding,
+                                        colors =
+                                            if (destructive)
+                                                ButtonDefaults.textButtonColors(
+                                                    contentColor = colors.error,
+                                                )
+                                            else ButtonDefaults.textButtonColors(),
+                                    ) {
+                                        if (pendingConfirmLabel == null) {
+                                            Text(confirm)
+                                        } else {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                val hidden =
+                                                    Modifier.clearAndSetSemantics {}.alpha(0f)
+                                                if (confirmPending) {
+                                                    Text(confirm, hidden)
+                                                    Text(pendingConfirmLabel)
+                                                } else {
+                                                    Text(pendingConfirmLabel, hidden)
+                                                    Text(confirm)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -29,13 +29,15 @@ struct AssistantFailureState: Equatable {
   }
   var actionTitle: String { recovery.continues ? "Continue" : "Try again" }
 
+  /// `models` is the selection's graph value for this render; nil reads its current value.
   @MainActor static func make(
     failure: ChatFailure, current: Bool, selection: ChatModelSelectionStore?,
+    models: ChatModelSelectionStore.Presentation? = nil,
     accounts: [PersonalSubscription]?, busy: Bool, accountsError: String? = nil
   ) -> Self {
-    let route = selection?.models.configuration?.row(
-      for: selection?.selection ?? ChatModelSelection())?
-      .memberEffective.providerType
+    let models = models ?? selection?.presentation
+    let chosen = models?.selection ?? ChatModelSelection()
+    let route = models?.configuration?.row(for: chosen)?.memberEffective.providerType
     let framework: ChatFailure.Framework? =
       route == PersonalSubscriptionType.codex.rawValue
       ? .codex
@@ -75,9 +77,9 @@ struct AssistantFailureState: Equatable {
     let resetAllowed = recovery.framework == .codex && !recovery.modelScoped && resets > 0
     return Self(
       failure: failure, recovery: recovery, isCurrent: current,
-      isBusy: busy || selection?.isMutating == true || subscriptions?.isMutating == true
+      isBusy: busy || models?.isMutating == true || subscriptions?.isMutating == true
         || (readsAccount && accounts == nil && accountsError == nil),
-      canSend: selection?.canSendConfirmedSelection != false,
+      canSend: selection.map { $0.connectors.canSend && models?.allowsSending == true } ?? true,
       accountLabel: account?.accountEmail ?? account?.workspaceName,
       disconnected: readsAccount && accounts != nil && account == nil,
       resetDetails: details.isEmpty ? recovery.resetLabel.map { ["Resets \($0)"] } ?? [] : details,

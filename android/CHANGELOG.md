@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.57.3](https://github.com/okou-ai/okou/compare/android-v0.57.2...android-v0.57.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align settings, editors, and theme colors ([#50772](https://github.com/okou-ai/okou/issues/50772)) ([54379d9](https://github.com/okou-ai/okou/commit/54379d93c4016e4025b8a2f0bdada2b7fabe5c0e))
+* **android:** use Material disabled colors for workspace entry checks ([#50942](https://github.com/okou-ai/okou/issues/50942)) ([6b87ade](https://github.com/okou-ai/okou/commit/6b87ade618e0720cb1905e5fb0c123c881f90299))
+* **android:** use native colors for artifact preview actions ([#50954](https://github.com/okou-ai/okou/issues/50954)) ([e2123a5](https://github.com/okou-ai/okou/commit/e2123a5f80c20d6dca2b3c150c53f9ded41fe8f7))
+
 ## [0.57.2](https://github.com/okou-ai/okou/compare/android-v0.57.1...android-v0.57.2) (2026-11-26)
 
 

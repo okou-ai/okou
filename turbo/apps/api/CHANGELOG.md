@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.132.1](https://github.com/okou-ai/okou/compare/api-v2.132.0...api-v2.132.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **connectors:** replace duplicate provider account authorizations ([#50784](https://github.com/okou-ai/okou/issues/50784)) ([c8f6d04](https://github.com/okou-ai/okou/commit/c8f6d04eec805cf2edb634af0fa48019ad82bd0d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.882.0
+    * @okouai/db bumped to 2.69.6
+    * @okouai/pi-agent-runtime bumped to 1.52.83
+
 ## [2.132.0](https://github.com/okou-ai/okou/compare/api-v2.131.0...api-v2.132.0) (2026-11-26)
 
 

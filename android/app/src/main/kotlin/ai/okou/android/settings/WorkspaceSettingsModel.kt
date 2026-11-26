@@ -157,6 +157,7 @@ internal constructor(
     private var accountsRead: Job? = null
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
+    private var creditRefreshFailureReported = false
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     internal fun visible(destination: SettingsDestination?) {
@@ -170,6 +171,8 @@ internal constructor(
         if (destination != SettingsDestination.CreditBalance) {
             usagePackRead?.cancel()
             workspaceCreditsRead?.cancel()
+        } else {
+            creditRefreshFailureReported = false
         }
         if (
             !restored &&
@@ -227,6 +230,7 @@ internal constructor(
                 UsagePackCredits.serializer(),
                 service::usagePackCredits,
                 { mutable.value.usagePack },
+                onCachedFailure = ::reportCreditRefreshFailure,
             ) { data ->
                 mutable.update { it.copy(usagePack = data) }
             }
@@ -244,6 +248,7 @@ internal constructor(
                     WorkspaceCreditSummary(billing.credits, billing.creditBreakdown)
                 },
                 { mutable.value.workspaceCredits },
+                onCachedFailure = ::reportCreditRefreshFailure,
             ) { data ->
                 mutable.update { it.copy(workspaceCredits = data) }
             }
@@ -387,7 +392,7 @@ internal constructor(
                     confirmSwitchByReading(provider, accountId)
                 }
             }
-            refresh()
+            refreshAccounts()
         }
     }
 
@@ -406,6 +411,7 @@ internal constructor(
         serializer: KSerializer<T>,
         fetch: suspend () -> T,
         state: () -> SettingsRead<T>,
+        onCachedFailure: () -> Unit = {},
         publish: (SettingsRead<T>) -> Unit,
     ) {
         val token = Any()
@@ -451,6 +457,7 @@ internal constructor(
                             readAt = current.readAt.takeIf { value != null },
                         ),
                     )
+                    if (value != null) onCachedFailure()
                     return
                 }
             }
@@ -460,6 +467,12 @@ internal constructor(
                 showProgress(resource, false)
             }
         }
+    }
+
+    private fun reportCreditRefreshFailure() {
+        if (creditRefreshFailureReported) return
+        creditRefreshFailureReported = true
+        messages.trySend(SettingsNotice.CreditBalanceRefreshFailed)
     }
 
     private fun showProgress(resource: WorkspaceSettingsResource, refreshing: Boolean) {

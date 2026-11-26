@@ -444,8 +444,6 @@ private fun WorkspaceSettingsContent(
                             HorizontalDivider()
                             EmailSubscriptionSetting(
                                 ready?.settings?.emailSubscription,
-                                snackbar,
-                                onFeedbackInOverlay,
                             ) {
                                 openPage(SettingsDestination.Account)
                             }

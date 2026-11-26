@@ -276,9 +276,11 @@ private struct WorkspaceRootView: View {
     }
     // The widgets show this workspace's confirmed chat list; republish only when it changes.
     .background {
-      WorkspaceWidgetPublisher(
-        store: store, workspaceID: workspaceID,
-        name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
+      SelectedConversationReader(store: store) { selected in
+        WorkspaceWidgetPublisher(
+          store: store, selected: selected, workspaceID: workspaceID,
+          name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
+      }
     }
     .task(id: OkouWidgetLinks.shared.requestID) {
       guard let threadID = OkouWidgetLinks.shared.takeChat(in: workspaceID) else { return }
@@ -315,8 +317,8 @@ private struct WorkspaceRootView: View {
   }
 
   private var chatPage: some View {
-    Group {
-      if let conversation = store.selectedConversation {
+    SelectedConversationReader(store: store) { selected in
+      if let conversation = selected {
         WorkspaceChatDetail(
           store: store, conversation: conversation,
           workspaceName: authentication.workspacePresentation(workspaceID)?.name,
@@ -421,6 +423,22 @@ private struct WorkspaceRootView: View {
   }
 }
 
+/// Resolves the selected chat's owner from the workspace session's graph, for content under the
+/// workspace's Store provider.
+private struct SelectedConversationReader<Content: View>: View {
+  let store: WorkspaceStore
+  let content: (ConversationStore?) -> Content
+  @ResolvedValue private var selected: ConversationStore??
+
+  init(store: WorkspaceStore, @ViewBuilder content: @escaping (ConversationStore?) -> Content) {
+    self.store = store
+    self.content = content
+    _selected = ResolvedValue(store.selectedConversationValue, equals: { $0 === $1 })
+  }
+
+  var body: some View { content(selected ?? store.selectedConversation) }
+}
+
 /// Publishes the widget snapshot. The selected chat's draft mark and the API's draft list are
 /// read from the session graph, so the publisher sits under the workspace's Store provider.
 private struct WorkspaceWidgetPublisher: View {
@@ -432,11 +450,10 @@ private struct WorkspaceWidgetPublisher: View {
   @ResolvedValue private var listedDrafts: Set<String>?
   @ResolvedValue private var threads: [ChatThread]?
 
-  init(store: WorkspaceStore, workspaceID: String, name: String?) {
+  init(store: WorkspaceStore, selected: ConversationStore?, workspaceID: String, name: String?) {
     self.store = store
     self.workspaceID = workspaceID
     self.name = name
-    let selected = store.selectedConversation
     selectedThreadID = selected?.thread.id
     _selectedDraft = ResolvedValue(
       selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)

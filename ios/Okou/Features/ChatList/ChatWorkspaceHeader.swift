@@ -23,8 +23,9 @@ private struct ChatWorkspaceHeaderContent: View {
   let height: CGFloat
   let openSidebar: () -> Void
   @LoadableValue private var unreadThreads: Loadable<Bool>
-  /// The selected chat, kept in the workspace session's Store.
+  /// The selected chat and its resident owner, kept in the workspace session's Store.
   @ResolvedValue private var selection: String??
+  @ResolvedValue private var selectedConversation: ConversationStore??
 
   init(store: WorkspaceStore, height: CGFloat, openSidebar: @escaping () -> Void) {
     self.store = store
@@ -32,6 +33,7 @@ private struct ChatWorkspaceHeaderContent: View {
     self.openSidebar = openSidebar
     _unreadThreads = LoadableValue(store.sidebar.hasUnreadThreads)
     _selection = ResolvedValue(store.selectedThreadValue)
+    _selectedConversation = ResolvedValue(store.selectedConversationValue, equals: { $0 === $1 })
   }
 
   private var hasUnread: Bool {
@@ -41,7 +43,9 @@ private struct ChatWorkspaceHeaderContent: View {
 
   var body: some View {
     HStack(spacing: OkouSpace.sm) {
-      if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
+      if let sharing = (selectedConversation ?? store.selectedConversation)?.sharing,
+        sharing.isSelecting
+      {
         Text("\(sharing.selectedCount) selected").font(.okou(.headline))
           .accessibilityIdentifier("chat-sharing-count")
         Spacer()

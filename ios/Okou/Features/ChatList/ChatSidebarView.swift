@@ -647,19 +647,23 @@ private struct ChatSidebarThreadLabel: View {
   let row: ChatSidebarPresentation.Row
   let workspace: WorkspaceStore
   let showsStatusColumn: Bool
-  /// The API's draft list, kept in the workspace session's Store.
+  /// The API's draft list and the selected chat's owner, kept in the workspace session's Store.
   @ResolvedValue private var listedDrafts: Set<String>?
+  @ResolvedValue private var selected: ConversationStore??
 
   init(row: ChatSidebarPresentation.Row, workspace: WorkspaceStore, showsStatusColumn: Bool) {
     self.row = row
     self.workspace = workspace
     self.showsStatusColumn = showsStatusColumn
     _listedDrafts = ResolvedValue(workspace.listedDraftIDs)
+    _selected = ResolvedValue(workspace.selectedConversationValue, equals: { $0 === $1 })
   }
 
   var body: some View {
     ChatSidebarThreadStates(
-      row: row, composer: workspace.residentComposer(row.id),
+      row: row,
+      composer: workspace.residentComposer(
+        row.id, selected: selected ?? workspace.selectedConversation),
       listedDraft: listedDrafts?.contains(row.id) ?? workspace.hasListedDraft(row.id),
       showsStatusColumn: showsStatusColumn
     )

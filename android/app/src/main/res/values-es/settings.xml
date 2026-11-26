@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">La configuración de correo no está disponible temporalmente.</string>
     <string name="settings_email_refresh_failed">No se pudo sincronizar. Se muestra la última suscripción guardada.</string>
     <string name="settings_email_refreshing">Sincronizando la suscripción por correo</string>
+    <string name="settings_email_saving">Actualizando la suscripción por correo…</string>
     <string name="settings_email_save_failed">No se pudo actualizar la suscripción por correo.</string>
     <string name="settings_email_save_unconfirmed">La actualización de la suscripción por correo aún no se ha confirmado.</string>
     <string name="settings_models">Modelos</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Saldo de créditos</string>
     <string name="settings_credit_scope">Créditos de Okou en «%1$s»</string>
-    <string name="settings_credit_update_failed">No se pudo actualizar. Se muestra el último saldo conocido.</string>
     <string name="settings_credit_unavailable">No se puede ver el saldo en este momento.</string>
     <string name="settings_credit_member">Paquete de uso personal</string>
     <string name="settings_credit_workspace">Saldo del espacio de trabajo</string>

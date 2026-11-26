@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">지금은 이메일 설정을 불러올 수 없습니다.</string>
     <string name="settings_email_refresh_failed">동기화하지 못했습니다. 마지막으로 저장된 구독 상태를 표시합니다.</string>
     <string name="settings_email_refreshing">이메일 구독 동기화 중</string>
+    <string name="settings_email_saving">이메일 구독을 업데이트하는 중…</string>
     <string name="settings_email_save_failed">이메일 구독을 업데이트하지 못했습니다.</string>
     <string name="settings_email_save_unconfirmed">이메일 구독 변경 결과가 아직 확인되지 않았습니다.</string>
     <string name="settings_models">모델</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">%1$s 미만</string>
     <string name="settings_credit_balance">크레딧 잔액</string>
     <string name="settings_credit_scope">‘%1$s’의 Okou 크레딧</string>
-    <string name="settings_credit_update_failed">새로고침하지 못했습니다. 마지막으로 확인된 잔액을 표시합니다.</string>
     <string name="settings_credit_unavailable">현재 잔액을 볼 수 없습니다.</string>
     <string name="settings_credit_member">개인 사용량 팩</string>
     <string name="settings_credit_workspace">워크스페이스 잔액</string>

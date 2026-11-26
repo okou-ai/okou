@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -282,7 +281,6 @@ private fun ArtifactAction(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
     OutlinedButton(
         onClick = onClick,
@@ -290,8 +288,6 @@ private fun ArtifactAction(
             modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).workspaceSearchFocusOutline(shape),
         enabled = enabled,
         shape = shape,
-        border = BorderStroke(1.dp, colors.outline),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) {
         FlowRow(

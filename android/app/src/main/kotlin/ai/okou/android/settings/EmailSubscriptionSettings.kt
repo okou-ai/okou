@@ -22,6 +22,7 @@ internal val EmailSubscription.canReceive: Boolean
 
 internal enum class SettingsNotice {
     ModelAccountSwitchFailed,
+    CreditBalanceRefreshFailed,
     EmailSubscriptionFailed,
     EmailSubscriptionUnconfirmed,
     ToolSaveFailed,
@@ -32,12 +33,13 @@ internal data class EmailSubscriptionState(
     val read: SettingsRead<EmailSubscription> = SettingsRead(),
     val desired: Boolean? = null,
     val unconfirmed: Boolean? = null,
+    val updateFailed: Boolean = false,
 ) {
     val checked: Boolean?
         get() = read.value?.let { desired ?: it.subscribed }
 
     val canChange: Boolean
-        get() = read.value?.canReceive == true && unconfirmed == null
+        get() = read.value?.canReceive == true && desired == null
 }
 
 /** The preference belongs to the account. Requests use the active authorized workspace. */
@@ -54,11 +56,19 @@ internal class EmailSubscriptionSettings(
     private val mutable = MutableStateFlow(EmailSubscriptionState())
     val state = mutable.asStateFlow()
 
+    private var panelOpen = false
     private var visible = false
     private var restored = false
     private var readRequested = false
     private var reading = false
     private var work: Job? = null
+
+    fun setPanelOpen(open: Boolean) {
+        panelOpen = open
+        if (!open && mutable.value.updateFailed) {
+            mutable.value = mutable.value.copy(updateFailed = false)
+        }
+    }
 
     fun visible(active: Boolean) {
         if (visible == active) return
@@ -71,7 +81,7 @@ internal class EmailSubscriptionSettings(
     fun subscribe(subscribed: Boolean) {
         val current = mutable.value
         if (!authorized() || !current.canChange || current.checked == subscribed) return
-        mutable.value = current.copy(desired = subscribed)
+        mutable.value = current.copy(desired = subscribed, updateFailed = false)
         if (reading && work?.isActive == true) {
             readRequested = visible
             work?.cancel()
@@ -139,13 +149,14 @@ internal class EmailSubscriptionSettings(
             requireOwner()
             val current = mutable.value
             if (error is ApiFailure.Http && error.status == 403) {
-                clearInaccessible()
-                if (attempted != null) notice(SettingsNotice.EmailSubscriptionFailed)
+                clearInaccessible(writeRejected = attempted != null)
             } else if (attempted == null) {
                 mutable.value = current.copy(read = current.read.copy(unavailable = true))
             } else {
                 mutable.value = current.copy(unconfirmed = attempted)
-                if (current.unconfirmed == null) notice(SettingsNotice.EmailSubscriptionUnconfirmed)
+                if (current.unconfirmed == null && !panelOpen) {
+                    notice(SettingsNotice.EmailSubscriptionUnconfirmed)
+                }
             }
         } finally {
             val current = mutable.value
@@ -193,8 +204,7 @@ internal class EmailSubscriptionSettings(
                 onSessionFailure(error)
                 requireOwner()
                 if (error is ApiFailure.Http && error.status == 403) {
-                    clearInaccessible()
-                    notice(SettingsNotice.EmailSubscriptionFailed)
+                    clearInaccessible(writeRejected = true)
                     return
                 }
                 val undelivered = error is ApiFailure.Network && error.connectionFailed
@@ -207,46 +217,40 @@ internal class EmailSubscriptionSettings(
                 }
                 if ((undelivered || throttled) && attempt < settingsReadAttempts - 1) {
                     delay(settingsReadRetryDelayMillis)
-                    val latest = mutable.value
-                    if (latest.desired != attempted) return
                     return@repeat
                 }
-                val latest = mutable.value
-                if (latest.desired == attempted) {
-                    mutable.value = latest.copy(desired = null)
-                    notice(SettingsNotice.EmailSubscriptionFailed)
-                }
+                reject(mutable.value)
                 return
             }
         }
     }
 
     private fun publish(value: EmailSubscription, readAt: Long?, attempted: Boolean?) {
-        val current = mutable.value
-        val desired = current.desired
-        mutable.value =
-            current.copy(
+        val resolved =
+            mutable.value.copy(
                 read = SettingsRead(value, readAt = readAt),
-                desired =
-                    desired.takeIf {
-                        it != attempted && it != value.subscribed && value.canReceive
-                    },
+                desired = null,
                 unconfirmed = null,
             )
+        if (attempted != null && value.subscribed != attempted) reject(resolved)
+        else mutable.value = resolved
         if (readAt != null) cache?.saveEmail(identity, ConfirmedSetting(value, readAt))
-        if (attempted != null && desired == attempted && value.subscribed != attempted) {
-            notice(SettingsNotice.EmailSubscriptionFailed)
-        }
     }
 
-    private fun clearInaccessible() {
+    private fun clearInaccessible(writeRejected: Boolean) {
         cache?.saveEmail(identity, null)
-        mutable.value =
+        val cleared =
             mutable.value.copy(
                 read = SettingsRead(unavailable = true),
                 desired = null,
                 unconfirmed = null,
             )
+        if (writeRejected) reject(cleared) else mutable.value = cleared
+    }
+
+    private fun reject(state: EmailSubscriptionState) {
+        mutable.value = state.copy(desired = null, unconfirmed = null, updateFailed = panelOpen)
+        if (!panelOpen) notice(SettingsNotice.EmailSubscriptionFailed)
     }
 
     private suspend fun requireOwner() {

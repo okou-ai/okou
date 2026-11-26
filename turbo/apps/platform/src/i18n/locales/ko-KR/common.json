@@ -7446,6 +7446,7 @@
       "sort": {
         "alphabetical": "알파벳순",
         "created": "최근 생성순",
+        "heading": "정렬 기준",
         "label": "워크플로 정렬",
         "nextRun": "다음 실행"
       },

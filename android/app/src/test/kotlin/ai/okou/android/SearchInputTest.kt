@@ -19,6 +19,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTouchHeightIsEqualTo
+import androidx.compose.ui.test.assertTouchWidthIsEqualTo
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasText
@@ -94,8 +96,10 @@ class SearchInputTest {
         compose.onNodeWithText("Native history reply").assertIsDisplayed()
         compose
             .onNodeWithContentDescription("Clear search")
-            .assertWidthIsEqualTo(48.dp)
-            .assertHeightIsEqualTo(48.dp)
+            .assertWidthIsEqualTo(40.dp)
+            .assertHeightIsEqualTo(40.dp)
+            .assertTouchWidthIsEqualTo(48.dp)
+            .assertTouchHeightIsEqualTo(48.dp)
             .performClick()
         query.assertIsFocused()
         awaitTurns()

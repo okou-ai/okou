@@ -7557,6 +7557,7 @@
       "sort": {
         "alphabetical": "Alphabétique",
         "created": "Créés récemment",
+        "heading": "Trier par",
         "label": "Trier les workflows",
         "nextRun": "Prochaine exécution"
       },

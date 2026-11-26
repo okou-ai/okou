@@ -67,7 +67,7 @@
     <string name="chat_unpin">Lepas sematan chat</string>
     <string name="chat_move_pin_up">Pindahkan ke atas</string>
     <string name="chat_move_pin_down">Pindahkan ke bawah</string>
-    <string name="chat_title_field">Judul chat</string>
+    <string name="chat_title_field">Nama baru</string>
     <string name="chat_rename_confirm">Ubah nama</string>
     <string name="chat_rename_cancel">Batal</string>
     <string name="chat_delete">Hapus chat</string>
@@ -98,6 +98,7 @@
     <string name="chat_project_delete_title">Hapus proyek?</string>
     <string name="chat_project_delete_description">Chat di “%1$s” akan dipindahkan ke luar proyek. Tugas yang sedang berjalan akan dilanjutkan.</string>
     <string name="chat_project_delete_pending">Menghapus proyek…</string>
+    <string name="chat_delete_pending">Menghapus…</string>
     <string name="chat_project_deleted">Proyek dihapus dan chatnya dipindahkan ke luar proyek.</string>
     <string name="chat_project_delete_rejected">Proyek tidak dapat dihapus.</string>
     <string name="chat_project_delete_unconfirmed">Penghapusan proyek tidak dapat dikonfirmasi.</string>

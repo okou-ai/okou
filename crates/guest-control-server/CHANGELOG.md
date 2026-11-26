@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.152](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.151...guest-control-server-v0.24.152) (2026-11-26)
+
+
+### Refactoring
+
+* **guest-control:** share session startup across transports ([#50933](https://github.com/okou-ai/okou/issues/50933)) ([3540d35](https://github.com/okou-ai/okou/commit/3540d35ac2b0b29ad0abd779bdf88ee4f8f58ad2))
+
 ## [0.24.151](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.150...guest-control-server-v0.24.151) (2026-11-25)
 
 ## [0.24.150](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.149...guest-control-server-v0.24.150) (2026-11-24)

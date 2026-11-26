@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">Les paramètres d’e-mail sont temporairement indisponibles.</string>
     <string name="settings_email_refresh_failed">Synchronisation impossible. Le dernier abonnement enregistré est affiché.</string>
     <string name="settings_email_refreshing">Synchronisation de l’abonnement par e-mail</string>
+    <string name="settings_email_saving">Mise à jour de l’abonnement par e-mail…</string>
     <string name="settings_email_save_failed">Impossible de mettre à jour l’abonnement par e-mail.</string>
     <string name="settings_email_save_unconfirmed">La mise à jour de l’abonnement par e-mail n’est pas encore confirmée.</string>
     <string name="settings_models">Modèles</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Solde de crédits</string>
     <string name="settings_credit_scope">Crédits Okou dans «\u00A0%1$s\u00A0»</string>
-    <string name="settings_credit_update_failed">L’actualisation a échoué. Dernier solde connu affiché.</string>
     <string name="settings_credit_unavailable">Impossible d’afficher le solde pour le moment.</string>
     <string name="settings_credit_member">Forfait d’utilisation personnel</string>
     <string name="settings_credit_workspace">Solde de l’espace de travail</string>

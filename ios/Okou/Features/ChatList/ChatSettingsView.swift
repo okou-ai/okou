@@ -226,7 +226,7 @@ struct ChatSettingsView: View {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: store.webURL, graph: models.stateStore, includesRemote: false,
-      managementEnabled: { true },
+      management: ComposerConnectorStore.managementEnabled,
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       },
@@ -303,14 +303,18 @@ struct ChatSettingsView: View {
 private struct SettingsModelsSection: View {
   let models: ChatModelStore
   @ResolvedValue private var canLinkSubscriptions: Bool?
+  /// The last confirmed switches answer until the current read resolves.
+  @ResolvedValue private var snapshot: ChatModelStore.Snapshot?
 
   init(models: ChatModelStore) {
     self.models = models
     _canLinkSubscriptions = ResolvedValue(task: models.subscriptionLinkingEnabled, keepLast: true)
+    _snapshot = ResolvedValue(models.snapshotValue)
   }
 
   var body: some View {
-    if (canLinkSubscriptions ?? models.lastKnownFeatureSwitches?.canLinkSubscriptions) == true {
+    let lastKnown = (snapshot ?? models.snapshot).switches?.canLinkSubscriptions
+    if (canLinkSubscriptions ?? lastKnown) == true {
       Section {
         NavigationLink {
           PersonalSubscriptionsView(store: models.subscriptions)

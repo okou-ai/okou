@@ -80,7 +80,7 @@ private final class ProviderAuthorizationFixture: Sendable {
 
 @MainActor
 final class ConnectorProviderAuthorizationTests: XCTestCase {
-  func testGoogleSystemBrowserAuthorizationConfirmsTheExactBackendAccount() async throws {
+  func testGoogleExternalBrowserAuthorizationConfirmsTheExactBackendAccount() async throws {
     let scheduled = expectation(description: "Google browser authorization polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let provider = ProviderApplication(opens: true)
@@ -96,18 +96,16 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
     let browser = try XCTUnwrap(flow.browserURL)
-    XCTAssertTrue(flow.usesSystemAuthenticationSession)
     XCTAssertEqual(browser.absoluteString, responses.authorizationURL)
     responses.completed.withLock { $0 = true }
-    store.authenticationFinished(
-      flow: flow, url: browser, callbackURL: flow.session?.nativeCallbackUrl, error: nil)
+    store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
 
-  func testGoogleBrowserCancellationChecksThePendingAttemptBeforeRetry() async throws {
+  func testGoogleBrowserReturnWithoutCallbackChecksThePendingAttemptBeforeRetry() async throws {
     let scheduled = expectation(description: "Google browser authorization polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let responses = ProviderAuthorizationFixture(slug: "gmail")
@@ -121,10 +119,10 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     store.activate(action)
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
-    store.authenticationFinished(
-      flow: flow, url: try XCTUnwrap(flow.browserURL), error: CancellationError())
+    store.authorizationSceneChanged(isActive: false, isBackground: true)
+    store.authorizationSceneChanged(isActive: true, isBackground: false)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertNil(flow.browserURL)
     XCTAssertNotNil(store.notices[action.id])
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
@@ -151,7 +149,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     XCTAssertNil(store.active?.browserURL)
@@ -164,18 +162,18 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
         $0.name == "state"
       }?.value, "server-state")
     XCTAssertFalse(continued.withLock { $0 })
-    store.providerSceneActive(false)
+    store.authorizationSceneChanged(isActive: false, isBackground: true)
     responses.completed.withLock { $0 = true }
     store.receiveProviderReturn(
       URL(string: "ai.okou.ios://connector-authorization/\(FixtureData.attemptID)")!)
     await fulfillment(of: [returned], timeout: 3)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
 
-  func testDefinitiveLaunchFailureUsesSameAttemptInSystemBrowser() async throws {
+  func testDefinitiveLaunchFailureUsesSameAttemptInExternalBrowser() async throws {
     let scheduled = expectation(description: "Web fallback polling")
     let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
     let provider = ProviderApplication(opens: false)
@@ -186,11 +184,10 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       didContinue: {}, didFail: { _ in }, providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
-    XCTAssertTrue(flow.usesSystemAuthenticationSession)
     XCTAssertFalse(flow.usesProviderApplication)
     let webURL = try XCTUnwrap(flow.browserURL)
     XCTAssertEqual(webURL.scheme, "https")
@@ -215,7 +212,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     let flow = try XCTUnwrap(store.active)

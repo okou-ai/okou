@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">Pengaturan email untuk sementara tidak tersedia.</string>
     <string name="settings_email_refresh_failed">Tidak dapat menyinkronkan. Menampilkan langganan terakhir yang disimpan.</string>
     <string name="settings_email_refreshing">Menyinkronkan langganan email</string>
+    <string name="settings_email_saving">Memperbarui langganan email…</string>
     <string name="settings_email_save_failed">Tidak dapat memperbarui langganan email.</string>
     <string name="settings_email_save_unconfirmed">Pembaruan langganan email belum dikonfirmasi.</string>
     <string name="settings_models">Model</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Saldo kredit</string>
     <string name="settings_credit_scope">Kredit Okou di “%1$s”</string>
-    <string name="settings_credit_update_failed">Gagal memperbarui. Saldo terakhir ditampilkan.</string>
     <string name="settings_credit_unavailable">Saldo tidak dapat dilihat saat ini.</string>
     <string name="settings_credit_member">Paket penggunaan pribadi</string>
     <string name="settings_credit_workspace">Saldo ruang kerja</string>

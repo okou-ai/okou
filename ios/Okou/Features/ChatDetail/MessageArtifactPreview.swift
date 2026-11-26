@@ -119,7 +119,10 @@ private struct ArtifactPreviewContent: View {
         }
         .accessibilityLabel("Copy content")
       }
-      if let file = (download.data ?? nil) ?? value.data?.file {
+      if let url = preview.artifact.source.websiteShareURL {
+        ShareLink(item: url) { OkouToolbarIcon("share") }
+          .accessibilityLabel("Share website link")
+      } else if let file = (download.data ?? nil) ?? value.data?.file {
         Button {
           viewer.share(file, previewID: preview.id)
         } label: {

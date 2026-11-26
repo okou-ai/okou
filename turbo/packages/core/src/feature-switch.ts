@@ -93,10 +93,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, independent of workspace
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
+    enabled: true,
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
@@ -169,6 +166,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
+  },
+  [FeatureSwitchKey.HideEmptyForYou]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Hide empty For you",
+    description: "Show For you in the chat list only when the feed has cards.",
+    enabled: false,
   },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",

@@ -41,10 +41,13 @@ struct ChatComposerView: View {
 private struct ChatComposerContent: View {
   let configuration: ChatComposerView
   @ResolvedValue private var draftPresentation: ComposerDraftPresentation?
+  @ResolvedValue private var resolvedModels: ChatModelSelectionStore.Presentation??
 
   init(configuration: ChatComposerView) {
     self.configuration = configuration
     _draftPresentation = ResolvedValue(configuration.draftState.presentation)
+    _resolvedModels = ResolvedValue(
+      ChatModelSelectionStore.presentation(of: configuration.modelSelection))
   }
 
   private var isBusy: Bool { configuration.isBusy }
@@ -69,6 +72,15 @@ private struct ChatComposerContent: View {
   /// This render's graph value. The synchronous read only covers a missing first resolution.
   private var current: ComposerDraftPresentation {
     draftPresentation ?? draftState.currentPresentation
+  }
+  /// The model selection's graph value for this render, with the same fallback.
+  private var models: ChatModelSelectionStore.Presentation? {
+    resolvedModels ?? modelSelection?.presentation
+  }
+  /// The model selection's part of send admission; a composer without one is not gated.
+  private var modelsAllowSending: Bool {
+    guard let modelSelection, let models else { return true }
+    return models.canSend && modelSelection.connectors.canSend
   }
 
   @State private var isFocused = false
@@ -106,7 +118,7 @@ private struct ChatComposerContent: View {
   private var canPerformPrimaryAction: Bool {
     (hasContent || showsStop) && current.attachments.isReady && !isBusy && !needsUpgrade
       && !voiceActive && current.canSend
-      && (showsStop || modelSelection?.canSend != false)
+      && (showsStop || modelsAllowSending)
   }
   private var showsEditingLayout: Bool {
     isFocused || current.draft.focusRequest != nil
@@ -137,7 +149,7 @@ private struct ChatComposerContent: View {
   }
   private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
   private var usesFollowupPlaceholder: Bool {
-    modelSelection?.models.usesFollowupPlaceholder == true
+    models?.snapshot.usesFollowupPlaceholder == true
   }
   private var visibleFollowup: String? {
     guard usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,

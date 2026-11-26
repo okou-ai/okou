@@ -11,6 +11,8 @@ struct ConversationRowProjection {
   let window: ConversationPresentation.Window
   /// Whether a send is in flight, from the delivery state ChatDetailView resolves.
   let isSending: Bool
+  /// The model selection's graph value for this render, which ChatDetailView also resolves.
+  let models: ChatModelSelectionStore.Presentation?
   private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
@@ -30,6 +32,7 @@ struct ConversationRowProjection {
     if window.hasEarlierMessages {
       result.append(.earlier)
     }
+    var answerForUsage: ChatMessage?
     for (index, item) in items.enumerated() {
       let continuesGroup =
         index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
@@ -58,21 +61,27 @@ struct ConversationRowProjection {
           }
           result.append(
             .failure(
-              message, conversation.failureState(failure), topSpacing: topSpacing,
-              providerMessage: providerMessage))
+              message, conversation.failureState(failure, models: models),
+              topSpacing: topSpacing, providerMessage: providerMessage))
           continue
         }
         let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
+        let showsActions = !isWorkHistory && pendingRetry == nil && endsTurn(at: index, in: items)
+        if showsActions, let runID = message.runID,
+          items.dropFirst(index + 1).first == .usage(runID: runID)
+        {
+          answerForUsage = message
+        }
         result.append(
           .message(
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && isSending, isWorkHistory: isWorkHistory,
-            showsActions: !conversation.sharing.isSelecting && !isWorkHistory
-              && pendingRetry == nil && endsTurn(at: index, in: items))
+            showsActions: showsActions && answerForUsage == nil)
         )
       case .usage(let runID):
-        result.append(.usage(runID: runID))
+        result.append(.usage(runID: runID, actionsFor: answerForUsage))
+        answerForUsage = nil
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
@@ -91,7 +100,7 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    if conversation.modelSelection?.models.usesFollowupPlaceholder != true,
+    if models?.snapshot.usesFollowupPlaceholder != true,
       let source = transcript.recommendedFollowups
     {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))

@@ -6,11 +6,18 @@ import SwiftUI
 /// the design system's `ChatFeedbackSurface`.
 struct ChatFeedbackBanner: View {
   let store: WorkspaceStore
+  /// The selected chat's owner, kept in the workspace session's Store.
+  @ResolvedValue private var selected: ConversationStore??
+
+  init(store: WorkspaceStore) {
+    self.store = store
+    _selected = ResolvedValue(store.selectedConversationValue, equals: { $0 === $1 })
+  }
 
   var body: some View {
     StoreProvider(store.list.stateStore) {
       // Passing the selected chat re-binds its sync status when the selection changes.
-      ChatFeedbackBannerContent(store: store, selected: store.selectedConversation)
+      ChatFeedbackBannerContent(store: store, selected: selected ?? store.selectedConversation)
         .id(ObjectIdentifier(store))
     }
   }

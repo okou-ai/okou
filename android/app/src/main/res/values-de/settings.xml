@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">E-Mail-Einstellungen sind vorübergehend nicht verfügbar.</string>
     <string name="settings_email_refresh_failed">Synchronisierung fehlgeschlagen. Das zuletzt gespeicherte Abonnement wird angezeigt.</string>
     <string name="settings_email_refreshing">E-Mail-Abonnement wird synchronisiert</string>
+    <string name="settings_email_saving">E-Mail-Abonnement wird aktualisiert…</string>
     <string name="settings_email_save_failed">Das E-Mail-Abonnement konnte nicht aktualisiert werden.</string>
     <string name="settings_email_save_unconfirmed">Die Änderung des E-Mail-Abonnements ist noch nicht bestätigt.</string>
     <string name="settings_models">Modelle</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Guthaben</string>
     <string name="settings_credit_scope">Okou-Guthaben in „%1$s“</string>
-    <string name="settings_credit_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekanntes Guthaben wird angezeigt.</string>
     <string name="settings_credit_unavailable">Guthaben momentan nicht verfügbar.</string>
     <string name="settings_credit_member">Persönliches Nutzungspaket</string>
     <string name="settings_credit_workspace">Arbeitsbereichsguthaben</string>
