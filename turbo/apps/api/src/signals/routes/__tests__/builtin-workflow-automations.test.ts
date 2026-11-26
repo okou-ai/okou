@@ -188,7 +188,11 @@ async function saveFeedback(
   agentToken: string,
   title: string,
   reason: string,
-  kind: "less_like_this" | "option_selected" | "dismissed" = "less_like_this",
+  kind:
+    | "less_like_this"
+    | "option_selected"
+    | "dismissed"
+    | "later" = "less_like_this",
   completedActionTitles: readonly string[] = [],
 ) {
   const api = setupApp({ context, routes: feedRoutes })(feedContract);
@@ -253,7 +257,7 @@ async function saveFeedback(
           id: feedbackId,
           kind,
           targetId: null,
-          note: "Initial preference",
+          note: kind === "less_like_this" ? "Initial preference" : "",
         },
       }),
       [200],
@@ -281,11 +285,14 @@ async function saveFeedback(
   );
   return {
     expected: {
-      kind,
       title,
       rationale,
-      ...(kind === "less_like_this" ? { reason } : {}),
-      ...(kind === "option_selected" ? { choice: "Review" } : {}),
+      message: {
+        less_like_this: `Show me fewer suggestions like this. My reason: ${reason}`,
+        option_selected: "I chose this direction: Review",
+        later: "I want to look at this later. Remind me after a while.",
+        dismissed: "",
+      }[kind],
     },
     undo: async () => {
       await accept(
@@ -369,7 +376,8 @@ async function prepareWorkflowFeedback(
       const undone = await saveFeedback(
         token,
         "Undo this preference",
-        "Temporary preference",
+        "",
+        "later",
       );
       const selected = await saveFeedback(
         token,
@@ -395,11 +403,9 @@ const feedbackSchema = object({
   complete: boolean(),
   feedback: array(
     object({
-      kind: string(),
+      message: string(),
       title: string(),
       rationale: string(),
-      reason: string().optional(),
-      choice: string().optional(),
     }),
   ),
 });
@@ -556,7 +562,7 @@ async function expectSuggestionFeedbackLifecycle(
       // instructions skip maintenance instead of repeating completed work.
       const bounded = await readFeedback(now(), false);
       const completed = bounded.filter((feedback) => {
-        return feedback.kind === "already_done";
+        return completedTitles.includes(feedback.title);
       });
       expect(completed.length).toBeGreaterThan(0);
       expect(completed.length).toBeLessThan(completedTitles.length);
@@ -564,7 +570,8 @@ async function expectSuggestionFeedbackLifecycle(
         expect(completedTitles).toContain(feedback.title);
         expect(feedback).toMatchObject({
           rationale: "Review the owner's pending decision",
-          reason: "Completed through another channel",
+          message:
+            "I have already done this. My reason: Completed through another channel",
         });
       }
     });

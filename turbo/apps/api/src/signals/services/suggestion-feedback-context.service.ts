@@ -19,14 +19,9 @@ const MAX_CONTEXT_BYTES = 65_536;
 const DAY = 86_400_000;
 
 type FeedbackRecord = {
-  readonly kind: Exclude<
-    SuggestionFeedback["kind"],
-    "undo" | "reason" | "dismissed"
-  >;
   readonly title: string;
   readonly rationale: string;
-  readonly reason?: string;
-  readonly choice?: string;
+  readonly message: string;
   readonly at: string;
   readonly until: string;
 };
@@ -70,15 +65,26 @@ function feedbackRecord(
   if (until <= at) {
     return [];
   }
-  const choice =
-    kind === "custom_sent" ? feedback.choice : feedback.context.optionLabel;
+  const messages = {
+    already_done: "I have already done this.",
+    not_planned: "I won't do this.",
+    later: "I want to look at this later. Remind me after a while.",
+    less_like_this: "Show me fewer suggestions like this.",
+    option_selected: feedback.context.optionLabel
+      ? `I chose this direction: ${feedback.context.optionLabel}`
+      : "I chose a suggested direction.",
+    custom_sent: feedback.choice
+      ? `I sent this direction: ${feedback.choice}`
+      : "I sent my own direction.",
+  };
+  const message = messages[kind];
   return [
     {
-      kind,
       title: feedback.context.title,
       rationale: feedback.context.rationale,
-      ...(feedback.note ? { reason: feedback.note } : {}),
-      ...(choice ? { choice } : {}),
+      message: feedback.note
+        ? `${message} My reason: ${feedback.note}`
+        : message,
       at: feedback.createdAt,
       until: new Date(until).toISOString(),
     },
