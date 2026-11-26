@@ -48,6 +48,32 @@ import { ChatComposer } from "./composer.tsx";
 const DIRECTION_CARD =
   "relative w-full rounded-xl border border-border bg-card text-foreground transition-[border-color,background-color,transform] duration-150 hover:bg-card [&:hover]:border-control-border [&:hover]:bg-state-hover-overlay focus-visible:ring-offset-muted dark:focus-visible:ring-offset-background";
 
+// Writing a direction and folding it back move one set of rows: the offered
+// directions and the editor's caption fold by their grid rows while the entry
+// grows into the editor below them, all on one curve, so the actions keep
+// their bottom edge and the text above follows every frame. A folded row stays
+// out of sight and out of reach, and it is only clipped while it moves.
+const FOLD =
+  "grid motion-safe:transition-[grid-template-rows,visibility] duration-(--duration-for-you-fold) ease-capability";
+
+function foldRow(open: boolean) {
+  return open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]";
+}
+
+function foldClip(open: boolean) {
+  return open
+    ? "min-h-0 motion-safe:animate-for-you-fold-clip-open"
+    : "min-h-0 overflow-clip motion-safe:animate-for-you-fold-clip-shut";
+}
+
+// What leaves fades first; what returns fades in once its room has opened.
+function foldFade(open: boolean) {
+  return cn(
+    "ease-out motion-safe:transition-opacity",
+    open ? "opacity-100 delay-120 duration-240" : "opacity-0 duration-120",
+  );
+}
+
 /** The line above a direction's label says what choosing it does. */
 function SuggestionOptionAction({
   option,
@@ -252,10 +278,23 @@ export function SuggestionSaveErrors() {
   });
 }
 
+/**
+ * The entry rests where the editor opens. Once the editor exists it lies under
+ * the entry folded to the entry's own size, so the entry gives up its fill
+ * and outline to it and only its words fade, out as the editor grows and back
+ * once it has folded. The fade sits on the contents so the button keeps its
+ * own hover transitions.
+ */
 function SuggestionDirectionEntry({
   entry,
+  over,
+  busy,
+  shown,
 }: {
   readonly entry: AgentSuggestionEntry;
+  readonly over: boolean;
+  readonly busy: boolean;
+  readonly shown: boolean;
 }) {
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
@@ -263,12 +302,25 @@ function SuggestionDirectionEntry({
   const signal = useGet(pageSignal$);
   return (
     <Button
-      ref={entryRef}
+      // Attached again each time the entry returns, so Escape can hand focus
+      // back to it.
+      ref={shown && !busy ? entryRef : undefined}
       type="button"
       variant="quiet"
+      data-slot="suggestion-direction-entry"
+      inert={!shown || busy}
+      aria-hidden={!shown || undefined}
+      aria-busy={busy || undefined}
       className={cn(
         DIRECTION_CARD,
-        "h-11 justify-between gap-3 px-4 text-sm font-normal text-muted-foreground",
+        // Above the folded editor in their shared cell; see SuggestionDirection.
+        "z-20 col-start-1 row-start-1 h-11 self-start px-4 text-sm font-normal text-muted-foreground",
+        over &&
+          "border-transparent bg-transparent hover:bg-transparent [&:hover]:bg-state-hover-overlay",
+        !shown && "pointer-events-none",
+        // Without an editor beneath it, as beside a failed one, it has its own
+        // fill to put away.
+        !shown && !over && "invisible",
       )}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
@@ -277,12 +329,23 @@ function SuggestionDirectionEntry({
         detach(open(entry, signal), Reason.DomCallback);
       }}
     >
-      <span className="min-w-0 flex-1 truncate text-left">
-        {t(($) => {
-          return $.chat.agentSuggestions.customPlaceholder;
-        })}
+      <span
+        className={cn(
+          "flex min-w-0 flex-1 items-center justify-between gap-3",
+          foldFade(shown),
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate text-left">
+          {t(($) => {
+            return $.chat.agentSuggestions.customPlaceholder;
+          })}
+        </span>
+        {busy ? (
+          <Loader2 aria-hidden className="shrink-0 animate-spin" />
+        ) : (
+          <SquarePen aria-hidden className="shrink-0" />
+        )}
       </span>
-      <SquarePen aria-hidden className="shrink-0" />
     </Button>
   );
 }
@@ -308,116 +371,182 @@ function FocusReopenedDirection({
   );
 }
 
-function SuggestionDirectionComposer({
-  entry,
-  folded,
+/** The editor's caption, with the control that folds it back into the entry. */
+function SuggestionDirectionCaption({
+  writing,
 }: {
-  readonly entry: AgentSuggestionEntry;
-  readonly folded: boolean;
+  readonly writing: boolean;
 }) {
   const { t } = useTranslation();
-  const prepared = useLoadable(suggestionDirectionComposer$);
-  const open = useSet(openSuggestionDirection$);
-  const signal = useGet(pageSignal$);
   const fold = useSet(foldSuggestionDirection$);
-  const foldOnRef = useSet(foldSuggestionDirectionOnRef$);
-  const composer =
-    prepared.state === "hasData" && prepared.data ? prepared.data : null;
-  const ready = composer !== null || prepared.state === "hasError";
-  const label = t(($) => {
-    return $.chat.agentSuggestions.customPlaceholder;
-  });
-  // Folded, the editor stays mounted and hidden, so what was written stays.
   return (
-    <section
-      ref={foldOnRef}
-      aria-label={label}
-      aria-busy={!ready}
-      hidden={folded}
-      className="min-w-0"
+    <div
+      inert={!writing}
+      aria-hidden={!writing || undefined}
+      className={cn(FOLD, foldRow(writing))}
     >
-      <div className="mb-1.5 flex h-7 items-center justify-between gap-3">
-        <span
-          aria-hidden
-          className="text-xs leading-4 font-medium text-muted-foreground"
-        >
-          {label}
-        </span>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          showTooltip
-          className="-mr-1.5"
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.collapseDirection;
-          })}
-          onClick={() => {
-            fold(false);
-          }}
-        >
-          <ChevronDown />
-        </Button>
-      </div>
-      {!ready && (
-        <div className="flex min-h-14 items-center justify-center rounded-xl border border-border bg-card">
-          <Loader2
-            size={16}
-            className="animate-spin text-muted-foreground"
-            aria-hidden
-          />
-        </div>
-      )}
-      <div
-        className={cn(
-          "grid min-w-0 rounded-xl",
-          ready
-            ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
-            : "grid-rows-[0fr] overflow-clip",
-        )}
-      >
+      <div className={foldClip(writing)}>
         <div
           className={cn(
-            "min-h-0 min-w-0",
-            ready && "motion-safe:animate-suggestion-direction-content-in",
+            "flex h-8.5 items-start justify-between gap-3",
+            foldFade(writing),
           )}
         >
-          {prepared.state === "hasError" ? (
-            <div
-              role="alert"
-              className="px-3 pb-3 text-sm text-muted-foreground"
-            >
-              {prepared.error instanceof Error
-                ? prepared.error.message
-                : t(($) => {
-                    return $.global.errors.requestFailed;
-                  })}
-              <Button
-                type="button"
-                variant="quiet"
-                size="sm"
-                onClick={() => {
-                  detach(open(entry, signal), Reason.DomCallback);
-                }}
-              >
-                {t(($) => {
-                  return $.chat.errors.recovery.tryAgain;
-                })}
-              </Button>
-            </div>
-          ) : composer ? (
-            <div className="w-full min-w-0" data-chat-composer>
-              <ChatComposer
-                signals={composer}
-                showPendingItems={false}
-                layout="card"
-              />
-              <FocusReopenedDirection composer={composer} />
-            </div>
-          ) : null}
+          <span
+            aria-hidden
+            className="flex h-7 items-center text-xs leading-4 font-medium text-muted-foreground"
+          >
+            {t(($) => {
+              return $.chat.agentSuggestions.customPlaceholder;
+            })}
+          </span>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            showTooltip
+            className="-mr-1.5"
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.collapseDirection;
+            })}
+            onClick={() => {
+              fold(false);
+            }}
+          >
+            <ChevronDown />
+          </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The editor stays mounted while folded, so what was written stays; folded,
+ * it lies under the entry at the entry's size, out of reach.
+ */
+function SuggestionDirectionComposer({
+  entry,
+  writing,
+  prepared,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly writing: boolean;
+  readonly prepared: DirectionComposerState;
+}) {
+  const { t } = useTranslation();
+  const open = useSet(openSuggestionDirection$);
+  const signal = useGet(pageSignal$);
+  return (
+    <section
+      aria-label={t(($) => {
+        return $.chat.agentSuggestions.customPlaceholder;
+      })}
+      inert={!writing}
+      aria-hidden={!writing || undefined}
+      className="col-start-1 row-start-1 min-w-0"
+    >
+      {prepared.state === "hasError" ? (
+        <div
+          role="alert"
+          hidden={!writing}
+          className="rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground"
+        >
+          {prepared.error instanceof Error
+            ? prepared.error.message
+            : t(($) => {
+                return $.global.errors.requestFailed;
+              })}
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              detach(open(entry, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.chat.errors.recovery.tryAgain;
+            })}
+          </Button>
+        </div>
+      ) : prepared.composer ? (
+        <div className="w-full min-w-0" data-chat-composer>
+          <ChatComposer
+            signals={prepared.composer}
+            showPendingItems={false}
+            layout="card"
+            expanded={writing}
+          />
+          <FocusReopenedDirection composer={prepared.composer} />
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+type DirectionComposerState =
+  | { readonly state: "loading"; readonly composer: null }
+  | {
+      readonly state: "hasError";
+      readonly error: unknown;
+      readonly composer: null;
+    }
+  | { readonly state: "hasData"; readonly composer: ComposerSignals | null };
+
+/**
+ * A card's own direction, written in place. The entry grows into the editor
+ * while the offered directions fold away above it, and the editor folds back
+ * into the entry the same way.
+ */
+function SuggestionDirection({
+  entry,
+  open,
+  writing,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly open: boolean;
+  readonly writing: boolean;
+}) {
+  const loadable = useLoadable(suggestionDirectionComposer$);
+  const foldOnRef = useSet(foldSuggestionDirectionOnRef$);
+  const prepared: DirectionComposerState =
+    loadable.state === "hasData"
+      ? { state: "hasData", composer: loadable.data }
+      : loadable.state === "hasError"
+        ? { state: "hasError", error: loadable.error, composer: null }
+        : { state: "loading", composer: null };
+  const ready = prepared.composer !== null || prepared.state === "hasError";
+  // Until the editor is ready the entry stays and says it is working.
+  const expanded = writing && ready;
+  return (
+    <div
+      ref={open ? foldOnRef : undefined}
+      data-slot="suggestion-direction"
+      className="min-w-0"
+    >
+      {/* Mounted folded from the start, so the first opening folds it in
+          like every later one. */}
+      <SuggestionDirectionCaption writing={writing} />
+      {/* The entry and the editor share one cell, the entry painted over the
+          folded editor's card (which stacks at z-10). `isolate` keeps that
+          order local to the cell. */}
+      <div className="isolate grid min-w-0">
+        {open && (
+          <SuggestionDirectionComposer
+            entry={entry}
+            writing={writing}
+            prepared={prepared}
+          />
+        )}
+        <SuggestionDirectionEntry
+          entry={entry}
+          over={open && prepared.composer !== null}
+          busy={writing && !ready}
+          shown={!expanded}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -547,52 +676,64 @@ export function AgentSuggestionCard({
           </Button>
         }
         actions={
-          <div className="flex flex-col gap-2">
-            {!writing &&
-              item.content.options.map((option, index) => {
-                return (
-                  <Button
-                    key={option.id}
-                    type="button"
-                    variant="quiet"
-                    className={cn(
-                      DIRECTION_CARD,
-                      "block h-auto px-4 py-3 text-left font-normal whitespace-normal active:scale-[0.99]",
-                    )}
-                    aria-label={option.label}
-                    aria-description={[
-                      option.description,
-                      option.threadId
-                        ? t(($) => {
-                            return $.chat.agentSuggestions.editDraft;
-                          })
-                        : t(($) => {
-                            return $.chat.agentSuggestions.sendNew;
-                          }),
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() => {
-                      detach(
-                        start(entry, option, index + 1, signal),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  >
-                    <SuggestionOptionContent
-                      option={option}
-                      chat={optionChatTitle(option)}
-                    />
-                  </Button>
-                );
-              })}
-            {active && (!directionOpen || folded) && (
-              <SuggestionDirectionEntry entry={entry} />
+          <>
+            <div
+              inert={writing}
+              aria-hidden={writing || undefined}
+              className={cn(FOLD, foldRow(!writing))}
+            >
+              <div className={foldClip(!writing)}>
+                <div
+                  className={cn("flex flex-col gap-2 pb-2", foldFade(!writing))}
+                >
+                  {item.content.options.map((option, index) => {
+                    return (
+                      <Button
+                        key={option.id}
+                        type="button"
+                        variant="quiet"
+                        className={cn(
+                          DIRECTION_CARD,
+                          "block h-auto px-4 py-3 text-left font-normal whitespace-normal active:scale-[0.99]",
+                        )}
+                        aria-label={option.label}
+                        aria-description={[
+                          option.description,
+                          option.threadId
+                            ? t(($) => {
+                                return $.chat.agentSuggestions.editDraft;
+                              })
+                            : t(($) => {
+                                return $.chat.agentSuggestions.sendNew;
+                              }),
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => {
+                          detach(
+                            start(entry, option, index + 1, signal),
+                            Reason.DomCallback,
+                          );
+                        }}
+                      >
+                        <SuggestionOptionContent
+                          option={option}
+                          chat={optionChatTitle(option)}
+                        />
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            {active && (
+              <SuggestionDirection
+                entry={entry}
+                open={directionOpen}
+                writing={writing}
+              />
             )}
-            {directionOpen && (
-              <SuggestionDirectionComposer entry={entry} folded={folded} />
-            )}
-          </div>
+          </>
         }
         footer={<SuggestionFeedback entry={entry} />}
       />

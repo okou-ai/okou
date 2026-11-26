@@ -7,6 +7,7 @@ import {
   settledFeedOrder$,
   suggestionDirectionItemId$,
 } from "./agent-suggestion-session.ts";
+import { suggestionDirectionFolded$ } from "./agent-suggestions.ts";
 
 /** The URL identifies the reading position; browsing never consumes a card. */
 export const forYouDeck$ = computed((get) => {
@@ -277,6 +278,108 @@ export const swipeForYouOnRef$ = onRef<HTMLElement>(
         } else {
           springBack(start.offset);
         }
+      },
+      { signal },
+    );
+  }),
+);
+
+// Arrow keys already mean something inside these: moving the caret, choosing a
+// cover or a menu item, scrolling a list.
+const ARROW_KEY_OWNERS = [
+  "input",
+  "textarea",
+  "select",
+  '[contenteditable]:not([contenteditable="false"])',
+  '[role="radiogroup"]',
+  '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="tablist"]',
+  '[role="tab"]',
+  '[role="menu"]',
+  '[role="menubar"]',
+  '[role="menuitem"]',
+  '[role="menuitemradio"]',
+  '[role="menuitemcheckbox"]',
+  '[role="listbox"]',
+  '[role="option"]',
+  '[role="grid"]',
+  '[role="tree"]',
+  '[role="dialog"]',
+].join(",");
+
+function pagingKey(event: KeyboardEvent): PageDirection | null {
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.isComposing ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  ) {
+    return null;
+  }
+  return event.key === "ArrowLeft"
+    ? "previous"
+    : event.key === "ArrowRight"
+      ? "next"
+      : null;
+}
+
+/** Keys pressed in a field, a control that uses the arrows, or elsewhere. */
+function keyBelongsElsewhere(event: KeyboardEvent, page: HTMLElement) {
+  const target = event.target;
+  return (
+    target instanceof Element &&
+    target !== page.ownerDocument.body &&
+    (!page.contains(target) || target.closest(ARROW_KEY_OWNERS) !== null)
+  );
+}
+
+/** The card the arrows lead to, wrapping round at either end. */
+function pageTarget(deck: ForYouDeck, direction: PageDirection) {
+  const { cards, remainingIds } = deck;
+  const current = cards[0]?.entry.item.id;
+  if (!remainingIds || remainingIds.length < 2 || current === undefined) {
+    return undefined;
+  }
+  const position = remainingIds.indexOf(current);
+  if (position === -1) {
+    return undefined;
+  }
+  const step = direction === "next" ? 1 : remainingIds.length - 1;
+  return remainingIds[(position + step) % remainingIds.length];
+}
+
+/**
+ * ← and → page the deck the way its arrows do, while focus rests on the page
+ * rather than in a field or a control that uses the arrows itself. A
+ * direction being written keeps its card, since paging would discard it.
+ */
+export const pageForYouWithKeysOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, page: HTMLElement, signal: AbortSignal) => {
+    page.ownerDocument.addEventListener(
+      "keydown",
+      (event) => {
+        const direction = pagingKey(event);
+        if (
+          direction === null ||
+          keyBelongsElsewhere(event, page) ||
+          (get(suggestionDirectionItemId$) !== null &&
+            !get(suggestionDirectionFolded$))
+        ) {
+          return;
+        }
+        const id = pageTarget(get(forYouDeck$), direction);
+        if (id === undefined) {
+          return;
+        }
+        // The key pages the deck instead of also scrolling whatever has
+        // focus sideways.
+        event.preventDefault();
+        set(browseForYou$, id, direction, signal);
       },
       { signal },
     );

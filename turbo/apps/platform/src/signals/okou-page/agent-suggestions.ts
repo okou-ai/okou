@@ -141,15 +141,15 @@ export const foldSuggestionDirection$ = command(
  * The editor folds when the member leaves it: its own Escape blurs it, and a
  * press anywhere else on the For you page moves away from it. Leaving by
  * Escape hands focus back to the card's entry. Focus moving to another
- * control, a press inside the editor's own section, or the window losing
- * focus keeps it open, and the editor's popups live outside the page, so
- * choosing from them never folds it.
+ * control, a press inside the direction's own area (the editor, its caption
+ * and the entry), or the window losing focus keeps it open, and the editor's
+ * popups live outside the page, so choosing from them never folds it.
  */
 export const foldSuggestionDirectionOnRef$ = onRef<HTMLElement>(
-  command(({ get, set }, section: HTMLElement, signal: AbortSignal) => {
-    const document = section.ownerDocument;
+  command(({ get, set }, area: HTMLElement, signal: AbortSignal) => {
+    const document = area.ownerDocument;
     let pressedInside = false;
-    section.addEventListener(
+    area.addEventListener(
       "pointerdown",
       () => {
         pressedInside = true;
@@ -163,13 +163,12 @@ export const foldSuggestionDirectionOnRef$ = onRef<HTMLElement>(
       },
       { signal },
     );
-    section.addEventListener(
+    area.addEventListener(
       "focusout",
       (event) => {
         if (
           event.relatedTarget !== null ||
           pressedInside ||
-          section.hidden ||
           get(directionFoldedState$) ||
           !document.hasFocus()
         ) {
@@ -184,9 +183,9 @@ export const foldSuggestionDirectionOnRef$ = onRef<HTMLElement>(
       (event) => {
         const target = event.target;
         if (
-          section.hidden ||
+          get(directionFoldedState$) ||
           !(target instanceof Element) ||
-          section.contains(target) ||
+          area.contains(target) ||
           !target.closest('[data-slot="for-you-page"]')
         ) {
           return;
