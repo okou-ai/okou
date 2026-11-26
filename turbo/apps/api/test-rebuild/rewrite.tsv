@@ -922,15 +922,15 @@ chat	src/signals/routes/__tests__/chat-threads-pin-order.test.ts	chat-threads-pi
 chat	src/signals/routes/__tests__/chat-threads-rename.test.ts	chat-threads-rename-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads-rename.test.ts	chat-threads-rename-004	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-003	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-004	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-006	planned					d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-003	rewritten	19.4		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-004	rewritten	88.0		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-006	rewritten	49.7		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-007	planned					a-run
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-008	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-009	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-010	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-011	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-013	planned					d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-008	rewritten	59.1		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-009	rewritten	61.6		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-010	rewritten	20.8		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-011	rewritten	125.7		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-013	rewritten	61.2		src/signals/routes/__tests__/chat-threads.bdd.test.ts	B14	d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-014	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-015	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-016	planned					a-run
@@ -958,13 +958,13 @@ chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-046	
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-047	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-049	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-050	planned					a-run
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-051	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-054	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-056	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-057	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-062	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-064	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-068	planned					d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-051	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-054	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-056	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-057	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-062	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-064	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-068	planned				B14	d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-073	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-075	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-076	planned					a-run
@@ -972,10 +972,10 @@ chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-087	
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-094	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-101	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-102	planned					a-run
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-105	planned					d-other
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-107	planned					d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-105	planned				B14	d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-107	planned				B14	d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-110	planned					a-run
-chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-111	planned					d-other
+chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-111	planned				B14	d-other
 chat	src/signals/routes/__tests__/chat-threads.bdd.test.ts	chat-threads.bdd-112	planned					a-run
 account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-001	rewritten	41.7		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04	
 account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-002	rewritten	128.5		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04	
@@ -1558,19 +1558,19 @@ account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switch
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-013	rewritten	16.7	asserts current behaviour after #51200 (9b08a6ab): the bundled agentSuggestion default is no longer injected into the effective switches; extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-015	rewritten	22.9	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-016	rewritten	13.0	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-001	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-002	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-003	planned				pilot	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-001	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-002	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-003	planned				B14	b-install
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-004	planned				pilot	a-run
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-005	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-007	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-010	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-011	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-013	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-016	planned				pilot	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-007	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-010	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-011	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-013	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-016	planned				B14	b-install
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-017	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				pilot	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				pilot	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				B14	b-install
 messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06	
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot	a-run
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot	a-run
@@ -1776,33 +1776,33 @@ messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integr
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-029	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-030	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has an executing chat Run, and the Run's Okou token is used"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-031	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-001	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-002	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-003	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-004	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-005	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-006	planned					b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-001	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-002	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-003	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-004	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-005	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-006	planned				B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-012	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-013	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-014	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-015	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-019	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-020	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-021	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-022	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-023	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-024	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-025	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-029	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-030	planned					b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-013	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-014	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-015	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-019	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-020	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-021	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-022	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-023	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-024	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-025	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-029	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-030	planned				B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-031	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-032	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-035	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-036	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-038	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-042	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	planned					b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-032	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-035	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-036	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-038	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-042	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	planned				B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-001	rewritten	7.1	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-002	rewritten	7.3	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-003	rewritten	8.4	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
@@ -2026,14 +2026,14 @@ messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	i
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-001	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 493.8 ms and 475.4 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (366.7 ms and 355.2 ms); onboarding 77.2/75.5 ms, Telegram link 39.3/33.3 ms, upload init 10.6/11.4 ms		B06	
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-004	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 494.0 ms and 486.3 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (368.8 ms and 359.7 ms); onboarding 78.1/81.1 ms, Telegram link 36.4/35.5 ms, upload init 10.7/10.0 ms		B06	
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-001	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-008	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-009	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-010	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-008	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-009	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-010	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	planned				B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-017	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-019	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-021	planned					a-run
@@ -2745,22 +2745,22 @@ workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	revisit		revisit: an expired import token was produced by re-implementing the production token signer in the test, which counts as a self-signed credential; evidence: the draft signed HS256 with the HKDF of SECRETS_ENCRYPTION_KEY; resume: issue the token through the real session route under mockNow two hours earlier, then read it back after moving the clock		B01	
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	rewritten	6.0	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot	
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	skipped		slow-setup: needs 52 real uploads through the session cap; measured 2554 ms per test		pilot	
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-001	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			b-install
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-002	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			b-install
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-003	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-004	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-006	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-008	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-010	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-016	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-017	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-019	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-020	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-022	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-024	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-027	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-031	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour			d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-001	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	b-install
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-002	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	b-install
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-003	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-004	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-006	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-008	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-010	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-016	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-017	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-019	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-020	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-022	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-024	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-027	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-031	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		B14	d-other
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-001	skipped		slow-setup: two production Slack OAuth installs plus a member connect flow before six channel reads; measured 224-226 ms with the light case running first		B01	
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-003	rewritten	81.6	revisit: draft passes but not accepted: another case in the file is over 200 ms (slack-channels-004:203ms); evidence: idle 3-run median 102.0 ms (runs [102, 106, 91]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01	
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-004	rewritten	172.2	revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 203.1 ms (runs [202, 205, 203]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01	
@@ -2924,24 +2924,24 @@ remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-034	rewri
 messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-001	skipped		slow-setup: Given+first When/Then (onboarded member with Teams installed and personal identity connected, signed personal message dispatching the Run, run-log read showing one running teams Run) measured 378.8 ms and 394.2 ms in two runs (file already warm); dominant step is the first When itself, the signed personal message that dispatches the Run (226.8 ms and 251.8 ms), Given via helpers/public-teams-dispatch-fixture create({ onboarded: true }) 146.1 ms and 135.7 ms; with fixture teardown the whole row took 547-603 ms		B06	
 messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	rewritten	170.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	B06	
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-001	planned					a-run
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	planned					b-install
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-011	planned					b-install
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-012	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-013	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-015	planned					b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-011	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-012	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-013	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-015	planned				B14	b-install
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-019	planned					a-run
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-020	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-026	planned					d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-020	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-026	planned				B14	d-other
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-027	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-028	planned					a-run
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-029	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-030	planned					d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-029	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-030	planned				B14	d-other
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-031	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-032	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-033	planned					a-run
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned					d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned					d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned				B14	d-other
 messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	15.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B06	
 messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-001	rewritten	6.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B07	
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	rewritten	174.3	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	B01	
@@ -2962,14 +2962,14 @@ messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-013	rewri
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-017	rewritten	39.9	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot	
 messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-001	skipped		slow-setup: Given+first When/Then 461 ms and 439 ms (also 437, 420 ms in-test; Vitest row 598-628 ms with fixture teardown; funded Teams member via the public Teams dispatch fixture (limited-free onboarding + runner group + bot install activity + Microsoft OAuth connect) 201-214 ms, the first signed channel mention through admission and dispatch (waitUntil flushed) 211-238 ms, lifecycle read 8-15 ms; without credits the mention only replies 'Insufficient credits' and creates no thread)		B02	
 messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-002	skipped		slow-setup: Given+first When/Then 454 ms and 344 ms (Vitest row 606 ms and 475 ms with fixture teardown; first funded Teams member via the public Teams dispatch fixture 125-162 ms, second identity limited-free onboarding 36-37 ms + Microsoft OAuth connect 67-92 ms, first identity's signed channel mention through admission and dispatch 111-155 ms, lifecycle read 4-8 ms)		B02	
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-001	planned					d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-002	planned					d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-005	planned					b-install
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-006	planned					b-install
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-008	planned					d-other
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-009	planned					b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-001	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-002	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-005	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-006	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-008	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-009	planned				B14	b-install
 messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-010	planned					a-run
-messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-014	planned					d-other
+messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-014	planned				B14	d-other
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-001	planned					a-run
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-002	planned					a-run
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-011	planned					a-run
@@ -3348,15 +3348,15 @@ webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-
 webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-010	rewritten	24.5		src/signals/routes/__tests__/webhooks-github-workflow.test.ts	pilot	
 webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-013	revisit		revisit: Given+first When/Then is borderline and was measured only while other writers loaded the 2-CPU machine; evidence: Given+first When/Then 300 ms and 238 ms (also 220, 211 ms; Pro entitlement via Stripe invoice webhook + personal Claude model (setupWorkflowOrg) 83-172 ms, public GitHub App install flow (shared installGithubApp, incl. a fresh RSA-2048 app key per call ~20-30 ms) 60-122 ms, workflow creation 10-15 ms, automation creation 12-25 ms, signed delivery ~7 ms, two automation creations); resume: re-measure row (1/n) on an idle machine and split if it is at most 200 ms		B01	
 webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-014	revisit		revisit: Given+first When/Then is borderline and was measured only while other writers loaded the 2-CPU machine; evidence: Given+first When/Then 279 ms and 222 ms (also 197, 200 ms; Pro entitlement via Stripe invoice webhook + personal Claude model (setupWorkflowOrg) 83-172 ms, public GitHub App install flow (shared installGithubApp, incl. a fresh RSA-2048 app key per call ~20-30 ms) 60-122 ms, workflow creation 10-15 ms, automation creation 12-25 ms, signed delivery ~7 ms, owner model claude-fable-5-1); resume: re-measure row (1/n) on an idle machine and split if it is at most 200 ms		B01	
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-006	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-007	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-009	planned					d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-006	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-007	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-009	planned				B14	d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-014	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-015	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-016	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-017	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-018	planned					d-other
-webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-019	planned					d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-015	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-016	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-017	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-018	planned				B14	d-other
+webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-019	planned				B14	d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-021	planned					a-run
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-022	planned					a-run
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-005	rewritten	168.8	split n=2: 1/2=157.0; 2/2=168.8; accepted by the non-first median rule (median over shuffled runs where the row was not first in its file: (1/2) 196.8/154.6/157.0 ms, (2/2) 262.4/209.9/160.1/168.8/148.5 ms)	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
