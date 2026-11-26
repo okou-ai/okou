@@ -3407,15 +3407,15 @@ chat	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome
 chat	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-004	rewritten	100.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	B07	d-other
 chat	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-006	rewritten	95.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	B07	d-other
 chat	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	welcome-chat-threads-automatic-007	rewritten	70.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	B07	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-003	planned				B09	a-run
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-004	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-005	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-006	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-007	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-008	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-015	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-016	planned				B09	d-other
-chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-018	planned				B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-003	skipped		slow-setup: Given+first When/Then 506 ms and 467 ms (a Pro-funded member Run from createRunExecutionCredentials plus removeMember dominate; the single welcome request and the admin event read take a few ms)		B09	a-run
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-004	revisit		revisit: over 200 ms by shuffled 3-run median (welcome-chat-threads-004 (1/4) 124.7 ms (112/125/125); welcome-chat-threads-004 (2/4) 130.3 ms (129/148/130); welcome-chat-threads-004 (3/4) 147.4 ms (133/147/153); welcome-chat-threads-004 (4/4) 296.1 ms (300/296/196)); draft /home/user/pilot-env/wip/r15/welcome-chat-threads.test.ts; resume: split further or record slow-setup with Given+first When/Then		B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-005	rewritten	142.2		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-006	rewritten	49.5		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-007	rewritten	36.0		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-008	rewritten	41.9		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-015	rewritten	117.2		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-016	rewritten	39.8		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/welcome-chat-threads.test.ts	welcome-chat-threads-018	rewritten	46.4		src/signals/routes/__tests__/welcome-chat-threads.test.ts	B09	d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-001	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-004	planned					d-other
 messaging	src/signals/routes/__tests__/whatsapp.test.ts	whatsapp-005	planned					d-other
