@@ -22,6 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
@@ -96,7 +97,7 @@ class ChatComposerApiTest {
             assertEquals(listOf(3L, chunk, 3L), transfers.map { it.bodySize })
             assertEquals(
                 listOf(42, 0, 42),
-                transfers.map { it.body.getByte(it.bodySize - 1).toInt() },
+                transfers.map { it.body[it.bodySize - 1].toInt() },
             )
             assertEquals("android", transfers.first().getHeader("x-amz-meta-chat"))
             assertTrue(transfers.all { it.getHeader("Authorization") == null })
