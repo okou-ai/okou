@@ -60,6 +60,7 @@ final class NewChatSubmission {
 
 struct NewChatSubmissionView: View {
   let submission: NewChatSubmission
+  let conversation: ConversationStore?
   let webURL: URL
 
   var body: some View {
@@ -67,7 +68,13 @@ struct NewChatSubmissionView: View {
       UserMessageView(
         message: submission.message.message, webURL: webURL, viewer: submission.viewer,
         loadsAttachments: true, sendTransition: submission.transition
-      )
+      ) {
+        if submission.isReadyForConversation, let conversation {
+          ConversationSendingIndicator(messageID: submission.message.id, conversation: conversation)
+        } else {
+          UserMessageSendingIndicator(sentAt: submission.message.createdAt)
+        }
+      }
       .padding(.horizontal, OkouSpace.xl)
       .padding(.top, OkouSpace.xl)
     }
@@ -84,13 +91,6 @@ struct NewChatSubmissionView: View {
       )
       .disabled(true)
     }
-    .sheet(
-      isPresented: Binding(
-        get: { submission.viewer.preview != nil },
-        set: { if !$0 { submission.viewer.dismiss() } }
-      )
-    ) {
-      MessageAttachmentPreview(viewer: submission.viewer)
-    }
+    .messageAttachmentPreview(viewer: submission.viewer)
   }
 }

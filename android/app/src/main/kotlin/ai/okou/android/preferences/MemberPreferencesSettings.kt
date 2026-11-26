@@ -1,14 +1,14 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.R
+import ai.okou.android.SettingsChoicePanel
 import ai.okou.android.SettingsChoiceRow
+import ai.okou.android.SettingsChoiceSheet
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsPickerRow
-import ai.okou.android.SettingsRadioOptions
+import ai.okou.android.SettingsRadioSheet
 import ai.okou.android.SettingsSection
-import ai.okou.android.SettingsSheet
-import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
@@ -20,12 +20,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
@@ -39,19 +39,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -93,17 +87,14 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(appearanceTitle, dismiss) {
-                    SettingsRadioOptions(
-                        options = UserPreferencesTheme.entries,
-                        selected = state.theme,
-                        label = ::appearanceLabel,
-                        enabled = true,
-                    ) { mode ->
-                        dismiss()
-                        model.selectTheme(mode)
-                    }
-                }
+                SettingsRadioSheet(
+                    appearanceTitle,
+                    dismiss,
+                    options = UserPreferencesTheme.entries,
+                    selected = state.theme,
+                    label = ::appearanceLabel,
+                    onSelect = model::selectTheme,
+                )
             }
             HorizontalDivider()
             SettingsPickerRow(
@@ -113,12 +104,13 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(colorTitle, dismiss) {
-                    PaletteOptions(state.colorTheme, dark) { palette ->
-                        dismiss()
-                        model.selectColorTheme(palette)
-                    }
-                }
+                PaletteSelectionSheet(
+                    colorTitle,
+                    dismiss,
+                    state.colorTheme,
+                    dark,
+                    model::selectColorTheme,
+                )
             }
         }
     }
@@ -132,17 +124,14 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null && state.supportedLocales.size > 1,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(languageTitle, dismiss) {
-                    SettingsRadioOptions(
-                        options = state.supportedLocales,
-                        selected = state.locale,
-                        label = ::languageLabel,
-                        enabled = true,
-                    ) { locale ->
-                        dismiss()
-                        model.selectLocale(locale)
-                    }
-                }
+                SettingsRadioSheet(
+                    languageTitle,
+                    dismiss,
+                    options = state.supportedLocales,
+                    selected = state.locale,
+                    label = ::languageLabel,
+                    onSelect = model::selectLocale,
+                )
             }
             HorizontalDivider()
             TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
@@ -181,41 +170,30 @@ internal fun TimezoneSelectionSheet(
     dismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-        val locale = LocalConfiguration.current.locales[0]
-        val utcName = stringResource(R.string.settings_timezone_utc)
-        val options =
-            remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
-        val initialZone = remember { current }
-        val list =
-            rememberLazyListState(
-                initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
-            )
-        val focus = remember { FocusRequester() }
-        val input = LocalInputModeManager.current
-        var positioned by remember { mutableStateOf(false) }
-        LaunchedEffect(positioned) {
-            if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
+    val locale = LocalConfiguration.current.locales[0]
+    val utcName = stringResource(R.string.settings_timezone_utc)
+    val openingTime = remember { System.currentTimeMillis() }
+    val options =
+        remember(current, locale, utcName) {
+            timezoneOptions(current, locale, utcName, atMillis = openingTime)
         }
-        LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
-            items(options, key = { it.id }) { zone ->
-                SettingsChoiceRow(
-                    timezoneLabel(zone),
-                    selected = zone.id == current,
-                    enabled = true,
-                    onClick = {
-                        dismiss()
-                        onSelect(zone.id)
-                    },
-                    modifier =
-                        if (zone.id == initialZone)
-                            Modifier.focusRequester(focus).onGloballyPositioned {
-                                positioned = true
-                            }
-                        else Modifier,
-                )
-            }
-        }
+    SettingsChoiceSheet(
+        title,
+        dismiss,
+        options,
+        options.indexOfFirst { it.id == current },
+        { it.id },
+    ) { zone, position ->
+        SettingsChoiceRow(
+            timezoneLabel(zone),
+            selected = zone.id == current,
+            enabled = true,
+            onClick = {
+                dismiss()
+                onSelect(zone.id)
+            },
+            modifier = position,
+        )
     }
 }
 
@@ -282,26 +260,42 @@ internal fun TimezoneScheduleFeedback(
 }
 
 @Composable
-private fun PaletteOptions(
+private fun PaletteSelectionSheet(
+    title: String,
+    dismiss: () -> Unit,
     selected: UserPreferencesColorTheme,
     dark: Boolean,
     onSelect: (UserPreferencesColorTheme) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().selectableGroup()) {
-        val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            UserPreferencesColorTheme.entries.chunked(columns).forEach { choices ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    choices.forEach { palette ->
-                        SettingsChoiceRow(
-                            stringResource(paletteLabel(palette)),
-                            selected = palette == selected,
-                            enabled = true,
-                            onClick = { onSelect(palette) },
-                            modifier = Modifier.weight(1f),
-                            leading = { PaletteSwatch(palette, dark) },
-                        )
-                    }
+    val palettes = UserPreferencesColorTheme.entries
+    val scroll = rememberLazyGridState(initialFirstVisibleItemIndex = selected.ordinal)
+    SettingsChoicePanel(
+        title,
+        dismiss,
+        initialKey = selected.name,
+        isAvailable = { name -> palettes.any { it.name == name } },
+    ) { position ->
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                state = scroll,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(palettes, key = { it.name }) { palette ->
+                    SettingsChoiceRow(
+                        stringResource(paletteLabel(palette)),
+                        selected = palette == selected,
+                        enabled = true,
+                        onClick = {
+                            dismiss()
+                            onSelect(palette)
+                        },
+                        modifier = position(palette.name),
+                        leading = { PaletteSwatch(palette, dark) },
+                    )
                 }
             }
         }

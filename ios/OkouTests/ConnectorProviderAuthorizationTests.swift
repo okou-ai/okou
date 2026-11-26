@@ -182,7 +182,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       store.close()
     }
     store.activate(.configuration(target: .builtin("tiktok"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [launched], timeout: 3)
     store.receiveProviderReturn(
@@ -193,7 +193,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     provider.finishLaunch()
     await fulfillment(of: [finished], timeout: 3)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
     XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
@@ -222,7 +222,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
         providerApplication: provider, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(.configuration(target: .builtin(slug), threadID: nil))
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       store.submit()
       await fulfillment(of: [initial], timeout: 3)
       XCTAssertEqual(provider.request?.provider, slug)
@@ -247,7 +247,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
         await fulfillment(of: [try XCTUnwrap(callback)], timeout: 3)
       }
       clock.advance(.seconds(2))
-      try await waitForBusinessResult { store.active == nil }
+      try await waitForBusinessResult(watching: store) { store.active == nil }
       XCTAssertTrue(continued.withLock { $0 })
       XCTAssertEqual(responses.starts.withLock { $0 }, 1)
       XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
@@ -266,7 +266,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
         providerApplication: ProviderApplication(opens: false), pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(.configuration(target: .builtin(slug), threadID: nil))
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       store.submit()
       await fulfillment(of: [scheduled], timeout: 3)
       XCTAssertEqual(store.active?.browserURL?.absoluteString, responses.authorizationURL)
@@ -285,7 +285,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("tiktok"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
@@ -318,7 +318,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: ProviderApplication(opens: false), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("dropbox"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     let flow = try XCTUnwrap(store.active)
@@ -327,7 +327,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       URL(string: "db-42://2/token?state=server-state&code=provider-code")!)
     await fulfillment(of: [exchanged], timeout: 3)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
     XCTAssertEqual(responses.callbacks.withLock { $0 }, 1)
   }
@@ -351,7 +351,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("dropbox"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     let flow = try XCTUnwrap(store.active)
@@ -386,7 +386,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     responses.completed.withLock { $0 = true }
     store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
@@ -408,7 +408,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     store.authorizationSceneChanged(isActive: false, isBackground: true)
     store.authorizationSceneChanged(isActive: true, isBackground: false)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertNil(flow.browserURL)
     XCTAssertNotNil(store.notices[action.id])
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
@@ -435,7 +435,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     XCTAssertNil(store.active?.browserURL)
@@ -454,7 +454,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       URL(string: "ai.okou.ios://connector-authorization/\(FixtureData.attemptID)")!)
     await fulfillment(of: [returned], timeout: 3)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
@@ -470,7 +470,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       didContinue: {}, didFail: { _ in }, providerApplication: provider, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
     let flow = try XCTUnwrap(store.active)
@@ -498,7 +498,7 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       providerApplication: ProviderApplication(opens: true), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("strava"), threadID: nil))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [initial], timeout: 3)
     let flow = try XCTUnwrap(store.active)

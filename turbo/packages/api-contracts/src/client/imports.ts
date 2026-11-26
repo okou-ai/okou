@@ -1521,6 +1521,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "remote-devices",
+    contracts: ["remoteDevicesContract"],
+    bindings: [],
+  },
+  {
     module: "remotes",
     contracts: ["remotesContract"],
     bindings: [],

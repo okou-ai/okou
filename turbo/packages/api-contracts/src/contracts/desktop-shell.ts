@@ -1,4 +1,4 @@
-import { boolean, object, type infer as zInfer } from "zod";
+import { boolean, object, uuid, type infer as zInfer } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -14,6 +14,7 @@ export {
 } from "./desktop-shell-schemas";
 
 export const desktopShellRequestSchema = object({
+  hostId: uuid().optional(),
   kind: desktopShellKindSchema,
   ...desktopShellPayloadSchema.omit({ shellPermissionId: true }).shape,
   waitMs: desktopShellPayloadSchema.shape.waitMs.default(10_000),

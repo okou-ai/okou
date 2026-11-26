@@ -147,7 +147,7 @@ private fun SearchInputDecoration(
         if (hasText) {
             IconButton(
                 onClick = onClear,
-                modifier = Modifier.size(48.dp).onFocusChanged { clearFocused = it.isFocused },
+                modifier = Modifier.onFocusChanged { clearFocused = it.isFocused },
             ) {
                 Icon(
                     painterResource(R.drawable.ic_close),

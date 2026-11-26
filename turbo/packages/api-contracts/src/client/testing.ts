@@ -599,6 +599,8 @@ import {
 } from "./realtime";
 import { registryResourceDownloadContract as OriginalRegistryResourceDownloadContract } from "../contracts/registry-resources";
 import { registryResourceDownloadContract } from "./registry-resources";
+import { remoteDevicesContract as OriginalRemoteDevicesContract } from "../contracts/remote-devices";
+import { remoteDevicesContract } from "./remote-devices";
 import { remotesContract as OriginalRemotesContract } from "../contracts/remotes";
 import { remotesContract } from "./remotes";
 import { runConnectorAccountsContract as OriginalRunConnectorAccountsContract } from "../contracts/run-connector-accounts";
@@ -1279,6 +1281,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [platformRealtimeTokenContract, OriginalPlatformRealtimeTokenContract],
   [runnerRealtimeTokenContract, OriginalRunnerRealtimeTokenContract],
   [registryResourceDownloadContract, OriginalRegistryResourceDownloadContract],
+  [remoteDevicesContract, OriginalRemoteDevicesContract],
   [remotesContract, OriginalRemotesContract],
   [runConnectorAccountsContract, OriginalRunConnectorAccountsContract],
   [runModelsMainContract, OriginalRunModelsMainContract],

@@ -68,4 +68,6 @@
     </plurals>
     <string name="conversation_link_unavailable">Ce lien de conversation est indisponible</string>
     <string name="conversation_link_no_browser">Aucun navigateur ne peut ouvrir ce lien</string>
+    <string name="chat_model_check_required">Impossible de vérifier le modèle enregistré.</string>
+    <string name="chat_model_save_rejected">Impossible d’enregistrer le modèle de cette conversation.</string>
 </resources>

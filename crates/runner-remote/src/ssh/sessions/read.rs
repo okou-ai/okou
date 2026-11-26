@@ -8,7 +8,11 @@ use tokio::time::Instant;
 use super::{Effects, FailureReason, Manager, Response, buffer, protocol};
 
 impl Manager {
-    pub(super) async fn read(&self, params: protocol::Read) -> Result<Response, ErrorCode> {
+    pub(super) async fn read(
+        &self,
+        params: protocol::Read,
+        scope: &super::Scope,
+    ) -> Result<Response, ErrorCode> {
         if params.wait_ms > 30_000
             || !(1..=buffer::READ_BYTES).contains(&params.max_bytes)
             || !(1..=buffer::READ_CHUNKS).contains(&params.max_chunks)
@@ -21,6 +25,13 @@ impl Manager {
                 Effects::NotStarted,
             ));
         };
+        if let Err(reason) = entry
+            .access
+            .check_device_policy(&self.runtime.authority, scope)
+            .await
+        {
+            return Ok(Response::failed(reason, Effects::NotStarted));
+        }
         let deadline = Instant::now() + Duration::from_millis(params.wait_ms);
         let invalidated = entry.access.cancelled();
         let mut permit = None;

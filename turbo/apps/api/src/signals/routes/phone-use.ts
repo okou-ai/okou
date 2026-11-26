@@ -34,6 +34,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { AuthContext } from "../../types/auth";
 
 import { env } from "../../lib/env";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { providerUnavailable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { authRoute } from "../auth/auth-route";
@@ -53,9 +54,22 @@ import {
   publishPhoneUseResultChanged,
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
+import {
+  phoneOperationGenerationMatches,
+  phoneOperationRegistrationEnded,
+} from "../services/phone-use-operation-generation";
 import { notifyPhoneUseOwner$ } from "../services/phone-use-notifications.service";
+import {
+  remoteDeviceAllowed,
+  remoteDeviceMode,
+  remoteDeviceRunActive,
+} from "../services/remote-device-access";
+import {
+  phoneDeviceAvailable,
+  phoneOperationDeviceAuthority,
+} from "../services/phone-use-device-access";
 
 type OrganizationAuthContext = AuthContext & { readonly orgId: string };
 class PhoneUseError extends Error {
@@ -84,14 +98,12 @@ function operationOwner(auth: OrganizationAuthContext) {
     eq(operations.userId, auth.userId),
   );
 }
-const feature$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const context = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
+const featureContext$ = createUserFeatureSwitchContext(
+  organizationAuthContext$,
+);
+const feature$ = command(async ({ get }, signal: AbortSignal) => {
+  const context = await get(featureContext$);
+  signal.throwIfAborted();
   return isFeatureEnabled(FeatureSwitchKey.PhoneUse, context);
 });
 function guard<T>(
@@ -179,65 +191,155 @@ const host$ = command(
     return device;
   },
 );
-const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  if (
-    auth.tokenType !== "agent" ||
-    !auth.phoneUseGrantId ||
-    !auth.phoneUseDeviceId ||
-    !auth.capabilities.includes("phone-use:write")
-  ) {
-    deny(
-      "Enable your phone in this chat's Connectors menu. Start a new Run after authorization.",
+interface PhoneRunTarget {
+  readonly deviceId?: string;
+  readonly operationId?: string;
+  readonly cleanup?: boolean;
+}
+
+const readPhoneDeviceGrant$ = command(
+  async (
+    { get },
+    auth: Extract<OrganizationAuthContext, { tokenType: "agent" }>,
+    target: PhoneRunTarget,
+    signal: AbortSignal,
+  ) => {
+    const id = target.deviceId ?? auth.phoneUseDeviceId;
+    const operation = get(db$)
+      .select({ id: operations.id })
+      .from(operations)
+      .where(
+        and(
+          eq(operations.deviceId, devices.id),
+          eq(operations.orgId, auth.orgId),
+          eq(operations.userId, auth.userId),
+          eq(operations.runId, auth.runId),
+          eq(operations.deviceGeneration, devices.generation),
+          eq(operations.grantId, devices.id),
+          target.operationId
+            ? eq(operations.id, target.operationId)
+            : undefined,
+        ),
+      );
+    if (!target.operationId && !id) {
+      deny("Select the exact iOS device for this Run");
+    }
+    const [device] = await get(db$)
+      .select()
+      .from(devices)
+      .where(
+        and(
+          owned(auth),
+          remoteDeviceMode(auth),
+          remoteDeviceRunActive(auth, auth.runId),
+          !target.operationId && id ? eq(devices.id, id) : undefined,
+          target.operationId || target.cleanup ? exists(operation) : undefined,
+          target.cleanup ? undefined : remoteDeviceAllowed(devices),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return device;
+  },
+);
+const runGrant$ = command(
+  async ({ get, set }, target: PhoneRunTarget, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    if (
+      auth.tokenType !== "agent" ||
+      !auth.capabilities.includes("phone-use:write")
+    ) {
+      deny(
+        "Enable your phone in this chat's Connectors menu. Start a new Run after authorization.",
+      );
+    }
+    const features = await get(featureContext$);
+    signal.throwIfAborted();
+    if (isFeatureEnabled(FeatureSwitchKey.RemoteDevices, features)) {
+      const device = await set(readPhoneDeviceGrant$, auth, target, signal);
+      if (
+        !device ||
+        !(await verifyClerkComputerUseSession(
+          {
+            userId: auth.userId,
+            orgId: auth.orgId,
+            sessionId: device.sessionId,
+          },
+          signal,
+        ))
+      ) {
+        deny("This Run does not have current access to the iOS device");
+      }
+      // The wire grantId keeps the native session bound to the exact channel.
+      // deviceGeneration is the reconnect boundary for device-policy operations.
+      return {
+        id: device.id,
+        deviceId: device.id,
+        deviceGeneration: device.generation,
+        runId: auth.runId,
+        device,
+      };
+    }
+    if (!auth.phoneUseGrantId || !auth.phoneUseDeviceId) {
+      deny(
+        "Enable your phone in this chat's Connectors menu. Start a new Run after authorization.",
+      );
+    }
+    const [grant] = await get(db$)
+      .select({
+        id: grants.id,
+        deviceId: grants.deviceId,
+        deviceGeneration: devices.generation,
+        sessionId: devices.sessionId,
+      })
+      .from(grants)
+      .innerJoin(
+        devices,
+        and(
+          eq(devices.id, grants.deviceId),
+          eq(devices.generation, grants.deviceGeneration),
+          eq(devices.userId, grants.userId),
+          eq(devices.orgId, grants.orgId),
+        ),
+      )
+      .innerJoin(
+        agentRuns,
+        and(
+          eq(agentRuns.chatThreadId, grants.threadId),
+          eq(agentRuns.id, auth.runId),
+          eq(agentRuns.status, "running"),
+        ),
+      )
+      .where(
+        and(
+          eq(grants.id, auth.phoneUseGrantId),
+          eq(grants.deviceId, auth.phoneUseDeviceId),
+          eq(grants.orgId, auth.orgId),
+          eq(grants.userId, auth.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!grant) {
+      deny("This Run no longer has an active Phone Use grant");
+    }
+    const valid = await verifyClerkComputerUseSession(
+      { userId: auth.userId, orgId: auth.orgId, sessionId: grant.sessionId },
+      signal,
     );
-  }
-  const [grant] = await get(db$)
-    .select({
-      id: grants.id,
-      deviceId: grants.deviceId,
-      sessionId: devices.sessionId,
-    })
-    .from(grants)
-    .innerJoin(
-      devices,
-      and(
-        eq(devices.id, grants.deviceId),
-        eq(devices.generation, grants.deviceGeneration),
-        eq(devices.userId, grants.userId),
-        eq(devices.orgId, grants.orgId),
-      ),
-    )
-    .innerJoin(
-      agentRuns,
-      and(
-        eq(agentRuns.chatThreadId, grants.threadId),
-        eq(agentRuns.id, auth.runId),
-        eq(agentRuns.status, "running"),
-      ),
-    )
-    .where(
-      and(
-        eq(grants.id, auth.phoneUseGrantId),
-        eq(grants.deviceId, auth.phoneUseDeviceId),
-        eq(grants.orgId, auth.orgId),
-        eq(grants.userId, auth.userId),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!grant) {
-    deny("This Run no longer has an active Phone Use grant");
-  }
-  const valid = await verifyClerkComputerUseSession(
-    { userId: auth.userId, orgId: auth.orgId, sessionId: grant.sessionId },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!valid) {
-    deny("The owner's Phone Use session has ended");
-  }
-  return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
-});
+    signal.throwIfAborted();
+    if (!valid) {
+      deny("The owner's Phone Use session has ended");
+    }
+    return {
+      id: grant.id,
+      deviceId: grant.deviceId,
+      deviceGeneration: grant.deviceGeneration,
+      runId: auth.runId,
+      device: null,
+    };
+  },
+);
 function deviceView(value: typeof devices.$inferSelect, present = false) {
   const online =
     present && value.ready && value.lastSeenAt.getTime() > now() - 45_000;
@@ -266,10 +368,20 @@ function operationView(value: typeof operations.$inferSelect) {
   });
 }
 const list$ = command(async ({ get }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
   const rows = await get(db$)
     .select()
     .from(devices)
-    .where(owned(get(organizationAuthContext$)));
+    .where(
+      and(
+        owned(auth),
+        auth.tokenType === "agent"
+          ? sql`CASE WHEN ${remoteDeviceMode(auth)}
+        THEN ${remoteDeviceAllowed(devices)} AND ${remoteDeviceRunActive(auth, auth.runId)}
+        ELSE TRUE END`
+          : undefined,
+      ),
+    );
   signal.throwIfAborted();
   const listed = await joinAll(
     rows.map(async (device) => {
@@ -319,7 +431,6 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
         target: [devices.orgId, devices.userId, devices.installationId],
         set: {
           ...values,
-          remoteDeviceId: sql`coalesce(${devices.remoteDeviceId}, excluded.remote_device_id)`,
           generation: sql`${devices.generation}+1`,
         },
       })
@@ -347,19 +458,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(operations.deviceId, device.id),
         inArray(operations.status, ["queued", "running", "approval_required"]),
-        not(
-          exists(
-            get(db$)
-              .select({ id: grants.id })
-              .from(grants)
-              .where(
-                and(
-                  eq(grants.id, operations.grantId),
-                  gt(grants.deviceGeneration, device.generation - 1),
-                ),
-              ),
-          ),
-        ),
+        phoneOperationRegistrationEnded(device.generation - 1),
       ),
     )
     .returning({
@@ -466,19 +565,7 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         eq(operations.deviceId, path.deviceId),
         inArray(operations.status, ["queued", "running", "approval_required"]),
-        not(
-          exists(
-            get(db$)
-              .select({ id: grants.id })
-              .from(grants)
-              .where(
-                and(
-                  eq(grants.id, operations.grantId),
-                  gt(grants.deviceGeneration, body.data.generation),
-                ),
-              ),
-          ),
-        ),
+        phoneOperationRegistrationEnded(body.data.generation),
       ),
     )
     .returning({
@@ -584,6 +671,7 @@ const chatGrant$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(grants.threadId, threadId),
         eq(grants.orgId, auth.orgId),
         eq(grants.userId, auth.userId),
+        sql`NOT ${remoteDeviceMode(auth)}`,
       ),
     )
     .limit(1);
@@ -600,6 +688,11 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
     deny("Phone Use is disabled");
   }
   const auth = get(organizationAuthContext$);
+  const features = await get(featureContext$);
+  signal.throwIfAborted();
+  if (isFeatureEnabled(FeatureSwitchKey.RemoteDevices, features)) {
+    deny("Manage iOS access on its Remote Device");
+  }
   const thread = await set(ownedThread$, body.data.threadId, signal);
   // Chat access belongs to the signed-in owner. Device lifecycle requests
   // still require the phone's own session through host$.
@@ -643,17 +736,7 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
             ne(grants.deviceId, device.id),
             ne(grants.deviceGeneration, device.generation),
           ),
-          exists(
-            get(db$)
-              .select({ id: devices.id })
-              .from(devices)
-              .where(
-                and(
-                  eq(devices.id, device.id),
-                  eq(devices.generation, device.generation),
-                ),
-              ),
-          ),
+          phoneDeviceAvailable(device, false),
         ),
         set: {
           id: randomUUID(),
@@ -681,7 +764,12 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
 const stoppedPhoneRun$ = command(
   async (
     { get },
-    claim: { runId: string; deviceId: string; grantId?: string },
+    claim: {
+      runId: string;
+      deviceId: string;
+      grantId?: string;
+      deviceGeneration?: number;
+    },
     signal: AbortSignal,
   ) => {
     const [stopped] = await get(db$)
@@ -692,6 +780,9 @@ const stoppedPhoneRun$ = command(
           eq(operations.runId, claim.runId),
           eq(operations.deviceId, claim.deviceId),
           claim.grantId ? eq(operations.grantId, claim.grantId) : undefined,
+          claim.deviceGeneration === undefined
+            ? ne(operations.grantId, operations.deviceId)
+            : eq(operations.grantId, operations.deviceId),
           eq(operations.status, "succeeded"),
           sql`${operations.action}->>'kind' = 'session.stop'`,
         ),
@@ -704,7 +795,7 @@ const stoppedPhoneRun$ = command(
 const closeRunAdmission$ = command(
   async (
     { set },
-    claim: { runId: string; grantId: string },
+    claim: { runId: string; grantId: string; deviceGeneration?: number },
     signal: AbortSignal,
   ) => {
     const retired = await set(writeDb$)
@@ -719,6 +810,9 @@ const closeRunAdmission$ = command(
         and(
           eq(operations.runId, claim.runId),
           eq(operations.grantId, claim.grantId),
+          claim.deviceGeneration === undefined
+            ? undefined
+            : phoneOperationGenerationMatches(claim.deviceGeneration),
           inArray(operations.status, [
             "queued",
             "running",
@@ -737,6 +831,82 @@ const closeRunAdmission$ = command(
     }
   },
 );
+type PhoneRunGrant = Awaited<ReturnType<(typeof runGrant$)["write"]>>;
+const publishPhoneOperation$ = command(
+  async (
+    { get, set },
+    input: Pick<typeof operations.$inferInsert, "id" | "action">,
+    grant: PhoneRunGrant,
+    device: typeof devices.$inferSelect,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const stopping = input.action.kind === "session.stop";
+    const deviceGeneration = grant.deviceGeneration;
+    const payloadHash = createHash("sha256")
+      .update(JSON.stringify(input.action))
+      .digest("hex");
+    const values = {
+      id: input.id,
+      orgId: auth.orgId,
+      userId: auth.userId,
+      runId: grant.runId,
+      grantId: grant.id,
+      deviceId: device.id,
+      deviceGeneration,
+      action: input.action,
+      payloadHash,
+      status: stopping ? "succeeded" : "queued",
+      result: stopping
+        ? { admissionClosed: true, nativeAcknowledged: false }
+        : null,
+      completedAt: stopping ? nowDate() : null,
+      expiresAt: new Date(now() + 45_000),
+    };
+    const db = set(writeDb$);
+    if (grant.device) {
+      await db.execute(sql`
+        INSERT INTO ${operations} (id, org_id, user_id, run_id, grant_id, device_id, device_generation,
+          action, payload_hash, status, result, completed_at, expires_at)
+        SELECT ${values.id}::uuid, ${values.orgId}, ${values.userId}, ${values.runId}::uuid,
+          ${values.grantId}::uuid, ${values.deviceId}::uuid, ${grant.device.generation},
+          ${JSON.stringify(values.action)}::jsonb, ${values.payloadHash}, ${values.status},
+          ${values.result ? JSON.stringify(values.result) : null}::jsonb,
+          ${values.completedAt?.toISOString() ?? null}::timestamp, ${values.expiresAt.toISOString()}::timestamp
+        WHERE ${remoteDeviceMode(auth)} AND ${remoteDeviceRunActive(auth, grant.runId)}
+          AND ${phoneDeviceAvailable(device, !stopping)}
+        ON CONFLICT (id) DO NOTHING
+      `);
+    } else {
+      await db
+        .insert(operations)
+        .values(values)
+        .onConflictDoNothing({ target: operations.id });
+    }
+    signal.throwIfAborted();
+    const [row] = await get(db$)
+      .select()
+      .from(operations)
+      .where(
+        and(
+          operationOwner(auth),
+          eq(operations.id, input.id),
+          eq(operations.runId, grant.runId),
+          eq(operations.deviceId, grant.deviceId),
+          phoneOperationGenerationMatches(deviceGeneration),
+          eq(operations.grantId, grant.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row || row.payloadHash !== payloadHash) {
+      conflict(
+        "Operation ID was already used with another payload or authority",
+      );
+    }
+    return row;
+  },
+);
 const createBody$ = bodyResultOf(contract.create);
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(createBody$);
@@ -750,14 +920,27 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     deny("Phone Use is disabled");
   }
-  const grant = await set(runGrant$, signal);
-  const auth = get(organizationAuthContext$);
   const stopping = body.data.action.kind === "session.stop";
+  const grant = await set(
+    runGrant$,
+    {
+      deviceId: body.data.deviceId,
+      cleanup: stopping,
+    },
+    signal,
+  );
+  const auth = get(organizationAuthContext$);
+  const deviceGeneration = grant.deviceGeneration;
   if (
     !stopping &&
     (await set(
       stoppedPhoneRun$,
-      { runId: grant.runId, deviceId: grant.deviceId, grantId: grant.id },
+      {
+        runId: grant.runId,
+        deviceId: grant.deviceId,
+        grantId: grant.id,
+        deviceGeneration: grant.device?.generation,
+      },
       signal,
     ))
   ) {
@@ -772,6 +955,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         owned(auth),
         eq(devices.id, grant.deviceId),
+        eq(devices.generation, deviceGeneration),
         stopping ? undefined : eq(devices.ready, true),
         stopping ? undefined : gt(devices.lastSeenAt, new Date(now() - 45_000)),
       ),
@@ -781,49 +965,17 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!device) {
     conflict("Open Okou iOS Use and go online");
   }
-  const payloadHash = createHash("sha256")
-    .update(JSON.stringify(body.data.action))
-    .digest("hex");
-  await set(writeDb$)
-    .insert(operations)
-    .values({
-      id: body.data.id,
-      orgId: auth.orgId,
-      userId: auth.userId,
-      runId: grant.runId,
-      grantId: grant.id,
-      deviceId: device.id,
-      action: body.data.action,
-      payloadHash,
-      status: stopping ? "succeeded" : "queued",
-      result: stopping
-        ? { admissionClosed: true, nativeAcknowledged: false }
-        : null,
-      completedAt: stopping ? nowDate() : null,
-      expiresAt: new Date(now() + 45_000),
-    })
-    .onConflictDoNothing({ target: operations.id });
-  signal.throwIfAborted();
-  const [row] = await get(db$)
-    .select()
-    .from(operations)
-    .where(
-      and(
-        operationOwner(auth),
-        eq(operations.id, body.data.id),
-        eq(operations.runId, grant.runId),
-        eq(operations.grantId, grant.id),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row || row.payloadHash !== payloadHash) {
-    conflict("Operation ID was already used with another payload or authority");
-  }
+  const row = await set(
+    publishPhoneOperation$,
+    body.data,
+    grant,
+    device,
+    signal,
+  );
   if (stopping) {
     await set(
       closeRunAdmission$,
-      { runId: grant.runId, grantId: grant.id },
+      { runId: grant.runId, grantId: grant.id, deviceGeneration },
       signal,
     );
   }
@@ -842,7 +994,8 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
 const getQuery$ = queryOf(contract.get);
 const getPath$ = pathParamsOf(contract.get);
 const get$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const grant = await set(runGrant$, signal);
+  const { operationId } = get(getPath$);
+  const grant = await set(runGrant$, { operationId }, signal);
   const auth = get(organizationAuthContext$);
   const [row] = await get(db$)
     .select()
@@ -850,9 +1003,11 @@ const get$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         operationOwner(auth),
-        eq(operations.id, get(getPath$).operationId),
+        eq(operations.id, operationId),
         eq(operations.grantId, grant.id),
         eq(operations.runId, grant.runId),
+        eq(operations.deviceId, grant.deviceId),
+        phoneOperationGenerationMatches(grant.deviceGeneration),
       ),
     )
     .limit(1);
@@ -912,7 +1067,8 @@ const get$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 const screenshotPath$ = pathParamsOf(contract.screenshot);
 const screenshot$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const grant = await set(runGrant$, signal);
+  const { operationId } = get(screenshotPath$);
+  const grant = await set(runGrant$, { operationId }, signal);
   const auth = get(organizationAuthContext$);
   const [row] = await get(db$)
     .select()
@@ -920,9 +1076,11 @@ const screenshot$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         operationOwner(auth),
-        eq(operations.id, get(screenshotPath$).operationId),
+        eq(operations.id, operationId),
         eq(operations.grantId, grant.id),
         eq(operations.runId, grant.runId),
+        eq(operations.deviceId, grant.deviceId),
+        phoneOperationGenerationMatches(grant.deviceGeneration),
       ),
     )
     .limit(1);
@@ -976,32 +1134,7 @@ const retireEndedOperations$ = command(
           ]),
           or(
             lte(operations.expiresAt, nowDate()),
-            not(
-              exists(
-                get(db$)
-                  .select({ id: grants.id })
-                  .from(grants)
-                  .innerJoin(
-                    agentRuns,
-                    and(
-                      eq(agentRuns.id, operations.runId),
-                      eq(agentRuns.chatThreadId, grants.threadId),
-                      eq(agentRuns.status, "running"),
-                      eq(agentRuns.orgId, device.orgId),
-                      eq(agentRuns.userId, device.userId),
-                    ),
-                  )
-                  .where(
-                    and(
-                      eq(grants.id, operations.grantId),
-                      eq(grants.deviceId, device.id),
-                      eq(grants.deviceGeneration, device.generation),
-                      eq(grants.orgId, device.orgId),
-                      eq(grants.userId, device.userId),
-                    ),
-                  ),
-              ),
-            ),
+            not(phoneOperationDeviceAuthority(device, false)),
           ),
         ),
       )
@@ -1023,25 +1156,56 @@ const activeNativeRun$ = command(
     claim: { threadId?: string; runId: string; grantId?: string },
     signal: AbortSignal,
   ) => {
-    const [active] = await get(db$)
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .innerJoin(
-        grants,
-        and(
-          eq(grants.threadId, agentRuns.chatThreadId),
-          claim.threadId ? eq(grants.threadId, claim.threadId) : undefined,
-          eq(grants.deviceId, device.id),
-          eq(grants.deviceGeneration, device.generation),
+    const db = get(db$);
+    const deviceOperation =
+      claim.grantId === undefined || claim.grantId === device.id
+        ? exists(
+            db
+              .select({ id: operations.id })
+              .from(operations)
+              .where(
+                and(
+                  eq(operations.deviceId, device.id),
+                  eq(operations.deviceGeneration, device.generation),
+                  eq(operations.grantId, device.id),
+                  eq(operations.runId, claim.runId),
+                  eq(operations.orgId, device.orgId),
+                  eq(operations.userId, device.userId),
+                ),
+              ),
+          )
+        : sql`FALSE`;
+    const legacy = exists(
+      db
+        .select({ id: grants.id })
+        .from(grants)
+        .where(
+          and(
+            eq(grants.threadId, agentRuns.chatThreadId),
+            eq(grants.deviceId, device.id),
+            eq(grants.deviceGeneration, device.generation),
+            eq(grants.orgId, device.orgId),
+            eq(grants.userId, device.userId),
+            claim.grantId ? eq(grants.id, claim.grantId) : undefined,
+          ),
         ),
-      )
+    );
+    const [active] = await db
+      .select({
+        id: agentRuns.id,
+        deviceOperation: deviceOperation.mapWith(pgBooleanDecoder),
+      })
+      .from(agentRuns)
       .where(
         and(
           eq(agentRuns.id, claim.runId),
           eq(agentRuns.userId, device.userId),
           eq(agentRuns.orgId, device.orgId),
           eq(agentRuns.status, "running"),
-          claim.grantId ? eq(grants.id, claim.grantId) : undefined,
+          claim.threadId
+            ? eq(agentRuns.chatThreadId, claim.threadId)
+            : undefined,
+          or(deviceOperation, legacy),
         ),
       )
       .limit(1);
@@ -1054,6 +1218,9 @@ const activeNativeRun$ = command(
           runId: claim.runId,
           deviceId: device.id,
           ...(claim.grantId ? { grantId: claim.grantId } : {}),
+          ...(active?.deviceOperation
+            ? { deviceGeneration: device.generation }
+            : {}),
         },
         signal,
       ));
@@ -1065,7 +1232,11 @@ const claimPhoneOperation$ = command(
   async (
     { get, set },
     device: typeof devices.$inferSelect,
-    claim: { readonly threadId?: string; readonly activeRunId?: string },
+    claim: {
+      readonly threadId?: string;
+      readonly activeRunId?: string;
+      readonly activeGrantId?: string;
+    },
     signal: AbortSignal,
   ) => {
     const [running] = await get(db$)
@@ -1082,30 +1253,12 @@ const claimPhoneOperation$ = command(
     if (running) {
       return { status: 200 as const, body: { operation: null } };
     }
-    const liveGrant = exists(
-      get(db$)
-        .select({ id: grants.id })
-        .from(grants)
-        .innerJoin(
-          agentRuns,
-          and(
-            eq(agentRuns.id, operations.runId),
-            eq(agentRuns.chatThreadId, grants.threadId),
-            eq(agentRuns.status, "running"),
-          ),
-        )
-        .where(
-          and(
-            eq(grants.id, operations.grantId),
-            eq(grants.deviceId, device.id),
-            eq(grants.deviceGeneration, device.generation),
-            eq(grants.orgId, device.orgId),
-            eq(grants.userId, device.userId),
-            eq(agentRuns.orgId, device.orgId),
-            eq(agentRuns.userId, device.userId),
-            claim.threadId ? eq(grants.threadId, claim.threadId) : undefined,
-          ),
-        ),
+    const liveGrant = and(
+      phoneOperationDeviceAuthority(device, true, claim.threadId),
+      claim.activeRunId ? eq(operations.runId, claim.activeRunId) : undefined,
+      claim.activeRunId && claim.activeGrantId
+        ? eq(operations.grantId, claim.activeGrantId)
+        : undefined,
     );
     const [candidate] = await get(db$)
       .select()
@@ -1115,9 +1268,6 @@ const claimPhoneOperation$ = command(
           eq(operations.deviceId, device.id),
           eq(operations.status, "queued"),
           gt(operations.expiresAt, nowDate()),
-          claim.activeRunId
-            ? eq(operations.runId, claim.activeRunId)
-            : undefined,
           liveGrant,
         ),
       )
@@ -1136,9 +1286,6 @@ const claimPhoneOperation$ = command(
           eq(operations.id, candidate.id),
           eq(operations.status, "queued"),
           gt(operations.expiresAt, nowDate()),
-          claim.activeRunId
-            ? eq(operations.runId, claim.activeRunId)
-            : undefined,
           exists(
             get(db$)
               .select({ id: devices.id })
@@ -1370,29 +1517,12 @@ const validate$ = command(async ({ get, set }, signal: AbortSignal) => {
       grantId: operations.grantId,
     })
     .from(operations)
-    .innerJoin(
-      grants,
-      and(
-        eq(grants.id, operations.grantId),
-        eq(grants.deviceId, operations.deviceId),
-        eq(grants.orgId, operations.orgId),
-        eq(grants.userId, operations.userId),
-        eq(grants.deviceGeneration, device.generation),
-      ),
-    )
-    .innerJoin(
-      agentRuns,
-      and(
-        eq(agentRuns.id, operations.runId),
-        eq(agentRuns.chatThreadId, grants.threadId),
-        eq(agentRuns.status, "running"),
-      ),
-    )
     .where(
       and(
         eq(operations.id, body.data.operationId),
         eq(operations.deviceId, device.id),
         eq(operations.claimedGeneration, device.generation),
+        phoneOperationDeviceAuthority(device, true),
         inArray(operations.status, ["running", "approval_required"]),
         gt(operations.expiresAt, nowDate()),
       ),
@@ -1408,6 +1538,8 @@ const validate$ = command(async ({ get, set }, signal: AbortSignal) => {
         runId: operation.runId,
         deviceId: device.id,
         grantId: operation.grantId,
+        deviceGeneration:
+          operation.grantId === device.id ? device.generation : undefined,
       },
       signal,
     ))

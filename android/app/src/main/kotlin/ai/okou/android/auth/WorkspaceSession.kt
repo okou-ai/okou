@@ -25,6 +25,7 @@ import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.RunActivitySummaryStatus
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -416,6 +417,9 @@ class CanonicalWorkspaceSession(
 
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
+
+    override suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest) =
+        api.setThreadModel(threadId, request)
 
     override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) =
         api.setPinned(threadId, pinOrder, eventId)

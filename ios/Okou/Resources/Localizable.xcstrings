@@ -20504,6 +20504,43 @@
         }
       }
     },
+    "Share website link": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Website-Link teilen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Compartir enlace al sitio web" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Partager le lien du site web" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "वेबसाइट का लिंक शेयर करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Bagikan tautan situs web" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Condividi il link al sito web" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ウェブサイトのリンクを共有" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "웹사이트 링크 공유" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Compartilhar link do site" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "分享网站链接" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "分享網站連結" }
+        }
+      }
+    },
     "Shipped": {
       "localizations": {
         "de": {

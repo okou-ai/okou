@@ -157,6 +157,7 @@ const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
 });
 
 const computerUseCommandTargetShape = {
+  hostId: uuid().optional(),
   timeoutMs: number().int().min(1_000).max(120_000).default(60_000),
   realtime: boolean().optional(),
 } as const;

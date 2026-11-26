@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -192,6 +193,53 @@ class WorkspaceSettingsModelTest {
                 val restored = model.uiState.first { it.workspaceCredits.value != null }
                 assertEquals(2400.0, restored.workspaceCredits.value!!.credits, 0.0)
                 assertEquals(2, fixture.billingReads.get())
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
+
+    @Test
+    fun bothCachedCreditReadFailuresShareOneNoticePerRefresh() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                val model = settings(store, api, admin = true)
+                val notices = mutableListOf<SettingsNotice>()
+                backgroundScope.launch { model.notices.collect { notices.add(it) } }
+                model.visible(SettingsDestination.CreditBalance)
+                val confirmed =
+                    model.uiState.first {
+                        it.usagePack.value != null && it.workspaceCredits.value != null
+                    }
+
+                repeat(2) { refresh ->
+                    model.visible(null)
+                    fixture.usagePackStatus = 400
+                    fixture.billingStatus = 400
+                    model.visible(SettingsDestination.CreditBalance)
+                    val failed =
+                        model.uiState.first {
+                            it.usagePack.unavailable && it.workspaceCredits.unavailable
+                        }
+                    runCurrent()
+                    assertEquals(confirmed.usagePack.value, failed.usagePack.value)
+                    assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
+                    assertEquals(
+                        List(refresh + 1) { SettingsNotice.CreditBalanceRefreshFailed },
+                        notices,
+                    )
+                    // The next visible refresh starts with successful, confirmed reads.
+                    model.visible(null)
+                    fixture.usagePackStatus = 200
+                    fixture.billingStatus = 200
+                    model.visible(SettingsDestination.CreditBalance)
+                    model.uiState.first {
+                        !it.usagePack.unavailable && !it.workspaceCredits.unavailable
+                    }
+                }
             }
         } finally {
             closeOwners(store)
@@ -462,6 +510,129 @@ class WorkspaceSettingsModelTest {
         }
     }
 
+    @Test
+    fun losingAdminWhileAwayDropsTheCachedBalanceAndDiscardsTheOldResponse() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val releaseOldRead = CompletableDeferred<Unit>()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                val cache = WorkspaceSettingsCache.create(backgroundScope) { file }
+                val cached = WorkspaceCreditSummary(120.0, emptyList())
+                cache.save(
+                    api.identity,
+                    "workspace-credits",
+                    WorkspaceCreditSummary.serializer(),
+                    ConfirmedSetting(cached, 0L),
+                )
+                val oldReadStarted = CompletableDeferred<Unit>()
+                val newRole = CompletableDeferred<Boolean>()
+                var roleReads = 0
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoveryBilling() =
+                            withContext(NonCancellable) {
+                                oldReadStarted.complete(Unit)
+                                releaseOldRead.await()
+                                api.service.recoveryBilling()
+                            }
+                    }
+                val model =
+                    settings(
+                        store,
+                        api,
+                        admin = true,
+                        cache = cache,
+                        service = service,
+                        readWorkspaceAdmin = {
+                            if (++roleReads == 1) true else newRole.await()
+                        },
+                    )
+                model.visible(SettingsDestination.CreditBalance)
+                oldReadStarted.await()
+                assertEquals(cached, model.uiState.value.workspaceCredits.value)
+
+                model.visible(null)
+                model.visible(SettingsDestination.CreditBalance)
+                val personal = model.uiState.first { it.usagePack.value != null }
+                assertTrue(personal.showWorkspaceCredits)
+                assertEquals(cached, personal.workspaceCredits.value)
+                newRole.complete(false)
+                val revoked = model.uiState.first { !it.showWorkspaceCredits }
+                assertNull(revoked.workspaceCredits.value)
+                assertEquals(860L, revoked.usagePack.value?.totalCredits)
+
+                releaseOldRead.complete(Unit)
+                model.visible(null)
+                store.clear()
+                presentationJobs.joinAll()
+                assertEquals(1, fixture.billingReads.get())
+                assertNull(model.uiState.value.workspaceCredits.value)
+                assertNull(
+                    cache.load(
+                        api.identity,
+                        "workspace-credits",
+                        WorkspaceCreditSummary.serializer(),
+                    ),
+                )
+            }
+        } finally {
+            releaseOldRead.complete(Unit)
+            closeOwners(store)
+        }
+    }
+
+    @Test
+    fun failedRoleLookupKeepsConfirmedAdminBalanceUntilLaterRefresh() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                var unavailable = false
+                var roleReads = 0
+                val model =
+                    settings(
+                        store,
+                        api,
+                        readWorkspaceAdmin = {
+                            roleReads++
+                            if (unavailable) throw ApiFailure.Http(503, null, null, null)
+                            true
+                        },
+                    )
+                model.visible(SettingsDestination.CreditBalance)
+                val confirmed = model.uiState.first { it.workspaceCredits.value != null }
+                assertTrue(confirmed.showWorkspaceCredits)
+
+                unavailable = true
+                model.visible(null)
+                model.visible(SettingsDestination.CreditBalance)
+                val failed = model.uiState.first { it.workspaceCredits.unavailable }
+                assertEquals(4, roleReads)
+                assertTrue(failed.showWorkspaceCredits)
+                assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
+                assertEquals(SettingsNotice.CreditBalanceRefreshFailed, model.notices.first())
+                assertEquals(1, fixture.billingReads.get())
+
+                unavailable = false
+                model.visible(null)
+                model.visible(SettingsDestination.CreditBalance)
+                val recovered =
+                    model.uiState.first {
+                        !it.workspaceCredits.unavailable && it.workspaceCredits.value != null
+                    }
+                assertTrue(recovered.showWorkspaceCredits)
+                assertEquals(5, roleReads)
+                assertEquals(2, fixture.billingReads.get())
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
+
     private suspend fun closeOwners(vararg stores: ViewModelStore) {
         try {
             withContext(NonCancellable) {
@@ -479,6 +650,7 @@ class WorkspaceSettingsModelTest {
         admin: Boolean = false,
         cache: WorkspaceSettingsCache? = null,
         service: WorkspaceSession = api.service,
+        readWorkspaceAdmin: suspend () -> Boolean = { admin },
         nowMillis: () -> Long = System::currentTimeMillis,
     ): WorkspaceSettingsModel =
         ViewModelProvider(
@@ -496,6 +668,7 @@ class WorkspaceSettingsModelTest {
                             api.identity,
                             defaultModelStore,
                             admin,
+                            readWorkspaceAdmin,
                             { true },
                             { throw it },
                             cache,

@@ -17,6 +17,7 @@ import { setResHeader$ } from "../context/hono";
 import { publishUserSignal } from "../external/realtime";
 import { notifyRemoteAccessChange$ } from "../services/chat-remote-access.service";
 import { sendNormalEvent$ } from "../services/chat-events.command";
+import { remoteDeviceMode$ } from "../services/remote-device-access";
 import type { RouteEntry } from "../route-entry";
 
 function error<T extends 403 | 404 | 409 | 410 | 503>(
@@ -46,7 +47,10 @@ function createAuthorizationHandler(protocol: Protocol, contract: Contract) {
     if (!body.ok) {
       return body.response;
     }
-    if (auth.tokenType !== "agent") {
+    if (
+      auth.tokenType !== "agent" ||
+      (await set(remoteDeviceMode$, auth, signal))
+    ) {
       return unavailable(protocol);
     }
     const id = await set(
@@ -192,7 +196,10 @@ function actionHandler(
   return command(async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
-    if (auth.tokenType !== "session") {
+    if (
+      auth.tokenType !== "session" ||
+      (await set(remoteDeviceMode$, auth, signal))
+    ) {
       return unavailable(protocol);
     }
     const body = await get(body$);

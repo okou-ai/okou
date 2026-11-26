@@ -74,7 +74,7 @@ class EmailSubscriptionSettingsTest {
     }
 
     @Test
-    fun latestToggleWinsWhenEarlierWriteFinishesAfterThePanelCloses() = runTest {
+    fun pendingToggleDisablesFurtherWritesAndCanFinishAfterThePanelCloses() = runTest {
         ChatListApiFixture().use { api ->
             val writes = mutableListOf<Boolean>()
             val release = CompletableDeferred<Unit>()
@@ -97,19 +97,69 @@ class EmailSubscriptionSettingsTest {
             runCurrent()
             model.subscribe(true)
             runCurrent()
+            assertEquals(true, model.state.value.checked)
+            assertFalse(model.state.value.canChange)
             model.subscribe(false)
-            model.subscribe(true)
-            model.subscribe(false)
-            assertEquals(false, model.state.value.checked)
+            assertEquals(true, model.state.value.checked)
             assertEquals(listOf(true), writes)
 
             model.visible(false)
             release.complete(Unit)
             runCurrent()
-            assertEquals(listOf(true, false), writes)
-            assertEquals(initial, server)
+            assertEquals(listOf(true), writes)
+            assertEquals(initial.copy(subscribed = true), server)
             assertNull(model.state.value.desired)
+            assertTrue(model.state.value.canChange)
             assertTrue(notices.isEmpty())
+        }
+    }
+
+    @Test
+    fun rejectedToggleRollsBackAndReportsFailureWhereTheUserIs() = runTest {
+        ChatListApiFixture().use { api ->
+            var release = CompletableDeferred<Unit>()
+            val service =
+                object : WorkspaceSession by api.service {
+                    override suspend fun emailSubscription() = initial
+
+                    override suspend fun updateEmailSubscription(subscribed: Boolean): Nothing {
+                        release.await()
+                        throw ApiFailure.Http(400, null, null, null)
+                    }
+                }
+            val model = model(api, service)
+            model.setPanelOpen(true)
+            model.visible(true)
+            runCurrent()
+
+            model.subscribe(true)
+            runCurrent()
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(false, model.state.value.checked)
+            assertTrue(model.state.value.canChange)
+            assertTrue(model.state.value.updateFailed)
+            assertTrue(notices.isEmpty())
+
+            model.setPanelOpen(false)
+            model.visible(false)
+            assertFalse(model.state.value.updateFailed)
+            assertTrue(notices.isEmpty())
+
+            model.setPanelOpen(true)
+            model.visible(true)
+            runCurrent()
+            release = CompletableDeferred()
+            model.subscribe(true)
+            runCurrent()
+            model.setPanelOpen(false)
+            model.visible(false)
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(false, model.state.value.checked)
+            assertTrue(model.state.value.canChange)
+            assertFalse(model.state.value.updateFailed)
+            assertEquals(listOf(SettingsNotice.EmailSubscriptionFailed), notices)
         }
     }
 

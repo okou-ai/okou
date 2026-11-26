@@ -33,19 +33,50 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.insertText(" /rel after")
     let slash = (input.text as NSString).range(of: "/rel")
     input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
-    let workflow = try await workflowCell("release", in: host.view)
-    XCTAssertTrue(workflow.accessibilityActivate())
-    try await eventually { input.text.contains("/release after") }
+    let workflows = workspace.newComposer.editor.workflows
+    try await waitForBusinessResult(
+      message: "Waiting for the /rel query; " + mentionInputStatus(input)
+        + "; selection: \(input.selectedRange)"
+    ) {
+      workflows.query == "rel"
+    }
+    _ = try await workflows.resources.store.get(workflows.resources.matches).value
+    // Native keyboard activation uses the displayed candidate snapshot without requiring
+    // UIKit to materialize a particular cell. The next test retains row activation coverage.
+    try await eventually(
+      message:
+        "Waiting for native Workflow keyboard candidates; query: \(String(reflecting: workflows.query)); "
+        + "matches: \(workflows.matches.map(\.id)); " + mentionInputStatus(input)
+    ) {
+      workflows.matches.contains { $0.id == "release" }
+        && input.keyCommands?.contains { $0.input == UIKeyCommand.inputDownArrow } == true
+    }
+    let down = try XCTUnwrap(input.keyCommands?.first { $0.input == UIKeyCommand.inputDownArrow })
+    _ = input.perform(down.action, with: down)
+    let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
+    _ = input.perform(confirm.action, with: confirm)
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/release after")
+    }
+    XCTAssertTrue(input.text.contains("/release after"))
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await eventually { input.text.contains("/rel after") }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/rel after")
+    }
+    XCTAssertTrue(input.text.contains("/rel after"))
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     input.undoManager?.redo()
-    try await eventually { input.text.contains("/release after") }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/release after")
+    }
+    XCTAssertTrue(input.text.contains("/release after"))
+    XCTAssertEqual(
+      workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
     let chat = try XCTUnwrap(

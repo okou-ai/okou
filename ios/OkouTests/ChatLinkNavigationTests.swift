@@ -77,6 +77,27 @@ final class ChatLinkNavigationTests: XCTestCase {
     XCTAssertTrue(fixture.requests.values.withLock { $0.allSatisfy { $0.hasPrefix("GET ") } })
   }
 
+  func testSourceChatReturnsToForYouAndAnUnavailableSourceLeavesTheDeckOpen() async {
+    let fixture = ChatLinkFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    let sidebar = store.sidebarInteraction
+    sidebar.openForYou()
+
+    await store.forYou.openSource(ChatLinkFixture.sourceID)
+    XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
+    XCTAssertTrue(sidebar.showsChat)
+    sidebar.goBack()
+    XCTAssertEqual(sidebar.path, [.forYou])
+
+    await store.forYou.openSource(UUID().uuidString)
+    XCTAssertNotNil(store.forYou.error)
+    XCTAssertEqual(sidebar.path, [.forYou])
+    sidebar.goBack()
+    XCTAssertTrue(sidebar.isOpen)
+  }
+
   func testUnavailableWorkflowStaysInTheCurrentChatWithANativeError() async throws {
     let fixture = ChatLinkFixture(workflow: { _ in
       ChatHTTPResponse(status: 404, body: #"{"error":{"message":"Workflow not found"}}"#)

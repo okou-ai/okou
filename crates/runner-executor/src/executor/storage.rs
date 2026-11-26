@@ -15,6 +15,7 @@ use tracing::{info, warn};
 
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
+use crate::storage_cache::PendingGuestArchives;
 use crate::storage_cache::decoded::CachedFiles;
 use crate::telemetry::{JobTelemetry, StorageBatchDimensions};
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
@@ -131,6 +132,7 @@ pub(super) async fn download_storages(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn download_storages_with_files(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
@@ -138,7 +140,35 @@ pub(super) async fn download_storages_with_files(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
-    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, None).await
+    download_storages_sequential(
+        sandbox,
+        context,
+        manifest,
+        files,
+        telemetry,
+        PendingGuestArchives::default(),
+    )
+    .await
+}
+
+pub(super) async fn download_storages_sequential(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut JobTelemetry,
+    pending_archives: PendingGuestArchives,
+) -> RunnerResult<()> {
+    download_storages_with_files_inner(
+        sandbox,
+        context,
+        manifest,
+        files,
+        telemetry,
+        None,
+        pending_archives,
+    )
+    .await
 }
 
 /// Stop later batches on a sibling failure without abandoning accepted Guest IO.
@@ -150,8 +180,16 @@ pub(super) async fn download_storages_with_files_until_cancelled(
     telemetry: &mut JobTelemetry,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> RunnerResult<()> {
-    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, Some(cancel))
-        .await
+    download_storages_with_files_inner(
+        sandbox,
+        context,
+        manifest,
+        files,
+        telemetry,
+        Some(cancel),
+        PendingGuestArchives::default(),
+    )
+    .await
 }
 
 async fn download_storages_with_files_inner(
@@ -161,9 +199,11 @@ async fn download_storages_with_files_inner(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
     cancel: Option<&tokio_util::sync::CancellationToken>,
+    pending_archives: PendingGuestArchives,
 ) -> RunnerResult<()> {
     // Complete all fallible preparation before the first Guest mutation.
     let prepare_started = Instant::now();
+    let allow_inline = !pending_archives.is_empty() && blank_mounts_outside_staging(&manifest);
     let inputs = storage_inputs(manifest, files);
     telemetry.record(
         "runner_storage_manifest_batch_prepare",
@@ -174,7 +214,23 @@ async fn download_storages_with_files_inner(
             .err()
             .map(|_| "storage_batch_prepare_failed"),
     );
-    let inputs = inputs?;
+    let mut inputs = inputs?;
+    if !pending_archives.is_empty() {
+        if allow_inline
+            && let Some(first) = inputs.first_mut()
+            && first.attach_archives(&pending_archives)
+        {
+            drop(pending_archives);
+            telemetry.record(
+                "storage_cache_warm_archives_inlined",
+                Duration::ZERO,
+                true,
+                None,
+            );
+        } else {
+            pending_archives.stage(sandbox, telemetry).await?;
+        }
+    }
     let batch_count = inputs.len();
     telemetry.record_bounded_outcome(
         "runner_storage_manifest_batch_count",
@@ -219,12 +275,51 @@ async fn download_storages_with_files_inner(
     Ok(())
 }
 
+fn blank_mounts_outside_staging(manifest: &Manifest) -> bool {
+    use std::path::{Component, Path};
+
+    // Only fresh Home paths qualify. A custom or cleanup mount must not
+    // observe a change to the presence of a staged archive file.
+    manifest.cleanup_paths.is_empty()
+        && manifest.instruction_cleanups.is_empty()
+        && manifest
+            .storages
+            .iter()
+            .map(|entry| &entry.mount_path)
+            .chain(manifest.artifacts.iter().map(|entry| &entry.mount_path))
+            .all(|mount| {
+                let path = Path::new(mount);
+                path.starts_with("/home/user")
+                    && !path
+                        .components()
+                        .any(|component| component == Component::ParentDir)
+            })
+}
+
 enum PreparedStorageInput<'a> {
     Json(Vec<u8>),
     Files(storage_files::PreparedInput<'a>),
+    Archives {
+        bytes: Vec<u8>,
+        manifest_bytes: usize,
+    },
 }
 
 impl PreparedStorageInput<'_> {
+    fn attach_archives(&mut self, archives: &PendingGuestArchives) -> bool {
+        let Self::Json(json) = self else {
+            return false;
+        };
+        let Some(bytes) = archives.inline_input(json) else {
+            return false;
+        };
+        *self = Self::Archives {
+            bytes,
+            manifest_bytes: json.len(),
+        };
+        true
+    }
+
     fn into_input(self) -> StorageInput {
         match self {
             Self::Json(bytes) => StorageInput::Json(bytes),
@@ -237,6 +332,14 @@ impl PreparedStorageInput<'_> {
                     payload_size_bucket,
                 }
             }
+            Self::Archives {
+                bytes,
+                manifest_bytes,
+            } => StorageInput::Files {
+                payload_size_bucket: binary_payload_size_bucket(bytes.len() - manifest_bytes - 16),
+                bytes,
+                manifest_bytes,
+            },
         }
     }
 }

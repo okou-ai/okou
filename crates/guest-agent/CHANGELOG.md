@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.113.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.4...guest-agent-v0.113.5) (2026-11-26)
+
+## [0.113.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.3...guest-agent-v0.113.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** finish antigravity runs and forward their disallowed tools ([#50962](https://github.com/okou-ai/okou/issues/50962)) ([ab3428a](https://github.com/okou-ai/okou/commit/ab3428a58305077c974be77fa604f962424d66b4))
+
 ## [0.113.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.2...guest-agent-v0.113.3) (2026-11-26)
 
 ## [0.113.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.1...guest-agent-v0.113.2) (2026-11-25)

@@ -509,9 +509,9 @@
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
       "automaticHint": "웹사이트 CNAME과 소유권 TXT를 설정합니다. 아래의 추가 인증서 레코드를 추가한 후 돌아와서 확인하세요.",
-      "automaticSetup": "웹사이트 레코드 설정",
-      "checkBeforeEditing": "DNS를 변경하기 전에 검증을 클릭하여 레코드를 확인하세요.",
+      "backToDns": "DNS 설정으로 돌아가기",
       "checkFailed": "조치 필요",
+      "checking": "확인 중…",
       "checkNotChecked": "확인 전",
       "checkPassed": "통과",
       "checkPending": "대기 중",
@@ -523,6 +523,7 @@
         "route": "웹사이트 라우팅"
       },
       "checkUnavailable": "확인할 수 없음",
+      "configureProvider": "{{provider}}에서 설정",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
@@ -542,13 +543,10 @@
       "manualHint": "DNS 설정에 레코드를 복사한 후 돌아와서 확인하세요.",
       "needsSetup": "Finish setup",
       "noDnsChanges": "DNS 레코드가 일치합니다. DNS를 변경할 필요가 없습니다.",
-      "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
       "openDns": "{{provider}} DNS 열기",
       "ownDomain": "Enter a domain you own",
-      "recordMatched": "일치함",
       "recordName": "이름",
-      "recordNeedsCheck": "아직 일치하지 않음",
       "recordValue": "값",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
@@ -556,7 +554,6 @@
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
       "retryVerification": "아래 결과를 확인한 후 검증을 클릭하여 다시 확인하세요.",
-      "reviewDns": "DNS 레코드 확인",
       "saveToEnable": "저장을 클릭해야 공유 주소가 변경됩니다.",
       "setUpDns": "DNS 레코드 설정",
       "setupStages": "도메인 설정 단계",
@@ -574,7 +571,10 @@
       "verified": "Domain verified. Save to use this address.",
       "verifiedRecords": "검증된 레코드 ({{total}})",
       "verify": "Verify",
+      "verifyAgain": "다시 확인",
       "verifyDomain": "도메인 검증",
+      "verifyFailed": "도메인을 확인할 수 없습니다. 다시 시도하세요.",
+      "verifyingHint": "도메인을 확인하고 있습니다. 결과가 아래에 표시됩니다.",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -5859,6 +5859,7 @@
       "personal": {
         "accountFallback": "계정 {{number}}",
         "activeAccount": "활성",
+        "antigravityGroup": "내 Google AI 요금제",
         "autoCredits": "Okou 크레딧 사용",
         "autoDescription": "ChatGPT 또는 Claude 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
@@ -7446,6 +7447,7 @@
       "sort": {
         "alphabetical": "알파벳순",
         "created": "최근 생성순",
+        "heading": "정렬 기준",
         "label": "워크플로 정렬",
         "nextRun": "다음 실행"
       },

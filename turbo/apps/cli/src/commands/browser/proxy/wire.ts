@@ -1,4 +1,5 @@
 import type { CdpEvent, CdpTransport } from "@okouai/browser-extension-client";
+import type { ProxyExit } from "./diagnostic";
 
 export function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -219,7 +220,11 @@ export class ControlWire implements CdpTransport {
   >();
   private readonly listeners = new Set<(event: CdpEvent) => void>();
   private releaseOwner: (() => void) | undefined;
-  private closed = false;
+  private termination: ProxyExit | undefined;
+
+  get exit(): ProxyExit | undefined {
+    return this.termination;
+  }
 
   private constructor(readonly socket: WebSocket) {
     socket.addEventListener("message", ({ data }: { data: unknown }) => {
@@ -235,11 +240,16 @@ export class ControlWire implements CdpTransport {
       else if (typeof value.method === "string")
         this.event(value.method, value, data);
     });
-    socket.addEventListener("close", () => {
-      this.fail();
+    socket.addEventListener("close", ({ code }) => {
+      this.fail({
+        reason: "upstream-socket-closed",
+        ...(Number.isInteger(code) && code >= 1000 && code <= 4999
+          ? { closeCode: code }
+          : {}),
+      });
     });
     socket.addEventListener("error", () => {
-      return this.close();
+      return this.close({ reason: "upstream-socket-error" });
     });
   }
 
@@ -372,7 +382,7 @@ export class ControlWire implements CdpTransport {
     params: Readonly<Record<string, unknown>>,
     sessionId?: string,
   ): Promise<unknown> {
-    if (this.closed || this.socket.readyState !== WebSocket.OPEN)
+    if (this.termination || this.socket.readyState !== WebSocket.OPEN)
       return Promise.reject(
         new Error("Browser control connection unavailable"),
       );
@@ -412,7 +422,7 @@ export class ControlWire implements CdpTransport {
   openPeer(): PeerWire {
     const peer = new PeerWire(this);
     this.peers.add(peer);
-    if (this.closed) peer.retire();
+    if (this.termination) peer.retire();
     else peer.acquire();
     return peer;
   }
@@ -443,7 +453,7 @@ export class ControlWire implements CdpTransport {
     message: Record<string, unknown>,
     sessionId?: string,
   ): void {
-    if (this.closed || peer.closed)
+    if (this.termination || peer.closed)
       throw new Error("Browser peer connection closed");
     const id = ++this.nextId;
     const parent = sessionId ?? root;
@@ -483,7 +493,7 @@ export class ControlWire implements CdpTransport {
   }
 
   private detach(sessionId: string, parent?: string): void {
-    if (this.closed || this.socket.readyState !== WebSocket.OPEN) return;
+    if (this.termination || this.socket.readyState !== WebSocket.OPEN) return;
     const id = ++this.nextId;
     const timer = setTimeout(() => {
       this.close();
@@ -516,8 +526,8 @@ export class ControlWire implements CdpTransport {
     };
   }
 
-  close(): void {
-    this.fail();
+  close(exit: ProxyExit = { reason: "control-transport-retired" }): void {
+    this.fail(exit);
     if (
       this.socket.readyState === WebSocket.OPEN ||
       this.socket.readyState === WebSocket.CONNECTING
@@ -525,9 +535,9 @@ export class ControlWire implements CdpTransport {
       this.socket.close();
   }
 
-  private fail(): void {
-    if (this.closed) return;
-    this.closed = true;
+  private fail(exit: ProxyExit): void {
+    if (this.termination) return;
+    this.termination = exit;
     this.releaseOwner?.();
     this.releaseOwner = undefined;
     for (const entry of this.pending.values()) {

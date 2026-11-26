@@ -1,12 +1,9 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import { useGet, useSet } from "ccstate-react";
-import { Check, ChevronDown, Circle, Copy } from "lucide-react";
+import { Check, ChevronDown, Copy } from "lucide-react";
 import { IconButton } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import {
-  domainRecordCheck,
-  type HostedSiteDomain,
-} from "../../lib/hosted-site-domains.ts";
+import type { HostedSiteDomain } from "../../lib/hosted-site-domains.ts";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -26,8 +23,6 @@ function DomainRecord({
   const { t } = useTranslation();
   const copy = useSet(session.domains.copy$);
   const signal = useGet(session.signal$);
-  const checked = domainRecordCheck(domain, record);
-  const passed = checked?.status === "passed";
   const certificate = domain.verification?.validationRecords.some((item) => {
     return (
       item.type === record.type &&
@@ -38,25 +33,6 @@ function DomainRecord({
   if (!signal) {
     return null;
   }
-  const status = passed
-    ? t(($) => {
-        return $.artifacts.customDomain.recordMatched;
-      })
-    : checked?.status === "unavailable"
-      ? t(($) => {
-          return $.artifacts.customDomain.checkUnavailable;
-        })
-      : checked?.status === "failed"
-        ? t(($) => {
-            return $.artifacts.customDomain.checkFailed;
-          })
-        : checked?.status === "pending"
-          ? t(($) => {
-              return $.artifacts.customDomain.recordNeedsCheck;
-            })
-          : t(($) => {
-              return $.artifacts.customDomain.checkNotChecked;
-            });
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
@@ -76,14 +52,6 @@ function DomainRecord({
               : t(($) => {
                   return $.artifacts.customDomain.checks.dns;
                 })}
-        </span>
-        <span className="flex items-center gap-1 text-muted-foreground">
-          {passed ? (
-            <Check size={14} className="text-green-600" aria-hidden />
-          ) : (
-            <Circle size={12} aria-hidden />
-          )}
-          {status}
         </span>
       </div>
       <div className="space-y-1">
@@ -129,11 +97,6 @@ function DomainRecord({
           );
         })}
       </div>
-      {checked && !passed && checked.status !== "not_checked" && (
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          {checked.message}
-        </p>
-      )}
     </div>
   );
 }

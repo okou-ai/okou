@@ -3928,6 +3928,48 @@
       "when": 1795659795482,
       "tag": "1639_connector_account_external_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 1640,
+      "version": "7",
+      "when": 1795664181111,
+      "tag": "1640_phone_use_operation_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1641,
+      "version": "7",
+      "when": 1795671256445,
+      "tag": "1641_remote_device_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1642,
+      "version": "7",
+      "when": 1795671303566,
+      "tag": "1642_require_remote_device_association",
+      "breakpoints": true
+    },
+    {
+      "idx": 1643,
+      "version": "7",
+      "when": 1795674857199,
+      "tag": "1643_antigravity_launch_framework",
+      "breakpoints": true
+    },
+    {
+      "idx": 1644,
+      "version": "7",
+      "when": 1795674877269,
+      "tag": "1644_validate_antigravity_launch_framework",
+      "breakpoints": true
+    },
+    {
+      "idx": 1645,
+      "version": "7",
+      "when": 1795674897721,
+      "tag": "1645_enable_antigravity_routes",
+      "breakpoints": true
     }
   ]
 }

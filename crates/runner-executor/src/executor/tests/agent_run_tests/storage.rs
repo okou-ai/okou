@@ -18,7 +18,7 @@ use crate::executor::tests::support::{
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
 use runner_types::storage_manifest::StorageManifest;
-use runner_types::types::SandboxReuseResult;
+use runner_types::types::{SandboxReuseResult, SandboxStartupPath};
 
 async fn spawn_storage_archive_server(body: &[u8]) -> RawHttpTestServer {
     let probe_response = format!(
@@ -47,6 +47,99 @@ fn extracted_archive() -> Vec<u8> {
         .append_data(&mut header, "file", &b"content"[..])
         .unwrap();
     builder.into_inner().unwrap().finish().unwrap()
+}
+
+#[tokio::test]
+async fn run_in_sandbox_hands_warm_archives_to_blank_apply() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let name = "warm-storage";
+    // The Guest entry point tests gzip validation. Here the mock captures the
+    // archive bytes selected for transport and their original source binding.
+    let mut archive = extracted_archive();
+    archive.resize(1024 * 1024, 0);
+    for (startup_path, mount, version, inline) in [
+        (
+            SandboxStartupPath::Blank,
+            "/home/user/storage",
+            "blank",
+            true,
+        ),
+        (
+            SandboxStartupPath::Cold,
+            "/home/user/storage",
+            "cold",
+            false,
+        ),
+        (SandboxStartupPath::Blank, "/mnt/custom", "custom", false),
+    ] {
+        let archive_dir = config.home.storage_cache_dir(name, version);
+        std::fs::create_dir_all(&archive_dir).unwrap();
+        std::fs::write(archive_dir.join("archive.tar.gz"), &archive).unwrap();
+        drop(runner_host::lock::open_lock_file(&config.home.storage_lock(name, version)).unwrap());
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+        let mut ctx = minimal_context();
+        ctx.storage_manifest = Some(StorageManifest {
+            storages: vec![api_storage(
+                name,
+                mount,
+                version,
+                "https://r2.example/archive",
+            )],
+            artifacts: Vec::new(),
+        });
+        let mut telemetry = test_telemetry(&config, &ctx);
+        run_in_sandbox(
+            sandbox.as_ref(),
+            &ctx,
+            &config,
+            RunStart {
+                sandbox_startup_path: startup_path,
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::PoolMiss,
+                home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            RunControls::new(tokio_util::sync::CancellationToken::new(), None),
+        )
+        .await
+        .unwrap();
+
+        let calls = overrides.storage_manifest_calls();
+        assert_eq!(calls.len(), 1);
+        let input = &calls[0].manifest_json;
+        let (json, sources) = if inline {
+            let (json, payload) = storage_files::split_input(input).unwrap();
+            (
+                json,
+                storage_files::inline_archives::decode(payload).unwrap(),
+            )
+        } else {
+            (input.as_slice(), HashMap::new())
+        };
+        let manifest: Manifest = serde_json::from_slice(json).unwrap();
+        assert_eq!(manifest.storages[0].mount_path, mount);
+        let path = manifest.storages[0]
+            .archive_url
+            .as_deref()
+            .unwrap()
+            .strip_prefix("file://")
+            .unwrap();
+        if inline {
+            assert_eq!(sources.get(path), Some(&archive.as_slice()));
+            assert!(overrides.write_files_calls().is_empty());
+        } else {
+            let writes = overrides.write_files_calls();
+            assert_eq!(writes.len(), 1);
+            assert_eq!(writes[0].files[0].path, path);
+            assert_eq!(writes[0].files[0].content, archive);
+        }
+        assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    }
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
 }
 
 #[tokio::test]

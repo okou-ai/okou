@@ -1,5 +1,6 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
@@ -23,6 +24,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,12 +41,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.maxLengthReject
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -186,8 +190,8 @@ internal fun ArtifactCatalogList(
         }
         if (page == null && failure != null) {
             ArtifactInitialReadFailure(
-                failure.label(),
-                Modifier.widthIn(max = 730.dp),
+                failure,
+                Modifier.widthIn(max = 730.dp).weight(1f),
             )
             return@Column
         }
@@ -407,9 +411,29 @@ private fun ArtifactEmpty(
 }
 
 @Composable
-internal fun ArtifactInitialReadFailure(@StringRes label: Int, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().testTag("artifact_read_error_area")) {
-        ArtifactReadNotice(label, Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp))
+internal fun ArtifactInitialReadFailure(
+    failure: ArtifactCatalogFailure,
+    modifier: Modifier = Modifier,
+) {
+    val area = modifier.fillMaxWidth().testTag("artifact_read_error_area")
+    if (failure == ArtifactCatalogFailure.Initial) {
+        BoxWithConstraints(area) {
+            ContentReadFailure(
+                R.string.chat_list_first_load_failed,
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(horizontal = 16.dp)
+                    .testTag("artifact_read_failure"),
+            )
+        }
+    } else {
+        Box(area) {
+            ArtifactReadNotice(
+                failure.label(),
+                Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp),
+            )
+        }
     }
 }
 

@@ -165,22 +165,8 @@ struct ChatDetailView: View {
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
     }
-    .sheet(
-      isPresented: Binding(
-        get: { conversation.attachmentViewer.preview != nil },
-        set: { if !$0 { conversation.attachmentViewer.dismiss() } }
-      )
-    ) {
-      MessageAttachmentPreview(viewer: conversation.attachmentViewer)
-    }
-    .sheet(
-      isPresented: Binding(
-        get: { conversation.artifacts.preview != nil },
-        set: { if !$0 { conversation.artifacts.dismiss() } }
-      )
-    ) {
-      MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
-    }
+    .messageAttachmentPreview(viewer: conversation.attachmentViewer)
+    .messageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(isPresented: $conversation.sharing.showsCreatedLink) {
       ChatSharingCreatedView(sharing: conversation.sharing)
@@ -200,17 +186,9 @@ struct ChatDetailView: View {
       .okouSheetBackground()
       .task { await conversation.modelSelection?.models.loadCatalog() }
     }
-    .connectorAuthorization(store: conversation.connectorActions)
-    .alert(
-      "Unable to open connection",
-      isPresented: Binding(
-        get: { conversation.connectorActions.activationError != nil },
-        set: { if !$0 { conversation.connectorActions.activationError = nil } })
-    ) {
-      Button("OK") { conversation.connectorActions.activationError = nil }
-    } message: {
-      Text(conversation.connectorActions.activationError ?? "")
-    }
+    .connectorAuthorization(
+      store: conversation.connectorActions, failureTitle: "Unable to open connection"
+    )
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
@@ -364,16 +342,19 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
-    case .usage(let runID):
-      ConversationRunUsageView(
-        runID: runID, usage: conversation.runUsage,
-        showDetails: { usageDetails = UsageDetails(id: runID) }
-      )
+    case .usage(let runID, let answer):
+      HStack(spacing: OkouSpace.sm) {
+        if let answer { messageActions(for: answer) }
+        ConversationRunUsageView(
+          runID: runID, usage: conversation.runUsage,
+          showDetails: { usageDetails = UsageDetails(id: runID) })
+      }
       .frame(maxWidth: .infinity, alignment: .leading)
       .background {
         if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
       }
-      .padding(.horizontal, 26)
+      .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset + OkouSpace.six)
+      .padding(.top, answer == nil ? 0 : OkouSpace.sm)
     }
   }
 
@@ -398,24 +379,29 @@ struct ChatDetailView: View {
           UserMessageView(
             message: message, webURL: conversation.webURL,
             viewer: conversation.attachmentViewer, loadsAttachments: presentation.loadsAttachments,
-            sendTransition: presentation.loadsAttachments ? scrolling.sendTransition : nil)
-          deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
+            sendTransition: presentation.loadsAttachments ? scrolling.sendTransition : nil
+          ) {
+            if presentation.loadsAttachments, !conversation.sharing.isSelecting {
+              StoreProvider(conversation.graph) {
+                ConversationSendingIndicator(messageID: message.id, conversation: conversation)
+              }
+            }
+          }
+          if pendingRetry == true { deliveryFailure(message, isSending: isSending) }
         }
       } else {
-        messageContent(
-          message, pendingRetry: pendingRetry, isSending: isSending, presentation: presentation
-        )
-        .textual.fontScale(presentation.isWorkHistory ? 0.9 : 1)
-        .foregroundStyle(
-          presentation.isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground
-        )
-        .padding(.leading, presentation.isWorkHistory ? 28 : 0)
-        .overlay(alignment: .leading) {
-          if presentation.isWorkHistory {
-            Rectangle().fill(OkouColor.divider).frame(width: 1).padding(
-              .leading, 14)
+        messageContent(message, presentation: presentation)
+          .textual.fontScale(presentation.isWorkHistory ? 0.9 : 1)
+          .foregroundStyle(
+            presentation.isWorkHistory ? OkouColor.mutedForeground : OkouColor.foreground
+          )
+          .padding(.leading, presentation.isWorkHistory ? 28 : 0)
+          .overlay(alignment: .leading) {
+            if presentation.isWorkHistory {
+              Rectangle().fill(OkouColor.divider).frame(width: 1).padding(
+                .leading, 14)
+            }
           }
-        }
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
@@ -426,10 +412,9 @@ struct ChatDetailView: View {
       .accessibilityIdentifier("assistant-avatar")
   }
 
-  private func messageContent(
-    _ message: ChatMessage, pendingRetry: Bool?, isSending: Bool,
-    presentation: MessageRowPresentation
-  ) -> some View {
+  private func messageContent(_ message: ChatMessage, presentation: MessageRowPresentation)
+    -> some View
+  {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if message.role == .assistant && presentation.showsAvatar {
         assistantAvatar
@@ -467,41 +452,35 @@ struct ChatDetailView: View {
           attachment: attachment, viewer: conversation.attachmentViewer,
           loadsThumbnail: presentation.loadsAttachments)
       }
-      deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
       if presentation.showsActions {
-        MessageActionBar(
-          text: message.copyText,
-          chatURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-          shareLink: { audience in
-            let id = try await conversation.shareAnswer(message.id, audience: audience)
-            return conversation.webURL.appending(path: "share/threads/\(id)")
-          }
-        )
-        // The answer's text is inset 6 pt; the first glyph sits on that edge.
-        .padding(.leading, OkouSpace.six)
+        messageActions(for: message)
+          .padding(.leading, OkouSpace.six)
       }
     }
   }
 
-  @ViewBuilder
-  private func deliveryStatus(_ message: ChatMessage, pendingRetry: Bool?, isSending: Bool)
-    -> some View
-  {
-    if let pendingRetry {
-      HStack {
-        Text(pendingRetry ? conversation.deliveryFailureText(message.id) : "Sending…")
-          .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
-        if pendingRetry {
-          Button("Check and retry") {
-            guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
-              return
-            }
-            Task { await conversation.retry(pending) }
-          }
-          .font(.okou(.caption))
-          .disabled(isSending)
+  private func messageActions(for message: ChatMessage) -> some View {
+    MessageActionBar(
+      text: message.copyText,
+      chatURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+      shareLink: { audience in
+        let id = try await conversation.shareAnswer(message.id, audience: audience)
+        return conversation.webURL.appending(path: "share/threads/\(id)")
+      })
+  }
+
+  private func deliveryFailure(_ message: ChatMessage, isSending: Bool) -> some View {
+    HStack {
+      Text(conversation.deliveryFailureText(message.id))
+        .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+      Button("Check and retry") {
+        guard let pending = conversation.pending.first(where: { $0.id == message.id }) else {
+          return
         }
+        Task { await conversation.retry(pending) }
       }
+      .font(.okou(.caption))
+      .disabled(isSending)
     }
   }
 }

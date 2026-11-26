@@ -1,10 +1,10 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
-/// Composes subscription resources, business commands and one authorization lifetime.
-@MainActor @Observable
+/// Composes subscription resources, business commands and one authorization lifetime. The
+/// mutation phase is kept in the workspace session's Store.
+@MainActor
 final class PersonalSubscriptionStore {
   typealias AuthPhase = PersonalSubscriptionAuthorization.Phase
   enum Action {
@@ -13,23 +13,41 @@ final class PersonalSubscriptionStore {
     case reset(String)
     case reconnect(PersonalSubscriptionType)
   }
-  private enum Mutation {
+  /// A subscription write's phase: what settings, the model sheet and failure cards render.
+  enum Mutation: Equatable {
     case idle, working
     case confirmed(notice: String?, refreshError: String?)
     case failed(String)
+
+    var isMutating: Bool { self == .working }
+    var error: String? {
+      switch self {
+      case .failed(let message): message
+      case .confirmed(_, let error): error
+      default: nil
+      }
+    }
+    var notice: String? {
+      if case .confirmed(let notice, _) = self { return notice }
+      return nil
+    }
   }
+  /// The phase for views whose owner may have no subscriptions.
+  static let idleMutation = Computed { _ in Mutation.idle }
   let resources: PersonalSubscriptionResources
   let authorization: PersonalSubscriptionAuthorization
   var stateStore: CCState.Store { resources.store }
   private let service: PersonalSubscriptionService
   private let didFail: @MainActor (Error) -> Void
   var didMutate: (@MainActor () async -> Void)?
-  private var mutation = Mutation.idle
+  /// Views resolve it; `isMutating`, `error` and `notice` serve actions and tests.
+  let mutationValue: Computed<Mutation>
+  private let mutationState = CCState.State(Mutation.idle)
   private var resetKeys: [String: String] = [:]
   // A confirmed reset with failed readback retries only that read, never spends another credit.
   private var resetOutcomes: [String: String] = [:]
-  @ObservationIgnored private var mutationTask: Task<Bool, Error>?
-  @ObservationIgnored private var mutationRefreshTask: Task<Void, Error>?
+  private var mutationTask: Task<Bool, Error>?
+  private var mutationRefreshTask: Task<Void, Error>?
   private var mutationRevision = UUID()
   private var closed = false
 
@@ -47,6 +65,8 @@ final class PersonalSubscriptionStore {
     authorization = PersonalSubscriptionAuthorization(
       store: stateStore, service: service, now: authNow, sleep: authSleep, didFail: didFail)
     self.didFail = didFail
+    let mutationState = mutationState
+    mutationValue = Computed { try $0(mutationState) }
     authorization.didComplete = { [weak self] in
       guard let self, !closed else { return }
       do { try await refreshAfterMutation() } catch is CancellationError {} catch {
@@ -58,21 +78,23 @@ final class PersonalSubscriptionStore {
 
   var accounts: [PersonalSubscription] { resources.accounts }
   var accountRevision: Int { resources.accountRevision }
-  var isMutating: Bool {
-    if case .working = mutation { return true }
-    return false
-  }
-  var error: String? {
-    switch mutation {
-    case .failed(let message): message
-    case .confirmed(_, let error): error
-    default: nil
+  /// The current value of `mutationValue`.
+  private(set) var mutation: Mutation {
+    get {
+      // A synchronous local value, not a network or persistence boundary.
+      do { return try stateStore.get(mutationValue) } catch {
+        preconditionFailure("Cannot read the subscription mutation: \(error)")
+      }
+    }
+    set {
+      do { try stateStore.set(mutationState, newValue) } catch {
+        preconditionFailure("Cannot publish the subscription mutation: \(error)")
+      }
     }
   }
-  var notice: String? {
-    if case .confirmed(let notice, _) = mutation { return notice }
-    return nil
-  }
+  var isMutating: Bool { mutation.isMutating }
+  var error: String? { mutation.error }
+  var notice: String? { mutation.notice }
   var phase: AuthPhase { authorization.current.phase }
   var authType: PersonalSubscriptionType? { authorization.current.authType }
   var browserURL: URL? { authorization.current.browserURL }
@@ -84,7 +106,7 @@ final class PersonalSubscriptionStore {
     set { authorization.authorizationCode = newValue }
   }
 
-  @ObservationIgnored private lazy var action: Command<Task<Bool, Error>, Action> =
+  private lazy var action: Command<Task<Bool, Error>, Action> =
     asyncCommand { [weak self] _, action in
       guard let self, !closed else { throw CancellationError() }
       return await perform(action)

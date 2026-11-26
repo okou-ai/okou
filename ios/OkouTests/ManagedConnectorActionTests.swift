@@ -69,7 +69,9 @@ final class ManagedConnectorActionTests: XCTestCase {
           threadID: FixtureData.threadID))
     }
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil || store.activationError != nil }
+    try await waitForBusinessResult(watching: store) {
+      store.active != nil || store.activationError != nil
+    }
     let flow = try XCTUnwrap(store.active)
     store.submit()
     try await waitForBusinessResult { !flow.busy }

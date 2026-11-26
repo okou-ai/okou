@@ -43,6 +43,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -103,6 +104,8 @@ internal fun WorkspaceSettingsFeedback(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val switchFailed by
         rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
+    val creditRefreshFailed by
+        rememberUpdatedState(stringResource(R.string.settings_credit_unavailable))
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
     val emailUnconfirmed by
         rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
@@ -115,6 +118,7 @@ internal fun WorkspaceSettingsFeedback(
                 val message =
                     when (notice) {
                         SettingsNotice.ModelAccountSwitchFailed -> switchFailed
+                        SettingsNotice.CreditBalanceRefreshFailed -> creditRefreshFailed
                         SettingsNotice.EmailSubscriptionFailed -> emailFailed
                         SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
                         SettingsNotice.ToolSaveFailed -> toolFailed
@@ -141,8 +145,7 @@ internal fun WorkspaceSettingsDataPage(
     }
     when (destination) {
         SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
-        SettingsDestination.CreditBalance ->
-            CreditBalance(workspace, state, model.showWorkspaceCredits)
+        SettingsDestination.CreditBalance -> CreditBalance(workspace, state)
         else -> Unit
     }
 }
@@ -177,11 +180,15 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-internal fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
+internal fun SettingsDetailStatus(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Text(
         text,
         modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = color,
         style = MaterialTheme.typography.bodyMedium,
     )
 }
@@ -442,7 +449,7 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
                 modifier =
                     Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
                 color = colors.primary,
-                trackColor = colors.outlineVariant,
+                trackColor = colors.secondaryContainer,
                 gapSize = 0.dp,
                 drawStopIndicator = {},
             )
@@ -488,18 +495,10 @@ private fun resetLabel(value: Instant, locale: Locale): String {
 private fun CreditBalance(
     workspace: String,
     state: WorkspaceSettingsState,
-    showWorkspaceCredits: Boolean,
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
-    val status =
-        when {
-            state.usagePack.unavailable && member != null ||
-                state.workspaceCredits.unavailable && shared != null ->
-                R.string.settings_credit_update_failed
-            else -> null
-        }
-    SettingsPageIntro(workspace, R.string.settings_credit_scope, status)
+    SettingsDetailStatus(stringResource(R.string.settings_credit_scope, workspace))
     SettingsSection(stringResource(R.string.settings_credit_member)) {
         if (member != null) {
             CreditCard(
@@ -511,7 +510,7 @@ private fun CreditBalance(
             )
         } else CreditReadState(state.usagePack)
     }
-    if (showWorkspaceCredits) {
+    if (state.showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
             if (shared != null) {
                 val byCategory =

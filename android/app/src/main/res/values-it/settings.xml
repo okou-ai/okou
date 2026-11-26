@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">Le impostazioni email sono temporaneamente non disponibili.</string>
     <string name="settings_email_refresh_failed">Sincronizzazione non riuscita. È visibile l’ultima iscrizione salvata.</string>
     <string name="settings_email_refreshing">Sincronizzazione dell’iscrizione via email</string>
+    <string name="settings_email_saving">Aggiornamento dell’iscrizione via email…</string>
     <string name="settings_email_save_failed">Impossibile aggiornare l’iscrizione via email.</string>
     <string name="settings_email_save_unconfirmed">L’aggiornamento dell’iscrizione via email non è ancora confermato.</string>
     <string name="settings_models">Modelli</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Saldo crediti</string>
     <string name="settings_credit_scope">Crediti Okou in «%1$s»</string>
-    <string name="settings_credit_update_failed">Impossibile aggiornare. È mostrato l’ultimo saldo disponibile.</string>
     <string name="settings_credit_unavailable">Impossibile visualizzare il saldo al momento.</string>
     <string name="settings_credit_member">Pacchetto di utilizzo personale</string>
     <string name="settings_credit_workspace">Saldo dello spazio di lavoro</string>

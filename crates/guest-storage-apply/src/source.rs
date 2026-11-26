@@ -40,7 +40,7 @@ pub(crate) fn open_archive(
     url: &str,
     remote_metrics: Option<&RemoteArchiveAttemptMetrics>,
     local_metrics: Option<&LocalArchiveAttemptMetrics>,
-) -> Result<ArchiveSource, DownloadError> {
+) -> Result<ArchiveSource<'static>, DownloadError> {
     if let Some(path) = url.strip_prefix("file://") {
         return Ok(LocalArchive::open(path)?.into_source(local_metrics));
     }
@@ -148,7 +148,10 @@ impl LocalArchive {
         })
     }
 
-    pub(crate) fn into_source(self, metrics: Option<&LocalArchiveAttemptMetrics>) -> ArchiveSource {
+    pub(crate) fn into_source(
+        self,
+        metrics: Option<&LocalArchiveAttemptMetrics>,
+    ) -> ArchiveSource<'static> {
         match metrics {
             Some(metrics) => ArchiveSource::local(
                 measure_local_body(self.file, metrics),
@@ -159,14 +162,14 @@ impl LocalArchive {
     }
 }
 
-pub(crate) struct ArchiveSource {
-    reader: Box<dyn Read>,
+pub(crate) struct ArchiveSource<'input> {
+    reader: Box<dyn Read + 'input>,
     http_body_read_failure: HttpBodyReadFailure,
     compressed_bytes: Option<u64>,
 }
 
-impl ArchiveSource {
-    pub(crate) fn local(reader: impl Read + 'static, compressed_bytes: Option<u64>) -> Self {
+impl<'input> ArchiveSource<'input> {
+    pub(crate) fn local(reader: impl Read + 'input, compressed_bytes: Option<u64>) -> Self {
         Self {
             reader: Box::new(reader),
             http_body_read_failure: HttpBodyReadFailure::disabled(),
@@ -196,7 +199,7 @@ impl ArchiveSource {
         self.compressed_bytes
     }
 
-    pub(crate) fn into_parts(self) -> (Box<dyn Read>, HttpBodyReadFailure) {
+    pub(crate) fn into_parts(self) -> (Box<dyn Read + 'input>, HttpBodyReadFailure) {
         (self.reader, self.http_body_read_failure)
     }
 }

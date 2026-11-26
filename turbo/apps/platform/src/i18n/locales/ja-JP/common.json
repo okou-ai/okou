@@ -509,9 +509,9 @@
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
       "automaticHint": "サイトの CNAME と所有権確認用 TXT を設定します。下に表示される追加の証明書レコードを設定してから、ここに戻って確認してください。",
-      "automaticSetup": "サイトのレコードを設定",
-      "checkBeforeEditing": "DNS を変更する前に「検証」をクリックしてレコードを確認してください。",
+      "backToDns": "DNS 設定に戻る",
       "checkFailed": "対応が必要",
+      "checking": "確認中…",
       "checkNotChecked": "未確認",
       "checkPassed": "確認済み",
       "checkPending": "待機中",
@@ -523,6 +523,7 @@
         "route": "サイトへの接続"
       },
       "checkUnavailable": "確認できません",
+      "configureProvider": "{{provider}} で設定",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
@@ -542,13 +543,10 @@
       "manualHint": "DNS 設定にレコードをコピーしてから、ここに戻って確認してください。",
       "needsSetup": "Finish setup",
       "noDnsChanges": "DNS レコードは一致しています。DNS の変更は不要です。",
-      "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
       "openDns": "{{provider}} の DNS を開く",
       "ownDomain": "Enter a domain you own",
-      "recordMatched": "一致",
       "recordName": "名前",
-      "recordNeedsCheck": "まだ一致していません",
       "recordValue": "値",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
@@ -556,7 +554,6 @@
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
       "retryVerification": "以下の結果を確認し、「検証」をクリックして再確認してください。",
-      "reviewDns": "DNS レコードを確認",
       "saveToEnable": "「保存」をクリックすると共有用アドレスが変更されます。",
       "setUpDns": "DNS レコードを設定",
       "setupStages": "ドメイン設定の手順",
@@ -574,7 +571,10 @@
       "verified": "Domain verified. Save to use this address.",
       "verifiedRecords": "検証済みのレコード（{{total}}）",
       "verify": "Verify",
+      "verifyAgain": "再確認",
       "verifyDomain": "ドメインの検証",
+      "verifyFailed": "ドメインを確認できませんでした。もう一度お試しください。",
+      "verifyingHint": "ドメインを確認しています。結果は以下に表示されます。",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -5859,6 +5859,7 @@
       "personal": {
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
+        "antigravityGroup": "Google AIのプラン",
         "autoCredits": "Okouクレジットを使用",
         "autoDescription": "ChatGPT または Claude アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
@@ -7446,6 +7447,7 @@
       "sort": {
         "alphabetical": "アルファベット順",
         "created": "作成日時が新しい順",
+        "heading": "並べ替え",
         "label": "ワークフローの並べ替え",
         "nextRun": "次の実行"
       },

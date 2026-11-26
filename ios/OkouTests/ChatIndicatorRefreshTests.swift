@@ -74,7 +74,9 @@ final class ChatIndicatorRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult { workspace.list.activeThreadIDs.contains(fixture.threadID) }
+    try await waitForBusinessResult(
+      watching: workspace.list.activeThreadIDsValue, in: workspace.graph
+    ) { workspace.list.activeThreadIDs.contains(fixture.threadID) }
     gate.open()
     await refresh.value
     XCTAssertEqual(workspace.list.threads.first?.id, fixture.threadID)

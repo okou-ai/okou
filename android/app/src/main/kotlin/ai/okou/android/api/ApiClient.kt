@@ -37,6 +37,7 @@ import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SetMorningBriefPreference
 import ai.okou.android.api.generated.SetProactiveSuggestionsPreference
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateEmailSubscriptionRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
@@ -409,6 +410,10 @@ class ApiClient(
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {
         writeNoContent { renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
+    }
+
+    suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest) {
+        writeNoContent { setThreadModel(it, threadId, request) }
     }
 
     suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) {

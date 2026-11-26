@@ -101,10 +101,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, independent of workspace
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
+    enabled: true,
   },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
@@ -317,6 +314,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Slack artifact sharing",
     description:
       "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Feishu and Lark artifact sharing",
+    description:
+      "Preview artifacts per authorized reader and privately help owners share access with current chat members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

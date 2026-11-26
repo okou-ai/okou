@@ -98,6 +98,16 @@ class CacheTest(unittest.TestCase):
 set -eu
 while [[ $1 != -o ]]; do url=$1; shift; done
 case "$url" in */zig-*-linux-0.15.2.tar.xz) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
+host=${url#https://}
+host=${host%%/*}
+printf '%s\n' "$host" >> "$CACHE_TEST_ROOT/download-hosts"
+case " ${CACHE_TEST_TIMEOUT_HOSTS:-} " in
+  *" $host "*) printf 'partial\n' > "$2"; exit 28 ;;
+esac
+if [[ ${CACHE_TEST_BAD_ARCHIVE:-} == "$name" ]]; then
+  printf 'unverified archive\n' > "$2"
+  exit 0
+fi
 exec cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
@@ -233,6 +243,34 @@ exec /usr/bin/flock "$@"
         (entry / "complete").unlink()
         self.run_build(False)
         self.run_build(True)
+
+    def test_download_timeouts_recover_through_alternate_hosts(self):
+        entry = self.run_build(False, extra={"CACHE_TEST_TIMEOUT_HOSTS": "ziglang.org kerberos.org"})
+        self.assertEqual((self.root / "download-hosts").read_text().splitlines(),
+                         ["ziglang.org", "zig.squirl.dev", "kerberos.org", "distfiles.macports.org"])
+        for name in ("zig.tar.xz", "krb5.tar.gz"):
+            self.assertEqual(sha(entry / name), sha(self.root / name))
+        self.assertTrue((entry / "complete").is_file())
+
+    def test_exhausted_downloads_report_both_sources_and_remove_partial_bytes(self):
+        process, _ = self.start(extra={"CACHE_TEST_TIMEOUT_HOSTS": "ziglang.org zig.squirl.dev"})
+        log, _ = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 28, log)
+        self.assertEqual(log.count("(curl exit 28)"), 2, log)
+        self.assertIn("https://ziglang.org/download/0.15.2/zig-", log)
+        self.assertIn("https://zig.squirl.dev/zig-", log)
+        self.assertFalse(list(self.cache.glob("*/zig.tar.xz*")))
+        self.assertFalse(list(self.cache.glob("*/complete")))
+
+    def test_downloaded_checksum_mismatch_stops_before_publication(self):
+        process, _ = self.start(extra={"CACHE_TEST_BAD_ARCHIVE": "zig.tar.xz"})
+        log, _ = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, log)
+        self.assertIn("SHA-256 verification failed for zig-", log)
+        self.assertIn("https://ziglang.org/download/0.15.2/zig-", log)
+        self.assertEqual((self.root / "download-hosts").read_text().splitlines(), ["ziglang.org"])
+        self.assertFalse(list(self.cache.glob("*/zig.tar.xz*")))
+        self.assertFalse(list(self.cache.glob("*/complete")))
 
     def test_unsafe_archive_is_rejected_even_with_matching_receipt(self):
         entry = self.run_build(False)

@@ -509,9 +509,9 @@
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
       "automaticHint": "将配置网站的 CNAME 和所有权 TXT。额外证书记录仍需在下方配置，完成后回来点验证。",
-      "automaticSetup": "一键配置网站记录",
-      "checkBeforeEditing": "修改 DNS 前，先点击验证检查记录。",
+      "backToDns": "返回 DNS 配置",
       "checkFailed": "需要处理",
+      "checking": "验证中…",
       "checkNotChecked": "尚未检查",
       "checkPassed": "已通过",
       "checkPending": "等待中",
@@ -523,6 +523,7 @@
         "route": "网站路由"
       },
       "checkUnavailable": "暂时无法检查",
+      "configureProvider": "使用 {{provider}} 一键配置",
       "connect": "Connect a domain",
       "continue": "继续",
       "copied": "已复制",
@@ -542,13 +543,10 @@
       "manualHint": "将记录复制到 DNS 设置，完成后回来点验证。",
       "needsSetup": "Finish setup",
       "noDnsChanges": "DNS 记录已匹配，无需修改。",
-      "notChecked": "尚未验证",
       "okouUrl": "Okou URL",
       "openDns": "打开 {{provider}} DNS",
       "ownDomain": "输入你拥有的域名",
-      "recordMatched": "已匹配",
       "recordName": "名称",
-      "recordNeedsCheck": "尚未匹配",
       "recordValue": "值",
       "remove": "移除",
       "removeConfirm": "分享链接将恢复为 {{url}}。",
@@ -556,7 +554,6 @@
       "removeTitle": "移除自定义域名？",
       "removing": "此域名已断开连接。点击移除以完成配置清理。",
       "retryVerification": "查看下方结果，再点击验证重新检查。",
-      "reviewDns": "查看 DNS 记录",
       "saveToEnable": "点击保存后，分享地址才会更改。",
       "setUpDns": "设置 DNS 记录",
       "setupStages": "域名设置步骤",
@@ -574,7 +571,10 @@
       "verified": "Domain verified. Save to use this address.",
       "verifiedRecords": "已验证的记录（{{total}}）",
       "verify": "验证",
+      "verifyAgain": "重新验证",
       "verifyDomain": "域名验证",
+      "verifyFailed": "无法验证域名，请重试。",
+      "verifyingHint": "正在验证域名，结果将在下方显示。",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -5859,6 +5859,7 @@
       "personal": {
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
+        "antigravityGroup": "你的 Google AI 套餐",
         "autoCredits": "消耗 Okou 积分",
         "autoDescription": "连接你的 ChatGPT 或 Claude 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
@@ -7446,6 +7447,7 @@
       "sort": {
         "alphabetical": "按名称",
         "created": "最近创建",
+        "heading": "排序方式",
         "label": "工作流排序",
         "nextRun": "下次运行"
       },

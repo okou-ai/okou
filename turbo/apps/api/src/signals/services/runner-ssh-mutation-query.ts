@@ -18,6 +18,7 @@ import { runThreadSshAccess } from "./run-thread-remote-access.service";
 
 type RunnerSshMutationInput = RunnerSshResolveRequest & {
   readonly runId: string;
+  readonly supportsDevicePolicy?: boolean;
 };
 export interface RunnerSshHostIdentity {
   readonly id: string;
@@ -58,7 +59,7 @@ function authorityPredicate(
       agentRuns.runnerHeartbeatGeneration,
       input.runnerIdentity.heartbeatGeneration,
     ),
-    runThreadSshAccess(host),
+    runThreadSshAccess(host, input.supportsDevicePolicy === true),
   );
 }
 function authorityQuery(

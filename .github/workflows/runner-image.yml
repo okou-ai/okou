@@ -419,12 +419,11 @@ jobs:
         run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
 
       - name: Restore pinned Kerberos dependencies
-        id: kerberos-cache
         if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-runner-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
+          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Build runner dependency cache
         id: prewarm

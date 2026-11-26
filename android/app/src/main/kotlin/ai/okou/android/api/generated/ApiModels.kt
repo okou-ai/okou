@@ -9787,6 +9787,34 @@ data class RenameThreadRequest(
 )
 
 @Serializable
+enum class SetThreadModelRequestReasoningEffort {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("extra") EXTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class SetThreadModelRequestCodexServiceTier {
+    @SerialName("fast") FAST,
+    @SerialName("ultrafast") ULTRAFAST,
+}
+
+@Serializable
+data class SetThreadModelRequest(
+    val `model`: String?,
+    val `reasoningEffort`: SetThreadModelRequestReasoningEffort? = null,
+    val `codexServiceTier`: CanonicalOptional<SetThreadModelRequestCodexServiceTier?> =
+        CanonicalOptional.Absent,
+    val `eventId`: String? = null,
+    val `serviceTierEventId`: String? = null,
+)
+
+@Serializable
 data class ReorderPinnedThreadRequest(
     val `pinOrder`: String,
     val `eventId`: String,

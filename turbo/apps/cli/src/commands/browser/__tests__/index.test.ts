@@ -134,6 +134,7 @@ describe("okou browser command", () => {
       "use",
       "restart",
       "lease",
+      "diagnose",
       "new",
       "status",
       "view",

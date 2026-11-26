@@ -71,7 +71,7 @@
     <string name="chat_unpin">Détacher la discussion</string>
     <string name="chat_move_pin_up">Déplacer vers le haut</string>
     <string name="chat_move_pin_down">Déplacer vers le bas</string>
-    <string name="chat_title_field">Titre de la discussion</string>
+    <string name="chat_title_field">Nouveau nom</string>
     <string name="chat_rename_confirm">Renommer</string>
     <string name="chat_rename_cancel">Annuler</string>
     <string name="chat_delete">Supprimer la discussion</string>
@@ -102,6 +102,7 @@
     <string name="chat_project_delete_title">Supprimer le projet\u202F?</string>
     <string name="chat_project_delete_description">Les conversations de «\u00A0%1$s\u00A0» seront déplacées hors des projets. Les tâches en cours continueront.</string>
     <string name="chat_project_delete_pending">Suppression du projet…</string>
+    <string name="chat_delete_pending">Suppression…</string>
     <string name="chat_project_deleted">Le projet a été supprimé et ses conversations ont été déplacées hors des projets.</string>
     <string name="chat_project_delete_rejected">Impossible de supprimer le projet.</string>
     <string name="chat_project_delete_unconfirmed">Impossible de confirmer la suppression du projet.</string>

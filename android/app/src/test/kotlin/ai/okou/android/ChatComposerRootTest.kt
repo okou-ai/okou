@@ -23,6 +23,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -34,6 +35,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -63,11 +65,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -137,6 +141,178 @@ class ChatComposerRootTest {
     private var editor: ai.okou.android.chat.ChatComposerModel? = null
     private var replacement: ActivityScenario<MainActivity>? = null
     private var cleanupApplication: ComposerRootApplication? = null
+
+    @Test
+    @Config(application = DraftModelRootApplication::class)
+    fun conversationModelUpdatesImmediatelyAndSendUsesServerSettings() {
+        val app = compose.activity.application as DraftModelRootApplication
+        cleanupApplication = app
+        app.contextGate.countDown()
+        app.sendGate.countDown()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val requests = ConcurrentLinkedQueue<JsonObject>()
+        val events = app.fixture.chats.rowEventTail()
+        val delayedEvents = ConcurrentLinkedQueue<Pair<Long, String>>()
+        val previous = app.fixture.chats.commandResponse
+        app.fixture.chats.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath !=
+                    "/api/chat-threads/$CHAT_PERSONAL/model-selection"
+            )
+                previous(request)
+            else {
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                requests += body
+                val attempt = requests.size
+                if (attempt == 2) {
+                    jsonResponse("""{"code":"BAD_REQUEST","message":"Unavailable"}""")
+                        .setResponseCode(400)
+                } else {
+                    if (attempt == 1) {
+                        started.countDown()
+                        release.await()
+                    }
+                    val seq = 100L + attempt * 2
+                    val model =
+                        chatEventWire(
+                            id = body.getValue("eventId").jsonPrimitive.content,
+                            seq = seq,
+                            kind = "model_selection_updated",
+                        )
+                    val modelFields = buildMap {
+                        put("selectedModel", body.getValue("model"))
+                        body["reasoningEffort"]?.let { effort ->
+                            put(
+                                "modelSettingsPatch",
+                                JsonObject(
+                                    mapOf("model" to body.getValue("model"), "effort" to effort),
+                                ),
+                            )
+                        }
+                    }
+                    val resultEvents = if (attempt == 4) delayedEvents else events
+                    resultEvents +=
+                        seq to
+                            JsonObject(Json.parseToJsonElement(model).jsonObject + modelFields)
+                                .toString()
+                    body["codexServiceTier"]?.let { tier ->
+                        val tierEvent =
+                            chatEventWire(
+                                id = body.getValue("serviceTierEventId").jsonPrimitive.content,
+                                seq = seq + 1,
+                                kind = "service_tier_updated",
+                            )
+                        val serviceTier =
+                            if (tier == JsonNull) JsonNull else JsonPrimitive("priority")
+                        resultEvents +=
+                            (seq + 1) to
+                                JsonObject(
+                                        Json.parseToJsonElement(tierEvent).jsonObject +
+                                            ("serviceTier" to serviceTier),
+                                    )
+                                    .toString()
+                    }
+                    MockResponse().setResponseCode(204).apply {
+                        if (attempt == 4) setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                    }
+                }
+            }
+        }
+        val modelRow = hasTestTag("chat-options-model") and isEnabled()
+        fun openModel() {
+            compose.onNodeWithTag("chat-options-button").performClick()
+            compose.waitUntilExactlyOneExists(modelRow, 8_000)
+            compose.onNode(modelRow).performClick()
+        }
+        fun closeModel() {
+            compose
+                .onNode(
+                    hasContentDescription("Back") and hasAnyAncestor(hasTestTag("model-picker")),
+                )
+                .performClick()
+            compose
+                .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+                .performSemanticsAction(SemanticsActions.Dismiss)
+        }
+        try {
+            compose.waitUntilExactlyOneExists(hasText("Personal chat"), 8_000)
+            compose.onNodeWithText("Personal chat").performClick()
+            compose.waitUntilExactlyOneExists(hasTestTag("message_input") and isEnabled(), 8_000)
+            compose.onNodeWithTag("message_input").performTextInput("Preserve this draft")
+            openModel()
+            val auto = compose.onNodeWithText("Auto")
+            val gpt = compose.onNodeWithText("GPT 5.6 Sol")
+            val fast = compose.onNodeWithText("Fast mode")
+            auto.assertIsSelected()
+            gpt.performClick().assertIsSelected()
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            fast.performClick().assertIsOn()
+            compose.onNodeWithText("Medium").performClick()
+            compose.onNodeWithText("High").performClick()
+            compose.onNodeWithText("High").assertExists()
+            assertEquals(1, requests.size)
+
+            closeModel()
+            val send = compose.onNodeWithContentDescription("Send")
+            compose.onNodeWithTag("message_input").assertTextContains("Preserve this draft")
+            send.assertIsEnabled().performClick()
+            awaitConversation { app.fixture.inputs.isNotEmpty() }
+            val input = app.fixture.inputs.values.single()
+            assertEquals(CHAT_PERSONAL, input.getValue("threadId").jsonPrimitive.content)
+            assertEquals("Preserve this draft", input.getValue("prompt").jsonPrimitive.content)
+            assertTrue(input.keys.none { it in setOf("inputModel", "model", "runOptions") })
+            assertEquals(1, requests.size)
+
+            release.countDown()
+            openModel()
+            compose.waitUntilExactlyOneExists(
+                hasText("Couldn’t save the model for this chat.") and
+                    hasAnyAncestor(hasTestTag("model-picker")),
+                8_000,
+            )
+            compose.waitUntilExactlyOneExists(hasText("Fast mode") and isOff(), 8_000)
+            gpt.assertIsSelected()
+            compose.onNodeWithText("High").assertExists()
+            fast.performClick().assertIsOn()
+            awaitConversation { requests.size == 4 }
+            val needsCheck = hasText("Couldn’t check the saved model.")
+            compose.waitUntilExactlyOneExists(needsCheck, 8_000)
+            fast.assertIsOn()
+            events.addAll(delayedEvents)
+            compose.onNodeWithText("Try again").performClick()
+            compose.waitUntilDoesNotExist(needsCheck, 8_000)
+            val saving = hasText("Saving…") or hasText("Checking the save result…")
+            compose.waitUntilDoesNotExist(saving, 8_000)
+            fast.assertIsOn()
+            closeModel()
+
+            app.modelFixture.gptFastAvailable = false
+            openModel()
+            compose.waitUntilDoesNotExist(hasText("Fast mode"), 8_000)
+            compose.onNodeWithText("High").performClick()
+            compose.onNodeWithText("Medium").performClick()
+            compose.waitUntilExactlyOneExists(hasText("Medium") and isEnabled(), 8_000)
+            awaitConversation { requests.size == 5 }
+            compose.waitUntilDoesNotExist(saving, 8_000)
+            val tierWrite = requests.elementAt(1)
+            assertEquals("fast", tierWrite.getValue("codexServiceTier").jsonPrimitive.content)
+            assertTrue("reasoningEffort" !in tierWrite)
+            val effortWrite = requests.elementAt(2)
+            assertEquals("high", effortWrite.getValue("reasoningEffort").jsonPrimitive.content)
+            assertTrue("codexServiceTier" !in effortWrite)
+            val unsupportedTierWrite = requests.elementAt(4)
+            assertEquals(
+                "medium",
+                unsupportedTierWrite.getValue("reasoningEffort").jsonPrimitive.content,
+            )
+            assertEquals(JsonNull, unsupportedTierWrite.getValue("codexServiceTier"))
+            assertTrue(app.fixture.created.isEmpty())
+            assertTrue(app.modelFixture.writes.isEmpty())
+        } finally {
+            release.countDown()
+        }
+    }
 
     @Test
     @Config(application = DraftModelRootApplication::class)
@@ -791,6 +967,27 @@ class ChatComposerRootTest {
         messageText(pending.eventId, prompt).assertIsDisplayed()
         messageDelivery(pending.eventId, "Sending…").assertDoesNotExist()
         compose.onNodeWithText("Check delivery").assertDoesNotExist()
+        assertTrue(app.fixture.inputs.isEmpty())
+    }
+
+    @Test
+    fun rejectedChatCreationKeepsTheInputRecoverable() {
+        val app = compose.activity.application as ComposerRootApplication
+        app.contextGate.countDown()
+        app.fixture.rejectCreate = true
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input")
+        val prompt = "Keep this unsent message"
+        input.performTextInput(prompt)
+        compose.onNodeWithContentDescription("Send").performClick()
+        val restore = hasText("Restore retained draft") and isEnabled()
+        compose.waitUntilExactlyOneExists(restore, 8_000)
+        compose
+            .onNodeWithText("The request failed. Your draft and pending message are retained.")
+            .assertDoesNotExist()
+        compose.onNode(restore).performClick()
+        input.assertTextContains(prompt)
+        assertTrue(app.fixture.created.isEmpty())
         assertTrue(app.fixture.inputs.isEmpty())
     }
 

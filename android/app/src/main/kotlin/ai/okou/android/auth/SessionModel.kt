@@ -3,7 +3,6 @@ package ai.okou.android.auth
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
-import ai.okou.android.api.generated.OrganizationRole
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
@@ -816,7 +815,12 @@ class SessionModel(
                     owner,
                     opened.identity,
                     defaultModelStore,
-                    resolvedOrganization.role == OrganizationRole.ADMIN,
+                    opened.role == "org:admin",
+                    {
+                        authentication.memberships(checkNotNull(snapshot.session)).any {
+                            it.id == opened.identity.workspaceId && it.role == "org:admin"
+                        }
+                    },
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
                     cache = settingsCache,

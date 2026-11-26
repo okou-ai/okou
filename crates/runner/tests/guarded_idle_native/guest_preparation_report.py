@@ -9,14 +9,13 @@ import struct
 import subprocess
 from typing import Callable
 
-import batch_aba_report as batch
 import cleanup_report as cleanup
 import ext4_superblock
 import progress_report as foreground
 import later_parking_report as later
 import pressure_report as pressure
 import report
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 
 @dataclass(frozen=True)
@@ -168,7 +167,7 @@ def validate(directory, contract):
     operation = later.identifier(captured.get("operation_run_id"))
     if operation in {*identity,history,thread}:
         raise ValueError("fixed operation identity reused")
-    started = batch.clock(captured.get("prepare_started_ns"),terminals[1]["monotonic_ns"],events[2]["monotonic_ns"])
+    started = clock(captured.get("prepare_started_ns"),terminals[1]["monotonic_ns"],events[2]["monotonic_ns"])
     sequence = wire(captured.get("request"),request_kind,
                     unix_window=(terminals[1]["unix_ns"],events[2]["unix_ns"]), history=history)
     exact(captured, {"history_run_id":history,"operation_run_id":operation,"prepare_started_ns":started,
@@ -194,24 +193,24 @@ def validate(directory, contract):
                     "response":waiting["response"],contract.field("public_restore_polled_pending", "public_repark_polled_pending", "public_repark_polled_pending"):True,
                     running:is_running}|LEASE|control_fields[0],
           "fixed waiting boundary or custody changed")
-    lost_ns = batch.clock(lost.get("lost_ns"),events[3]["monotonic_ns"],events[4]["monotonic_ns"])
+    lost_ns = clock(lost.get("lost_ns"),events[3]["monotonic_ns"],events[4]["monotonic_ns"])
     exact(lost, {"lost_ns":lost_ns,"observer_unwound":"-observer-unwind-" in case,"state":"Uncertain",
                  "commit_refused":True,"repark_refused":True,"incoming_refused":True,"original_metadata_preserved":True,
                  "pool_empty":True,"original_exit_polled_pending":True}|LEASE|control_fields[1],"fixed cancellation reopened original reuse")
-    held = batch.clock(progress.get("pool_held_ns"),events[4]["monotonic_ns"],events[5]["monotonic_ns"])
-    status_held = batch.clock(progress.get("status_held_ns"),held,events[5]["monotonic_ns"])
-    status_wait = batch.clock(progress.get("status_wait_polled_ns"),status_held,events[5]["monotonic_ns"])
+    held = clock(progress.get("pool_held_ns"),events[4]["monotonic_ns"],events[5]["monotonic_ns"])
+    status_held = clock(progress.get("status_held_ns"),held,events[5]["monotonic_ns"])
+    status_wait = clock(progress.get("status_wait_polled_ns"),status_held,events[5]["monotonic_ns"])
     waits_before,waits_after = (progress.get(key) for key in ("status_waits_before","status_waits_after"))
     if not pressure.integer(waits_before) or type(waits_after) is not int or waits_after != waits_before+1:
         raise ValueError("actual fixed status publication wait missing")
-    pending = batch.clock(progress.get("heartbeat_pending_ns"),status_wait,events[5]["monotonic_ns"])
+    pending = clock(progress.get("heartbeat_pending_ns"),status_wait,events[5]["monotonic_ns"])
     foreground.observer(progress.get("observer"),pending,events[5]["monotonic_ns"])
-    released = batch.clock(progress.get("pool_released_ns"),progress["observer"]["completed_ns"],events[5]["monotonic_ns"])
+    released = clock(progress.get("pool_released_ns"),progress["observer"]["completed_ns"],events[5]["monotonic_ns"])
     runner,generation = foreground.heartbeat(progress.get("heartbeat"),1,released,events[5]["monotonic_ns"],(2,4096))
-    status_released = batch.clock(progress.get("status_released_ns"),progress["heartbeat"]["completed_ns"],events[5]["monotonic_ns"])
-    status_published = batch.clock(progress.get("status_published_ns"),status_released,events[5]["monotonic_ns"])
-    after = batch.clock(progress.get("sample_after_ns"),status_published,events[5]["monotonic_ns"])
-    sample = batch.clock(progress.get("p1_sample_ns"),after,events[5]["monotonic_ns"])
+    status_released = clock(progress.get("status_released_ns"),progress["heartbeat"]["completed_ns"],events[5]["monotonic_ns"])
+    status_published = clock(progress.get("status_published_ns"),status_released,events[5]["monotonic_ns"])
+    after = clock(progress.get("sample_after_ns"),status_published,events[5]["monotonic_ns"])
+    sample = clock(progress.get("p1_sample_ns"),after,events[5]["monotonic_ns"])
     if runner in {*identity,history,thread,operation} or generation != 1 or not any(s["monotonic_ns"]==sample for s in samples):
         raise ValueError("fixed independent heartbeat or original P1 acknowledgement missing")
     exact(progress, {"pool_held_ns":held,"status_held_ns":status_held,"heartbeat_pending_ns":pending,
@@ -223,10 +222,10 @@ def validate(directory, contract):
     wire(joined.get("response"),result_kind,sequence)
     if terminal:
         exact(joined["response"],waiting["response"],"fixed late terminal was substituted")
-    delivered = batch.clock(joined.get("delivery_requested_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
-    finished = batch.clock(joined.get("joined_ns"),delivered,events[6]["monotonic_ns"])
+    delivered = clock(joined.get("delivery_requested_ns"),events[5]["monotonic_ns"],events[6]["monotonic_ns"])
+    finished = clock(joined.get("joined_ns"),delivered,events[6]["monotonic_ns"])
     if is_running and unwound:
-        controller_joined = batch.clock(joined.get("running_controller_joined_before_delivery_ns"),
+        controller_joined = clock(joined.get("running_controller_joined_before_delivery_ns"),
                                         events[5]["monotonic_ns"],delivered)
         if controller_joined >= delivered:
             raise ValueError("running controller was not joined before transport delivery/unwind")

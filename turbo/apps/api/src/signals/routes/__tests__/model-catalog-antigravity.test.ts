@@ -70,7 +70,7 @@ describe("staff Antigravity model catalog", () => {
           providerType: "antigravity",
           subscriptionType: "antigravity",
           concreteProviderType: "antigravity",
-          enabled: false,
+          enabled: true,
           defaultEffort: "medium",
           efforts:
             model === "gemini-4-carbon"

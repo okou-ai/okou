@@ -24,6 +24,22 @@ import { logger } from "../../lib/log";
 import { request$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
+import { rootSignal$ } from "../context/root";
+import {
+  prepareFeishuArtifactPreview$,
+  renderFeishuArtifactPreview$,
+  promptFeishuArtifactSharing$,
+  feishuArtifactSharingAction,
+  applyFeishuArtifactSharing$,
+  feishuArtifactSharingCredentials$,
+  type FeishuArtifactSharingAction,
+} from "./feishu-artifact-sharing.service";
+import { feishuArtifactCard } from "../../lib/feishu-artifact-sharing";
+import {
+  refreshFeishuArtifactPreview,
+  updateFeishuArtifactPrompt,
+} from "../external/feishu-artifact-client";
+import { sendEmailOutboxItem$ } from "./email-common.service";
 import {
   fetchFeishuBotInfo,
   FeishuApiError,
@@ -33,7 +49,13 @@ import {
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { nowDate } from "../../lib/time";
-import { safeSync, tapError } from "../utils";
+import {
+  safeSync,
+  tapError,
+  settleIncludingAbort,
+  awaitWithSignal,
+  settle,
+} from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { admitFeishuChatEvent$ } from "./feishu-chat-ingress.service";
 import { handleFeishuModelRecovery$ } from "./feishu-model-recovery.service";
@@ -432,6 +454,158 @@ const loadFeishuWebhookConfig$ = command(
   },
 );
 
+const processFeishuArtifactAction$ = command(
+  async ({ set }, input: FeishuArtifactSharingAction, signal: AbortSignal) => {
+    const credentials = await set(
+      feishuArtifactSharingCredentials$,
+      input.state.installationId,
+      signal,
+    );
+    if (!credentials) {
+      return;
+    }
+    const applied = await settle(
+      set(applyFeishuArtifactSharing$, { ...input, credentials }, signal),
+      signal,
+    );
+    await updateFeishuArtifactPrompt(
+      credentials,
+      {
+        token: input.updateToken,
+        card: feishuArtifactCard({
+          title: "Artifact sharing",
+          text: applied.ok
+            ? applied.value.text
+            : "Sharing could not finish. Some access changes may already have completed. Share the link again to check the remaining members.",
+        }),
+      },
+      signal,
+    );
+    if (!applied.ok) {
+      throw applied.error;
+    }
+    for (const id of applied.value.outboxIds) {
+      await set(sendEmailOutboxItem$, id, signal);
+    }
+    if (applied.value.refresh) {
+      await refreshFeishuArtifactPreview(
+        credentials,
+        input.state.previewToken,
+        signal,
+      );
+    }
+  },
+);
+
+const handleFeishuArtifactPreview$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly config: FeishuInstallationConfig;
+      readonly event: unknown;
+      readonly tenantKey: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    // The provider requires a response within three seconds; optional preview work cannot hold its callback open.
+    const previewSignal = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
+    const operation = set(prepareFeishuArtifactPreview$, args, previewSignal);
+    waitUntil(settleIncludingAbort(operation));
+    const prepared = await settleIncludingAbort(
+      awaitWithSignal(operation, previewSignal),
+    );
+    signal.throwIfAborted();
+    if (!prepared.ok) {
+      if (previewSignal.aborted) {
+        return jsonResponse({});
+      }
+      throw prepared.error;
+    }
+    if (prepared.value.prompt) {
+      waitUntil(
+        tapError(
+          set(
+            promptFeishuArtifactSharing$,
+            prepared.value.prompt,
+            get(rootSignal$),
+          ),
+          (error) => {
+            L.error("Error checking Feishu artifact sharing", { error });
+          },
+        ),
+      );
+    }
+    if (!prepared.value.resource) {
+      return jsonResponse(prepared.value.body);
+    }
+    const rendering = set(
+      renderFeishuArtifactPreview$,
+      { resource: prepared.value.resource, installationId: args.config.id },
+      previewSignal,
+    );
+    waitUntil(settleIncludingAbort(rendering));
+    const rendered = await settleIncludingAbort(
+      awaitWithSignal(rendering, previewSignal),
+    );
+    signal.throwIfAborted();
+    if (!rendered.ok) {
+      if (previewSignal.aborted) {
+        return jsonResponse({});
+      }
+      throw rendered.error;
+    }
+    return jsonResponse(rendered.value);
+  },
+);
+
+const handleFeishuArtifactCard$ = command(
+  (
+    { get, set },
+    args: {
+      readonly config: FeishuInstallationConfig;
+      readonly event: unknown;
+      readonly tenantKey: string;
+    },
+    signal: AbortSignal,
+  ): Response | null => {
+    signal.throwIfAborted();
+    const sharing = feishuArtifactSharingAction(
+      args.event,
+      args.config,
+      args.tenantKey,
+    );
+    if (sharing?.kind === "invalid") {
+      return jsonResponse({
+        toast: {
+          type: "error",
+          content:
+            "This sharing action has expired or belongs to another account. Share the link again.",
+        },
+      });
+    }
+    if (sharing?.kind === "action") {
+      waitUntil(
+        tapError(
+          set(processFeishuArtifactAction$, sharing, get(rootSignal$)),
+          (error) => {
+            L.error("Error handling Feishu artifact sharing", { error });
+          },
+        ),
+      );
+      return jsonResponse({
+        card: {
+          type: "raw",
+          data: feishuArtifactCard({
+            title: "Artifact sharing",
+            text: "Updating artifact access…",
+          }),
+        },
+      });
+    }
+    return null;
+  },
+);
+
 export const handleFeishuEventsForConfig$ = command(
   async (
     { get, set },
@@ -511,7 +685,30 @@ export const handleFeishuEventsForConfig$ = command(
       return validated.response;
     }
     await set(markCallbackVerified$, { config }, signal);
+    if (validated.envelope.header.event_type === "url.preview.get") {
+      return set(
+        handleFeishuArtifactPreview$,
+        {
+          config,
+          event: validated.envelope.event,
+          tenantKey: validated.envelope.header.tenant_key,
+        },
+        signal,
+      );
+    }
     if (validated.envelope.header.event_type === "card.action.trigger") {
+      const artifactResponse = set(
+        handleFeishuArtifactCard$,
+        {
+          config,
+          event: validated.envelope.event,
+          tenantKey: validated.envelope.header.tenant_key,
+        },
+        signal,
+      );
+      if (artifactResponse) {
+        return artifactResponse;
+      }
       return set(
         handleFeishuModelRecovery$,
         validated.envelope.event,

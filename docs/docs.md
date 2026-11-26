@@ -177,6 +177,9 @@ owning surface.
   scheduled work, shared-resource progress, cancellation, and shutdown.
 - [Guest/Runner transport](runner/runner-rpc-transport.md): control versus RPC
   placement, bounded framing, exact-assignment authority, and resource lifetime.
+- [Run WebSocket application protocol](runner/run-websocket-application-protocol.md):
+  proposed readiness, request correlation, resource limits, and reconnect semantics
+  for authenticated Run channels.
 - [MITM addon contracts](runner/mitm-addon-contracts.md): credential boundaries,
   framing, logging, and bounded protocol inspection.
 - [Rust testing](runner/rust-testing.md): crate integration tests, Runner owner

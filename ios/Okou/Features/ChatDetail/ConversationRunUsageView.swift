@@ -80,11 +80,12 @@ private struct ConversationRunUsageLabel: View {
   var body: some View {
     Group {
       if case .loading = state {
-        Color.clear.frame(height: 44).accessibilityHidden(true)
+        Color.clear.frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .accessibilityHidden(true)
       } else {
         Button(action: showDetails) {
-          HStack(spacing: 5) {
-            OkouIcon("layout-grid", size: OkouIconSize.inline).accessibilityHidden(true)
+          HStack(spacing: OkouSpace.xs) {
+            OkouIcon("coins", size: OkouIconSize.inline)
             if case .available(let usage) = state {
               Text(CreditUsageDisplay.credits(usage.totalCredits)).monospacedDigit()
             } else {
@@ -92,8 +93,11 @@ private struct ConversationRunUsageLabel: View {
             }
           }
           .font(.okou(.caption))
-          .foregroundStyle(OkouColor.mutedForeground)
-          .frame(minWidth: 44, minHeight: OkouControl.minimumTarget, alignment: .leading)
+          .foregroundStyle(OkouColor.mutedForeground.opacity(0.7))
+          .frame(
+            minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget,
+            alignment: .leading
+          )
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

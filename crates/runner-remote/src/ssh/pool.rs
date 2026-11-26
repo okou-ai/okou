@@ -207,6 +207,10 @@ impl Pool {
         observation.created_at = Some(request.credential.created_at);
         scope.check()?;
         request.access.check()?;
+        request
+            .access
+            .check_device_policy(&runtime.authority, scope)
+            .await?;
         self.prune();
         let generation = generation(&request.credential)?;
         observation.diagnostic_generation = Some(generation);

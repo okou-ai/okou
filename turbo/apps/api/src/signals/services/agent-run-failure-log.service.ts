@@ -14,7 +14,7 @@ import { logger } from "../../lib/log";
 
 export interface AgentRunFailureLogSnapshot {
   readonly launchSnapshot: {
-    readonly framework: "claude-code" | "codex" | "pi";
+    readonly framework: "claude-code" | "codex" | "pi" | "antigravity";
   } | null;
   readonly modelProvider: string | null;
   readonly modelProviderCredentialScope: string | null;

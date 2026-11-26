@@ -26,6 +26,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
+internal const val CONNECTOR_EXTERNAL_CODE_LIMIT = 4096
 private const val RECENT_READ_LIMIT = 8
 private const val ACCOUNT_READBACK_LIMIT = 3
 private val CONNECTOR_READ_LIFETIME = 10.minutes
@@ -77,6 +78,12 @@ internal data class ConnectorAction(
 ) {
     val blocksOtherActions: Boolean
         get() = busy || reconciling || authorization != null
+
+    val awaitingExternalReceipt: Boolean
+        get() =
+            authorization is ConnectorAuthorization.External &&
+                (problem == ConnectorProblem.VerificationPending ||
+                    problem == ConnectorProblem.VerificationNetwork)
 }
 
 internal data class ConnectorImpact(val accountId: String, val read: ConnectorRead<Long>)
@@ -148,6 +155,7 @@ class ConnectorModel(
     private var foreground = true
     private var filter: ConnectorBrowseFilter? = null
     private var authorizationDeadline: TimeMark? = null
+    private var pendingExternalCode: String? = null
     private var pendingChange: PendingChange? = null
 
     internal fun setOpen(open: Boolean) {
@@ -651,7 +659,7 @@ class ConnectorModel(
 
     internal fun openBrowser(launch: (HttpUrl) -> Boolean) {
         val action = mutableState.value.action ?: return
-        if (!open || !authorized() || action.busy) return
+        if (!open || !authorized() || action.busy || action.awaitingExternalReceipt) return
         val step = action.authorization ?: return
         if (authorizationExpired()) {
             // The device job may still be receiving the result of a poll sent before expiry.
@@ -758,15 +766,49 @@ class ConnectorModel(
     internal fun completeExternal(code: String) {
         val action = mutableState.value.action ?: return
         val step = action.authorization as? ConnectorAuthorization.External ?: return
-        if (!open || code.isBlank() || code.trim().length > 4096 || action.busy) return
+        val trimmed = code.trim()
+        if (
+            !open ||
+                action.busy ||
+                action.awaitingExternalReceipt ||
+                trimmed.length !in 1..CONNECTOR_EXTERNAL_CODE_LIMIT
+        )
+            return
         if (authorizationExpired()) {
             updateAction {
                 it.copy(authorization = null, problem = ConnectorProblem.AuthorizationIncomplete)
             }
             return
         }
+        submitExternalCode(action, step, trimmed)
+    }
+
+    internal fun checkExternalAuthorization() {
+        val action = mutableState.value.action ?: return
+        val step = action.authorization as? ConnectorAuthorization.External ?: return
+        val code = pendingExternalCode ?: return
+        if (!open || !action.awaitingExternalReceipt) return
+        // The server can still return the receipt of a completed session after its expiry.
+        submitExternalCode(action, step, code)
+    }
+
+    private fun submitExternalCode(
+        action: ConnectorAction,
+        step: ConnectorAuthorization.External,
+        code: String,
+    ) {
         runAction(action) {
-            val connectionId = service.completeExternal(action.target.slug, step, code.trim())
+            pendingExternalCode = code
+            val connectionId =
+                try {
+                    service.completeExternal(action.target.slug, step, code)
+                } catch (error: ApiFailure.Http) {
+                    if (!action.awaitingExternalReceipt || error.status != 400) throw error
+                    // A 400 can also mean that the original exchange is still completing.
+                    updateAction { it.copy(problem = ConnectorProblem.VerificationPending) }
+                    return@runAction
+                }
+            pendingExternalCode = null
             finishAuthorization(action.target, connectionId)
         }
     }
@@ -834,7 +876,16 @@ class ConnectorModel(
             throw ApiFailure.IncompatibleResponse()
         }
         updateAction {
-            it.copy(authorization = ConnectorAuthorization.Receipt(receipt), reconciling = true)
+            val externalCodeSessionId =
+                when (val previous = it.authorization) {
+                    is ConnectorAuthorization.External -> previous.sessionId
+                    is ConnectorAuthorization.Receipt -> previous.externalCodeSessionId
+                    else -> null
+                }
+            it.copy(
+                authorization = ConnectorAuthorization.Receipt(receipt, externalCodeSessionId),
+                reconciling = true,
+            )
         }
         val connected = service.accountIsConnected(target.slug, receipt)
         val accounts = service.accounts(target.slug)
@@ -862,13 +913,21 @@ class ConnectorModel(
 
     internal fun dismissAction() {
         val action = mutableState.value.action
-        if (action?.busy == true || action?.reconciling == true) return
+        if (action?.busy == true) return
+        if (action?.reconciling == true) {
+            val receipt = action.authorization as? ConnectorAuthorization.Receipt
+            if (receipt?.externalCodeSessionId != null) {
+                updateAction { it.copy(authorization = receipt.copy(externalCodeSessionId = null)) }
+            }
+            return
+        }
         deviceJob?.cancel()
         deviceJob = null
         verificationJob?.cancel()
         verificationJob = null
         verificationFailures = 0
         authorizationDeadline = null
+        pendingExternalCode = null
         mutableState.update { it.copy(action = null) }
     }
 
@@ -993,23 +1052,30 @@ class ConnectorModel(
                         error.status in 400..499 &&
                         error.status != 408 &&
                         error.status != 429
-                val canRetryBrowserReceipt = error.hasUncertainResponse() && !authorizationExpired()
+                val connectionFailed = error.connectionFailed()
+                val uncertain = error.hasUncertainResponse()
+                val canRetryBrowserReceipt = uncertain && !authorizationExpired()
                 if (definitive) pendingChange = null
                 updateAction {
+                    val checkExternalSession =
+                        it.authorization is ConnectorAuthorization.External &&
+                            (action.awaitingExternalReceipt || uncertain && !connectionFailed)
                     val verifying =
                         !definitive &&
-                            (it.reconciling || it.awaitingBrowserReceipt && canRetryBrowserReceipt)
+                            (it.reconciling ||
+                                it.awaitingBrowserReceipt && canRetryBrowserReceipt ||
+                                checkExternalSession)
                     it.copy(
                         reconciling = it.reconciling && !definitive,
                         authorization =
                             if (definitive && it.reconciling) null else it.authorization,
                         problem =
                             when {
-                                verifying && error.connectionFailed() ->
+                                verifying && connectionFailed ->
                                     ConnectorProblem.VerificationNetwork
                                 verifying -> ConnectorProblem.VerificationPending
-                                error.connectionFailed() -> ConnectorProblem.Network
-                                mayAuthorize && error.hasUncertainResponse() ->
+                                connectionFailed -> ConnectorProblem.Network
+                                mayAuthorize && uncertain ->
                                     ConnectorProblem.AuthorizationUnconfirmed
                                 else -> ConnectorProblem.Failed
                             },
@@ -1037,6 +1103,12 @@ class ConnectorModel(
                     refreshDetail()
                 }
             } finally {
+                if (
+                    action.authorization is ConnectorAuthorization.External &&
+                        (!authorized() ||
+                            mutableState.value.action?.awaitingExternalReceipt != true)
+                )
+                    pendingExternalCode = null
                 updateAction { it.copy(busy = false) }
                 scheduleVerification()
             }

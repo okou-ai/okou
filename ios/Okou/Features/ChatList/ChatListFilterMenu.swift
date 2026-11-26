@@ -29,6 +29,8 @@ struct ChatListFilterMenu: UIViewRepresentable {
   /// Whether a chat is unread: one the read-state snapshot marks, or a chat that is not muted in
   /// the list, from the values the sidebar resolves.
   let hasUnreadChats: Bool
+  /// Whether Mark all as read is in flight, so a changed state rebuilds the menu.
+  let markingAllRead: Bool
   /// Names a new Project; the sidebar owns its name dialog.
   let newProject: () -> Void
 
@@ -74,8 +76,7 @@ struct ChatListFilterMenu: UIViewRepresentable {
       UIMenu(options: [.displayInline, .singleSelection], children: filters)
     ]
     let list = store.list
-    let enabled =
-      !list.markingAllRead && list.updatingThreads.isEmpty && hasUnreadChats
+    let enabled = !markingAllRead && list.updatingThreads.isEmpty && hasUnreadChats
     groups.append(
       UIMenu(
         options: .displayInline,

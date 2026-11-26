@@ -8,7 +8,7 @@ import pathlib
 import batch_aba_report as batch
 import pressure_report as pressure
 import report
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_BATCH_REPARK_WITNESS "
 CASES = {f"BatchRepark-{mode}" for mode in ("fresh", "snapshot")}
@@ -42,7 +42,7 @@ def validate(directory):
                "sandbox_id":steps[0]["sandbox_id"],"backing_generation":steps[0]["backing_generation"]},
               "physical rollback original identity changed")
         for field in ("monotonic_ns", "unix_ns"):
-            batch.clock(event.get(field), steps[0][field], steps[1][field])
+            clock(event.get(field), steps[0][field], steps[1][field])
         value = event.get("evidence")
         if not isinstance(value, dict):
             raise ValueError("physical rollback evidence missing")
@@ -51,7 +51,7 @@ def validate(directory):
         if initial["reuse_key"] != report.GUARDED_IDLE_REUSE_KEY_PREFIX+history or history in runs:
             raise ValueError("physical rollback replaced original history")
         runs.add(history)
-        started = batch.clock(value.get("started_ns"), steps[0]["monotonic_ns"], event["monotonic_ns"])
+        started = clock(value.get("started_ns"), steps[0]["monotonic_ns"], event["monotonic_ns"])
         cycles = value.get("cycles")
         if not isinstance(cycles, list) or len(cycles) != 2:
             raise ValueError("physical rollback requires both observed cycles")
@@ -67,14 +67,14 @@ def validate(directory):
             clocks = {}
             for name in ("prepare_started_ns", "rpc_completed_ns", "prepared_ns",
                          "repark_started_ns", "repark_completed_ns"):
-                previous = batch.clock(cycle.get(name), previous, event["monotonic_ns"])
+                previous = clock(cycle.get(name), previous, event["monotonic_ns"])
                 clocks[name] = previous
             exact(cycle, {"operation_run_id":operation, **clocks,"payload_sha256":expected_digest,
                   "private_history_verified":True,"ordinary_home_verified":True,
                   "physical_unpark_completed":True,"physical_repark_completed":True,
                   "original_metadata_preserved":True,"original_full_lease_active":True},
                   "physical rollback lost actual RPC/park or original history/data/custody")
-        restored = batch.clock(value.get("restored_ns"), previous, event["monotonic_ns"])
+        restored = clock(value.get("restored_ns"), previous, event["monotonic_ns"])
         if restored >= steps[1]["evidence"]["pool_held_ns"]:
             raise ValueError("physical provider work overlapped held pool/status")
         revision = value.get("revision")

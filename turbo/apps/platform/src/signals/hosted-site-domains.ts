@@ -47,7 +47,7 @@ function createDomainState(site$: SiteSignal) {
   const addressMode$ = state<"platform" | "custom">("platform");
   const selectedDomainId$ = state<string | null>(null);
   const managedDomainId$ = state<string | null>(null);
-  const reviewedStage$ = state<DomainSetupStage | null>(null);
+  const viewedStage$ = state<DomainSetupStage | null>(null);
   const hostname$ = state("");
   const notice$ = state<string | null>(null);
   const removalConfirmation$ = state(false);
@@ -104,7 +104,7 @@ function createDomainState(site$: SiteSignal) {
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
-    reviewedStage$,
+    viewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
@@ -124,17 +124,16 @@ function createDomainWizard(scope: DomainState) {
       return null;
     }
     const progress = hostedDomainProgress(domain);
-    const review = get(scope.reviewedStage$);
-    return {
-      ...progress,
-      stage:
-        review !== null && review < progress.currentStage
-          ? review
-          : progress.currentStage,
-    };
+    const stage = get(scope.viewedStage$) ?? progress.initialStage;
+    const currentStage: DomainSetupStage = domain.ready
+      ? 2
+      : domain.verification || stage === 1
+        ? 1
+        : 0;
+    return { ...progress, currentStage, stage };
   });
   const reviewStage$ = command(({ set }, stage: DomainSetupStage) => {
-    set(scope.reviewedStage$, stage);
+    set(scope.viewedStage$, stage);
     set(scope.notice$, null);
   });
   return { wizard$, reviewStage$ };
@@ -146,7 +145,7 @@ function createDomainNavigation(scope: DomainState) {
     addressMode$,
     selectedDomainId$,
     managedDomainId$,
-    reviewedStage$,
+    viewedStage$,
     hostname$,
     notice$,
     removalConfirmation$,
@@ -156,7 +155,7 @@ function createDomainNavigation(scope: DomainState) {
     const settings = await get(settings$);
     signal.throwIfAborted();
     set(open$, false);
-    set(reviewedStage$, null);
+    set(viewedStage$, null);
     set(notice$, null);
     const selected =
       settings?.allowed &&
@@ -177,7 +176,7 @@ function createDomainNavigation(scope: DomainState) {
       return;
     }
     set(managedDomainId$, null);
-    set(reviewedStage$, null);
+    set(viewedStage$, null);
     set(hostname$, "");
     set(notice$, null);
     set(open$, true);
@@ -208,12 +207,7 @@ function createDomainNavigation(scope: DomainState) {
       const selected = settings?.domains.find((domain) => {
         return domain.id === get(selectedDomainId$) && domain.ready;
       });
-      const ready =
-        selected ??
-        settings?.domains.find((domain) => {
-          return domain.ready && !domain.removing;
-        });
-      set(selectedDomainId$, ready?.id ?? null);
+      set(selectedDomainId$, selected?.id ?? null);
       if (settings?.allowed && settings.domains.length === 0) {
         set(managedDomainId$, null);
         set(hostname$, "");
@@ -223,7 +217,7 @@ function createDomainNavigation(scope: DomainState) {
   );
   const manage$ = command(({ set }, id: string | null) => {
     set(managedDomainId$, id);
-    set(reviewedStage$, null);
+    set(viewedStage$, null);
     set(notice$, null);
     set(open$, true);
   });
@@ -314,7 +308,16 @@ const applyDomainSettings$ = command(
       open$,
     } = scope;
     set(saved$, settings);
-    set(scope.reviewedStage$, null);
+    set(
+      scope.viewedStage$,
+      action === "verify"
+        ? settings.domains.find((domain) => {
+            return domain.id === domainId;
+          })?.ready
+          ? 2
+          : 1
+        : null,
+    );
     if (
       get(selectedDomainId$) &&
       !settings.domains.some((domain) => {
@@ -434,6 +437,9 @@ function createDomainMutations(scope: DomainState) {
     return set(mutate$, "create", signal);
   });
   const verify$ = command(({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(scope.viewedStage$, 1);
+    set(scope.notice$, null);
     return set(mutate$, "verify", signal);
   });
   const remove$ = command(async ({ set }, signal: AbortSignal) => {

@@ -525,9 +525,9 @@
     "customDomain": {
       "addressHint": "Choose the full address used when you share this website.",
       "automaticHint": "Esto configura el CNAME del sitio y el TXT de propiedad. Añade abajo los registros adicionales del certificado y vuelve para verificar.",
-      "automaticSetup": "Configurar registros del sitio",
-      "checkBeforeEditing": "Haz clic en Verificar para comprobar los registros antes de cambiar el DNS.",
+      "backToDns": "Volver a configurar DNS",
       "checkFailed": "Requiere atención",
+      "checking": "Verificando…",
       "checkNotChecked": "Sin comprobar",
       "checkPassed": "Correcto",
       "checkPending": "En espera",
@@ -539,6 +539,7 @@
         "route": "Enrutamiento del sitio"
       },
       "checkUnavailable": "No se pudo comprobar",
+      "configureProvider": "Configurar con {{provider}}",
       "connect": "Connect a domain",
       "continue": "Continue",
       "copied": "Copied",
@@ -558,13 +559,10 @@
       "manualHint": "Copia los registros en tu configuración DNS y vuelve para verificar.",
       "needsSetup": "Finish setup",
       "noDnsChanges": "Tus registros DNS coinciden. No es necesario cambiarlos.",
-      "notChecked": "No verification yet",
       "okouUrl": "Okou URL",
       "openDns": "Abrir DNS de {{provider}}",
       "ownDomain": "Enter a domain you own",
-      "recordMatched": "Coincide",
       "recordName": "Nombre",
-      "recordNeedsCheck": "Aún no coincide",
       "recordValue": "Valor",
       "remove": "Remove",
       "removeConfirm": "Your sharing link will return to {{url}}.",
@@ -572,7 +570,6 @@
       "removeTitle": "Remove custom domain?",
       "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
       "retryVerification": "Revisa los resultados y haz clic en Verificar para comprobar de nuevo.",
-      "reviewDns": "Revisar registros DNS",
       "saveToEnable": "Tu dirección para compartir solo cambia al hacer clic en Guardar.",
       "setUpDns": "Configura los registros DNS",
       "setupStages": "Pasos para configurar el dominio",
@@ -590,7 +587,10 @@
       "verified": "Domain verified. Save to use this address.",
       "verifiedRecords": "Registros verificados ({{total}})",
       "verify": "Verify",
+      "verifyAgain": "Volver a verificar",
       "verifyDomain": "Verificación del dominio",
+      "verifyFailed": "No se pudo verificar tu dominio. Inténtalo de nuevo.",
+      "verifyingHint": "Verificando tu dominio. Los resultados aparecerán a continuación.",
       "yourDomains": "Connected domains"
     },
     "deletion": {
@@ -5950,6 +5950,7 @@
       "personal": {
         "accountFallback": "Cuenta {{number}}",
         "activeAccount": "Activa",
+        "antigravityGroup": "Tu plan de Google AI",
         "autoCredits": "Usa créditos de Okou",
         "autoDescription": "Conecta tu cuenta de ChatGPT o Claude para usar más modelos.",
         "autoTitle": "Usa más modelos",
@@ -7557,6 +7558,7 @@
       "sort": {
         "alphabetical": "Alfabético",
         "created": "Más recientes",
+        "heading": "Ordenar por",
         "label": "Ordenar workflows",
         "nextRun": "Próxima ejecución"
       },

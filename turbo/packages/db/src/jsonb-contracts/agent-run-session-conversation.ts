@@ -28,7 +28,7 @@ export type AgentRunFullLaunchSnapshot =
 /** Native history stays only in the retained sandbox/home for this producer. */
 export interface AgentRunLaunchSnapshotV5 {
   schemaVersion: 5;
-  framework: "claude-code" | "codex" | "pi";
+  framework: "claude-code" | "codex" | "pi" | "antigravity";
   runnerProfile: string;
 }
 export type AgentRunLaunchSnapshot = AgentRunFullLaunchSnapshot;

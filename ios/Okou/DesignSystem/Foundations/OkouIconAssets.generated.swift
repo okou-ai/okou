@@ -34,6 +34,7 @@ enum OkouIconAssets {
     "circle-x",
     "clock",
     "code",
+    "coins",
     "copy",
     "cpu",
     "download",

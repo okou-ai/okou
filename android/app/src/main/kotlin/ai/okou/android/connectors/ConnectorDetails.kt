@@ -14,6 +14,7 @@ import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -165,8 +166,16 @@ internal fun ConnectorDetails(
 
     val confirmingDisconnect = disconnectImpact != null
 
-    LaunchedEffect(action?.authorization) {
-        if (panel == null && action?.authorization != null && !action.reconciling) {
+    val authorization = action?.authorization
+    LaunchedEffect(authorization) {
+        if (
+            panel == null &&
+                action != null &&
+                authorization != null &&
+                (!action.reconciling ||
+                    authorization is ConnectorAuthorization.Receipt &&
+                        authorization.externalCodeSessionId != null)
+        ) {
             accountId = action.target.connectionId
             panel = ConnectorPanel.Authorize
         }
@@ -746,6 +755,7 @@ private fun ConnectorDefaultSwitch(
 ) {
     val color = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
+    val interactions = remember { MutableInteractionSource() }
     Row(
         modifier
             .fillMaxWidth()
@@ -754,6 +764,8 @@ private fun ConnectorDefaultSwitch(
             .updateFocusOutline(shape, color.onSurface, keyboardOnly = true)
             .toggleable(
                 checked,
+                interactionSource = interactions,
+                indication = null,
                 enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
@@ -768,7 +780,7 @@ private fun ConnectorDefaultSwitch(
             color = color.onSurface.copy(alpha = if (enabled) 1f else 0.38f),
             style = connectorBodyType(),
         )
-        OkouSwitch(checked, enabled)
+        OkouSwitch(checked, enabled, interactions)
     }
 }
 

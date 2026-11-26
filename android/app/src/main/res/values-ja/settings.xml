@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">現在、メール設定を読み込めません。</string>
     <string name="settings_email_refresh_failed">同期できませんでした。最後に保存した購読設定を表示しています。</string>
     <string name="settings_email_refreshing">メール購読設定を同期中</string>
+    <string name="settings_email_saving">メール購読設定を更新中…</string>
     <string name="settings_email_save_failed">メール購読設定を更新できませんでした。</string>
     <string name="settings_email_save_unconfirmed">メール購読設定の更新はまだ確認できていません。</string>
     <string name="settings_models">モデル</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">%1$s 未満</string>
     <string name="settings_credit_balance">クレジット残高</string>
     <string name="settings_credit_scope">「%1$s」の Okou クレジット</string>
-    <string name="settings_credit_update_failed">更新できませんでした。前回取得した残高を表示しています。</string>
     <string name="settings_credit_unavailable">現在、残高を表示できません。</string>
     <string name="settings_credit_member">個人用利用パック</string>
     <string name="settings_credit_workspace">ワークスペースの残高</string>

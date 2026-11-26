@@ -33,9 +33,9 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture, callbackQuery: "I+connected+Slack%2BChat")
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
@@ -54,12 +54,12 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertEqual(starts.withLock { $0 }, 2)
   }
   func testUncertainContinuationRetriesTheSameEventWithoutAnotherReconnect() async throws {
@@ -84,9 +84,9 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     // Unrelated read demand may evict cached rows, never the uncertain operation's identity.
     for _ in 0..<80 {
@@ -95,7 +95,7 @@ final class ConnectorActionTests: XCTestCase {
           target: .builtin("slack"), threadID: UUID().uuidString))
     }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(starts.withLock { $0 }, 1)
     XCTAssertEqual(eventIDs.withLock { Set($0).count }, 1)
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
@@ -147,9 +147,9 @@ final class ConnectorActionTests: XCTestCase {
         webURL: fixture.baseURL, threadID: FixtureData.threadID))
     XCTAssertEqual(action.isMemberApproval, memberWide)
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
@@ -211,7 +211,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     XCTAssertEqual(reads.withLock { $0 }, 0)
     store.browserDismissed()
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(reads.withLock { $0 }, 1)
     store.activate(action)
     await fulfillment(of: [scheduled[1]], timeout: 3)
@@ -249,7 +249,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       defer { store.close() }
       let action = try descriptor(fixture)
       store.activate(action)
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       let flow = try XCTUnwrap(store.active)
       store.submit()
       await fulfillment(of: [started], timeout: 3)
@@ -302,17 +302,17 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store) {
       store.active?.isExternalCode == true && store.active?.busy == false
     }
     store.active?.code = "wrong-code"
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     store.active?.code = "correct-code"
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(submissions.withLock { $0 }, 2)
   }
   func testOAuthCompletionReceiptVerifiesOwnedAccountBeforeContinuing() async throws {
@@ -346,7 +346,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     store.authorizationSceneChanged(isActive: false, isBackground: true)
     store.authorizationSceneChanged(isActive: true, isBackground: false)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
 
@@ -391,7 +391,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled[0]], timeout: 3)
     XCTAssertNotNil(store.active?.session)
@@ -403,7 +403,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     XCTAssertEqual(polls.withLock { $0 }, 1)
     XCTAssertNotNil(store.active)
     clock.advance(.seconds(1))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
   func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
@@ -453,7 +453,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(try descriptor(fixture, custom: true))
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
       XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
       store.submit()
@@ -462,7 +462,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
         XCTAssertEqual(callbacks.withLock { $0 }, 0)
         clock.advance(.seconds(2))
       }
-      try await waitForBusinessResult { store.active == nil }
+      try await waitForBusinessResult(watching: store) { store.active == nil }
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
   }
@@ -503,7 +503,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [firstPoll], timeout: 3)
     XCTAssertEqual(polls.withLock { $0 }, 0)
@@ -753,7 +753,7 @@ final class ConnectorStatusReadTests: XCTestCase {
     }
     XCTAssertEqual((error as? APIClientError)?.statusCode, 403)
     store.activate(action)
-    try await waitForBusinessResult { store.activationError != nil }
+    try await waitForBusinessResult(watching: store) { store.activationError != nil }
     XCTAssertNil(store.active)
   }
 
@@ -793,4 +793,8 @@ extension XCTestCase {
       commands: commands, thread: thread, didContinue: {},
       didFail: { _ in }, pollSleep: pollSleep)
   }
+}
+
+extension ConnectorActionStore {
+  fileprivate var attemptFailed: Bool { active?.error != nil && active?.busy == false }
 }

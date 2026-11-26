@@ -10,6 +10,66 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.134.0](https://github.com/okou-ai/okou/compare/api-v2.133.1...api-v2.134.0) (2026-11-26)
+
+
+### Features
+
+* **api:** enforce live remote device access ([#50892](https://github.com/okou-ai/okou/issues/50892)) ([df3cad0](https://github.com/okou-ai/okou/commit/df3cad08ac5cc8cfbe7167341149e70ac39ba6d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.131.0
+    * @okouai/core bumped to 8.883.2
+    * @okouai/db bumped to 2.70.0
+    * @okouai/pi-agent-runtime bumped to 1.52.86
+
+## [2.133.1](https://github.com/okou-ai/okou/compare/api-v2.133.0...api-v2.133.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **api:** bind phone use operations to the registration generation ([#50976](https://github.com/okou-ai/okou/issues/50976)) ([5180e1d](https://github.com/okou-ai/okou/commit/5180e1dcf8a16b958edeb7d721882ca22b1eb56c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.130.0
+    * @okouai/core bumped to 8.883.1
+    * @okouai/db bumped to 2.69.8
+    * @okouai/pi-agent-runtime bumped to 1.52.85
+
+## [2.133.0](https://github.com/okou-ai/okou/compare/api-v2.132.1...api-v2.133.0) (2026-11-26)
+
+
+### Features
+
+* **core:** enable artifact timing for everyone ([#50973](https://github.com/okou-ai/okou/issues/50973)) ([3d737bf](https://github.com/okou-ai/okou/commit/3d737bf1c93875478f6c5f70c6df2a106edbdf92))
+
+
+### Bug Fixes
+
+* **browser:** retain cli proxy shutdown diagnostics ([#50961](https://github.com/okou-ai/okou/issues/50961)) ([715a4e4](https://github.com/okou-ai/okou/commit/715a4e4a166d009ffadcbc6d466c261e69211273))
+
+
+### Refactoring
+
+* **api:** remove clerk lookups from vnc run authorization ([#50970](https://github.com/okou-ai/okou/issues/50970)) ([47da7c9](https://github.com/okou-ai/okou/commit/47da7c97682aa46f93f1acce4a5389a1ac9e0f7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.883.0
+    * @okouai/db bumped to 2.69.7
+    * @okouai/pi-agent-runtime bumped to 1.52.84
+
 ## [2.132.1](https://github.com/okou-ai/okou/compare/api-v2.132.0...api-v2.132.1) (2026-11-26)
 
 

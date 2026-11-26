@@ -94,6 +94,7 @@ internal fun ChatComposerField(
     connectorOptions: ChatConnectorOptions? = null,
     manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
     defaultModel: DefaultModelSettings? = null,
+    conversationModel: ConversationModelControls? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
@@ -201,6 +202,7 @@ internal fun ChatComposerField(
                         editorFocus,
                         manageConnectors,
                         defaultModel,
+                        conversationModel,
                     )
                 // Scroll state saved by Compose belongs to this orientation.
                 key(shortWindow) {
@@ -395,6 +397,4 @@ private fun ComposerFeedback(
         }
     }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-    if (target.key in state.failed && !connectorSetupFailed)
-        Text(stringResource(R.string.composer_request_failed))
 }

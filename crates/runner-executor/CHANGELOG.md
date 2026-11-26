@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.8...runner-executor-v0.24.9) (2026-11-26)
+
+## [0.24.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.7...runner-executor-v0.24.8) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** finish antigravity runs and forward their disallowed tools ([#50962](https://github.com/okou-ai/okou/issues/50962)) ([ab3428a](https://github.com/okou-ai/okou/commit/ab3428a58305077c974be77fa604f962424d66b4))
+
 ## [0.24.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.6...runner-executor-v0.24.7) (2026-11-25)
 
 ## [0.24.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.5...runner-executor-v0.24.6) (2026-11-25)
