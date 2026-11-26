@@ -216,27 +216,47 @@ test("returns provider refusal to iOS without creating a connection or allowing 
   expect(replay.body.nativeAppReturn).toBeUndefined();
 });
 
-test("uses the HTTPS return for direct callbacks and ignores unclaimed native-looking state", async () => {
-  const started = await start("github");
-  const app = createApp({ signal: context.signal, routes });
-  const callback = new URL(
-    "https://api.okou.ai/api/connectors/github/callback",
-  );
-  callback.searchParams.set("state", started.state);
-  callback.searchParams.set("error", "access_denied");
-  const denied = await app.request(callback.toString(), {
-    headers: { "x-okou-web-origin": "https://okou.ai" },
-  });
-  expect(denied.status).toBe(307);
-  expect(denied.headers.get("location")).toBe(started.nativeCallbackUrl);
-  callback.searchParams.set("state", `ios-https-v1:${randomUUID()}`);
-  const invalid = await app.request(callback.toString(), {
-    headers: { "x-okou-web-origin": "https://okou.ai" },
-  });
-  expect(new URL(invalid.headers.get("location") ?? "").pathname).toBe(
-    "/connector/error",
-  );
-});
+test.each([false, true])(
+  "keeps direct native callbacks on their connector result page (denied=%s)",
+  async (denied) => {
+    const started = await start("github");
+    const app = createApp({ signal: context.signal, routes });
+    const callback = new URL(
+      "https://api.okou.ai/api/connectors/github/callback",
+    );
+    callback.searchParams.set("state", started.state);
+    callback.searchParams.set(
+      denied ? "error" : "code",
+      denied ? "access_denied" : "provider-code",
+    );
+    const result = await app.request(callback.toString(), {
+      headers: { "x-okou-web-origin": "https://okou.ai" },
+    });
+    expect(result.status).toBe(307);
+    const destination = new URL(result.headers.get("location") ?? "");
+    expect(destination.origin).toBe("https://app.okou.ai");
+    expect(destination.pathname).toBe(
+      `/connectors/github/callback/${denied ? "error" : "success"}`,
+    );
+    expect(destination.searchParams.get("nativeAppAttemptId")).toBe(
+      started.oauthAttemptId,
+    );
+    expect(destination.searchParams.get("nativeAppHttpsHost")).toBe(
+      "app.okou.ai",
+    );
+    expect((await receipt("github", started.oauthAttemptId)).status).toBe(
+      denied ? 404 : 200,
+    );
+    expect(result.headers.get("Cache-Control")).toBe("no-store");
+    callback.searchParams.set("state", `ios-https-v1:${randomUUID()}`);
+    const invalid = await app.request(callback.toString(), {
+      headers: { "x-okou-web-origin": "https://okou.ai" },
+    });
+    expect(new URL(invalid.headers.get("location") ?? "").pathname).toBe(
+      "/connector/error",
+    );
+  },
+);
 
 test("keeps web grants unchanged and returns connectors outside the original whitelist", async () => {
   const web = await start("github", false);

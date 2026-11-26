@@ -15,6 +15,7 @@ import {
 import { authHeadersSchema, initContract } from "./base";
 import { connectorCatalogSyncAttemptReportSchema } from "./connector-catalog-sync";
 import { apiErrorSchema } from "./errors";
+import { proactiveTasks } from "./proactive";
 
 const c = initContract();
 
@@ -575,6 +576,55 @@ export const cronConnectorCatalogContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Publish the validated official connector catalog",
+  },
+});
+
+const proactiveShadowCounts = object({
+  bothDue: number().int().nonnegative(),
+  automationOnly: number().int().nonnegative(),
+  proactiveOnly: number().int().nonnegative(),
+  paused: number().int().nonnegative(),
+  awaitingAnchor: number().int().nonnegative(),
+  missingTimezone: number().int().nonnegative(),
+  invalidTimezone: number().int().nonnegative(),
+  deferred: number().int().nonnegative(),
+  overdue: number().int().nonnegative(),
+  expired: number().int().nonnegative(),
+});
+
+export const cronProactiveContract = c.router({
+  compare: {
+    method: "GET",
+    path: "/api/cron/proactive",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({
+        minute: iso.datetime(),
+        copy: object({
+          added: number().int().nonnegative(),
+          removed: number().int().nonnegative(),
+          changedSettings: number().int().nonnegative(),
+          changedCursor: number().int().nonnegative(),
+        }),
+        differences: array(
+          object({
+            orgId: string(),
+            userId: string(),
+            task: zEnum(proactiveTasks),
+            source: zEnum(["automation", "proactive"]),
+            scheduledAt: iso.datetime(),
+          }),
+        ).max(20),
+        tasks: object({
+          "morning-brief": proactiveShadowCounts,
+          suggestions: proactiveShadowCounts,
+          learning: proactiveShadowCounts,
+        }),
+      }),
+      401: apiErrorSchema,
+    },
+    summary:
+      "Compare upcoming built-in task slots while Automation owns dispatch",
   },
 });
 

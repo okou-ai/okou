@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">附件</string>
+    <string name="chat_attachment_photos">照片和视频</string>
+    <string name="chat_attachment_files">文件</string>
+    <string name="chat_attachment_count">%1$d 个附件</string>
+    <string name="chat_attachment_done">完成</string>
+    <string name="chat_attachment_remove">移除 %1$s</string>
+    <string name="chat_attachment_uploading">上传 %1$d%%</string>
+    <string name="chat_attachment_waiting">等待上传</string>
+    <string name="chat_attachment_failed">上传失败</string>
+    <string name="chat_attachment_reselect">重新选择文件</string>
+    <string name="chat_attachment_too_large">文件超过 512 MiB</string>
+    <string name="chat_attachment_type_file">文件</string>
+    <string name="chat_attachment_type_image">图片</string>
+    <string name="chat_attachment_type_video">视频</string>
+    <string name="chat_attachment_type_text">文本</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">暂时无法预览</string>
+    <string name="chat_attachment_save">保存</string>
+    <string name="chat_attachment_open">用其他应用打开</string>
+</resources>

@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.136.0](https://github.com/okou-ai/okou/compare/api-v2.135.0...api-v2.136.0) (2026-11-26)
+
+
+### Features
+
+* **api:** prepare schedules for the standalone proactive cron ([#51079](https://github.com/okou-ai/okou/issues/51079)) ([2b49ea5](https://github.com/okou-ai/okou/commit/2b49ea55c08205b79c036a97f26a2e0e38baf117))
+
+
+### Refactoring
+
+* remove slack artifact sharing feature switch ([#51083](https://github.com/okou-ai/okou/issues/51083)) ([50b7d05](https://github.com/okou-ai/okou/commit/50b7d05735afeaefa0cbcc86b33ffa8e4141922f))
+
+
+### Performance Improvements
+
+* **api:** deduplicate chat search projection around runner dispatch ([#51080](https://github.com/okou-ai/okou/issues/51080)) ([ade8eac](https://github.com/okou-ai/okou/commit/ade8eac256f73ca08fffe6135d19151666a2e02c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.0
+    * @okouai/core bumped to 8.885.1
+    * @okouai/db bumped to 2.71.0
+    * @okouai/pi-agent-runtime bumped to 1.52.89
+
 ## [2.135.0](https://github.com/okou-ai/okou/compare/api-v2.134.1...api-v2.135.0) (2026-11-26)
 
 

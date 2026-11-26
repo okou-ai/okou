@@ -6,9 +6,8 @@ import pathlib
 import re
 
 import batch_replacement_report as replacement
-import later_parking_report as later
 import report
-from report import exact
+from report import exact, validate_evidence_uuid
 
 PREFIX = "NATIVE_DUAL_HISTORY_WITNESS "
 CASES = {f"DualHistory{outcome}-{mode}" for outcome in ("Success", "Nonzero")
@@ -51,7 +50,7 @@ def validate(directory):
     seen, keys = set(), set()
 
     def identity(value):
-        value = later.identifier(value)
+        value = validate_evidence_uuid(value)
         if value in seen:
             raise ValueError("dual-history physical/run/session identity replay")
         seen.add(value)

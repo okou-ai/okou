@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">模型帳號</string>
     <string name="settings_accounts_scope">選擇你在「%1$s」使用的訂閱帳號。</string>
     <string name="settings_accounts_scope_empty">「%1$s」的模型帳號</string>
-    <string name="settings_workspace_status">「%1$s」 · %2$s</string>
     <string name="settings_accounts_update_failed">暫時無法更新，顯示上次同步的資訊。</string>
     <string name="settings_accounts_empty">尚未連接模型帳號</string>
     <string name="settings_accounts_empty_help">連接 ChatGPT 或 Claude 後可查看配額並選擇帳號。</string>

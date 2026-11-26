@@ -258,10 +258,10 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             compose.mainClock.autoAdvance = true
         }
         gate.countDown()
-        waitFor("Could not load workflows")
+        waitFor("Temporarily unable to load")
         val feedback =
             compose
-                .onNodeWithText("Could not load workflows")
+                .onNodeWithText("Temporarily unable to load")
                 .assertIsDisplayed()
                 .assert(
                     SemanticsMatcher.expectValue(
@@ -280,14 +280,15 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 )
                 .getUnclippedBoundsInRoot()
         val bounds = feedback.getUnclippedBoundsInRoot()
-        val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
-        assertEquals(12.dp, bounds.left - directory.left)
-        assertEquals(32.dp, bounds.top - filter.bottom)
+        val viewport = compose.onNodeWithTag("workflow_read_failure").getUnclippedBoundsInRoot()
+        val center = (viewport.left + viewport.right) / 2
+        assertTrue((bounds.left + bounds.right) / 2 in (center - 1.dp)..(center + 1.dp))
+        assertTrue(bounds.top > filter.bottom)
         val layouts = mutableListOf<TextLayoutResult>()
         feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val style = layouts.single().layoutInput.style
-        assertEquals(14.sp, style.fontSize)
-        assertEquals(20.sp, style.lineHeight)
+        assertEquals(16.sp, style.fontSize)
+        assertEquals(24.sp, style.lineHeight)
         selectScope("Workspace shared")
         feedback.assertIsDisplayed()
         back()
@@ -295,30 +296,41 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun cachedCatalogFailureAppearsInTheListAndKeepsScopeControlsUsable() {
+    fun cachedCatalogFailureOverlaysTheDirectoryWithoutMovingRowsOrReplaying() {
         app.gate.countDown()
         compose.onNodeWithContentDescription("Workflows").performClick()
         waitForTag("workflow_row_$WORKFLOW_RELEASE")
         back()
 
         val fixture = app.fixture
+        val gate = CountDownLatch(1)
         val response = fixture.chats.commandResponse
         fixture.chats.commandResponse = { request ->
-            if (request.requestUrl?.encodedPath == "/api/workflows")
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                gate.await()
                 MockResponse().setResponseCode(400)
-            else response(request)
+            } else response(request)
         }
         compose.onNodeWithContentDescription("Workflows").performClick()
+        val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE")
+        val original =
+            try {
+                row.assertIsDisplayed().getUnclippedBoundsInRoot()
+            } finally {
+                gate.countDown()
+            }
         val message = "Could not refresh the workflow directory. Showing loaded workflows."
         waitFor(message)
-        val feedback = compose.onNodeWithText(message).assertIsDisplayed()
-        val feedbackBounds = feedback.getUnclippedBoundsInRoot()
+        val snackbar = compose.onNodeWithTag("workflow_read_snackbar").assertIsDisplayed()
+        val feedbackBounds = snackbar.getUnclippedBoundsInRoot()
         val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
-        val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
-        assertEquals(16.dp, feedbackBounds.left - directory.left)
-        assertEquals(12.dp, row.top - feedbackBounds.bottom)
+        assertEquals(original, row.getUnclippedBoundsInRoot())
+        assertEquals(12.dp, feedbackBounds.left - directory.left)
+        assertEquals(8.dp, directory.bottom - feedbackBounds.bottom)
+        val text = compose.onNodeWithText(message).assertIsDisplayed()
+        assertEquals(16.dp, text.getUnclippedBoundsInRoot().left - feedbackBounds.left)
         val layouts = mutableListOf<TextLayoutResult>()
-        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals(14.sp, layouts.single().layoutInput.style.fontSize)
         assertEquals(20.sp, layouts.single().layoutInput.style.lineHeight)
         val all = compose.onNodeWithTag("workflow_scope_All").getUnclippedBoundsInRoot()
@@ -328,7 +340,27 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         selectScope("Workspace shared")
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").assertIsDisplayed()
-        feedback.assertIsDisplayed()
+        compose.onNodeWithText(message).assertDoesNotExist()
+        selectScope("All")
+        row.assertIsDisplayed()
+        compose.onNodeWithText(message).assertDoesNotExist()
+
+        back()
+        val nextRead = CountDownLatch(1)
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") nextRead.await()
+            response(request)
+        }
+        try {
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            row.assertIsDisplayed()
+            compose.onNodeWithText(message).assertDoesNotExist()
+            compose.activityRule.scenario.recreate()
+            row.assertIsDisplayed()
+            compose.onNodeWithText(message).assertDoesNotExist()
+        } finally {
+            nextRead.countDown()
+        }
     }
 
     @Test
@@ -1205,6 +1237,27 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
+    fun firstHistoryFailureUsesTheBodyBetweenTheHeadingAndUseAction() {
+        val fixture = app.fixture
+        val respond = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE/run-history") {
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick().assertIsSelected()
+        waitFor("Temporarily unable to load")
+
+        val heading = compose.onNodeWithText("Recent automation runs").getUnclippedBoundsInRoot()
+        val body = compose.onNodeWithTag("workflow_read_failure").getUnclippedBoundsInRoot()
+        val action =
+            compose.onNodeWithTag("workflow_use").assertIsEnabled().getUnclippedBoundsInRoot()
+        assertEquals(8.dp, body.top - heading.bottom)
+        assertEquals(33.dp, action.top - body.bottom)
+    }
+
+    @Test
     fun unavailableConnectorAnnouncesTheReadFailureAndReturnsToTheDraft() {
         app.connectorFixture.unavailableCatalogSlugs = setOf("gmail")
         openWorkflowDetail()
@@ -1437,8 +1490,24 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(rejected).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText(rejected).assertIsDisplayed()
+            val feedback = compose.onNodeWithText(rejected).assertIsDisplayed()
             compose.onNode(source).assertIsDisplayed()
+
+            compose.mainClock.autoAdvance = false
+            try {
+                compose.mainClock.advanceTimeBy(3_000)
+                feedback.assertIsDisplayed()
+                val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+                instructions.performClick()
+                compose.mainClock.advanceTimeBy(250)
+                instructions.assertIsSelected()
+                feedback.assertIsDisplayed()
+
+                compose.mainClock.advanceTimeBy(2_250)
+                feedback.assertDoesNotExist()
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         } finally {
             releaseDelete.countDown()
         }

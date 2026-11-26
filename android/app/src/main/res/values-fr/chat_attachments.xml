@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">Pièces jointes</string>
+    <string name="chat_attachment_photos">Photos et vidéos</string>
+    <string name="chat_attachment_files">Fichiers</string>
+    <string name="chat_attachment_count">Nombre de pièces jointes %1$d</string>
+    <string name="chat_attachment_done">Terminé</string>
+    <string name="chat_attachment_remove">Retirer %1$s</string>
+    <string name="chat_attachment_uploading">Envoi à %1$d%%</string>
+    <string name="chat_attachment_waiting">En attente d’envoi</string>
+    <string name="chat_attachment_failed">Échec de l’envoi</string>
+    <string name="chat_attachment_reselect">Choisir à nouveau un fichier</string>
+    <string name="chat_attachment_too_large">Le fichier dépasse 512 Mio</string>
+    <string name="chat_attachment_type_file">Fichier</string>
+    <string name="chat_attachment_type_image">Image</string>
+    <string name="chat_attachment_type_video">Vidéo</string>
+    <string name="chat_attachment_type_text">Texte</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">Aperçu indisponible</string>
+    <string name="chat_attachment_save">Enregistrer</string>
+    <string name="chat_attachment_open">Ouvrir avec</string>
+</resources>

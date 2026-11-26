@@ -110,8 +110,8 @@ struct ChatSettingsView: View {
           )
           .okouSectionNote()
         }
+        SettingsConnectorsSection(open: openConnectors)
         StoreProvider(store.settingsResources.store) {
-          SettingsConnectorsSection(workspace: store, open: openConnectors)
           SettingsRemoteDevicesSection(
             resources: store.settingsResources.remoteDevices, webURL: store.webURL)
           SettingsModelsSection(models: store.modelStore)
@@ -228,7 +228,6 @@ struct ChatSettingsView: View {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: store.webURL, graph: models.stateStore, includesRemote: false,
-      management: ComposerConnectorStore.managementEnabled,
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       },

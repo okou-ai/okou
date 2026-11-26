@@ -6,12 +6,11 @@ import pathlib
 import batch_aba_report as batch
 import observation_report
 import progress_report as foreground
-import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_evidence
 from cleanup_report import COUNTS, accounting, exact_coverage, has_accounting_shape, supplied_policy
-from report import exact, validate_batch_phase_clock as clock
+from report import exact, validate_batch_phase_clock as clock, validate_evidence_uuid
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
 CASES = {f"BatchReplacement-{mode}" for mode in ("fresh", "snapshot")}
@@ -69,7 +68,8 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
         prep = blocked.get("preparation")
         if not isinstance(prep,dict):
             raise ValueError("replacement actual incoming preparation missing")
-        new, backing, operation = [later.identifier(prep.get(k)) for k in ("sandbox_id","backing_generation","operation_id")]
+        new, backing, operation = [validate_evidence_uuid(prep.get(k)) for k in (
+            "sandbox_id", "backing_generation", "operation_id")]
         if (len({new,backing,operation}) != 3 or {new,backing,operation} & identities
                 or operation in operations or operation == reuse.removeprefix(report.GUARDED_IDLE_REUSE_KEY_PREFIX)):
             raise ValueError("replacement reused original/incoming operation or physical identity")

@@ -271,6 +271,7 @@ export {
   cronDrainEmailOutboxContract,
   cronDrainEmailOutboxResponseSchema,
   cronExecuteWorkflowAutomationsContract,
+  cronProactiveContract,
   cronRenewGmailWatchesContract,
   cronRenewGmailWatchesResponseSchema,
   cronRenewGoogleFormsWatchesContract,

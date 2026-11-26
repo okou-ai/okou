@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Account dei modelli</string>
     <string name="settings_accounts_scope">Scegli gli account in abbonamento che usi in «%1$s».</string>
     <string name="settings_accounts_scope_empty">Account di modello in «%1$s»</string>
-    <string name="settings_workspace_status">«%1$s» · %2$s</string>
     <string name="settings_accounts_update_failed">Impossibile aggiornare gli account. Sono mostrate le ultime informazioni disponibili.</string>
     <string name="settings_accounts_empty">Nessun account di modello collegato</string>
     <string name="settings_accounts_empty_help">Collega ChatGPT o Claude per vedere le quote e scegliere un account.</string>

@@ -43,7 +43,6 @@
     <string name="workflow_instructions">निर्देश</string>
     <string name="workflow_instructions_heading">वर्कफ़्लो के निर्देश</string>
     <string name="workflow_keep_editing">संपादन जारी रखें</string>
-    <string name="workflow_load_failed">वर्कफ़्लो लोड नहीं हो सके</string>
     <string name="workflow_rules_load_failed">ट्रिगर के नियम लोड नहीं हो सके।</string>
     <string name="workflow_mail_from_contains">भेजने वाले में %1$s है</string>
     <string name="workflow_mail_labeled">Gmail लेबल लगा</string>
@@ -109,7 +108,6 @@
     <string name="workflow_write_conflict">सहेजते समय यह वर्कफ़्लो बदल गया। आपके बदलाव सुरक्षित हैं।</string>
     <string name="workflow_history_earlier">पिछले रन दिखाएँ</string>
     <string name="workflow_history_event">इवेंट</string>
-    <string name="workflow_history_failed">रन का इतिहास लोड नहीं हो सका</string>
     <string name="workflow_history_loading">रन का इतिहास लोड हो रहा है…</string>
     <string name="workflow_history_open_chat">संबंधित चैट खोलें</string>
     <string name="workflow_history_unavailable">रन का इतिहास उपलब्ध नहीं है</string>

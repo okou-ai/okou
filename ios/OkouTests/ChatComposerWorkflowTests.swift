@@ -24,7 +24,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.insertText("Before @")
     let firstChat = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "").first)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace) {
       workspace.newComposer.editor.mentionSuggestions.contains(firstChat)
     }
     workspace.newComposer.editor.insertMention(firstChat)
@@ -81,7 +81,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.insertText(" @")
     let chat = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "").first)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace) {
       workspace.newComposer.editor.mentionSuggestions.contains(chat)
     }
     workspace.newComposer.editor.insertMention(chat)
@@ -558,21 +558,37 @@ extension XCTestCase {
 private struct WorkflowNewChatHost: View {
   let workspace: WorkspaceStore
   var body: some View {
-    let composer = workspace.newComposer
     StoreProvider(workspace.graph) {
-      ChatComposerView(
-        isBusy: workspace.isCreating, showsProgress: false, canStop: false,
-        needsUpgrade: workspace.needsUpgrade, error: workspace.error,
-        attachmentURL: workspace.webURL, draftState: composer,
-        submit: { await workspace.sendNewChat() }, refresh: nil,
-        mentionSource: workspace.mentionTestSource,
-        workflowSource: workspace.composerWorkflows
-      )
-      .frame(maxHeight: .infinity, alignment: .bottom)
-      .composerSuggestionOverlay()
+      WorkflowNewChatComposer(workspace: workspace)
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .composerSuggestionOverlay()
     }
     // Production replaces the workspace root at its scope boundary.
     .id(ObjectIdentifier(workspace))
+  }
+}
+
+/// Resolves the workspace's status from the session graph, as production's new chat composer
+/// does.
+private struct WorkflowNewChatComposer: View {
+  let workspace: WorkspaceStore
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(workspace: WorkspaceStore) {
+    self.workspace = workspace
+    _shell = ResolvedValue(workspace.shellValue)
+  }
+
+  var body: some View {
+    let status = shell ?? workspace.shell
+    ChatComposerView(
+      isBusy: status.isCreating, showsProgress: false, canStop: false,
+      needsUpgrade: status.needsUpgrade, error: status.error,
+      attachmentURL: workspace.webURL, draftState: status.newComposer,
+      submit: { await workspace.sendNewChat() }, refresh: nil,
+      mentionSource: workspace.mentionTestSource,
+      workflowSource: workspace.composerWorkflows
+    )
   }
 }
 

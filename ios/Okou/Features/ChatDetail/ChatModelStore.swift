@@ -318,14 +318,10 @@ final class ChatModelSelectionStore {
       try context.set(metadataDemand, UUID())
     }
     clearMetadata = Command { context in try context.set(metadataDemand, nil) }
-    let snapshot = models.snapshotValue
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: models.webURL, graph: models.stateStore, threadID: threadID,
       remoteDevices: models.remoteDevices,
-      management: Computed { get in
-        try get(snapshot).configuration?.switches["iosConnectorManagement"] == true
-      },
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       }, readRetrySleep: models.readRetrySleep,

@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -63,6 +65,12 @@ private fun EmailSubscriptionSheet(
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val state by model.state.collectAsStateWithLifecycle()
+    val snackbar = remember(model) { SnackbarHostState() }
+    SettingsRefreshFeedback(
+        snackbar,
+        state.read.refreshFailure,
+        R.string.settings_email_refresh_failed,
+    )
     fun close() {
         model.setPanelOpen(false)
         dismiss()
@@ -80,6 +88,7 @@ private fun EmailSubscriptionSheet(
         onDismiss = ::close,
         modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
         titleInset = 8.dp,
+        snackbar = snackbar,
         progress = {
             if (state.read.refreshing) {
                 ContentReadProgress(R.string.settings_email_refreshing)
@@ -135,11 +144,6 @@ private fun EmailSubscriptionSheet(
                 ) {
                     Text(stringResource(R.string.settings_email_check_address))
                 }
-            } else if (state.read.unavailable) {
-                SettingsDetailStatus(
-                    stringResource(R.string.settings_email_refresh_failed),
-                    indentation,
-                )
             }
         }
     }

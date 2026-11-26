@@ -17,6 +17,7 @@ enum class HistoryRole {
 enum class HistoryBlockKind {
     Text,
     Reference,
+    Attachment,
     Unsupported,
     Error,
 }
@@ -30,7 +31,15 @@ enum class HistoryExecution {
     Cancelled,
 }
 
-data class HistoryBlock(val kind: HistoryBlockKind, val text: String, val title: String? = null)
+data class HistoryBlock(
+    val kind: HistoryBlockKind,
+    val text: String,
+    val title: String? = null,
+    val attachment: ChatAttachmentReference? = null,
+)
+
+internal fun ChatAttachmentReference.historyBlock() =
+    HistoryBlock(HistoryBlockKind.Attachment, "", filename, this)
 
 data class HistoryMessage(
     val id: String,
@@ -315,7 +324,14 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
             "chat_thread",
             "template" -> objectPart.reference("titleSnapshot")
             "project" -> objectPart.reference("nameSnapshot")
-            "file" -> objectPart.reference("filenameSnapshot")
+            "file" -> {
+                val id = objectPart.text("fileId")
+                val name = objectPart.text("filenameSnapshot")
+                val type = objectPart.text("contentType")
+                if (id.isNullOrBlank() || name.isNullOrBlank() || type.isNullOrBlank())
+                    objectPart.reference("filenameSnapshot")
+                else ChatAttachmentReference(id, name, type).historyBlock()
+            }
             "automation" -> objectPart.reference("workflowName")
             "feedback" -> objectPart.reference("quote")
             "attachment",

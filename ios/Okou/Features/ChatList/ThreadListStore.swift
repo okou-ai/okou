@@ -9,7 +9,8 @@ import OSLog
 final class ThreadListStore {
   private let lifecycleTasks: LifecycleTasks
   private lazy var actions = ThreadListMutations(
-    owner: self, client: client, commands: commands, lifecycleTasks: lifecycleTasks,
+    owner: self, graph: resources.store, client: client, commands: commands,
+    lifecycleTasks: lifecycleTasks,
     readThreads: { [weak self] in self?.threads ?? [] },
     isClosed: { [weak self] in self?.closed != false },
     isBlocked: { [weak self] in self?.blocked != false },
@@ -467,8 +468,9 @@ final class ThreadListStore {
     actions.dismissError()
   }
 
-  func canUpdate(_ id: String) -> Bool {
-    actions.canUpdate(id)
+  /// Whether a chat may be updated. A view passes the mutation activity it resolved.
+  func canUpdate(_ id: String, mutations: ThreadListMutations.Activity? = nil) -> Bool {
+    actions.canUpdate(id, activity: mutations)
   }
 
   @discardableResult
@@ -566,6 +568,12 @@ final class ThreadListStore {
 
 /// Synchronous accessors for the graph-backed list values, for owner logic, actions and tests.
 extension ThreadListStore {
+  /// Chats with a write in flight and the last action's failure, kept in the workspace session's
+  /// Store. Views resolve it; `actionError`, `updatingThreads` and `mutations` serve owner logic,
+  /// actions and tests.
+  var mutationsValue: Computed<ThreadListMutations.Activity> { actions.activityValue }
+  var mutations: ThreadListMutations.Activity { actions.activity }
+
   private(set) var threads: [ChatThread] {
     get { confirmed(threadsValue) }
     set {
@@ -715,8 +723,9 @@ extension ThreadListStore {
     return true
   }
 
-  func canWrite(_ id: String) -> Bool {
-    actions.canWrite(id)
+  /// Whether a write may start on a chat. A view passes the mutation activity it resolved.
+  func canWrite(_ id: String, mutations: ThreadListMutations.Activity? = nil) -> Bool {
+    actions.canWrite(id, activity: mutations)
   }
 
   @discardableResult

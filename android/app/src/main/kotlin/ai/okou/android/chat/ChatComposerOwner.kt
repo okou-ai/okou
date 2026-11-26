@@ -1,6 +1,8 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.AttachmentStorageRejection
+import ai.okou.android.api.MaxChatAttachmentBytes
 import ai.okou.android.api.generated.CanonicalInteger1
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
@@ -12,11 +14,14 @@ import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.settings.DefaultModelOptions
+import android.net.Uri
+import java.io.File
 import java.io.IOException
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +34,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Main-thread transaction owner shared by attached workspace presentation controllers. */
@@ -82,6 +90,11 @@ internal class ChatComposerOwner(
 
     private val draftWork = mutableMapOf<String, DraftWork>()
     private val readableDrafts = mutableSetOf<String>()
+    private val attachmentJobs = mutableMapOf<String, Pair<Connection, Job>>()
+    private val attachmentSlots = Semaphore(2)
+
+    fun attachmentFile(key: String): File =
+        store.attachmentDirectory(identity).resolve(UUID.fromString(key).toString())
 
     fun attach(connection: Connection) {
         connections += connection
@@ -92,12 +105,16 @@ internal class ChatComposerOwner(
         else {
             connection.chatList?.retainAcceptedNewChats(journal.acceptedNewChats(), restored = true)
             resumeSends(connection)
+            resumeAttachmentUploads(connection)
         }
     }
 
     fun detach(connection: Connection): Boolean {
         connection.chatList?.onAcceptedChatMissing = null
         val retired = draftWork.values.filter { it.connection === connection }.toList()
+        val retiredUploads =
+            attachmentJobs.values.filter { it.first === connection }.map { it.second }
+        retiredUploads.forEach { it.cancel() }
         retired.forEach {
             draftWork.remove(it.target.key)
             it.job?.cancel()
@@ -125,6 +142,11 @@ internal class ChatComposerOwner(
             ?.let { next ->
                 retired.forEach { synchronize(next, it.target, refresh = true) }
                 resumeSends(next)
+                if (retiredUploads.isNotEmpty())
+                    next.scope.launch {
+                        retiredUploads.forEach { it.join() }
+                        resumeAttachmentUploads(next)
+                    }
             }
         if (connections.isNotEmpty()) return false
         localScope.cancel()
@@ -214,6 +236,19 @@ internal class ChatComposerOwner(
                 connections
                     .filter { it.current() }
                     .forEach { it.chatList?.retainAcceptedNewChats(accepted, restored = true) }
+                connections
+                    .firstOrNull { it.current() && it.service.attachmentService != null }
+                    ?.let { connection ->
+                        store.pruneAttachmentCache(
+                            identity,
+                            restored.drafts.values
+                                .flatMap { draft ->
+                                    draft.attachments.map { it.key }
+                                }
+                                .toSet(),
+                        )
+                        resumeAttachmentUploads(connection)
+                    }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -333,16 +368,275 @@ internal class ChatComposerOwner(
         serverTarget(key)?.let { synchronize(connection, it) }
     }
 
+    fun addAttachments(
+        connection: Connection,
+        draftKey: String,
+        source: String,
+        uris: List<Uri>,
+        replacing: String? = null,
+    ) {
+        if (!connection.current() || connection.service.attachmentService == null) return
+        val contentUris = uris.filter { it.scheme == "content" }
+        if (contentUris.isEmpty()) return
+        val selection = PendingAttachmentSelection(draftKey, source)
+        connection.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val initial = mutable.value
+            mutable.value =
+                initial.copy(
+                    readingAttachmentSelections = initial.readingAttachmentSelections + selection,
+                )
+            try {
+                restoreJournal()
+                restoring?.join()
+                if (!connection.current()) return@launch
+                val selected = store.readAttachmentMetadata(contentUris)
+                // Publish picker results for the same draft in selection order.
+                uiState.first { state ->
+                    val key = selection.destination(state.journal)
+                    state.readingAttachmentSelections.firstOrNull {
+                        it.destination(state.journal) == key
+                    } === selection
+                }
+                if (!connection.current()) return@launch
+                val journal = mutable.value.journal ?: return@launch
+                val key = selection.destination(journal)
+                val draft = journal.drafts[key] ?: EditableComposerDraft()
+                val old = draft.attachments
+                val fresh = selected.map { it.second }
+                val attachments =
+                    if (replacing == null) old + fresh
+                    else {
+                        val index = old.indexOfFirst { it.key == replacing }
+                        if (index < 0) return@launch
+                        old.take(index) + fresh + old.drop(index + 1)
+                    }
+                putAttachments(connection, key, draft.copy(source = source), attachments)
+                replacing?.let(::discardAttachment)
+                selected.forEach { (uri, attachment) ->
+                    startAttachment(connection, attachment, uri)
+                }
+            } finally {
+                val state = mutable.value
+                mutable.value =
+                    state.copy(
+                        readingAttachmentSelections = state.readingAttachmentSelections - selection,
+                    )
+            }
+        }
+    }
+
+    fun removeAttachment(connection: Connection, key: String) {
+        if (!connection.current()) return
+        val (draftKey, draft) = attachmentDraft(key) ?: return
+        putAttachments(connection, draftKey, draft, draft.attachments.filterNot { it.key == key })
+        discardAttachment(key)
+    }
+
+    fun retryAttachment(connection: Connection, key: String) {
+        if (!connection.current() || key in attachmentJobs) return
+        val attachment = attachmentDraft(key)?.value?.attachments?.firstOrNull { it.key == key }
+        if (attachment?.failure == AttachmentFailure.UploadFailed) {
+            val reset = updateAttachment(connection, key) { it.copy(failure = null) } ?: return
+            startAttachment(connection, reset)
+        }
+    }
+
+    private fun attachmentDraft(key: String): Map.Entry<String, EditableComposerDraft>? =
+        mutable.value.journal?.drafts?.entries?.firstOrNull { (_, draft) ->
+            draft.attachments.any { it.key == key }
+        }
+
+    private fun putAttachments(
+        connection: Connection,
+        draftKey: String,
+        draft: EditableComposerDraft,
+        attachments: List<DraftChatAttachment>,
+    ) {
+        val journal = mutable.value.journal ?: return
+        replace(
+            journal.copy(
+                drafts =
+                    journal.drafts +
+                        (draftKey to
+                            draft.copy(
+                                attachments = attachments,
+                                dirty = true,
+                                revision = draft.revision + 1,
+                            )),
+            ),
+        )
+        if (attachments.all { it.reference != null })
+            serverTarget(draftKey)?.let { synchronize(connection, it) }
+    }
+
+    private fun updateAttachment(
+        connection: Connection,
+        key: String,
+        transform: (DraftChatAttachment) -> DraftChatAttachment,
+    ): DraftChatAttachment? {
+        if (!connection.current()) return null
+        val (draftKey, draft) = attachmentDraft(key) ?: return null
+        val updated = transform(draft.attachments.first { it.key == key })
+        putAttachments(
+            connection,
+            draftKey,
+            draft,
+            draft.attachments.map {
+                if (it.key == key) updated else it
+            },
+        )
+        return updated
+    }
+
+    private fun discardAttachment(key: String) {
+        val work = attachmentJobs.remove(key)?.second
+        work?.cancel()
+        setAttachmentProgress(key, null)
+        localScope.launch {
+            work?.join()
+            withContext(Dispatchers.IO) { attachmentFile(key).delete() }
+        }
+    }
+
+    private fun resumeAttachmentUploads(connection: Connection) {
+        if (!connection.current()) return
+        mutable.value.journal?.drafts?.values?.forEach { draft ->
+            draft.attachments.forEach { startAttachment(connection, it) }
+        }
+    }
+
+    private fun setAttachmentProgress(key: String, percent: Int?) {
+        val state = mutable.value
+        if (state.attachmentProgress[key] == percent) return
+        mutable.value =
+            state.copy(
+                attachmentProgress =
+                    if (percent == null) state.attachmentProgress - key
+                    else state.attachmentProgress + (key to percent),
+            )
+    }
+
+    private fun startAttachment(
+        connection: Connection,
+        attachment: DraftChatAttachment,
+        source: Uri? = null,
+    ) {
+        val service = connection.service.attachmentService ?: return
+        val key = attachment.key
+        if (attachment.reference != null || attachment.failure != null || key in attachmentJobs)
+            return
+        val job =
+            connection.scope.launch(start = CoroutineStart.LAZY) {
+                val self = checkNotNull(currentCoroutineContext()[Job])
+                fun current() = attachmentJobs[key]?.second === self && connection.current()
+                try {
+                    val file = attachmentFile(key)
+                    val size = attachmentSlots.withPermit {
+                        if (!current()) return@launch
+                        when {
+                            source != null ->
+                                store.contentResolver.stageChatAttachment(source, file)
+                            else ->
+                                withContext(Dispatchers.IO) {
+                                    if (!file.isFile) throw AttachmentSourceUnavailable()
+                                    file.length()
+                                }
+                        }
+                    }
+                    if (size > MaxChatAttachmentBytes) throw AttachmentTooLarge()
+                    if (!current()) return@launch
+                    val staged =
+                        updateAttachment(connection, key) { it.copy(staged = true, size = size) }
+                            ?: return@launch
+                    val progress = MutableStateFlow<Int?>(null)
+                    val observer = launch {
+                        progress.collect { if (current()) setAttachmentProgress(key, it) }
+                    }
+                    try {
+                        var failures = 0
+                        while (current()) {
+                            try {
+                                val reference = attachmentSlots.withPermit {
+                                    if (!current()) return@launch
+                                    progress.value = 0
+                                    service.uploadChatAttachment(file, staged) { bytes ->
+                                        progress.value =
+                                            if (size == 0L) 100
+                                            else ((bytes.coerceIn(0, size) * 100) / size).toInt()
+                                    }
+                                }
+                                if (current())
+                                    updateAttachment(connection, key) {
+                                        it.copy(reference = reference)
+                                    }
+                                break
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                val wait = uploadRetryDelay(error)
+                                if (wait == null || failures == ChatDependencyRetryCount)
+                                    throw error
+                                failures++
+                                progress.value = null
+                                delay(wait)
+                            }
+                        }
+                    } finally {
+                        observer.cancel()
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (current()) {
+                        updateAttachment(connection, key) {
+                            it.copy(
+                                failure =
+                                    when (error) {
+                                        is AttachmentTooLarge -> AttachmentFailure.TooLarge
+                                        is AttachmentSourceUnavailable ->
+                                            AttachmentFailure.SourceUnavailable
+                                        else -> AttachmentFailure.UploadFailed
+                                    },
+                            )
+                        }
+                        report(connection, error)
+                    }
+                } finally {
+                    if (attachmentJobs[key]?.second === self) {
+                        attachmentJobs.remove(key)
+                        setAttachmentProgress(key, null)
+                    }
+                }
+            }
+        attachmentJobs[key] = connection to job
+        job.start()
+    }
+
+    private fun uploadRetryDelay(error: Exception): Long? =
+        when (error) {
+            is AttachmentStorageRejection -> uploadRetryDelay(error.response)
+            is IOException,
+            is ApiFailure.Network -> ChatDependencyRetryDelayMillis
+            is ApiFailure.Http ->
+                if (error.status in 500..599 || error.status in setOf(408, 425, 429))
+                    error.retryAfterSeconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
+                        ?: ChatDependencyRetryDelayMillis
+                else null
+            else -> null
+        }
+
     fun restoreDraft(connection: Connection, target: ComposerTarget, key: String) {
         val journal = mutable.value.journal ?: return
-        if (!connection.current() || mutable.value.entry(target).text.isNotEmpty()) return
-        val text = journal.retainedDrafts[key] ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        if (!connection.current() || draft.text.isNotEmpty() || draft.attachments.isNotEmpty())
+            return
+        val text = journal.retainedDrafts[key] ?: return
         val choices = if (draftKey == "new:") journal.retainedDraftConnectorOverrides[key] else null
         replace(
             journal.copy(
                 retainedDrafts = journal.retainedDrafts - key,
+                retainedDraftAttachments = journal.retainedDraftAttachments - key,
                 newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
                 retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
                 newChatModel =
@@ -355,6 +649,10 @@ internal class ChatComposerOwner(
                         (draftKey to
                             draft.copy(
                                 text = text,
+                                attachments =
+                                    journal.retainedDraftAttachments[key].orEmpty().map {
+                                        it.restoredAttachment()
+                                    },
                                 dirty = true,
                                 revision = draft.revision + 1,
                                 source = target.key,
@@ -414,7 +712,7 @@ internal class ChatComposerOwner(
                                 .read(isCurrent = ::current) {
                                     connection.service.composerDraft(target)
                                 }
-                                .plainText()
+                                .editableContent()
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         if (remote == null) {
@@ -424,33 +722,56 @@ internal class ChatComposerOwner(
                         if (target.threadId != null && indexVersion != null)
                             list.confirmDraftPresence(
                                 target.threadId,
-                                !remote.isBlankWebDraft(),
+                                !remote.text.isBlankWebDraft() || remote.attachments.isNotEmpty(),
                                 indexVersion,
                             )
                         readableDrafts += target.key
                         journal = mutable.value.journal ?: return@launch
                         val local = journal.drafts[target.key] ?: EditableComposerDraft()
+                        val localReferences = local.attachments.map { it.reference }
                         if (
                             !local.dirty &&
                                 local.revision == before.revision &&
-                                local.text != remote
+                                (local.text != remote.text || localReferences != remote.attachments)
                         ) {
+                            val unmatched =
+                                local.attachments
+                                    .groupBy { it.reference }
+                                    .mapValues { (_, files) ->
+                                        ArrayDeque(files)
+                                    }
+                            val attachments =
+                                remote.attachments.map { reference ->
+                                    unmatched[reference]?.removeFirstOrNull()
+                                        ?: reference.restoredAttachment()
+                                }
                             replace(
                                 journal.copy(
                                     drafts =
-                                        journal.drafts + (target.key to local.copy(text = remote)),
+                                        journal.drafts +
+                                            (target.key to
+                                                local.copy(
+                                                    text = remote.text,
+                                                    attachments = attachments,
+                                                )),
                                 ),
                             )
+                            unmatched.values.flatten().forEach { discardAttachment(it.key) }
                         }
                     }
                     while (current()) {
                         val draft = mutable.value.journal?.drafts?.get(target.key) ?: break
                         if (!draft.dirty) break
+                        val attachments = draft.attachments.mapNotNull { it.reference }
+                        if (attachments.size != draft.attachments.size) {
+                            syncStatus(target.key, ComposerSync.Idle)
+                            return@launch
+                        }
                         syncStatus(target.key, ComposerSync.Saving)
                         // Web flushes explicit clears immediately; ordinary edits use its 500ms
                         // debounce.
                         if (
-                            draft.text.isNotEmpty() &&
+                            (draft.text.isNotEmpty() || draft.attachments.isNotEmpty()) &&
                                 withTimeoutOrNull(500) {
                                     uiState.first { it.journal?.drafts?.get(target.key) != draft }
                                 } != null
@@ -472,16 +793,26 @@ internal class ChatComposerOwner(
                                         mutable.value.journal?.drafts?.get(target.key) != draft
                                 )
                                     return@run false
-                                connection.service.saveComposerDraft(target, draft.text)
+                                if (attachments.isEmpty())
+                                    connection.service.saveComposerDraft(target, draft.text)
+                                else {
+                                    val service =
+                                        connection.service.attachmentService ?: return@run false
+                                    service.saveAttachmentDraft(target, draft.text, attachments)
+                                }
                                 true
                             }
-                        if (!submitted) continue
+                        if (!submitted) {
+                            if (mutable.value.journal?.drafts?.get(target.key) == draft)
+                                return@launch
+                            continue
+                        }
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
                         target.threadId?.let {
                             connection.chatList?.confirmDraftPresence(
                                 it,
-                                !draft.text.isBlankWebDraft(),
+                                draft.hasContent,
                             )
                         }
                         journal = mutable.value.journal ?: return@launch
@@ -633,6 +964,10 @@ internal class ChatComposerOwner(
         val op = begin(connection, target.key) ?: return
         val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)
+        val draftKey = mutable.value.draftKey(target)
+        val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        val attachments = draft.attachments.map { checkNotNull(it.reference) }
+        val hasText = !entry.text.isBlankWebDraft()
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
         val draftModel = journal.newChatModel.takeIf { target.threadId == null }
@@ -651,20 +986,25 @@ internal class ChatComposerOwner(
                         }
                 else null,
                 SendRequestVariant1(
-                    prompt = entry.text,
+                    prompt = if (hasText) entry.text else AttachmentOnlyPrompt,
                     threadId = threadId,
                     clientEventId = eventId,
                     chatThreadSortEventId = UUID.randomUUID().toString(),
-                    hasTextContent = true,
+                    hasTextContent = hasText,
                     userMessage =
                         SendRequestVariant1UserMessage(
                             CanonicalInteger1,
-                            listOf(
-                                SendRequestVariant1UserMessagePartsItemVariant1(
-                                    SendRequestVariant1UserMessagePartsItemVariant1Type.TEXT,
-                                    entry.text,
-                                ),
-                            ),
+                            buildList {
+                                if (hasText)
+                                    add(
+                                        SendRequestVariant1UserMessagePartsItemVariant1(
+                                            SendRequestVariant1UserMessagePartsItemVariant1Type
+                                                .TEXT,
+                                            entry.text,
+                                        ),
+                                    )
+                                attachments.forEach { add(it.part()) }
+                            },
                         ),
                 ),
                 TextStage.Prepared,
@@ -672,9 +1012,14 @@ internal class ChatComposerOwner(
                     if (target.threadId == null) journal.newChatConnectorOverrides else emptyList(),
                 started = store.sendClock.markNow(),
                 draftModel = draftModel,
+                attachmentReferences = attachments,
+                attachmentFiles =
+                    draft.attachments
+                        .filter { it.staged }
+                        .associate {
+                            checkNotNull(it.reference).id to attachmentFile(it.key)
+                        },
             )
-        val draftKey = mutable.value.draftKey(target)
-        val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
         replace(
             journal.copy(
                 entries =
@@ -688,6 +1033,7 @@ internal class ChatComposerOwner(
                         (draftKey to
                             draft.copy(
                                 text = "",
+                                attachments = emptyList(),
                                 dirty = true,
                                 revision = draft.revision + 1,
                                 source = target.key,
@@ -1029,7 +1375,13 @@ internal class ChatComposerOwner(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
-                                    journal.retainedDrafts + (latest.eventId to latest.send.prompt),
+                                    journal.retainedDrafts + (latest.eventId to latest.displayText),
+                                retainedDraftAttachments =
+                                    if (latest.attachmentReferences.isEmpty())
+                                        journal.retainedDraftAttachments
+                                    else
+                                        journal.retainedDraftAttachments +
+                                            (latest.eventId to latest.attachmentReferences),
                                 retainedDraftModels =
                                     journal.retainedDraftModels +
                                         (latest.eventId to latest.draftModel),
@@ -1040,6 +1392,7 @@ internal class ChatComposerOwner(
                                             (latest.eventId to choices),
                             ),
                         )
+                        deleteSentAttachmentFiles(latest)
                         fail(op, error)
                     } else settle(op, latest, TextDisposition.Rejected)
                     return
@@ -1190,7 +1543,7 @@ internal class ChatComposerOwner(
         val destination = "thread:${pending.threadId}"
         if (
             destination != op.key &&
-                (journal.drafts[destination]?.text?.isNotEmpty() == true ||
+                (journal.drafts[destination]?.hasContent == true ||
                     journal.entries[destination]?.pending != null) == true
         )
             throw ApiFailure.IncompatibleResponse()
@@ -1220,12 +1573,21 @@ internal class ChatComposerOwner(
         if (pending.create != null) {
             val source = "new:"
             val draft = drafts[source]
-            if (draft != null && draft.source == op.key && draft.text.isNotEmpty()) {
+            if (
+                draft != null &&
+                    draft.source == op.key &&
+                    (draft.text.isNotEmpty() || draft.attachments.isNotEmpty())
+            ) {
                 drafts =
                     drafts +
                         (destination to draft.copy(dirty = true)) +
                         (source to
-                            draft.copy(text = "", dirty = true, revision = draft.revision + 1))
+                            draft.copy(
+                                text = "",
+                                attachments = emptyList(),
+                                dirty = true,
+                                revision = draft.revision + 1,
+                            ))
             }
         }
         val history = op.connection.history?.uiState?.value
@@ -1240,6 +1602,7 @@ internal class ChatComposerOwner(
                     receiptMessages +
                         (pending.eventId to pending.preview(disposition, sequence = sequence)),
         )
+        deleteSentAttachmentFiles(pending)
         if (pending.create != null) {
             synchronize(op.connection, ServerDraftTarget())
             synchronize(op.connection, ServerDraftTarget(pending.threadId))
@@ -1256,6 +1619,11 @@ internal class ChatComposerOwner(
             list?.acknowledgeOutgoingActivity(pending)
         }
         op.connection.accepted(pending.threadId)
+    }
+
+    private fun deleteSentAttachmentFiles(pending: PendingText) {
+        if (pending.attachmentFiles.isEmpty()) return
+        localScope.launch(Dispatchers.IO) { pending.attachmentFiles.values.forEach { it.delete() } }
     }
 
     private fun report(connection: Connection, error: Exception) {

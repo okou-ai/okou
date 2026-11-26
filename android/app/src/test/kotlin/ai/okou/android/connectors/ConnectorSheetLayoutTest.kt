@@ -40,6 +40,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -232,6 +233,71 @@ class ConnectorSheetLayoutTest {
         assertEquals(22.dp, panel.getUnclippedBoundsInRoot().bottom - footer.bottom)
         compose.onNodeWithText("Permission 22").performScrollTo().assertIsDisplayed()
         assertEquals(footer, actions.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun permissionFirstReadFailureUsesThePanelIllustrationSize() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.failPermissionReads = true
+            withConnectors(fixture) {
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val permissions = "Permissions this service can request"
+                compose.waitUntilAtLeastOneExists(hasText(permissions), 10_000)
+                compose.onNodeWithText(permissions).performClick()
+                val failure = "Temporarily unable to load"
+                compose.waitUntilAtLeastOneExists(hasText(failure), 10_000)
+                val label = compose.onNodeWithText(failure).assertIsDisplayed()
+                val illustration =
+                    compose
+                        .onNodeWithTag("content-read-failure-illustration", useUnmergedTree = true)
+                        .assertWidthIsEqualTo(112.dp)
+                assertEquals(
+                    12.dp,
+                    label.getUnclippedBoundsInRoot().top -
+                        illustration.getUnclippedBoundsInRoot().bottom,
+                )
+                compose.onNodeWithText("Close").assertIsEnabled().performClick()
+                compose.onNodeWithText(permissions).assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun permissionRefreshFeedbackStaysAboveTheCloseAction() {
+        ConnectorApiFixture().use { fixture ->
+            withConnectors(fixture) { model ->
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val permissions = "Permissions this service can request"
+                compose.waitUntilAtLeastOneExists(hasText(permissions), 10_000)
+                compose.onNodeWithText(permissions).performClick()
+                val ready = "读取日历与日程"
+                compose.waitUntilAtLeastOneExists(hasText(ready), 10_000)
+                val close = compose.onNodeWithText("Close").assertIsDisplayed()
+                val closeBounds = close.getUnclippedBoundsInRoot()
+                val permission = compose.onNodeWithText(ready)
+                val permissionBounds = permission.getUnclippedBoundsInRoot()
+
+                fixture.failPermissionReads = true
+                compose.runOnIdle {
+                    model.pause()
+                    model.resume()
+                }
+                val feedback = "Could not refresh connectors."
+                compose.waitUntilAtLeastOneExists(hasText(feedback), 10_000)
+                val feedbackBounds = compose.onNodeWithText(feedback).getUnclippedBoundsInRoot()
+                assertTrue(feedbackBounds.bottom < closeBounds.top)
+                assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
+                assertEquals(permissionBounds, permission.getUnclippedBoundsInRoot())
+                close.assertIsEnabled().performClick()
+                compose.onNodeWithText(permissions).assertIsDisplayed()
+            }
+        }
     }
 
     @Test

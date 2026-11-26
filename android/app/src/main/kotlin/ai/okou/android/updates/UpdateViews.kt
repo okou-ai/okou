@@ -109,21 +109,21 @@ internal data class UpdateToolbarAction(
     @DrawableRes val icon: Int = R.drawable.ic_update,
 )
 
-private fun UpdateTransfer.Downloading.fraction(): Float? = downloadedBytes?.let {
-    (it.toDouble() / release.size).coerceIn(0.0, 1.0).toFloat()
+private fun UpdateTransfer.Downloading.percent(): Int? = downloadedBytes?.let {
+    (it.coerceIn(0L, release.size) * 100 / release.size).toInt()
 }
 
 @Composable
-private fun updatePercent(fraction: Float): String {
+private fun updatePercent(percent: Int): String {
     val locale = LocalConfiguration.current.locales[0]
     val format = remember(locale) { NumberFormat.getPercentInstance(locale) }
-    return format.format((fraction * 100).toInt() / 100.0)
+    return format.format(percent / 100.0)
 }
 
 @Composable
-private fun downloadLabel(fraction: Float?): String =
-    if (fraction == null) stringResource(R.string.updates_preparing)
-    else stringResource(R.string.updates_downloading, updatePercent(fraction))
+private fun downloadLabel(percent: Int?): String =
+    if (percent == null) stringResource(R.string.updates_preparing)
+    else stringResource(R.string.updates_downloading, updatePercent(percent))
 
 private val UpdateUiState.interrupted
     get() = transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Interrupted
@@ -143,7 +143,7 @@ internal fun updateToolbarAction(
     val transfer = state.transfer
     return when {
         transfer is UpdateTransfer.Downloading -> {
-            val percent = updatePercent(transfer.fraction() ?: 0f)
+            val percent = updatePercent(transfer.percent() ?: 0)
             UpdateToolbarAction(
                 stringResource(R.string.updates_downloading, percent),
                 openDetails,
@@ -748,9 +748,10 @@ private fun UpdateAction(
             transfer !is UpdateTransfer.Waiting &&
             !state.canInstall &&
             !state.canDownload
+    val downloadPercent = (transfer as? UpdateTransfer.Downloading)?.percent()
     val progress =
         when {
-            transfer is UpdateTransfer.Downloading -> downloadLabel(transfer.fraction())
+            transfer is UpdateTransfer.Downloading -> downloadLabel(downloadPercent)
             state.preparing -> stringResource(R.string.updates_preparing)
             state.canInstall && installProgress != null -> stringResource(installProgress)
             checking -> stringResource(R.string.updates_check_in_progress)
@@ -771,7 +772,7 @@ private fun UpdateAction(
                 if (showingProgress) colors.onSurface else foreground,
             )
     if (progress != null) {
-        val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
+        val fraction = downloadPercent?.let { it / 100f }
         val disabledColors = ButtonDefaults.buttonColors()
         Box(
             controlModifier
@@ -942,7 +943,7 @@ private fun measureUpdateActions(width: Dp, required: Boolean): UpdateActionSize
     val progressLabels =
         listOf(
             downloadLabel(null),
-            downloadLabel(1f),
+            downloadLabel(100),
             stringResource(R.string.updates_check_in_progress),
             stringResource(R.string.updates_installing),
             stringResource(R.string.updates_waiting_to_install),

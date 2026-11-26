@@ -96,6 +96,44 @@ describe("Custom connector OAuth callbacks", () => {
     }
   });
 
+  it("keeps a direct native custom OAuth denial on its connector result page", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const provider = mockCustomConnectorOAuth2Provider(context, {
+      initialScope: "read",
+    });
+    const actor = createBddApi(context).user({ orgRole: "org:admin" });
+    const connector = await createCustomOAuthConnector(actor, provider);
+    ownedConnectors.push({ actor, connectorId: connector.id });
+    const started = await accept(
+      setupApp({ context, routes: customConnectorOAuth2Routes })(
+        customConnectorOAuth2Contract,
+      ).start({
+        headers: {
+          authorization: "Bearer clerk-session",
+          "x-okou-native-connector-callback": "ios-https",
+        },
+        params: { id: connector.id },
+        body: { account: { intent: "add" } },
+      }),
+      [200],
+    );
+    if (started.body.result !== "authorization") {
+      throw new Error("Expected authorization");
+    }
+    const state = authorizationState(new URL(started.body.authorizationUrl));
+    const result = await connectors.completeCustomConnectorOAuth2Callback({
+      state,
+      error: "access_denied",
+    });
+    const destination = redirectLocation(result);
+    expect(destination.origin).toBe("https://app.okou.ai");
+    expect(destination.pathname).toBe("/connectors/custom/callback/error");
+    expect(destination.searchParams.get("nativeAppAttemptId")).toBe(
+      started.body.oauthAttemptId,
+    );
+    expect(destination.searchParams.get("message")).toBeTruthy();
+  });
+
   it.each([false, true])(
     "returns a custom OAuth attempt to iOS after consent or refusal (denied=%s)",
     async (denied) => {

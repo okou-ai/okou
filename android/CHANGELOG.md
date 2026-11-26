@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.60.0](https://github.com/okou-ai/okou/compare/android-v0.59.0...android-v0.60.0) (2026-11-26)
+
+
+### Features
+
+* **android:** send attachments from the chat composer ([#51035](https://github.com/okou-ai/okou/issues/51035)) ([f57b998](https://github.com/okou-ai/okou/commit/f57b9987c2b7dfb21f36a0d4e07455f2ad07cda3))
+
+
+### Bug Fixes
+
+* **android:** align workflow read failure feedback ([#51021](https://github.com/okou-ai/okou/issues/51021)) ([5078727](https://github.com/okou-ai/okou/commit/507872777a1d9a3dc2fb87a7f0c1a94e7d863b13))
+
 ## [0.59.0](https://github.com/okou-ai/okou/compare/android-v0.58.2...android-v0.59.0) (2026-11-26)
 
 
