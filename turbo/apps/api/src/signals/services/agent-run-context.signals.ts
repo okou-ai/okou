@@ -151,10 +151,6 @@ export interface AgentRunContextSignals {
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
   >;
-  /** Seed Skill rows read with the model catalog; shared across contexts. */
-  readonly seedSkills$: ReturnType<
-    typeof createGlobalModelContext
-  >["seedSkills$"];
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly PaidToolId[]>>;
   readonly customConnectorDefinitions$: Computed<
@@ -347,7 +343,6 @@ function createOrgContextReferences(
           managedModelKeys$: supplied.managedModelKeys$,
           modelPricing$: supplied.modelPricing$,
           catalog$: supplied[globalModelOwner],
-          seedSkills$: supplied.seedSkills$,
         }
       : undefined
     : createGlobalModelContext();
@@ -551,7 +546,6 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     ...connectorContext,
-    seedSkills$: globalReferences.seedSkills$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
   };

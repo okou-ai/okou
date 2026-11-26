@@ -2142,7 +2142,7 @@ export function createThreadClaimRunObjects(
         return mountPath;
       },
     );
-    const selected = selectExecutionPackages(packageSources, {
+    const selected = selectExecutionPackages(packageSources?.sources ?? null, {
       skillRoot,
       protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
       ordinaryAutomation,
@@ -2152,6 +2152,7 @@ export function createThreadClaimRunObjects(
     }
     return {
       memoryMountPath,
+      prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
         bundles: selectExecutionContentBundles(selected, {
@@ -2188,7 +2189,12 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
+    return isRouteError(packagePlan)
+      ? null
+      : {
+          bundles: packagePlan.packages.bundles,
+          prefetchedUrls: packagePlan.prefetchedUrls,
+        };
   });
   const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */
