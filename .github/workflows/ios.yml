@@ -421,6 +421,28 @@ jobs:
           else
             bash ios/scripts/run-ci-tests.sh
           fi
+      - name: Capture the native thread on the disposable simulator
+        if: "!cancelled() && github.event_name == 'workflow_dispatch'"
+        shell: bash
+        run: |
+          set -euo pipefail
+          spec=("$RUNNER_TEMP"/okou-ios-ci/DerivedData/Build/Products/*.xctestrun)
+          test -f "${spec[0]}"
+          python3 ios/scripts/capture-thread-51170.py &
+          capture_pid=$!
+          trap 'kill "$capture_pid" 2>/dev/null || true' EXIT
+          xcodebuild -xctestrun "${spec[0]}" -destination "$IOS_TEST_DESTINATION" \
+            -parallel-testing-enabled NO -testLanguage zh-Hans -testRegion CN \
+            -only-testing:OkouTests/ThreadPresentationCapture/testCaptureThread test-without-building
+          wait "$capture_pid"
+      - name: Upload native thread screenshots
+        if: "!cancelled() && github.event_name == 'workflow_dispatch'"
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-thread-51170
+          path: ${{ runner.temp }}/thread-parity-51170/
+          if-no-files-found: error
+          retention-days: 3
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
