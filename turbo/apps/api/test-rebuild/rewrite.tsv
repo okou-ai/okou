@@ -1622,8 +1622,8 @@ billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-0
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-001	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-002	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-004	planned				
-account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-001	planned				B02
-account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-003	planned				B02
+account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-001	rewritten	156.3		src/signals/routes/__tests__/get-started.test.ts	B02
+account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-003	rewritten	138.5		src/signals/routes/__tests__/get-started.test.ts	B02
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-002	planned				
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-003	planned				
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-004	planned				
