@@ -2045,29 +2045,29 @@ messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-003	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-008	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-009	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-023	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-024	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-025	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-026	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-027	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-029	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-030	planned				B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-023	rewritten	48.8		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-024	rewritten	39.7		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-025	rewritten	20.3		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-026	rewritten	40.2		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-027	rewritten	6.0		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-029	rewritten	46.8		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-030	rewritten	8.1		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
 messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-031	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-032	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-033	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-034	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-038	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-040	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-041	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-042	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-044	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-046	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-047	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-048	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-049	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-052	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-053	planned				B13	d-other
-messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-054	planned				B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-032	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: the owner message enqueues the chat thread (receiveWechatMessage$ -> pickEnqueuedChatThread$) and upload-file init/materialize/complete publish run artifacts (runId from the run credential); resume: reclassify to a-run		B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-033	rewritten	68.8		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-034	rewritten	130.9		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-038	rewritten	59.1		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-040	rewritten	55.5		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-041	rewritten	63.2		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-042	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: owner messages on an active binding go through receiveWechatMessage$ -> pickEnqueuedChatThread$, which dispatches a chat Run (Given requires Pro entitlement and Claude subscription); resume: reclassify to a-run		B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-044	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: later-text is admitted through receiveWechatMessage$ -> pickEnqueuedChatThread$, which dispatches a chat Run; the retry backoff is a stored timestamp, not a timer; resume: reclassify to a-run		B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-046	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: the four owner messages are recorded only through receiveWechatMessage$, which enqueues and dispatches a chat Run per thread; resume: reclassify to a-run		B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-047	rewritten	87.8		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-048	rewritten	71.8		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-049	rewritten	84.1		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-052	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: fresh-message is admitted through receiveWechatMessage$ -> pickEnqueuedChatThread$, which dispatches a chat Run (Given requires Pro entitlement and Claude subscription); resume: reclassify to a-run		B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-053	rewritten	47.4		src/signals/routes/__tests__/integrations-wechat.test.ts	B13	d-other
+messaging	src/signals/routes/__tests__/integrations-wechat.test.ts	integrations-wechat-054	revisit		revisit: needs a dispatched Run (a-run, awaiting decision); evidence: the owner batch on the active binding is admitted through receiveWechatMessage$ -> pickEnqueuedChatThread$, which dispatches a chat Run; resume: reclassify to a-run		B13	d-other
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-001	planned					d-other
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-003	planned					b-install
 messaging	src/signals/routes/__tests__/integrations.bdd.test.ts	integrations.bdd-004	planned					b-install
