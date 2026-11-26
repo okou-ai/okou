@@ -805,48 +805,41 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         .local_metrics
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
-    if let Some(bytes) = task.inline_archive
-        && task.template_guidance.is_none()
-    {
-        download.opened_file_compressed_bytes = Some(bytes.len() as u64);
-        let extract_start = Instant::now();
-        #[cfg(target_os = "linux")]
-        let result = match download
-            .inflate_load
-            .filter(|_| task.telemetry.is_artifact())
-        {
-            Some(load) => {
-                archive::inflate::extract_inline(bytes, target_path, download.concurrency, load)
-            }
-            None => archive::extract_inline_tar_gz(bytes, target_path, download.concurrency),
-        };
-        #[cfg(not(target_os = "linux"))]
-        let result = archive::extract_inline_tar_gz(bytes, target_path, download.concurrency);
-        if let Some(metrics) = &mut download.local_metrics {
-            metrics.record_extraction(Duration::ZERO, extract_start.elapsed());
-        }
-        return result;
-    }
     #[cfg(target_os = "linux")]
     if let Some(load) = download.inflate_load
         && task.telemetry.is_artifact()
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")
     {
-        let archive = source::LocalArchive::open(path)?;
-        download.opened_file_compressed_bytes = archive.compressed_bytes;
-        let extract_start = Instant::now();
-        let result = archive::inflate::extract_staged(
-            archive,
-            target_path,
-            local_attempt_metrics.as_ref(),
-            download.concurrency,
-            load,
-        );
+        let metrics = local_attempt_metrics.as_ref();
+        let (result, extract_wall) = if let Some(bytes) = task.inline_archive {
+            download.opened_file_compressed_bytes = Some(bytes.len() as u64);
+            let extract_start = Instant::now();
+            let result = archive::inflate::extract_inline(
+                bytes,
+                target_path,
+                metrics,
+                download.concurrency,
+                load,
+            );
+            (result, extract_start.elapsed())
+        } else {
+            let archive = source::LocalArchive::open(path)?;
+            download.opened_file_compressed_bytes = archive.compressed_bytes;
+            let extract_start = Instant::now();
+            let result = archive::inflate::extract_staged(
+                archive,
+                target_path,
+                metrics,
+                download.concurrency,
+                load,
+            );
+            (result, extract_start.elapsed())
+        };
         if let (Some(metrics), Some(attempt)) =
             (&mut download.local_metrics, &local_attempt_metrics)
         {
-            metrics.record_extraction(attempt.body_read(), extract_start.elapsed());
+            metrics.record_extraction(attempt.body_read(), extract_wall);
         }
         return result;
     }

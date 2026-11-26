@@ -1,7 +1,7 @@
 use super::*;
 use flate2::Compression;
 use flate2::write::GzEncoder;
-use std::fs;
+use std::fs::{self, File};
 use std::io::Seek;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tempfile::TempDir;
@@ -19,14 +19,12 @@ fn gzip_archive(path: &str, content: &[u8]) -> Vec<u8> {
 
 fn extract(dir: &TempDir, bytes: &[u8], inline: bool) -> Result<(), DownloadError> {
     if inline {
-        try_extract_inline(bytes, dir.path(), 1).expect("the test inflater starts")
+        try_extract(bytes, dir.path(), 1, None).expect("the test inflater starts")
     } else {
         let source = dir.path().join("archive.tar.gz");
         fs::write(&source, bytes).unwrap();
-        let mut file = File::open(source).unwrap();
-        try_extract_staged(&mut file, dir.path(), 1)
-            .expect("the test inflater starts")
-            .0
+        let file = File::open(source).unwrap();
+        try_extract(file, dir.path(), 1, None).expect("the test inflater starts")
     }
 }
 

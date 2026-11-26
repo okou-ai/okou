@@ -55,22 +55,6 @@ pub(crate) fn extract_tar_gz(
     extract_tar_gz_checked(source, target, concurrency, u64::MAX, |_, _, _, _| Ok(()))
 }
 
-/// Extract directly from the validated frame's gzip bytes.
-pub(crate) fn extract_inline_tar_gz(
-    bytes: &[u8],
-    target: &Path,
-    concurrency: usize,
-) -> Result<(), DownloadError> {
-    extract_tar(
-        flate2::bufread::GzDecoder::new(bytes),
-        crate::source::HttpBodyReadFailure::disabled(),
-        target,
-        concurrency,
-        u64::MAX,
-        |_, _, _, _| Ok(()),
-    )
-}
-
 /// Reuse Storage extraction with an additional package contract before each write.
 /// Validation runs before each write; extraction retains the non-atomic semantics above.
 pub(crate) fn extract_tar_gz_checked(

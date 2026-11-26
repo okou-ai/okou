@@ -5,7 +5,6 @@ use crate::source::{
     HttpBodyReadFailure, LocalArchive, LocalArchiveAttemptMetrics, measure_local_body,
 };
 use flate2::bufread::GzDecoder;
-use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
@@ -105,12 +104,8 @@ pub(crate) fn extract_staged(
     let concurrency = load.writer_concurrency(concurrency);
     if load.can_read_ahead(archive.compressed_bytes, |output, offset| {
         archive.file.read_exact_at(output, offset)
-    }) && let Some((result, body_read)) =
-        try_extract_staged(&mut archive.file, target, concurrency)
+    }) && let Some(result) = try_extract(&mut archive.file, target, concurrency, metrics)
     {
-        if let Some(metrics) = metrics {
-            metrics.record_body_read(body_read);
-        }
         return result;
     }
     super::extract_tar_gz(archive.into_source(metrics), target, concurrency)
@@ -119,17 +114,23 @@ pub(crate) fn extract_staged(
 pub(crate) fn extract_inline(
     bytes: &[u8],
     target: &Path,
+    metrics: Option<&LocalArchiveAttemptMetrics>,
     concurrency: usize,
     load: InflateLoad,
 ) -> Result<(), DownloadError> {
     let concurrency = load.writer_concurrency(concurrency);
-    if load.can_read_ahead(Some(bytes.len() as u64), |output, offset| {
+    let compressed_bytes = Some(bytes.len() as u64);
+    if load.can_read_ahead(compressed_bytes, |output, offset| {
         read_inline_at(bytes, output, offset)
-    }) && let Some(result) = try_extract_inline(bytes, target, concurrency)
+    }) && let Some(result) = try_extract(bytes, target, concurrency, metrics)
     {
         return result;
     }
-    super::extract_inline_tar_gz(bytes, target, concurrency)
+    super::extract_tar_gz(
+        crate::source::ArchiveSource::local(bytes, compressed_bytes),
+        target,
+        concurrency,
+    )
 }
 
 fn read_inline_at(bytes: &[u8], output: &mut [u8], offset: u64) -> io::Result<()> {
@@ -181,49 +182,21 @@ fn has_small_file_prefix(read_exact_at: impl Fn(&mut [u8], u64) -> io::Result<()
     })
 }
 
-fn try_extract_staged(
-    file: &mut File,
-    target: &Path,
-    concurrency: usize,
-) -> Option<(Result<(), DownloadError>, Duration)> {
-    try_extract(target, concurrency, move |ready, recycle| {
-        let metrics = LocalArchiveAttemptMetrics::default();
-        let decoder = GzDecoder::new(BufReader::with_capacity(
-            COMPRESSED_BUFFER_BYTES,
-            measure_local_body(file, &metrics),
-        ));
-        inflate(decoder, ready, recycle);
-        metrics.body_read()
-    })
-}
-
-fn try_extract_inline(
-    bytes: &[u8],
-    target: &Path,
-    concurrency: usize,
-) -> Option<Result<(), DownloadError>> {
-    try_extract(target, concurrency, move |ready, recycle| {
-        inflate(GzDecoder::new(bytes), ready, recycle);
-        Duration::ZERO
-    })
-    .map(|(result, _)| result)
-}
-
 /// None means the worker could not start and the archive has not been read.
 fn try_extract(
+    reader: impl Read + Send,
     target: &Path,
     concurrency: usize,
-    produce_blocks: impl FnOnce(SyncSender<io::Result<DecodedBlock>>, Receiver<Vec<u8>>) -> Duration
-    + Send,
-) -> Option<(Result<(), DownloadError>, Duration)> {
-    thread::scope(|scope| {
+    metrics: Option<&LocalArchiveAttemptMetrics>,
+) -> Option<Result<(), DownloadError>> {
+    let (result, body_read) = thread::scope(|scope| {
         let (ready_tx, ready) = sync_channel(1);
         // Each block belongs to one of the worker, reader or queues. Dropping
         // the reader closes both channels, even on an early extraction error.
         let (recycle, recycle_rx) = sync_channel(BLOCK_COUNT);
         let worker = thread::Builder::new()
             .name("archive-inflate".into())
-            .spawn_scoped(scope, move || produce_blocks(ready_tx, recycle_rx))
+            .spawn_scoped(scope, move || inflate(reader, ready_tx, recycle_rx))
             .ok()?;
         let result = super::extract_tar(
             InflateReader {
@@ -248,14 +221,23 @@ fn try_extract(
                 Duration::ZERO,
             ),
         })
-    })
+    })?;
+    if let Some(metrics) = metrics {
+        metrics.record_body_read(body_read);
+    }
+    Some(result)
 }
 
 fn inflate(
-    mut decoder: impl Read,
+    reader: impl Read,
     ready: SyncSender<io::Result<DecodedBlock>>,
     recycle: Receiver<Vec<u8>>,
-) {
+) -> Duration {
+    let metrics = LocalArchiveAttemptMetrics::default();
+    let mut decoder = GzDecoder::new(BufReader::with_capacity(
+        COMPRESSED_BUFFER_BYTES,
+        measure_local_body(reader, &metrics),
+    ));
     let buffers: [_; BLOCK_COUNT] = std::array::from_fn(|_| vec![0; BLOCK_BYTES]);
     for mut buffer in buffers.into_iter().chain(recycle) {
         let read = loop {
@@ -276,6 +258,7 @@ fn inflate(
             break;
         }
     }
+    metrics.body_read()
 }
 
 #[cfg(test)]
