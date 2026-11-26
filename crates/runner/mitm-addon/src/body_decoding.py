@@ -106,6 +106,16 @@ def _no_stream_decode_error() -> str | None:
     return None
 
 
+def _remaining_stream_decode_allowance(
+    compressed_bytes_seen: int, decoded_bytes_emitted: int
+) -> int:
+    allowed_decoded_bytes = max(
+        STREAM_DECODE_EXPANSION_GRACE,
+        compressed_bytes_seen * STREAM_DECODE_MAX_EXPANSION_RATIO,
+    )
+    return allowed_decoded_bytes - decoded_bytes_emitted
+
+
 def _create_zlib_stream_decode_session(
     feed: _StreamDecodeFeed,
     *,
@@ -137,11 +147,9 @@ def _create_zlib_stream_decode_session(
         while input_cursor:
             data = input_cursor.take()
             member_in_progress = True
-            allowed_decoded_bytes = max(
-                STREAM_DECODE_EXPANSION_GRACE,
-                compressed_bytes_seen * STREAM_DECODE_MAX_EXPANSION_RATIO,
+            remaining_decoded_bytes = _remaining_stream_decode_allowance(
+                compressed_bytes_seen, decoded_bytes_emitted
             )
-            remaining_decoded_bytes = allowed_decoded_bytes - decoded_bytes_emitted
             probing_for_additional_output = remaining_decoded_bytes == 0
             max_length = (
                 1
@@ -235,11 +243,9 @@ def _create_brotli_stream_decode_session(
 
         pending_input = chunk
         while True:
-            allowed_decoded_bytes = max(
-                STREAM_DECODE_EXPANSION_GRACE,
-                compressed_bytes_seen * STREAM_DECODE_MAX_EXPANSION_RATIO,
+            remaining_decoded_bytes = _remaining_stream_decode_allowance(
+                compressed_bytes_seen, decoded_bytes_emitted
             )
-            remaining_decoded_bytes = allowed_decoded_bytes - decoded_bytes_emitted
             try:
                 decoded = obj.process(
                     pending_input,

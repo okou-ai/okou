@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.251.26](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.25...runner-rs-v0.251.26) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** share streaming decode expansion allowance ([#51250](https://github.com/okou-ai/okou/issues/51250)) ([4a27b92](https://github.com/okou-ai/okou/commit/4a27b9219bed48c3ca08237fff0fce93f30c764f))
+
 ## [0.251.25](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.24...runner-rs-v0.251.25) (2026-11-26)
 
 

@@ -55,7 +55,8 @@ final class ComposerDraftSignals {
       if let voice { recording = try get(voice) }
       return ComposerDraftPresentation(
         draft: draft, editorBlocks: try get(blocks), status: state, attachments: files,
-        voicePhase: recording?.phase, voiceHasError: recording?.error != nil,
+        voicePhase: recording?.phase, audioUpload: recording?.audioUpload,
+        voiceHasError: recording?.error != nil,
         hasContent: ComposerDraftRules.hasContent(draft, files),
         canSend: ComposerDraftRules.canSend(draft, state, files, recording),
         canEditVoice: ComposerDraftRules.canEditDocument(draft, state))
