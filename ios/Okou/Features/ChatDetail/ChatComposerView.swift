@@ -18,6 +18,7 @@ struct ChatComposerView: View {
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
+  var stopRun: (@MainActor () async -> Void)?
   var modelSelection: ChatModelSelectionStore?
   var connectorSelection: ComposerConnectorStore?
   var mentionSource: ComposerMentionSource?
@@ -28,9 +29,9 @@ struct ChatComposerView: View {
   /// the input as its context, so the input stays open; the card's own files are not the
   /// member's content; and the page sets the input's width.
   var writesDirection = false
-  var placeholder = String(localized: "Message Okou")
+  var placeholder = ""
   var recommendedFollowup: String?
-  var showsTrailingFeedbackInput = true
+  var showsTrailingFeedbackInput = false
   var project: ChatProject?
   var removeProject: (() -> Void)?
 
@@ -150,24 +151,18 @@ private struct ChatComposerContent: View {
 
   private var expandsInput: Bool {
     writesDirection || showsEditingLayout || hasText || hasMultipleVoiceParts
-      || current.draft.document.hasFeedback || voiceActive || showsModels
+      || current.draft.document.hasFeedback || (voiceActive && hasContent) || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
     guard let phase = current.voicePhase else { return false }
     return phase == .recording || phase == .processing || phase == .saved
   }
-  /// Expanded text entry reserves send before typing; only compact or voice-only input lets
-  /// the mic take its place, so the toolbar does not reflow on the first or last character.
-  private var replacesSendWithMic: Bool {
-    !hasContent && !canStop && draftState.voice != nil && (!expandsInput || voiceActive)
-  }
-  private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
   private var usesFollowupPlaceholder: Bool {
     models?.snapshot.usesFollowupPlaceholder == true
   }
   private var visibleFollowup: String? {
-    guard usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,
+    guard !canStop, !voiceActive, usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,
       current.canSend, let followup = configuration.recommendedFollowup,
       !followup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
@@ -182,8 +177,8 @@ private struct ChatComposerContent: View {
             .accessibilityLabel("Project: \(project.name)")
             .disabled(isBusy || needsUpgrade)
         }
-        if let voice = draftState.voice, current.voiceHasError || voiceActive {
-          ComposerVoiceInputTray(voice: voice)
+        if let voice = draftState.voice, current.voiceHasError {
+          ComposerVoiceInputNotice(voice: voice)
             .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
         }
         // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
@@ -253,26 +248,21 @@ private struct ChatComposerContent: View {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
         let followup = visibleFollowup
-        OkouComposerSurface(isExpanded: expandsInput) {
-          textInput(id: inputID, followup: followup)
-            .accessibilityIdentifier("message-input")
-        } inlineAction: {
-          if let followup {
-            Button {
-              draftState.editor.acceptFollowup(followup)
-            } label: {
-              Text("OK")
-                .font(.okou(.footnote).weight(.medium))
-                .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
-                .background(OkouColor.muted, in: Capsule())
-                .frame(minWidth: actionSize, minHeight: actionSize)
-                .contentShape(Rectangle())
+        OkouComposerSurface(
+          isExpanded: voiceActive ? hasContent : expandsInput,
+          compactTrailingCount: draftState.voice == nil ? 1 : 2,
+          showsBottomBar: voiceActive
+        ) {
+          ZStack(alignment: .topLeading) {
+            textInput(id: inputID, followup: followup)
+              .opacity(voiceActive && !hasContent ? 0 : 1)
+              .allowsHitTesting(!voiceActive)
+              .accessibilityHidden(voiceActive && !hasContent)
+            if expandsInput, let followup {
+              followupSuggestion(followup)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Use this suggestion")
-            .accessibilityValue(Text(verbatim: followup))
-            .accessibilityIdentifier("accept-followup")
           }
+          .accessibilityIdentifier("message-input")
         } leading: {
           HStack(spacing: 0) {
             Button {
@@ -298,6 +288,12 @@ private struct ChatComposerContent: View {
           }
         } trailing: {
           trailingActions
+        } bottomBar: {
+          if voiceActive, let voice = draftState.voice {
+            ComposerVoiceInputTray(
+              voice: voice, canSend: canSendRecording,
+              send: { await submit() })
+          }
         }
         .chatFeedbackContentAnchor()
         .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
@@ -415,10 +411,12 @@ private struct ChatComposerContent: View {
     ChatFeedbackComposer(
       state: draftState, presentation: current, inputID: inputID,
       isFocused: $isFocused,
-      acceptsImages: !isBusy && !needsUpgrade, placeholder: configuration.placeholder,
+      acceptsImages: !isBusy && !needsUpgrade && !voiceActive,
+      placeholder: expandsInput && followup != nil ? "" : configuration.placeholder,
       followup: followup,
       showsTrailingParagraph: showsTrailingFeedbackInput,
       expanded: showsEditingLayout,
+      showsFollowupPlaceholder: !expandsInput,
       mentionSource: mentionSource
     )
     .id(inputID)
@@ -426,38 +424,40 @@ private struct ChatComposerContent: View {
     .disabled(!current.draft.document.isSupported)
   }
 
+  private var canSendRecording: Bool {
+    !isBusy && !needsUpgrade && current.attachments.isReady && modelsAllowSending
+      && draftState.canEditVoice
+  }
+
+  private func followupSuggestion(_ prompt: String) -> some View {
+    var text = AttributedString(prompt + " ")
+    var action = AttributedString(String(localized: "Accept"))
+    action.link = URL(string: "okou-followup:accept")
+    action.foregroundColor = OkouColor.foreground
+    text.append(action)
+    return Text(text)
+      .font(.okou(.body))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .environment(\.openURL, OpenURLAction { _ in
+        draftState.editor.acceptFollowup(prompt)
+        return .handled
+      })
+  }
+
   private var trailingActions: some View {
     HStack(spacing: OkouSpace.xs) {
-      if let modelSelection {
-        ZStack {
-          if showsSecondaryActions {
-            ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-              .disabled(needsUpgrade)
-              .transition(.opacity)
-          }
-        }
-        .frame(width: actionSize, height: actionSize)
+      if expandsInput, let modelSelection {
+        ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+          .disabled(needsUpgrade)
+          .frame(width: actionSize, height: actionSize)
       }
       if let voice = draftState.voice {
-        ZStack {
-          if showsSecondaryActions {
-            voiceInput(voice)
-              .transition(.opacity)
-          }
-        }
+        voiceInput(voice)
+      }
+      primaryAction
         .frame(width: actionSize, height: actionSize)
-      }
-      // Keep the row width stable while the compact mic fades into the primary action.
-      ZStack {
-        if replacesSendWithMic, let voice = draftState.voice {
-          voiceInput(voice)
-            .transition(.opacity)
-        } else {
-          primaryAction
-            .transition(.opacity)
-        }
-      }
-      .frame(width: actionSize, height: actionSize)
     }
   }
 
@@ -498,15 +498,25 @@ private struct ChatComposerContent: View {
     .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: hasContent)
   }
 
+  private func stopRun() async {
+    if let stop = configuration.stopRun {
+      await stop()
+    } else {
+      await submit()
+    }
+  }
+
   private func performPrimaryAction() {
     guard canPerformPrimaryAction else { return }
-    let requiresContent = !showsStop
+    let stopsRun = showsStop
     Task {
-      // A queued Send must not become Stop after another send clears the draft.
-      guard !requiresContent || hasContent else { return }
-      if showsStop { stopFeedback += 1 } else { sendFeedback += 1 }
-      // The send operation captures native text for motion before ending editing.
-      await submit()
+      if stopsRun {
+        stopFeedback += 1
+        await stopRun()
+      } else if hasContent {
+        sendFeedback += 1
+        await submit()
+      }
     }
   }
 

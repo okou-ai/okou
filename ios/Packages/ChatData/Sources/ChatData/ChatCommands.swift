@@ -201,9 +201,13 @@ public actor ChatCommands {
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
     }
-    for runID in current.activeRunIDs {
+    try await interrupt(threadID: thread.id, runIDs: current.activeRunIDs)
+  }
+
+  public func interrupt(threadID: String, runIDs: [String]) async throws {
+    for runID in runIDs {
       let body = InterruptBody(
-        threadId: thread.id,
+        threadId: threadID,
         interruptsRunId: runID, clientEventId: UUID().uuidString)
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))

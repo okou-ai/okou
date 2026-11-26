@@ -19,8 +19,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var searchableRanges: (@MainActor () -> [NSRange])?
   var focusRequested: (@MainActor () -> Void)?
   var inputReady: (@MainActor () -> Void)?
-  var placeholder = String(localized: "Message Okou")
+  var placeholder = ""
   var followup: String?
+  var showsFollowupPlaceholder = true
   var identifier = "message-input"
   var expanded = false
   var mentionSource: ComposerMentionSource?
@@ -104,7 +105,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
       view.isApplyingDocument = false
     }
     view.followup = followup
-    view.placeholder.text = followup ?? placeholder
+    view.placeholder.text = showsFollowupPlaceholder ? followup ?? placeholder : placeholder
     view.placeholder.numberOfLines = expanded && followup != nil ? 2 : 1
     view.accessibilityLabel = placeholder.isEmpty ? String(localized: "Message Okou") : placeholder
     view.accessibilityIdentifier = identifier
@@ -131,7 +132,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   {
     guard let width = proposal.width else { return nil }
     let line = uiView.textView.font?.lineHeight ?? 20
-    if followup != nil && uiView.textView.textStorage.length == 0 {
+    if showsFollowupPlaceholder, followup != nil, uiView.textView.textStorage.length == 0 {
       let hint = uiView.textView.placeholder.sizeThatFits(
         CGSize(width: width, height: .greatestFiniteMagnitude))
       return CGSize(width: width, height: max(expanded ? line * 2 : line, ceil(hint.height)))
