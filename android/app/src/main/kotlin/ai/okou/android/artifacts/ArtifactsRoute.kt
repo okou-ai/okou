@@ -44,6 +44,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -252,6 +253,7 @@ internal fun ArtifactSelectionPreview(
         val id = selectedId
         val preview = state.preview?.takeIf { it.id == id }
         val context = LocalContext.current
+        val resources = LocalResources.current
         val scope = rememberCoroutineScope()
         val shareSnackbar = remember { SnackbarHostState() }
         var sharing by remember { mutableStateOf(false) }
@@ -292,7 +294,7 @@ internal fun ArtifactSelectionPreview(
                                         else -> null
                                     }
                                 if (message != null)
-                                    shareSnackbar.showSnackbar(context.getString(message))
+                                    shareSnackbar.showSnackbar(resources.getString(message))
                             }
                         }
                     }
