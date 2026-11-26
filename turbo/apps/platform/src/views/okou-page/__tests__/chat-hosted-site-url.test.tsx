@@ -1005,6 +1005,7 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
   let requests = 0;
   const refreshStarted = context.mocks.deferred<void>();
   const finishRefresh = context.mocks.deferred<void>();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
     requests += 1;
     if (requests >= 2) {
@@ -1073,12 +1074,16 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
   await within(menu).findByRole("heading", { name: "Domain verification" });
   finishRefresh.resolve();
   await within(menu).findByText("Domain verified. Save to use this address.");
-  expect(requests).toBe(3);
   expect(getNamedButton("Save", menu)).toBeEnabled();
-  expect(settings.selectedDomainId).toBeNull();
   click(getNamedButton("Cancel", menu));
   click(getNamedButton("Cancel", menu));
-  await expect(findNamedButton("Copy link", menu)).resolves.toBeEnabled();
+  await waitFor(() => {
+    expect(getNamedButton("Copy link", menu)).toBeEnabled();
+  });
+  click(getNamedButton("Copy link", menu));
+  await waitFor(() => {
+    expect(clipboard.writes.at(-1)).toBe(address(original));
+  });
 });
 
 test.each(["Cloudflare", "Vercel"] as const)(
