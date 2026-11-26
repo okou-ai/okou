@@ -1683,7 +1683,7 @@ artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-d
 artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-017	planned				
 artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-018	planned				
 artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-019	planned				
-artifacts	src/signals/routes/__tests__/hosted-site-scope.test.ts	hosted-site-scope-001	planned				B05
+artifacts	src/signals/routes/__tests__/hosted-site-scope.test.ts	hosted-site-scope-001	skipped		slow-setup: Given+first When/Then 655 ms and 649 ms (Given needs two dispatched chat Runs with issued OKOU tokens via createRunExecutionCredentials: first Run launch 421/417 ms incl. cold start, second fresh Run 182/185 ms warm; owner session prepare 35/26 ms; first Run prepare 17/21 ms, returned the same site at version 2)		B05
 artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-001	rewritten	111.9	split n=2: 1/2=91.0; 2/2=111.9	src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-002	rewritten	96.8		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-003	rewritten	88.3		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
