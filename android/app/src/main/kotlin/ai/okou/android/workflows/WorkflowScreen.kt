@@ -277,7 +277,7 @@ internal fun WorkflowScreen(
                         changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
                 },
                 restoreRow = restoreRow,
-                onRowRestored = { restoreRow = null },
+                onReturnFocusFinished = { restoreRow = null },
             )
         }
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -412,7 +412,7 @@ private fun WorkflowDirectory(
     onScope: (WorkflowScope) -> Unit,
     onSelect: (String) -> Unit,
     restoreRow: String?,
-    onRowRestored: () -> Unit,
+    onReturnFocusFinished: () -> Unit,
 ) {
     val text = query.keyword
     val inputEnabled = state.editing == null
@@ -485,7 +485,7 @@ private fun WorkflowDirectory(
                 query.position,
                 rowFocus,
                 backFocus,
-                onRowRestored,
+                onReturnFocusFinished,
                 rowEnabled =
                     restoreRow != null &&
                         canNavigate &&

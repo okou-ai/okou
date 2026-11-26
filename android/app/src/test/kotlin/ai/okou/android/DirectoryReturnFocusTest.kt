@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +16,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
@@ -86,6 +90,38 @@ class DirectoryReturnFocusTest {
         compose.onNodeWithTag("fallback").assertIsFocused()
     }
 
+    @Test
+    fun touchCancelsReturnFocusWhileTheDirectoryIsLoading() = withKeyboard {
+        var loaded by mutableStateOf(false)
+        var pending by mutableStateOf(true)
+        var mode by mutableStateOf(InputMode.Keyboard)
+        val inputMode =
+            object : InputModeManager {
+                override val inputMode: InputMode
+                    get() = mode
+
+                override fun requestInputMode(inputMode: InputMode) = inputMode == this.inputMode
+            }
+        compose.setContent {
+            CompositionLocalProvider(LocalInputModeManager provides inputMode) {
+                Directory(ready = loaded, hasRow = loaded, restoreRow = "row".takeIf { pending }) {
+                    pending = false
+                }
+            }
+        }
+
+        compose.runOnIdle { mode = InputMode.Touch }
+        compose.waitForIdle()
+        compose.runOnIdle { mode = InputMode.Keyboard }
+        focusOtherAction()
+        compose.runOnIdle { loaded = true }
+
+        compose.onNodeWithTag("other").assertIsFocused()
+
+        compose.runOnIdle { pending = true }
+        compose.onNodeWithTag("row").assertIsFocused()
+    }
+
     private fun focusOtherAction() =
         compose
             .onNodeWithTag("other")
@@ -110,7 +146,8 @@ private fun Directory(
     modifier: Modifier = Modifier,
     hasRow: Boolean = true,
     rowEnabled: Boolean = true,
-    onRestored: () -> Unit,
+    restoreRow: String? = "row",
+    onFinished: () -> Unit,
 ) {
     val position = rememberLazyListState()
     val row = remember { FocusRequester() }
@@ -118,12 +155,12 @@ private fun Directory(
     OkouTheme(false) {
         Column(
             modifier.restoreDirectoryFocus(
-                "row",
+                restoreRow,
                 ready,
                 position,
                 row,
                 fallback,
-                onRestored,
+                onFinished,
                 rowEnabled,
             ),
         ) {

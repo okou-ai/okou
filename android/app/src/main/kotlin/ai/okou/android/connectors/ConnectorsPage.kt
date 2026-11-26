@@ -191,7 +191,7 @@ internal fun ConnectorsPage(
                     directoryAnnouncements,
                     selected = selected.takeIf { wide },
                     restoreRow = restoreRow,
-                    onRestored = { restoreRow = null },
+                    onReturnFocusFinished = { restoreRow = null },
                     editQuery = ::setQuery,
                     setCategory = ::setCategory,
                     open = { entry ->
@@ -296,7 +296,7 @@ private fun ConnectorDirectory(
     announcements: ConnectorReadAnnouncements,
     selected: String?,
     restoreRow: String?,
-    onRestored: () -> Unit,
+    onReturnFocusFinished: () -> Unit,
     editQuery: (TextFieldValue) -> Unit,
     setCategory: (String?) -> Unit,
     open: (ConnectorEntry) -> Unit,
@@ -393,7 +393,7 @@ private fun ConnectorDirectory(
                 position,
                 restoreFocus,
                 tabFocus[selectedTab],
-                onRestored,
+                onReturnFocusFinished,
                 rowEnabled = restoreRow != null && entries?.any { it.slug == restoreRow } == true,
             )
             .padding(horizontal = 16.dp),

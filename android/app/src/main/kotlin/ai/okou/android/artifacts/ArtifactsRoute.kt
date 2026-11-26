@@ -149,7 +149,7 @@ internal fun ArtifactsRoute(
                 position = position,
                 selectedId = selectedId,
                 restoreRow = page.restoreRow,
-                onFocusRestored = { page.restoreRow = null },
+                onReturnFocusFinished = { page.restoreRow = null },
                 onSelect = { item ->
                     page.restoreRow = null
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
