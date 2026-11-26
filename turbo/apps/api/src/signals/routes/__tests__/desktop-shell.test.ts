@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
 import { desktopShellAuthorizationContract } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { browserAuthorizationRoutes } from "../browser-authorization";
 import { desktopShellAuthorizationRoutes } from "../desktop-shell-authorization";
@@ -355,6 +357,136 @@ describe("Desktop Shell command pipeline", () => {
         if (nextRunId) {
           await scenario.cancelRun(actor, nextRunId);
         }
+      });
+    },
+  );
+
+  it.each([
+    { disposition: "accepted", status: "running" },
+    { disposition: "rejected", status: "failed" },
+  ] as const)(
+    "notifies once after the host and Run commit before a Runner reply of $disposition",
+    { timeout: 30_000 },
+    async ({ disposition, status }) => {
+      const scenario = createPublicComputerUseScenario(context);
+      await scenario.run(async () => {
+        const actor = scenario.user();
+        const api = scenario.computerUse;
+        const chat = createChatFilesBddApi(context);
+        const runs = createRunsApi(context);
+        await createAuthDeviceSupportApi(context).updateFeatureSwitches(actor, {
+          desktopShell: true,
+        });
+        const host = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        const source = await scenario.launchRun(actor, host.hostId);
+        const requested = await api.requestDesktopShellAccess(
+          { bearer: source.token },
+          "Inspect the project in Terminal",
+        );
+        if (requested.status !== 200) {
+          throw new Error("Expected pending Shell access");
+        }
+        const secondHost = await api.startComputerUseHost(actor, {
+          supportedCapabilities: capabilities,
+        });
+        await scenario.cancelRun(actor, source.runId);
+        await scenario.run(flushWaitUntilForTest);
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({ status: "pending", approvalBlockedReason: null });
+
+        const clientEventId = randomUUID();
+        const readNotification = async () => {
+          const current = await api.readDesktopShellAccess(
+            actor,
+            requested.body.id,
+          );
+          if (current.status !== 200) {
+            throw new Error("Expected the pending Shell authorization");
+          }
+          const { events } = await chat.listThreadEvents(
+            actor,
+            source.threadId,
+          );
+          const picked = events.find((event) => {
+            return event.revokesEventId === clientEventId;
+          });
+          return {
+            approvalBlockedReason: current.body.approvalBlockedReason,
+            runId: picked?.runId,
+          };
+        };
+        const notifications: ReturnType<typeof readNotification>[] = [];
+        context.mocks.ably.publish.mockImplementation(async (topic) => {
+          if (topic === "desktopShellAuthorizationChanged") {
+            const notification = readNotification();
+            notifications.push(notification);
+            await notification;
+          }
+        });
+        const offers: {
+          runId: string;
+          notifications: Awaited<ReturnType<typeof readNotification>>[];
+        }[] = [];
+        await scenario.run(() => {
+          return runs.configureRunnerGroup({
+            reply: async (envelope) => {
+              const runId = envelope.executionContext.runId;
+              offers.push({
+                runId,
+                notifications: await Promise.all(notifications),
+              });
+              return HttpResponse.json({
+                runnerId: envelope.runnerId,
+                heartbeatGeneration: envelope.heartbeatGeneration,
+                runId,
+                disposition,
+              });
+            },
+          });
+        });
+        await chat.requestSendEvent(
+          actor,
+          {
+            threadId: source.threadId,
+            prompt: "Continue on the other computer",
+            computerUseHostId: secondHost.hostId,
+            clientEventId,
+          },
+          [201],
+        );
+        await scenario.run(flushWaitUntilForTest);
+
+        expect(offers).toHaveLength(1);
+        const [offer] = offers;
+        if (!offer) {
+          throw new Error("Expected a Runner dispatch");
+        }
+        expect(offer.notifications).toStrictEqual([
+          { approvalBlockedReason: "computer_changed", runId: offer.runId },
+        ]);
+        expect(notifications).toHaveLength(1);
+        await expect(runs.readRun(actor, offer.runId)).resolves.toMatchObject({
+          status,
+        });
+        await expect(runs.readRunQueue(actor)).resolves.toMatchObject({
+          body: { concurrency: { active: disposition === "accepted" ? 1 : 0 } },
+        });
+        expect(
+          (await api.readDesktopShellAccess(actor, requested.body.id)).body,
+        ).toMatchObject({
+          status: "pending",
+          approvalBlockedReason: "computer_changed",
+        });
+        await api.actDesktopShellAccess(
+          actor,
+          requested.body.id,
+          "approve",
+          [409],
+        );
+        context.mocks.ably.publish.mockResolvedValue(undefined);
       });
     },
   );

@@ -90,10 +90,7 @@ import { now, nowDate } from "../../lib/time";
 import type { AuthContext } from "../../types/auth";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { waitUntil } from "../context/wait-until";
-import {
-  publishDesktopShellAuthorizationChangedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import {
   bestEffort,
   joinAll,
@@ -2236,14 +2233,10 @@ const publishEnqueuedNormalSend$ = command(
       context,
       requestInput,
     } = input;
-    if (
+    const hostChanged =
       thread.kind === "existing" &&
       thread.computerAccess.computerUseHostId !==
-        thread.current.computerUseHostId
-    ) {
-      await publishDesktopShellAuthorizationChangedSafely(args.userId);
-      signal.throwIfAborted();
-    }
+        thread.current.computerUseHostId;
     const picked = await settle(
       set(
         pickEnqueuedChatThread$,
@@ -2254,6 +2247,9 @@ const publishEnqueuedNormalSend$ = command(
           ...(publishedLease ? { publishedLease } : {}),
           context,
           requestInput,
+          ...(hostChanged
+            ? { computerUseHostChangedForUserId: args.userId }
+            : {}),
         },
         signal,
       ),
