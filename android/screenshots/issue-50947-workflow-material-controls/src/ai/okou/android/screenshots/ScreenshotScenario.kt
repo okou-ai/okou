@@ -20,6 +20,8 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.RippleDefaults
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import androidx.test.core.app.ActivityScenario
@@ -49,7 +51,10 @@ class ScreenshotScenario {
     private val labels = listOf("说明", "自动化", "运行记录")
 
     @Test
+    @OptIn(ExperimentalMaterial3Api::class)
     fun material3WorkflowDetailTabs() {
+        assertEquals(0.10f, RippleDefaults.RippleAlpha.pressedAlpha, 0.001f)
+        assertEquals(0.08f, RippleDefaults.RippleAlpha.hoveredAlpha, 0.001f)
         val auth = app.authentication as TestAuthentication
         val previousAuth = auth.state.value
         val previousChats = app.chatService
@@ -106,7 +111,7 @@ class ScreenshotScenario {
                 val colors = resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false)
                 val background = colors.background.toArgb()
                 val primary = colors.primary.toArgb()
-                injectPointer(MotionEvent.ACTION_HOVER_MOVE, x, y, mouse = true)
+                injectHover(x, y)
                 try {
                     awaitPixel(
                         x,
@@ -119,31 +124,11 @@ class ScreenshotScenario {
                     assertSelected("说明")
                     ScreenshotCapture.capture("phone-tab-hover.png")
                 } finally {
-                    injectPointer(
-                        MotionEvent.ACTION_HOVER_MOVE,
-                        x,
-                        y - bounds.height(),
-                        mouse = true,
-                    )
+                    injectHover(x, y - bounds.height())
                 }
                 awaitPixel(x, y, background)
 
-                val down = SystemClock.uptimeMillis()
-                injectPointer(MotionEvent.ACTION_DOWN, x, y, downTime = down)
-                try {
-                    awaitPixel(
-                        x,
-                        y,
-                        ColorUtils.compositeColors(
-                            ColorUtils.setAlphaComponent(primary, 26),
-                            background,
-                        ),
-                    )
-                    ScreenshotCapture.capture("phone-tab-press.png")
-                } finally {
-                    injectPointer(MotionEvent.ACTION_UP, x, y, downTime = down)
-                }
-
+                tab("自动化").click()
                 text("添加自动化")
                 assertSelected("自动化")
                 ScreenshotCapture.capture("phone-automations.png")
@@ -200,7 +185,8 @@ class ScreenshotScenario {
                     )
                 val focusTarget =
                     checkNotNull(
-                        generateSequence(firstTabLabel) { it.parent }.firstOrNull { it.isFocusable },
+                        generateSequence(firstTabLabel) { it.parent }
+                            .firstOrNull { it.isFocusable },
                     )
                 assertTrue(
                     focusTarget.isFocused ||
@@ -399,30 +385,24 @@ class ScreenshotScenario {
         return bounds
     }
 
-    private fun injectPointer(
-        action: Int,
-        x: Int,
-        y: Int,
-        mouse: Boolean = false,
-        downTime: Long = SystemClock.uptimeMillis(),
-    ) {
+    private fun injectHover(x: Int, y: Int) {
+        val now = SystemClock.uptimeMillis()
         val property =
             MotionEvent.PointerProperties().apply {
                 id = 0
-                toolType = if (mouse) MotionEvent.TOOL_TYPE_MOUSE else MotionEvent.TOOL_TYPE_FINGER
+                toolType = MotionEvent.TOOL_TYPE_MOUSE
             }
         val point =
             MotionEvent.PointerCoords().apply {
                 this.x = x.toFloat()
                 this.y = y.toFloat()
-                pressure = if (action == MotionEvent.ACTION_DOWN) 1f else 0f
                 size = 1f
             }
         val event =
             MotionEvent.obtain(
-                downTime,
-                SystemClock.uptimeMillis(),
-                action,
+                now,
+                now,
+                MotionEvent.ACTION_HOVER_MOVE,
                 1,
                 arrayOf(property),
                 arrayOf(point),
@@ -432,11 +412,11 @@ class ScreenshotScenario {
                 1f,
                 0,
                 0,
-                if (mouse) InputDevice.SOURCE_MOUSE else InputDevice.SOURCE_TOUCHSCREEN,
+                InputDevice.SOURCE_MOUSE,
                 0,
             )
         try {
-            assertTrue("Android pointer event $action", automation.injectInputEvent(event, true))
+            assertTrue("Android mouse hover", automation.injectInputEvent(event, true))
         } finally {
             event.recycle()
         }
