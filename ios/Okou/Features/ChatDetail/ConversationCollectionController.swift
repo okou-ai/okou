@@ -275,8 +275,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         case .message(let message, _, _, let pendingRetry, _, _, _):
           message.id == source.sendTransition?.messageID
             && pendingRetry != true && message.role == .user && message.attachments.isEmpty
-            && message.modelChange == nil
-            && message.inputError == nil
+            && message.modelChange == nil && message.inputError == nil
             && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
         case .footer(_, let showsAvatar): !showsAvatar
         default: false
