@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.68.0](https://github.com/okou-ai/okou/compare/ios-v0.67.4...ios-v0.68.0) (2026-11-26)
+
+
+### Features
+
+* offer four feedback choices on suggestion cards ([#51173](https://github.com/okou-ai/okou/issues/51173)) ([4f89ea3](https://github.com/okou-ai/okou/commit/4f89ea375bdad29e8180bf76011733206f402fcf))
+
+
+### Bug Fixes
+
+* **ios:** match the web chat thinking animation ([#51168](https://github.com/okou-ai/okou/issues/51168)) ([a82432a](https://github.com/okou-ai/okou/commit/a82432a4cd630f2ab87180431cd4627ad89d619f))
+
+
+### Refactoring
+
+* **ios:** keep the connector choices' status in the session graph ([#51146](https://github.com/okou-ai/okou/issues/51146)) ([f655b57](https://github.com/okou-ai/okou/commit/f655b576c8a8e843d398d459c47d0fbfea243132))
+* **ios:** keep the for you deck in the session graph ([#51153](https://github.com/okou-ai/okou/issues/51153)) ([5202a6d](https://github.com/okou-ai/okou/commit/5202a6d7103599bcaa8e3ae4fa03fd37b1779423))
+
 ## [0.67.4](https://github.com/okou-ai/okou/compare/ios-v0.67.3...ios-v0.67.4) (2026-11-26)
 
 

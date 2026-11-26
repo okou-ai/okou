@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.886.0](https://github.com/okou-ai/okou/compare/core-v8.885.4...core-v8.886.0) (2026-11-26)
+
+
+### Features
+
+* **app:** for you corner radii, selectable option text and action labels ([#51148](https://github.com/okou-ai/okou/issues/51148)) ([d3a229a](https://github.com/okou-ai/okou/commit/d3a229a493ba204b298d182eeeaf60c735241d02))
+
 ## [8.885.4](https://github.com/okou-ai/okou/compare/core-v8.885.3...core-v8.885.4) (2026-11-26)
 
 

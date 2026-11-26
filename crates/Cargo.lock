@@ -3184,7 +3184,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.32"
+version = "0.5.33"
 dependencies = [
  "bitvec",
  "cli-test-support",
@@ -4159,7 +4159,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.251.22"
+version = "0.251.23"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4899,7 +4899,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.151"
+version = "0.53.152"
 dependencies = [
  "api-contracts",
  "async-trait",
