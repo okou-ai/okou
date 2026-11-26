@@ -414,7 +414,10 @@ jobs:
         env:
           IOS_PRODUCT_TOOLCHAIN: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
         run: |
-          if [[ "$IOS_PARALLEL_APP_TESTS" == true ]]; then
+          if [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
+            bash ios/scripts/ci-test.sh build
+            python3 ios/scripts/preboot-simulator.py
+          elif [[ "$IOS_PARALLEL_APP_TESTS" == true ]]; then
             bash ios/scripts/transfer-ci-test-products.sh unpack
             echo "iOS starting test-without-building"
             bash ios/scripts/ci-test.sh run

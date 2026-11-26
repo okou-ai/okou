@@ -64,14 +64,18 @@ final class ThreadPresentationCapture: XCTestCase {
     format.scale = scene.screen.scale
     let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
     // Native window frames are also retained when simctl output is unavailable.
+    let clock = FrameClock()
     for index in 0..<9 {
+      await clock.advance()
       let data = renderer.pngData { _ in
         window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
       }
       try data.write(to: destination.appendingPathComponent(String(format: "ui-%02d.png", index)))
-      try await Task.sleep(for: .milliseconds(600))
     }
-
+    let recorded = destination.appendingPathComponent("recorded")
+    try await eventually(timeout: .seconds(90), message: "The simulator recorder did not finish") {
+      FileManager.default.fileExists(atPath: recorded.path)
+    }
   }
 
   private func event(_ sequence: Int, _ type: String, _ text: String, _ run: String, _ date: Date)
@@ -87,5 +91,28 @@ final class ThreadPresentationCapture: XCTestCase {
       "seqId": sequence, "eventType": type, "runId": run,
       "createdAt": date.ISO8601Format(), "payload": payload
     ])
+  }
+}
+
+/// Sample the native display at a low rate and leave the main run loop free between frames.
+@MainActor
+private final class FrameClock: NSObject {
+  private var nextTime: CFTimeInterval = 0
+  private var continuation: CheckedContinuation<Void, Never>?
+
+  func advance() async {
+    nextTime = CACurrentMediaTime() + 0.48
+    await withCheckedContinuation { continuation in
+      self.continuation = continuation
+      let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
+      link.add(to: .main, forMode: .common)
+    }
+  }
+
+  @objc private func frame(_ link: CADisplayLink) {
+    guard link.timestamp >= nextTime else { return }
+    link.invalidate()
+    continuation?.resume()
+    continuation = nil
   }
 }
