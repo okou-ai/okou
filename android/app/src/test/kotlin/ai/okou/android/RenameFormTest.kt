@@ -8,6 +8,19 @@ import org.junit.Test
 
 class RenameFormTest {
     @Test
+    fun aReadOnlyRefreshUpdatesTheBaselineWithoutReplacingInput() {
+        val draft = RenameDraft("Original")
+        assertFalse(draft.receive("Remote", readOnly = true))
+        assertEquals("Original", draft.input.text.toString())
+        assertTrue(draft.form("Remote", true, null).canSave)
+
+        draft.receive("Original")
+        assertFalse(draft.form("Original", true, null).canSave)
+        assertTrue(draft.receive("Newest"))
+        assertEquals("Newest", draft.input.text.toString())
+    }
+
+    @Test
     fun comparesTheNormalizedInputAgainstTheLatestConfirmedName() {
         assertTrue(renameForm("  Original  ", "Remote", true, null).canSave)
         assertFalse(renameForm("  Remote  ", "Remote", true, null).canSave)

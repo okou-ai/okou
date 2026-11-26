@@ -8,6 +8,7 @@ import ai.okou.android.OkouFormFieldSupport
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
+import ai.okou.android.canAdoptConfirmedForm
 import ai.okou.android.okouFormInputStyle
 import ai.okou.android.okouFormSupportingLineHeight
 import ai.okou.android.rememberContentReadSkeleton
@@ -113,7 +114,9 @@ private class InstructionsInput(val field: TextFieldState) {
             onEdit()
         }
         val current = model.uiState.value
-        if (text != current.content && current.canEdit && field.composition != null) return
+        // The owner has accepted any native edit and already resolved its draft against the read.
+        if (text != current.content && current.canEdit && !canAdoptConfirmedForm(false, field))
+            return
         presented = current.content
         field.replaceTextPreservingSelection(presented)
     }
