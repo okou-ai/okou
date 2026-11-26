@@ -3129,10 +3129,10 @@ remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-010	p
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-001	planned				
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-016	planned				
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-018	planned				
-artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-001	planned				B04
-artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-007	planned				B04
-artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-009	planned				B04
-artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-029	planned				B04
+artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-001	skipped		timer: 依赖定时器，暂缓 (retryable STS failures wait on signal-timers delay between the three token attempts in signals/external/gcp-llm-auth.ts)		B04
+artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-007	rewritten	90.7		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
+artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-009	rewritten	88.0		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
+artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-029	rewritten	105.3		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-006	planned				
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-007	planned				
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-010	planned				
