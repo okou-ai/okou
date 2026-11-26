@@ -1023,10 +1023,10 @@ remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-019	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-024	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access.test.ts	cloudflare-access-028	planned					a-run
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-001	planned				B07	d-other
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-002	planned				B07	d-other
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-011	planned				B07	d-other
-billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-012	planned				B07	d-other
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-001	rewritten	44.0		src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	B07	d-other
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-002	rewritten	61.1		src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	B07	d-other
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-011	rewritten	62.6		src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	B07	d-other
+billing	src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	codex-reset-credit-expiry-invalidation-012	rewritten	62.6		src/signals/routes/__tests__/codex-reset-credit-expiry-invalidation.test.ts	B07	d-other
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-002	rewritten	48.6		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04	
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-018	rewritten	92.5		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04	
 billing	src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	codex-reset-credit-expiry-019	rewritten	39.0		src/signals/routes/__tests__/codex-reset-credit-expiry.test.ts	B04	
