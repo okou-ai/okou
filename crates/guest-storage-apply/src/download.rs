@@ -805,19 +805,38 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         .local_metrics
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
+    if let Some(bytes) = task.inline_archive
+        && task.template_guidance.is_none()
+    {
+        download.opened_file_compressed_bytes = Some(bytes.len() as u64);
+        let extract_start = Instant::now();
+        #[cfg(target_os = "linux")]
+        let result = match download
+            .inflate_load
+            .filter(|_| task.telemetry.is_artifact())
+        {
+            Some(load) => {
+                archive::inflate::extract_inline(bytes, target_path, download.concurrency, load)
+            }
+            None => archive::extract_inline_tar_gz(bytes, target_path, download.concurrency),
+        };
+        #[cfg(not(target_os = "linux"))]
+        let result = archive::extract_inline_tar_gz(bytes, target_path, download.concurrency);
+        if let Some(metrics) = &mut download.local_metrics {
+            metrics.record_extraction(Duration::ZERO, extract_start.elapsed());
+        }
+        return result;
+    }
     #[cfg(target_os = "linux")]
     if let Some(load) = download.inflate_load
         && task.telemetry.is_artifact()
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")
     {
-        let archive = match task.inline_archive {
-            Some(bytes) => source::LocalArchive::Inline(bytes),
-            None => source::LocalArchive::open(path)?,
-        };
-        download.opened_file_compressed_bytes = archive.compressed_bytes();
+        let archive = source::LocalArchive::open(path)?;
+        download.opened_file_compressed_bytes = archive.compressed_bytes;
         let extract_start = Instant::now();
-        let result = archive::inflate::extract_local(
+        let result = archive::inflate::extract_staged(
             archive,
             target_path,
             local_attempt_metrics.as_ref(),
@@ -833,7 +852,10 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
     }
 
     let source = match task.inline_archive {
-        Some(archive) => Ok(source::LocalArchive::Inline(archive).into_source(None)),
+        Some(archive) => Ok(source::ArchiveSource::local(
+            archive,
+            Some(archive.len() as u64),
+        )),
         None => source::open_archive(
             &task.url,
             attempt_metrics.as_ref(),
