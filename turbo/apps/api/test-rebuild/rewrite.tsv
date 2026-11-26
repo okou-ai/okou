@@ -476,9 +476,9 @@ billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-019	rewritten	28.9	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-022	rewritten	54.2	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-024	rewritten	5.6	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	planned				B02
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	planned				B02
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	planned				B02
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	rewritten	116.0		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	rewritten	160.6		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	rewritten	80.9		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	planned				
