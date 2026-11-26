@@ -25,7 +25,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var identifier = "message-input"
   var expanded = false
   var mentionSource: ComposerMentionSource?
-  var voicePlayback: ComposerVoicePlayback?
+  var voicePlayback: VoiceClipPlayback?
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.workspaceChatPresentation) private var presentation
 
@@ -283,7 +283,7 @@ final class ComposerTextView: UITextView {
   var isCurrent: @MainActor () -> Bool = { true }
   var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
-  weak var voicePlayback: ComposerVoicePlayback?
+  weak var voicePlayback: VoiceClipPlayback?
   var layoutVoiceClips: (() -> Void)?
   /// The workspace chats this input was last rendered with, for keyboard mention activation.
   var mentionSource: ComposerMentionSource?
