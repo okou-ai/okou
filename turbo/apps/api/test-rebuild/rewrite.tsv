@@ -2138,8 +2138,8 @@ account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notificat
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-003	planned				
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-006	planned				
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-007	planned				
-account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-001	planned				B02
-account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-002	planned				B02
+account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-001	rewritten	73.2		src/signals/routes/__tests__/ios-push-registrations.test.ts	B02
+account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-002	rewritten	35.2		src/signals/routes/__tests__/ios-push-registrations.test.ts	B02
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-001	planned				
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-004	planned				
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-006	planned				
