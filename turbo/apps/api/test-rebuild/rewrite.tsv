@@ -1249,52 +1249,52 @@ connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-001	rewritten	191.5		src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-004	rewritten	124.9		src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-005	rewritten	110.6	split n=2: 1/2=110.6; 2/2=102.9	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-002	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-003	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-004	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-009	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-010	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-013	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-014	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-015	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-016	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-017	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-018	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-023	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-024	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-025	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-026	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-027	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-028	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-029	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-030	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-031	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-032	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-033	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-034	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-035	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-036	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-050	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-052	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-053	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-054	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-055	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-056	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-057	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-058	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-059	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-060	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-061	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-062	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-063	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-064	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-065	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-081	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-082	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-083	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-087	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-088	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-091	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-002	rewritten	11.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-003	rewritten	10.5		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-004	rewritten	10.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-009	rewritten	41.4		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-010	rewritten	22.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-013	rewritten	61.9		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-014	rewritten	46.7		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-015	rewritten	39.6		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-016	rewritten	39.9		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-017	rewritten	40.4		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-018	rewritten	37.1		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-023	rewritten	39.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-024	rewritten	38.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-025	rewritten	37.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-026	rewritten	38.6		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-027	rewritten	39.1		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-028	rewritten	37.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-029	rewritten	37.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-030	rewritten	39.0		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-031	rewritten	41.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-032	rewritten	40.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-033	rewritten	37.6		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-034	rewritten	41.4		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-035	rewritten	39.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-036	rewritten	40.0		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-050	rewritten	38.7		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-052	rewritten	39.4		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-053	rewritten	38.1		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-054	rewritten	42.0		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-055	rewritten	39.9		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-056	rewritten	39.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-057	rewritten	47.5		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-058	rewritten	40.0		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-059	rewritten	40.7		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-060	rewritten	42.6		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-061	rewritten	39.1		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-062	rewritten	41.8		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-063	rewritten	50.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-064	rewritten	37.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-065	rewritten	42.9		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-081	rewritten	39.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-082	rewritten	9.5		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-083	rewritten	12.0		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-087	rewritten	4.2		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-088	rewritten	8.3		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-091	rewritten	8.4		src/signals/routes/__tests__/connectors-oauth-start.test.ts	B10	d-other
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-001	rewritten	129.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-003	rewritten	95.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-004	rewritten	157.5		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
