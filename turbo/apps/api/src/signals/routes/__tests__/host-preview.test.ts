@@ -290,7 +290,8 @@ describe("sandbox hosted previews", () => {
     };
     mocks.clerk.session(actor.userId, actor.orgId);
     const first = await accept(api.sitePreview(request), [200]);
-    expect(first.body.expiresAt).toBeNull();
+    expect(first.body.expiresAt).not.toBeNull();
+    expect(first.body.url).toMatch(/^https:\/\/pv-/u);
     expect(first.body.previewImageUrl).toBeDefined();
     expect(
       new URL(first.body.previewImageUrl!).searchParams.get("object"),
@@ -298,6 +299,15 @@ describe("sandbox hosted previews", () => {
     expect((await accept(api.sitePreview(request), [200])).body).toStrictEqual(
       first.body,
     );
+    const outsider = createBddApi(context).user();
+    mocks.clerk.session(outsider.userId, outsider.orgId);
+    const publicPreview = await accept(api.sitePreview(request), [200]);
+    expect(publicPreview.body.url).toBe(
+      `https://${prepared.publicSlug}.okou.app/`,
+    );
+    expect(publicPreview.body.expiresAt).toBeNull();
+    expect(publicPreview.body.previewImageUrl).toBe(first.body.previewImageUrl);
+    mocks.clerk.session(actor.userId, actor.orgId);
     const policy = await accept(
       api.siteVisibility({ headers, params: { siteId: prepared.siteId } }),
       [200],
@@ -315,7 +325,6 @@ describe("sandbox hosted previews", () => {
       first.body.previewImageUrl,
     );
     expect(privatePreview.body.url).toMatch(/^https:\/\/pv-/u);
-    const outsider = createBddApi(context).user();
     mocks.clerk.session(outsider.userId, outsider.orgId);
     await accept(api.sitePreview(request), [404]);
   });

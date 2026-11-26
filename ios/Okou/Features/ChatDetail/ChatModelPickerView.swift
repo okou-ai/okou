@@ -18,8 +18,9 @@ struct ChatModelPickerButton: View {
 }
 
 private struct ChatModelPickerButtonContent: View {
-  @Bindable var selection: ChatModelSelectionStore
+  let selection: ChatModelSelectionStore
   let action: () -> Void
+  @ResolvedValue private var resolvedPresentation: ChatModelSelectionStore.Presentation?
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
   @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
   @LoadableValue private var metadata: Loadable<ChatModelSelection?>
@@ -27,31 +28,36 @@ private struct ChatModelPickerButtonContent: View {
   init(selection: ChatModelSelectionStore, action: @escaping () -> Void) {
     self.selection = selection
     self.action = action
+    _resolvedPresentation = ResolvedValue(selection.presentationValue)
     _resolvedConfiguration = ResolvedValue(
       task: selection.models.configurationValue, keepLast: true)
     _modelStatus = LoadableStatus(task: selection.models.configurationValue)
     _metadata = LoadableValue(task: selection.metadataValue)
   }
 
+  /// This render's graph value. The synchronous read only covers a missing first resolution.
+  private var presentation: ChatModelSelectionStore.Presentation {
+    resolvedPresentation ?? selection.presentation
+  }
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
   private var configuration: ChatModelConfiguration? {
-    resolvedConfiguration ?? models.configuration
+    presentation.configuration ?? resolvedConfiguration
   }
   private var modelError: String? {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
   }
-  private var models: ChatModelStore { selection.models }
   private var metadataError: String? {
     if case .hasError(let error) = metadata { return ChatRequestFailure.message(for: error) }
     return nil
   }
   private var isLoading: Bool {
     if case .loading = metadata { return true }
-    return modelStatus == .loading || selection.isBusy
+    return modelStatus == .loading || presentation.isBusy
   }
+  private var canSend: Bool { presentation.canSend && selection.connectors.canSend }
   private var hasError: Bool {
-    modelError != nil || metadataError != nil || selection.error != nil
-      || (configuration != nil && !selection.canSend && !isLoading)
+    modelError != nil || metadataError != nil || presentation.error != nil
+      || (configuration != nil && !canSend && !isLoading)
   }
   private var accessibilityValue: String {
     guard let configuration else {
@@ -59,9 +65,9 @@ private struct ChatModelPickerButtonContent: View {
         ? String(localized: "Loading model settings")
         : String(localized: "Model settings unavailable")
     }
-    var parts = [configuration.catalog.name(selection.selection.model)]
-    if let effort = selection.effectiveEffort { parts.append(effortLabel(effort)) }
-    if selection.selection.serviceTier == "priority" {
+    var parts = [configuration.catalog.name(presentation.selection.model)]
+    if let effort = presentation.effectiveEffort { parts.append(effortLabel(effort)) }
+    if presentation.selection.serviceTier == "priority" {
       parts.append(String(localized: "Fast mode"))
     }
     if hasError { parts.append(String(localized: "Model settings need attention")) }
@@ -72,7 +78,7 @@ private struct ChatModelPickerButtonContent: View {
   /// a company's subscription is that company's, another catalog model is Okou's, and a model
   /// the catalog cannot name yet is the generic `cpu`.
   private var mark: OkouComposerModelMark.Mark {
-    guard let model = selection.selection.model else { return .okou }
+    guard let model = presentation.selection.model else { return .okou }
     guard let catalog = configuration?.catalog,
       catalog.models.contains(where: { $0.model == model })
     else { return .icon("cpu") }
@@ -126,22 +132,28 @@ struct ChatModelPickerView: View {
 /// chat never runs on a half-made choice and nothing changes behind the sheet; ✕ or a swipe
 /// drops it.
 private struct ChatModelPickerContent: View {
-  @Bindable var selection: ChatModelSelectionStore
+  let selection: ChatModelSelectionStore
   let settingsURL: URL?
+  @ResolvedValue private var resolvedPresentation: ChatModelSelectionStore.Presentation?
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
   @LoadableValue private var metadata: Loadable<ChatModelSelection?>
 
   init(selection: ChatModelSelectionStore, settingsURL: URL?) {
     self.selection = selection
     self.settingsURL = settingsURL
+    _resolvedPresentation = ResolvedValue(selection.presentationValue)
     _resolvedConfiguration = ResolvedValue(
       task: selection.models.configurationValue, keepLast: true)
     _metadata = LoadableValue(task: selection.metadataValue)
   }
 
+  /// This render's graph value. The synchronous read only covers a missing first resolution.
+  private var presentation: ChatModelSelectionStore.Presentation {
+    resolvedPresentation ?? selection.presentation
+  }
   // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
   private var configuration: ChatModelConfiguration? {
-    resolvedConfiguration ?? models.configuration
+    presentation.configuration ?? resolvedConfiguration
   }
   private var modelError: String? {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
@@ -169,30 +181,32 @@ private struct ChatModelPickerContent: View {
     case models
   }
 
-  private var choice: ChatModelSelection { draft ?? selection.selection }
+  private var choice: ChatModelSelection { draft ?? presentation.selection }
+  /// A save in flight or an unresolved one blocks another change.
+  private var blocksChanges: Bool { presentation.isBusy || presentation.uncertain }
   private var hasChanges: Bool {
     guard let configuration else { return false }
-    return configuration.resolved(choice) != selection.selection
+    return configuration.resolved(choice) != presentation.selection
   }
 
   var body: some View {
     NavigationStack(path: $path) {
       List {
         if let configuration {
-          if selection.uncertain || metadataError != nil || modelError != nil {
+          if presentation.uncertain || metadataError != nil || modelError != nil {
             Section {
               refreshButton
             }
           }
           options(configuration)
           availabilityNotice(configuration)
-          if selection.canSaveForFutureChats(choice) {
+          if presentation.canSaveForFutureChats(choice) {
             defaultSection
           }
           if let settingsURL {
             Section { Link("Open model settings", destination: settingsURL) }
           }
-        } else if let error = selection.error ?? metadataError ?? modelError {
+        } else if let error = presentation.error ?? metadataError ?? modelError {
           Section {
             Text(error).foregroundStyle(OkouColor.destructive)
             refreshButton
@@ -203,7 +217,7 @@ private struct ChatModelPickerContent: View {
       .listSectionSpacing(OkouSpace.lg)
       .overlay {
         if configuration == nil && modelError == nil && metadataError == nil
-          && selection.error == nil
+          && presentation.error == nil
         {
           ChatSettingsLoadingView(title: "Loading models…")
         }
@@ -239,7 +253,7 @@ private struct ChatModelPickerContent: View {
         await selection.refresh()
       }
     }
-    .disabled(selection.isBusy)
+    .disabled(presentation.isBusy)
   }
 
   /// The drafted model, which opens the model list, then its thinking effort and speed as
@@ -305,7 +319,7 @@ private struct ChatModelPickerContent: View {
         }
         .contentShape(Rectangle())
       }
-      .disabled(committing != nil || selection.isBusy || selection.uncertain)
+      .disabled(committing != nil || blocksChanges)
       .accessibilityIdentifier("save-model-default")
     }
   }
@@ -314,7 +328,7 @@ private struct ChatModelPickerContent: View {
   /// above it.
   private var doneBar: some View {
     VStack(spacing: OkouSpace.md) {
-      if let error = selection.error ?? metadataError ?? modelError {
+      if let error = presentation.error ?? metadataError ?? modelError {
         Text(error)
           .font(.okou(.footnote))
           .foregroundStyle(OkouColor.destructive)
@@ -330,7 +344,7 @@ private struct ChatModelPickerContent: View {
         }
       }
       .buttonStyle(OkouButtonStyle(isPrimary: true))
-      .disabled(committing != nil || hasChanges && (selection.isBusy || selection.uncertain))
+      .disabled(committing != nil || hasChanges && blocksChanges)
       .accessibilityIdentifier("chat-model-done")
     }
     .padding(.horizontal, OkouSpace.lg)
@@ -350,14 +364,12 @@ private struct ChatModelPickerContent: View {
               Task { showsAuth = await subscriptions.reconnect(type: type) }
             }
             .disabled(
-              !configuration.canLinkSubscriptions || subscriptions.isMutating || selection.isBusy)
+              !configuration.canLinkSubscriptions || subscriptions.isMutating
+                || presentation.isBusy)
           }
         }
       } else if row.memberEffective.availability != "available" {
-        Section {
-          Text("This model is restricted by your plan.")
-          Link("Manage plan", destination: selection.modelsWebURL)
-        }
+        Section { Text("This model is restricted by your plan.") }
       }
     } else {
       Section { Text("This model is unavailable. Choose an available model before sending.") }
@@ -394,9 +406,6 @@ private struct ChatModelPickerContent: View {
         if !rows.isEmpty {
           Section {
             ForEach(rows) { row in modelRow(row, configuration: configuration) }
-            if rows.contains(where: { $0.memberEffective.availability == "plan_restricted" }) {
-              Link("Manage plan", destination: selection.modelsWebURL)
-            }
           } header: {
             // Allowance lives on the Subscriptions page; the header only names the provider.
             if let provider = PersonalSubscriptionType(rawValue: type) {
@@ -438,13 +447,13 @@ private struct ChatModelPickerContent: View {
               SubscriptionBrandIcon(type: type)
             }
           }
-          .disabled(selection.isBusy)
+          .disabled(presentation.isBusy)
         }
       }
       NavigationLink("Manage subscriptions") {
         PersonalSubscriptionsView(store: subscriptions)
       }
-      .disabled(selection.isBusy)
+      .disabled(presentation.isBusy)
     }
   }
 

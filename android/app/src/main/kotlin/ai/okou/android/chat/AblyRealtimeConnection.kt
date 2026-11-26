@@ -65,7 +65,7 @@ internal fun decodeRunOutput(data: Any?): SessionOutputDelta {
     require(
         listOf("threadId", "runId", "eventId", "runEventId", "createdAt", "delta").all {
             (document[it] as? JsonPrimitive)?.isString == true
-        }
+        },
     )
     val index = document.getValue("chunkIndex").jsonPrimitive
     require(!index.isString)
@@ -74,7 +74,7 @@ internal fun decodeRunOutput(data: Any?): SessionOutputDelta {
     // Web parses JSON numbers before validating integers, including 1.0 and 1e0.
     val value =
         outputJson.decodeFromJsonElement<SessionOutputDelta>(
-            JsonObject(document + ("chunkIndex" to JsonPrimitive(number.toLong())))
+            JsonObject(document + ("chunkIndex" to JsonPrimitive(number.toLong()))),
         )
     require(listOf(value.threadId, value.runId, value.eventId).all(outputUuid::matches))
     require(value.runEventId.isNotEmpty())
@@ -120,7 +120,7 @@ internal class RealtimeTokenBridge(
             throw AblyException.fromThrowable(cancelled)
         } catch (error: Exception) {
             failed(error)
-            // This observation fails as one owned operation; only an explicit retry starts another.
+            // The owner can reopen the observation after this token request has ended.
             close()
             throw AblyException.fromThrowable(error)
         }
@@ -183,7 +183,7 @@ internal class AblyRealtimeConnection(
                         }
                     publish(
                         change.current == ConnectionState.connected &&
-                            change.previous != ConnectionState.connected
+                            change.previous != ConnectionState.connected,
                     )
                 }
             }
@@ -249,83 +249,78 @@ internal class AblyRealtimeConnection(
     }
 
     /** Lossless callback handoff, separate from conflated connection snapshots. */
-    fun runOutput(target: RunOutputTarget): Flow<RunOutputSignal> =
-        callbackFlow {
-                check(!closed.get())
-                val name = "run-output:$userId:$workspaceId:${target.runId}"
-                val channel = client.channels.get(name)
-                var attached = false
-                fun offer(value: RunOutputSignal) {
-                    trySend(value)
-                }
-                val states = ChannelStateListener { change ->
-                    if (change.current == ChannelState.attached) {
-                        if (attached && !change.resumed) offer(RunOutputSignal.Discontinuity)
-                        attached = true
-                    } else if (
-                        change.current !in setOf(ChannelState.initialized, ChannelState.attaching)
-                    ) {
-                        offer(RunOutputSignal.Discontinuity)
-                    }
-                }
-                val messages =
-                    ChannelBase.MessageListener { message ->
-                        val delta =
-                            try {
-                                decodeRunOutput(message.data)
-                            } catch (_: Exception) {
-                                return@MessageListener
-                            }
-                        offer(RunOutputSignal.Delta(delta))
-                    }
+    fun runOutput(target: RunOutputTarget): Flow<RunOutputSignal> = callbackFlow {
+        check(!closed.get())
+        val name = "run-output:$userId:$workspaceId:${target.runId}"
+        val channel = client.channels.get(name)
+        var attached = false
+        fun offer(value: RunOutputSignal) {
+            trySend(value)
+        }
+        val states = ChannelStateListener { change ->
+            if (change.current == ChannelState.attached) {
+                if (attached && !change.resumed) offer(RunOutputSignal.Discontinuity)
+                attached = true
+            } else if (change.current !in setOf(ChannelState.initialized, ChannelState.attaching)) {
+                offer(RunOutputSignal.Discontinuity)
+            }
+        }
+        val messages = ChannelBase.MessageListener { message ->
+            val delta =
                 try {
-                    channel.on(states)
-                    channel.subscribe(target.runId, messages)
-                    awaitClose()
-                } finally {
-                    channel.unsubscribe(target.runId, messages)
-                    channel.off(states)
-                    // Wait for DETACHED before release: the SDK rejects release while detaching.
-                    // Bound offline cleanup so a backgrounded workspace can still close its client.
-                    withContext(NonCancellable) {
-                        val detached =
-                            withTimeoutOrNull(5_000) {
-                                suspendCancellableCoroutine { continuation ->
-                                    channel.detach(
-                                        object : CompletionListener {
-                                            override fun onSuccess() {
-                                                if (continuation.isActive) continuation.resume(true)
-                                            }
-
-                                            override fun onError(reason: ErrorInfo?) {
-                                                if (continuation.isActive)
-                                                    continuation.resume(false)
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        if (
-                            detached == true ||
-                                channel.state in
-                                    setOf(
-                                        ChannelState.initialized,
-                                        ChannelState.detached,
-                                        ChannelState.failed,
-                                    )
-                        )
-                            client.channels.release(name)
-                        // On timeout the observation's SDK retains the channel until its own close;
-                        // late completion callbacks cannot release a replacement subscription.
-                    }
+                    decodeRunOutput(message.data)
+                } catch (_: Exception) {
+                    return@MessageListener
                 }
+            offer(RunOutputSignal.Delta(delta))
+        }
+        try {
+            channel.on(states)
+            channel.subscribe(target.runId, messages)
+            awaitClose()
+        } finally {
+            channel.unsubscribe(target.runId, messages)
+            channel.off(states)
+            // Wait for DETACHED before release: the SDK rejects release while detaching.
+            // Bound offline cleanup so a backgrounded workspace can still close its client.
+            withContext(NonCancellable) {
+                val detached =
+                    withTimeoutOrNull(5_000) {
+                        suspendCancellableCoroutine { continuation ->
+                            channel.detach(
+                                object : CompletionListener {
+                                    override fun onSuccess() {
+                                        if (continuation.isActive) continuation.resume(true)
+                                    }
+
+                                    override fun onError(reason: ErrorInfo?) {
+                                        if (continuation.isActive) continuation.resume(false)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                if (
+                    detached == true ||
+                        channel.state in
+                            setOf(
+                                ChannelState.initialized,
+                                ChannelState.detached,
+                                ChannelState.failed,
+                            )
+                )
+                    client.channels.release(name)
+                // On timeout the observation's SDK retains the channel until its own close;
+                // late completion callbacks cannot release a replacement subscription.
             }
-            // Web queues every received payload. Do not discard valid data for a slow collector.
-            .buffer(Channel.UNLIMITED)
-            .catch { error ->
-                if (error is CancellationException) throw error
-                emit(RunOutputSignal.Discontinuity)
-            }
+        }
+    }
+    // Web queues every received payload. Do not discard valid data for a slow collector.
+    .buffer(Channel.UNLIMITED)
+        .catch { error ->
+            if (error is CancellationException) throw error
+            emit(RunOutputSignal.Discontinuity)
+        }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return

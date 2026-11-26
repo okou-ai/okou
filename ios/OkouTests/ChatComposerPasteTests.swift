@@ -1,5 +1,8 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
+import Observation
 import SwiftUI
 import Synchronization
 import UniformTypeIdentifiers
@@ -35,7 +38,9 @@ final class ChatComposerPasteTests: XCTestCase {
       "Before [Archived plan](/chats/\(MentionNavigationFixture.thread(31)))"
         + " and [Project 30](/chats/\(MentionNavigationFixture.thread(30))) after 🌷")
     input.cut(nil)
-    try await waitForBusinessResult { !conversation.composer.hasContent }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      !conversation.composer.hasContent
+    }
     try await eventually { input.undoManager?.groupingLevel == 0 }
 
     // Own external delivery while keeping the exported payload and native paste bridge real.
@@ -47,14 +52,20 @@ final class ChatComposerPasteTests: XCTestCase {
       return nil
     }
     input.paste(itemProviders: [provider])
-    try await waitForBusinessResult { conversation.composer.document == expected }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.composer.document == expected
+    }
     XCTAssertEqual(input.text, expectedNativeText)
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await waitForBusinessResult { !conversation.composer.hasContent }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      !conversation.composer.hasContent
+    }
     input.undoManager?.redo()
-    try await waitForBusinessResult { conversation.composer.document == expected }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.composer.document == expected
+    }
     XCTAssertEqual(input.text, expectedNativeText)
   }
 
@@ -63,7 +74,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     conversation.draft = "Before old after"
-    let host = UIHostingController(rootView: composer(conversation))
+    let host = UIHostingController(rootView: pasteComposer(conversation))
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
@@ -91,12 +102,43 @@ final class ChatComposerPasteTests: XCTestCase {
       completion(Data("pasted".utf8), nil)
       return nil
     }
-    try await pasteAndWaitForResult(
-      providers, in: input, conversation: conversation, fixture: fixture
-    ) {
-      conversation.draft == "Before pasted after"
-        && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
+    let replaced = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
+      MainActor.assumeIsolated { input.text.contains("pasted") }
     }
+    let uploadsSettled = expectation(
+      description: "The pasted images finished importing and uploading")
+    let attachments = conversation.attachmentDraft
+    var settled = false
+    let settle: @MainActor () -> Void = {
+      let failed = attachments.items.contains { if case .failed = $0.state { true } else { false } }
+      guard !settled, attachments.isReady || attachments.error != nil || failed else { return }
+      settled = true
+      uploadsSettled.fulfill()
+    }
+    // Upload state lives in the composer graph; its signal wakes this wait.
+    let subscription = try conversation.composer.store.watch(attachments.value) { settle() }
+    defer {
+      do { try subscription.cancel() } catch { XCTFail("Upload observer cleanup: \(error)") }
+    }
+    let pasteStarted = ContinuousClock.now
+    input.paste(itemProviders: providers)
+    // Paste starts the import synchronously. A missing image must reach the count assertion too.
+    settle()
+    // UIKit edits and attachment uploads finish independently. Bound a hang by XCTest's case budget.
+    let result = await XCTWaiter.fulfillment(
+      of: [replaced, uploadsSettled], timeout: executionTimeAllowance)
+    guard result == .completed, attachments.error == nil, attachments.isReady,
+      attachments.items.count == 2
+    else {
+      return XCTFail(
+        "Paste completion: \(result); editor text: \(input.text ?? "<missing>")\n"
+          + pasteDiagnostics(
+            conversation, fixture: fixture, providers: providers, since: pasteStarted))
+    }
+    XCTAssertEqual(conversation.draft, "Before pasted after")
+    XCTAssertEqual(input.text, conversation.draft)
     try await eventually { input.isFirstResponder }
     let requests = fixture.state.value.withLock { $0.preparations }
     XCTAssertEqual(requests.count, 2)
@@ -122,13 +164,13 @@ final class ChatComposerPasteTests: XCTestCase {
     defer { conversation.close() }
     let file = try makeImage()
     defer { try? FileManager.default.removeItem(at: file) }
-    let host = UIHostingController(rootView: composer(conversation))
+    let host = UIHostingController(rootView: pasteComposer(conversation))
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
     let provider = try XCTUnwrap(NSItemProvider(contentsOf: file))
     input.paste(itemProviders: [provider, provider])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.items.contains {
         if case .failed = $0.state { true } else { false }
       }
@@ -136,9 +178,11 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 1)
     let item = try XCTUnwrap(conversation.attachmentDraft.items.first)
     conversation.attachmentDraft.retry(item.id)
-    try await waitForBusinessResult { conversation.attachmentDraft.isReady }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.attachmentDraft.isReady
+    }
     input.paste(itemProviders: [provider])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
     }
     XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 3)
@@ -268,7 +312,7 @@ final class ChatComposerPasteTests: XCTestCase {
     next.draft = "Next conversation"
     await next.send()
     delivery.release()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: original.composer) {
       original.attachmentDraft.hasAttachments && original.attachmentDraft.isReady
     }
     XCTAssertFalse(next.attachmentDraft.hasAttachments)
@@ -293,7 +337,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     conversation.draft = "Keep selected text"
-    let host = UIHostingController(rootView: composer(conversation))
+    let host = UIHostingController(rootView: pasteComposer(conversation))
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
@@ -329,7 +373,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     conversation.draft = "Old draft"
-    let host = UIHostingController(rootView: composer(conversation))
+    let host = UIHostingController(rootView: pasteComposer(conversation))
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
@@ -403,7 +447,7 @@ final class ChatComposerPasteTests: XCTestCase {
     readGate.yield()
     await synchronization.value
     delivery.release()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
     }
     XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 1)
@@ -426,18 +470,6 @@ final class ChatComposerPasteTests: XCTestCase {
     }
   }
 
-  private func composer(_ conversation: ConversationStore)
-    -> some View
-  {
-    ChatComposerView(
-      draft: Binding(get: { conversation.draft }, set: { conversation.draft = $0 }),
-      isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
-      error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
-      attachments: conversation.attachmentDraft,
-      draftState: conversation.composer,
-      submit: { await conversation.send() }, refresh: nil)
-  }
-
   private func pasteAndWaitForResult(
     _ providers: [PasteDiagnosticItemProvider], in input: ComposerTextView,
     conversation: ConversationStore, fixture: AttachmentFlowFixture,
@@ -450,7 +482,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let importsAtReturn = conversation.attachmentDraft.importingCount
     let waitCalled = pasteStarted.duration(to: .now)
     try await waitForBusinessResult(
-      file: file, line: line,
+      watching: conversation.composer, file: file, line: line,
       message: "Since paste began, paste returned at \(pasteReturned) "
         + "with importing=\(importsAtReturn), readiness wait called at \(waitCalled).\n"
         + pasteDiagnostics(
@@ -534,15 +566,27 @@ private final class PasteDiagnosticItemProvider: NSItemProvider, @unchecked Send
   }
 }
 
+/// A conversation composer under the session Store that the workspace root provides.
+@MainActor private func pasteComposer(_ conversation: ConversationStore) -> some View {
+  StoreProvider(conversation.composer.store) {
+    ChatComposerView(
+      isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
+      error: nil, attachmentURL: URL(string: "https://app.example.invalid")!,
+      draftState: conversation.composer,
+      submit: { await conversation.send() }, refresh: nil)
+  }
+}
+
 private struct WorkspacePasteComposerHarness: View {
   let workspace: WorkspaceStore
 
   var body: some View {
-    @Bindable var composer = workspace.newComposer
-    ChatComposerView(
-      draft: $composer.text,
-      isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
-      error: nil, attachmentURL: workspace.webURL, attachments: composer.attachments,
-      draftState: composer, submit: {}, refresh: nil)
+    let composer = workspace.newComposer
+    StoreProvider(workspace.graph) {
+      ChatComposerView(
+        isBusy: false, showsProgress: false, canStop: false, needsUpgrade: false,
+        error: nil, attachmentURL: workspace.webURL,
+        draftState: composer, submit: {}, refresh: nil)
+    }
   }
 }

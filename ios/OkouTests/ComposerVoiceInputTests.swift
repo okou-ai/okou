@@ -11,6 +11,39 @@ import XCTest
 @MainActor
 final class ComposerVoiceInputTests: XCTestCase {
 
+  func testRecordingMessageSurvivesDraftReopenWithoutDictation() async throws {
+    let fixture = VoiceComposerFixture()
+    fixture.state.value.withLock {
+      $0.recordAsMessage = true
+      $0.quotaAllowed = false
+    }
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.speak(seconds: 16)
+    await voice.finish()
+    let clip = MessageJSON.object([
+      "type": .string("voice"),
+      "clips": .array([.object(["fileId": .string("73000000-0000-4000-8000-000000000002")])])
+    ])
+    XCTAssertEqual(composer.value.draftUserMessage?.parts, [clip])
+    XCTAssertTrue(composer.canSend)
+    XCTAssertTrue(composer.hasContent)
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
+    XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 0)
+    composer.close()
+    let reopened = fixture.composer(root: root, capture: VoiceCaptureFixture())
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.document.parts, [clip])
+    XCTAssertEqual(reopened.voice?.phase, .idle)
+  }
+
   func testVoiceReplacesSelectionPreservesReferencesAndSupportsUndoWithoutSending() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -211,9 +244,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 16)
-    try await waitForBusinessResult { voice.duration == 16 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 16
+    }
     gate.release()
     await starting.value
     await fulfillment(of: [upload], timeout: 3)
@@ -247,9 +284,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 15)
-    try await waitForBusinessResult { voice.duration == 15 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 15
+    }
     gate.release()
     await starting.value
     XCTAssertEqual(voice.phase, .saved)
@@ -290,9 +331,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 1)
-    try await waitForBusinessResult { voice.duration == 1 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 1
+    }
     let finish = Task { await voice.finish() }
     addTeardownBlock { @MainActor in
       gate.release()
@@ -300,7 +345,9 @@ final class ComposerVoiceInputTests: XCTestCase {
       await voice.discard()
       await finish.value
     }
-    try await waitForBusinessResult { voice.phase == .processing }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .processing
+    }
     gate.release()
     await starting.value
     await finish.value
@@ -309,7 +356,9 @@ final class ComposerVoiceInputTests: XCTestCase {
     XCTAssertEqual(composer.text, "Notes: ")
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
     composer.close()
-    try await waitForBusinessResult { voice.phase == .saved }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .saved
+    }
     unmount(window)
 
     fixture.state.value.withLock {
@@ -349,9 +398,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 16)
-    try await waitForBusinessResult { voice.duration == 16 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 16
+    }
     await voice.discard()
     await starting.value
     XCTAssertEqual(voice.phase, .idle)
@@ -637,7 +690,9 @@ final class VoiceAudioCaptureTests: XCTestCase {
     await voice.start()
     capture.speak(seconds: 1)
     voice.suspend()
-    try await waitForBusinessResult { voice.phase == .saved }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .saved
+    }
     XCTAssertEqual(voice.duration, 2)
     await voice.finish()
     XCTAssertEqual(composer.text, "spoken words")

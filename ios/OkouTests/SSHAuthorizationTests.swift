@@ -164,7 +164,8 @@ final class SSHAuthorizationTests: XCTestCase {
       id: SSHAuthorizationFixture.threadID,
       title: "SSH", createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     let registry = ApprovalCardRegistry(
-      thread: thread, commands: commands, sync: sync, didFail: { _ in }, didContinue: {})
+      thread: thread, commands: commands, sync: sync, graph: makeTestWorkspaceGraph(),
+      didFail: { _ in }, didContinue: {})
     defer { registry.close() }
     let action = try fixture.action()
     registry.activate()
@@ -260,7 +261,7 @@ private final class SSHAuthorizationFixture: Sendable {
 
   @MainActor func card() throws -> SSHAuthorizationStore {
     SSHAuthorizationStore(
-      action: try action(), threadID: Self.threadID, client: http.client, didFail: { _ in },
-      didContinue: {})
+      action: try action(), threadID: Self.threadID, client: http.client,
+      graph: makeTestWorkspaceGraph(), didFail: { _ in }, didContinue: {})
   }
 }

@@ -1,0 +1,42 @@
+[
+  {
+    "blur": true,
+    "pending": {},
+    "clipboard": "prior clipboard",
+    "gesture": {
+      "trusted": true,
+      "focused": "Remote browser input"
+    },
+    "write": {
+      "writeError": "AbortError",
+      "itemError": "AbortError"
+    },
+    "alerts": [
+      "Connecting to browser…",
+      "Starting"
+    ],
+    "remoteTitle": "Example",
+    "remoteText": "orderedfresh",
+    "enabled": true
+  },
+  {
+    "blur": false,
+    "pending": {},
+    "clipboard": "ordered",
+    "gesture": {
+      "trusted": true,
+      "focused": "Remote browser input"
+    },
+    "write": {
+      "item": "ordered",
+      "write": "fulfilled"
+    },
+    "alerts": [
+      "Connecting to browser…",
+      "Starting"
+    ],
+    "remoteTitle": "Example",
+    "remoteText": "orderedfresh",
+    "enabled": true
+  }
+]

@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">内置工具</string>
+    <string name="settings_tool_scope">你在「%1$s」中使用工具会消耗积分。</string>
+    <string name="settings_common_tools">常用工具</string>
+    <string name="settings_data_tools">数据工具</string>
+    <string name="settings_tool_web_search">网页搜索</string>
+    <string name="settings_tool_image_generation">图片生成</string>
+    <string name="settings_tool_image_model">图片生成模型</string>
+    <string name="settings_tools_unavailable">暂时无法加载工具。</string>
+    <string name="settings_tool_save_failed">未能确认设置是否保存。</string>
+    <string name="settings_tool_image_save_failed">未能保存图片生成模型</string>
+    <string name="settings_preferences_save_rolled_back">未能保存设置，已恢复原值。</string>
+    <string name="settings_appearance_sync_failed">外观未能同步，已应用到此设备。</string>
+    <string name="settings_email_updates">邮件更新</string>
+    <string name="settings_email_scope">接收所有工作区的简报、提醒和更新。</string>
+    <string name="settings_email_receive">接收邮件</string>
+    <string name="settings_email_unavailable">邮件不可用</string>
+    <string name="settings_email_check_address">核对账号邮箱</string>
+    <string name="settings_email_load_failed">暂时无法加载邮件订阅。</string>
+    <string name="settings_email_refresh_failed">暂时无法同步，正在显示已保存的订阅状态。</string>
+    <string name="settings_email_refreshing">正在同步邮件订阅</string>
+    <string name="settings_email_saving">正在更新邮件订阅…</string>
+    <string name="settings_email_save_failed">未能更新邮件订阅</string>
+    <string name="settings_email_save_unconfirmed">邮件订阅的保存结果尚未确认</string>
     <string name="settings_models">模型</string>
     <string name="settings_tools">工具</string>
     <string name="settings_my_okou">我的 Okou</string>
@@ -14,8 +37,6 @@
     <string name="settings_accounts_scope">选择你在「%1$s」使用的订阅账号。</string>
     <string name="settings_accounts_scope_empty">「%1$s」的模型账号</string>
     <string name="settings_workspace_status">「%1$s」 · %2$s</string>
-    <string name="settings_accounts_offline">离线，联网后可切换账号。</string>
-    <string name="settings_accounts_offline_connect">离线，联网后可连接账号。</string>
     <string name="settings_accounts_unavailable">暂时无法查看模型账号。</string>
     <string name="settings_accounts_update_failed">暂时无法更新，显示上次同步的信息。</string>
     <string name="settings_accounts_empty">尚未连接模型账号</string>
@@ -29,7 +50,8 @@
     <string name="settings_account_select">选择</string>
     <string name="settings_account_reconnect">需要重新连接</string>
     <string name="settings_account_switching">正在切换…</string>
-    <string name="settings_account_switch_failed">未能切换账号。</string>
+    <string name="settings_account_switch_unconfirmed">切换结果尚未确认</string>
+    <string name="settings_account_switch_failed">未能切换模型账号</string>
     <string name="settings_quota">配额</string>
     <string name="settings_hour_quota">%1$d 小时额度</string>
     <string name="settings_day_quota">%1$d 天额度</string>
@@ -43,8 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">积分余额</string>
     <string name="settings_credit_scope">「%1$s」的 Okou 积分</string>
-    <string name="settings_credit_offline">离线，显示上次余额。</string>
-    <string name="settings_credit_update_failed">暂时无法更新，显示上次余额。</string>
     <string name="settings_credit_unavailable">暂时无法查看余额。</string>
     <string name="settings_credit_member">个人用量包</string>
     <string name="settings_credit_workspace">工作区余额</string>
@@ -59,8 +79,7 @@
     <string name="settings_auto_model_detail">由 Okou 选择可用模型</string>
     <string name="settings_model_plan_restricted">需要其他套餐</string>
     <string name="settings_model_fast">快速模式</string>
-    <string name="settings_model_fast_usage">订阅用量约 %1$s 倍</string>
-    <string name="settings_model_load_when_online">联网后加载…</string>
+    <string name="settings_model_fast_usage">开启时，ChatGPT 订阅用量为标准档的 %1$s 倍</string>
     <string name="settings_model_save_rolled_back">未能保存默认模型，已恢复原值。</string>
     <string name="settings_model_save_unconfirmed">默认模型的保存结果尚未确认。</string>
     <string name="settings_model_effort">推理强度</string>
@@ -70,4 +89,28 @@
     <string name="settings_model_effort_extra">超高</string>
     <string name="settings_model_effort_max">最高</string>
     <string name="settings_model_effort_ultra">极高</string>
+    <string name="settings_refreshing_model_accounts">正在刷新模型账号</string>
+    <string name="settings_refreshing_credit_balance">正在刷新积分余额</string>
+    <string name="settings_proactive_services">主动服务</string>
+    <string name="settings_proactive_scope">设置在「%1$s」内生效。</string>
+    <string name="settings_proactive_loading">正在加载主动服务</string>
+    <string name="settings_proactive_needs_timezone">请先选择时区以安排发送。</string>
+    <string name="settings_proactive_read_failed">暂时无法加载此设置。</string>
+    <string name="settings_proactive_refresh_failed">同步失败，正在显示上次确认的设置。</string>
+    <string name="settings_proactive_preparing">正在准备排程…</string>
+    <string name="settings_proactive_schedule_failed">设置已保存，排程需要处理。</string>
+    <string name="settings_proactive_save_unconfirmed">保存结果尚未确认。</string>
+    <string name="settings_morning_brief">晨报</string>
+    <string name="settings_morning_brief_detail">每天早上 7:00 前按所选时区送达</string>
+    <string name="settings_morning_brief_save_failed">未能保存晨报设置，已恢复原值。</string>
+    <string name="settings_suggestions">建议</string>
+    <string name="settings_suggestions_detail">检查连接内容，更新画像并给出建议</string>
+    <string name="settings_suggestions_partial">部分开启</string>
+    <string name="settings_suggestions_hourly_only">目前仅检查信息及更新画像。</string>
+    <string name="settings_suggestions_cards_only">目前仅接收建议卡片。</string>
+    <string name="settings_suggestions_enable_both">同时开启</string>
+    <string name="settings_suggestions_disable_both">同时关闭</string>
+    <string name="settings_suggestions_save_failed">未能保存建议设置，已恢复原值。</string>
+    <string name="settings_timezone_save_rejected">未能保存时区，已恢复原值。</string>
+    <string name="settings_timezone_schedule_update_failed">时区已保存，晨报时间未能更新。</string>
 </resources>

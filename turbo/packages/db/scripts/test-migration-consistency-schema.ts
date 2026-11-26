@@ -55,11 +55,19 @@ import { applyPendingMigrations } from "./migration-runner";
 import { validateChatThreadEventExecutorRetirement } from "./test-chat-thread-event-executor-retirement";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
+import { validateOfficialWorkflowCatalogArchive } from "./test-official-workflow-catalog-archive";
+import {
+  validateOfficialWorkflowIdentityRetirement,
+  validateOfficialWorkflowInstallationRetirement,
+} from "./test-official-workflow-identity-retirement";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateCustomConnectorSkillCutover } from "./test-custom-connector-skill-cutover";
+import {
+  validateCustomConnectorSkillCutover,
+  validateCustomConnectorSkillPublicationViewRetirement,
+} from "./test-custom-connector-skill-cutover";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -1378,13 +1386,12 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
   {
     schemaName: "public",
     functionName: "delete_workflow_rows",
-    identityArguments:
-      "p_org_id text, p_workflow_id uuid, p_allow_official_installation_deletion boolean, p_required_official_installation_state text",
+    identityArguments: "p_org_id text, p_workflow_id uuid",
     kind: "f",
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
+    bodyHash: "484cfe3bbe028d16ee5162a6de83c974",
   },
   {
     schemaName: "public",
@@ -2878,6 +2885,24 @@ async function main(): Promise<void> {
       dbUrl1,
       await migrationTimestamp("1618_drop_legacy_agent_api_profiles"),
     );
+    await validateCustomConnectorSkillPublicationViewRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1620_drop_custom_connector_skill_publication_view",
+      ),
+    );
+    await validateOfficialWorkflowIdentityRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1637_retire_official_workflow_automation_identities",
+      ),
+    );
+    await validateOfficialWorkflowInstallationRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1638_retire_official_workflow_installation_state",
+      ),
+    );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -2939,6 +2964,7 @@ async function main(): Promise<void> {
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     // Transition regression uses retained SQL before fresh-schema generation.
     await validateOfficialWorkflowStorageRetirement(dbUrl1);
+    await validateOfficialWorkflowCatalogArchive(dbUrl1);
     await validateWorkflowPublicationContraction(dbUrl1);
     await validateStaffWorkflowAttachmentDeletion(dbUrl1);
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);

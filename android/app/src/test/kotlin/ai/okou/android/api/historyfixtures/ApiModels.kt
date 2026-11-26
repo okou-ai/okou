@@ -87,7 +87,7 @@ object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -182,7 +182,7 @@ data class HistoryRowsRowsItemVariant1Payload(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
+    @SerialName("run.failed") RUN_FAILED,
 }
 
 @Serializable
@@ -366,12 +366,16 @@ object HistoryRowsRowsItemSerializer : KSerializer<HistoryRowsRowsItem> {
 @Serializable(with = HistoryRowsCursorSerializer::class) sealed interface HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant1(val `lastEventId`: JsonNull, val `lastSeqId`: CanonicalZero) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant1(
+    val `lastEventId`: JsonNull,
+    val `lastSeqId`: CanonicalZero,
+) : HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant2(val `lastEventId`: String, val `lastSeqId`: Long) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant2(
+    val `lastEventId`: String,
+    val `lastSeqId`: Long,
+) : HistoryRowsCursor
 
 object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
     override val descriptor =
@@ -396,7 +400,7 @@ object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -438,9 +442,15 @@ data class HistoryRows(
 )
 
 @Serializable
-data class ThreadDetail(val `lastReadAt`: String?, val `cancellationRecoveryPending`: Boolean)
+data class ThreadDetail(
+    val `lastReadAt`: String?,
+    val `cancellationRecoveryPending`: Boolean,
+)
 
-@Serializable data class ReadState(val `lastReadAt`: String?)
+@Serializable
+data class ReadState(
+    val `lastReadAt`: String?,
+)
 
 @Serializable(with = RawHistoryRowSerializer::class) sealed interface RawHistoryRow
 
@@ -469,7 +479,7 @@ data class RawHistoryRowVariant1Payload(
 
 @Serializable
 enum class RawHistoryRowVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
+    @SerialName("run.failed") RUN_FAILED,
 }
 
 @Serializable
@@ -653,7 +663,10 @@ object RawHistoryRowSerializer : KSerializer<RawHistoryRow> {
 @Serializable(with = RowsQuerySerializer::class) sealed interface RowsQuery
 
 @Serializable
-data class RowsQueryVariant1(val `sinceSeqId`: CanonicalZero, val `limit`: Double) : RowsQuery
+data class RowsQueryVariant1(
+    val `sinceSeqId`: CanonicalZero,
+    val `limit`: Double,
+) : RowsQuery
 
 @Serializable
 data class RowsQueryVariant2(

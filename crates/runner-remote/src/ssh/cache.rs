@@ -220,6 +220,49 @@ impl Drop for Registration {
 }
 
 impl Access {
+    pub(super) fn uses_device_policy(&self) -> bool {
+        self.entry
+            .value
+            .get()
+            .is_some_and(|credential| credential.device_policy)
+    }
+
+    pub(super) async fn check_device_policy(
+        &self,
+        authority: &super::authority::Authority,
+        scope: &super::Scope,
+    ) -> Result<(), FailureReason> {
+        if let Some(credential) = self.entry.value.get().filter(|c| c.device_policy) {
+            let generation = credential
+                .trust
+                .lock()
+                .map_err(|_| FailureReason::Protocol)?
+                .generation;
+            let result = scope
+                .wait(Box::pin(authority.check(
+                    self.registration.run,
+                    self.connection,
+                    credential.created_at,
+                    generation,
+                )))
+                .await?;
+            if matches!(result, Err(FailureReason::ConfigurationChanged)) {
+                // A concurrent first-use pin may have advanced this snapshot.
+                let trust = credential
+                    .trust
+                    .lock()
+                    .map_err(|_| FailureReason::Protocol)?;
+                if trust.generation != generation {
+                    return Err(FailureReason::Unavailable);
+                }
+                self.invalidate();
+            }
+            result?;
+            self.check()?;
+        }
+        Ok(())
+    }
+
     pub(super) fn with_diagnostics(mut self, handle: crate::diagnostics::Handle) -> Self {
         self.diagnostics = Some(handle);
         self

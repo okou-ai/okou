@@ -32,10 +32,7 @@ class StatusFailureReportTests(unittest.TestCase):
             terminal = copy.deepcopy(originals[index*6:index*6+6])
             for event, clock in zip(terminal, (0, 1, 2, 3, 20, 50)):
                 event.update(case=case, monotonic_ns=at(clock), unix_ns=at(clock)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(clock)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(clock)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(clock) + 1))
             self.events.extend(terminal)
             accounts = {k: 0 for k in cleanup.COUNTS} | {"closed": True}
             active = accounts | {"registered_operations": 1, "started": 1,
@@ -97,12 +94,7 @@ class StatusFailureReportTests(unittest.TestCase):
 
     def refused(self, changes):
         original = copy.deepcopy(self.witnesses)
-        for index, change in enumerate(changes):
-            with self.subTest(change=index):
-                self.witnesses = copy.deepcopy(original)
-                change()
-                with self.assertRaises(ValueError):
-                    self.validate()
+        report_test.assert_indexed_witness_refusals(self, original, changes)
 
     def test_both_cases_preserve_original_and_measurement_limits(self):
         value = self.validate()

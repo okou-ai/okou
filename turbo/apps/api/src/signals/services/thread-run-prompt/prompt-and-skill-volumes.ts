@@ -116,6 +116,7 @@ function createIntegrationPrompts(
     automation: createAutomationThreadPrompt(
       threadContext.automationSnapshot$,
       threadContext.automationPayload$,
+      threadContext.officialWorkflowObservation$,
     ),
   };
 }
@@ -296,7 +297,7 @@ export function createPromptAndSkillVolumesSignals(
         (await get(memberMetadata$)).preferences?.timezone ?? undefined,
     };
   });
-  return { prompt$, skillVolumes$: shared.skillVolumes$ };
+  return { prompt$, skillVolumes$: shared.skillVolumes$, suggestionsPrompt$ };
 }
 
 function createDeviceUsePrompts(

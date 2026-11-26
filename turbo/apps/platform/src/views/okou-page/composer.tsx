@@ -5,20 +5,14 @@ import { ComposerCapabilityTray } from "./composer-capability-tray.tsx";
 type ChatComposerProps = Omit<
   ComponentProps<typeof CoreChatComposer>,
   "discovery"
-> & {
-  readonly discoveryInContent?: boolean;
-};
+>;
 
-export function ChatComposer({
-  discoveryInContent,
-  ...props
-}: ChatComposerProps) {
-  const contentHasDiscovery = discoveryInContent ?? props.layout === "home";
+export function ChatComposer(props: ChatComposerProps) {
   return (
     <CoreChatComposer
       {...props}
       discovery={
-        !contentHasDiscovery ? (
+        props.layout !== "home" ? (
           <ComposerCapabilityTray signals={props.signals} />
         ) : null
       }

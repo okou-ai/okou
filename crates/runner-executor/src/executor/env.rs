@@ -560,6 +560,20 @@ pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), Stri
                 Err("invalid session_id".to_string())
             }
         }
+        EffectiveCliFramework::Antigravity => {
+            if context.local_resume_session_id.is_some() {
+                Err("Antigravity does not accept an unbound local conversation ID".into())
+            } else if context
+                .native_continuation
+                .as_ref()
+                .and_then(|n| n.recovery_prompt.as_deref())
+                .is_some_and(|p| !p.is_empty())
+            {
+                Ok(())
+            } else {
+                Err("Antigravity continuation requires chat recovery context".into())
+            }
+        }
         EffectiveCliFramework::Pi => {
             if is_valid_cli_agent_session_id(session_id) {
                 Ok(())
@@ -803,7 +817,7 @@ pub(super) fn build_env_json_with_host_env(
     match effective_cli_framework(&context.cli_agent_type) {
         EffectiveCliFramework::ClaudeCode => insert_claude_code_env(&mut env, context, host_env),
         EffectiveCliFramework::Codex => insert_codex_env(&mut env, context, host_env),
-        EffectiveCliFramework::Pi => {}
+        EffectiveCliFramework::Pi | EffectiveCliFramework::Antigravity => {}
     }
 
     Ok(env)
@@ -835,9 +849,11 @@ pub(super) fn prepare_run_payload_for_run(
         validate_codex_runtime_config_field(config).map_err(RunnerError::Internal)?;
     }
 
-    let disallowed_tools = if effective_cli_framework(&context.cli_agent_type)
-        == EffectiveCliFramework::ClaudeCode
-        && let Some(values) = &context.disallowed_tools
+    // The guest maps these Claude tool names onto Antigravity's native tools.
+    let disallowed_tools = if matches!(
+        effective_cli_framework(&context.cli_agent_type),
+        EffectiveCliFramework::ClaudeCode | EffectiveCliFramework::Antigravity
+    ) && let Some(values) = &context.disallowed_tools
     {
         validate_disallowed_tools(values).map_err(RunnerError::Internal)?;
         values.join(",")

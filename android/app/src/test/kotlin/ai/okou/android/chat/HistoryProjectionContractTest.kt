@@ -18,7 +18,7 @@ class HistoryProjectionContractTest {
         val fixture =
             Json.parseToJsonElement(
                     checkNotNull(javaClass.getResource("/api-bindings/chat-history-semantics.json"))
-                        .readText()
+                        .readText(),
                 )
                 .jsonObject
         val threadId = fixture.getValue("threadId").jsonPrimitive.content
@@ -38,20 +38,17 @@ class HistoryProjectionContractTest {
                     expected.getValue("activeRunId").jsonPrimitive.contentOrNull,
                     actual.activeRunId,
                 )
-                // Opaque usage remains inspectable in native UI; Web excludes it from groups.
                 val events =
-                    actual.messages
-                        .filter { byId.getValue(it.id).type != "usage.recorded" }
-                        .map { message ->
-                            val type = message.status ?: byId.getValue(message.id).type
-                            JsonObject(
-                                mapOf(
-                                    "id" to JsonPrimitive(message.id),
-                                    "type" to JsonPrimitive(type),
-                                    "queued" to JsonPrimitive(message.queued),
-                                )
-                            )
-                        }
+                    actual.messages.map { message ->
+                        val type = message.status ?: byId.getValue(message.id).type
+                        JsonObject(
+                            mapOf(
+                                "id" to JsonPrimitive(message.id),
+                                "type" to JsonPrimitive(type),
+                                "queued" to JsonPrimitive(message.queued),
+                            ),
+                        )
+                    }
                 assertEquals(label, expected.getValue("events"), JsonArray(events))
                 assertEquals(
                     label,

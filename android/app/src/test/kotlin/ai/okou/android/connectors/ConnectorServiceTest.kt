@@ -8,7 +8,9 @@ import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
 import ai.okou.android.CONNECTOR_OAUTH_ATTEMPT
 import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.FixtureConnectorIcon
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +20,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConnectorServiceTest {
+    @Test
+    fun memberPolicyUsesTheSameAccountAcrossSettingsAndComposer() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            val service = fixture.service
+            fixture.memberAccess = true
+            val saved =
+                service.setAccountPolicy(
+                    CONNECTOR_CALENDAR,
+                    CONNECTOR_CALENDAR_SECONDARY,
+                    ConnectorAccountPolicyRequestPolicy.ALLOW_24H,
+                )
+            assertTrue(saved.enabled)
+            assertTrue(saved.expiresAt != null)
+
+            val accounts = service.accounts(CONNECTOR_CALENDAR)
+            assertEquals(saved, accounts.first { it.id == CONNECTOR_CALENDAR_SECONDARY }.policy)
+            val chatAccounts = service.chatAccounts(null)
+            val group = chatAccounts.groups.single { it.entry.slug == CONNECTOR_CALENDAR }
+            assertTrue(chatAccounts.memberAccess)
+            assertEquals(
+                saved,
+                group.accounts
+                    .first { it.account.id == CONNECTOR_CALENDAR_SECONDARY }
+                    .account
+                    .policy,
+            )
+            assertTrue(fixture.chatOverrideRequests.isEmpty())
+
+            fixture.memberAccess = false
+            val legacy =
+                service.accounts(CONNECTOR_CALENDAR).first { it.id == CONNECTOR_CALENDAR_SECONDARY }
+            assertNull(legacy.policy)
+            assertEquals(false, legacy.defaultEnabled)
+        }
+    }
+
     @Test
     fun recommendationsAndCategoryBrowsesUseTheCanonicalDirectory() = runBlocking {
         ConnectorApiFixture().use { fixture ->
@@ -39,6 +77,30 @@ class ConnectorServiceTest {
     }
 
     @Test
+    fun discoveryOverviewAndDetailCarryTheCurrentCatalogArtwork() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            val service = fixture.service
+            fixture.omittedFromDefaultBrowse = setOf("slack")
+            val artwork = FixtureConnectorIcon("slack-v1", invertInDarkMode = true, scale = 2.2)
+            fixture.icons = mapOf("slack" to artwork)
+
+            assertFalse(service.discover(null, null).entries.any { it.slug == "slack" })
+            val connected = checkNotNull(service.connected().getValue("slack").entry.icon)
+            assertEquals("slack-v1.svg", connected.url.pathSegments.last())
+            assertTrue(connected.invertInDarkMode)
+            assertEquals(2.2f, connected.scale, 0f)
+            assertEquals(connected, service.discover("slack", null).entries.single().icon)
+            assertEquals(connected, service.detail("slack").entry.icon)
+
+            fixture.icons = mapOf("slack" to artwork.copy(asset = "slack-v2", scale = null))
+            val updated = checkNotNull(service.detail("slack").entry.icon)
+            assertEquals("slack-v2.svg", updated.url.pathSegments.last())
+            assertEquals(1f, updated.scale, 0f)
+            assertEquals(updated, service.connected().getValue("slack").entry.icon)
+        }
+    }
+
+    @Test
     fun accountWritesKeepTheExactConnectorAndDoNotChangeOtherAccounts() = runBlocking {
         ConnectorApiFixture().use { fixture ->
             val service = fixture.service
@@ -49,7 +111,7 @@ class ConnectorServiceTest {
             )
             assertTrue(before.first { it.id == CONNECTOR_CALENDAR_PRIMARY }.defaultEnabled == true)
             assertFalse(
-                service.setDefaultEnabled(CONNECTOR_CALENDAR, CONNECTOR_CALENDAR_PRIMARY, false)
+                service.setDefaultEnabled(CONNECTOR_CALENDAR, CONNECTOR_CALENDAR_PRIMARY, false),
             )
             assertEquals(
                 "Renamed",

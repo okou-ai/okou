@@ -6,7 +6,6 @@ import { CLIENT_HEADER_NAMES } from "@okouai/api-contracts/contracts/client-head
 
 import { safeUrlParse } from "../signals/utils";
 import { env } from "./env";
-import { allowedMcpOrigin } from "./mcp-server-config";
 
 // Hono owns CORS for registered API routes directly. Their responses need
 // CORS headers here because they do not pass through a frontend proxy.
@@ -96,9 +95,7 @@ const firstPartyCors: MiddlewareHandler = cors({
 });
 
 const mcpCors = cors({
-  origin: (origin) => {
-    return allowedMcpOrigin(origin) ? origin : null;
-  },
+  origin: "*",
   allowMethods: ["POST", "GET", "DELETE", "OPTIONS"],
   allowHeaders: [
     "Authorization",
@@ -116,15 +113,24 @@ const mcpCors = cors({
 const mcpMetadataCors = cors({ origin: "*", allowMethods: ["GET", "OPTIONS"] });
 
 export const corsMiddleware: MiddlewareHandler = async (context, next) => {
-  if (context.req.path === "/.well-known/oauth-protected-resource/mcp") {
+  const { req } = context;
+  if (req.path === "/.well-known/oauth-protected-resource/mcp") {
     return mcpMetadataCors(context, next);
   }
-  if (context.req.path !== "/mcp") {
-    return firstPartyCors(context, next);
+  if (req.path === "/mcp") {
+    const origin = req.header("Origin");
+    if (origin !== undefined) {
+      const url = safeUrlParse(origin);
+      if (
+        !url ||
+        (url.protocol !== "https:" && url.protocol !== "http:") ||
+        url.origin !== origin ||
+        req.header("Cookie") !== undefined
+      ) {
+        return context.json({ error: "Forbidden Origin" }, 403);
+      }
+    }
+    return mcpCors(context, next);
   }
-  const origin = context.req.header("Origin");
-  if (origin !== undefined && !allowedMcpOrigin(origin)) {
-    return context.json({ error: "Forbidden Origin" }, 403);
-  }
-  return await mcpCors(context, next);
+  return await firstPartyCors(context, next);
 };

@@ -154,6 +154,49 @@ export const sshTypeBindings = [
     ],
   },
   {
+    schema: runnerSshContract.check.body,
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckRequest",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "CheckRequest",
+        rustDoc: ["Check a retained SSH connection before an operation."],
+        fields: {
+          connectionId: ["Exact SSH connection UUID."],
+          runnerIdentity: ["Host-owned process identity."],
+          expectedGeneration: ["Currently retained configuration generation."],
+          expectedCreatedAt: [
+            "Creation timestamp of the exact retained channel.",
+          ],
+        },
+      },
+      identityDocs("CheckRequestRunnerIdentity"),
+    ],
+  },
+  {
+    schema: runnerSshContract.check.responses[200],
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckResponse",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "CheckResponse",
+        rustDoc: ["Current authority for one retained SSH identity."],
+        fields: { outcome: ["Whether the operation may proceed."] },
+      },
+      {
+        rustTypeName: "CheckResponseOutcome",
+        rustDoc: ["Result of the exact current authority check."],
+        variants: {
+          valid: ["The retained identity still has access."],
+          unavailable: ["The retained identity is no longer authorized."],
+          configuration_changed: ["The authorized configuration has changed."],
+        },
+      },
+    ],
+  },
+  {
     schema: runnerSshContract.pin.body,
     rustModulePath: ["runners", "ssh"],
     rustTypeName: "PinRequest",

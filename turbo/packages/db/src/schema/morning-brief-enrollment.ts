@@ -24,17 +24,7 @@ export const morningBriefEnrollments = pgTable(
   {
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    /**
-     * The one installation this enrollment owns.
-     *
-     * Morning Brief is installed per Agent, so a member may legitimately hold
-     * several installations. The preference surface manages exactly the one
-     * recorded here, pinned to the Agent it was installed on rather than to
-     * whichever Agent is the org default today. Callers must tolerate a null
-     * or stale value: rows written before this column existed, and rows whose
-     * installation was later uninstalled, resolve through the adoption rule
-     * instead.
-     */
+    /** The installation that last claimed this member's opt-in. */
     workflowId: uuid("workflow_id"),
     membershipId: text("membership_id"),
     sourceCreatedAt: timestamp("source_created_at"),

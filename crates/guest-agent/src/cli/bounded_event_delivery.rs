@@ -18,6 +18,7 @@ use crate::error::AgentError;
 pub(super) enum Framework {
     ClaudeCode,
     Pi,
+    Antigravity,
     Codex,
 }
 
@@ -26,6 +27,7 @@ impl Framework {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Pi => "Pi",
+            Self::Antigravity => "Antigravity",
             Self::Codex => "Codex",
         }
     }
@@ -83,7 +85,9 @@ pub(super) fn prepare_for_delivery(
     // Every delivered event is named, not only the reduced ones: the ordinary
     // delivery log line carries these labels too.
     let (event_type, item_type) = match framework {
-        Framework::ClaudeCode | Framework::Pi => message_event_delivery::labels(&event),
+        Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
+            message_event_delivery::labels(&event)
+        }
         Framework::Codex => codex_event_delivery::labels(&event),
     };
     let labels = EventLabels {
@@ -192,7 +196,7 @@ pub(super) fn prepare_for_delivery(
         .collect::<BTreeSet<_>>();
     fallback_categories.insert("event_structure");
     let fallback = match framework {
-        Framework::ClaudeCode | Framework::Pi => {
+        Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
             message_event_delivery::minimum_event(event, reduced_categories.contains("image"))
         }
         Framework::Codex => {
@@ -275,7 +279,7 @@ fn collect_value(
     }
     *visited += 1;
     let policy = match framework {
-        Framework::ClaudeCode | Framework::Pi => {
+        Framework::ClaudeCode | Framework::Pi | Framework::Antigravity => {
             message_event_delivery::content_policy(value, path)
         }
         Framework::Codex => codex_event_delivery::content_policy(value, path, item_type),

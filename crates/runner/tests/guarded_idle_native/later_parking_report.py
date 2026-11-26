@@ -7,7 +7,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, supplied_policy
+from cleanup_report import COUNTS, accounting, exact_coverage, supplied_policy
 from report import exact
 
 PREFIX = "NATIVE_LATER_PARKING_WITNESS "
@@ -22,14 +22,16 @@ def identifier(value):
     return value
 
 
-def history_operation(evidence, identities, reason):
-    """Parse and reserve a distinct canonical history/operation identity pair."""
+def bind_history_operation(evidence, identities, baseline, sandbox, *, replay_error, binding_error):
+    """Reserve the canonical IDs and verify their binding to the original parked sandbox."""
     history = identifier(evidence.get("history_run_id"))
     operation = identifier(evidence.get("operation_run_id"))
     if history == operation or history in identities or operation in identities:
-        raise ValueError(reason)
+        raise ValueError(replay_error)
     identities.update((history, operation))
-    return history, operation
+    reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX + history
+    exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": sandbox}], binding_error)
+    return history, operation, reuse
 
 
 def clock(value, begin, end):
@@ -40,29 +42,26 @@ def covered(value, policy):
     if not isinstance(value, dict):
         raise ValueError("missing later parking coverage")
     accounting(value.get("accounting"), False, policy)
-    exact(value, {"allocated": [4, 8192, 2], "accounting": value["accounting"],
-                  "original_lease_active": True, "io_release_withheld": True},
-          "original or separate incoming full lease lost")
+    exact_coverage(value, [4, 8192, 2], value["accounting"],
+                   "original or separate incoming full lease lost")
 
 
 def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_later_parking_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid later parking witness",
     )
-    identities = {e[1][k] for e in terminals.values() for k in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     runners, paths, operations, reuse_keys = set(), set(), set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered later parking phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         report.validate_witness_clock_order(
             [terminal[3], *events, terminal[-1]], "later parking changed terminal phase ordering")
         if report.witness_identity_changed(events, identity):
@@ -124,9 +123,10 @@ def validate(directory):
         if not status_evidence.status_wait_advanced(before, after):
             raise ValueError("final status wait not positively observed")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, events[3]["monotonic_ns"])
-        if first != second or first in runners:
-            raise ValueError("heartbeat runner changed or replayed")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "heartbeat runner changed or replayed",
+        )
         exact(waiting.get("accounting"), dict.fromkeys(COUNTS, 0) | {"closed": False}, "open accounting not settled")
         exact(waiting, {"io_released_ns": io_released, "status_wait_polled_ns": polled,
             "status_waits_before": before, "status_waits_after": after, "receiver_polled_pending": True,

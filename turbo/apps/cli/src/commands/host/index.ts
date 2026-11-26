@@ -16,10 +16,15 @@ import { completeHostedSiteCommand } from "./complete";
 import { titleHostedSiteCommand } from "./title";
 import { createHostedSiteBannerCommand } from "./banner";
 import {
-  createArtifactVisibilityOption,
-  type ArtifactVisibility,
-} from "../shared/artifact-visibility";
-import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
+  hostedSiteVisibilityInstructions,
+  type HostedSiteCliVisibility,
+} from "../../lib/host/visibility";
+import {
+  createHostedSiteEmailOption,
+  createHostedSiteVisibilityOption,
+} from "./visibility-options";
+import { createHostedSiteVisibilityCommand } from "./visibility";
+import { createHostedSiteDomainCommand } from "./domain";
 import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 
 interface HostOptions {
@@ -30,7 +35,8 @@ interface HostOptions {
   readonly spa?: boolean;
   readonly json?: boolean;
   readonly preview?: string;
-  readonly visibility?: ArtifactVisibility;
+  readonly visibility?: HostedSiteCliVisibility;
+  readonly email?: string[];
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -70,14 +76,17 @@ export function createHostCommand(): Command {
       "PNG/JPEG artifact cover outside the hosted directory (up to 5 MiB)",
     )
     .option("--json", "Output the result and Markdown return forms as JSON")
-    .addOption(createArtifactVisibilityOption())
+    .addOption(createHostedSiteVisibilityOption())
+    .addOption(createHostedSiteEmailOption())
     .addCommand(cloneHostedSiteCommand)
     .addCommand(versionsHostedSiteCommand)
     .addCommand(deleteHostedSiteCommand)
     .addCommand(screenshotHostedSiteCommand)
     .addCommand(completeHostedSiteCommand)
     .addCommand(titleHostedSiteCommand)
-    .addCommand(createHostedSiteBannerCommand());
+    .addCommand(createHostedSiteBannerCommand())
+    .addCommand(createHostedSiteVisibilityCommand())
+    .addCommand(createHostedSiteDomainCommand());
   return command
     .addHelpText("after", () => {
       return `
@@ -88,6 +97,9 @@ Examples:
   Redeploy the same URL: okou host ./dist --site my-product-demo --title "Product demo" --spa
   Change display title: okou host title my-product-demo "New product demo"
   Hide the banner:      okou host banner my-product-demo off
+  Invite by email:      okou host ./dist --site my-product-demo --title "Product demo" --visibility email --email person@example.com
+  Change audience:      okou host visibility my-product-demo email --email person@example.com
+  Connect a domain:     okou host domain --help
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Take a site offline:   okou host delete my-product-demo
@@ -134,6 +146,7 @@ Notes:
           spaFallback: Boolean(options.spa),
           preview: options.preview,
           visibility: options.visibility,
+          emails: options.email,
           onProgress: options.json
             ? undefined
             : (progress) => {
@@ -168,6 +181,13 @@ Notes:
         console.log(chalk.dim(`  Title: ${result.title}`));
         console.log(chalk.dim(`  Site: ${result.publicSlug}`));
         console.log(chalk.dim(`  Visibility: ${result.visibility}`));
+        if (result.shares) {
+          console.log(
+            chalk.dim(
+              `  Sharing invitations processed: ${result.shares.length}`,
+            ),
+          );
+        }
         if (result.deploymentVersion !== undefined) {
           console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
         }

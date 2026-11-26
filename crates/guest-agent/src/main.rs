@@ -360,7 +360,7 @@ async fn run(runtime: GuestRuntime) -> i32 {
     // flush with output finalization. The EOF-consuming final flush runs below,
     // after background producers stop, so `/complete` logs still upload without
     // racing metrics or heartbeat writes.
-    let exit_code = execute(
+    let (exit_code, memory_published) = execute(
         &masker,
         start,
         Some(heartbeat_status_rx),
@@ -384,6 +384,14 @@ async fn run(runtime: GuestRuntime) -> i32 {
 
     if exit_code == 0 {
         log_info!(LOG_TAG, "✓ Sandbox finished successfully");
+        if memory_published {
+            // The executor reads this from the existing terminal stdout stream.
+            // A failed hint must leave the successful Run result intact.
+            use std::io::Write as _;
+            let mut stdout = std::io::stdout().lock();
+            let _ = stdout
+                .write_all(guest_contracts::stdout_framing::MEMORY_PUBLISHED_MARKER.as_bytes());
+        }
     } else {
         log_info!(LOG_TAG, "✗ Sandbox failed (exit code {exit_code})");
     }
@@ -414,7 +422,7 @@ async fn execute(
     telemetry: &Telemetry,
     controls: ExecutionControls,
     runtime: &GuestRuntime,
-) -> i32 {
+) -> (i32, bool) {
     let ExecutionControls {
         active_input,
         cli_cancellation,
@@ -428,7 +436,7 @@ async fn execute(
     let dns_target = match config.framework {
         env::Framework::ClaudeCode => Some("api.anthropic.com:443"),
         env::Framework::Codex => Some("api.openai.com:443"),
-        env::Framework::Pi => None,
+        env::Framework::Pi | env::Framework::Antigravity => None,
     };
     if let Some(dns_target) = dns_target {
         tokio::spawn(async move {
@@ -450,7 +458,7 @@ async fn execute(
             ),
         );
         record_sandbox_op("working_dir_setup", wd_start.elapsed(), false, Some(&msg));
-        return 1;
+        return (1, false);
     }
     record_sandbox_op("working_dir_setup", wd_start.elapsed(), true, None);
 
@@ -478,7 +486,7 @@ async fn execute(
                 FailureClass::CliExecutionError,
             ),
         );
-        return 1;
+        return (1, false);
     }
 
     // Memory is mounted directly through manifest.artifacts[] at the
@@ -840,7 +848,7 @@ async fn complete_execution(
     mut state: CompletionState<'_>,
     telemetry: &Telemetry,
     runtime: &GuestRuntime,
-) -> i32 {
+) -> (i32, bool) {
     let config = &runtime.config;
     let runtime_paths = &runtime.paths;
     let http = &runtime.http;
@@ -881,6 +889,7 @@ async fn complete_execution(
         .and_then(|diagnostic| diagnostic.cli_termination.as_ref())
         .is_some_and(|termination| termination.reason == CliTerminationReason::UserCancellation);
     let mut guest_completion_reported = false;
+    let mut memory_published = false;
 
     // Finalization on success (skip when no API — local/test mode). The
     // pre-finalization flush runs in `tokio::join!` with the snapshot work so
@@ -903,6 +912,7 @@ async fn complete_execution(
             tokio::join!(finalization, telemetry.flush(UploadMode::Live),);
         match finalization_result {
             Ok(finalization) => {
+                let published = finalization.memory_published();
                 // Persist the prepared finalization and terminal state together
                 // before returning to the top-level final telemetry pass. See
                 // the `complete` module docs for the runner's idempotent fallback
@@ -920,6 +930,7 @@ async fn complete_execution(
                 match result {
                     Ok(()) => {
                         guest_completion_reported = true;
+                        memory_published = published;
                         log_info!(
                             LOG_TAG,
                             "✓ Finalization complete ({}s)",
@@ -1027,7 +1038,7 @@ async fn complete_execution(
         .await;
     }
 
-    exit_code
+    (exit_code, memory_published)
 }
 
 async fn stop_background_and_flush_final_telemetry(

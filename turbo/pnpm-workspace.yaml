@@ -100,6 +100,9 @@ patchedDependencies:
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
   # Remove when upstream persists recalculated pan bounds and supports wheel step callbacks.
   "react-zoom-pan-pinch@4.0.3": patches/react-zoom-pan-pinch@4.0.3.patch
+  # Cancel the exit timer when a toast unmounts before its animation ends.
+  # https://github.com/okou-ai/sonner/commit/84ce278973cae975be7d2eac6ab16be17391fa11
+  "sonner@2.0.7": patches/sonner@2.0.7.patch
 
 ignoredBuiltDependencies:
   - esbuild

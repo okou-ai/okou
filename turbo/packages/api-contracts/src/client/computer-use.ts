@@ -8,6 +8,7 @@ import type {
   computerUseHostsContract as OriginalComputerUseHostsContract,
   computerUseSessionHostsContract as OriginalComputerUseSessionHostsContract,
   computerUseWriteCommandContract as OriginalComputerUseWriteCommandContract,
+  runnerAppStateContract as OriginalRunnerAppStateContract,
 } from "../contracts/computer-use";
 import type { ClientDescriptor } from "./types";
 
@@ -252,6 +253,22 @@ export const computerUseWriteCommandContract: ClientDescriptor<
       404: true,
       409: true,
       503: true,
+    },
+  },
+};
+
+export const runnerAppStateContract: ClientDescriptor<
+  typeof OriginalRunnerAppStateContract
+> = {
+  check: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/computer-use/commands/:commandId/check",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
     },
   },
 };

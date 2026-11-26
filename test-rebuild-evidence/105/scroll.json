@@ -1,0 +1,872 @@
+{
+  "006": {
+    "hold": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 404,
+            "y": -224.25,
+            "width": 219,
+            "height": 164.25
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 318.5,
+          "textVisible": true,
+          "relativeToAnchor": -542.75
+        },
+        {
+          "label": "hold",
+          "frame": {
+            "x": 404,
+            "y": -224.25,
+            "width": 219,
+            "height": 164.25
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 318.5,
+          "textVisible": true,
+          "relativeToAnchor": -542.75
+        }
+      ],
+      "initialImage": {
+        "tag": "BUTTON",
+        "src": null,
+        "rect": {
+          "x": 404,
+          "y": 205.75,
+          "width": 420,
+          "height": 315,
+          "top": 205.75,
+          "right": 824,
+          "bottom": 520.75,
+          "left": 404
+        }
+      },
+      "receivers": [
+        {
+          "turn": 17,
+          "seq": 51
+        }
+      ],
+      "headings": [
+        "Find people",
+        "Research",
+        "Create",
+        "Workflow"
+      ],
+      "sideUrl": "http://localhost:8193/chats/b0000000-0000-4000-a000-000000000081?sidebar=beef0000-0000-4000-8000-000000000104",
+      "marker17": false,
+      "listTarget": 1,
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 596,
+          "bottomGap": 5789,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 223.5,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1397,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 469.25,
+          "visible": true
+        },
+        {
+          "step": "automations-open",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 0,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 0,
+          "visible": false
+        },
+        {
+          "step": "side-open",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "incoming-with-side",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "hold",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "revealed",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        }
+      ]
+    },
+    "deliver": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 404,
+            "y": -224.25,
+            "width": 219,
+            "height": 164.25
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 318.5,
+          "textVisible": true,
+          "relativeToAnchor": -542.75
+        },
+        {
+          "label": "deliver",
+          "frame": {
+            "x": 404,
+            "y": -224.25,
+            "width": 219,
+            "height": 164.25
+          },
+          "state": "rendered",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 318.5,
+          "textVisible": true,
+          "relativeToAnchor": -542.75
+        }
+      ],
+      "initialImage": {
+        "tag": "BUTTON",
+        "src": null,
+        "rect": {
+          "x": 404,
+          "y": 205.75,
+          "width": 420,
+          "height": 315,
+          "top": 205.75,
+          "right": 824,
+          "bottom": 520.75,
+          "left": 404
+        }
+      },
+      "receivers": [
+        {
+          "turn": 17,
+          "seq": 51
+        }
+      ],
+      "headings": [
+        "Find people",
+        "Research",
+        "Create",
+        "Workflow"
+      ],
+      "sideUrl": "http://localhost:8193/chats/b0000000-0000-4000-a000-000000000081?sidebar=beef0000-0000-4000-8000-000000000104",
+      "marker17": false,
+      "listTarget": 1,
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 596,
+          "bottomGap": 5789,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 223.5,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1397,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 469.25,
+          "visible": true
+        },
+        {
+          "step": "automations-open",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 0,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 0,
+          "visible": false
+        },
+        {
+          "step": "side-open",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "incoming-with-side",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1246,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "deliver",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1514,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        },
+        {
+          "step": "revealed",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 72.75,
+            "visible": true
+          },
+          "offset": 5036,
+          "height": 596,
+          "bottomGap": 1514,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 318.5,
+          "visible": true
+        }
+      ]
+    }
+  },
+  "020": {
+    "hold": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 30,
+            "y": -259.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 434.25,
+          "textVisible": true,
+          "relativeToAnchor": -693.5
+        },
+        {
+          "label": "hold",
+          "frame": {
+            "x": 30,
+            "y": -259.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 434.25,
+          "textVisible": true,
+          "relativeToAnchor": -693.5
+        }
+      ],
+      "initialImage": {
+        "tag": "BUTTON",
+        "src": null,
+        "rect": {
+          "x": 30,
+          "y": 170.75,
+          "width": 420,
+          "height": 315,
+          "top": 170.75,
+          "right": 450,
+          "bottom": 485.75,
+          "left": 30
+        }
+      },
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 561,
+          "bottomGap": 5824,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        },
+        {
+          "step": "hold",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        }
+      ]
+    },
+    "deliver": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 30,
+            "y": -259.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 434.25,
+          "textVisible": true,
+          "relativeToAnchor": -693.5
+        },
+        {
+          "label": "deliver",
+          "frame": {
+            "x": 30,
+            "y": -259.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendered",
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "textTop": 434.25,
+          "textVisible": true,
+          "relativeToAnchor": -693.5
+        }
+      ],
+      "initialImage": {
+        "tag": "BUTTON",
+        "src": null,
+        "rect": {
+          "x": 30,
+          "y": 170.75,
+          "width": 420,
+          "height": 315,
+          "top": 170.75,
+          "right": 450,
+          "bottom": 485.75,
+          "left": 30
+        }
+      },
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 561,
+          "bottomGap": 5824,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        },
+        {
+          "step": "deliver",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000037",
+            "text": "Question number 13",
+            "y": 188.5,
+            "visible": true
+          },
+          "offset": 5054,
+          "height": 561,
+          "bottomGap": 1414,
+          "event": "aa970000-0000-4000-8000-000000000038",
+          "text": "Turn 13, observation 3.",
+          "y": 434.25,
+          "visible": true
+        }
+      ]
+    }
+  },
+  "008": {
+    "hold": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 30,
+            "y": 123.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "textTop": null,
+          "textVisible": false,
+          "relativeToAnchor": null
+        },
+        {
+          "label": "hold",
+          "frame": {
+            "x": 30,
+            "y": 123.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "textTop": null,
+          "textVisible": false,
+          "relativeToAnchor": null
+        }
+      ],
+      "receivers": [
+        {
+          "turn": 17,
+          "seq": 51
+        }
+      ],
+      "preparationCovered": {
+        "imageArrivals": 0,
+        "imageOpen": false
+      },
+      "preparationRevealed": {
+        "imageArrivals": 0,
+        "imageOpen": false
+      },
+      "preparationAtTail": {
+        "imageArrivals": 1,
+        "imageOpen": false
+      },
+      "atTailText": 1,
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000046",
+            "text": "Question number 16",
+            "y": 122,
+            "visible": true
+          },
+          "offset": 5447,
+          "height": 561,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000047",
+          "text": "Turn 16, observation 3.",
+          "y": 367.75,
+          "visible": true
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000002",
+            "text": "Turn 1, observation 2.",
+            "y": 59.25,
+            "visible": true
+          },
+          "offset": 275,
+          "height": 561,
+          "bottomGap": 6504,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 296,
+          "visible": true
+        },
+        {
+          "step": "automations-open",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 0,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 0,
+          "visible": false
+        },
+        {
+          "step": "revealed",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000002",
+            "text": "Turn 1, observation 2.",
+            "y": 59.25,
+            "visible": true
+          },
+          "offset": 275,
+          "height": 561,
+          "bottomGap": 6792,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 296,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000050",
+            "text": "Survey diagram 17",
+            "y": 91.75,
+            "visible": true
+          },
+          "offset": 7481,
+          "height": 561,
+          "bottomGap": 0,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "hold",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000050",
+            "text": "Survey diagram 17",
+            "y": 91.75,
+            "visible": true
+          },
+          "offset": 7481,
+          "height": 561,
+          "bottomGap": 0,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        }
+      ]
+    },
+    "deliver": {
+      "layout": [
+        {
+          "label": "pending",
+          "frame": {
+            "x": 30,
+            "y": 123.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendering",
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "textTop": null,
+          "textVisible": false,
+          "relativeToAnchor": null
+        },
+        {
+          "label": "deliver",
+          "frame": {
+            "x": 30,
+            "y": 123.25,
+            "width": 420,
+            "height": 315
+          },
+          "state": "rendered",
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "textTop": null,
+          "textVisible": false,
+          "relativeToAnchor": null
+        }
+      ],
+      "receivers": [
+        {
+          "turn": 17,
+          "seq": 51
+        }
+      ],
+      "preparationCovered": {
+        "imageArrivals": 0,
+        "imageOpen": false
+      },
+      "preparationRevealed": {
+        "imageArrivals": 0,
+        "imageOpen": false
+      },
+      "preparationAtTail": {
+        "imageArrivals": 1,
+        "imageOpen": false
+      },
+      "atTailText": 1,
+      "positions": [
+        {
+          "step": "tail",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000046",
+            "text": "Question number 16",
+            "y": 122,
+            "visible": true
+          },
+          "offset": 5447,
+          "height": 561,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000047",
+          "text": "Turn 16, observation 3.",
+          "y": 367.75,
+          "visible": true
+        },
+        {
+          "step": "reading",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000002",
+            "text": "Turn 1, observation 2.",
+            "y": 59.25,
+            "visible": true
+          },
+          "offset": 275,
+          "height": 561,
+          "bottomGap": 6504,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 296,
+          "visible": true
+        },
+        {
+          "step": "automations-open",
+          "oldestVisible": null,
+          "offset": 0,
+          "height": 0,
+          "bottomGap": 0,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 0,
+          "visible": false
+        },
+        {
+          "step": "revealed",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000002",
+            "text": "Turn 1, observation 2.",
+            "y": 59.25,
+            "visible": true
+          },
+          "offset": 275,
+          "height": 561,
+          "bottomGap": 6792,
+          "event": "aa970000-0000-4000-8000-000000000004",
+          "text": "Question number 2",
+          "y": 296,
+          "visible": true
+        },
+        {
+          "step": "held-image",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000050",
+            "text": "Survey diagram 17",
+            "y": 91.75,
+            "visible": true
+          },
+          "offset": 7481,
+          "height": 561,
+          "bottomGap": 0,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        },
+        {
+          "step": "deliver",
+          "oldestVisible": {
+            "event": "aa970000-0000-4000-8000-000000000050",
+            "text": "Survey diagram 17",
+            "y": 91.75,
+            "visible": true
+          },
+          "offset": 7481,
+          "height": 561,
+          "bottomGap": 0,
+          "event": null,
+          "text": null,
+          "y": null,
+          "visible": null
+        }
+      ]
+    }
+  }
+}

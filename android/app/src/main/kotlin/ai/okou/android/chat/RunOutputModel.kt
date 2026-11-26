@@ -63,8 +63,9 @@ class RunOutputModel(
             if (visible && authorized() && thread != null && run != null) thread to run else null
         val previous = demand.value
         if (previous?.let { it.threadId to it.runId } != selected) epoch++
-        demand.value =
-            selected?.let { (threadId, runId) -> RunOutputTarget(threadId, runId, epoch) }
+        demand.value = selected?.let { (threadId, runId) ->
+            RunOutputTarget(threadId, runId, epoch)
+        }
         publish()
     }
 
@@ -116,7 +117,7 @@ class RunOutputModel(
         // Web derives demand from persisted events followed by retained optimistic blocks.
         return transcript
             .liveRunsIncluding(
-                buffers.values.filter { it.threadId == current.thread?.id }.map { it.runId }
+                buffers.values.filter { it.threadId == current.thread?.id }.map { it.runId },
             )
             .lastOrNull()
     }
@@ -134,7 +135,7 @@ class RunOutputModel(
                                 HistoryRole.Assistant,
                                 listOf(HistoryBlock(HistoryBlockKind.Text, value.text)),
                             )
-                        }
+                        },
             )
     }
 
@@ -154,14 +155,21 @@ fun HistoryTranscript.liveRunsIncluding(retained: Iterable<String>): List<String
 fun HistoryTranscript.withOutput(output: RunOutputState, threadId: String): List<HistoryMessage> {
     if (output.threadId != threadId) return messages
     val extra = output.messages.filter { it.id !in persistedIds }.groupBy { it.runId }
-    val last =
-        messages.mapIndexedNotNull { index, message -> message.runId?.let { it to index } }.toMap()
+    if (extra.isEmpty()) return messages
+    val positions = mutableMapOf<String, Int>()
+    for (index in messages.indices.reversed()) {
+        val message = messages[index]
+        val runId = message.runId ?: continue
+        if (runId !in extra) continue
+        // A confirmed terminal belongs below any retained text from the same run.
+        if (message.isTerminalStatus()) positions[runId] = index
+        else positions.putIfAbsent(runId, index + 1)
+    }
+    val insertions = extra.entries.groupBy({ positions[it.key] ?: messages.size }, { it.value })
     return buildList {
-        for ((index, message) in messages.withIndex()) {
-            add(message)
-            if (message.runId != null && last[message.runId] == index)
-                addAll(extra[message.runId].orEmpty())
+        for (index in 0..messages.size) {
+            for (inserted in insertions[index].orEmpty()) addAll(inserted)
+            if (index < messages.size) add(messages[index])
         }
-        addAll(extra.filterKeys { it !in last }.values.flatten())
     }
 }

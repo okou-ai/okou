@@ -1548,6 +1548,7 @@ interface TestOAuthDeviceConnectorProviderOptions {
 }
 
 interface TestOAuthDeviceConnectorProviderRecorder {
+  setSubject(subject: string): void;
   readonly deviceCodeBodies: URLSearchParams[];
   readonly tokenBodies: URLSearchParams[];
 }
@@ -1606,9 +1607,13 @@ function testOAuthDeviceTokenErrorResponse(
 export function mockTestOAuthDeviceConnectorProvider(
   options: TestOAuthDeviceConnectorProviderOptions = {},
 ): TestOAuthDeviceConnectorProviderRecorder {
+  let subject = "test-oauth-device-user";
   const recorded: TestOAuthDeviceConnectorProviderRecorder = {
     deviceCodeBodies: [],
     tokenBodies: [],
+    setSubject(value) {
+      subject = value;
+    },
   };
 
   server.use(
@@ -1654,6 +1659,7 @@ export function mockTestOAuthDeviceConnectorProvider(
 
       return HttpResponse.json({
         access_token: `test-device-access:${deviceCode}`,
+        sub: subject,
         token_type: "Bearer",
         expires_in: 3600,
         ...(options.tokenScope === null
@@ -1867,7 +1873,9 @@ interface StripeCliDashboardAuthMock {
   readonly pollCount: () => number;
 }
 
-export function mockStripeCliDashboardAuth(): StripeCliDashboardAuthMock {
+export function mockStripeCliDashboardAuth(
+  options: { readonly accountId?: string } = {},
+): StripeCliDashboardAuthMock {
   const startBodies: URLSearchParams[] = [];
   let pollCount = 0;
 
@@ -1884,7 +1892,7 @@ export function mockStripeCliDashboardAuth(): StripeCliDashboardAuthMock {
       pollCount += 1;
       return HttpResponse.json({
         redeemed: true,
-        account_id: "acct_bdd",
+        account_id: options.accountId ?? "acct_bdd",
         account_display_name: "BDD Stripe",
         livemode_key_secret: "rk_live_api456",
         livemode_key_publishable: "pk_live_api456",
@@ -1917,6 +1925,7 @@ const awsTokenRequestSchema = object({
 type AwsTokenRequest = zInfer<typeof awsTokenRequestSchema>;
 
 interface AwsExternalCodeProviderRecorder {
+  setAccountId(accountId: string): void;
   readonly tokenRequests: AwsTokenRequest[];
 }
 
@@ -1967,13 +1976,13 @@ function awsTokenEndpointResponseBody(
   };
 }
 
-function awsStsCallerIdentityXml(): string {
+function awsStsCallerIdentityXml(accountId = "123456789012"): string {
   return [
     "<GetCallerIdentityResponse>",
     "<GetCallerIdentityResult>",
     "<UserId>AIDAEXTERNALUSER</UserId>",
-    "<Account>123456789012</Account>",
-    "<Arn>arn:aws:iam::123456789012:user/external-code</Arn>",
+    `<Account>${accountId}</Account>`,
+    `<Arn>arn:aws:iam::${accountId}:user/external-code</Arn>`,
     "</GetCallerIdentityResult>",
     "</GetCallerIdentityResponse>",
   ].join("");
@@ -1989,6 +1998,7 @@ function awsStsCallerIdentityXml(): string {
 export function mockAwsExternalCodeProvider(
   options: {
     readonly stsFailure?: boolean;
+    readonly accountId?: string;
     readonly credentialsByRequest?: readonly {
       readonly accessKeyId: string;
       readonly secretAccessKey: string;
@@ -1996,7 +2006,13 @@ export function mockAwsExternalCodeProvider(
     }[];
   } = {},
 ): AwsExternalCodeProviderRecorder {
-  const recorded: AwsExternalCodeProviderRecorder = { tokenRequests: [] };
+  let accountId = options.accountId ?? "123456789012";
+  const recorded: AwsExternalCodeProviderRecorder = {
+    tokenRequests: [],
+    setAccountId(value) {
+      accountId = value;
+    },
+  };
 
   server.use(
     http.post(AWS_SIGNIN_TOKEN_URL, async ({ request }) => {
@@ -2033,7 +2049,7 @@ export function mockAwsExternalCodeProvider(
       if (options.stsFailure) {
         return HttpResponse.text("AWS STS unavailable", { status: 500 });
       }
-      return HttpResponse.xml(awsStsCallerIdentityXml());
+      return HttpResponse.xml(awsStsCallerIdentityXml(accountId));
     }),
   );
 

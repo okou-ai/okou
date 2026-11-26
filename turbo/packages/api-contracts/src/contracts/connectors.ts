@@ -60,6 +60,8 @@ export const builtinConnectorOauthStartContract = c.router({
     body: object({
       authMethod: connectorAuthMethodIdSchema,
       callbackTarget: literal("app").optional(),
+      nativeCallback: literal("ios-https").optional(),
+      nativeAppAuthorization: literal("ios").optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {
@@ -84,6 +86,7 @@ export const builtinConnectorAutomaticContract = c.router({
     body: object({
       authMethod: connectorAuthMethodIdSchema,
       account: connectorAccountMutationIntentSchema,
+      nativeCallback: literal("ios-https").optional(),
     }),
     responses: {
       200: builtinConnectorAutomaticResponseSchema,
@@ -125,6 +128,7 @@ export const builtinConnectorOpenIdStartContract = c.router({
     body: object({
       authMethod: connectorAuthMethodIdSchema,
       account: connectorAccountMutationIntentSchema,
+      nativeCallback: literal("ios-https").optional(),
     }),
     responses: {
       200: builtinConnectorOauthStartResponseSchema,

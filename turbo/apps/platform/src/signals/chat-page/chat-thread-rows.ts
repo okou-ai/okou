@@ -38,6 +38,7 @@ export interface ChatThreadRowModel {
   readonly stackFirstOnPrevious: boolean;
   /** The run status row (thinking or finished) renders in this row. */
   readonly holdsStatusRow: boolean;
+  readonly animateAvatar: boolean;
   readonly dateDividers: ReadonlyMap<string, ChatDateDivider>;
   readonly modelChanges: ReadonlyMap<string, RunModelChange>;
 }
@@ -167,6 +168,7 @@ function buildChatThreadRowDrafts(
   renderedGroups: readonly ChatEventGroup[],
   locale: string,
   includesTail: boolean,
+  hasLaterReply: boolean,
 ): ChatThreadRowDraft[] {
   const { activeGroups } =
     splitQueuedEventsForThinkingIndicator(renderedGroups);
@@ -176,8 +178,20 @@ function buildChatThreadRowDrafts(
   const sections = groups.map((group) => {
     return runWorkSectionForGroup(runWorkFolding, group);
   });
+  const statusRowOwnerId = includesTail
+    ? statusRowGroupId(groups, runWorkFolding)
+    : null;
+  let latestAssistant: ChatEventGroup | undefined;
   const timelineEvents = groups.flatMap((group, index) => {
-    if (!groupRendersContent(group, sections[index] ?? null)) {
+    const rendersContent = groupRendersContent(group, sections[index] ?? null);
+    if (
+      !hasLaterReply &&
+      group.role === "assistant" &&
+      (rendersContent || group.beginEventId === statusRowOwnerId)
+    ) {
+      latestAssistant = group;
+    }
+    if (!rendersContent) {
       return [];
     }
     if (group.role === "user") {
@@ -189,9 +203,6 @@ function buildChatThreadRowDrafts(
   });
   const dateDividers = chatThreadDateDividers(timelineEvents, locale);
   const keys = chatEventGroupKeys(groups, runWorkFolding);
-  const statusRowOwnerId = includesTail
-    ? statusRowGroupId(groups, runWorkFolding)
-    : null;
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
@@ -216,6 +227,7 @@ function buildChatThreadRowDrafts(
         }),
         stackFirstOnPrevious,
         holdsStatusRow: group.beginEventId === statusRowOwnerId,
+        animateAvatar: group === latestAssistant,
         dateDividers,
         modelChanges,
       },
@@ -421,10 +433,12 @@ function createChatThreadRow(
  */
 export function createChatThreadRows({
   includesTail$,
+  hasLaterReply$,
   renderedGroups$,
   threadScrollPosition$,
 }: {
   readonly includesTail$: Computed<boolean>;
+  readonly hasLaterReply$: Computed<boolean>;
   readonly renderedGroups$: Computed<readonly ChatEventGroup[]>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
 }) {
@@ -433,6 +447,7 @@ export function createChatThreadRows({
       get(renderedGroups$),
       get(locale$),
       get(includesTail$),
+      get(hasLaterReply$),
     );
   });
   const scrollTargetEventId$ = computed((get): string | null => {

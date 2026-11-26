@@ -19,6 +19,8 @@ import { vncCredentials } from "./vnc-credential";
 import type { VncKerberosPrincipal } from "../jsonb-contracts/vnc-kerberos";
 import { kerberosPrincipalCheck } from "./vnc-kerberos";
 
+import { remoteDevices } from "./remote-device";
+
 export const vncConnections = pgTable(
   "vnc_connections",
   {
@@ -26,6 +28,7 @@ export const vncConnections = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     displayName: varchar("display_name", { length: 128 }).notNull(),
+    remoteDeviceId: uuid("remote_device_id").notNull(),
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(5900),
     transportType: varchar("transport_type", {
@@ -116,6 +119,16 @@ export const vncConnections = pgTable(
       OR ${table.transportType} = 'tailscale'
       OR (${table.transportType} = 'cloudflare_access' AND ${table.originTlsServerName} IS NOT NULL))`;
     return [
+      foreignKey({
+        name: "vnc_connections_remote_device_owner_fk",
+        columns: [table.remoteDeviceId, table.orgId, table.userId],
+        foreignColumns: [
+          remoteDevices.id,
+          remoteDevices.orgId,
+          remoteDevices.userId,
+        ],
+      }).onDelete("restrict"),
+      index("idx_vnc_connections_remote_device").on(table.remoteDeviceId),
       foreignKey({
         name: "vnc_connections_cloudflare_org_fk",
         columns: [table.cloudflareAccessId, table.orgId],

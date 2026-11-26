@@ -23,6 +23,8 @@ private struct ComposerConnectorSheetContent: View {
   @LoadableStatus<[ChatComposerConnector]> private var status: LoadableState
   @State private var search = ""
   @State private var accountDestination: ComposerConnectorAccountResources?
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
@@ -31,7 +33,10 @@ private struct ComposerConnectorSheetContent: View {
     self.resources = resources
     _connected = LoadableValue(task: resources.connected, keepLast: true)
     _status = LoadableStatus(task: resources.connected)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   var body: some View {
     NavigationStack {
@@ -41,13 +46,6 @@ private struct ComposerConnectorSheetContent: View {
         }
         if let notice = store.notice {
           Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-        }
-        Section {
-          NavigationLink {
-            ComposerRemoteControls(store: store, resources: resources)
-          } label: {
-            OkouRowLabel("Remote control", okouSymbol: "monitor")
-          }
         }
         Section {
           switch connected {
@@ -61,15 +59,16 @@ private struct ComposerConnectorSheetContent: View {
               ) { await store.refresh() }
             }
           case .hasData:
-            // The phase comes from the Task; draft account projections remain business data.
+            // The phase comes from the Task; rows come from the snapshot, which carries a new
+            // chat's pending account choices.
             ForEach(
-              store.connectors.filter {
+              snapshot.connectors.filter {
                 search.isEmpty || $0.label.localizedCaseInsensitiveContains(search)
               }
             ) { connector in
               connectorRow(connector)
             }
-            if store.connectors.isEmpty && status != .loading {
+            if snapshot.connectors.isEmpty && status != .loading {
               Text("Connect a service to use it in this chat.")
                 .foregroundStyle(OkouColor.mutedForeground)
             }
@@ -86,17 +85,15 @@ private struct ComposerConnectorSheetContent: View {
             }
           }
         } header: {
-          // The rule belongs above the switches it explains, not under a long list.
-          VStack(alignment: .leading, spacing: OkouSpace.two) {
-            Text("Services").okouSectionHeader()
-            Text("Account choices apply to this chat.")
-              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-              .textCase(nil)
-          }
+          Text("Services").okouSectionHeader()
         }
+        ComposerConnectorTools(store: store, resources: resources)
       }
-      .listSectionSpacing(16)
-      .searchable(text: $search, prompt: "Find connectors")
+      .listSectionSpacing(OkouSpace.lg)
+      .connectorSearch(
+        text: $search, enabled: snapshot.connectors.count > 20 || !search.isEmpty,
+        prompt: "Find connectors"
+      )
       .okouGroupedBackground()
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
@@ -112,30 +109,9 @@ private struct ComposerConnectorSheetContent: View {
         }
       }
       .toolbar { OkouCloseToolbarItem { dismiss() } }
-      .alert(
-        "Could not open connector",
-        isPresented: Binding(
-          get: { store.authorization.activationError != nil },
-          set: { if !$0 { store.authorization.activationError = nil } })
-      ) {
-        Button("OK") { store.authorization.activationError = nil }
-      } message: {
-        Text(store.authorization.activationError ?? "")
-      }
-      .sheet(
-        item: Binding(
-          get: { store.authorization.active },
-          set: { if $0 == nil { store.authorization.cancel() } })
-      ) { flow in
-        ConnectorAuthorizationSheet(flow: flow, store: store.authorization)
-          .okouSheetBackground()
-      }
-      .sheet(
-        item: $store.webDestination, onDismiss: { Task { await store.refresh() } },
-        content: { page in
-          ConnectorSafariView(url: page.url) { store.webDestination = nil }
-        })
+
     }
+    .connectorAuthorizationPresentation(store: store)
     // Loading belongs to the sheet, including its pushed destinations.
     .task { await store.refresh() }
     .onChange(of: scenePhase) { _, phase in
@@ -162,8 +138,10 @@ private struct ComposerConnectorSheetContent: View {
         VStack(alignment: .leading, spacing: OkouSpace.two) {
           Text(connector.label)
             .font(.okou(.body)).foregroundStyle(OkouColor.foreground).lineLimit(1)
-          Text("\(connector.access.enabledCount) enabled")
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
+          if connector.access.accounts.count > 1 {
+            Text("\(connector.access.accounts.count) accounts")
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
+          }
         }
         Spacer(minLength: OkouSpace.sm)
         OkouIcon("chevron-right", size: OkouIconSize.inline)
@@ -225,17 +203,22 @@ private struct ComposerConnectorReadErrorContent: View {
   }
 }
 
-private struct ComposerRemoteControls: View {
+struct ComposerRemoteControls: View {
   @Bindable var store: ComposerConnectorStore
   @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
   @LoadableStatus<ComposerConnectorResources.Remote> private var status: LoadableState
   @State private var showsDesktopSetup = false
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     _remote = LoadableValue(task: resources.remote, keepLast: true)
     _status = LoadableStatus(task: resources.remote)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   var body: some View {
     Form {
@@ -252,38 +235,12 @@ private struct ComposerRemoteControls: View {
             isLoading: status == .loading
           ) { await store.refresh() }
         }
-      case .hasData(let value):
-        let remotes = value.overview
+      case .hasData:
         Section {
-          Toggle(
-            "Cloud Browser",
-            isOn: Binding(
-              get: { store.computerAccess.cloudBrowserEnabled },
-              set: { enabled in
-                Task {
-                  await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: enabled))
-                }
-              })
-          )
-          .toggleStyle(.switch)
-          .tint(OkouColor.primary400)
-          .disabled(store.isSaving || store.uncertain || !remotes.cloudBrowserAvailable)
-        } header: {
-          Text("Cloud Browser").okouSectionHeader()
-        } footer: {
-          Group {
-            if !remotes.cloudBrowserAvailable {
-              Text("Cloud Browser is not available for this workspace.")
-            }
-
-          }
-          .okouSectionNote()
-        }
-        Section {
-          ForEach(store.visibleComputerUseHosts) { host in
+          ForEach(store.visibleComputerUseHosts(in: snapshot)) { host in
             Toggle(
               isOn: Binding(
-                get: { store.computerAccess.computerUseHostId == host.id },
+                get: { store.computerAccess(in: snapshot).computerUseHostId == host.id },
                 set: { enabled in
                   Task {
                     await store.setComputerAccess(
@@ -302,7 +259,7 @@ private struct ComposerRemoteControls: View {
             .tint(OkouColor.primary400)
             .disabled(store.isSaving || store.uncertain)
           }
-          if store.visibleComputerUseHosts.isEmpty {
+          if store.visibleComputerUseHosts(in: snapshot).isEmpty {
             Text("No online computers").foregroundStyle(OkouColor.mutedForeground)
           }
           Button("Connect my computer") { showsDesktopSetup = true }
@@ -317,7 +274,7 @@ private struct ComposerRemoteControls: View {
         }
         ForEach(ChatRemoteProtocol.allCases, id: \.rawValue) { proto in
           Section {
-            ForEach(store.hosts(proto)) { host in
+            ForEach(snapshot.hosts(proto)) { host in
               Picker(
                 host.displayName,
                 selection: Binding(
@@ -345,21 +302,10 @@ private struct ComposerRemoteControls: View {
       }
     }
     .okouGroupedBackground()
-    .navigationTitle("Computers & browser")
+    .navigationTitle("Remote access")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showsDesktopSetup) {
-      NavigationStack {
-        Form {
-          Text("Install Okou Desktop on your Mac, connect your account, then reopen Connectors.")
-          ShareLink("Share Desktop download link", item: store.service.desktopDownloadURL)
-          Link("Download for Mac", destination: store.service.desktopDownloadURL)
-        }
-        .okouGroupedBackground()
-        .navigationTitle("Connect my computer")
-        .toolbar { OkouCloseToolbarItem { showsDesktopSetup = false } }
-      }
-      .presentationDetents([.medium])
-      .okouSheetBackground()
+      ComposerDesktopSetup(store: store)
     }
   }
   private func choice(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol) -> String {
@@ -367,10 +313,10 @@ private struct ComposerRemoteControls: View {
   }
   @ViewBuilder private func dependencies(_ host: ChatRemoteHost) -> some View {
     ForEach(
-      store.vncConnections.first(where: { $0.id == host.connectionId })?.sshDependencies ?? [],
+      snapshot.vncConnections.first(where: { $0.id == host.connectionId })?.sshDependencies ?? [],
       id: \.self
     ) { id in
-      let ssh = store.hosts(.ssh).first { $0.connectionId == id }
+      let ssh = snapshot.hosts(.ssh).first { $0.connectionId == id }
       let enabled = ssh.map { store.enabled($0, protocol: .ssh) } ?? false
       Label(
         enabled

@@ -56,7 +56,7 @@ final class WorkspaceChatActions {
     threadPreview?.close()
     // Share serialized history reads without retaining a conversation, draft or realtime work.
     threadPreview = ChatThreadPreviewResources(
-      threadID: id, sync: sync,
+      threadID: id, graph: workspace.graph, sync: sync,
       didFinish: { [weak self, sync] in
         guard self?.isResident(id) != true else { return }
         _ = await sync.releaseHistory(threadID: id)
@@ -335,7 +335,7 @@ final class WorkspaceChatActions {
     else { return }
     fork = ChatForkStore(
       selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
-      commands: commands, models: workspace.modelStore,
+      commands: commands, graph: workspace.graph, models: workspace.modelStore,
       workflowSource: workspace.composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.workspace?.list.insertCreated(thread) },
@@ -343,10 +343,14 @@ final class WorkspaceChatActions {
       didFail: { [weak self] in self?.handle($0) })
   }
 
+  /// Removes the fork's sheet. A swipe makes SwiftUI clear the sheet's item, and run its
+  /// `onDismiss`, from inside its own interactive dismissal. Closing the fork ends native
+  /// editing, and a keyboard change there re-enters the sheet's layout and aborts on an
+  /// exclusivity violation, so the fork closes on the next main-actor turn.
   func dismissFork() {
-    guard fork?.isSending != true else { return }
-    fork?.close()
-    fork = nil
+    guard let fork, !fork.isSending else { return }
+    self.fork = nil
+    lifecycleTasks.track(Task { @MainActor in fork.close() })
   }
 
   private func finishFork(_ thread: ChatThread) {
@@ -358,6 +362,16 @@ final class WorkspaceChatActions {
       threadID: thread.id, message: String(localized: "New chat created"),
       actionTitle: String(localized: "Open"), requiresNavigation: true,
       action: { [weak self] in self?.selectChat(thread.id) })
+  }
+
+  func threadUnavailable(_ id: String, wasSelected: Bool) {
+    if openingThreadID == id { cancelOpening() }
+    dismissChatPreview(id)
+    if wasSelected {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: String(localized: "This chat is no longer available."),
+        actionTitle: nil, kind: .error, action: {})
+    }
   }
 
   func close() {

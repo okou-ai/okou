@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "模型目錄快取校驗延遲",
         "modelCatalogPrefetchRole": "模型目錄預取角色",
         "modelCatalogUpstreamEncoding": "模型目錄上游編碼",
+        "openrouterAttempts": "OpenRouter 供應商嘗試",
+        "openrouterAttemptsIncomplete": "OpenRouter 嘗試記錄不完整",
+        "openrouterGenerationId": "OpenRouter 生成 ID",
+        "openrouterModel": "OpenRouter 模型",
+        "openrouterProvider": "OpenRouter 供應商",
         "params": "參數",
         "permission": "權限",
         "permissionError": "權限錯誤",
@@ -373,7 +378,6 @@
     },
     "sidebar": {
       "ariaLabel": "側邊欄",
-      "chat": "聊天",
       "hideChatList": "隱藏聊天列表",
       "mobile": {
         "invite": "邀請",
@@ -431,7 +435,6 @@
       "close": "關閉",
       "closeArtifact": "關閉成果",
       "closeNamed": "關閉 {{title}}",
-      "closePreviewMenu": "關閉預覽選單",
       "download": "下載",
       "downloadArtifact": "下載成果",
       "downloadMarkdownAs": "下載為 {{format}}",
@@ -503,6 +506,77 @@
       "kindIcon": "{{kind}}成果",
       "loading": "正在載入成果"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "將設定網站的 CNAME 和所有權 TXT。額外憑證記錄仍需在下方設定，完成後回來按驗證。",
+      "backToDns": "返回 DNS 設定",
+      "checkFailed": "需要處理",
+      "checking": "驗證中…",
+      "checkNotChecked": "尚未檢查",
+      "checkPassed": "已通過",
+      "checkPending": "等待中",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership",
+        "provider": "網域啟用",
+        "route": "網站路由"
+      },
+      "checkUnavailable": "暫時無法檢查",
+      "configureProvider": "使用 {{provider}} 一鍵設定",
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecordName": "複製 {{type}} 名稱 {{name}}",
+      "copyRecordValue": "複製 {{type}} 值 {{name}}",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS 已設定",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "findingProvider": "正在尋找 DNS 設定方式…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "保留同名的現有 TXT 值，每個值分別新增為一筆 TXT 記錄。",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "將記錄複製到 DNS 設定，完成後回來按驗證。",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "DNS 記錄已相符，無需修改。",
+      "okouUrl": "Okou URL",
+      "openDns": "開啟 {{provider}} DNS",
+      "ownDomain": "Enter a domain you own",
+      "recordName": "名稱",
+      "recordValue": "值",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "查看下方結果，再點擊驗證重新檢查。",
+      "saveToEnable": "點擊儲存後，分享網址才會變更。",
+      "setUpDns": "設定 DNS 記錄",
+      "setupStages": "網域設定步驟",
+      "sharingAddress": "你的分享網址",
+      "steps": {
+        "dns": "DNS 設定",
+        "enable": "啟用",
+        "verify": "驗證"
+      },
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "網域驗證檢查",
+      "verificationComplete": "所有檢查均已通過，繼續以啟用網域。",
+      "verificationDetails": "驗證詳細資料",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "已驗證的記錄（{{total}}）",
+      "verify": "Verify",
+      "verifyAgain": "重新驗證",
+      "verifyDomain": "網域驗證",
+      "verifyFailed": "無法驗證網域，請重試。",
+      "verifyingHint": "正在驗證網域，結果將在下方顯示。",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "取消",
       "delete": "刪除",
@@ -571,9 +645,47 @@
       "text": "文字",
       "video": "影片"
     },
+    "library": {
+      "allArtifacts": "全部成果",
+      "allTypes": "全部類型",
+      "clearFilters": "清除篩選",
+      "clearSearch": "清除搜尋",
+      "created": "建立時間",
+      "emptyDescription": "請嘗試其他名稱或類型。",
+      "emptyTitle": "沒有找到成果",
+      "loadMore": "載入更多",
+      "name": "名稱",
+      "retry": "重試",
+      "search": "搜尋成果",
+      "sortAscending": "升冪排序",
+      "sortDescending": "降冪排序",
+      "type": "類型"
+    },
     "metadata": {
       "generated": "生成於 {{date}}",
       "updated": "更新於 {{date}}"
+    },
+    "people": {
+      "accounts": "符合的工作區成員",
+      "anyone": "任何人",
+      "invitationProcessed": "分享邀請已處理",
+      "label": "分享給指定使用者",
+      "noAccounts": "找不到符合的工作區成員。請輸入完整電子郵件地址邀請。",
+      "owner": "擁有者",
+      "placeholder": "姓名或電子郵件地址",
+      "remove": "移除 {{email}} 的存取權限",
+      "removed": "已移除存取權限",
+      "restricted": "受邀人員",
+      "restrictedDescription": "僅你和受邀人員",
+      "searching": "正在搜尋工作區成員…",
+      "searchUnavailable": "成員搜尋暫時無法使用，請稍後重試。",
+      "share": "邀請",
+      "updateUnavailable": "暫時無法更新分享設定，請稍後重試。",
+      "viewers": "有權存取的使用者",
+      "workspace": "工作區",
+      "workspaceDescription": "{{organization}} 成員和受邀人員",
+      "workspaceDescriptionUnnamed": "工作區成員和受邀人員",
+      "you": "{{name}}（你）"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音訊預覽",
@@ -644,15 +756,9 @@
       "updated": "網站網址已更新"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} 當前 HTML 預覽",
-      "all": "全部",
       "avatar": "虛擬形象",
-      "categories": "模板分類",
-      "category": "模板分類",
       "fullPreview": "{{title}} 網站完整預覽",
       "htmlPreview": "{{title}} HTML 預覽",
-      "illustration": "插畫",
-      "illustrationPreview": "{{title}} 插畫預覽",
       "importDeck": "匯入你自己的簡報",
       "importDeckHint": "（.pptx、.ppt、.pdf）",
       "importDocument": "匯入你自己的文件",
@@ -663,18 +769,10 @@
       "importImageHint": "儲存為可重用風格",
       "multiAccent": "多口音",
       "nextSlide": "預覽下一頁",
-      "noMatches": "沒有匹配結果",
-      "previewCurrentSlide": "從當前頁預覽 {{title}}",
       "previewSlide": "預覽第 {{slideNumber}} 頁",
-      "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "searchConnector": "搜尋模板",
-      "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
       "selectTemplate": "選擇模板 {{title}}",
-      "selectWebsite": "選擇網站模板 {{title}}",
-      "selectWorkflow": "選擇工作流模板 {{title}}",
-      "showVariant": "顯示變體 {{variantNumber}}",
       "singleAccent": "單一口音",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 投影片預覽",
@@ -702,15 +800,11 @@
         "terracottaClay": "陶罐",
         "warmSand": "晨報"
       },
-      "tryDifferentSearch": "換個關鍵詞試試。",
-      "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
         "changeLabel": "修改模板可見範圍"
       },
       "website": "網站",
-      "websitePreview": "{{title}} 網站模板預覽",
-      "workflow": "工作流",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "建立一個工作流：當郵件被打上指定的 Gmail 標籤時自動執行，並處理這封郵件。",
@@ -1145,6 +1239,12 @@
       "teamWarning": "你的 Team 權益會持續到當前帳單週期結束，之後這個工作區會變成{{plan}}。",
       "title": "降級套餐"
     },
+    "feedback": {
+      "otherPlaceholder": "可以多說一點…",
+      "rewardTerms": "每個工作區僅一次 · 積分有效期 30 天",
+      "submitFeedback": "提交回饋",
+      "thanks": "感謝你的回饋"
+    },
     "invoices": {
       "amount": "金額",
       "date": "日期",
@@ -1288,40 +1388,6 @@
     "sidebar": {
       "description": "更多積分和併發執行",
       "getPlan": "獲取{{plan}}"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "只是看看價格",
-          "needs_approval": "需要其他人核准",
-          "not_ready_yet": "還沒準備好付費",
-          "not_seeing_value": "還沒看到它的價值",
-          "other": "其他原因",
-          "payment_issue": "付款時遇到問題",
-          "price_higher_than_expected": "價格比預期高",
-          "results_not_good_enough": "對產出結果不滿意"
-        },
-        "description": "只有一個問題，你的回答會幫助我們改進。",
-        "question": "是什麼讓你沒有完成購買？"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "目前用不到更多",
-          "not_sure_worth_it": "還不確定是否值得",
-          "other": "其他原因",
-          "still_trying": "想再多試用一下",
-          "too_expensive": "價格太高"
-        },
-        "question": "是什麼讓你今天還沒有升級？",
-        "reward": "此工作區首個符合條件的回答可獲得 {{credits}} 獎勵 credits，有效期 30 天。",
-        "thanksWithCredits": "感謝！已為你新增 {{credits}} credits，可以繼續使用了。"
-      },
-      "error": "送出失敗，請再試一次。",
-      "notNow": "暫不回答",
-      "otherLabel": "你的回答",
-      "otherPlaceholder": "補充說明（選填）",
-      "submit": "送出",
-      "thanks": "感謝你的回饋。"
     },
     "toasts": {
       "autoRechargeUpdated": "自動充值已更新",
@@ -1711,6 +1777,7 @@
       "waiting": "正在等待 Mastercard Data Connect。在那邊完成後，回到聊天繼續。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "最低儲值 $5 即可繼續使用，或升級 Pro 解鎖專屬功能。",
       "addCreditsToContinue": "新增積分，繼續和 {{assistantName}} 對話。",
       "askAdminCredits": "請工作區管理員新增積分，你就能繼續和 {{assistantName}} 對話。",
       "askAdminUpgrade": "請工作區管理員升級到 Pro，你就能繼續和 {{assistantName}} 對話。",
@@ -1724,7 +1791,6 @@
       "customAmountError": "請輸入 $1 到 $10,000 之間的金額",
       "customDollarAmount": "自定義金額（美元）",
       "outOfCredits": "你的積分用完了",
-      "redirecting": "正在跳轉…",
       "upgradeToContinue": "升級到 Pro，繼續和 {{assistantName}} 對話。",
       "upgradeToPro": "升級到 Pro",
       "upgradeToRun": "升級到 Pro 才能執行 {{assistantName}}",
@@ -1886,11 +1952,10 @@
       "add": "新增",
       "configureModel": "配置模型",
       "create": {
-        "addStyle": "新增風格",
-        "addTemplate": "新增模板",
         "documentPlaceholder": "你希望文件包含哪些內容？",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
+        "presentationPlaceholderWithDefault": "你的簡報是關於什麼的？（預設{{format}}）",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
@@ -1901,6 +1966,16 @@
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
+      "presentationFormatSetup": {
+        "htmlDescription": "可在任何瀏覽器中開啟的連結",
+        "htmlLabel": "網頁投影片",
+        "openSettings": "開啟設定",
+        "pptxDescription": "可編輯的 .pptx 檔案",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}}已設為簡報的預設格式",
+        "settingsHint": "之後的新簡報都會使用它，可在設定中修改。",
+        "title": "選擇一個預設格式開始"
+      },
       "selectedModelUnavailable": "所選模型當前不可用。配置好之後再傳送。",
       "selectedModelUnavailableToast": "所選模型當前不可用",
       "selectModel": "選擇模型",
@@ -1927,12 +2002,10 @@
         "scheduleHint": "按排程自動執行",
         "share": "分享對話",
         "shareHint": "分享這段對話的連結",
-        "templates": "範本",
         "unpin": "取消置頂"
       },
       "slashPanel": {
-        "browseAll": "瀏覽全部模板",
-        "hint": "搜尋工作流程或選擇範本…",
+        "hint": "選擇一項操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -1974,8 +2047,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "連接器帳戶",
       "actionFailed": "帳戶切換失敗。",
+      "allowForHour": "允許 1 小時",
       "customConnector": "自定義連接器",
       "loadFailed": "無法載入這個連接器帳戶。",
+      "memberScope": "允許在你的所有聊天中使用，並在此聊天中選擇此帳號。",
       "reconnectRequired": "需要重新連線。之後的執行可能會繼續使用現有的備用帳戶。",
       "selected": "已切換到 {{account}}",
       "switch": "切換",
@@ -2129,6 +2204,12 @@
         },
         "inReview": "稽核中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} 積分",
+            "confirm": "回去幹活",
+            "description": "積分用來支付真正的工作：每一次執行、每一份成果、每一個按時間執行的工作流。",
+            "title": "今天這一步完成了"
+          },
           "connector": {
             "confirm": "瀏覽全部連接器",
             "connected": "已連線",
@@ -2503,11 +2584,10 @@
       "number": "數字"
     },
     "sidebar": {
-      "archive": "歸檔聊天",
+      "archive": "歸檔",
       "archived": "已歸檔",
       "chatsWith": "與{{assistantName}}的聊天",
       "chatThreads": "聊天會話",
-      "delete": "刪除聊天",
       "deleteDescription": "這將永久刪除該聊天。聊天中正在執行的任務會立即停止，關聯的自動化會被暫停。此操作無法撤銷。",
       "deleteTitle": "刪除聊天？",
       "draft": "草稿",
@@ -2518,7 +2598,7 @@
       "markUnread": "標為未讀",
       "movePinDown": "下移",
       "movePinUp": "上移",
-      "mute": "靜音聊天",
+      "mute": "靜音",
       "muted": "已靜音",
       "newChatWith": "與{{assistantName}}新建聊天",
       "noArchived": "沒有已歸檔的聊天",
@@ -2526,7 +2606,7 @@
       "noUnread": "沒有未讀聊天",
       "openChatMenu": "開啟聊天選單",
       "openListMenu": "開啟聊天列表選單",
-      "pin": "置頂聊天",
+      "pin": "置頂",
       "pinned": "已置頂",
       "rename": "重新命名聊天",
       "renameDescription": "為這個聊天會話輸入新名稱。",
@@ -2562,11 +2642,6 @@
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
     "taskChips": {
-      "presentationFormat": "簡報格式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {
@@ -2584,7 +2659,6 @@
         "website": "網站",
         "workflow": "工作流"
       },
-      "viewAll": "檢視全部",
       "visualization": {
         "allCharts": "全部圖表",
         "back": "返回視覺化選項",
@@ -2766,8 +2840,6 @@
         "workflow": "工作流"
       },
       "previewTemplate": "預覽模板 {{title}}",
-      "previewWebsite": "預覽網站模板 {{title}}",
-      "previewWorkflow": "預覽工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}"
@@ -2839,6 +2911,7 @@
       "storageFailed": "音訊未能儲存。只能使用已儲存在此裝置上的音訊。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在轉寫",
+      "uploadingRecording": "正在上傳錄音…",
       "useRecording": "使用錄音"
     },
     "walletAction": {
@@ -2917,6 +2990,8 @@
     "accountsInChat": "選擇在此對話中開啟哪些帳號。",
     "enableByDefault": "預設啟用 {{account}}",
     "manageAccounts": "管理帳號",
+    "memberPolicyLoadFailed": "無法載入帳號存取權限。",
+    "memberSettingsDescription": "選擇 Okou 可在你的所有聊天中使用的 {{connector}} 帳號。",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
     "settingsDescription": "選擇 Okou 可以在你的對話中使用哪些 {{connector}} 帳號。你可以在每個對話中單獨調整。",
@@ -2970,6 +3045,7 @@
       "edit": "編輯",
       "grant": "授予",
       "reconnect": "重新連線",
+      "returnToOkou": "返回 Okou",
       "revoke": "撤銷",
       "save": "儲存",
       "saving": "正在儲存…",
@@ -3855,7 +3931,6 @@
         "overview": "供應方與客戶資訊"
       }
     },
-    "filter": "文件分類",
     "formats": {
       "pdf": "PDF",
       "word": "Word 文件"
@@ -3865,10 +3940,8 @@
     "nextPage": "下一頁樣張",
     "openLarger": "查看大圖",
     "page": "第 {{page}} 頁",
-    "preview": "預覽 {{title}}",
     "previousPage": "上一頁樣張",
-    "title": "文件",
-    "useNamed": "使用 {{title}}"
+    "title": "文件"
   },
   "featureGuide": {
     "close": "關閉新功能指南",
@@ -4380,7 +4453,6 @@
   },
   "myOkou": {
     "conflict": "指令已在其他地方更新。本機草稿已保留，請先檢視或複製，再重新載入已儲存的內容。",
-    "description": "在此工作區中，專屬於你的 Okou 指令",
     "discard": "捨棄",
     "draftKept": "切換頁面或工作區時，草稿會保留在此瀏覽器分頁中。",
     "instructions": "指令",
@@ -5144,6 +5216,7 @@
     }
   },
   "projects": {
+    "archiveProject": "封存",
     "back": "返回",
     "close": "Close",
     "collapse": "收合",
@@ -5152,7 +5225,7 @@
     "delete": "删除",
     "deleteChoiceDescription": "可以只刪除 Project 並保留聊天，也可以同時刪除其中的聊天。",
     "deleteError": "无法删除 Project",
-    "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天…",
+    "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天",
     "deleteProjectOnly": "僅刪除 Project",
     "deleteThreadsDescription_other": "永久刪除此 Project 和 {{count}} 個聊天，包括封存聊天及其歷史記錄。正在執行的任務會停止，關聯的自動化會暫停。此操作無法復原。",
     "deleteThreadsError": "刪除已停止。部分聊天可能已被永久刪除，請檢查 Project 和剩餘聊天後再繼續。",
@@ -5180,6 +5253,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "還原專案",
     "retryThreads": "重新載入聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
@@ -5648,7 +5722,6 @@
           "title": "偏好設定"
         },
         "proactiveLearning": {
-          "description": "選擇 Okou 主動工作的方式。",
           "title": "Proactive"
         },
         "tools": {
@@ -5731,7 +5804,27 @@
       "actions": {
         "resetUsage": "重置用量"
       },
+      "antigravity": {
+        "title": "Google AI（Antigravity）"
+      },
       "deviceAuth": {
+        "antigravity": {
+          "address": "瀏覽器中的網址",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "請貼上瀏覽器中的網址以繼續。",
+          "connectedToast": "已連接 Google AI 帳號",
+          "connectTitle": "連接 Google AI（Antigravity）",
+          "expired": "登入已過期，請重新開始。",
+          "failed": "Google 登入失敗，請再試一次。",
+          "instructions": "使用你的個人 Google AI Pro 或 Ultra 帳號授權存取。接著 Google 會開啟一個無法載入的頁面，請從瀏覽器複製該頁面的完整網址並貼到下方。",
+          "openApproval": "開啟 Google 登入",
+          "preparing": "正在準備 Google 登入…",
+          "reconnectAction": "重新登入",
+          "reconnectTitle": "重新連接 Google AI（Antigravity）",
+          "signIn": "使用 Google 登入",
+          "submit": "連接",
+          "usageNotice": "內部員工試點。Google 可能會限制透過第三方用戶端使用的帳號。"
+        },
         "claude": {
           "authorizationCode": "授權碼",
           "codePlaceholder": "貼上 Claude 提供的授權碼",
@@ -5930,6 +6023,14 @@
           "title": "預設模型"
         },
         "description": "設定新聊天的預設項和訊息傳送方式。",
+        "presentationFormat": {
+          "htmlDescription": "新簡報以連結形式在瀏覽器中開啟",
+          "pptxDescription": "新簡報以可編輯的 .pptx 檔案交付",
+          "saveFailed": "無法儲存預設格式，請重試。",
+          "title": "預設簡報格式",
+          "unavailable": "無法載入預設格式",
+          "unsetDescription": "首次製作簡報時會詢問你"
+        },
         "sectionTitle": "聊天"
       },
       "debug": {
@@ -6036,7 +6137,6 @@
         "title": "晨報"
       },
       "proactiveSuggestions": {
-        "description": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
@@ -6327,17 +6427,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部標為已讀",
     "noResults": "沒有找到結果",
     "resultCount_other": "{{count}} 條結果",
     "searching": "搜尋中…",
     "searchWorkspace": "搜尋工作區…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "訊息",
-      "workflows": "工作流"
+      "threads": "對話串"
     }
   },
   "ssh": {
@@ -6495,11 +6592,8 @@
   "templates": {
     "actions": {
       "delete": "刪除",
-      "menu": "針對{{title}}的操作",
-      "preview": "預覽{{title}}",
       "rename": "重新命名模板"
     },
-    "builtIn": "內建",
     "custom": "自定義",
     "delete": {
       "cancel": "取消",
@@ -6514,11 +6608,6 @@
       "page": "第 {{number}} 頁"
     },
     "loadFailed": "無法載入模板。",
-    "rename": {
-      "action": "重新命名",
-      "cancel": "取消",
-      "save": "儲存"
-    },
     "renameFailed": "無法重新命名該模板。",
     "sharedBy": "由{{owner}}分享",
     "sharedByMember": "由組織內的成員分享",
@@ -7325,6 +7414,8 @@
       "all": "全部",
       "automated": "已自動化",
       "automations": "自動化",
+      "clearFilters": "清除篩選",
+      "clearSearch": "清除搜尋",
       "createdBy": "建立者",
       "createInChat": "在對話中建立",
       "description": "把一項任務沉澱成可複用的標準流程。可以從零編寫，也可以從日常工作中提煉，然後隨時執行、編輯或自動化。",
@@ -7333,13 +7424,18 @@
         "automated": "給工作流新增自動化後，它就會出現在這裡。",
         "private": "還沒有私有工作流。",
         "public": "還沒有公開工作流。",
+        "search": "試試其他關鍵字，或調整篩選條件。",
         "without": "這裡的每個工作流都按定時任務或事件執行。"
       },
+      "filter": "篩選工作流程",
+      "filters": "篩選",
+      "noResults": "沒有符合的工作流程",
       "noWorkflows": "沒有工作流",
       "open": "開啟{{title}}",
       "openRecovery": "開啟{{title}}的恢復",
       "ownerLoading": "正在載入作者…",
       "ownerUnavailable": "無法獲取作者",
+      "search": "搜尋工作流程…",
       "section": {
         "event": "由自動化觸發",
         "later": "更久以後",
@@ -7349,12 +7445,17 @@
       },
       "sort": {
         "alphabetical": "按名稱",
-        "created": "建立時間",
-        "label": "下次執行",
+        "created": "最近建立",
+        "heading": "排序方式",
+        "label": "工作流程排序",
         "nextRun": "下次執行"
       },
       "title": "工作流",
-      "viewAutomations": "檢視自動化"
+      "viewAutomations": "檢視自動化",
+      "visibility": "可見範圍",
+      "withAutomations": "有自動化",
+      "withoutAutomations": "無自動化",
+      "workspaceShared": "工作區共享"
     },
     "skillImport": {
       "action": "匯入技能",

@@ -761,6 +761,7 @@ const sendNewThreadMessage$ = command(
     const { prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
+    const direction = get(draft.suggestionDirection$);
     const submittedInput = get(draft.input$);
     const submittedDocument = set(draft.readEditorDocument$);
     const submittedAttachments = get(draft.attachments$);
@@ -835,7 +836,7 @@ const sendNewThreadMessage$ = command(
     // Custom follow-ups keep the complete composer and card until the input is
     // durably accepted. A failed or unknown delivery can replay the same IDs.
     if (customDirection) {
-      await sendChatEvent(createClient, sendBody, signal);
+      await sendChatEvent(createClient, sendBody, signal, direction);
       signal.throwIfAborted();
     }
     await set(
@@ -872,7 +873,7 @@ const sendNewThreadMessage$ = command(
       signal.throwIfAborted();
       set(draft.confirmThreadIdentity$, threadId);
       if (!customDirection) {
-        await sendChatEvent(createClient, sendBody, signal);
+        await sendChatEvent(createClient, sendBody, signal, direction);
       }
       signal.throwIfAborted();
       L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });

@@ -9,6 +9,37 @@ import XCTest
 @MainActor
 final class ChatClientTests: XCTestCase {
 
+  func testPaymentRequiredResponsesShowTheLimitForTheRequestedAction() async throws {
+    let cases = [
+      (
+        "/api/chat/events", "INSUFFICIENT_CREDITS",
+        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
+        "Out of credits"
+      ),
+      (
+        "/api/chat/events", "PRO_REQUIRED", "This model requires a paid plan.",
+        "This action is unavailable on your current plan."
+      ),
+      (
+        "/api/voice-io/polish/segments", "AUDIO_INPUT_QUOTA_EXCEEDED",
+        "Audio input quota exceeded. Upgrade to Pro or Team for unlimited audio input.",
+        "Your voice input limit has been reached."
+      )
+    ]
+    for (path, code, message, expected) in cases {
+      let fixture = ChatHTTPFixture { _ in
+        try ChatHTTPResponse(status: 402, json: ["error": ["code": code, "message": message]])
+      }
+      do {
+        _ = try await fixture.client.data(path, method: "POST")
+        XCTFail("Expected the request to be rejected")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.serverCode, code)
+        XCTAssertEqual(error.localizedDescription, expected)
+      }
+    }
+  }
+
   func testUpgradeRequiredBlocksHistory() async throws {
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(
@@ -19,7 +50,21 @@ final class ChatClientTests: XCTestCase {
       XCTFail("Expected upgrade-required response")
     } catch let error as APIClientError {
       XCTAssertEqual(error.statusCode, 426)
-      XCTAssertEqual(error.errorDescription, "Update Okou in TestFlight to continue.")
+      XCTAssertEqual(error.errorDescription, "Update Okou to continue.")
+    }
+  }
+
+  func testFirstPartyRequestsSendTheInstallationChannel() async throws {
+    for channel in ClientDistribution.allCases {
+      let fixture = ChatHTTPFixture { request in
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Distribution"), channel.rawValue)
+        return ChatHTTPResponse(body: "{}")
+      }
+      let client = APIClient(
+        baseURL: fixture.baseURL, clientVersion: "1.0.0", session: fixture.session,
+        distribution: { channel }, bearerToken: { "test-token" }
+      )
+      _ = try await client.data("/api/feature-switches")
     }
   }
 
@@ -243,7 +288,10 @@ final class ChatClientTests: XCTestCase {
         let events =
           current && chatQueryValue("sinceSeqId", in: request) == nil
           ? (1...101).map {
-            threadEventJSON(seq: $0, kind: "renamed", thread: fixtureThread, title: "Event \($0)")
+            $0 == 101
+              ? threadEventJSON(seq: $0, kind: "deleted", thread: deletedThread)
+              : threadEventJSON(
+                seq: $0, kind: "renamed", thread: fixtureThread, title: "Event \($0)")
           }
           : []
         return ChatHTTPResponse(
@@ -264,6 +312,13 @@ final class ChatClientTests: XCTestCase {
     let result = try await sync.threadsWithIndicators()
     XCTAssertEqual(result.threads.first?.title, "Compacted title")
     XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
+    // A notification extension can commit this snapshot before the app ever sees the deletion.
+    let cached = await sync.cachedThreadList()
+    XCTAssertEqual(cached?.deletedThreadIDs, [deletedThread])
+    XCTAssertEqual(cached?.removalsToAcknowledge, [deletedThread])
+    await sync.acknowledgeRemovedThreads([deletedThread])
+    let acknowledged = await sync.cachedThreadList()
+    XCTAssertEqual(acknowledged?.deletedThreadIDs, [])
   }
 
 }

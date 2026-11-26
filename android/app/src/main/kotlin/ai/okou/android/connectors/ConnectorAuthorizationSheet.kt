@@ -1,21 +1,31 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormFieldSupport
+import ai.okou.android.OkouFormLabel
+import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.RenameDraft
+import ai.okou.android.RenameFieldError
+import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
+import ai.okou.android.chat.ContentReadFeedback
+import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormLabelHeight
+import ai.okou.android.okouFormSupportingTextHeight
+import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
@@ -31,8 +41,8 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,12 +53,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -67,55 +78,71 @@ internal fun ConnectorRenameSheet(
     cancel: () -> Unit,
 ) {
     val currentLabel = account.label()
-    val baseline = remember(account.id) { currentLabel }
-    val label = remember(account.id) { TextFieldState(initialText = baseline) }
-    var showError by remember(account.id) { mutableStateOf(false) }
-    val focus = remember { FocusRequester() }
-    val name = label.text.toString().trim()
+    val draft = remember(account.id) { RenameDraft(currentLabel) }
+    LaunchedEffect(draft, currentLabel, action?.busy) {
+        if (action?.busy != true) draft.receive(currentLabel)
+    }
+    val form = draft.form(currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
     val errorMessage =
-        when {
-            name.isEmpty() -> stringResource(R.string.connector_rename_required)
-            name.length > CONNECTOR_ACCOUNT_NAME_LIMIT ->
+        when (form.error) {
+            RenameFieldError.Required -> stringResource(R.string.connector_rename_required)
+            RenameFieldError.TooLong ->
                 stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
+            null -> null
+        }
+    val saving = action?.busy == true && !action.reconciling
+    val problem = action?.problem
+    val feedback =
+        when {
+            action?.reconciling == true && action.busy ->
+                stringResource(R.string.chat_rename_checking_result)
+            problem != null -> stringResource(connectorActionProblemMessage(problem))
             else -> null
         }
+    val definiteFailure = problem == ConnectorProblem.Failed || problem == ConnectorProblem.Network
+    val colors = MaterialTheme.colorScheme
+    val saveLabel = stringResource(R.string.instructions_save)
+    val savingLabel = stringResource(R.string.settings_saving)
     ConnectorSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
         actions = {
-            ConnectorFormActions(
-                stringResource(R.string.instructions_save),
-                enabled = canModify && name != baseline.trim(),
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.settings_cancel),
+                confirmLabel = if (saving) savingLabel else saveLabel,
                 cancel = cancel,
+                confirm = { save(form.name) },
+                confirmEnabled = form.canSave,
+                modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = action?.busy != true,
-            ) {
-                if (errorMessage == null) {
-                    save(name)
-                } else {
-                    showError = true
-                    focus.requestFocus()
-                }
-            }
+                confirmLayoutLabels = listOf(saveLabel, savingLabel),
+            )
         },
     ) {
         ConnectorInput(
             stringResource(R.string.connector_account_name),
-            label,
+            draft.input,
             readOnly = !canModify,
-            modifier = Modifier.focusRequester(focus),
-            supportingText =
-                stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
-            errorMessage = errorMessage.takeIf { showError },
+            showLabel = false,
+            supportingText = {
+                OkouFormFieldSupport(
+                    errorMessage ?: feedback,
+                    if (errorMessage != null || definiteFailure) colors.error
+                    else colors.onSurfaceVariant,
+                    Modifier.animateContentSize(),
+                )
+            },
+            errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
         )
-        ConnectorActionFeedback(action)
     }
 }
 
 @Composable
 internal fun ConnectorAuthorizationSheet(
     model: ConnectorModel,
-    detail: ConnectorServiceDetail,
+    service: String,
+    detail: ConnectorRead<ConnectorServiceDetail>,
     account: ConnectorSavedAccount?,
     addingAccount: Boolean,
     canModify: Boolean,
@@ -133,61 +160,88 @@ internal fun ConnectorAuthorizationSheet(
             }
         }
     val verb = stringResource(actionLabel)
-    val title = stringResource(R.string.connector_authorization, verb, detail.entry.name)
+    val title = stringResource(R.string.connector_authorization, verb, service)
     val accountLabel = account?.label()
-    val step = action?.authorization
+    val step = action?.authorization.takeIf { detail.data != null }
     val canDismiss = action?.busy != true
-    if (action == null || step == null) {
-        val methods = detail.methods.filter { account == null || it.id == account.authMethod }
-        if (methods.isEmpty()) {
-            ConnectorSheet(
-                title,
-                cancel,
-                expandInShortWindow = true,
-                actions = { ConnectorCloseAction(cancel) },
-            ) {
-                ConnectorStatusBanner(R.string.connector_unavailable)
+    val methods =
+        detail.data?.methods.orEmpty().filter { account == null || it.id == account.authMethod }
+    var selectedId by remember(service, account?.id) { mutableStateOf<String?>(null) }
+    val method = methods.firstOrNull { it.id == selectedId } ?: methods.firstOrNull()
+    val chosenOptions = remember(method?.id) { mutableStateMapOf<String, String>() }
+    val options =
+        method
+            ?.startOptions
+            .orEmpty()
+            .mapNotNull { option ->
+                val value = chosenOptions[option.id] ?: option.defaultValue
+                option.options.find { it.value == value }?.let { option.id to it.value }
             }
-        } else {
-            ConnectorMethodForm(
-                title,
-                accountLabel,
-                methods,
-                detail.googleSecurityWarning,
-                canModify,
-                action,
-                verb,
-                cancel,
-            ) { method, values ->
-                model.startAuthorization(account?.id, method, values)
-            }
-        }
-        return
-    }
+            .toMap()
+    val fields =
+        if (step == null) {
+            val fieldIds = method?.manualFields.orEmpty().map { it.id }
+            remember(method?.id, fieldIds) { fieldIds.associateWith { TextFieldState() } }
+        } else emptyMap()
 
     val context = LocalContext.current
     val continueInBrowser = { model.openBrowser { launchConnectorBrowser(context, it) } }
-    val browserOpened = action.browserOpened
-    val canContinue = canDismiss && !action.reconciling
+    val browserOpened = action?.browserOpened == true
+    val canContinue = canDismiss && action?.reconciling != true
     if (step is ConnectorAuthorization.Browser) {
-        LaunchedEffect(step, canContinue, browserOpened, action.problem) {
-            if (canContinue && !browserOpened && action.problem == null) continueInBrowser()
+        LaunchedEffect(step, canContinue, browserOpened, action?.problem) {
+            if (canContinue && !browserOpened && action?.problem == null) continueInBrowser()
         }
     }
-    val code = remember((step as? ConnectorAuthorization.External)?.sessionId) { TextFieldState() }
+    val externalCodeSessionId =
+        when (step) {
+            is ConnectorAuthorization.External -> step.sessionId
+            is ConnectorAuthorization.Receipt -> step.externalCodeSessionId
+            else -> null
+        }
+    val code = remember(externalCodeSessionId) { TextFieldState() }
+    val codeLength = code.text.trim().length
+    val checkingCode = externalCodeSessionId != null && !canDismiss
+    val awaitingExternalReceipt = action?.awaitingExternalReceipt == true
     val submitLabel =
         when (step) {
             is ConnectorAuthorization.Browser ->
                 if (browserOpened) R.string.connector_verify_authorization
                 else R.string.connector_open_provider
             is ConnectorAuthorization.Device -> R.string.connector_continue_provider
-            is ConnectorAuthorization.External -> R.string.connector_submit_code
-            is ConnectorAuthorization.Receipt -> R.string.connector_verify_authorization
+            is ConnectorAuthorization.External ->
+                when {
+                    checkingCode -> R.string.connector_checking_code
+                    awaitingExternalReceipt -> R.string.connector_verify_authorization
+                    else -> R.string.connector_submit_code
+                }
+            is ConnectorAuthorization.Receipt ->
+                if (checkingCode) R.string.connector_checking_code
+                else R.string.connector_verify_authorization
+            is ConnectorAuthorization.DeviceVerification -> R.string.connector_verify_authorization
+            null ->
+                when (method?.grantKind) {
+                    null -> null
+                    ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE,
+                    ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL -> actionLabel
+                    else -> R.string.connector_continue_provider
+                }
         }
     val canSubmit =
         when (step) {
-            is ConnectorAuthorization.Receipt -> canDismiss
-            is ConnectorAuthorization.External -> canContinue && code.text.trim().length in 1..4096
+            is ConnectorAuthorization.Receipt,
+            is ConnectorAuthorization.DeviceVerification -> canDismiss
+            is ConnectorAuthorization.External ->
+                canContinue &&
+                    (awaitingExternalReceipt || codeLength in 1..CONNECTOR_EXTERNAL_CODE_LIMIT)
+            null ->
+                canModify &&
+                    action?.problem != ConnectorProblem.AuthorizationUnconfirmed &&
+                    method != null &&
+                    method.manualFields.all {
+                        !it.required || fields.getValue(it.id).text.isNotBlank()
+                    } &&
+                    method.startOptions.all { !it.required || !options[it.id].isNullOrBlank() }
             else -> canContinue
         }
     ConnectorSheet(
@@ -196,25 +250,76 @@ internal fun ConnectorAuthorizationSheet(
         dismissible = canDismiss,
         expandInShortWindow = true,
         actions = {
-            ConnectorFormActions(
-                stringResource(submitLabel),
-                enabled = canSubmit,
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.settings_cancel),
+                confirmLabel = submitLabel?.let { stringResource(it) },
                 cancel = cancel,
+                confirm = {
+                    when (step) {
+                        is ConnectorAuthorization.Browser ->
+                            if (browserOpened) model.checkAuthorization() else continueInBrowser()
+                        is ConnectorAuthorization.Device -> continueInBrowser()
+                        is ConnectorAuthorization.External ->
+                            if (awaitingExternalReceipt) model.checkExternalAuthorization()
+                            else model.completeExternal(code.text.toString())
+                        is ConnectorAuthorization.DeviceVerification,
+                        is ConnectorAuthorization.Receipt -> model.checkAuthorization()
+                        null ->
+                            if (method != null) {
+                                val values = options + fields.mapValues { it.value.text.toString() }
+                                model.startAuthorization(
+                                    account?.id,
+                                    method.id,
+                                    values.filterValues { it.isNotBlank() },
+                                )
+                            }
+                    }
+                },
+                confirmEnabled = canSubmit,
+                modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = canDismiss,
-            ) {
-                when (step) {
-                    is ConnectorAuthorization.Browser ->
-                        if (browserOpened) model.checkAuthorization() else continueInBrowser()
-                    is ConnectorAuthorization.Device -> continueInBrowser()
-                    is ConnectorAuthorization.External ->
-                        model.completeExternal(code.text.toString())
-                    is ConnectorAuthorization.Receipt -> model.checkAuthorization()
-                }
-            }
+                confirmLayoutLabels =
+                    if (externalCodeSessionId == null) emptyList()
+                    else
+                        listOf(
+                            stringResource(R.string.connector_submit_code),
+                            stringResource(R.string.connector_checking_code),
+                            stringResource(R.string.connector_verify_authorization),
+                        ),
+                keepConfirmFocusWhilePending = checkingCode,
+            )
         },
     ) {
         ConnectorAuthorizationAccount(accountLabel)
         when (step) {
+            null ->
+                if (method == null) {
+                    when {
+                        detail.data != null -> ConnectorStatusBanner(R.string.connector_unavailable)
+                        detail.failure != null ->
+                            ContentReadFeedback(R.string.connector_load_failed)
+                        else ->
+                            ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 1)
+                    }
+                } else {
+                    if (methods.size > 1) {
+                        Column(Modifier.fillMaxWidth().selectableGroup()) {
+                            for (item in methods) {
+                                ConnectorChoice(item.label, item.id == method.id, canModify) {
+                                    selectedId = item.id
+                                }
+                            }
+                        }
+                    }
+                    ConnectorMethodFields(
+                        method,
+                        canModify,
+                        fields,
+                        options,
+                        onChooseOption = { id, value -> chosenOptions[id] = value },
+                        googleSecurityWarning = detail.data?.googleSecurityWarning == true,
+                    )
+                }
             is ConnectorAuthorization.Browser -> {
                 Text(stringResource(R.string.connector_return_browser), style = connectorBodyType())
                 if (browserOpened)
@@ -238,149 +343,138 @@ internal fun ConnectorAuthorizationSheet(
                             ),
                     )
                 }
-                if (browserOpened && action.problem == null && !action.busy)
+                if (browserOpened && action.problem == null && canDismiss)
                     ConnectorProgress(R.string.connector_waiting_provider)
             }
-            is ConnectorAuthorization.External -> {
-                Text(
-                    stringResource(R.string.connector_external_instructions),
-                    style = connectorBodyType(),
-                )
-                ConnectorButton(
-                    stringResource(R.string.connector_open_provider),
-                    continueInBrowser,
-                    treatment = ConnectorButtonTreatment.Outline,
-                    enabled = canContinue,
-                )
-                ConnectorInput(
-                    stringResource(R.string.connector_external_code),
-                    code,
-                    readOnly = !canContinue,
-                    secret = true,
-                )
-            }
-            is ConnectorAuthorization.Receipt -> Unit
+            is ConnectorAuthorization.External,
+            is ConnectorAuthorization.Receipt ->
+                if (externalCodeSessionId != null) {
+                    ConnectorExternalCodeForm(
+                        code,
+                        tooLong = codeLength > CONNECTOR_EXTERNAL_CODE_LIMIT,
+                        editable =
+                            step is ConnectorAuthorization.External &&
+                                canContinue &&
+                                !awaitingExternalReceipt,
+                        problem = action?.problem.takeIf { canDismiss },
+                        openProvider = continueInBrowser,
+                    )
+                }
+            is ConnectorAuthorization.DeviceVerification -> Unit
         }
-        ConnectorActionFeedback(action)
+        if (externalCodeSessionId == null) ConnectorActionFeedback(action)
     }
 }
 
 @Composable
-private fun ConnectorMethodForm(
-    title: String,
-    accountLabel: String?,
-    methods: List<ConnectorDetailConnectorAuthMethodsItem>,
-    googleSecurityWarning: Boolean,
-    enabled: Boolean,
-    action: ConnectorAction?,
-    verb: String,
-    cancel: () -> Unit,
-    start: (String, Map<String, String>) -> Unit,
+private fun ConnectorExternalCodeForm(
+    code: TextFieldState,
+    tooLong: Boolean,
+    editable: Boolean,
+    problem: ConnectorProblem?,
+    openProvider: () -> Unit,
 ) {
-    var selectedId by remember { mutableStateOf(methods.first().id) }
-    val method = methods.firstOrNull { it.id == selectedId } ?: methods.first()
-    val options =
-        remember(method.id) {
-            mutableStateMapOf<String, String>().apply {
-                method.startOptions.forEach { option ->
-                    option.defaultValue?.let { put(option.id, it) }
-                }
-            }
+    val lengthError =
+        stringResource(R.string.connector_external_code_too_long, CONNECTOR_EXTERNAL_CODE_LIMIT)
+    val errorMessage =
+        when {
+            tooLong -> lengthError
+            problem == ConnectorProblem.Failed ->
+                stringResource(R.string.connector_external_code_failed)
+            problem == ConnectorProblem.Network || problem == ConnectorProblem.BrowserUnavailable ->
+                stringResource(connectorActionProblemMessage(problem))
+            else -> null
         }
-    val fieldIds = method.manualFields.map { it.id }
-    val fields = remember(method.id, fieldIds) { fieldIds.associateWith { TextFieldState() } }
-    val ready =
-        method.manualFields.all { !it.required || fields.getValue(it.id).text.isNotBlank() } &&
-            method.startOptions.all { !it.required || !options[it.id].isNullOrBlank() }
-    val submitLabel =
-        when (method.grantKind) {
-            ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE,
-            ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL -> verb
-            else -> stringResource(R.string.connector_continue_provider)
-        }
-    ConnectorSheet(
-        title,
-        cancel,
-        dismissible = action?.busy != true,
-        expandInShortWindow = true,
-        actions = {
-            ConnectorFormActions(
-                submitLabel,
-                enabled =
-                    enabled &&
-                        ready &&
-                        action?.problem != ConnectorProblem.AuthorizationUnconfirmed,
-                cancel = cancel,
-                cancelEnabled = action?.busy != true,
-            ) {
-                val values = options + fields.mapValues { it.value.text.toString() }
-                start(method.id, values.filterValues { it.isNotBlank() })
+    val colors = MaterialTheme.colorScheme
+    Text(stringResource(R.string.connector_external_instructions), style = connectorBodyType())
+    ConnectorButton(
+        stringResource(R.string.connector_open_provider),
+        openProvider,
+        treatment = ConnectorButtonTreatment.Outline,
+        enabled = editable,
+    )
+    ConnectorInput(
+        stringResource(R.string.connector_external_code),
+        code,
+        readOnly = !editable,
+        secret = true,
+        supportingText = {
+            Box {
+                OkouFormFieldSupport(
+                    lengthError,
+                    colors.onSurfaceVariant,
+                    Modifier.clearAndSetSemantics {}.alpha(0f),
+                )
+                OkouFormFieldSupport(
+                    errorMessage
+                        ?: problem?.let { stringResource(connectorActionProblemMessage(it)) },
+                    if (errorMessage == null) colors.onSurfaceVariant else colors.error,
+                )
             }
         },
-    ) {
-        ConnectorAuthorizationAccount(accountLabel)
-        if (methods.size > 1) {
-            Column(Modifier.fillMaxWidth().selectableGroup()) {
-                for (item in methods) {
-                    ConnectorChoice(item.label, item.id == method.id, enabled) {
-                        selectedId = item.id
+        errorMessage = errorMessage,
+    )
+}
+
+@Composable
+private fun ConnectorMethodFields(
+    method: ConnectorDetailConnectorAuthMethodsItem,
+    enabled: Boolean,
+    fields: Map<String, TextFieldState>,
+    options: Map<String, String>,
+    onChooseOption: (String, String) -> Unit,
+    googleSecurityWarning: Boolean,
+) {
+    if (!method.description.isNullOrBlank())
+        Text(method.description, style = connectorFeedbackType())
+    when (method.grantKind) {
+        ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL ->
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                for (field in method.manualFields) {
+                    key(field.id) {
+                        ConnectorInput(
+                            field.label,
+                            fields.getValue(field.id),
+                            readOnly = !enabled,
+                            secret =
+                                field.inputType ==
+                                    ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
+                                        .PASSWORD,
+                            placeholder = field.placeholder,
+                        )
+                    }
+                }
+            }
+        ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE ->
+            Text(
+                stringResource(R.string.connector_authorize_no_auth),
+                style = connectorBodyType(),
+            )
+        else -> {
+            Text(
+                stringResource(R.string.connector_authorize_browser),
+                style = connectorBodyType(),
+            )
+            if (googleSecurityWarning) {
+                Text(
+                    stringResource(R.string.connector_google_warning),
+                    style = connectorFeedbackType(),
+                )
+            }
+            for (option in method.startOptions) {
+                Column(Modifier.fillMaxWidth().selectableGroup()) {
+                    Text(option.label, style = connectorFeedbackType())
+                    for (choice in option.options) {
+                        SettingsChoiceRow(
+                            choice.label,
+                            options[option.id] == choice.value,
+                            enabled,
+                            onClick = { onChooseOption(option.id, choice.value) },
+                        )
                     }
                 }
             }
         }
-        if (!method.description.isNullOrBlank())
-            Text(method.description, style = connectorFeedbackType())
-        when (method.grantKind) {
-            ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL ->
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    for (field in method.manualFields) {
-                        key(field.id) {
-                            ConnectorInput(
-                                field.label,
-                                fields.getValue(field.id),
-                                readOnly = !enabled,
-                                secret =
-                                    field.inputType ==
-                                        ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
-                                            .PASSWORD,
-                                placeholder = field.placeholder,
-                            )
-                        }
-                    }
-                }
-            ConnectorDetailConnectorAuthMethodsItemGrantKind.NONE ->
-                Text(
-                    stringResource(R.string.connector_authorize_no_auth),
-                    style = connectorBodyType(),
-                )
-            else -> {
-                Text(
-                    stringResource(R.string.connector_authorize_browser),
-                    style = connectorBodyType(),
-                )
-                if (googleSecurityWarning) {
-                    Text(
-                        stringResource(R.string.connector_google_warning),
-                        style = connectorFeedbackType(),
-                    )
-                }
-                for (option in method.startOptions) {
-                    Column(Modifier.fillMaxWidth().selectableGroup()) {
-                        Text(option.label, style = connectorFeedbackType())
-                        for (choice in option.options) {
-                            ConnectorChoice(
-                                choice.label,
-                                options[option.id] == choice.value,
-                                enabled,
-                            ) {
-                                options[option.id] = choice.value
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        ConnectorActionFeedback(action)
     }
 }
 
@@ -401,9 +495,12 @@ private fun ConnectorChoice(
     enabled: Boolean,
     choose: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = 48.dp)
+            .clip(shape)
+            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface, keyboardOnly = true)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = choose)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -413,7 +510,6 @@ private fun ConnectorChoice(
             selected,
             onClick = null,
             enabled = enabled,
-            colors = RadioButtonDefaults.colors(selectedColor = LocalActivityStatusColor.current),
         )
         Text(label, style = connectorBodyType())
     }
@@ -426,33 +522,46 @@ private fun ConnectorInput(
     readOnly: Boolean,
     modifier: Modifier = Modifier,
     secret: Boolean = false,
+    showLabel: Boolean = true,
     placeholder: String? = null,
-    supportingText: String? = null,
+    supportingText: (@Composable () -> Unit)? = null,
     errorMessage: String? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val field =
-        modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("connector-input").semantics {
-            contentDescription = label
-            if (errorMessage != null) error(errorMessage)
-        }
-    val shape = RoundedCornerShape(12.dp)
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
-    val padding = PaddingValues(12.dp)
-    val placeholderContent: (@Composable () -> Unit)? =
-        placeholder?.let { { Text(it, style = connectorBodyType()) } }
-    Column(Modifier.fillMaxWidth()) {
-        Text(label, style = connectorFeedbackType())
-        Spacer(Modifier.height(8.dp))
+    val supportHeight =
+        if (supportingText != null)
+            okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
+        else 0.dp
+    val shape = MaterialTheme.shapes.medium
+    val padding = OkouFormLayout.FieldPadding
+    val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
+        { Text(it, style = connectorBodyType()) }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val labelHeight = if (showLabel) okouFormLabelHeight(label, constraints.maxWidth) else 0.dp
+        val field =
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = OutlinedTextFieldDefaults.MinHeight + supportHeight + labelHeight)
+                .testTag("connector-input")
+                .semantics {
+                    contentDescription = label
+                    if (errorMessage != null) error(errorMessage)
+                }
         if (secret) {
             OutlinedSecureTextField(
                 state = state,
                 modifier = field,
                 inputTransformation = InputTransformation { if (readOnly) revertAllChanges() },
                 textObfuscationMode = TextObfuscationMode.Hidden,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
+                isError = errorMessage != null,
+                supportingText = supportingText,
                 shape = shape,
-                textStyle = connectorBodyType(),
-                colors = fieldColors,
+                textStyle = okouFormInputStyle(),
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
@@ -461,48 +570,20 @@ private fun ConnectorInput(
                 state = state,
                 modifier = field,
                 readOnly = readOnly,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
                 isError = errorMessage != null,
+                supportingText = supportingText,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 shape = shape,
-                textStyle = connectorBodyType(),
-                colors = fieldColors,
+                textStyle = okouFormInputStyle(),
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
         }
-        val supportStyle =
-            MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
-        if (supportingText != null) {
-            Spacer(Modifier.height(4.dp))
-            Text(supportingText, style = supportStyle, color = colors.onSurfaceVariant)
-        }
-        if (errorMessage != null) {
-            Spacer(Modifier.height(4.dp))
-            Text(errorMessage, style = supportStyle, color = colors.error)
-        }
-    }
-}
-
-@Composable
-private fun ConnectorFormActions(
-    label: String,
-    enabled: Boolean,
-    cancel: () -> Unit,
-    cancelEnabled: Boolean,
-    submit: () -> Unit,
-) {
-    FlowRow(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ConnectorButton(
-            stringResource(R.string.settings_cancel),
-            cancel,
-            enabled = cancelEnabled,
-            treatment = ConnectorButtonTreatment.Text,
-        )
-        ConnectorButton(label, submit, enabled = enabled)
     }
 }
 
@@ -510,7 +591,7 @@ private fun launchConnectorBrowser(context: Context, url: HttpUrl): Boolean =
     try {
         context.startActivity(
             Intent(Intent.ACTION_VIEW, url.toString().toUri())
-                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addCategory(Intent.CATEGORY_BROWSABLE),
         )
         true
     } catch (_: ActivityNotFoundException) {

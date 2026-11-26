@@ -54,15 +54,7 @@ fn read_entropy(mut input: impl Read) -> io::Result<Vec<u8>> {
         .take((MAX_ENTROPY_BYTES + 1) as u64)
         .read_to_end(&mut entropy)
         .map_err(|e| io::Error::new(e.kind(), format!("read stdin: {e}")))?;
-    if entropy.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty entropy"));
-    }
-    if entropy.len() > MAX_ENTROPY_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "entropy too large",
-        ));
-    }
+    validate_entropy_length(entropy.len())?;
     Ok(entropy)
 }
 
@@ -85,16 +77,21 @@ fn read_restore_entropy(mut input: impl Read) -> io::Result<[u8; RESTORE_ENTROPY
     Ok(entropy)
 }
 
-fn reseed(entropy: &[u8]) -> io::Result<()> {
-    if entropy.is_empty() {
+fn validate_entropy_length(length: usize) -> io::Result<()> {
+    if length == 0 {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty entropy"));
     }
-    if entropy.len() > MAX_ENTROPY_BYTES {
+    if length > MAX_ENTROPY_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "entropy too large",
         ));
     }
+    Ok(())
+}
+
+fn reseed(entropy: &[u8]) -> io::Result<()> {
+    validate_entropy_length(entropy.len())?;
 
     fs::write("/dev/urandom", entropy)
         .map_err(|e| io::Error::new(e.kind(), format!("write /dev/urandom: {e}")))?;

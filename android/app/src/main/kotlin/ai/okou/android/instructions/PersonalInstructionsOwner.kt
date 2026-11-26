@@ -2,9 +2,11 @@ package ai.okou.android.instructions
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.PersonalInstructions
+import ai.okou.android.api.retryBoundedRead
 import ai.okou.android.auth.WorkspaceIdentity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -38,23 +40,25 @@ internal class PersonalInstructionsOwner(
 
     private class Operation(val connection: Connection, val before: PersonalInstructionsState) {
         var job: Job? = null
-        var revision: Long = 0
     }
 
     private val mutable = MutableStateFlow(PersonalInstructionsState())
     val uiState = mutable.asStateFlow()
     private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val connections = mutableSetOf<Connection>()
+    private val openPanels = mutableSetOf<Connection>()
     private var operation: Operation? = null
     private var restored = false
+    private var journalPresent = false
+    private var pendingJournal: Deferred<InstructionsCommit>? = null
     private var started = false
-    private var revision = 0L
 
     fun attach(connection: Connection) {
         connections += connection
     }
 
     fun detach(connection: Connection): Boolean {
+        closePanel(connection)
         operation
             ?.takeIf { it.connection === connection }
             ?.let {
@@ -74,85 +78,111 @@ internal class PersonalInstructionsOwner(
         if (!current(op)) throw CancellationException("Instructions request retired")
     }
 
-    /** Compare-and-replace prevents settlement of an older intent from removing new input. */
     private fun replaceDraft(
-        expected: Long,
         draft: InstructionsDraft?,
         state: PersonalInstructionsState = mutable.value,
-    ) =
-        if (expected != revision) null
-        else {
-            val accepted = ++revision
-            store.persist(identity, draft).also { pending ->
-                mutable.value =
-                    state.copy(draft = draft, persistence = InstructionsPersistence.Pending)
-                localScope.launch {
-                    val result =
-                        try {
-                            pending.await()
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (_: Exception) {
-                            null
-                        }
-                    if (revision == accepted)
-                        mutable.value =
-                            mutable.value.copy(
-                                persistence =
-                                    if (result == InstructionsCommit.Committed)
-                                        InstructionsPersistence.Durable
-                                    else InstructionsPersistence.Failed
-                            )
+    ): Deferred<InstructionsCommit>? {
+        val journal = draft?.takeIf { it.attempted }
+        val needsWrite = journal != null || journalPresent
+        if (!needsWrite) {
+            mutable.value = state.copy(draft = draft)
+            return null
+        }
+        journalPresent = true
+        return store.persist(identity, journal).also { pending ->
+            pendingJournal = pending
+            mutable.value = state.copy(draft = draft, persistence = InstructionsPersistence.Pending)
+            localScope.launch {
+                val result =
+                    try {
+                        pending.await()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    }
+                if (pendingJournal === pending) {
+                    pendingJournal = null
+                    if (result == InstructionsCommit.Committed && journal == null)
+                        journalPresent = false
+                    mutable.value =
+                        mutable.value.copy(
+                            persistence =
+                                if (result == InstructionsCommit.Committed)
+                                    InstructionsPersistence.Durable
+                                else InstructionsPersistence.Failed,
+                        )
                 }
             }
         }
+    }
 
     fun edit(connection: Connection, content: String) {
         val state = mutable.value
         if (!connection.current() || !state.canEdit || content == state.content) return
-        val base = state.draft?.base ?: state.saved ?: return
-        val draft =
-            if (
-                content == base.content &&
-                    state.read == InstructionsRead.Ready &&
-                    !state.conflicting
-            )
-                null
-            else InstructionsDraft(content, base)
-        val next =
-            state.copy(
-                rejection =
-                    if (state.rejection == InstructionsRejection.Invalid) InstructionsRejection.None
-                    else state.rejection
-            )
-        replaceDraft(revision, draft, next)
+        val base = state.saved ?: return
+        val next = state.copy(saveRejected = false, saveConfirmed = false)
+        if (content == base.content && state.read != InstructionsRead.Failed)
+            replaceDraft(null, next)
+        else mutable.value = next.copy(draft = InstructionsDraft(content, base))
     }
 
     fun retryLocalDraft(connection: Connection) {
         if (connection.current() && restored && !mutable.value.busy && mutable.value.localFailure)
-            replaceDraft(revision, mutable.value.draft)
+            replaceDraft(mutable.value.draft)
     }
 
-    fun discard(connection: Connection) {
+    fun discardEdits(connection: Connection, draft: InstructionsDraft): Boolean {
         val state = mutable.value
-        if (!connection.current() || !state.canEdit || state.draft == null) return
-        if (state.conflicting) refresh(connection, discard = true)
-        else {
-            replaceDraft(revision, null, state.copy(rejection = InstructionsRejection.None))
-        }
+        if (!connection.current() || state.saveInProgress) return false
+        if (state.draft == null) return true
+        if (state.draft !== draft) return false
+        replaceDraft(null, state.copy(saveRejected = false))
+        return true
     }
 
     fun refreshFromForeground(connection: Connection) {
         if (started) refresh(connection)
     }
 
-    fun refresh(connection: Connection, discard: Boolean = false) {
-        if (!connection.current() || mutable.value.busy) return
+    fun open(connection: Connection, restoring: Boolean) {
+        if (!connection.current()) return
+        val joining = openPanels.any { it !== connection && it.current() }
+        openPanels += connection
+        val state = mutable.value
+        if (restoring || state.busy) return
+        if (!joining && state.draft == null) {
+            val cached = if (restored) store.freshConfirmed(identity) else null
+            mutable.value =
+                state.copy(
+                    saved = cached,
+                    read = if (cached == null) InstructionsRead.Idle else InstructionsRead.Ready,
+                )
+        }
+        refresh(connection)
+    }
+
+    fun closePanel(connection: Connection) {
+        openPanels -= connection
+    }
+
+    fun refresh(connection: Connection) {
+        val before = mutable.value
+        if (!connection.current() || before.busy) return
         started = true
-        val op = Operation(connection, mutable.value)
+        val op = Operation(connection, before)
         operation = op
+        val background =
+            before.saved != null &&
+                before.draft?.attempted != true &&
+                (before.read == InstructionsRead.Ready ||
+                    before.read == InstructionsRead.RefreshFailed)
         mutable.value =
-            mutable.value.copy(request = InstructionsRequest.Reading, recoveryVersion = null)
+            before.copy(
+                request =
+                    if (background) InstructionsRequest.Refreshing else InstructionsRequest.Reading,
+                read = if (background) InstructionsRead.Ready else before.read,
+            )
         op.job =
             connection.scope.launch {
                 try {
@@ -160,20 +190,26 @@ internal class PersonalInstructionsOwner(
                         val local = store.load(identity)
                         requireCurrent(op)
                         restored = true
+                        journalPresent = local.draft != null || !local.durable
+                        val cached = store.freshConfirmed(identity)
                         mutable.value =
                             mutable.value.copy(
-                                saved = local.draft?.base,
+                                saved = cached ?: local.draft?.base,
                                 draft = local.draft,
+                                request =
+                                    if (cached != null && local.draft?.attempted != true)
+                                        InstructionsRequest.Refreshing
+                                    else InstructionsRequest.Reading,
+                                read =
+                                    if (cached != null || local.draft != null)
+                                        InstructionsRead.Ready
+                                    else InstructionsRead.Idle,
                                 persistence =
                                     if (local.durable) InstructionsPersistence.Durable
                                     else InstructionsPersistence.Failed,
                             )
                     }
-                    op.revision = revision
-                    requireCurrent(op)
-                    val saved = connection.service.personalInstructions()
-                    requireCurrent(op)
-                    acceptRead(op, saved, discard)
+                    read(op)
                 } catch (cancelled: CancellationException) {
                     finish(op, interrupted = true)
                     throw cancelled
@@ -185,129 +221,166 @@ internal class PersonalInstructionsOwner(
             }
     }
 
-    private fun acceptRead(op: Operation, saved: PersonalInstructions, discard: Boolean = false) {
-        if (!current(op) || op.revision != revision) return
-        val draft = mutable.value.draft
-        val fulfilled =
-            draft?.attempted == true &&
-                saved.version != draft.base.version &&
-                saved.content == draft.content
-        // An offline undo remains provisional until its original version is confirmed.
-        val unchanged =
-            draft != null &&
-                !draft.attempted &&
-                saved.version == draft.base.version &&
-                saved.content == draft.content
-        val next =
-            mutable.value.copy(
-                saved = saved,
-                read = InstructionsRead.Ready,
-                rejection = InstructionsRejection.None,
-                recoveryVersion =
-                    if (draft?.attempted == true && saved.version == draft.base.version)
-                        saved.version
-                    else null,
-            )
-        if (discard || fulfilled || unchanged) replaceDraft(op.revision, null, next)
-        else if (draft?.attempted == true && saved.version != draft.base.version)
-            replaceDraft(op.revision, draft.copy(attempted = false), next)
-        else mutable.value = next
+    private fun acceptRead(saved: PersonalInstructions, settlingSave: Boolean = false) {
+        store.rememberConfirmed(identity, saved)
+        val state = mutable.value
+        val draft = state.draft
+        val next = state.copy(saved = saved, read = InstructionsRead.Ready)
+        when {
+            draft == null -> mutable.value = next
+            draft.content == saved.content ->
+                replaceDraft(
+                    null,
+                    next.copy(
+                        saveRejected = false,
+                        saveConfirmed = settlingSave || draft.attempted,
+                    ),
+                )
+            draft.attempted ->
+                replaceDraft(draft.copy(attempted = false), next.copy(saveRejected = true))
+            else -> mutable.value = next
+        }
     }
 
     fun save(connection: Connection) {
         val before = mutable.value
-        if (!connection.current() || (!before.canSave && !before.canRetrySave)) return
-        val attempt = checkNotNull(before.draft).copy(attempted = true)
+        if (!connection.current() || !before.canSave) return
+        val attempt =
+            checkNotNull(before.draft).copy(base = checkNotNull(before.saved), attempted = true)
         val op = Operation(connection, before)
+        val refresh = operation
         operation = op
-        val preparing =
-            before.copy(
-                request = InstructionsRequest.Preparing,
-                rejection = InstructionsRejection.None,
-                recoveryVersion = null,
-            )
+        refresh?.job?.cancel()
         // Accept the frozen intent synchronously, before a presentation can retire.
-        val durable = checkNotNull(replaceDraft(revision, attempt, preparing))
-        op.revision = revision
+        val durable = prepare(attempt)
         op.job =
             connection.scope.launch {
                 try {
-                    try {
-                        val receipt = durable.await()
-                        requireCurrent(op)
-                        if (receipt != InstructionsCommit.Committed || op.revision != revision)
-                            return@launch
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        return@launch
-                    }
-                    mutable.value = mutable.value.copy(request = InstructionsRequest.Sending)
-                    try {
-                        val saved =
-                            connection.service.updatePersonalInstructions(
-                                attempt.content,
-                                attempt.base.version,
-                            )
-                        requireCurrent(op)
-                        if (
-                            saved.content != attempt.content ||
-                                saved.version == attempt.base.version
-                        )
-                            throw ApiFailure.IncompatibleResponse()
-                        replaceDraft(
-                            op.revision,
-                            null,
-                            mutable.value.copy(saved = saved, read = InstructionsRead.Ready),
-                        )
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        if (!current(op)) return@launch
-                        if (
-                            error is ApiFailure.Http &&
-                                (error.status == 409 ||
-                                    error.status == 400 && !before.draft.attempted)
-                        ) {
-                            val rejected =
-                                mutable.value.copy(
-                                    rejection =
-                                        if (error.status == 409) InstructionsRejection.Conflict
-                                        else InstructionsRejection.Invalid
-                                )
-                            replaceDraft(op.revision, attempt.copy(attempted = false), rejected)
-                        } else {
-                            report(connection, error)
-                            requireCurrent(op)
-                            try {
-                                val saved = connection.service.personalInstructions()
-                                requireCurrent(op)
-                                acceptRead(op, saved)
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (read: Exception) {
-                                failRead(op, read)
-                            }
-                        }
-                    }
+                    submit(op, attempt, durable)
                 } finally {
                     finish(op)
                 }
             }
     }
 
+    private fun prepare(attempt: InstructionsDraft): Deferred<InstructionsCommit> =
+        checkNotNull(
+            replaceDraft(
+                attempt,
+                mutable.value.copy(
+                    request = InstructionsRequest.Preparing,
+                    saveRejected = false,
+                    saveConfirmed = false,
+                ),
+            ),
+        )
+
+    private suspend fun submit(
+        op: Operation,
+        initialAttempt: InstructionsDraft,
+        initialReceipt: Deferred<InstructionsCommit>,
+    ) {
+        var attempt = initialAttempt
+        var receipt = initialReceipt
+        repeat(2) { index ->
+            try {
+                send(op, attempt, receipt)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!current(op)) return
+                val status = (error as? ApiFailure.Http)?.status
+                if (status == 409 && index == 0) {
+                    // This request was definitively rejected. Freeze the same text on the new base.
+                    replaceDraft(attempt.copy(attempted = false))
+                    val latest = read(op, settlingSave = true)
+                    if (latest == null) {
+                        if (current(op)) mutable.value = mutable.value.copy(saveRejected = true)
+                        return
+                    }
+                    if (latest.content == attempt.content) return
+                    attempt = attempt.copy(base = latest)
+                    receipt = prepare(attempt)
+                } else if (status == 400 || status == 409) {
+                    replaceDraft(
+                        attempt.copy(attempted = false),
+                        mutable.value.copy(saveRejected = true),
+                    )
+                    return
+                } else {
+                    report(op.connection, error)
+                    requireCurrent(op)
+                    read(op, settlingSave = true)
+                    return
+                }
+            }
+        }
+    }
+
+    private suspend fun send(
+        op: Operation,
+        attempt: InstructionsDraft,
+        receipt: Deferred<InstructionsCommit>,
+    ) {
+        val result =
+            try {
+                receipt.await()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return
+            }
+        requireCurrent(op)
+        if (result != InstructionsCommit.Committed) return
+        mutable.value = mutable.value.copy(request = InstructionsRequest.Sending)
+        val saved =
+            op.connection.service.updatePersonalInstructions(attempt.content, attempt.base.version)
+        requireCurrent(op)
+        if (saved.content != attempt.content || saved.version == attempt.base.version)
+            throw ApiFailure.IncompatibleResponse()
+        acceptRead(saved, settlingSave = true)
+    }
+
+    private suspend fun read(op: Operation, settlingSave: Boolean = false): PersonalInstructions? {
+        requireCurrent(op)
+        var result: PersonalInstructions? = null
+        suspend fun attempt(): Exception? =
+            try {
+                val saved = op.connection.service.personalInstructions()
+                requireCurrent(op)
+                acceptRead(saved, settlingSave)
+                result = saved
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                error
+            }
+        if (mutable.value.draft?.attempted == true) {
+            mutable.value = mutable.value.copy(request = InstructionsRequest.CheckingSave)
+        }
+        val error = retryBoundedRead({ current(op) }, ::attempt)
+        if (error != null) failRead(op, error)
+        return result
+    }
+
     private fun failRead(op: Operation, error: Exception) {
         if (!current(op)) return
         report(op.connection, error)
         if (!current(op)) return
-        mutable.value =
-            mutable.value.copy(
-                read =
-                    if (error is ApiFailure.Http && error.status in setOf(403, 404))
-                        InstructionsRead.Unavailable
-                    else InstructionsRead.Failed,
-                recoveryVersion = null,
-            )
+        val denied = error is ApiFailure.Http && (error.status == 403 || error.status == 404)
+        if (denied) store.forgetConfirmed(identity)
+        val state = mutable.value
+        val read =
+            when {
+                denied || state.read == InstructionsRead.Unavailable -> InstructionsRead.Unavailable
+                state.saved != null &&
+                    (state.request == InstructionsRequest.Refreshing ||
+                        store.freshConfirmed(identity) != null) -> InstructionsRead.RefreshFailed
+                else -> InstructionsRead.Failed
+            }
+        mutable.value = state.copy(read = read)
     }
 
     private fun report(connection: Connection, error: Exception) {
@@ -324,19 +397,20 @@ internal class PersonalInstructionsOwner(
         // A preflight failure/cancellation cannot create an unknown remote outcome. A retry of an
         // older unknown operation, however, must keep that older attempt frozen.
         val preparing = mutable.value.request == InstructionsRequest.Preparing
-        val reading = mutable.value.request == InstructionsRequest.Reading
+        val reading =
+            mutable.value.request == InstructionsRequest.Reading ||
+                mutable.value.request == InstructionsRequest.Refreshing ||
+                mutable.value.request == InstructionsRequest.CheckingSave
         operation = null
+        val state = mutable.value
         val next =
-            mutable.value.copy(
+            state.copy(
                 request = InstructionsRequest.None,
-                read = if (interrupted && reading) InstructionsRead.Failed else mutable.value.read,
+                read =
+                    if (interrupted && reading && state.read != InstructionsRead.Unavailable)
+                        InstructionsRead.Failed
+                    else state.read,
             )
-        if (preparing) {
-            replaceDraft(
-                op.revision,
-                op.before.draft,
-                next.copy(recoveryVersion = op.before.recoveryVersion),
-            )
-        } else mutable.value = next
+        if (preparing) replaceDraft(op.before.draft, next) else mutable.value = next
     }
 }

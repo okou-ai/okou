@@ -1,29 +1,21 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.auth.WorkspaceIdentity
-import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** Main-thread command transaction owner shared by every controller of one durable identity. */
-internal class RunControlsOwner(
-    private val store: RunControlJournalStore,
-    private val identity: WorkspaceIdentity,
-) {
+/** Main-thread transaction owner for the attached controllers of one authorized workspace. */
+internal class RunControlsOwner {
     class Connection(
         val service: RunControlService,
         val history: ConversationHistoryModel,
@@ -48,16 +40,12 @@ internal class RunControlsOwner(
 
     private val mutable = MutableStateFlow(RunControlsState())
     val uiState = mutable.asStateFlow()
-    private val localScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val connections = mutableSetOf<Connection>()
     private val writes = mutableMapOf<String, Operation>()
     private val reads = mutableMapOf<String, Read>()
-    private var restoring: Job? = null
-    private var revision = 0L
 
     fun attach(connection: Connection) {
         connections += connection
-        restore()
     }
 
     fun detach(connection: Connection): Boolean {
@@ -80,32 +68,29 @@ internal class RunControlsOwner(
             }
         markInterrupted(interrupted)
         connections -= connection
-        if (connections.isNotEmpty()) return false
-        localScope.cancel()
-        return true
+        return connections.isEmpty()
     }
 
     private fun markInterrupted(ids: Set<String>) {
+        if (ids.isEmpty()) return
         mutable.value =
             mutable.value.copy(
                 phases =
                     mutable.value.phases.mapValues { (id, phase) ->
                         if (
                             id in ids &&
-                                (phase == RunControlPhase.Preparing ||
-                                    phase == RunControlPhase.Sending ||
+                                (phase == RunControlPhase.Sending ||
                                     phase == RunControlPhase.Checking)
                         )
                             RunControlPhase.Unknown
                         else phase
-                    }
+                    },
             )
     }
 
     private fun current(connection: Connection) = connection in connections && connection.current()
 
-    private fun contains(intent: RunControlIntent) =
-        mutable.value.journal?.pending?.contains(intent) == true
+    private fun contains(intent: RunControlIntent) = intent in mutable.value.pending
 
     private fun current(op: Operation) =
         current(op.connection) && writes[op.intent.id] === op && contains(op.intent)
@@ -116,94 +101,17 @@ internal class RunControlsOwner(
             throw CancellationException("Control connection retired or target settled")
     }
 
-    private fun restore() {
-        if (
-            connections.none { it.current() } ||
-                restoring?.isActive == true ||
-                mutable.value.journal != null
-        )
-            return
-        mutable.value = mutable.value.copy(persistence = RunControlPersistence.Loading)
-        restoring =
-            localScope.launch {
-                try {
-                    val saved = store.load(identity)
-                    currentCoroutineContext().ensureActive()
-                    if (connections.none { current(it) }) return@launch
-                    mutable.value =
-                        mutable.value.copy(
-                            journal = saved.journal,
-                            persistence =
-                                if (saved.durable) RunControlPersistence.Durable
-                                else RunControlPersistence.Failed,
-                            phases =
-                                saved.journal.pending.associate { it.id to RunControlPhase.Unknown },
-                        )
-                    // Restore publishes intent only; never dispatch from a restored preparation.
-                    for (connection in connections.toList()) connection.history.uiState.value.thread
-                        ?.id
-                        ?.let { id ->
-                            connection.history.checkpoint(id)?.let { reconcile(connection, it) }
-                        }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    mutable.value = mutable.value.copy(persistence = RunControlPersistence.Failed)
-                }
-            }
-    }
-
-    private fun persist(
-        journal: RunControlJournal,
-        phases: Map<String, RunControlPhase> = mutable.value.phases,
-        notice: RunControlNotice? = mutable.value.notice,
-    ): Deferred<Unit> {
-        val ticket = ++revision
-        val write = store.persist(identity, journal)
-        mutable.value =
-            mutable.value.copy(
-                journal = journal,
-                phases = phases,
-                notice = notice,
-                persistence = RunControlPersistence.Pending,
-            )
-        localScope.launch {
-            val durable =
-                try {
-                    write.await()
-                    true
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    false
-                }
-            if (ticket == revision)
-                mutable.value =
-                    mutable.value.copy(
-                        persistence =
-                            if (durable) RunControlPersistence.Durable
-                            else RunControlPersistence.Failed
-                    )
-        }
-        return write
-    }
-
-    fun retryLocal(connection: Connection) {
-        if (!current(connection)) return
-        val journal = mutable.value.journal
-        if (journal == null) restore() else persist(journal)
-    }
-
     fun stop(connection: Connection, threadId: String, displayedRunIds: List<String>) {
         if (!current(connection)) return
         val state = connection.history.uiState.value
-        val thread = state.thread?.takeIf { it.id == threadId } ?: return
+        if (state.thread?.id != threadId) return
         val eligible = state.controlRunIds(connection.history.output.state.value).toSet()
+        val settled = mutable.value.settledRuns[threadId].orEmpty()
         append(
             connection,
             displayedRunIds
                 .distinct()
-                .filter { it in eligible }
+                .filter { it in eligible && it !in settled }
                 .map {
                     RunControlIntent(
                         UUID.randomUUID().toString(),
@@ -215,11 +123,15 @@ internal class RunControlsOwner(
         )
     }
 
-    fun skip(connection: Connection, threadId: String, eventId: String) {
+    fun skip(
+        connection: Connection,
+        threadId: String,
+        eventId: String,
+        preview: ComposerMessagePreview?,
+    ) {
         if (!current(connection)) return
-        val state = connection.history.uiState.value
-        val thread = state.thread?.takeIf { it.id == threadId } ?: return
-        if (eventId !in state.transcript?.queuedEventIds.orEmpty()) return
+        if (eventId in mutable.value.settledQueueInputs[threadId].orEmpty()) return
+        if (!connection.history.uiState.value.canWithdrawInput(threadId, eventId, preview)) return
         append(
             connection,
             listOf(
@@ -228,28 +140,27 @@ internal class RunControlsOwner(
                     threadId,
                     RunControlKind.Revoke,
                     eventId,
-                )
+                ),
             ),
         )
     }
 
     private fun append(connection: Connection, candidates: List<RunControlIntent>) {
+        if (!current(connection)) return
         val state = mutable.value
-        val journal = state.journal ?: return
-        if (!current(connection) || state.persistence == RunControlPersistence.Failed) return
-        val fresh =
-            candidates.filter { candidate ->
-                journal.pending.none {
-                    it.threadId == candidate.threadId &&
-                        it.kind == candidate.kind &&
-                        it.targetId == candidate.targetId
-                }
+        val fresh = candidates.filter { candidate ->
+            state.pending.none {
+                it.threadId == candidate.threadId &&
+                    it.kind == candidate.kind &&
+                    it.targetId == candidate.targetId
             }
+        }
         if (fresh.isEmpty()) return
-        persist(
-            journal.copy(pending = journal.pending + fresh),
-            state.phases + fresh.associate { it.id to RunControlPhase.Preparing },
-        )
+        mutable.value =
+            state.copy(
+                pending = state.pending + fresh,
+                phases = state.phases + fresh.associate { it.id to RunControlPhase.Sending },
+            )
         fresh.forEach { launch(connection, it, false) }
     }
 
@@ -261,8 +172,18 @@ internal class RunControlsOwner(
 
     fun retry(connection: Connection, id: String) {
         if (!current(connection) || mutable.value.phases[id] != RunControlPhase.Retryable) return
-        val intent = mutable.value.journal?.pending?.singleOrNull { it.id == id } ?: return
+        val state = mutable.value
+        val intent = state.pending.singleOrNull { it.id == id } ?: return
+        if (id in writes) return
+        mutable.value = state.copy(phases = state.phases + (id to RunControlPhase.Checking))
         launch(connection, intent, true)
+    }
+
+    fun consumeActionFailure(connection: Connection, intent: RunControlIntent): Boolean {
+        val state = mutable.value
+        if (!current(connection) || state.actionFailures.none { it === intent }) return false
+        mutable.value = state.copy(actionFailures = state.actionFailures - intent)
+        return true
     }
 
     private fun launch(connection: Connection, intent: RunControlIntent, retry: Boolean) {
@@ -272,35 +193,8 @@ internal class RunControlsOwner(
         op.job =
             connection.scope.launch {
                 try {
-                    if (retry) {
-                        phase(op, RunControlPhase.Checking)
-                        val checkpoint =
-                            connection.sync.synchronize(
-                                intent.threadId,
-                                connection.history.checkpoint(intent.threadId),
-                            )
-                        requireCurrent(op)
-                        if (controlEvidence(intent, checkpoint) != RunControlEvidence.Eligible) {
-                            reconcile(connection, checkpoint, setOf(intent.id))
-                            return@launch
-                        }
-                    }
-                    val saved = store.load(identity)
-                    requireCurrent(op)
-                    if (!saved.durable || intent !in saved.journal.pending)
-                        throw IOException("Exact control intent is not durable")
-                    // Any peer's current canonical checkpoint can settle the original target.
-                    for (peer in connections.toList()) peer.history
-                        .checkpoint(intent.threadId)
-                        ?.let { reconcile(peer, it) }
-                    requireCurrent(op)
-                    phase(op, RunControlPhase.Sending)
-                    val accepted = connection.service.sendControl(intent.request())
-                    requireCurrent(op)
-                    if (accepted.threadId != intent.threadId)
-                        throw ApiFailure.IncompatibleResponse()
-                    phase(op, RunControlPhase.Accepted)
-                    invalidate(intent.threadId)
+                    if (retry && !verifyTarget(op, canResend = true)) return@launch
+                    submitWithRetry(op)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -318,55 +212,101 @@ internal class RunControlsOwner(
             }
     }
 
-    fun hasPending(threadId: String) =
-        mutable.value.journal?.pending?.any { it.threadId == threadId } == true
+    private suspend fun send(op: Operation) {
+        val intent = op.intent
+        requireCurrent(op)
+        // Any peer's current canonical checkpoint can settle the original target.
+        for (peer in connections.toList()) peer.history.checkpoint(intent.threadId)?.let {
+            reconcile(peer, it)
+        }
+        requireCurrent(op)
+        phase(op, RunControlPhase.Sending)
+        val accepted = op.connection.service.sendControl(intent.request())
+        requireCurrent(op)
+        if (accepted.threadId != intent.threadId) throw ApiFailure.IncompatibleResponse()
+        phase(op, RunControlPhase.Accepted)
+        invalidate(intent.threadId)
+    }
+
+    private suspend fun verifyTarget(op: Operation, canResend: Boolean): Boolean {
+        requireCurrent(op)
+        phase(op, RunControlPhase.Checking)
+        val connection = op.connection
+        val intent = op.intent
+        suspend fun read() =
+            connection.sync.synchronize(
+                intent.threadId,
+                connection.history.checkpoint(intent.threadId),
+            )
+        val checkpoint = ChatDependencyRetry().read(isCurrent = { current(op) }, fetch = ::read)
+        requireCurrent(op)
+        if (canResend && controlEvidence(intent, checkpoint) == RunControlEvidence.Eligible)
+            return true
+        reconcile(connection, checkpoint, setOf(intent.id))
+        invalidate(intent.threadId)
+        return false
+    }
+
+    private suspend fun submitWithRetry(op: Operation) {
+        var remaining = ChatDependencyRetryCount
+        while (true) {
+            try {
+                send(op)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(op)
+                report(op.connection, error)
+                requireCurrent(op)
+                phase(op, RunControlPhase.Unknown)
+                invalidate(op.intent.threadId)
+                val delayMillis = dependencyRetryAfterMillis(error).takeIf { remaining > 0 }
+                if (delayMillis != null) delay(maxOf(ChatDependencyRetryDelayMillis, delayMillis))
+                // Only an authoritative observation of the exact original target permits a resend.
+                if (!verifyTarget(op, canResend = delayMillis != null)) return
+                remaining--
+            }
+        }
+    }
+
+    fun hasPending(threadId: String) = mutable.value.pending.any { it.threadId == threadId }
 
     /** Read-only reconciliation; foreground/navigation/reconnect never call sendControl. */
-    fun check(connection: Connection, threadId: String) {
-        if (
-            !current(connection) ||
-                threadId in reads ||
-                writes.values.any { it.intent.threadId == threadId }
-        )
-            return
-        val pending = mutable.value.journal?.pending?.filter { it.threadId == threadId }.orEmpty()
+    fun check(connection: Connection, threadId: String, unknownOnly: Boolean = false) {
+        if (!current(connection) || threadId in reads) return
+        val state = mutable.value
+        val pending =
+            state.pending.filter { intent ->
+                val phase = state.phases[intent.id]
+                intent.threadId == threadId &&
+                    intent.id !in writes &&
+                    (phase == RunControlPhase.Unknown ||
+                        !unknownOnly && phase == RunControlPhase.Accepted)
+            }
         if (pending.isEmpty()) return
         val checkedIds = pending.mapTo(hashSetOf()) { it.id }
-        mutable.value =
-            mutable.value.copy(
-                phases =
-                    mutable.value.phases + pending.associate { it.id to RunControlPhase.Checking }
-            )
         val reading = Read(connection, checkedIds)
         reads[threadId] = reading
+        mutable.value =
+            state.copy(
+                phases = state.phases + pending.associate { it.id to RunControlPhase.Checking },
+            )
         reading.job =
             connection.scope.launch {
                 try {
-                    val checkpoint =
-                        connection.sync.synchronize(
-                            threadId,
-                            connection.history.checkpoint(threadId),
-                        )
+                    val before = connection.history.checkpoint(threadId)
+                    val checkpoint = connection.sync.synchronize(threadId, before)
                     currentCoroutineContext().ensureActive()
                     if (!current(connection) || reads[threadId] !== reading) return@launch
                     reconcile(connection, checkpoint, checkedIds)
-                    invalidate(threadId)
+                    // After a history refresh, an unchanged checkpoint needs no new invalidation.
+                    if (!unknownOnly || checkpoint !== before) invalidate(threadId)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    if (current(connection) && reads[threadId] === reading) {
+                    if (current(connection) && reads[threadId] === reading)
                         report(connection, error)
-                        if (!current(connection)) return@launch
-                        val remaining =
-                            mutable.value.journal?.pending.orEmpty().filter { it.id in checkedIds }
-                        mutable.value =
-                            mutable.value.copy(
-                                phases =
-                                    mutable.value.phases +
-                                        remaining.associate { it.id to RunControlPhase.Unknown },
-                                notice = RunControlNotice(threadId, RunControlNoticeKind.ReadFailed),
-                            )
-                    }
                 } finally {
                     if (reads[threadId] === reading) {
                         reads.remove(threadId)
@@ -382,45 +322,83 @@ internal class RunControlsOwner(
         checkedIds: Set<String> = emptySet(),
     ) {
         if (!current(connection)) return
-        val journal = mutable.value.journal ?: return
-        val intents = journal.pending.filter { it.threadId == checkpoint.threadId }
-        if (intents.isEmpty()) return
-        val observation = RunControlObservation(checkpoint)
-        val results = intents.associateWith { observation.evidence(it) }
-        val resolved =
-            results.filterValues {
-                it == RunControlEvidence.Recorded || it == RunControlEvidence.TargetSettled
-            }
+        val state = mutable.value
+        val threadId = checkpoint.threadId
+        val priorSettledQueue = state.settledQueueInputs[threadId].orEmpty()
+        val priorSettledRuns = state.settledRuns[threadId].orEmpty()
+        val intents = state.pending.filter { it.threadId == threadId }
+        if (intents.isEmpty() && priorSettledQueue.isEmpty() && priorSettledRuns.isEmpty()) return
+        val results =
+            if (intents.isEmpty()) emptyMap()
+            else intents.associateWith(RunControlObservation(checkpoint)::evidence)
+        val resolved = results.filterValues {
+            it == RunControlEvidence.Recorded || it == RunControlEvidence.TargetSettled
+        }
         val ids = resolved.keys.mapTo(hashSetOf()) { it.id }
-        var phases = mutable.value.phases - ids
+        var phases = state.phases - ids
+        var actionFailures = state.actionFailures.filterNot { it.id in ids }
         // Only commands captured by this read receive request phases; newer writes keep theirs.
-        for ((intent, evidence) in results) if (intent.id in checkedIds && intent.id !in ids)
-            phases =
-                phases +
-                    (intent.id to
-                        if (evidence == RunControlEvidence.Eligible) RunControlPhase.Retryable
-                        else RunControlPhase.Unknown)
-        val notice =
-            when {
-                resolved.isNotEmpty() ->
-                    RunControlNotice(
-                        checkpoint.threadId,
-                        if (resolved.values.any { it == RunControlEvidence.Recorded })
-                            RunControlNoticeKind.Recorded
-                        else RunControlNoticeKind.TargetSettled,
-                    )
-                results.values.any { it == RunControlEvidence.Invalid } ->
-                    RunControlNotice(checkpoint.threadId, RunControlNoticeKind.ReadFailed)
-                else -> mutable.value.notice
+        for ((intent, evidence) in results) {
+            if (intent.id !in checkedIds || intent.id in ids) continue
+            if (evidence == RunControlEvidence.Eligible) {
+                phases = phases + (intent.id to RunControlPhase.Retryable)
+                if (intent !in actionFailures) actionFailures = actionFailures + intent
+            } else {
+                phases = phases + (intent.id to RunControlPhase.Unknown)
             }
-        if (ids.isNotEmpty())
-            persist(
-                journal.copy(pending = journal.pending.filterNot { it.id in ids }),
-                phases,
-                notice,
+        }
+        val settledQueue =
+            targetsAwaitingHistory(
+                threadId,
+                resolved.keys
+                    .filter { it.kind == RunControlKind.Revoke }
+                    .mapTo(priorSettledQueue.toMutableSet()) { it.targetId },
+            ) { transcript, id ->
+                transcript.hasSettledInput(id)
+            }
+        val settledRuns =
+            targetsAwaitingHistory(
+                threadId,
+                resolved.keys
+                    .filter { it.kind == RunControlKind.Interrupt }
+                    .mapTo(priorSettledRuns.toMutableSet()) { it.targetId },
+            ) { transcript, id ->
+                id in transcript.terminatedRunIds
+            }
+        val next =
+            state.copy(
+                pending = state.pending.filterNot { it.id in ids },
+                phases = phases,
+                actionFailures = actionFailures,
+                settledQueueInputs =
+                    if (settledQueue.isEmpty()) state.settledQueueInputs - threadId
+                    else state.settledQueueInputs + (threadId to settledQueue),
+                settledRuns =
+                    if (settledRuns.isEmpty()) state.settledRuns - threadId
+                    else state.settledRuns + (threadId to settledRuns),
             )
-        else if (phases != mutable.value.phases || notice != mutable.value.notice)
-            mutable.value = mutable.value.copy(phases = phases, notice = notice)
+        if (next != state) mutable.value = next
+    }
+
+    /** A validated control read can settle targets before the selected histories catch up. */
+    private fun targetsAwaitingHistory(
+        threadId: String,
+        targets: Set<String>,
+        isSettled: (HistoryTranscript, String) -> Boolean,
+    ): Set<String> {
+        if (targets.isEmpty()) return targets
+        val selected = connections.mapNotNull { connection ->
+            connection.history.uiState.value.takeIf {
+                current(connection) && it.thread?.id == threadId
+            }
+        }
+        if (selected.isEmpty()) return targets
+        return targets.filterTo(hashSetOf()) { id ->
+            selected.any { state ->
+                state.phase != HistoryPhase.Missing &&
+                    state.transcript?.let { isSettled(it, id) } != true
+            }
+        }
     }
 
     private fun invalidate(threadId: String) {

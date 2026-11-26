@@ -1,5 +1,5 @@
 import { type ModelProviderRefreshTokenAuthProvider } from "../../types";
-import { CHATGPT_OAUTH_CLIENT_ID, refreshChatgptToken } from "./oauth";
+import { refreshChatgptToken } from "./oauth";
 import { oauthRefreshResultToProviderResult } from "../../oauth/types";
 
 type CodexOAuthRefreshInputs = {
@@ -23,11 +23,15 @@ const codexOauthProviderDefinition = {
   },
   access: {
     kind: "refresh-token",
-    resolveAuthClient: () => {
+    resolveAuthClient: (env) => {
+      const clientId = env.CODEX_OAUTH_CLIENT_ID;
+      if (!clientId) {
+        return undefined;
+      }
       return {
         clientRegistration: "static",
         clientType: "public",
-        clientId: CHATGPT_OAUTH_CLIENT_ID,
+        clientId,
       };
     },
     refresh: async (args, signal: AbortSignal) => {

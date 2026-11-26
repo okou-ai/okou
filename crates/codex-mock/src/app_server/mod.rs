@@ -4,7 +4,7 @@ mod persistence;
 mod scenario;
 
 use chrono::{DateTime, Utc};
-use messages::{write_json_line, write_success};
+use messages::{write_error, write_json_line, write_success};
 use persistence::session_artifact_thread_id;
 use scenario::Scenario;
 use serde_json::{Value, json};
@@ -160,38 +160,45 @@ impl AppServerState {
         params: &Value,
         output: &mut W,
     ) -> io::Result<ServerAction> {
-        match method {
-            "initialize" => self.handle_initialize(id, params, output),
-            "thread/start" => self.handle_thread_start(id, params, output),
-            "thread/resume" => self.handle_thread_resume(id, params, output),
-            "turn/start" => self.handle_turn_start(id, params, output),
-            "turn/steer" => self.handle_turn_steer(id, params, output),
-            "turn/interrupt" => self.handle_turn_interrupt(id, params, output),
-            "mock/inputs" => self.handle_mock_inputs(id, output),
-            "mock/state" => self.handle_mock_state(id, output),
-            "mock/complete-split-notification" => {
-                self.handle_mock_complete_split_notification(id, output)
-            }
-            _ => {
-                write_json_line(
-                    output,
-                    &json!({
-                        "id": id,
-                        "error": {
-                            "code": METHOD_NOT_FOUND,
-                            "message": "unsupported method",
-                            "data": {
-                                "request": {
-                                    "method": method
-                                },
-                                "retryable": false
+        let handle_initialized: fn(&mut Self, Value, &Value, &mut W) -> io::Result<ServerAction> =
+            match method {
+                "initialize" => return self.handle_initialize(id, params, output),
+                "thread/start" => Self::handle_thread_start,
+                "thread/resume" => Self::handle_thread_resume,
+                "turn/start" => Self::handle_turn_start,
+                "turn/steer" => Self::handle_turn_steer,
+                "turn/interrupt" => Self::handle_turn_interrupt,
+                "mock/inputs" => return self.handle_mock_inputs(id, output),
+                "mock/state" => return self.handle_mock_state(id, output),
+                "mock/complete-split-notification" => {
+                    return self.handle_mock_complete_split_notification(id, output);
+                }
+                _ => {
+                    write_json_line(
+                        output,
+                        &json!({
+                            "id": id,
+                            "error": {
+                                "code": METHOD_NOT_FOUND,
+                                "message": "unsupported method",
+                                "data": {
+                                    "request": {
+                                        "method": method
+                                    },
+                                    "retryable": false
+                                }
                             }
-                        }
-                    }),
-                )?;
-                Ok(ServerAction::Continue)
-            }
+                        }),
+                    )?;
+                    return Ok(ServerAction::Continue);
+                }
+            };
+
+        if !self.initialized {
+            write_error(output, id, INVALID_REQUEST, "app server is not initialized")?;
+            return Ok(ServerAction::Continue);
         }
+        handle_initialized(self, id, params, output)
     }
 
     fn handle_client_response<W: Write>(
@@ -270,17 +277,21 @@ impl AppServerState {
         });
     }
 
-    fn current_thread_mut<'a>(
+    fn lookup_turn_thread<'a, W: Write>(
         slot: &'a mut Option<AppServerThread>,
         requested_thread_id: &str,
-    ) -> Result<&'a mut AppServerThread, &'static str> {
-        let Some(current_thread) = slot.as_mut() else {
-            return Err("no active thread");
+        id: &Value,
+        output: &mut W,
+    ) -> io::Result<Option<&'a mut AppServerThread>> {
+        let message = match slot.as_mut() {
+            Some(thread) if requested_thread_id == thread.protocol_thread_id => {
+                return Ok(Some(thread));
+            }
+            Some(_) => "unknown threadId",
+            None => "no active thread",
         };
-        if requested_thread_id != current_thread.protocol_thread_id {
-            return Err("unknown threadId");
-        }
-        Ok(current_thread)
+        write_error(output, id.clone(), INVALID_REQUEST, message)?;
+        Ok(None)
     }
 }
 

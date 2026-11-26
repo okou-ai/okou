@@ -22,8 +22,6 @@ export interface AdmittedExecutionFacts {
   readonly nativeContinuation: NativeContinuation;
   readonly featureFlags: {
     readonly [FeatureSwitchKey.ArtifactThreePointTiming]: boolean;
-    /** Execution mode consumed by released Runners. */
-    readonly singleAgent: boolean;
   };
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
@@ -31,7 +29,6 @@ export interface AdmittedExecutionFacts {
   readonly apiStartTime: number | undefined;
   /** First accepted non-secret Connector environment, before source precedence. */
   readonly connectorEnvironment: Environment;
-  readonly connectorNetworkPolicyInputs: ExecutionNetworkPolicyInputs | null;
   readonly integration: string | undefined;
   readonly captureNetworkBodies: boolean;
   /** First accepted source and compiled environment, including its Pi configuration. */

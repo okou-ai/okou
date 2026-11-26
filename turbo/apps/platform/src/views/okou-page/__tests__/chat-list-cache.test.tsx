@@ -1,219 +1,266 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 import userEvent from "@testing-library/user-event";
-import {
-  chatThreadMetadataContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
   startPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   cachedChatListEvents,
-  chatListAuth,
   chatListEvent,
   chatListThread,
-  fastButton,
   installChatListStream,
   sidebarThreadLinks,
-  sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
-test("Cached conversations appear before remote synchronization", async () => {
-  const auth = chatListAuth(1);
-  const cached = chatListThread(1, "Original cached title");
-  const rename = chatListEvent(1, 2, "renamed", cached.id, {
-    title: "Latest cached title",
+test("A cached rename appears while member chat synchronization is pending", async () => {
+  const old = chatListThread(6, "Unreviewed budget");
+  const revision = chatListEvent(281, 2, "renamed", old.id, {
+    title: "Approved autumn budget",
   });
-  const remote = context.mocks.deferred<void>();
-  const agents = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
   installChatListStream(context, {
-    caseId: 1,
-    snapshot: [cached],
-    events: [rename],
-    remoteGate: remote.promise,
+    caseId: 281,
+    snapshot: [],
+    remoteGate: hold.promise,
   });
-
-  await startPage({
+  const page = await startPage({
     context,
-    path: `/`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(1, [cached], [rename]),
+    path: "/",
+    cachedChatThreadEvents: cachedChatListEvents(281, [old], [revision]),
   });
-  await screen.findByText("Latest cached title");
-  expect(sidebarThreadTitles()).toStrictEqual(["Latest cached title"]);
-  expect(remote.settled()).toBeFalsy();
-  expect(agents.settled()).toBeFalsy();
-});
-
-test("A complete cached conversation list remains navigable", async () => {
-  const auth = chatListAuth(3);
-  const cached = Array.from({ length: 26 }, (_, offset) => {
-    const index = offset + 1;
-    return chatListThread(index, `Cached conversation ${index}`);
-  });
-  const remote = context.mocks.deferred<void>();
-  installChatListStream(context, {
-    caseId: 3,
-    snapshot: cached,
-    remoteGate: remote.promise,
-  });
-
-  await startPage({
-    context,
-    path: `/`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(3, cached),
-  });
-  const expected = Array.from({ length: 26 }, (_, offset) => {
-    return `Cached conversation ${26 - offset}`;
-  });
-  await screen.findByText("Cached conversation 26");
-  expect(sidebarThreadTitles()).toStrictEqual(expected);
-  const links = sidebarThreadLinks();
-  expect(links).toHaveLength(26);
-  expect(
-    links.every((link) => {
-      return link.getAttribute("href")?.startsWith("/chats/");
-    }),
-  ).toBeTruthy();
-  expect(remote.settled()).toBeFalsy();
-});
-
-test("Rename dialog uses the latest cached title", async () => {
-  const auth = chatListAuth(11);
-  const cached = chatListThread(11, "Original title");
-  const rename = chatListEvent(11, 2, "renamed", cached.id, {
-    title: "Cached renamed title",
-  });
-  const remote = context.mocks.deferred<void>();
-  const detail = context.mocks.deferred<void>();
-  installChatListStream(context, {
-    caseId: 11,
-    snapshot: [cached],
-    events: [rename],
-    remoteGate: remote.promise,
-  });
-
-  context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
-    await detail.promise;
-    return respond(404, {
-      error: {
-        code: "CHAT_THREAD_NOT_FOUND",
-        message: "Chat thread not found",
-      },
+  try {
+    await page.content;
+    await waitFor(() => {
+      expect(
+        sidebarThreadLinks().map((link) => {
+          return [link.pathname, link.textContent?.trim()];
+        }),
+      ).toStrictEqual([[`/chats/${old.id}`, revision.title]]);
     });
-  });
-
-  await startPage({
-    context,
-    path: `/`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(11, [cached], [rename]),
-  });
-  await screen.findByText("Cached renamed title");
-  expect(sidebarThreadTitles()).toStrictEqual(["Cached renamed title"]);
-  const row = sidebarThreadLinks()[0]?.closest(".group");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected the cached conversation row");
+  } finally {
+    hold.resolve();
   }
-  click(within(row).getByLabelText("Open chat menu"));
-  const renameItem = await waitFor(() => {
-    const item = queryAllByRoleFast("menuitem", document).find((candidate) => {
-      return candidate.getAttribute("aria-label") === "Rename chat";
-    });
-    if (!item) {
-      throw new Error("Expected the Rename chat menu item");
-    }
-    return item;
-  });
-  click(renameItem);
-
-  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
-  const input = within(dialog).getByPlaceholderText("Chat title");
-  expect(input).toHaveValue("Cached renamed title");
-  expect(detail.settled()).toBeFalsy();
-  expect(remote.settled()).toBeFalsy();
+  await page.ready;
 });
 
-test("Signed-out pages do not sync private conversations", async () => {
-  let snapshotRequested = false;
-  let eventsRequested = false;
-  let indicatorsRequested = false;
-  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    snapshotRequested = true;
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Authentication required" },
-    });
+test("chat-list-cache-002 exposes a chat destination for every cached conversation in descending order", async () => {
+  const records = Array.from({ length: 26 }, (_, i) => {
+    return chatListThread(i + 1, `Planning session ${i + 1}`);
   });
-  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
-    eventsRequested = true;
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Authentication required" },
-    });
-  });
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    indicatorsRequested = true;
-    return respond(401, {
-      error: { code: "UNAUTHORIZED", message: "Authentication required" },
-    });
-  });
-
-  await setupPage({ context, path: "/sign-in", auth: null });
-
-  // Hosted Clerk owns the form, so the mounted component marks readiness.
-  await screen.findByTestId("clerk-sign-in");
-  expect(window.location.pathname).toBe("/sign-in");
-  expect(snapshotRequested).toBeFalsy();
-  expect(eventsRequested).toBeFalsy();
-  expect(indicatorsRequested).toBeFalsy();
-});
-
-test("The unread filter applies to cached conversations", async () => {
-  const auth = chatListAuth(16);
-  const unread = chatListThread(15, "Unread cached conversation");
-  const read = chatListThread(16, "Read cached conversation");
-  const remote = context.mocks.deferred<void>();
+  const sync = context.mocks.deferred<void>();
   installChatListStream(context, {
-    caseId: 16,
-    snapshot: [unread, read],
-    remoteGate: remote.promise,
+    caseId: 282,
+    snapshot: [],
+    remoteGate: sync.promise,
   });
+  const page = await startPage({
+    context,
+    path: "/",
+    cachedChatThreadEvents: cachedChatListEvents(282, records),
+  });
+  try {
+    await page.content;
+    const newestFirst = [...records].reverse().map((thread) => {
+      return [thread.title, `/chats/${thread.id}`];
+    });
+    await waitFor(() => {
+      expect(
+        sidebarThreadLinks().map((link) => {
+          return [link.textContent?.trim(), link.pathname];
+        }),
+      ).toStrictEqual(newestFirst);
+    });
+  } finally {
+    sync.resolve();
+  }
+  await page.ready;
+});
 
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+async function openCachedSearch(count: number, standalone = false) {
+  const history = Array.from({ length: count }, (_, index) => {
+    return chatListThread(
+      index + 1,
+      "Chat " + (index + 1),
+      index < 2
+        ? { pinnedAt: "2026-08-01T00:00:00Z", pinOrder: "a" + index }
+        : {},
+    );
+  });
+  if (standalone) {
+    const media = window.matchMedia.bind(window);
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(display-mode: standalone)" || media(query).matches;
+    });
+  }
+  const gate = context.mocks.deferred<void>();
+  const requested = context.mocks.deferred<void>();
+  installChatListStream(context, {
+    caseId: 821,
+    snapshot: [],
+    remoteGate: gate.promise,
+    onRemoteRead: () => {
+      if (!requested.settled()) {
+        requested.resolve();
+      }
+    },
+  });
+  context.mocks.browser.userAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36",
+  );
+
+  context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
     return respond(200, {
-      threads: { [unread.id]: "unread" },
-      unreadAt: {},
+      results: Array.from({ length: 30 }, (_, index) => {
+        const source = history[(index + 2) % history.length]!;
+        return {
+          chatThreadId: source.id,
+          matchedMessage: {
+            role: "assistant" as const,
+            chatThreadId: source.id,
+            seqId: index + 2,
+            runId: null,
+            createdAt: source.updatedAt,
+            content: query.keyword + " entry " + (index + 1),
+          },
+          matchedRanges: [{ start: 0, end: query.keyword.length }],
+        };
+      }),
     });
   });
-
-  await startPage({
+  const page = await startPage({
     context,
-    path: `/`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(16, [unread, read]),
+    path: "/",
+    cachedChatThreadEvents: cachedChatListEvents(821, history),
   });
-  await screen.findByText("Read cached conversation");
-  expect(sidebarThreadTitles()).toStrictEqual([
-    "Read cached conversation",
-    "Unread cached conversation",
-  ]);
-  await userEvent.click(fastButton("Open chat list menu"));
-  const unreadOnly = queryAllByRoleFast("menuitem", document).find((item) => {
-    return item.textContent?.trim().startsWith("Unread");
-  });
-  expect(unreadOnly).toBeDefined();
-  await userEvent.click(unreadOnly!);
+  try {
+    await Promise.all([page.content, requested.promise]);
+    await waitFor(() => {
+      return expect(
+        sidebarThreadLinks().some((link) => {
+          return link.textContent?.includes("Chat 1");
+        }),
+      ).toBeTruthy();
+    });
+    click(await findFastControl("button", "Hide chat list"));
+    const keys = userEvent.setup();
+    await keys.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
+    const dialog = within(await screen.findByRole("dialog"));
+    const input = dialog.getByRole("combobox");
+    return {
+      input,
+      dialog,
+      history,
+      keys,
+      finish: async () => {
+        gate.resolve();
+        await page.ready;
+      },
+    };
+  } catch (error) {
+    gate.resolve();
+    await page.ready;
+    throw error;
+  }
+}
+test("Blank queries leave cached chats hidden and typing shares twenty-five places between title and message matches", async () => {
+  const { input, dialog, finish } = await openCachedSearch(26);
+  try {
+    expect(dialog.queryByRole("listbox")).toBeNull();
+    await fill(input, "   ");
+    expect(dialog.queryByRole("status")).toBeNull();
+    expect(dialog.queryByRole("listbox")).toBeNull();
+    await fill(input, "letter");
+    const only = await dialog.findByRole("group", { name: "Messages" });
+    expect(queryAllByRoleFast("option", only)).toHaveLength(25);
+    expect(dialog.queryByRole("group", { name: "Threads" })).toBeNull();
+    await fill(input, "Chat");
+    await dialog.findByLabelText("chat entry 22");
+    const titles = dialog.getByRole("group", { name: "Threads" });
+    const messages = dialog.getByRole("group", { name: "Messages" });
+    const groups = dialog.getAllByRole("group");
+    expect(groups.indexOf(titles)).toBeLessThan(groups.indexOf(messages));
+    const shown = queryAllByRoleFast("option", titles);
+    expect(shown).toHaveLength(3);
+    expect(shown[0]).toHaveTextContent("Chat 26");
+    expect(shown[1]).toHaveTextContent("Chat 25");
+    expect(shown[2]).toHaveTextContent("Chat 24");
+    expect(queryAllByRoleFast("option", messages)).toHaveLength(22);
+  } finally {
+    await finish();
+  }
+});
+test.each([
+  { digit: 4, message: 1 },
+  { digit: 9, message: 6 },
+])(
+  "Command+$digit opens matching message $message after three titles with the sidebar hidden",
+  async ({ digit, message }) => {
+    const { input, dialog, history, keys, finish } = await openCachedSearch(
+      10,
+      true,
+    );
+    try {
+      expect(dialog.queryByRole("listbox")).toBeNull();
+      await fill(input, "Chat");
+      await dialog.findByLabelText("chat entry 22");
+      const options = dialog.getAllByRole("option");
+      expect(options[digit - 1]).toHaveTextContent("entry " + message);
+      await keys.keyboard("{Meta>}");
+      await waitFor(() => {
+        return expect(options[0]).toHaveTextContent("⌘1");
+      });
+      expect(options).toHaveLength(25);
+      for (const [index, row] of options.slice(0, 9).entries()) {
+        expect(row).toHaveTextContent("⌘" + (index + 1));
+      }
+      expect(options[9]).not.toHaveTextContent(/⌘/);
+      await keys.keyboard(String(digit) + "{/Meta}");
+      await waitFor(() => {
+        return expect(location.pathname).toBe(
+          "/chats/" + history[message + 1]!.id,
+        );
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await expect(
+        findFastControl("button", "Show chat list"),
+      ).resolves.toBeEnabled();
+    } finally {
+      await finish();
+    }
+  },
+);
 
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Unread cached conversation"]);
-  });
-  expect(remote.settled()).toBeFalsy();
+test("Leaving the member session keeps its saved conversation out of the signed-out sign-in page", async () => {
+  const member = createTestRuntime(context);
+  const thread = chatListThread(91, "Private financing draft");
+  installChatListStream(context, { caseId: 902, snapshot: [thread] });
+  await setupPage({ context: member, path: "/" });
+  await screen.findByText("Private financing draft");
+  cleanup();
+  member.dispose();
+  await setupPage({ context, path: "/sign-in", auth: null });
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/sign-in");
+  expect(screen.queryByText("Private financing draft")).not.toBeInTheDocument();
+});
+
+test("chat-list-cache-004 A cold signed-out visit stays on sign-in when the chat service has private history", async () => {
+  const privateThread = chatListThread(94, "Annual capital review");
+  installChatListStream(context, { caseId: 94, snapshot: [privateThread] });
+  await setupPage({ context, path: "/sign-in", auth: null });
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/sign-in");
+  expect(screen.queryByText("Annual capital review")).toBeNull();
 });

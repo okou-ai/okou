@@ -25,23 +25,14 @@ final class ThreadListStore {
     advanceReadRevision: { [weak self] in self?.readRevision += 1 }, didFail: didFail)
   @ObservationIgnored private let confirmedThreads = CCState.State<[ChatThread]>([])
   @ObservationIgnored private let replaceThreads: Command<Void, [ChatThread]>
+  /// The confirmed chats, kept in the workspace session's Store. Views read it through
+  /// CCStateSwiftUI; `threads` serves owner logic, actions and tests.
   let threadsValue: Computed<[ChatThread]>
-
-  private(set) var threads: [ChatThread] {
-    get {
-      access(keyPath: \.threads)
-      return confirmed(threadsValue)
-    }
-    set {
-      guard newValue != confirmed(threadsValue) else { return }
-      withMutation(keyPath: \.threads) {
-        do { try stateStore.set(replaceThreads, newValue) } catch {
-          preconditionFailure("Cannot publish confirmed threads: \(error)")
-        }
-      }
-    }
-  }
-  private(set) var unreadThreadIDs: Set<String> = []
+  @ObservationIgnored private let confirmedUnread = CCState.State<Set<String>>([])
+  @ObservationIgnored private let replaceUnread: Command<Void, Set<String>>
+  /// Chats the read-state snapshot marks unread, kept in the workspace session's Store. Views
+  /// read it through CCStateSwiftUI; `unreadThreadIDs` serves owner logic, actions and tests.
+  let unreadThreadIDsValue: Computed<Set<String>>
   private(set) var markingAllRead = false
   private var readRevision = 0
   var actionError: String? { actions.actionError }
@@ -49,7 +40,11 @@ final class ThreadListStore {
   private var indicatorsError: String?
   // Standalone indicator failures retain their own policy; list errors live on listValue.
   var syncError: String? { indicatorsError }
-  private(set) var hasLoadedThreads = false
+  @ObservationIgnored private let loadedThreads = CCState.State(false)
+  @ObservationIgnored private let replaceLoadedThreads: Command<Void, Bool>
+  /// Whether a chat list has been published, kept in the workspace session's Store. Views read
+  /// it through CCStateSwiftUI; `hasLoadedThreads` serves owner logic and tests.
+  let hasLoadedThreadsValue: Computed<Bool>
   var updatingThreads: Set<String> { actions.updatingThreads }
 
   private let client: APIClient
@@ -64,7 +59,13 @@ final class ThreadListStore {
   private var refreshAgain = false
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
-  private var appliedThreadSequence = 0
+  private var appliedCursor: ChatCacheCursor?
+  private var appliedCursorIsDurable = false
+  private var removedByCachedSnapshot = Set<String>()
+  // A failed local cleanup stays hidden and is retried when the confirmed deletion is replayed.
+  private var cleanedUnavailableThreads: [String: Bool] = [:]
+  private let didDelete: @MainActor (String) -> Bool
+  private let confirmAbsences: @MainActor (Set<String>) async -> Set<String>
   private var appliedIndicatorsRevision = 0
   // Online running state can arrive before its list event. Keep the current
   // server set so later metadata can project it; running state is never persisted.
@@ -84,12 +85,14 @@ final class ThreadListStore {
   var renameTitle = ""
   private var renameSessionID = UUID()
   private var closed = false
-  private var blocked = false
+  @ObservationIgnored private var blocked = false
 
   init(
     client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
+    didDelete: @escaping @MainActor (String) -> Bool = { _ in true },
+    confirmAbsences: @escaping @MainActor (Set<String>) async -> Set<String> = { _ in [] },
     didChangeReadState: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -101,6 +104,12 @@ final class ThreadListStore {
     let confirmedThreads = confirmedThreads
     threadsValue = Computed { try $0(confirmedThreads) }
     replaceThreads = Command { context, value in try context.set(confirmedThreads, value) }
+    let confirmedUnread = confirmedUnread
+    unreadThreadIDsValue = Computed { try $0(confirmedUnread) }
+    replaceUnread = Command { context, value in try context.set(confirmedUnread, value) }
+    let loadedThreads = loadedThreads
+    hasLoadedThreadsValue = Computed { try $0(loadedThreads) }
+    replaceLoadedThreads = Command { context, value in try context.set(loadedThreads, value) }
     let listDemand = listDemand
     let listLifetime = listLifetime
     reloadList = Command { context in
@@ -113,6 +122,8 @@ final class ThreadListStore {
     self.resources = resources
     self.commands = commands
     self.didRefresh = didRefresh
+    self.didDelete = didDelete
+    self.confirmAbsences = confirmAbsences
     self.didChangeReadState = didChangeReadState
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
@@ -122,15 +133,17 @@ final class ThreadListStore {
   func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
-    let sequence = hasLoadedThreads ? appliedThreadSequence : nil
+    let cursor = appliedCursor
     var restoredThreads = false
-    if let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
-      revision == creationRevision,
-      !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
+    let lowerBound = appliedCursorIsDurable ? nil : cursor?.seqID
+    if let cached = await sync.cachedThreadList(newerThan: lowerBound, excluding: cursor), !closed,
+      !Task.isCancelled,
+      revision == creationRevision, appliedCursor == cursor
     {
       let restored = ThreadListReadProjection.restoring(cached.threads, preserving: threads)
-      appliedThreadSequence = cached.cursor.seqID
-      projectThreads(restored)
+      removedByCachedSnapshot.formUnion(
+        Set(threads.map(\.id)).subtracting(cached.threads.map(\.id)))
+      await applyList(cached, threads: restored)
       restoredThreads = true
     }
     // Read changes need not advance the thread-list event cursor. Re-read the
@@ -172,17 +185,24 @@ final class ThreadListStore {
           do {
             let revision = readRevision
             let creation = creationRevision
+            let cursor = appliedCursor
             let response = try await ChatReadRecovery.read("chat list", sleep: readRetrySleep) {
               try await self.sync.threadList()
             }
             var result = response.threads
+            // Compaction can remove a row without retaining its deletion event.
+            let absent = response.removedThreadIDs.union(removedByCachedSnapshot).union(
+              threads.map(\.id)
+            )
+            .subtracting(result.map(\.id)).subtracting(response.deletedThreadIDs)
+            let confirmed = await confirmAbsences(absent)
             let cachedUnread = await sync.cachedIndicators()
             try Task.checkCancellation()
             try signal.checkCancellation()
             guard !closed else { throw CancellationError() }
             actions.settleOptimisticChanges(eventIDs: response.eventIDs)
-            // A read started before creation cannot remove its acknowledged thread.
-            guard creation == creationRevision else {
+            // Only the read that still owns this projection may replace it, including on rollback.
+            guard creation == creationRevision, cursor == appliedCursor else {
               refreshAgain = true
               continue
             }
@@ -207,9 +227,8 @@ final class ThreadListStore {
               appliedIndicatorsRevision = cachedUnread.revision
               unreadThreadIDs = Set(cachedUnread.unreadAt.keys)
             }
-            guard response.cursor.seqID >= appliedThreadSequence else { continue }
-            appliedThreadSequence = response.cursor.seqID
-            projectThreads(result)
+            removedByCachedSnapshot.removeAll()
+            await applyList(response, threads: result, confirming: confirmed)
           } catch {
             try Task.checkCancellation()
             try signal.checkCancellation()
@@ -228,13 +247,6 @@ final class ThreadListStore {
       lifecycleTasks.track(task)
       signal.onCancel { task.cancel() }
       return task
-    }
-  }
-
-  private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
-    // These are synchronous local business values, not a network or persistence boundary.
-    do { return try stateStore.get(signal) } catch {
-      preconditionFailure("Cannot read confirmed navigation: \(error)")
     }
   }
 
@@ -431,16 +443,6 @@ final class ThreadListStore {
     await actions.movePinned(id, beside: targetID, placement: placement, projectID: projectID)
   }
 
-  private func projectThreads(_ snapshot: [ChatThread]) {
-    publishThreads(actions.projected(snapshot))
-  }
-
-  private func publishThreads(_ result: [ChatThread]) {
-    hasLoadedThreads = true
-    if threads != result { threads = result }
-    didRefresh(result)
-  }
-
   @discardableResult
   func setProject(
     _ id: String, projectID: String?, onFailure: (@MainActor (String) -> Void)? = nil,
@@ -551,7 +553,115 @@ final class ThreadListStore {
   isolated deinit { listTask?.cancel() }
 }
 
+/// Synchronous accessors for the graph-backed list values, for owner logic, actions and tests.
 extension ThreadListStore {
+  private(set) var threads: [ChatThread] {
+    get { confirmed(threadsValue) }
+    set {
+      guard newValue != confirmed(threadsValue) else { return }
+      do { try stateStore.set(replaceThreads, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed threads: \(error)")
+      }
+    }
+  }
+
+  private(set) var unreadThreadIDs: Set<String> {
+    get { confirmed(unreadThreadIDsValue) }
+    set {
+      guard newValue != confirmed(unreadThreadIDsValue) else { return }
+      do { try stateStore.set(replaceUnread, newValue) } catch {
+        preconditionFailure("Cannot publish unread chats: \(error)")
+      }
+    }
+  }
+
+  private(set) var hasLoadedThreads: Bool {
+    get { confirmed(hasLoadedThreadsValue) }
+    set {
+      guard newValue != confirmed(hasLoadedThreadsValue) else { return }
+      do { try stateStore.set(replaceLoadedThreads, newValue) } catch {
+        preconditionFailure("Cannot publish the loaded chat list: \(error)")
+      }
+    }
+  }
+
+  private func confirmed<Value>(_ signal: Signal<Value>) -> Value {
+    // These are synchronous local business values, not a network or persistence boundary.
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read confirmed navigation: \(error)")
+    }
+  }
+}
+
+extension ThreadListStore {
+  private func projectThreads(_ snapshot: [ChatThread]) {
+    publishThreads(actions.projected(snapshot))
+  }
+
+  private func publishThreads(_ result: [ChatThread]) {
+    hasLoadedThreads = true
+    threads = result.filter { cleanedUnavailableThreads[$0.id] == nil }
+    didRefresh(threads)
+  }
+
+  private func applyList(
+    _ response: ChatSync.ThreadList, threads: [ChatThread],
+    confirming additionalDeletes: Set<String> = []
+  ) async {
+    appliedCursor = response.cursor
+    appliedCursorIsDurable = response.isPersisted
+    for id in response.deletedThreadIDs.union(additionalDeletes) { retireThread(id) }
+    projectThreads(threads)
+    await acknowledgeCleanup(response, confirming: additionalDeletes)
+  }
+
+  @discardableResult
+  private func retireThread(_ id: String) -> Bool {
+    guard !closed, cleanedUnavailableThreads[id] != true else { return false }
+    let first = cleanedUnavailableThreads[id] == nil
+    cleanedUnavailableThreads[id] = didDelete(id)
+    return first
+  }
+
+  func awaitsParentCheck(_ id: String) -> Bool {
+    removedByCachedSnapshot.contains(id)
+  }
+
+  private func acknowledgeCleanup(_ list: ChatSync.ThreadList, confirming confirmed: Set<String>)
+    async
+  {
+    guard list.isPersisted, !cleanedUnavailableThreads.isEmpty else { return }
+    let listed = Set(list.threads.map(\.id))
+    // A parent probe may have written a tombstone after this snapshot was read.
+    let newlyAbsent = confirmed.subtracting(listed).subtracting(list.deletedThreadIDs)
+    let cleaned = list.removalsToAcknowledge.union(newlyAbsent).filter {
+      cleanedUnavailableThreads[$0] == true
+    }
+    // Keep guards only for rows or delete events still present in the shared projection.
+    let referenced = list.deletedThreadIDs.union(listed).subtracting(cleaned)
+    cleanedUnavailableThreads = cleanedUnavailableThreads.filter {
+      !$0.value || referenced.contains($0.key)
+    }
+    await sync.acknowledgeRemovedThreads(cleaned)
+  }
+
+  @discardableResult
+  func confirmUnavailable(_ id: String) -> Bool {
+    guard retireThread(id) else { return false }
+    publishThreads(threads)
+    // A detail response can arrive before the corresponding list event, even across a restart.
+    let task = Task { [sync] in
+      do { try await sync.markThreadUnavailable(id) } catch {
+        Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+          .error(
+            "event=chat.cache.unavailable.save.failed error=\(error.localizedDescription, privacy: .private)"
+          )
+      }
+    }
+    lifecycleTasks.track(task)
+    return true
+  }
+
   func canWrite(_ id: String) -> Bool {
     actions.canWrite(id)
   }

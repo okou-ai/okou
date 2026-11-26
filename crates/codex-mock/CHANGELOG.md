@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.103](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.102...codex-mock-v0.12.103) (2026-11-26)
+
+
+### Refactoring
+
+* **codex-mock:** gate initialized requests at dispatch ([#50918](https://github.com/okou-ai/okou/issues/50918)) ([4781feb](https://github.com/okou-ai/okou/commit/4781feba4d569e4b75ed717099852478b6469fdb))
+
+## [0.12.102](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.101...codex-mock-v0.12.102) (2026-11-25)
+
+
+### Refactoring
+
+* **codex-mock:** share turn thread lookup errors ([#50881](https://github.com/okou-ai/okou/issues/50881)) ([770ba6c](https://github.com/okou-ai/okou/commit/770ba6c51816446c060ae0d62e8b39f268c2a9ff))
+
+## [0.12.101](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.100...codex-mock-v0.12.101) (2026-11-25)
+
+## [0.12.100](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.99...codex-mock-v0.12.100) (2026-11-24)
+
+## [0.12.99](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.98...codex-mock-v0.12.99) (2026-11-24)
+
+## [0.12.98](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.97...codex-mock-v0.12.98) (2026-11-24)
+
+## [0.12.97](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.96...codex-mock-v0.12.97) (2026-11-23)
+
 ## [0.12.96](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.95...codex-mock-v0.12.96) (2026-11-22)
 
 ## [0.12.95](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.94...codex-mock-v0.12.95) (2026-11-22)

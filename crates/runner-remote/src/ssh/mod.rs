@@ -350,7 +350,7 @@ impl SshRuntime {
         .await;
         if result
             .as_ref()
-            .is_err_and(|failure| invalidates_access(*failure))
+            .is_err_and(|failure| invalidates_access(*failure, access.uses_device_policy()))
         {
             access.invalidate();
         }
@@ -390,6 +390,7 @@ impl SshRuntime {
         // Move common fields with the key worker so its secrets outlive cancelled waiters.
         let prepared = move |auth| PreparedCredential {
             created_at: credential.created_at,
+            device_policy: credential.device_policy,
             host: credential.host,
             port: credential.port,
             username: credential.username,
@@ -541,7 +542,16 @@ impl runner_provider::AblySideMessageHandler for SshRuntime {
     }
 }
 
-fn invalidates_access(failure: FailureReason) -> bool {
+fn invalidates_access(failure: FailureReason, uses_device_policy: bool) -> bool {
+    // A fresh policy denial or lookup outage does not cancel admitted work.
+    if uses_device_policy
+        && matches!(
+            failure,
+            FailureReason::Unavailable | FailureReason::AuthorityFailure
+        )
+    {
+        return false;
+    }
     matches!(
         failure,
         FailureReason::Unavailable

@@ -6,10 +6,32 @@ export function runnerDispatchPath(runnerId: string, runId: string): string {
 }
 
 export interface RunnerDispatchTiming {
-  startedAt: number;
+  readonly preconnectStartedAt?: number;
   sendCount: number;
   connection?: "first_use" | "reused";
-  sendHeadersMs?: number;
+  sentHeadersAt?: number;
+}
+
+export function runnerDispatchHeaderTimings(
+  timing: RunnerDispatchTiming,
+  dispatchStartedAt: number,
+) {
+  const { sentHeadersAt, preconnectStartedAt } = timing;
+  if (timing.sendCount !== 1 || sentHeadersAt === undefined) {
+    return {};
+  }
+  // A reserved request can emit headers before the body handoff. Keep that
+  // observation on the preconnection clock.
+  return {
+    api_preconnect_send_headers_ms:
+      preconnectStartedAt === undefined
+        ? undefined
+        : sentHeadersAt - preconnectStartedAt,
+    api_send_headers_ms:
+      sentHeadersAt >= dispatchStartedAt
+        ? sentHeadersAt - dispatchStartedAt
+        : undefined,
+  };
 }
 
 export interface ReservedRunnerDispatch {
@@ -21,7 +43,14 @@ export interface TakenRunnerDispatch extends ReservedRunnerDispatch {
   readonly clearDeadline: () => void;
 }
 
+export type RunnerDispatchEncoding = "identity" | "gzip";
+
 export interface RunnerDispatchTransport {
+  readonly request: (url: string, options: RequestInit) => Promise<Response>;
+  readonly poolStats?: (origin: string) => {
+    readonly connected: number;
+    readonly pending: number;
+  };
   readonly reserve: (
     runId: string,
     url: string,
@@ -30,12 +59,13 @@ export interface RunnerDispatchTransport {
       signal: AbortSignal,
     ) => ReservedRunnerDispatch,
     signal: AbortSignal,
+    encoding?: RunnerDispatchEncoding,
   ) => void;
   readonly take: (
     url: string,
-    body: string,
-    startedAt: number,
+    body: string | Uint8Array<ArrayBuffer>,
     signal: AbortSignal,
+    encoding?: RunnerDispatchEncoding,
   ) => TakenRunnerDispatch | undefined;
 }
 

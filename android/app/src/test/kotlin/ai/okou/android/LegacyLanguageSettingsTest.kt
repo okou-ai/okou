@@ -23,7 +23,7 @@ class LegacyLanguageSettingsTest {
     @Test
     fun applicationLanguageChangesUseTheNativeCompatibilityPathAndRecreateTheList() {
         compose.onNodeWithContentDescription("Chats").assertExists()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Language").performScrollTo().performClick()
         compose
             .onNodeWithText("日本語")

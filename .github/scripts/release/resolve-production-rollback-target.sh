@@ -18,6 +18,7 @@ readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561d
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
+readonly DIRECT_DISPATCH_GZIP_READER_COMMIT=dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290
 # Project lifecycle events require the CLI reader installed by #44617.
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
@@ -152,7 +153,7 @@ readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-g
 readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
-readonly RUN_WEBHOOK_PATHS_PATH=.github/rollback-floors/run-webhook-callbacks
+readonly RUN_WEBHOOK_PATHS_PATH=.github/rollback-floors/run-mitm-webhooks
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -198,6 +199,7 @@ readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_d
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
 readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql
+readonly OFFICIAL_WORKFLOW_STORAGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1638_retire_official_workflow_installation_state.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -311,6 +313,18 @@ if [[ ! "$agent_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$agent_contraction_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Agent storage contraction: ${agent_contraction_commit}."
+fi
+
+# Identity uniqueness outlives the activating API. Earlier writers cannot replace
+# a duplicate authorization after its indexes exist. Keep the separately deployed
+# preparation eligible by resolving its merged main history, not activation.
+if ! connector_identity_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1634_connector_identity_writer_preparation.sql | sed -n '1p') ||
+  [[ ! "$connector_identity_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Connector identity writer preparation on main."
+fi
+if ! git merge-base --is-ancestor "$connector_identity_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Connector identity writer preparation: ${connector_identity_preparation_commit}."
 fi
 
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
@@ -762,6 +776,16 @@ if [[ ! "$official_result_email_storage_contraction_commit" =~ ^[0-9a-f]{40}$ ]]
 fi
 if ! git merge-base --is-ancestor "$official_result_email_storage_contraction_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Official result-email storage contraction: ${official_result_email_storage_contraction_commit}."
+fi
+
+# Older APIs read the catalog and write identities for built-in schedules.
+official_storage_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_WORKFLOW_STORAGE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$official_storage_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official Workflow storage retirement on main."
+fi
+if ! git merge-base --is-ancestor "$official_storage_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Official Workflow storage retirement: ${official_storage_retirement_commit}."
 fi
 
 # Physical needs_rebind contraction requires the independently released runtime
@@ -1291,6 +1315,22 @@ if ! git merge-base --is-ancestor "$agent_api_profile_floor" "$TARGET_COMMIT"; t
   fail "Rollback target predates the Agent API profile retirement: ${agent_api_profile_floor}."
 fi
 
+# #50060 reads Custom Connector Skill publications directly from the connector
+# table. Earlier artifacts still need the view removed by migration 1620.
+connector_skill_view_floor_path=.github/rollback-floors/custom-connector-skill-publication-view-independent-api
+if ! connector_skill_view_floor=$(git show "origin/main:${connector_skill_view_floor_path}"); then
+  fail "Cannot read the Custom Connector Skill view rollback floor from main."
+fi
+if [[ ! "$connector_skill_view_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Custom Connector Skill view rollback floor."
+fi
+if ! git merge-base --is-ancestor "$connector_skill_view_floor" origin/main; then
+  fail "Custom Connector Skill view rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$connector_skill_view_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates direct Custom Connector Skill publication reads: ${connector_skill_view_floor}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
@@ -1324,6 +1364,10 @@ runner_tag=$(runner_image_release_tag "$runner_version")
 runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
+fi
+# The production API can keep sending gzip while Runner rollback runs.
+if ! git merge-base --is-ancestor "$DIRECT_DISPATCH_GZIP_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates gzip direct dispatch: ${DIRECT_DISPATCH_GZIP_READER_COMMIT}."
 fi
 teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')
@@ -1404,22 +1448,20 @@ if [ "$runner_group_count" -lt 1 ]; then
   fail "No production Runner host groups found."
 fi
 
-runner_assets=$(curl -fsSL \
-  --retry 5 \
-  --retry-delay 2 \
-  --retry-max-time 60 \
-  --retry-all-errors \
-  -H "Authorization: token ${GH_TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${runner_tag}" \
-  | jq -r '.assets[].name')
+# shellcheck source=../runner/runner-release-assets.sh
+. "${script_dir}/../runner/runner-release-assets.sh"
+runner_assets=$(runner_release_assets_read "$runner_tag")
 
 runner_targets=$(jq -r '.[].target' <<<"$runner_matrix")
 while IFS= read -r target; do
   asset_name=$(runner_image_release_asset_name "$runner_version" "$target")
-  if ! grep -qx "$asset_name" <<<"$runner_assets"; then
-    fail "Runner release ${runner_tag} is missing ${asset_name}."
+  if ! asset_checksum=$(runner_release_asset_checksum "$asset_name" <<<"$runner_assets"); then
+    fail "Runner release ${runner_tag} is missing ${asset_name} or has multiple matching assets."
   fi
+  asset_url=$(runner_release_asset_url "$runner_tag" "$asset_name")
+  runner_matrix=$(jq -c --arg target "$target" --arg url "$asset_url" --arg checksum "$asset_checksum" '
+    map(if .target == $target then . + {asset_url: $url, asset_checksum: $checksum} else . end)
+  ' <<<"$runner_matrix")
 done <<<"$runner_targets"
 
 {

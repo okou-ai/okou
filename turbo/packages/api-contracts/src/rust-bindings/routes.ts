@@ -1,4 +1,5 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
+import { runnerAppStateContract } from "../contracts/computer-use";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
@@ -9,7 +10,10 @@ import {
   runnersHeartbeatContract,
   runnersSteerContract,
 } from "../contracts/runners";
-import { runWebhookContract } from "../contracts/webhooks";
+import {
+  runWebhookContract,
+  webhookMemoryArchiveContract,
+} from "../contracts/webhooks";
 
 export interface RouteLike {
   readonly method?: unknown;
@@ -24,6 +28,19 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnerAppStateContract.check,
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "computer_use",
+      "commands",
+      "by_command_id",
+      "check",
+    ],
+    rustConstName: "CHECK",
+  },
   {
     route: runnersRunStartupContract.setStartup,
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],
@@ -60,6 +77,11 @@ export const rustRouteBindings = [
     route: runnerSshContract.pin,
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "pin"],
     rustConstName: "PIN",
+  },
+  {
+    route: runnerSshContract.check,
+    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "check"],
+    rustConstName: "CHECK",
   },
   {
     route: runnersSteerContract.next,
@@ -144,5 +166,10 @@ export const rustRouteBindings = [
     route: runWebhookContract.storageCommit,
     rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
+  },
+  {
+    route: webhookMemoryArchiveContract.read,
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustConstName: "READ",
   },
 ] as const satisfies readonly RustRouteBinding[];

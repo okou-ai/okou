@@ -23,7 +23,8 @@ assert 'codeql' in security['ci-gate-security']['needs']
 for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
     assert any(step.get('uses', '').startswith(action) for step in security['codeql']['steps']), \
         'the required CodeQL job must initialize and execute its scanner'
-ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
+ts_jobs = ['lint-eslint', 'lint-eslint-api', 'lint-eslint-app', 'lint-db-dependencies',
+           'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
            'test-other', 'test-browser-extension-package', 'test-browser-extension']
 artifacts = ['deploy-app']
@@ -130,7 +131,8 @@ for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True, event='merge_group')), job
     assert not condition(turbo[job], context(ios=False, ts=True, event='push')), job
     assert not condition(turbo[job], context(ios=False, ts=False)), job
-for job in ['test-browser-extension-package', 'test-browser-extension']:
+for job in ['lint-eslint-api', 'lint-eslint-app', 'lint-db-dependencies',
+            'test-browser-extension-package', 'test-browser-extension']:
     for result in ['failure', 'cancelled', 'skipped']:
         gate(turbo, 'ci-gate-turbo', context(ios=False, ts=True) | {f'needs.{job}.result': result}, False)
 for job in artifacts:
@@ -246,28 +248,26 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-assert {'detect-release', 'detect', 'build-test', 'instrumentation', 'release-smoke'} <= set(android_gate['needs'])
+parallel_jobs = ['build', 'build-test', 'instrumentation', 'release-smoke']
+assert {'detect', *parallel_jobs} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {
-        'needs.detect-release.result': 'success',
-        'needs.detect-release.outputs.skip': 'false',
         'needs.detect.result': 'success',
+        'needs.detect.outputs.skip': 'false',
         'needs.detect.outputs.needed': needed,
-        'needs.build-test.result': 'success' if needed == 'true' else 'skipped',
-        'needs.instrumentation.result': 'success' if needed == 'true' else 'skipped',
-        'needs.release-smoke.result': 'success' if needed == 'true' else 'skipped',
+        **{f'needs.{job}.result': 'success' if needed == 'true' else 'skipped' for job in parallel_jobs},
     }
-    for job in ['instrumentation', 'release-smoke']:
+    for job in parallel_jobs:
         assert condition(android[job], values) == (needed == 'true')
     assert condition(android_gate, values, cancelled=True)
     gate(android, 'ci-gate-android', values, True)
     for failure in ['failure', 'cancelled', 'skipped']:
         blocked = values | {'needs.detect.result': failure}
-        for job in ['instrumentation', 'release-smoke']:
+        for job in parallel_jobs:
             assert not condition(android[job], blocked)
         assert condition(android_gate, blocked)
         gate(android, 'ci-gate-android', blocked, False)
-    for job in ['build-test', 'instrumentation', 'release-smoke']:
+    for job in parallel_jobs:
         for result in ['failure', 'cancelled', 'skipped' if needed == 'true' else 'success']:
             blocked = values | {f'needs.{job}.result': result}
             assert condition(android_gate, blocked)

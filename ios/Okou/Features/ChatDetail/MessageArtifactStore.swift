@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -26,6 +27,8 @@ final class MessageArtifactStore {
   /// workspace search, which arrives with its own title.
   private let threadID: String?
   private let markdown: MessageMarkdownCache
+  /// The workspace session's Store, which keeps the reads' graph values.
+  @ObservationIgnored private let graph: CCState.Store
   let webURL: URL
   var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
@@ -33,15 +36,16 @@ final class MessageArtifactStore {
 
   init(
     service: ChatArtifacts, threadID: String?, webURL: URL, markdown: MessageMarkdownCache,
-    didFail: @escaping @MainActor (Error) -> Void
+    graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
     self.threadID = threadID
     self.webURL = webURL
     self.markdown = markdown
+    self.graph = graph
     self.didFail = didFail
     reads = MessageArtifactResources(
-      service: service, threadID: threadID, webURL: webURL, didFail: didFail)
+      service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)
   }
 
   func resource(_ value: String) -> ChatArtifact? {
@@ -85,7 +89,7 @@ final class MessageArtifactStore {
     case .reference, .file, .hostedSite:
       open(content.artifact, images: content.images, renewedHTMLSignature: true)
       return true
-    case .published: return false
+    case .publishedSite, .published: return false
     }
   }
 
@@ -135,7 +139,7 @@ final class MessageArtifactStore {
     reads.close()
     if !closed {
       reads = MessageArtifactResources(
-        service: service, threadID: threadID, webURL: webURL, didFail: didFail)
+        service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)
     }
   }
 

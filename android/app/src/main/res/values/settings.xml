@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">Built-in tools</string>
+    <string name="settings_tool_scope">Tools you use in %1$s consume credits.</string>
+    <string name="settings_common_tools">Common tools</string>
+    <string name="settings_data_tools">Data tools</string>
+    <string name="settings_tool_web_search">Web search</string>
+    <string name="settings_tool_image_generation">Image generation</string>
+    <string name="settings_tool_image_model">Image generation model</string>
+    <string name="settings_tools_unavailable">Tools are temporarily unavailable.</string>
+    <string name="settings_tool_save_failed">Couldn’t confirm this change.</string>
+    <string name="settings_tool_image_save_failed">Couldn’t save the image generation model</string>
+    <string name="settings_preferences_save_rolled_back">Couldn’t save settings. Restored the previous values.</string>
+    <string name="settings_appearance_sync_failed">Couldn’t sync appearance. Applied it to this device.</string>
+    <string name="settings_email_updates">Email updates</string>
+    <string name="settings_email_scope">Receive briefs, reminders, and updates from all workspaces.</string>
+    <string name="settings_email_receive">Receive emails</string>
+    <string name="settings_email_unavailable">Email unavailable</string>
+    <string name="settings_email_check_address">Check your account email</string>
+    <string name="settings_email_load_failed">Email settings are temporarily unavailable.</string>
+    <string name="settings_email_refresh_failed">Could not sync. Showing the last saved subscription.</string>
+    <string name="settings_email_refreshing">Updating email subscription</string>
+    <string name="settings_email_saving">Updating email subscription…</string>
+    <string name="settings_email_save_failed">Could not update email subscription.</string>
+    <string name="settings_email_save_unconfirmed">The email subscription update is still unconfirmed.</string>
     <string name="settings_models">Models</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">My Okou</string>
@@ -14,8 +37,6 @@
     <string name="settings_accounts_scope">Choose the subscription accounts you use in “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Model accounts in “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_offline">Offline. Connect to switch accounts.</string>
-    <string name="settings_accounts_offline_connect">Offline. Connect to link a model account.</string>
     <string name="settings_accounts_unavailable">Unable to view model accounts right now.</string>
     <string name="settings_accounts_update_failed">Unable to refresh model accounts. Showing last known information.</string>
     <string name="settings_accounts_empty">No model accounts connected</string>
@@ -29,7 +50,8 @@
     <string name="settings_account_select">Select</string>
     <string name="settings_account_reconnect">Reconnect required</string>
     <string name="settings_account_switching">Switching…</string>
-    <string name="settings_account_switch_failed">Unable to switch accounts.</string>
+    <string name="settings_account_switch_unconfirmed">Switch unconfirmed</string>
+    <string name="settings_account_switch_failed">Unable to switch model accounts.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">%1$d-hour quota</string>
     <string name="settings_day_quota">%1$d-day quota</string>
@@ -43,8 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Credit balance</string>
     <string name="settings_credit_scope">Okou credits in “%1$s”</string>
-    <string name="settings_credit_offline">Offline. Showing the last known balance.</string>
-    <string name="settings_credit_update_failed">Unable to refresh. Showing the last known balance.</string>
     <string name="settings_credit_unavailable">Unable to view the balance right now.</string>
     <string name="settings_credit_member">Personal usage pack</string>
     <string name="settings_credit_workspace">Workspace balance</string>
@@ -60,8 +80,7 @@
     <string name="settings_auto_model_detail">Okou chooses an available model</string>
     <string name="settings_model_plan_restricted">Requires a different plan</string>
     <string name="settings_model_fast">Fast mode</string>
-    <string name="settings_model_fast_usage">Uses about %1$s× your subscription quota</string>
-    <string name="settings_model_load_when_online">Content will load when you’re back online.</string>
+    <string name="settings_model_fast_usage">When on, uses %1$s× as much of your ChatGPT subscription as standard mode</string>
     <string name="settings_model_save_rolled_back">Couldn’t save the default model. Restored the previous setting.</string>
     <string name="settings_model_save_unconfirmed">The default model save is still unconfirmed.</string>
     <string name="settings_model_effort">Reasoning effort</string>
@@ -71,4 +90,28 @@
     <string name="settings_model_effort_extra">Extra high</string>
     <string name="settings_model_effort_max">Max</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Refreshing model accounts</string>
+    <string name="settings_refreshing_credit_balance">Refreshing credit balance</string>
+    <string name="settings_proactive_services">Proactive services</string>
+    <string name="settings_proactive_scope">These settings apply in “%1$s”.</string>
+    <string name="settings_proactive_loading">Loading proactive services</string>
+    <string name="settings_proactive_needs_timezone">Choose a timezone to schedule delivery.</string>
+    <string name="settings_proactive_read_failed">Unable to load this setting right now.</string>
+    <string name="settings_proactive_refresh_failed">Unable to sync. Showing the last confirmed setting.</string>
+    <string name="settings_proactive_preparing">Preparing the schedule…</string>
+    <string name="settings_proactive_schedule_failed">Your choice was saved. The schedule needs attention.</string>
+    <string name="settings_proactive_save_unconfirmed">The save is still unconfirmed.</string>
+    <string name="settings_morning_brief">Morning Brief</string>
+    <string name="settings_morning_brief_detail">Delivered before 7:00 AM in your selected timezone</string>
+    <string name="settings_morning_brief_save_failed">Couldn’t save Morning Brief. Restored the previous setting.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Check connected content, update your profile, and offer suggestions</string>
+    <string name="settings_suggestions_partial">Partially enabled</string>
+    <string name="settings_suggestions_hourly_only">Currently only checks content and updates your profile.</string>
+    <string name="settings_suggestions_cards_only">Currently only delivers suggestion cards.</string>
+    <string name="settings_suggestions_enable_both">Turn both on</string>
+    <string name="settings_suggestions_disable_both">Turn both off</string>
+    <string name="settings_suggestions_save_failed">Couldn’t save Suggestions. Restored the previous setting.</string>
+    <string name="settings_timezone_save_rejected">Couldn’t save the time zone. Restored the previous time zone.</string>
+    <string name="settings_timezone_schedule_update_failed">Time zone saved. Couldn’t update the Morning Brief schedule.</string>
 </resources>

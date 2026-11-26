@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectArchiveProjectsItem
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.api.generated.ProjectEventsEventsItemKind
+import ai.okou.android.api.generated.ProjectRecord
 import ai.okou.android.api.generated.ProjectSnapshotVariant1
 import ai.okou.android.api.generated.ProjectSnapshotVariant2
 import kotlinx.coroutines.CoroutineDispatcher
@@ -13,6 +14,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 typealias ConfirmedProject = ProjectArchiveProjectsItem
+
+internal fun ProjectRecord.asConfirmedProject(expectedId: String): ConfirmedProject {
+    if (id != expectedId || name.isBlank() || name.length > ProjectNameLimit)
+        throw ApiFailure.IncompatibleResponse()
+    // Validate the timestamp used to rank a receipt without a sort order.
+    if (sortOrder == null) chatTime(createdAt)
+    return ConfirmedProject(id, name, createdAt, updatedAt, sortOrder, archived, lastArchivedAt)
+}
 
 internal fun ProjectEventsEventsItem.cursor() = ChatCursor(id, seqId)
 
@@ -78,7 +87,7 @@ fun replayProjects(checkpoint: ProjectCheckpoint): List<ConfirmedProject> {
                 val name = event.name
                 requireChatWire(name != null)
                 requireChatWire(
-                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null
+                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null,
                 )
                 projects[event.projectId] =
                     ConfirmedProject(
@@ -91,12 +100,15 @@ fun replayProjects(checkpoint: ProjectCheckpoint): List<ConfirmedProject> {
             }
         }
     }
-    return projects.values.sortedWith { left, right ->
+    return projects.values.inProjectOrder()
+}
+
+internal fun Iterable<ConfirmedProject>.inProjectOrder(): List<ConfirmedProject> =
+    sortedWith { left, right ->
         compareProjectBytes(left.effectiveSortOrder(), right.effectiveSortOrder()).takeIf {
             it != 0
         } ?: compareProjectBytes(left.id, right.id)
     }
-}
 
 /** Independent Project snapshot/tail, with Web's cursor recovery and no event compaction. */
 class ProjectSync(

@@ -1,10 +1,13 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.connectors.ChatConnectorOptions
+import ai.okou.android.connectors.ConnectorAccountTarget
+import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.rememberJournalEditor
-import android.widget.Toast
+import ai.okou.android.workspaceListPaneWidth
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,24 +39,35 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -63,27 +77,37 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+// Keep original line breaks in the journal and preserve native selection offsets.
+private val CompactDraftDisplay = VisualTransformation { text ->
+    val line = text.text.replace('\n', ' ').replace('\r', ' ')
+    TransformedText(if (line == text.text) text else AnnotatedString(line), OffsetMapping.Identity)
+}
+
 @Composable
-fun ChatComposerField(
+internal fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
-    onInputFocusChanged: (Boolean) -> Unit = {},
-    offline: Boolean = false,
+    followup: String? = null,
+    onFollowupInserted: () -> Unit = {},
     beforeSend: () -> Unit = {},
+    connectorOptions: ChatConnectorOptions? = null,
+    manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
+    defaultModel: DefaultModelSettings? = null,
+    conversationModel: ConversationModelControls? = null,
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
+    val wide = workspaceListPaneWidth(window.width, window.height) != null
     val horizontalInset = composerHorizontalInset(window)
     val bottomInset =
         when {
             shortWindow -> 8.dp
-            window.width >= 840 -> 24.dp
+            wide -> ChatPaneBottomInset
             else -> 14.dp
         }
     val colors = MaterialTheme.colorScheme
@@ -103,6 +127,20 @@ fun ChatComposerField(
         if (shortWindow) minimumTextHeight
         else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
     var inputFocused by remember { mutableStateOf(false) }
+    val restoreFocusOnResize = remember(shortWindow) { inputFocused }
+    val currentShortWindow by rememberUpdatedState(shortWindow)
+    val editorFocus = remember(target.key) { FocusRequester() }
+    val latestInput by rememberUpdatedState(input)
+    val hasDraft = state.journal != null
+    LaunchedEffect(target, followup, hasDraft) {
+        if (followup == null || !hasDraft) return@LaunchedEffect
+        val editor = latestInput
+        val updated = insertConversationFollowup(editor.value.text, followup)
+        editor.edit(updated)
+        if (updated.text != editor.value.text) model.edit(target, updated.text)
+        onFollowupInserted()
+        editorFocus.requestFocus()
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -116,18 +154,20 @@ fun ChatComposerField(
         open()
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val cardVerticalPadding = 5.dp
+    val cardOutline = 1.dp
+    // The normal outline is drawn inside the measured card, along with the inner padding.
+    val cardVerticalPadding = if (wide) cardOutline + 3.dp else 5.dp
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
             .imePadding()
             .padding(
                 start = horizontalInset,
-                top = 4.dp,
+                top = ChatComposerTopInset,
                 end = horizontalInset,
                 bottom = bottomInset,
             )
-            .testTag("chat_composer")
+            .testTag("chat_composer"),
     ) {
         val textSpace = maxHeight - cardVerticalPadding * 2
         val availableTextHeight =
@@ -136,11 +176,11 @@ fun ChatComposerField(
             ComposerFeedback(model, target, state, entry)
             Row(
                 Modifier.fillMaxWidth()
+                    .testTag("chat_input_card")
                     .background(colors.surface, cardShape)
                     .border(
-                        width = if (inputFocused) 2.dp else 1.dp,
-                        color =
-                            if (inputFocused) LocalActivityStatusColor.current else colors.outline,
+                        width = if (inputFocused) 2.dp else cardOutline,
+                        color = if (inputFocused) colors.onSurface else colors.outline,
                         shape = cardShape,
                     )
                     .padding(
@@ -152,64 +192,76 @@ fun ChatComposerField(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                BasicTextField(
-                    value = input.value,
-                    onValueChange = {
-                        input.edit(it)
-                        model.edit(target, it.text)
-                    },
-                    modifier =
-                        Modifier.weight(1f)
-                            .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                            .onFocusChanged {
-                                inputFocused = it.isFocused
-                                onInputFocusChanged(it.isFocused)
+                if (connectorOptions != null || defaultModel != null)
+                    ChatConnectorOptionsButton(
+                        connectorOptions,
+                        model,
+                        state,
+                        target,
+                        inputFocused,
+                        editorFocus,
+                        manageConnectors,
+                        defaultModel,
+                        conversationModel,
+                    )
+                // Scroll state saved by Compose belongs to this orientation.
+                key(shortWindow) {
+                    BasicTextField(
+                        value = input.value,
+                        onValueChange = {
+                            // A retiring field can clear its selection while focus moves.
+                            if (shortWindow == currentShortWindow) {
+                                input.edit(it)
+                                model.edit(target, it.text)
                             }
-                            .testTag("message_input")
-                            .semantics { contentDescription = label },
-                    enabled = state.journal != null,
-                    textStyle = textStyle,
-                    cursorBrush = SolidColor(colors.onSurface),
-                    maxLines = if (shortWindow) 1 else Int.MAX_VALUE,
-                    decorationBox = { editor ->
-                        Box(
-                            Modifier.fillMaxWidth()
-                                .padding(
-                                    start = 2.dp,
-                                    top = textPadding,
-                                    end = 10.dp,
-                                    bottom = textPadding,
-                                ),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            if (input.value.text.isEmpty()) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.clearAndSetSemantics {},
-                                    color = colors.onSurfaceVariant,
-                                    style = textStyle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                        },
+                        modifier =
+                            Modifier.weight(1f)
+                                .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                                .focusRequester(editorFocus)
+                                .onFocusChanged { inputFocused = it.isFocused }
+                                .testTag("message_input")
+                                .semantics { contentDescription = label },
+                        enabled = state.journal != null,
+                        textStyle = textStyle,
+                        cursorBrush = SolidColor(colors.onSurface),
+                        singleLine = shortWindow,
+                        visualTransformation =
+                            if (shortWindow) CompactDraftDisplay else VisualTransformation.None,
+                        decorationBox = { editor ->
+                            Box(
+                                Modifier.fillMaxWidth()
+                                    .padding(
+                                        start = 2.dp,
+                                        top = textPadding,
+                                        end = 10.dp,
+                                        bottom = textPadding,
+                                    ),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (input.value.text.isEmpty()) {
+                                    Text(
+                                        label,
+                                        modifier = Modifier.clearAndSetSemantics {},
+                                        color = colors.onSurfaceVariant,
+                                        style = textStyle,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                editor()
                             }
-                            editor()
-                        }
-                    },
-                )
+                        },
+                    )
+                    if (restoreFocusOnResize) {
+                        LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
+                    }
+                }
                 FilledIconButton(
                     onClick = {
-                        if (offline) {
-                            Toast.makeText(
-                                    context,
-                                    R.string.conversation_offline_send,
-                                    Toast.LENGTH_SHORT,
-                                )
-                                .show()
-                        } else {
-                            focus.clearFocus()
-                            beforeSend()
-                            model.send(target)
-                        }
+                        focus.clearFocus()
+                        beforeSend()
+                        model.send(target, defaultModel?.state?.value?.options)
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                     enabled = state.canSend(target),
@@ -232,6 +284,22 @@ fun ChatComposerField(
         }
     }
 }
+
+internal fun insertConversationFollowup(text: String, prompt: String): TextFieldValue {
+    var start = text.indexOf(prompt)
+    while (start in text.indices) {
+        val end = start + prompt.length
+        val wholeLines =
+            (start == 0 || text[start - 1] == '\n') && (end == text.length || text[end] == '\n')
+        if (wholeLines) return TextFieldValue(text, TextRange(start, end))
+        start = text.indexOf(prompt, start + 1)
+    }
+    val separator = if (text.isEmpty() || text.endsWith('\n')) "" else "\n"
+    val result = text + separator + prompt
+    return TextFieldValue(result, TextRange(result.length))
+}
+
+internal val ChatComposerTopInset = 4.dp
 
 internal fun composerHorizontalInset(window: IntSize) =
     when {
@@ -286,25 +354,6 @@ private fun ComposerFeedback(
             Text(stringResource(R.string.retry))
         }
     }
-    when (state.sync(target)) {
-        ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
-        ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
-        ComposerSync.Failed,
-        ComposerSync.NetworkFailed,
-        ComposerSync.Unsupported -> {
-            Text(
-                stringResource(
-                    if (state.sync(target) == ComposerSync.Unsupported)
-                        R.string.composer_sync_unsupported
-                    else R.string.composer_sync_failed
-                )
-            )
-            TextButton(onClick = { model.retrySync(target) }, colors = actionColors) {
-                Text(stringResource(R.string.composer_sync_retry))
-            }
-        }
-        else -> Unit
-    }
     state.journal?.retainedDrafts?.forEach { (key, text) ->
         Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
         TextButton(
@@ -315,52 +364,37 @@ private fun ComposerFeedback(
             Text(stringResource(R.string.composer_restore_draft))
         }
     }
-    if (entry.pending != null) {
+    val busy = target.key in state.busy
+    val connectorSetupFailed = state.connectorSetupFailed(target.key)
+    if (connectorSetupFailed) {
+        Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
+            Text(
+                stringResource(R.string.chat_connector_first_send_failed),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = connectorFeedbackType(),
+            )
+            TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
+                Text(stringResource(R.string.composer_retry))
+            }
+        }
+    } else if (
+        entry.pending != null &&
+            entry.pending.started == null &&
+            (!busy || target.key in state.checking)
+    ) {
         FlowRow {
             TextButton(
                 onClick = { model.observe(target) },
-                enabled = target.key !in state.busy,
+                enabled = !busy,
                 colors = actionColors,
             ) {
                 Text(stringResource(R.string.composer_check))
             }
-            TextButton(
-                onClick = { model.retry(target) },
-                enabled = target.key !in state.busy,
-                colors = actionColors,
-            ) {
+            TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
                 Text(stringResource(R.string.composer_retry))
             }
         }
     }
-    entry.receipt?.let {
-        if (it.eventId !in state.receiptMessages)
-            Text(
-                stringResource(it.disposition.label()),
-                modifier = Modifier.testTag("send_receipt"),
-            )
-        TextButton(
-            onClick = { model.observe(target) },
-            enabled = target.key !in state.busy,
-            colors = actionColors,
-        ) {
-            Text(stringResource(R.string.composer_check))
-        }
-    }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-    if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
-    if (state.persistence == ComposerPersistence.Pending)
-        Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }
-
-internal fun TextDisposition.label() =
-    when (this) {
-        TextDisposition.Accepted -> R.string.composer_accepted
-        TextDisposition.Queued -> R.string.history_queued
-        TextDisposition.Consumed -> R.string.composer_consumed
-        TextDisposition.Completed -> R.string.history_completed
-        TextDisposition.Failed -> R.string.history_run_failed
-        TextDisposition.Cancelled -> R.string.history_cancelled
-        TextDisposition.Rejected -> R.string.history_rejected
-        TextDisposition.Revoked -> R.string.composer_revoked
-    }

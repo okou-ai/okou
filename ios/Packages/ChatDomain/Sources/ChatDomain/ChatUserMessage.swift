@@ -54,15 +54,19 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
   }
 
   public func attachments() throws -> [ChatMessageAttachment] {
-    try parts.filter { $0.type == "file" }.map { part in
+    try parts.flatMap { part -> [ChatMessageAttachment] in
+      if part.type == "voice" { return part.voiceAttachments }
+      guard part.type == "file" else { return [] }
       guard let id = part.fileId, !id.isEmpty,
         let filename = part.filenameSnapshot, !filename.isEmpty,
         let contentType = part.contentType, !contentType.isEmpty
       else { throw ChatError.invalidContract("Attachment identity or metadata is missing.") }
-      return ChatMessageAttachment(
-        id: id, filename: filename,
-        contentType: part.annotatedFileId == nil ? contentType : "image/png",
-        renderedFileID: part.annotatedFileId)
+      return [
+        ChatMessageAttachment(
+          id: id, filename: filename,
+          contentType: part.annotatedFileId == nil ? contentType : "image/png",
+          renderedFileID: part.annotatedFileId)
+      ]
     }
   }
 
@@ -103,9 +107,18 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let selectedModel: String?
     public let serviceTier: String?
     public let annotatedFileId: String?
+    public struct VoiceClip: Decodable, Equatable, Sendable {
+      public let fileId: String
+    }
+    public let clips: [VoiceClip]?
+    public var voiceAttachments: [ChatMessageAttachment] {
+      (clips ?? []).map {
+        ChatMessageAttachment(id: $0.fileId, filename: "Voice recording", contentType: "audio/*")
+      }
+    }
 
     private enum CodingKeys: String, CodingKey {
-      case type, text, titleSnapshot, nameSnapshot, fileId, contentType, filenameSnapshot
+      case type, text, clips, titleSnapshot, nameSnapshot, fileId, contentType, filenameSnapshot
       case workflowName, kind, href, clientName, threadId, projectId, runId, workflowId
       case automationBrief, eventId, range, quote, source, selectedModel, serviceTier,
         annotatedFileId
@@ -151,6 +164,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       eventId: String? = nil, range: FeedbackRange? = nil,
       selectedModel: String? = nil, serviceTier: String? = nil, annotatedFileId: String? = nil
     ) {
+      self.clips = nil
       self.type = type
       self.text = text
       self.titleSnapshot = titleSnapshot
@@ -206,9 +220,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
           && (eventId == nil || present(eventId))
           && (range.map { $0.start >= 0 && $0.end > $0.start } ?? true)
         for part in note ?? [] { try part.validate() }
-        if let source, source.type != "mail" || !["draft", "sent"].contains(source.status) {
-          throw ChatError.invalidContract("Invalid quoted feedback source.")
-        }
+        try source?.validate()
       case "model": valid = present(selectedModel)
       case "source": valid = kind.map(Self.sourceKinds.contains) == true
       default: valid = true
@@ -224,11 +236,50 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let end: Int
   }
 
-  public struct FeedbackSource: Decodable, Equatable, Sendable {
-    public let type: String
-    public let id: String
-    public let status: String
-    public let sentId: String?
+  public enum FeedbackSource: Decodable, Equatable, Sendable {
+    case mail(id: String, status: MailStatus, sentId: String?)
+    case artifact(fileId: String, filenameSnapshot: String, artifactId: String?)
+
+    public enum MailStatus: String, Decodable, Sendable {
+      case draft, sent
+    }
+
+    private enum CodingKeys: CodingKey {
+      case type, id, status, sentId, fileId, filenameSnapshot, artifactId
+    }
+
+    public init(from decoder: Decoder) throws {
+      let fields = try decoder.container(keyedBy: CodingKeys.self)
+      switch try fields.decode(String.self, forKey: .type) {
+      case "mail":
+        self = .mail(
+          id: try fields.decode(String.self, forKey: .id),
+          status: try fields.decode(MailStatus.self, forKey: .status),
+          sentId: try fields.decodeIfPresent(String.self, forKey: .sentId))
+      case "artifact":
+        self = .artifact(
+          fileId: try fields.decode(String.self, forKey: .fileId),
+          filenameSnapshot: try fields.decode(String.self, forKey: .filenameSnapshot),
+          artifactId: try fields.decodeIfPresent(String.self, forKey: .artifactId))
+      default:
+        throw ChatError.invalidContract("Invalid quoted feedback source.")
+      }
+    }
+
+    fileprivate func validate() throws {
+      let valid: Bool
+      switch self {
+      case .mail(let id, _, let sentId):
+        valid = !id.isEmpty && (sentId.map { !$0.isEmpty } ?? true)
+      case .artifact(let fileId, let filenameSnapshot, let artifactId):
+        valid =
+          !fileId.isEmpty && !filenameSnapshot.isEmpty
+          && (artifactId.map { !$0.isEmpty } ?? true)
+      }
+      guard valid else {
+        throw ChatError.invalidContract("Invalid quoted feedback source.")
+      }
+    }
   }
 }
 

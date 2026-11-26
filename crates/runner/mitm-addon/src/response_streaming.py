@@ -24,6 +24,7 @@ import flow_metadata_keys as metadata_keys
 import http_response_classification
 import model_usage_request
 import model_websocket_usage
+import openrouter_routing_log
 import response_inspection
 import run_usage
 import stream_capture
@@ -45,9 +46,11 @@ _CONNECTOR_RESPONSE_FINALIZER = "_connector_response_finalizer"
 _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _RESPONSE_INSPECTION = "_response_inspection"
 
-_ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
-_OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
-_OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
+_MODEL_SSE_LOG_PROTOCOLS: dict[usage.ModelUsageProtocol, str] = {
+    "anthropic_messages": "anthropic_messages_sse",
+    "openai_chat_completions": "openai_chat_completions_sse",
+    "openai_responses": "openai_responses_sse",
+}
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
@@ -175,7 +178,7 @@ def _make_response_decode_session(
 def _make_model_sse_parse_error_logger(
     flow: http.HTTPFlow,
     *,
-    usage_protocol: str,
+    model_protocol: usage.ModelUsageProtocol,
 ) -> _SseUsageParseErrorLogger:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     warning_budget = ParseErrorWarningBudget()
@@ -190,7 +193,7 @@ def _make_model_sse_parse_error_logger(
             "warn",
             "Model provider SSE usage extraction failed",
             type="usage_event",
-            usage_protocol=usage_protocol,
+            usage_protocol=_MODEL_SSE_LOG_PROTOCOLS[model_protocol],
             event=event,
             error=error,
         )
@@ -264,12 +267,9 @@ def _configure_model_sse_inspection(
         nonlocal observed_terminal
         observed_terminal = True
 
+    log_parse_error = _make_model_sse_parse_error_logger(flow, model_protocol=model_protocol)
+
     if model_protocol == "openai_responses":
-        usage_protocol = _OPENAI_RESPONSES_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
 
         def record_openai_terminal_usage(terminal_usage: dict) -> None:
             usage.merge_openai_responses_usage_result(
@@ -283,22 +283,12 @@ def _configure_model_sse_inspection(
             on_terminal_usage=record_openai_terminal_usage,
         )
     elif model_protocol == "openai_chat_completions":
-        usage_protocol = _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
         parser_fn, usage_dict = usage.create_openai_chat_completions_sse_usage_extractor(
             on_parse_error=log_parse_error,
             on_usage=observe_usage,
             on_done=observe_done,
         )
     else:
-        usage_protocol = _ANTHROPIC_MESSAGES_SSE_PROTOCOL
-        log_parse_error = _make_model_sse_parse_error_logger(
-            flow,
-            usage_protocol=usage_protocol,
-        )
 
         def observe_anthropic_event(event: str) -> None:
             observe_usage(usage_dict, event == "message_stop")
@@ -329,12 +319,20 @@ def _configure_model_sse_inspection(
             flow,
             "Deferred model SSE response inspection was interrupted",
             error,
-            usage_protocol=usage_protocol,
+            usage_protocol=_MODEL_SSE_LOG_PROTOCOLS[model_protocol],
         )
+
+    routing = openrouter_routing_log.observation(flow)
+    routing_scanner = routing.sse_scanner() if routing is not None else None
+
+    def feed_steps(chunk: bytes) -> Generator[None]:
+        yield from parser_fn.feed_steps(chunk)
+        if routing_scanner is not None:
+            yield from routing_scanner.feed_steps(chunk)
 
     sse_inspection = response_inspection.inspect_decoded_response(
         decode_session.iter_chunks,
-        parser_fn.feed_steps,
+        feed_steps if routing_scanner is not None else parser_fn.feed_steps,
         fail_sse_inspection,
     )
     flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
@@ -356,7 +354,7 @@ def _configure_model_sse_inspection(
                 log_parse_error("compressed_body", decode_error)
                 usage_dict.clear()
                 if (
-                    usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
+                    model_protocol == "openai_responses"
                     and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
                 ):
                     usage.merge_openai_responses_usage_result(
@@ -381,10 +379,22 @@ def _configure_model_json_inspection(
     websocket_header_work_limit: int,
 ) -> _ResponseStreamSetup:
     extractor = usage.create_model_json_response_inspector(model_protocol)
+    routing = openrouter_routing_log.observation(flow)
+
+    def accepts_more_input() -> bool:
+        return extractor.accepts_more_input() or (
+            routing is not None and routing.accepts_more_input()
+        )
+
+    def feed_steps(chunk: bytes) -> Generator[None]:
+        if routing is not None:
+            routing.on_data(chunk)
+        yield from extractor.feed_steps(chunk)
+
     decode_session = _make_response_decode_session(
         extractor.feed,
         response.headers,
-        should_continue=extractor.accepts_more_input,
+        should_continue=accepts_more_input if routing is not None else extractor.accepts_more_input,
     )
     needs_buffered_fallback = False
     if decode_session is None:
@@ -424,7 +434,7 @@ def _configure_model_json_inspection(
     if decode_session is not None:
         json_inspection = response_inspection.inspect_decoded_response(
             decode_session.iter_chunks,
-            extractor.feed_steps,
+            feed_steps if routing is not None else extractor.feed_steps,
             fail_json_inspection,
         )
     else:
@@ -441,7 +451,7 @@ def _configure_model_json_inspection(
             )
             if decode_error is None:
                 if stream_body.buffer:
-                    yield from extractor.feed_steps(decoded_body)
+                    yield from feed_steps(decoded_body)
                 else:
                     finished = True
 
@@ -630,6 +640,7 @@ def configure_response_stream(
     if not flow.response:
         return
 
+    openrouter_routing_log.observe_headers(flow)
     metrics = stream_capture.empty_stream_byte_count()
     setup = _configure_response_inspection_stream(
         flow,
@@ -809,4 +820,5 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
+    openrouter_routing_log.release(flow)
     stream_capture.replace_owned_stream(flow.response, stream_callback)

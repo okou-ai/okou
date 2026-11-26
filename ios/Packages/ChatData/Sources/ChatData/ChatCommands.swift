@@ -16,8 +16,8 @@ public actor ChatCommands {
   private var writingReadState = false
   private var readStateWaiters: [CheckedContinuation<Void, Never>] = []
 
-  public init(client: APIClient, sync: ChatSync) {
-    voiceInput = VoiceInputClient(client: client)
+  public init(client: APIClient, sync: ChatSync, voiceInput: VoiceInputClient? = nil) {
+    self.voiceInput = voiceInput ?? VoiceInputClient(client: client)
     artifacts = ChatArtifacts(client: client)
     permissions = ChatPermissions(client: client)
     batchPermissions = ChatBatchPermissions(client: client)
@@ -117,6 +117,25 @@ public actor ChatCommands {
   )
     async throws -> SendReceipt
   {
+    try await send(
+      threadID: thread.id, text: text, attachments: attachments, document: document,
+      clientEventID: clientEventID, chatThreadSortEventID: chatThreadSortEventID,
+      modelSelection: modelSelection, reasoningEffort: reasoningEffort,
+      computerAccess: computerAccess,
+      sourceRunID: sourceRunID)
+  }
+
+  public func send(
+    threadID: String, text: String, attachments: [ChatAttachment] = [],
+    document: ChatDraftDocument? = nil,
+    clientEventID: String = UUID().uuidString,
+    chatThreadSortEventID: String = UUID().uuidString,
+    modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
+    computerAccess: ChatComputerAccess? = nil,
+    sourceRunID: String? = nil
+  )
+    async throws -> SendReceipt
+  {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let document = document?.trimmingWhitespace()
     guard !prompt.isEmpty || !attachments.isEmpty || document?.parts.isEmpty == false else {
@@ -125,15 +144,15 @@ public actor ChatCommands {
     guard UUID(uuidString: clientEventID) != nil else {
       throw ChatError.invalidContract("Invalid message identity.")
     }
-    guard sendingThreads.insert(thread.id).inserted else {
+    guard sendingThreads.insert(threadID).inserted else {
       throw ChatError.operationInProgress
     }
-    defer { sendingThreads.remove(thread.id) }
+    defer { sendingThreads.remove(threadID) }
 
     let metadata = try await loadThreadSettings(
-      threadID: thread.id)
+      threadID: threadID)
     let body = SendBody(
-      threadId: thread.id,
+      threadId: threadID,
       prompt: prompt.isEmpty
         ? (document?.hasFeedback == true
           ? "(see quoted passages)"

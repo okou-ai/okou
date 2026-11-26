@@ -383,27 +383,17 @@ final class ChatSearchUnreadTests: XCTestCase {
       await stale.value
     }
     await fulfillment(of: [started], timeout: 2)
-    let confirmedRead = Task {
-      for await unread in Observations({ store.list.threads.first?.isUnread })
-      where unread == false {
-        return
-      }
-    }
-    addTeardownBlock {
-      confirmedRead.cancel()
-      await confirmedRead.value
-    }
-    let markingRead = Task {
-      await store.setRead(thread, read: true)
-      confirmedRead.cancel()
-    }
+    let markingRead = Task { await store.setRead(thread, read: true) }
     addTeardownBlock {
       markingRead.cancel()
       gate.open()
       freshGate.open()
       await markingRead.value
     }
-    await confirmedRead.value
+    // The confirmed read reaches the list while the stale indicator response is still held.
+    try await waitForBusinessResult(watching: store.list.threadsValue, in: store.graph) {
+      store.list.threads.first?.isUnread == false
+    }
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
     // Release the stale response before waiting for the read operation that joins it.
     gate.open()

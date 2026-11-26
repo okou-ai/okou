@@ -121,6 +121,8 @@ private struct MessageRenderUnitView: View {
   let measurement: MessageUnitMeasurements.Session?
   /// VoiceOver reads inline code as text; the drawn chips are for sighted reading.
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+  @Environment(\.locale) private var locale
+  @Environment(\.timeZone) private var timeZone
 
   var body: some View {
     if let measurement, let key = unit.sizeKey {
@@ -148,11 +150,15 @@ private struct MessageRenderUnitView: View {
         }
       }
     case .markdown(let fragment, _):
+      let timeFormat = MessageTime.format(locale: locale, timeZone: timeZone)
       StructuredText(
-        message.text, parser: PreparedMessageParser(content: fragment, drawsInlineCode: !voiceOver)
+        message.text,
+        parser: PreparedMessageParser(
+          content: fragment, drawsInlineCode: !voiceOver, timeFormat: timeFormat)
       )
       .id(fragment)
       .id(voiceOver)
+      .id(timeFormat)
     case .connector(let action):
       if let store = message.connectorActions {
         ConnectorActionCard(action: action, store: store, loadsState: message.loadsActions)

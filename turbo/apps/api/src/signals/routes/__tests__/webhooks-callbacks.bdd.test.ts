@@ -2116,22 +2116,12 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       // Canonical writes land under the run organization's Storage prefix.
       const storageName = writebackMount.name;
       const files = [storageFile("index.html", 2048)];
-      // The outgoing Runner uses both original storage URLs for writeback.
-      const outgoingRunner = setupApp({
+      const storageClient = setupApp({
         context,
         routes: webhooksAgentStorageRoutes,
-      })({
-        prepare: {
-          ...runWebhookContract.storagePrepare,
-          path: "/api/webhooks/agent/storages/prepare",
-        },
-        commit: {
-          ...runWebhookContract.storageCommit,
-          path: "/api/webhooks/agent/storages/commit",
-        },
-      } as const);
+      })(runWebhookContract);
       const prepared = await accept(
-        outgoingRunner.prepare({
+        storageClient.storagePrepare({
           headers,
           body: {
             runId: run.runId,
@@ -2157,7 +2147,7 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       const committed = await fixture.run(() => {
         acceptPreparedStorageBytes(prepared.body, files);
         return accept(
-          outgoingRunner.commit({
+          storageClient.storageCommit({
             headers,
             body: {
               runId: run.runId,

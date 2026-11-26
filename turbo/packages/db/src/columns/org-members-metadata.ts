@@ -7,7 +7,9 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
+import type { RecentWorkflowIds } from "@okouai/db/jsonb-contracts/workflow";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type { PresentationOutputFormat } from "@okouai/api-contracts/validators/presentation-output-format";
 import type {
   ColorTheme,
   ThemePreference,
@@ -23,6 +25,8 @@ export function orgMembersMetadataColumns() {
     proactiveSuggestionsEnabled: boolean("proactive_suggestions_enabled"),
     proactiveLearningEnabled: boolean("proactive_learning_enabled"),
     locale: text("locale"),
+    /** Null is eligible for legacy import; an empty array is already initialized. */
+    recentWorkflowIds: jsonb("recent_workflow_ids").$type<RecentWorkflowIds>(),
     onboardingRole: text("onboarding_role"),
     sendMode: text("send_mode").notNull().default("enter"),
     cloudBrowserEnabledByDefault: boolean("cloud_browser_enabled_by_default")
@@ -45,6 +49,10 @@ export function orgMembersMetadataColumns() {
     }).$type<ChatThreadServiceTier>(),
     /** Member setting for built-in image generation; null uses the default. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
+    /** Workspace member's presentation preference; null means unselected. */
+    presentationFormat: text(
+      "presentation_format",
+    ).$type<PresentationOutputFormat>(),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
     /**
      * When this member finished the source-first onboarding in this org.

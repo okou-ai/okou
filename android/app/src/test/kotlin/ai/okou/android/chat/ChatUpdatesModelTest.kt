@@ -7,6 +7,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -69,8 +70,7 @@ class ChatUpdatesModelTest {
         runCurrent()
         owner.foreground(false)
         owner.foreground(true)
-        owner.retry()
-        owner.retry()
+        owner.foreground(true)
         runCurrent()
         assertEquals(1, observers.size)
         val old = observers.single()
@@ -85,7 +85,7 @@ class ChatUpdatesModelTest {
         val before = reads
         active = false
         observers.last()(
-            RealtimeSnapshot(RealtimePhase.Unavailable, 2, ApiFailure.Unauthenticated())
+            RealtimeSnapshot(RealtimePhase.Unavailable, 2, ApiFailure.Unauthenticated()),
         )
         runCurrent()
         assertEquals(before, reads)
@@ -117,6 +117,63 @@ class ChatUpdatesModelTest {
         assertEquals(1, reads)
         assertEquals(RealtimePhase.Unavailable, owner.phase.value)
         assertTrue(errors.single() is ApiFailure.Unauthenticated)
+        owner.close()
+    }
+
+    @Test
+    fun endedTemporaryObservationReopensAfterBackoffAndStopsWithItsWorkspace() = runTest {
+        val nextFailure = CompletableDeferred<Unit>()
+        val errors = mutableListOf<Exception>()
+        var opened = 0
+        var closed = 0
+        var reads = 0
+        val service =
+            object : RealtimeService {
+                override suspend fun observeRealtime(
+                    target: StateFlow<RunOutputTarget?>,
+                    output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+                    observe: suspend (RealtimeSnapshot) -> Unit,
+                ): Nothing {
+                    try {
+                        opened++
+                        if (opened == 1) throw ApiFailure.Http(503, null, null, 5)
+                        observe(
+                            RealtimeSnapshot(
+                                RealtimePhase.Connected,
+                                changes = ChatChanges(resync = true),
+                            ),
+                        )
+                        nextFailure.await()
+                        throw ApiFailure.Network(IOException("connection ended"))
+                    } finally {
+                        closed++
+                    }
+                }
+            }
+        val owner = ChatUpdatesModel(service, backgroundScope, { true }, errors::add) { reads++ }
+        owner.foreground(true)
+        runCurrent()
+        assertEquals(1, closed)
+        assertEquals(RealtimePhase.Unavailable, owner.phase.value)
+        advanceTimeBy(4_999)
+        runCurrent()
+        assertEquals(1, opened)
+        assertEquals(1, reads)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, opened)
+        assertEquals(2, reads)
+        assertEquals(RealtimePhase.Connected, owner.phase.value)
+
+        nextFailure.complete(Unit)
+        runCurrent()
+        assertEquals(2, errors.size)
+        owner.foreground(false)
+        advanceTimeBy(48_000)
+        runCurrent()
+        assertEquals(2, opened)
+        assertEquals(2, closed)
+        assertEquals(RealtimePhase.Stopped, owner.phase.value)
         owner.close()
     }
 

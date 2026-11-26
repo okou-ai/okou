@@ -1,44 +1,18 @@
 import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$ } from "../external/db";
 import { personalProjectAccess$ } from "./projects";
 import { sendValidatedChatEvent$ } from "./chat-events";
 import {
   chatThreadDraft,
   updateChatThreadDraft$,
 } from "../services/chat-thread.service";
-import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
-import { notFound, resourceUnavailable } from "../../lib/error";
+import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const missing = notFound("Project or conversation not found");
-function ownedThread(id: string) {
-  return computed(async (get) => {
-    const owner = get(organizationAuthContext$);
-    if (
-      owner.tokenType === "agent" &&
-      !owner.capabilities.includes("project:read")
-    ) {
-      return resourceUnavailable("Project access is not available");
-    }
-    const rows = await get(db$)
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, id),
-          eq(chatThreads.userId, owner.userId),
-          chatThreadOrganizationPredicate(owner.orgId),
-        ),
-      );
-    return rows.length > 0;
-  });
-}
 const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(personalProjectAccess$)) {
     return missing;
@@ -55,34 +29,29 @@ const draft$ = computed(async (get) => {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.draft)).id;
-  if (!(await get(ownedThread(id)))) {
+  const draft = await get(
+    chatThreadDraft({
+      threadId: id,
+      orgId: get(organizationAuthContext$).orgId,
+      userId: get(organizationAuthContext$).userId,
+    }),
+  );
+  if (!draft) {
     return missing;
   }
-  return {
-    status: 200 as const,
-    body: await get(
-      chatThreadDraft({
-        threadId: id,
-        orgId: get(organizationAuthContext$).orgId,
-        userId: get(organizationAuthContext$).userId,
-      }),
-    ),
-  };
+  return { status: 200 as const, body: draft };
 });
 const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!get(personalProjectAccess$)) {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.saveDraft)).id;
-  if (!(await get(ownedThread(id)))) {
-    return missing;
-  }
   const body = await get(bodyResultOf(projectChatContract.saveDraft));
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
   }
-  await set(
+  const saved = await set(
     updateChatThreadDraft$,
     {
       threadId: id,
@@ -92,6 +61,9 @@ const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
     },
     signal,
   );
+  if (!saved) {
+    return missing;
+  }
   return { status: 204 as const, body: undefined };
 });
 export const projectChatRoutes: readonly RouteEntry[] = [

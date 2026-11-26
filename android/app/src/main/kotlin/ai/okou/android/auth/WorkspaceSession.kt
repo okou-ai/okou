@@ -9,6 +9,8 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.EmailSubscription
+import ai.okou.android.api.generated.EmailSubscriptionUpdate
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
@@ -20,14 +22,17 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.RunActivitySummaryStatus
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.artifacts.ArtifactQuery
 import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
@@ -44,15 +49,24 @@ import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.chat.RunOutputSignal
 import ai.okou.android.chat.RunOutputTarget
+import ai.okou.android.chat.SearchArtifactHit
+import ai.okou.android.chat.SearchArtifactPage
+import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.WorkspaceSearchService
+import ai.okou.android.chat.asConfirmedProject
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.settings.BuiltInToolsService
+import ai.okou.android.settings.CanonicalBuiltInToolsService
+import ai.okou.android.settings.ProactivePreferencesService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +96,7 @@ interface WorkspaceSession :
     ChatComposerService,
     RealtimeService,
     RunControlService,
+    WorkspaceSearchService,
     AssistantRecoveryService {
     val artifacts: ArtifactService
     val connectors: ConnectorService?
@@ -90,10 +105,16 @@ interface WorkspaceSession :
     val workflowService: WorkflowService?
         get() = null
 
+    val proactivePreferences: ProactivePreferencesService?
+        get() = null
+
+    val builtInTools: BuiltInToolsService?
+        get() = null
+
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
 
     suspend fun activateModelAccount(
-        accountId: String
+        accountId: String,
     ): ai.okou.android.api.generated.ActivatedModelAccount
 
     suspend fun organization(): Organization
@@ -103,8 +124,12 @@ interface WorkspaceSession :
     suspend fun defaultModelPreference(): DefaultModelPreference
 
     suspend fun updateDefaultModelPreference(
-        update: UpdateDefaultModelPreference
+        update: UpdateDefaultModelPreference,
     ): DefaultModelPreference
+
+    suspend fun emailSubscription(): EmailSubscription
+
+    suspend fun updateEmailSubscription(subscribed: Boolean): EmailSubscriptionUpdate
 
     suspend fun featureSwitches(): FeatureSwitches
 
@@ -133,6 +158,12 @@ class CanonicalWorkspaceSession(
 
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
+    override val proactivePreferences = ProactivePreferencesService(api)
+    private val builtInToolsService =
+        CanonicalBuiltInToolsService(api, identity.apiOrigin.toHttpUrl())
+    override val builtInTools: BuiltInToolsService
+        get() = builtInToolsService
+
     override val connectors = ConnectorService(api)
     private val transfers = SignedTransferClient()
     override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
@@ -146,6 +177,9 @@ class CanonicalWorkspaceSession(
     override suspend fun workflows() = api.workflows()
 
     override suspend fun workflow(id: String) = api.workflow(id)
+
+    override suspend fun workflowRunHistory(id: String, cursor: String?) =
+        api.workflowRunHistory(id, cursor)
 
     override suspend fun workflowAutomations() = api.workspaceWorkflowAutomations()
 
@@ -164,6 +198,34 @@ class CanonicalWorkspaceSession(
 
     override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
         api.setWorkflowAutomationEnabled(id, enabled)
+
+    override suspend fun searchArtifacts(keyword: String, cursor: String?): SearchArtifactPage {
+        val page = artifacts.page(ArtifactQuery(keyword = keyword), cursor = cursor, limit = 25)
+        return SearchArtifactPage(
+            page.items.map { SearchArtifactHit(it.id, it.title, it.kind) },
+            page.nextCursor,
+        )
+    }
+
+    override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
+        api.searchChatMessages(keyword).results.mapNotNull { result ->
+            val match = result.matchedMessage
+            if (result.chatThreadId != match.chatThreadId) return@mapNotNull null
+            SearchMessageHit(
+                match.chatThreadId,
+                match.seqId,
+                match.content,
+                result.matchedRanges.mapNotNull { range ->
+                    if (
+                        range.start < 0 ||
+                            range.end <= range.start ||
+                            range.end > match.content.length
+                    )
+                        null
+                    else range.start.toInt() until range.end.toInt()
+                },
+            )
+        }
 
     override suspend fun observeRealtime(
         target: StateFlow<RunOutputTarget?>,
@@ -203,6 +265,8 @@ class CanonicalWorkspaceSession(
 
     override suspend fun indicators() = api.indicators()
 
+    override suspend fun draftThreadIds() = api.draftThreadIds()
+
     override suspend fun newChatReady(): Boolean {
         val status = api.onboardingStatus()
         return status.hasOrg && !status.needsOnboarding
@@ -227,6 +291,11 @@ class CanonicalWorkspaceSession(
 
     override suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) =
         api.updateDefaultModelPreference(update)
+
+    override suspend fun emailSubscription() = api.emailSubscription()
+
+    override suspend fun updateEmailSubscription(subscribed: Boolean) =
+        api.updateEmailSubscription(subscribed)
 
     override suspend fun featureSwitches() = api.featureSwitches()
 
@@ -268,6 +337,7 @@ class CanonicalWorkspaceSession(
                             InputStatusVariant3Status.REVOKED -> TextDisposition.Revoked
                             InputStatusVariant3Status.UNAVAILABLE -> null
                         },
+                        observed.input?.seqId,
                     )
             }
         if (result.threadId != threadId || result.eventId != eventId)
@@ -305,6 +375,15 @@ class CanonicalWorkspaceSession(
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
 
+    override suspend fun summarizeRunActivity(threadId: String, runId: String): String? {
+        val summary = api.summarizeRunActivity(threadId, runId)
+        if (summary.runId != runId) throw ApiFailure.IncompatibleResponse()
+        return summary.messages
+            .firstOrNull { it.text.isNotBlank() }
+            ?.text
+            .takeIf { summary.status == RunActivitySummaryStatus.AVAILABLE }
+    }
+
     override suspend fun markRead(threadId: String) = api.markRead(threadId)
 
     override suspend fun markUnread(threadId: String) = api.markUnread(threadId)
@@ -318,8 +397,14 @@ class CanonicalWorkspaceSession(
     override suspend fun deleteThread(threadId: String, eventId: String) =
         api.deleteThread(threadId, eventId)
 
+    override suspend fun createProject(projectId: String, name: String) =
+        api.createProject(projectId, name).asConfirmedProject(projectId)
+
+    override suspend fun projectDetail(projectId: String) =
+        api.projectDetail(projectId).asConfirmedProject(projectId)
+
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
-        api.renameProject(projectId, name, eventId)
+        api.renameProject(projectId, name, eventId).asConfirmedProject(projectId)
 
     override suspend fun moveThreadToProject(
         threadId: String,
@@ -332,6 +417,9 @@ class CanonicalWorkspaceSession(
 
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
+
+    override suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest) =
+        api.setThreadModel(threadId, request)
 
     override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) =
         api.setPinned(threadId, pinOrder, eventId)
@@ -356,18 +444,7 @@ class CanonicalWorkspaceSession(
         }
 
     override suspend fun historyArchive(url: String): List<HistoryEvent> =
-        withContext(Dispatchers.IO) {
-            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
-            try {
-                transfers.download(address, ::readHistoryNdjson)
-            } catch (error: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable(error.status)
-            } catch (_: SerializationException) {
-                throw ApiFailure.IncompatibleResponse()
-            } catch (_: IllegalArgumentException) {
-                throw ApiFailure.IncompatibleResponse()
-            }
-        }
+        downloadArchive(url, ::readHistoryNdjson)
 
     override suspend fun chatArchive(url: String): ChatArchive = archive(url)
 
@@ -375,10 +452,13 @@ class CanonicalWorkspaceSession(
 
     @OptIn(ExperimentalSerializationApi::class)
     private suspend inline fun <reified T> archive(url: String): T =
+        downloadArchive(url) { archiveJson.decodeFromStream<T>(it) }
+
+    private suspend fun <T> downloadArchive(url: String, read: (InputStream) -> T): T =
         withContext(Dispatchers.IO) {
             val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
             try {
-                transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
+                transfers.download(address, read)
             } catch (error: ApiFailure.Http) {
                 throw ChatSnapshotUnavailable(error.status, error.retryAfterSeconds)
             } catch (error: IOException) {
@@ -408,7 +488,7 @@ class CanonicalWorkspaceSession(
             if (existing != null && existing.initialized()) existing
             else {
                 api.initializePreferences(
-                    InitializePreferencesRequest(timezone = timezone, locale = locale)
+                    InitializePreferencesRequest(timezone = timezone, locale = locale),
                 )
             }
         check(preferences.initialized()) { "Workspace initialization is incomplete" }
@@ -424,7 +504,11 @@ class CanonicalWorkspaceSession(
         try {
             api.close()
         } finally {
-            transfers.close()
+            try {
+                transfers.close()
+            } finally {
+                builtInToolsService.close()
+            }
         }
     }
 }

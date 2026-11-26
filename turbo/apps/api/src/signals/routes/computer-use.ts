@@ -26,6 +26,7 @@ import {
 import { computerUseSessionHostRoutes } from "./computer-use-session-hosts";
 import { createComputerUseResultSubscription } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
+import { remoteDeviceMode$ } from "../services/remote-device-access";
 
 const computerUseHostNotAuthorized = Object.freeze({
   status: 403 as const,
@@ -53,14 +54,22 @@ function conflict(message: string) {
 
 const hostsListInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  const deviceMode =
+    auth.tokenType === "agent" && (await set(remoteDeviceMode$, auth, signal));
   const boundHostId =
-    auth.tokenType === "agent" ? (auth.computerUseHostId ?? null) : undefined;
+    auth.tokenType === "agent" && !deviceMode
+      ? (auth.computerUseHostId ?? null)
+      : undefined;
   if (boundHostId === null) {
     return computerUseHostNotAuthorized;
   }
   const listed = await set(
     listComputerUseHosts$,
-    { orgId: auth.orgId, userId: auth.userId },
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      ...(deviceMode ? { deviceRunId: auth.runId } : {}),
+    },
     signal,
   );
   signal.throwIfAborted();
@@ -75,6 +84,27 @@ const hostsListInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
+const commandTarget$ = command(
+  async (
+    { get, set },
+    requestedHostId: string | undefined,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    if (auth.tokenType !== "agent") {
+      return {};
+    }
+    const deviceMode = await set(remoteDeviceMode$, auth, signal);
+    return {
+      runId: auth.runId,
+      deviceMode,
+      targetHostId: deviceMode
+        ? (requestedHostId ?? auth.computerUseHostId)
+        : auth.computerUseHostId,
+    };
+  },
+);
+
 const commandCreateBody$ = bodyResultOf(computerUseCommandContract.create);
 const commandCreateInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -85,9 +115,8 @@ const commandCreateInner$ = command(
       return bodyResult.response;
     }
 
-    const targetHostId =
-      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-    if (auth.tokenType === "agent" && !targetHostId) {
+    const target = await set(commandTarget$, bodyResult.data.hostId, signal);
+    if (auth.tokenType === "agent" && !target.targetHostId) {
       return computerUseHostNotAuthorized;
     }
 
@@ -96,12 +125,11 @@ const commandCreateInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
+        appStateRunner: bodyResult.data.appStateRunner,
         kind: bodyResult.data.kind,
         payload: bodyResult.data,
         timeoutMs: bodyResult.data.timeoutMs,
-        ...(auth.tokenType === "agent"
-          ? { runId: auth.runId, targetHostId }
-          : {}),
+        ...target,
       },
       signal,
     );
@@ -148,6 +176,7 @@ const commandCreateInner$ = command(
       body: {
         commandId: result.commandId,
         status: result.commandStatus,
+        ...(result.directAppState ? { directAppState: true as const } : {}),
         ...(realtime ? { realtime } : {}),
       },
     };
@@ -166,9 +195,8 @@ const writeCommandCreateInner$ = command(
       return bodyResult.response;
     }
 
-    const targetHostId =
-      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-    if (auth.tokenType === "agent" && !targetHostId) {
+    const target = await set(commandTarget$, bodyResult.data.hostId, signal);
+    if (auth.tokenType === "agent" && !target.targetHostId) {
       return computerUseHostNotAuthorized;
     }
 
@@ -180,9 +208,7 @@ const writeCommandCreateInner$ = command(
         kind: bodyResult.data.kind,
         payload: bodyResult.data,
         timeoutMs: bodyResult.data.timeoutMs,
-        ...(auth.tokenType === "agent"
-          ? { runId: auth.runId, targetHostId }
-          : {}),
+        ...target,
       },
       signal,
     );
@@ -268,9 +294,8 @@ const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
     };
   }
-  const targetHostId =
-    auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-  if (auth.tokenType === "agent" && !targetHostId) {
+  const target = await set(commandTarget$, parsed.data.hostId, signal);
+  if (auth.tokenType === "agent" && !target.targetHostId) {
     return computerUseHostNotAuthorized;
   }
   if (auth.tokenType !== "agent") {
@@ -296,9 +321,7 @@ const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       kind: body.kind,
       payload: body,
       timeoutMs,
-      ...(auth.tokenType === "agent"
-        ? { runId: auth.runId, targetHostId }
-        : {}),
+      ...target,
     },
     signal,
   );
@@ -356,9 +379,12 @@ const commandGetParams$ = pathParamsOf(computerUseCommandContract.get);
 const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const params = get(commandGetParams$);
-  const hostId =
-    auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-  if (auth.tokenType === "agent" && !hostId) {
+  const target = await set(commandTarget$, undefined, signal);
+  if (
+    auth.tokenType === "agent" &&
+    !target.deviceMode &&
+    !target.targetHostId
+  ) {
     return computerUseHostNotAuthorized;
   }
   const result = await set(
@@ -367,7 +393,9 @@ const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       commandId: params.commandId,
-      ...(hostId ? { hostId } : {}),
+      ...(target.deviceMode
+        ? { deviceRunId: target.runId }
+        : { hostId: target.targetHostId }),
     },
     signal,
   );
@@ -386,9 +414,12 @@ const screenshotUrlInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(screenshotUrlParams$);
-    const hostId =
-      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-    if (auth.tokenType === "agent" && !hostId) {
+    const target = await set(commandTarget$, undefined, signal);
+    if (
+      auth.tokenType === "agent" &&
+      !target.deviceMode &&
+      !target.targetHostId
+    ) {
       return computerUseHostNotAuthorized;
     }
     const screenshot = await set(
@@ -397,7 +428,9 @@ const screenshotUrlInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         commandId: params.commandId,
-        ...(hostId ? { hostId } : {}),
+        ...(target.deviceMode
+          ? { deviceRunId: target.runId }
+          : { hostId: target.targetHostId }),
       },
       signal,
     );

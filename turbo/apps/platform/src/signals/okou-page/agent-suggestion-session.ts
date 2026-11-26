@@ -1,39 +1,98 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import { getSuggestionExpiresAt } from "@okouai/api-contracts/validators/suggestions";
 import type {
   Suggestion,
   SuggestionFeedbackRequest,
-  PlatformEvent,
+  ActiveFeedItem,
 } from "@okouai/api-contracts/contracts/feed";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import {
+  captureSuggestionCard,
+  type SuggestionImpression,
+  type SuggestionFeedbackKind as FeedbackKind,
+} from "../../lib/posthog.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
-import { setAblyLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
+import { searchParams$ } from "../route.ts";
+import {
+  detach,
+  onDomEventFn,
+  onRef,
+  Reason,
+  resetSignal,
+  waitForToken,
+} from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createPlatformEventEntry } from "./platform-feed-events.ts";
 import {
+  activeSuggestionImpression$,
   createForYouReadRef,
-  reloadForYouSources$,
+  forYouSummary$,
 } from "./for-you-sources.ts";
 
-type FeedbackKind =
-  | "already_done"
-  | "not_planned"
-  | "dont_nudge"
-  | "less_like_this"
-  | "dismissed";
 type SuggestionMutation =
-  | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
+  | {
+      readonly type: "feedback";
+      readonly request: SuggestionFeedbackRequest;
+      readonly impression: SuggestionImpression;
+      readonly kind: FeedbackKind;
+    }
   | { readonly type: "consume"; readonly optionId: string };
+
+function createSuggestionImpression(item: Suggestion) {
+  // A click can precede the first intersection notification. Both paths use
+  // the same impression for the lifetime of the active card.
+  const show$ = command(({ get, set }) => {
+    const activeImpression$ = get(activeSuggestionImpression$);
+    const previous = get(activeImpression$);
+    if (previous?.suggestion_id === item.id) {
+      return previous;
+    }
+    const impression = {
+      suggestion_id: item.id,
+      impression_id: crypto.randomUUID(),
+    };
+    const ids = item.content.options.map((option) => {
+      return option.id;
+    });
+    set(activeImpression$, impression);
+    captureSuggestionCard({
+      eventName: "suggestion_card_shown",
+      properties: { ...impression, option_ids: ids, option_count: ids.length },
+    });
+    return impression;
+  });
+  const observe$ = command(
+    ({ set }, element: HTMLElement, signal: AbortSignal) => {
+      let intersecting = false;
+      const report = () => {
+        if (intersecting && !document.hidden && !signal.aborted) {
+          set(show$);
+        }
+      };
+      const observer = new IntersectionObserver(([entry]) => {
+        intersecting = entry?.isIntersecting === true;
+        report();
+      });
+      observer.observe(element);
+      document.addEventListener("visibilitychange", report, { signal });
+      signal.addEventListener(
+        "abort",
+        () => {
+          observer.disconnect();
+        },
+        { once: true },
+      );
+    },
+  );
+  return { show$, readOnRef$: createForYouReadRef(item.id, observe$) };
+}
 
 function createSuggestionEntry(item: Suggestion) {
   const hidden$ = state(false);
@@ -81,6 +140,18 @@ function createSuggestionEntry(item: Suggestion) {
         );
         if (result.status === 409) {
           set(unavailable$, true);
+        } else {
+          captureSuggestionCard(
+            {
+              eventName: "suggestion_card_feedback_recorded",
+              properties: {
+                ...mutation.impression,
+                feedback_kind: mutation.kind,
+                operation: kind === "undo" ? "undo" : "apply",
+              },
+            },
+            mutation.request.id,
+          );
         }
       } else {
         // The cached option has already prepared a draft. Another session
@@ -135,7 +206,7 @@ function createSuggestionEntry(item: Suggestion) {
   const sending$ = state<Promise<void> | undefined>(undefined);
   return {
     item,
-    readOnRef$: createForYouReadRef(item.id),
+    ...createSuggestionImpression(item),
     hidden$,
     unavailable$,
     acted$,
@@ -152,6 +223,7 @@ interface SuggestionFeedbackOutcome {
   readonly type: "feedback";
   readonly id: string;
   readonly undoId: string;
+  readonly impression: SuggestionImpression;
   readonly kind: FeedbackKind;
 }
 interface SuggestionSentOutcome {
@@ -170,124 +242,139 @@ interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** The suggestion feature owns both the For you page and its navigation entry. */
-export const suggestionsEnabled$ = computed(async (get) => {
-  return (
-    (await get(featureSwitches$))[FeatureSwitchKey.AgentSuggestion] === true
-  );
-});
-
-const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!(await get(suggestionsEnabled$))) {
-    return false;
-  }
-  return true;
-});
-
-const feedVersion$ = computed((get) => {
-  get(authenticatedSessionKey$);
-  return state(0);
-});
-/**
- * The sidebar preloads the same owner-scoped feed that each review visit uses.
- * Ably refreshes it independently of the visit's cards and in-progress writes.
- */
-const forYouFeed$ = computed(async (get) => {
-  get(get(feedVersion$));
-  if (!(await get(agentSuggestionsEnabled$))) {
-    return [];
-  }
-  const result = await accept(
-    get(apiClient$)(feedContract).list(),
-    [200, 403],
-    undefined,
-    { showErrorToast: false },
-  );
-  return result.status === 200 ? result.body.items : [];
-});
-
-const reloadForYouFeed$ = command(({ get, set }) => {
-  set(get(feedVersion$), (version) => {
-    return version + 1;
-  });
-});
-
-const refreshForYouFeed$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(reloadForYouFeed$);
-    set(reloadForYouSources$);
-    await get(forYouFeed$);
-    signal.throwIfAborted();
-    return false;
-  },
-);
-/**
- * The row owns background refreshes for both the unread summary and detail feed.
- * Subscription and continuity-gap reads also recover changes missed while away.
- */
-export const followForYouFeedOnRef$ = onRef(
-  command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
-    set(
-      setAblyLoop$,
-      {
-        scope: "credential",
-        topic: "agentSuggestionsChanged",
-        loopCommand$: refreshForYouFeed$,
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-  }),
-);
+/** A member can start a custom response while only the summary card is available. */
+export interface SuggestionDirectionSession {
+  readonly entry: AgentSuggestionEntry;
+  readonly impression: SuggestionImpression;
+}
+type ForYouEntry =
+  AgentSuggestionEntry | ReturnType<typeof createPlatformEventEntry>;
 
 function createSuggestionSession() {
+  const direction$ = state<SuggestionDirectionSession | null>(null);
   const settledOrder$ = state<readonly string[]>([]);
-  const feed$ = state<
-    | readonly (Suggestion | PlatformEvent)[]
-    | Promise<readonly (Suggestion | PlatformEvent)[]>
-  >([]);
-  const events$ = computed(async (get) => {
-    return (await get(feed$))
-      .filter((item) => {
-        return item.type === "event";
-      })
-      .map((item) => {
-        return createPlatformEventEntry(item, settledOrder$);
-      });
+  const snapshot$ = state<{
+    readonly source: "preview" | "list";
+    readonly entries: readonly ForYouEntry[];
+  } | null>(null);
+  const request$ = state<Promise<void> | undefined>(undefined);
+  const entries$ = computed((get) => {
+    return (get(snapshot$)?.entries ?? []).filter((entry) => {
+      return "unavailable$" in entry;
+    });
   });
-  // A visit owns its cards, independent of reactive metadata invalidations.
-  // They are read again only when a write finds that a card has left the pool.
-  const entries$ = state<
-    readonly AgentSuggestionEntry[] | Promise<readonly AgentSuggestionEntry[]>
-  >([]);
-  // Handled cards, in the order the member handled them.
-  const settled$ = state<readonly SettledSuggestion[]>([]);
-  const listItems$ = computed(
-    async (get): Promise<readonly AgentSuggestionListItem[]> => {
-      const entries = await get(entries$);
-      const waiting = entries
-        .filter((entry) => {
-          return (
-            !get(entry.hidden$) &&
-            !get(entry.unavailable$) &&
-            getSuggestionExpiresAt(entry.item) > now()
-          );
-        })
-        .map((entry) => {
-          return { entry, outcome: null };
-        });
-      const settled = get(settled$).filter(({ entry }) => {
-        return !get(entry.unavailable$);
+
+  function createEntry(item: ActiveFeedItem): ForYouEntry {
+    return item.type === "suggestion"
+      ? createSuggestionEntry(item)
+      : createPlatformEventEntry(item, settledOrder$);
+  }
+
+  // Reuse entries across the preview and list so drafts, feedback and Undo
+  // stay attached to their cards. A completed empty list supersedes the preview.
+  const applyCards$ = command(
+    ({ get, set }, items: readonly ActiveFeedItem[]) => {
+      const editing = get(direction$)?.entry;
+      const offered = new Map(
+        items.map((item) => {
+          return [item.id, item] as const;
+        }),
+      );
+      const byId = new Map<string, ForYouEntry>();
+      for (const entry of get(snapshot$)?.entries ?? []) {
+        const id = entry.item.id;
+        const current = offered.get(id);
+        if ("unavailable$" in entry) {
+          const keepAction = entry === editing || get(entry.acted$);
+          if (get(entry.unavailable$) || (!current && !keepAction)) {
+            set(entry.unavailable$, true);
+            continue;
+          }
+          // An untouched card uses the authoritative revision. Writes and drafts
+          // keep the exact signed content on which the member acted.
+          if (
+            !keepAction &&
+            current?.type === "suggestion" &&
+            (entry.item.consumeToken !== current.consumeToken ||
+              entry.item.updatedAt !== current.updatedAt)
+          ) {
+            continue;
+          }
+        } else if (current?.type === "event") {
+          // The workflow description may change while dismissal is in flight.
+          byId.set(id, { ...entry, item: current });
+          continue;
+        } else if (!get(entry.dismissed$)) {
+          continue;
+        }
+        byId.set(id, entry);
+      }
+      for (const item of offered.values()) {
+        if (!byId.has(item.id)) {
+          byId.set(item.id, createEntry(item));
+        }
+      }
+      const cards = [...byId.values()].sort((left, right) => {
+        return (
+          right.item.priority - left.item.priority ||
+          left.item.createdAt.localeCompare(right.item.createdAt) ||
+          left.item.id.localeCompare(right.item.id)
+        );
       });
-      return [...waiting, ...settled];
+      set(snapshot$, { source: "list", entries: cards });
     },
   );
+
+  const readList$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const client = get(apiClient$)(feedContract);
+    const items: ActiveFeedItem[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await accept(
+        client.list({ query: { cursor }, fetchOptions: { signal } }),
+        [200, 403],
+        signal,
+        { showErrorToast: false },
+      );
+      signal.throwIfAborted();
+      if (result.status === 403) {
+        return set(applyCards$, []);
+      }
+      items.push(...result.body.items);
+      cursor = result.body.nextCursor;
+    } while (cursor);
+    return set(applyCards$, items);
+  });
+  const resetRead$ = resetSignal();
+  const reload$ = command(({ set }, pageSignal: AbortSignal) => {
+    const load = set(readList$, set(resetRead$, pageSignal));
+    set(request$, load);
+    return load;
+  });
+  const showPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const summary = get(forYouSummary$);
+    const { firstItem } = await waitForToken(summary, signal);
+    signal.throwIfAborted();
+    const target = get(searchParams$).get("suggestion");
+    if (
+      firstItem &&
+      (!target || firstItem.id === target) &&
+      !get(snapshot$) &&
+      get(forYouSummary$) === summary
+    ) {
+      set(snapshot$, { source: "preview", entries: [createEntry(firstItem)] });
+    }
+  });
+  // Handled cards, in the order the member handled them.
+  const settled$ = state<readonly SettledSuggestion[]>([]);
   return {
-    feed$,
-    events$,
+    direction$,
+    showPreview$,
+    reload$,
+    request$,
+    snapshot$,
     settledOrder$,
     entries$,
-    listItems$,
     settled$,
   };
 }
@@ -298,14 +385,38 @@ const session$ = computed((get) => {
   get(visit$);
   return createSuggestionSession();
 });
+export const suggestionDirectionSession$ = computed((get) => {
+  return get(session$).direction$;
+});
+export const suggestionDirectionItemId$ = computed((get) => {
+  return get(get(suggestionDirectionSession$))?.entry.item.id ?? null;
+});
 export const agentSuggestionEntries$ = computed((get) => {
   return get(get(session$).entries$);
 });
-export const agentSuggestionListItems$ = computed((get) => {
-  return get(get(session$).listItems$);
-});
-export const platformEventEntries$ = computed((get) => {
-  return get(get(session$).events$);
+export const agentSuggestionListItems$ = computed(
+  (get): readonly AgentSuggestionListItem[] => {
+    const session = get(session$);
+    const entries = get(session.entries$);
+    const waiting = entries
+      .filter((entry) => {
+        return (
+          !get(entry.hidden$) &&
+          !get(entry.unavailable$) &&
+          getSuggestionExpiresAt(entry.item) > now()
+        );
+      })
+      .map((entry) => {
+        return { entry, outcome: null };
+      });
+    const settled = get(session.settled$).filter(({ entry }) => {
+      return !get(entry.unavailable$);
+    });
+    return [...waiting, ...settled];
+  },
+);
+export const forYouVisitSnapshot$ = computed((get) => {
+  return get(get(session$).snapshot$);
 });
 export const settledFeedOrder$ = computed((get) => {
   return get(get(session$).settledOrder$);
@@ -317,40 +428,28 @@ export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
   }),
 );
 
-const loadAgentSuggestionEntries$ = command(
-  async ({ get }, signal: AbortSignal) => {
-    const items = await get(get(session$).feed$);
-    signal.throwIfAborted();
-    return items
-      .filter((item) => {
-        return item.type === "suggestion";
-      })
-      .map(createSuggestionEntry);
-  },
-);
-/** Each visit takes a snapshot of the feed already followed by the sidebar. */
+/** The current request can fail while a previous complete list remains usable. */
+export const forYouListRequest$ = computed((get) => {
+  return get(get(session$).request$);
+});
+
 export const enterSuggestionSession$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(visit$, get(visit$) + 1);
-    set(get(session$).feed$, get(forYouFeed$));
-    const entries = set(loadAgentSuggestionEntries$, signal);
-    set(get(session$).entries$, entries);
-    await entries;
+    const session = get(session$);
+    detach(set(session.showPreview$, signal), Reason.Daemon, "For you preview");
+    return set(session.reload$, signal);
   },
 );
 
-/** A failed shared read needs invalidation before opening a new snapshot. */
 export const reloadSuggestionSession$ = command(
-  ({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(reloadForYouFeed$);
-    return set(enterSuggestionSession$, signal);
+  ({ get, set }, signal: AbortSignal) => {
+    return set(get(session$).reload$, signal);
   },
 );
 
 const SUGGESTION_UNAVAILABLE_TOAST_ID = "agent-suggestion-unavailable";
-const resetSuggestionRefresh$ = resetSignal();
 /**
  * A card that has left the pool leaves the visit with a short notice rather
  * than the API's conflict, and the visit reads the pool again so the cards
@@ -374,45 +473,7 @@ const refreshAfterUnavailableSuggestion$ = command(
       }),
       { id: SUGGESTION_UNAVAILABLE_TOAST_ID },
     );
-    // The latest read replaces an earlier one, which could drop its cards.
-    const signal = set(resetSuggestionRefresh$, pageSignal);
-    const session = get(session$);
-    set(reloadForYouFeed$);
-    const offered = (await get(forYouFeed$)).filter((item) => {
-      return item.type === "suggestion";
-    });
-    const loaded = await get(session.entries$);
-    signal.throwIfAborted();
-    const offeredIds = new Set(
-      offered.map((item) => {
-        return item.id;
-      }),
-    );
-    const kept = loaded.filter((candidate) => {
-      return (
-        !get(candidate.unavailable$) &&
-        (offeredIds.has(candidate.item.id) || get(candidate.acted$))
-      );
-    });
-    // The open review retains its original entries and must skip removed cards.
-    for (const candidate of loaded) {
-      if (!kept.includes(candidate)) {
-        set(candidate.unavailable$, true);
-      }
-    }
-    const keptIds = new Set(
-      kept.map((candidate) => {
-        return candidate.item.id;
-      }),
-    );
-    set(session.entries$, [
-      ...kept,
-      ...offered
-        .filter((item) => {
-          return !keptIds.has(item.id);
-        })
-        .map(createSuggestionEntry),
-    ]);
+    await set(reloadSuggestionSession$, pageSignal);
   },
 );
 
@@ -438,6 +499,10 @@ export const settleAgentSuggestion$ = command(
       return;
     }
     const session = get(session$);
+    const impression$ = get(activeSuggestionImpression$);
+    if (get(impression$)?.suggestion_id === entry.item.id) {
+      set(impression$, null);
+    }
     set(entry.hidden$, true);
     set(session.settledOrder$, (ids) => {
       return [
@@ -523,7 +588,7 @@ const submitAgentSuggestionFeedback$ = command(
     pageSignal: AbortSignal,
   ) => {
     const session = get(session$);
-    const entries = await get(session.entries$);
+    const entries = get(session.entries$);
     pageSignal.throwIfAborted();
     const entry = entries.find((candidate) => {
       return candidate.item.id === suggestionId;
@@ -531,6 +596,7 @@ const submitAgentSuggestionFeedback$ = command(
     if (!entry || get(entry.hidden$)) {
       return;
     }
+    const impression = set(entry.show$);
     const id = crypto.randomUUID();
     set(
       settleAgentSuggestion$,
@@ -539,6 +605,7 @@ const submitAgentSuggestionFeedback$ = command(
         type: "feedback",
         id,
         undoId: crypto.randomUUID(),
+        impression,
         kind,
       },
       pageSignal,
@@ -547,6 +614,8 @@ const submitAgentSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
+        impression,
+        kind,
         request: {
           id,
           kind: kind === "dont_nudge" ? "not_planned" : kind,
@@ -577,6 +646,8 @@ const undoSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
+        impression: feedback.impression,
+        kind: feedback.kind,
         request: {
           id: feedback.undoId,
           kind: "undo",
@@ -598,7 +669,7 @@ export const submitSuggestionFeedbackWithUndo$ = command(
     signal: AbortSignal,
   ) => {
     const session = get(session$);
-    const entry = (await get(session.entries$)).find((candidate) => {
+    const entry = get(session.entries$).find((candidate) => {
       return candidate.item.id === suggestionId;
     });
     signal.throwIfAborted();

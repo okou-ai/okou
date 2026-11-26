@@ -9,6 +9,7 @@ import { setupRunModelRealtime$ } from "./external/run-model-realtime.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
+import { subscribeForYouSources$ } from "./okou-page/for-you-sources.ts";
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
@@ -74,6 +75,7 @@ const initializeAuthenticatedRealtime$ = command(
     set(setSharedWorkerRealtimeBridge$, bridge);
     await set(setupRealtime$, signal);
     signal.throwIfAborted();
+    set(subscribeForYouSources$, signal);
     return bridge;
   },
 );

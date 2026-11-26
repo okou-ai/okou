@@ -6,12 +6,10 @@ import Foundation
 @MainActor
 final class OnboardingResources {
   enum Resource: CaseIterable, Hashable {
-    case availability, status, draft, sources, preferences, tools, recommendation
+    case status, draft, sources, recommendation
   }
-  let store = CCState.Store()
+  let store: CCState.Store
   let service: OnboardingService
-  private let catalog: OnboardingToolCatalog
-  private let locale: String
   private let revisions = Dictionary(
     uniqueKeysWithValues: Resource.allCases.map { ($0, CCState.State(0)) })
   private let alive = CCState.State(true)
@@ -20,22 +18,17 @@ final class OnboardingResources {
   private let didFail: @MainActor (Error) -> Void
 
   init(
-    client: APIClient, catalogURL: URL, locale: String,
+    client: APIClient, graph: CCState.Store,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
+    store = graph
     service = OnboardingService(client: client)
-    catalog = OnboardingToolCatalog(url: catalogURL)
-    self.locale = locale
     self.didFail = didFail
   }
 
-  lazy var availability = read(.availability) { [service] in try await service.nativeAvailability()
-  }
   lazy var status = read(.status) { [service] in try await service.status() }
   lazy var draft = read(.draft) { [service] in try await service.draft() }
   lazy var sources = read(.sources) { [service] in try await service.sources() }
-  lazy var preferences = read(.preferences) { [service] in try await service.toolPreferences() }
-  lazy var tools = read(.tools) { [catalog, locale] in try await catalog.tools(locale: locale) }
   lazy var recommendation = makeRecommendation()
 
   private func makeRecommendation() -> Computed<Task<OnboardingRecommendation?, Error>> {

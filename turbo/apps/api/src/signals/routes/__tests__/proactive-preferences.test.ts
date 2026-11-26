@@ -1,18 +1,16 @@
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { describe, expect, it } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { feedRoutes } from "../feed";
-import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { createBddApi } from "./helpers/api-bdd";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
@@ -23,7 +21,6 @@ const routes = Object.freeze([
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
   ...feedRoutes,
-  ...cronOfficialWorkflowCatalogRoutes,
 ]);
 const app = setupApp({ context, routes });
 
@@ -47,7 +44,7 @@ function preferenceClient(
   };
 }
 
-async function preferenceRun(suggestions = true) {
+async function preferenceRun() {
   const owned = await publicChatActor(context);
   return await owned.run(async () => {
     const { actor } = owned;
@@ -56,24 +53,18 @@ async function preferenceRun(suggestions = true) {
       throw new Error("Expected a workspace member");
     }
     await bdd.completeOnboarding(actor, { timezone: "UTC" });
-    owned.ownsFeatureSwitches();
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: suggestions,
-      },
-    );
     const sent = await owned.sendChatRun(actor, {
       prompt: "Manage my Proactive settings",
     });
-    const { execution } = await owned.runExecution(sent.runId);
+    const { execution, sandboxHeaders } = await owned.runExecution(sent.runId);
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected an execution token");
     }
     return {
       owned,
+      runId: sent.runId,
+      sandboxHeaders,
       actor: { ...actor, orgId: actor.orgId },
       headers: { authorization: `Bearer ${token}` },
     };
@@ -81,17 +72,10 @@ async function preferenceRun(suggestions = true) {
 }
 
 describe("Proactive CLI preferences", () => {
-  it("publishes the Official catalog and lets the primary Run control preferences and delivery", async () => {
-    const isolatedApp = await setupApp({ context, routes, isolatePg: true });
+  it("lets the primary Run control built-in preferences and delivery", async () => {
     const { owned, actor, headers } = await preferenceRun();
     installWorkflowVolumeS3Fixture(context);
     await owned.run(async () => {
-      await accept(
-        isolatedApp(cronOfficialWorkflowCatalogContract).sync({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
       for (const contract of [
         morningBriefPreferenceContract,
         proactiveSuggestionsContract,
@@ -157,48 +141,18 @@ describe("Proactive CLI preferences", () => {
           expect(read.body).toStrictEqual(saved.body);
         }
       }
-      // A live rollout revocation also blocks credentials issued while enabled.
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.AgentSuggestion]: false,
-      });
-      for (const contract of [
-        morningBriefPreferenceContract,
-        proactiveSuggestionsContract,
-      ]) {
-        const client = preferenceClient(contract);
-        await accept(client.get({ headers }), [403]);
-        await accept(
-          client.update({ headers, body: { enabled: false } }),
-          [403],
-        );
-      }
-      await accept(
-        app(proactiveSuggestionsContract).update({
-          headers,
-          body: { enabled: false },
-        }),
-        [403],
-      );
-      await accept(feed.sources({ headers }), [403]);
-      await accept(
-        feed.updateSources({ headers, body: { offers: false } }),
-        [403],
-      );
-      // The existing web preference remains usable outside the new CLI gate.
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const sessionMorningBrief = await accept(
-        app(morningBriefPreferenceContract).get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(sessionMorningBrief.body.enabled).toBeTruthy();
     });
   });
 
-  it("rejects Run credentials without suggestion capabilities", async () => {
-    const { owned, headers } = await preferenceRun(false);
+  it("rejects preference access from a finished personal Run", async () => {
+    const { owned, runId, headers, sandboxHeaders } = await preferenceRun();
     await owned.run(async () => {
+      await createChatEventsFixture(context).failChatRun(
+        runId,
+        sandboxHeaders,
+        "Finish the preference Run",
+      );
+      await flushWaitUntilForTest();
       for (const contract of [
         morningBriefPreferenceContract,
         proactiveSuggestionsContract,

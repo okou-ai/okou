@@ -1,10 +1,22 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import { tokenPublicationFields } from "./builtin-token-connection-metadata";
+import { connectorConnectionExternalConflict } from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
-import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  sql,
+  SQL,
+  getTableColumns,
+} from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -73,6 +85,7 @@ function automaticConnectionMetadata(input: AutomaticConnectionPublication) {
       input.binding === null ? ("none" as const) : ("oauth" as const),
     storageVersion: input.storageVersion,
     externalId: input.identity?.id ?? null,
+    externalIssuer: input.binding?.issuer ?? "",
     externalUsername: input.identity?.username ?? null,
     externalEmail: input.identity?.email ?? null,
     oauthScopes: null,
@@ -104,19 +117,42 @@ function automaticSiblingAccountInsert(
 ): SQL {
   const values = automaticConnectionValues(input);
   // Preserve database defaults with a bound INSERT column subset.
+  const identity = input.identity?.id;
+  const conflictTarget = connectorConnectionExternalConflict("builtin");
+  const conflict = identity
+    ? sql`ON CONFLICT (${sql.join(
+        conflictTarget.target.map((column) => {
+          return column instanceof SQL
+            ? sql`(${column})`
+            : sql.identifier(column.name);
+        }),
+        sql`, `,
+      )}) WHERE ${conflictTarget.where} DO UPDATE SET ${new PgDialect().buildUpdateSet(
+        connectors,
+        Object.fromEntries(
+          tokenPublicationFields(
+            getTableColumns(connectors),
+            automaticConnectionMetadata(input),
+          ).map(({ key, value }) => {
+            return [key, value];
+          }),
+        ),
+      )}, updated_at = clock_timestamp()`
+    : sql.empty();
   return sql`INSERT INTO ${connectors}
         (org_id, user_id, connector_slug, custom_connector_id, display_name,
-         auth_method, automatic_auth_type, storage_version, external_id,
+         auth_method, automatic_auth_type, storage_version, external_id, external_issuer,
          external_username, external_email, oauth_scopes, oauth_granted_scopes,
          token_expires_at, needs_reconnect, reconnect_reason, is_default)
         SELECT ${values.orgId}, ${values.userId}, ${values.connectorSlug}, NULL,
           ${values.displayName}, ${values.authMethod}, ${values.automaticAuthType},
-          ${values.storageVersion}, ${values.externalId},
+          ${values.storageVersion}, ${values.externalId}, ${values.externalIssuer},
           ${values.externalUsername}, ${values.externalEmail}, NULL,
           ${values.oauthGrantedScopes},
           ${sql.param(values.tokenExpiresAt, connectors.tokenExpiresAt)},
           false, NULL, false
         WHERE NOT EXISTS (SELECT 1 FROM ${preferred})
+        ${conflict}
         RETURNING id`;
 }
 
@@ -140,6 +176,8 @@ function automaticCredentialInsert(
           'connector', ${connection}.id, ${input.orgId}, ${input.userId}
         FROM ${connection} CROSS JOIN (${tokens}) AS token(name, encrypted_value)
         WHERE ${afterCleanup}
+        ON CONFLICT (connector_id, name) WHERE connector_id IS NOT NULL
+          DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value, updated_at = clock_timestamp()
         RETURNING id`;
 }
 
@@ -165,6 +203,14 @@ function automaticBindingInsert(
           FROM ${connection}
           WHERE ${afterTokens}
             AND ${afterCleanup}
+          ON CONFLICT (connector_account_id) DO UPDATE SET
+            auth_method = EXCLUDED.auth_method, storage_version = EXCLUDED.storage_version,
+            endpoint = EXCLUDED.endpoint, issuer = EXCLUDED.issuer, resource = EXCLUDED.resource,
+            resource_metadata_url = EXCLUDED.resource_metadata_url,
+            token_endpoint = EXCLUDED.token_endpoint, client_id = EXCLUDED.client_id,
+            token_endpoint_auth_method = EXCLUDED.token_endpoint_auth_method,
+            registration_method = EXCLUDED.registration_method,
+            dcr_registration_id = EXCLUDED.dcr_registration_id
           RETURNING connector_account_id`;
 }
 

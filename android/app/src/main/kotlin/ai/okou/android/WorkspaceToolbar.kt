@@ -95,7 +95,15 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
+private val searchFieldEdge = 12.dp
+private val searchIconSize = 20.dp
+private val searchIconGap = 8.dp
+
 @Composable internal fun workspaceSearchTextStyle() = MaterialTheme.typography.bodyLarge
+
+@Composable
+internal fun Modifier.workspaceSearchFocusOutline(shape: Shape): Modifier =
+    updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground, keyboardOnly = true)
 
 @Composable
 internal fun workspaceSearchControlHeight(): Dp {
@@ -145,34 +153,35 @@ internal fun WorkspaceSearchField(
     focused: Boolean? = null,
     onClick: (() -> Unit)? = null,
     hasTrailingAction: Boolean = false,
+    iconOnly: Boolean = false,
     shape: Shape = CircleShape,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val outline =
-        when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
-            false -> Modifier.border(1.dp, colors.outline, shape)
-            null -> Modifier
-        }
+    // SearchBar has no resting border. Its focus outline uses the theme primary.
+    val outline = if (focused == true) Modifier.border(2.dp, colors.primary, shape) else Modifier
     Row(
         modifier
             .heightIn(min = workspaceSearchControlHeight())
             .clip(shape)
-            .background(colors.surfaceVariant)
+            .background(colors.surfaceContainerHigh)
             .then(outline)
             .then(
                 if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
-                else Modifier
+                else Modifier,
             )
-            .padding(start = 12.dp, end = if (hasTrailingAction) 0.dp else 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(
+                start = if (iconOnly) 0.dp else searchFieldEdge,
+                end = if (iconOnly || hasTrailingAction) 0.dp else searchFieldEdge,
+            ),
+        horizontalArrangement =
+            if (iconOnly) Arrangement.Center else Arrangement.spacedBy(searchIconGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             painterResource(R.drawable.ic_search),
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(searchIconSize),
             tint = colors.onSurfaceVariant,
         )
         content()
@@ -198,28 +207,40 @@ internal fun WorkspaceListToolbar(
                 if (avatar == null) {
                     Box(
                         Modifier.matchParentSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                     )
                 } else avatar()
             }
         },
         field = { modifier ->
-            WorkspaceSearchField(
-                modifier
-                    .focusRequester(searchFocus)
-                    .onFocusChanged { onSearchFocusChanged(it.isFocused) }
-                    .testTag("workspace_search_entry")
-                    .semantics { if (openSearch != null) contentDescription = label },
-                onClick = openSearch,
-            ) {
-                Text(
-                    label,
-                    Modifier.padding(vertical = 8.dp).clearAndSetSemantics {},
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = workspaceSearchTextStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            BoxWithConstraints(modifier) {
+                val style = workspaceSearchTextStyle()
+                val em = with(LocalDensity.current) { style.fontSize.toDp() }
+                val textWidth = maxWidth - searchFieldEdge * 2 - searchIconSize - searchIconGap
+                val iconOnly = textWidth < em * 2
+                WorkspaceSearchField(
+                    Modifier.fillMaxWidth()
+                        .focusRequester(searchFocus)
+                        .focusProperties { canFocus = openSearch != null }
+                        .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                        .workspaceSearchFocusOutline(CircleShape)
+                        .testTag("workspace_search_entry")
+                        .semantics { if (openSearch != null) contentDescription = label },
+                    onClick = openSearch,
+                    iconOnly = iconOnly,
+                ) {
+                    if (!iconOnly) {
+                        Text(
+                            if (textWidth < em * 5) stringResource(R.string.chat_search_short)
+                            else label,
+                            Modifier.padding(vertical = 8.dp).clearAndSetSemantics {},
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         },
         actions = actions,
@@ -272,7 +293,7 @@ internal fun WorkspaceToolEntries(
             )
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -287,7 +308,7 @@ private fun WorkspaceToolEntry(
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (onClick == null) 0.4f else 1f)
     val interaction =
         if (onClick != null) {
-            Modifier.updateFocusOutline(ChatListRowShape, LocalActivityStatusColor.current)
+            Modifier.updateFocusOutline(ChatListRowShape, MaterialTheme.colorScheme.onSurface)
                 .clickable(role = Role.Button, onClick = onClick)
                 .clearAndSetSemantics { contentDescription = title }
         } else {
@@ -352,19 +373,23 @@ internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     list: ChatListUiState,
     selectFilter: ((ChatListFilter) -> Unit)?,
-    markAllRead: () -> Unit,
+    markAllRead: (() -> Unit)?,
     update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
+    openProjectCreation: ((restoreFocus: Boolean) -> Unit)?,
 ) {
     val hasUpdate = update != null
     var menu by remember(showFilter, hasUpdate) { mutableStateOf<WorkspaceMenuPage?>(null) }
     val filterFocus = remember { FocusRequester() }
-    var restoreMenuFocus by remember(showFilter, hasUpdate) { mutableStateOf(false) }
+    var restoreMenuFocus by
+        remember(showFilter, hasUpdate) { mutableStateOf<FocusRequester?>(null) }
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
-        Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
+        Modifier.size(48.dp).focusRequester(settingsFocus).onFocusChanged {
+            anchorFocused = it.isFocused
+        }
     val colors = MaterialTheme.colorScheme
     val currentFilter = stringResource(list.filter.label())
     val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
@@ -374,13 +399,14 @@ internal fun WorkspaceToolbarActions(
     val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurface
 
     fun closeMenu() {
-        restoreMenuFocus = true
+        restoreMenuFocus =
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) settingsFocus else filterFocus
         menu = null
     }
     LaunchedEffect(menu, showFilter, hasUpdate) {
-        if (menu == null && restoreMenuFocus) {
-            restoreMenuFocus = false
-            (if (hasUpdate) settingsFocus else filterFocus).requestFocus()
+        if (menu == null) {
+            restoreMenuFocus?.requestFocus()
+            restoreMenuFocus = null
         }
     }
 
@@ -389,7 +415,7 @@ internal fun WorkspaceToolbarActions(
             menu?.let { page ->
                 val items = buildList {
                     if (page == WorkspaceMenuPage.Overflow) {
-                        if (showFilter) {
+                        if (hasUpdate && showFilter) {
                             add(
                                 WorkspaceMenuItem(
                                     stringResource(R.string.chat_filter),
@@ -397,7 +423,19 @@ internal fun WorkspaceToolbarActions(
                                     enabled = selectFilter != null,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
-                                }
+                                },
+                            )
+                        }
+                        if (showFilter) {
+                            add(
+                                WorkspaceMenuItem(
+                                    stringResource(R.string.chat_project_create),
+                                    R.drawable.ic_create_new_folder,
+                                    enabled = openProjectCreation != null,
+                                ) {
+                                    menu = null
+                                    openProjectCreation?.invoke(restoreSettingsAnchor)
+                                },
                             )
                         }
                         add(
@@ -408,18 +446,20 @@ internal fun WorkspaceToolbarActions(
                             ) {
                                 menu = null
                                 openSettings?.invoke(restoreSettingsAnchor)
-                            }
+                            },
                         )
                     } else {
                         add(
                             WorkspaceMenuItem(
                                 stringResource(R.string.chat_mark_all_read),
                                 R.drawable.ic_done_all,
-                                enabled = remember(list) { list.markAllReadTargets().isNotEmpty() },
+                                enabled =
+                                    markAllRead != null &&
+                                        remember(list) { list.markAllReadTargets().isNotEmpty() },
                             ) {
                                 closeMenu()
-                                markAllRead()
-                            }
+                                markAllRead?.invoke()
+                            },
                         )
                         for (choice in ChatListFilter.entries) {
                             add(
@@ -429,7 +469,7 @@ internal fun WorkspaceToolbarActions(
                                 ) {
                                     selectFilter?.invoke(choice)
                                     closeMenu()
-                                }
+                                },
                             )
                         }
                     }
@@ -455,34 +495,30 @@ internal fun WorkspaceToolbarActions(
                     enabled = selectFilter != null,
                     colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
                     modifier =
-                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
-                            stateDescription = currentFilter
-                        },
+                        Modifier.size(48.dp)
+                            .focusRequester(filterFocus)
+                            .then(filterTreatment)
+                            .semantics { stateDescription = currentFilter },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),
                         stringResource(R.string.chat_filter),
                     )
                 }
-                menuContent()
+                if (menu == WorkspaceMenuPage.Filter) menuContent()
             }
-        }
-        IconButton(
-            modifier = settingsAnchor,
-            onClick = { openSettings?.invoke(anchorFocused) },
-            enabled = openSettings != null,
-            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
-        ) {
-            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     } else {
         UpdateToolbarButton(update)
+    }
+    if (showFilter || hasUpdate) {
         Box {
             IconButton(
                 modifier =
-                    settingsAnchor.then(filterTreatment).semantics {
-                        if (showFilter) stateDescription = currentFilter
+                    settingsAnchor.then(if (hasUpdate) filterTreatment else Modifier).semantics {
+                        if (hasUpdate && showFilter) stateDescription = currentFilter
                     },
+                enabled = hasUpdate || openSettings != null || openProjectCreation != null,
                 onClick = {
                     restoreSettingsAnchor = anchorFocused
                     menu = WorkspaceMenuPage.Overflow
@@ -491,10 +527,19 @@ internal fun WorkspaceToolbarActions(
                 Icon(
                     painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
-                    tint = filterTint,
+                    tint = if (hasUpdate) filterTint else colors.onSurface,
                 )
             }
-            menuContent()
+            if (hasUpdate || menu == WorkspaceMenuPage.Overflow) menuContent()
+        }
+    } else {
+        IconButton(
+            modifier = settingsAnchor,
+            onClick = { openSettings?.invoke(anchorFocused) },
+            enabled = openSettings != null,
+            colors = IconButtonDefaults.iconButtonColors(contentColor = colors.onSurface),
+        ) {
+            Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
         }
     }
 }
@@ -544,7 +589,7 @@ internal fun WorkspaceMenu(
             shape = RoundedCornerShape(16.dp),
             color = colors.surface,
             shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, colors.outline),
+            border = BorderStroke(1.dp, colors.outlineVariant),
         ) {
             key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
@@ -613,7 +658,7 @@ private fun WorkspaceMenuItems(
             .focusRequester(popupFocus)
             .focusTarget()
             .verticalScroll(rememberScrollState())
-            .padding(7.dp)
+            .padding(7.dp),
     ) {
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
@@ -672,7 +717,7 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(shape)
-            .then(if (focused) Modifier.border(2.dp, colors.onSurfaceVariant, shape) else Modifier)
+            .then(if (focused) Modifier.border(2.dp, colors.onSurface, shape) else Modifier)
             .then(gesture)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),

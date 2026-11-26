@@ -3,6 +3,8 @@ package ai.okou.android.settings
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.DefaultModelApiFixture
 import ai.okou.android.OkouTheme
+import ai.okou.android.api.generated.UpdateDefaultModelPreference
+import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,7 +45,7 @@ class DefaultModelSettingTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
-    fun offlinePickerRecoversAndKeepsCachedChoicesEditable() {
+    fun pickerKeepsCachedChoicesEditableDuringCatalogRefresh() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         instrumentation.setInTouchMode(false)
@@ -51,12 +54,25 @@ class DefaultModelSettingTest {
                 val fixture = DefaultModelApiFixture(api)
                 val file = temporary.newFolder().resolve("default-model.preferences_pb")
                 val store = DefaultModelStore(PreferenceDataStoreFactory.create { file }, scope)
+                val initialCatalog = CompletableDeferred<Unit>()
+                val pendingSave = CompletableDeferred<Unit>()
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoveryCatalog() =
+                            initialCatalog.await().let { api.service.recoveryCatalog() }
+
+                        override suspend fun updateDefaultModelPreference(
+                            update: UpdateDefaultModelPreference,
+                        ) =
+                            pendingSave.await().let {
+                                api.service.updateDefaultModelPreference(update)
+                            }
+                    }
                 val model =
-                    DefaultModelSettings(scope, api.service, api.identity, store, { true }) {
+                    DefaultModelSettings(scope, service, api.identity, store, { true }) {
                         throw it
                     }
                 compose.runOnIdle {
-                    model.online(false)
                     model.foreground(true)
                     model.showSettings(SettingsDestination.Overview)
                 }
@@ -69,12 +85,9 @@ class DefaultModelSettingTest {
 
                 val row = compose.onNodeWithText("Default model")
                 row.assertIsDisplayed().assertHasNoClickAction()
-                compose
-                    .onNodeWithText("Content will load when you’re back online.")
-                    .assertIsDisplayed()
                 compose.waitUntil(10_000) { model.state.value.record != null }
                 compose.onNodeWithText("Auto").assertIsDisplayed()
-                compose.runOnIdle { model.online(true) }
+                initialCatalog.complete(Unit)
                 compose.waitUntil(10_000) {
                     compose.runOnIdle { model.state.value.options != null }
                 }
@@ -84,13 +97,13 @@ class DefaultModelSettingTest {
                 val claude = compose.onNode(hasText("Claude Sonnet 5") and isSelectable())
                 gpt.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
                 assertTrue(
-                    gpt.getUnclippedBoundsInRoot().top < claude.getUnclippedBoundsInRoot().top
+                    gpt.getUnclippedBoundsInRoot().top < claude.getUnclippedBoundsInRoot().top,
                 )
 
                 compose.runOnIdle {
-                    model.online(false)
+                    model.foreground(false)
                     fixture.gptSortOrder = 3
-                    model.online(true)
+                    model.foreground(true)
                 }
                 compose.waitUntil(10_000) {
                     compose.runOnIdle {
@@ -98,16 +111,21 @@ class DefaultModelSettingTest {
                     }
                 }
                 assertTrue(
-                    claude.getUnclippedBoundsInRoot().top < gpt.getUnclippedBoundsInRoot().top
+                    claude.getUnclippedBoundsInRoot().top < gpt.getUnclippedBoundsInRoot().top,
                 )
                 gpt.assertIsFocused()
 
                 val auto = compose.onNode(hasText("Auto") and isSelectable())
                 val listTop = auto.getUnclippedBoundsInRoot().top
-                compose.runOnIdle { model.online(false) }
+                compose.runOnIdle { model.foreground(false) }
                 assertEquals(listTop, auto.getUnclippedBoundsInRoot().top)
                 claude.assertIsEnabled().performClick().assertIsSelected()
                 assertTrue(fixture.writes.isEmpty())
+                compose.runOnIdle { pendingSave.complete(Unit) }
+                compose.waitUntil(10_000) {
+                    compose.runOnIdle { model.state.value.pending == null }
+                }
+                assertEquals(1, fixture.writes.size)
             }
         } finally {
             scope.cancel()

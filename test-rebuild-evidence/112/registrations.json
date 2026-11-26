@@ -1,0 +1,66 @@
+{
+  "removed": [
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts",
+      "title": "A microphone stream reaching 73 seconds uploads windows before the member stops recording",
+      "reason": "The incremental one-minute recording reaches the same 73 seconds, captures the same final live window and renders the final transcript after stopping.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/voice-draft-wav-windows.test.ts — Continuing a live one-minute recording sends the next full WAV before Use recording"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx",
+      "title": "chat-scroll-007 restores the reader at offset 275 after a reply arrives behind Automations",
+      "reason": "Both cover returning to history after a reply arrives behind Automations. The longer history keeps the same reading anchor and then opens the delivered reply. The absolute fixture offset added no separate consequence.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx — A completed turn delivered behind Automations stays accessible after the reader returns to history"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/feishu-connect-flow.test.tsx",
+      "title": "feishu-connect-flow-007 the logged-out callback shows its provider until the bot destination arrives",
+      "reason": "Both start signed out, preserve the OAuth callback parameters and open the bot supplied by the response. The retained case also checks the provider icon. It now exercises the escaped plus in state.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/connector-provider-pages.test.tsx — The signed-out Feishu callback renders its catalog mark before opening the connected bot"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+      "title": "The replacement viewer accepts typing with the expired handshake withheld",
+      "reason": "After the hidden handshake expires, the original socket already has zero active connections. The retained row reveals the page, releases the obsolete hello, then types into the recovered replacement. The withheld row reaches the same usable replacement after the old connection has closed; neither asserts replacement input before releasing a still-live hello.",
+      "representative": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx — The replacement viewer accepts typing with the expired handshake released"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+      "title": "Replacement page receives typing when the pending descriptor expires and its original reply is withhold",
+      "reason": "The retained visible-descriptor row types into the replacement while the HTTP descriptor response is still held, delivers and observes the old response, then types again on the replacement. This covers both sides of late descriptor delivery. Hidden-descriptor recovery remains open at browser-response-deadlines-006.",
+      "representative": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx — Replacement page receives typing when the pending descriptor expires and its original reply is deliver"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx",
+      "title": "The Image composer imports a reusable WEBP after receiving a PDF through the clipboard",
+      "reason": "Pasting into the ordinary chat editor is a separate control. The frozen registration tries both files in the Image style picker.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx — The Image composer imports a reusable WEBP after receiving a PDF through the file picker"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx",
+      "title": "Discord status starts at false and returns as false when refresh starts before leaving",
+      "reason": "No change of membership or account state. Retain the two on-return cases for the original actions and the before-departure arm where status actually changes.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx — Discord status starts at false and returns as true when refresh starts before leaving"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx",
+      "title": "Discord status starts at true and returns as true when refresh starts before leaving",
+      "reason": "No change of membership or account state. Retain the two on-return cases for the original actions and the before-departure arm where status actually changes.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx — Discord status starts at false and returns as true when refresh starts before leaving"
+    },
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts",
+      "title": "The workspace reports an unavailable private chat cache without publishing its diagnostic",
+      "reason": "Both induce a private InvalidStateError on the member archive and assert a numeric failure duration with no diagnostic or identity. The conversation also completes route.ready and exposes its actual composer. The success and token/cursor/thread privacy rows remain registered.",
+      "representative": "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts — Opening a conversation with a failing local archive reports only the database operation"
+    }
+  ],
+  "retitled": [
+    {
+      "path": "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx",
+      "before": "The pending QuickTime preview uses its conversation when the member opens the recording",
+      "after": "The pending conversation plays its inline QuickTime recording before its artifact catalog exists",
+      "change": "Retained inline playback and the absent error against a 404 catalog. Removed the additional click into a different artifact viewer."
+    }
+  ]
+}

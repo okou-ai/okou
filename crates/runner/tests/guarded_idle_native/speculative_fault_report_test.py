@@ -32,10 +32,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
             for event, offset in zip(terminal, (0,1,40,41,70,100)):
                 event.update(case=case, sandbox_id=old, backing_generation=backing,
                              monotonic_ns=at(offset), unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
             reuse = "thread:native-guarded-"+history
@@ -94,7 +91,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
                 ))
 
     def event(self, phase):
-        return next(e for e in self.witnesses if e["phase"] == phase)
+        return report_test.witness_for_phase(self.witnesses, phase)
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,
@@ -107,11 +104,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
     def refused(self, changes):
         original = copy.deepcopy(self.witnesses)
         try:
-            for index, change in enumerate(changes):
-                with self.subTest(change=index):
-                    self.witnesses = copy.deepcopy(original)
-                    change()
-                    with self.assertRaises(ValueError): self.validate()
+            report_test.assert_indexed_witness_refusals(self, original, changes)
         finally:
             self.witnesses = original
         self.validate()

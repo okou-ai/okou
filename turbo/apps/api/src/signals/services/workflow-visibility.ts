@@ -1,15 +1,12 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, or, type SQLWrapper } from "drizzle-orm";
+import { and, eq, or, type SQLWrapper } from "drizzle-orm";
 
 /** Scope the surrounding query to the caller's workspace. */
 export function visibleWorkflowCondition(userId: string | SQLWrapper) {
-  return and(
-    or(
-      isNull(workflows.officialDefinitionName),
-      eq(workflows.officialInstallationState, "installed"),
-    ),
-    or(eq(workflows.visibility, "public"), eq(workflows.ownerUserId, userId)),
+  return or(
+    eq(workflows.visibility, "public"),
+    eq(workflows.ownerUserId, userId),
   );
 }
 

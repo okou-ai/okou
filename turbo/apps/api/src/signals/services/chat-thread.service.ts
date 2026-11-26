@@ -1,4 +1,7 @@
-import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  readStoredDraftMessage,
+  type SuggestionPreset,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -231,33 +234,49 @@ function ownedChatThread(
 }
 
 export function chatThreadDraft(args: {
+  readonly legacyMemberDraft?: boolean;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
-}): Computed<Promise<ChatThreadDraft>> {
-  return computed(async (get): Promise<ChatThreadDraft> => {
+}): Computed<Promise<ChatThreadDraft | null>> {
+  return computed(async (get): Promise<ChatThreadDraft | null> => {
     const db = get(db$);
     const [draft] = await db
       .select({
         draftUserMessage: chatThreadDrafts.draftUserMessage,
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
-      .from(chatThreadDrafts)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatThreadDrafts.chatThreadId))
-      .where(
+      .from(chatThreads)
+      .leftJoin(
+        chatThreadDrafts,
         and(
-          eq(chatThreadDrafts.chatThreadId, args.threadId),
-          chatThreadOrganizationPredicate(args.orgId),
+          eq(chatThreadDrafts.chatThreadId, chatThreads.id),
           eq(chatThreadDrafts.userId, args.userId),
         ),
       )
+      .where(
+        and(
+          eq(chatThreads.id, args.threadId),
+          chatThreadOrganizationPredicate(args.orgId),
+          args.legacyMemberDraft
+            ? undefined
+            : eq(chatThreads.userId, args.userId),
+        ),
+      )
       .limit(1);
+    if (!draft) {
+      return null;
+    }
+    const marker = draft.draftUserMessage?.parts.find((part) => {
+      return part.type === "suggestion_preset";
+    });
     return {
-      draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
+      ...(marker ? { suggestionPreset: marker.preset } : {}),
+      draftUserMessage: readStoredDraftMessage(draft.draftUserMessage),
       draftAttachments: persistedAttachmentSchema
         .array()
         .nullable()
-        .parse(draft?.draftAttachments ?? null),
+        .parse(draft.draftAttachments),
     };
   });
 }
@@ -267,7 +286,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
-const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 /** Unread candidates read per request: the newest threads within the lookback. */
 export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
@@ -327,6 +345,7 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly activeLimit: number;
 };
 type IndicatorThreadRow = {
   readonly threadId: string;
@@ -366,7 +385,7 @@ function createIndicatorRows(args: IndicatorScope) {
         )
         .groupBy(chatThreads.id)
         .orderBy(desc(max(agentRuns.createdAt)))
-        .limit(INDICATOR_ACTIVE_LIMIT);
+        .limit(args.activeLimit);
     },
   );
   const unreadRows$ = computed(
@@ -1145,20 +1164,24 @@ export const updateChatThreadDraft$ = command(
   async (
     { set },
     args: {
+      readonly legacyMemberDraft?: boolean;
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
+      readonly suggestionPreset?: SuggestionPreset;
       readonly draftUserMessage: UserMessageInputDocument | null;
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
+  ): Promise<boolean> => {
+    const saved = await set(
       persistChatThreadDraft$,
       {
         chatThreadId: args.threadId,
+        legacyMemberDraft: args.legacyMemberDraft,
         orgId: args.orgId,
         userId: args.userId,
+        suggestionPreset: args.suggestionPreset,
         draftUserMessage: args.draftUserMessage,
         draftAttachments: args.draftAttachments
           ? [...args.draftAttachments]
@@ -1167,5 +1190,6 @@ export const updateChatThreadDraft$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return saved;
   },
 );

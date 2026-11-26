@@ -22,10 +22,10 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const CLIENT_VERSION = "0.734.0";
 
-function authHeaders() {
+function authHeaders(version = CLIENT_VERSION) {
   return {
     authorization: "Bearer clerk-session",
-    [CLIENT_VERSION_HEADER]: CLIENT_VERSION,
+    [CLIENT_VERSION_HEADER]: version,
   };
 }
 
@@ -89,6 +89,28 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
           eventId: "draft-feedback-event",
           range: { start: 0, end: 10 },
         },
+        {
+          type: "feedback",
+          quote: "Artifact passage",
+          note: [],
+          source: {
+            type: "artifact",
+            fileId: randomUUID(),
+            filenameSnapshot: "brief.md",
+            artifactId: randomUUID(),
+          },
+        },
+        {
+          type: "feedback",
+          quote: "Email passage",
+          note: [],
+          source: {
+            type: "mail",
+            id: randomUUID(),
+            status: "sent",
+            sentId: `gmail-${randomUUID()}`,
+          },
+        },
       ],
     };
 
@@ -117,7 +139,7 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
     for (const client of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
       const native = await accept(
         draftsClient().get({
-          headers: authHeaders(),
+          headers: authHeaders("0.60.0"),
           extraHeaders: { [CLIENT_TYPE_HEADER]: client },
         }),
         [200],
@@ -133,6 +155,15 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
         ...draftUserMessage.parts.slice(2),
       ]);
     }
+
+    const voiceAware = await accept(
+      draftsClient().get({
+        headers: authHeaders("0.61.0"),
+        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
+      }),
+      [200],
+    );
+    expect(voiceAware.body.draftUserMessage).toStrictEqual(draftUserMessage);
 
     const updatedDraftUserMessage: UserMessageInputDocument = {
       version: 1,

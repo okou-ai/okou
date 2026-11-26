@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ComposerSuggestionPresentation: PreferenceKey {
   enum Content {
-    case chats(ComposerEditor)
+    case chats(ComposerEditor, ComposerMentionSource?)
     case workflows(ComposerWorkflowSuggestions)
   }
 
@@ -32,8 +32,9 @@ extension View {
           if availableHeight > 0 {
             Group {
               switch presentation.content {
-              case .chats(let editor):
-                ComposerMentionMenu(editor: editor, availableHeight: availableHeight)
+              case .chats(let editor, let source):
+                ComposerMentionMenu(
+                  editor: editor, source: source, availableHeight: availableHeight)
               case .workflows(let suggestions):
                 ComposerWorkflowMenu(suggestions: suggestions, availableHeight: availableHeight)
               }

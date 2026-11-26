@@ -2,10 +2,12 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One workspace owns the search graph; each presentation owns its requests and debounce.
-@MainActor @Observable
+/// The input lives in the workspace session's Store. The sidebar reads `presented` and the
+/// search page reads `field` through CCStateSwiftUI; the synchronous accessors serve actions,
+/// the navigation guard and tests.
+@MainActor
 final class ChatSearchStore {
   private struct Input: Equatable {
     var isPresented = false
@@ -28,26 +30,41 @@ final class ChatSearchStore {
     case retry, retryWorkflows, dismiss, close
   }
 
-  @ObservationIgnored let stateStore = CCState.Store()
-  @ObservationIgnored private let input = CCState.State(Input())
-  @ObservationIgnored private let presentedValue: Computed<Bool>
-  @ObservationIgnored private let rawQueryValue: Computed<String>
-  @ObservationIgnored private let transition: Command<Void, Action>
-  @ObservationIgnored private var subscriptions: [Subscription] = []
-  @ObservationIgnored private var debounceTask: Task<String?, Error>?
-  @ObservationIgnored private var messagesTask: Task<[ChatSearchResult], Error>?
-  @ObservationIgnored private var artifactsTask: Task<[ChatSearchArtifact], Error>?
-  @ObservationIgnored private var workflowsTask: Task<[ChatSearchWorkflow], Error>?
+  /// What the search page renders from the input: the field's text, its normalized keyword,
+  /// and the error from opening a result.
+  struct Field: Equatable {
+    var query = ""
+    var keyword = ""
+    var openingError: String?
+  }
+
+  /// The workspace session's Store.
+  let stateStore: CCState.Store
+  private let input = CCState.State(Input())
+  private let openingErrorState = CCState.State<String?>(nil)
+  /// Whether the search sheet is presented.
+  let presented: Computed<Bool>
+  let field: Computed<Field>
+  private let transition: Command<Void, Action>
+  private var debounceTask: Task<String?, Error>?
+  private var messagesTask: Task<[ChatSearchResult], Error>?
+  private var artifactsTask: Task<[ChatSearchArtifact], Error>?
+  private var workflowsTask: Task<[ChatSearchWorkflow], Error>?
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
-  private(set) var openingError: String?
 
-  init(sync: ChatSync, didFail: @escaping @MainActor (Error) -> Void) {
+  init(sync: ChatSync, graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void) {
     self.sync = sync
     self.didFail = didFail
+    stateStore = graph
     let input = input
-    presentedValue = Computed { get in try get(input).isPresented }
-    rawQueryValue = Computed { get in try get(input).query }
+    let openingErrorState = openingErrorState
+    presented = Computed { get in try get(input).isPresented }
+    field = Computed { get in
+      let value = try get(input)
+      let openingError = try get(openingErrorState)
+      return Field(query: value.query, keyword: value.keyword, openingError: openingError)
+    }
     transition = Command { context, action in
       var next = try context.get(input)
       guard !next.closed else { return }
@@ -70,19 +87,6 @@ final class ChatSearchStore {
       }
       try context.set(input, next)
     }
-    do {
-      let presented = try stateStore.watch(presentedValue) { [weak self] in
-        guard let self else { return }
-        // The sidebar and navigation guard need synchronous identity, not a second state copy.
-        withMutation(keyPath: \.isPresented) {}
-      }
-      subscriptions.append(presented)
-      let query = try stateStore.watch(rawQueryValue) { [weak self] in
-        guard let self else { return }
-        withMutation(keyPath: \.query) {}
-      }
-      subscriptions.append(query)
-    } catch { preconditionFailure("Cannot observe the search input graph: \(error)") }
   }
 
   private var snapshot: Input {
@@ -92,36 +96,37 @@ final class ChatSearchStore {
     }
   }
 
-  var isPresented: Bool {
-    access(keyPath: \.isPresented)
-    return snapshot.isPresented
-  }
-  var query: String {
-    access(keyPath: \.query)
-    return snapshot.query
-  }
-  var keyword: String {
-    access(keyPath: \.query)
-    return snapshot.keyword
-  }
+  var isPresented: Bool { snapshot.isPresented }
+  var query: String { snapshot.query }
+  var keyword: String { snapshot.keyword }
   var requestID: UUID { snapshot.requestID }
+  var openingError: String? {
+    do { return try stateStore.get(openingErrorState) } catch {
+      preconditionFailure("Cannot read the search opening error: \(error)")
+    }
+  }
+  /// The synchronous value of `field`, for a render whose graph read has not resolved.
+  var currentField: Field {
+    let value = snapshot
+    return Field(query: value.query, keyword: value.keyword, openingError: openingError)
+  }
 
-  @ObservationIgnored private lazy var queryRequest = Computed<QueryRequest?> { [input] get in
+  private lazy var queryRequest = Computed<QueryRequest?> { [input] get in
     let value = try get(input)
     guard value.isPresented, !value.closed, !value.keyword.isEmpty else { return nil }
     return QueryRequest(id: value.requestID, keyword: value.keyword)
   }
 
-  @ObservationIgnored private lazy var workflowRequest = Computed<Int?> { [input] get in
+  private lazy var workflowRequest = Computed<Int?> { [input] get in
     let value = try get(input)
     return value.isPresented && !value.closed ? value.workflowsRevision : nil
   }
 
-  @ObservationIgnored private lazy var keywordValue = Computed { [input] get in
+  private lazy var keywordValue = Computed { [input] get in
     try get(input).keyword
   }
 
-  @ObservationIgnored private lazy var debouncedKeyword = makeDebouncedKeyword()
+  private lazy var debouncedKeyword = makeDebouncedKeyword()
 
   // Keep Task-producing closures out of lazy initializers so Swift can resolve actor defaults.
   private func makeDebouncedKeyword() -> Computed<Task<String?, Error>> {
@@ -143,7 +148,7 @@ final class ChatSearchStore {
 
   }
 
-  @ObservationIgnored lazy var messagesValue = makeMessagesValue()
+  lazy var messagesValue = makeMessagesValue()
 
   private func makeMessagesValue() -> Computed<Task<[ChatSearchResult], Error>> {
     Computed { [weak self] get, options in
@@ -160,7 +165,7 @@ final class ChatSearchStore {
 
   }
 
-  @ObservationIgnored lazy var artifactsValue = makeArtifactsValue()
+  lazy var artifactsValue = makeArtifactsValue()
 
   private func makeArtifactsValue() -> Computed<Task<[ChatSearchArtifact], Error>> {
     Computed { [weak self] get, options in
@@ -177,7 +182,7 @@ final class ChatSearchStore {
 
   }
 
-  @ObservationIgnored private lazy var allWorkflowsValue = makeAllWorkflowsValue()
+  private lazy var allWorkflowsValue = makeAllWorkflowsValue()
 
   private func makeAllWorkflowsValue() -> Computed<Task<[ChatSearchWorkflow], Error>> {
     Computed { [weak self] get, options in
@@ -193,7 +198,7 @@ final class ChatSearchStore {
 
   }
 
-  @ObservationIgnored lazy var workflowsValue: Computed<Task<[ChatSearchWorkflow], Error>> =
+  lazy var workflowsValue: Computed<Task<[ChatSearchWorkflow], Error>> =
     computedTask { [keywordValue, allWorkflowsValue] get, options in
       let keyword = try get(keywordValue)
       let pending = try get(allWorkflowsValue)
@@ -204,7 +209,11 @@ final class ChatSearchStore {
     }
 
   func titleResults(in threads: [ChatThread]) -> [ChatThread] {
-    let query = keyword
+    Self.titleResults(in: threads, keyword: keyword)
+  }
+
+  /// Title matches for a keyword; the search page passes the keyword it resolved.
+  static func titleResults(in threads: [ChatThread], keyword query: String) -> [ChatThread] {
     let matching = threads.filter { query.isEmpty || $0.displayTitle.lowercased().contains(query) }
     if query.isEmpty { return Array(matching.prefix(25)) }
     return Array(
@@ -219,13 +228,13 @@ final class ChatSearchStore {
   func updateQuery(_ value: String) {
     guard !snapshot.closed, value != query else { return }
     cancelQuery()
-    openingError = nil
+    setOpeningError(nil)
     perform(.query(value))
   }
 
   func retry() {
     cancelQuery()
-    openingError = nil
+    setOpeningError(nil)
     perform(.retry)
   }
 
@@ -239,13 +248,17 @@ final class ChatSearchStore {
     return value.isPresented && !value.closed && value.requestID == id
   }
 
-  func setOpeningError(_ value: String?) { openingError = value }
+  func setOpeningError(_ value: String?) {
+    do { try stateStore.set(openingErrorState, value) } catch {
+      preconditionFailure("Cannot update the search opening error: \(error)")
+    }
+  }
 
   func dismiss() {
     cancelQuery()
     workflowsTask?.cancel()
     workflowsTask = nil
-    openingError = nil
+    setOpeningError(nil)
     perform(.dismiss)
   }
 
@@ -253,9 +266,8 @@ final class ChatSearchStore {
     cancelQuery()
     workflowsTask?.cancel()
     workflowsTask = nil
-    openingError = nil
+    setOpeningError(nil)
     perform(.close)
-    stopObserving()
   }
 
   private func cancelQuery() {
@@ -298,20 +310,10 @@ final class ChatSearchStore {
     didFail(error)
   }
 
-  private func stopObserving() {
-    for subscription in subscriptions {
-      do { try subscription.cancel() } catch {
-        preconditionFailure("Cannot release the search input graph: \(error)")
-      }
-    }
-    subscriptions = []
-  }
-
   isolated deinit {
     messagesTask?.cancel()
     artifactsTask?.cancel()
     debounceTask?.cancel()
     workflowsTask?.cancel()
-    stopObserving()
   }
 }

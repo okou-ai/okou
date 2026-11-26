@@ -3788,6 +3788,167 @@
       "when": 1795401917480,
       "tag": "1619_for_you_cover_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 1620,
+      "version": "7",
+      "when": 1795412018406,
+      "tag": "1620_drop_custom_connector_skill_publication_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 1621,
+      "version": "7",
+      "when": 1795420969285,
+      "tag": "1621_hosted_site_email_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 1622,
+      "version": "7",
+      "when": 1795428787258,
+      "tag": "1622_member_connector_account_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1623,
+      "version": "7",
+      "when": 1795432954375,
+      "tag": "1623_burly_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1624,
+      "version": "7",
+      "when": 1795435594773,
+      "tag": "1624_workflow_recency_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 1625,
+      "version": "7",
+      "when": 1795451971668,
+      "tag": "1625_project_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 1626,
+      "version": "7",
+      "when": 1795497745008,
+      "tag": "1626_internal_antigravity_model_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1627,
+      "version": "7",
+      "when": 1795508852593,
+      "tag": "1627_retire_billing_survey_responses",
+      "breakpoints": true
+    },
+    {
+      "idx": 1628,
+      "version": "7",
+      "when": 1795515997042,
+      "tag": "1628_artifact_file_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 1629,
+      "version": "7",
+      "when": 1795519845513,
+      "tag": "1629_allow_free_credit_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 1630,
+      "version": "7",
+      "when": 1795527168266,
+      "tag": "1630_antigravity_member_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1631,
+      "version": "7",
+      "when": 1795528736916,
+      "tag": "1631_stale_surge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1632,
+      "version": "7",
+      "when": 1795581323048,
+      "tag": "1632_onboarding_suggestions_rollout",
+      "breakpoints": true
+    },
+    {
+      "idx": 1633,
+      "version": "7",
+      "when": 1795594293433,
+      "tag": "1633_remote_device_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 1634,
+      "version": "7",
+      "when": 1795604448663,
+      "tag": "1634_connector_identity_writer_preparation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1635,
+      "version": "7",
+      "when": 1795629684120,
+      "tag": "1635_finish_morning_brief_installation_rename",
+      "breakpoints": true
+    },
+    {
+      "idx": 1636,
+      "version": "7",
+      "when": 1795635534065,
+      "tag": "1636_archive_official_workflow_installations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1637,
+      "version": "7",
+      "when": 1795641080018,
+      "tag": "1637_retire_official_workflow_automation_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 1638,
+      "version": "7",
+      "when": 1795644846811,
+      "tag": "1638_retire_official_workflow_installation_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1639,
+      "version": "7",
+      "when": 1795659795482,
+      "tag": "1639_connector_account_external_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1640,
+      "version": "7",
+      "when": 1795664181111,
+      "tag": "1640_phone_use_operation_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1641,
+      "version": "7",
+      "when": 1795671256445,
+      "tag": "1641_remote_device_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1642,
+      "version": "7",
+      "when": 1795671303566,
+      "tag": "1642_require_remote_device_association",
+      "breakpoints": true
     }
   ]
 }

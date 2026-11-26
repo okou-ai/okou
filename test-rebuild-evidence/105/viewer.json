@@ -1,0 +1,111 @@
+{
+  "regularSuite": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+  "nativeReplay": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.native.replay.mjs",
+  "observedReceivers": {
+    "024": {
+      "wallDeltaMs": -3600000,
+      "monotonicAdvanceMs": 30001,
+      "expired": "acknowledged capture stopped",
+      "retry": "new held image, then original page receives text"
+    },
+    "026": {
+      "expiredCaptureBudgetsMs": [
+        30001,
+        30001
+      ],
+      "originalTabAvailableOnBoth": true,
+      "inputRecipient": "replacement"
+    },
+    "029": {
+      "acknowledgementHeldMs": 20000,
+      "acknowledgedBeforeTimeoutMs": 29999,
+      "additionalMs": 2,
+      "totalConnections": 1,
+      "inputRecipient": "replacement"
+    },
+    "031": {
+      "held": [
+        "old image",
+        "stop acknowledgement"
+      ],
+      "siblingUsableBeforeRelease": true,
+      "inputAfterBothReleases": "replacement"
+    },
+    "034": {
+      "held": "old native hello during separate-image selection",
+      "sharedChoiceDisabledDuringPause": true,
+      "sharedChoiceAvailableWithNewBinding": true,
+      "receivedAfterResume": "replacement window",
+      "oldAcceptedNewText": false
+    },
+    "051": {
+      "wire": [
+        {
+          "step": "observed navigation",
+          "origin": "http://localhost:9387",
+          "path": "/visit"
+        },
+        {
+          "step": "forward",
+          "time": 1795504931683
+        },
+        {
+          "step": "held-ack",
+          "time": 1795504931717
+        },
+        {
+          "step": "observed navigation",
+          "origin": "http://localhost:9387",
+          "path": "/visit"
+        },
+        {
+          "step": "forward",
+          "time": 1795504963817
+        }
+      ],
+      "documents": [
+        {
+          "step": "committed ACK held",
+          "arrivals": 1,
+          "ids": [
+            12
+          ],
+          "title": "Arrival 1",
+          "input": true,
+          "at": 1795504931883
+        },
+        {
+          "step": "beyond deadline",
+          "arrivals": 1,
+          "ids": [
+            12
+          ],
+          "title": "Arrival 1",
+          "input": false,
+          "at": 1795504963391
+        },
+        {
+          "step": "recovered",
+          "arrivals": 1,
+          "ids": [
+            12
+          ],
+          "title": "Arrival 1",
+          "input": true,
+          "at": 1795504963453
+        },
+        {
+          "step": "repeat control",
+          "arrivals": 2,
+          "ids": [
+            14
+          ],
+          "title": "Arrival 2",
+          "input": true,
+          "at": 1795504964103
+        }
+      ],
+      "elapsedBeforeDeadlineObservationMs": 31508
+    }
+  }
+}

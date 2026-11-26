@@ -31,26 +31,24 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_unpark_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid native unpark witness",
     )
-    identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or reordered native unpark phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("native unpark changed original physical owner")
-        ordered = [terminal[1], *events[:6], terminal[2], terminal[3], *events[6:9],
-                   terminal[4], *events[9:], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "native unpark phase clocks lost ordering")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=6, tail_end_index=9,
+            message="native unpark phase clocks lost ordering",
+        )
         initial, captured, accepted, lost, progress, joined = [event["evidence"] for event in events[:6]]
         mode = case.rsplit("-", 1)[0]
         baseline = status_evidence.validate_initial_status_receipt(
@@ -58,12 +56,11 @@ def validate(directory):
             path_error="invalid or replayed native unpark status path",
             receipt_error="native unpark changed original inputs",
         )
-        history, operation = later.history_operation(
-            captured, identities, "native unpark replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            captured, identities, baseline, identity[0],
+            replay_error="native unpark replayed run or resource identity",
+            binding_error="native unpark lost original history binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key":reuse,"sandbox_id":identity[0]}],
-              "native unpark lost original history binding")
         started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         request_sha = wire(captured.get("request_raw"))

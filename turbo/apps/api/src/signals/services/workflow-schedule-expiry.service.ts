@@ -65,7 +65,7 @@ function futureAfterSkip(current: Automation, at: Date): Date | null {
   return null;
 }
 
-function expiredScheduleValues(
+function skippedScheduleValues(
   current: Automation,
   nextRunAt: Date | null,
   at: Date,
@@ -151,7 +151,7 @@ export const skipExpiredWorkflowSchedule$ = command(
     const advanced = db.$with("advanced").as(
       db
         .update(workflowAutomations)
-        .set(expiredScheduleValues(current, nextRunAt, args.at))
+        .set(skippedScheduleValues(current, nextRunAt, args.at))
         .where(
           and(
             eq(workflowAutomations.id, current.id),
@@ -188,6 +188,45 @@ export const skipExpiredWorkflowSchedule$ = command(
       .from(advanced);
     signal.throwIfAborted();
     return applied ? "skipped" : "moved";
+  },
+);
+
+/**
+ * Move past one unclaimed occurrence of a recurring schedule whose owner is not
+ * served now. Like an expired slot, no Run, failure, queue event or expiry
+ * marker is created, and the next occurrence decides again. Returns false
+ * when the occurrence was claimed or moved concurrently.
+ */
+export const skipInactiveOwnerSchedule$ = command(
+  async (
+    { set },
+    args: { readonly automation: Automation; readonly at: Date },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { automation, at } = args;
+    const anchor = automation.nextRunAt;
+    const nextRunAt = futureAfterSkip(automation, at);
+    if (
+      anchor === null ||
+      nextRunAt === null ||
+      nextRunAt.getTime() <= at.getTime()
+    ) {
+      return false;
+    }
+    const [advanced] = await set(writeDb$)
+      .update(workflowAutomations)
+      .set(skippedScheduleValues(automation, nextRunAt, at))
+      .where(
+        and(
+          eq(workflowAutomations.id, automation.id),
+          eq(workflowAutomations.enabled, true),
+          eq(workflowAutomations.nextRunAt, anchor),
+          sql`NOT ${workflowScheduleAlreadyClaimedSql(automation, anchor)}`,
+        ),
+      )
+      .returning({ id: workflowAutomations.id });
+    signal.throwIfAborted();
+    return advanced !== undefined;
   },
 );
 

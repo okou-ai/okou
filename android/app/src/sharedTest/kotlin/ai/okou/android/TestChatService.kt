@@ -7,7 +7,9 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ConfirmedProject
 import kotlinx.serialization.json.Json
 
 /** Empty external workspace data for shell/preferences tests. */
@@ -16,7 +18,7 @@ open class TestChatService : ChatListService {
         ai.okou.android.chat.HistoryBatch(cursors.mapValues { emptyList() }, emptyList())
 
     override suspend fun historySnapshot(
-        threadId: String
+        threadId: String,
     ): ai.okou.android.api.generated.HistorySnapshot = error("Unexpected history request")
 
     override suspend fun historyArchive(url: String): List<ai.okou.android.chat.HistoryEvent> =
@@ -28,7 +30,7 @@ open class TestChatService : ChatListService {
     ): ai.okou.android.chat.HistoryPage = error("Unexpected history tail")
 
     override suspend fun threadDetail(
-        threadId: String
+        threadId: String,
     ): ai.okou.android.api.generated.ThreadDetail = error("Unexpected thread detail")
 
     override suspend fun markRead(threadId: String): ai.okou.android.api.generated.ReadState =
@@ -46,8 +48,17 @@ open class TestChatService : ChatListService {
     override suspend fun deleteThread(threadId: String, eventId: String): Unit =
         error("Unexpected deletion")
 
-    override suspend fun renameProject(projectId: String, name: String, eventId: String): Unit =
-        error("Unexpected Project rename")
+    override suspend fun createProject(projectId: String, name: String): ConfirmedProject =
+        error("Unexpected Project creation")
+
+    override suspend fun projectDetail(projectId: String): ConfirmedProject =
+        error("Unexpected Project lookup")
+
+    override suspend fun renameProject(
+        projectId: String,
+        name: String,
+        eventId: String,
+    ): ConfirmedProject = error("Unexpected Project rename")
 
     override suspend fun moveThreadToProject(
         threadId: String,
@@ -61,6 +72,9 @@ open class TestChatService : ChatListService {
     override suspend fun renameThread(threadId: String, title: String, eventId: String): Unit =
         error("Unexpected rename")
 
+    override suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest): Unit =
+        error("Unexpected model change")
+
     override suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String): Unit =
         error("Unexpected pin change")
 
@@ -72,7 +86,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun chatSnapshot() =
         Json.decodeFromString<ChatSnapshot>(
-            """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"""
+            """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}""",
         )
 
     override suspend fun chatArchive(url: String): ChatArchive = error("Unexpected archive request")
@@ -81,9 +95,11 @@ open class TestChatService : ChatListService {
 
     override suspend fun indicators() = Indicators(emptyMap(), emptyMap())
 
+    override suspend fun draftThreadIds() = emptyList<String>()
+
     override suspend fun projectSnapshot() =
         Json.decodeFromString<ProjectSnapshot>(
-            """{"projects":[],"latestEventId":null,"latestSeqId":0}"""
+            """{"projects":[],"latestEventId":null,"latestSeqId":0}""",
         )
 
     override suspend fun projectArchive(url: String): ProjectArchive =

@@ -2,10 +2,15 @@
 
 from collections.abc import Callable
 
+from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
-from .model_tokens import ANTHROPIC_USAGE_FIELD_CATEGORIES, update_model_usage_quantity
-from .quantities import MAX_USAGE_QUANTITY
-from .sse import SseUsageScanner
+from .model_tokens import (
+    ANTHROPIC_USAGE_FIELD_CATEGORIES,
+    MODEL_USAGE_IDENTITY_FIELD,
+    MODEL_USAGE_QUANTITY_FIELD,
+    update_model_usage_quantity,
+)
+from .sse import SseUsageScanner, resolve_event_name
 
 _ANTHROPIC_MESSAGES_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
 _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS = frozenset(
@@ -13,43 +18,24 @@ _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS = frozenset(
 )
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_ANTHROPIC_MESSAGES_MAX_WORK_UNITS = 65_536
 _SseUsageParseErrorCallback = Callable[[str, str], None]
 AnthropicMessagesAccountingEventCallback = Callable[[str], None]
 
 _MODEL_JSON_SCALAR_FIELDS = {
-    ("id",): ScalarField("string", max_bytes=1024),
-    ("model",): ScalarField("string", max_bytes=1024),
-    **{
-        ("usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
-        for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
-    },
+    ("id",): MODEL_USAGE_IDENTITY_FIELD,
+    ("model",): MODEL_USAGE_IDENTITY_FIELD,
+    **{("usage", field): MODEL_USAGE_QUANTITY_FIELD for field in ANTHROPIC_USAGE_FIELD_CATEGORIES},
 }
 
 _ANTHROPIC_SSE_SCALAR_FIELDS = {
     ("type",): ScalarField("string", max_bytes=1024),
-    ("message", "id"): ScalarField("string", max_bytes=1024),
-    ("message", "model"): ScalarField("string", max_bytes=1024),
+    ("message", "id"): MODEL_USAGE_IDENTITY_FIELD,
+    ("message", "model"): MODEL_USAGE_IDENTITY_FIELD,
     **{
-        ("message", "usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
+        ("message", "usage", field): MODEL_USAGE_QUANTITY_FIELD
         for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
     },
-    **{
-        ("usage", field): ScalarField(
-            "int",
-            max_bytes=64,
-            max_int_value=MAX_USAGE_QUANTITY,
-        )
-        for field in ANTHROPIC_USAGE_FIELD_CATEGORIES
-    },
+    **{("usage", field): MODEL_USAGE_QUANTITY_FIELD for field in ANTHROPIC_USAGE_FIELD_CATEGORIES},
 }
 
 
@@ -138,16 +124,13 @@ class _AnthropicMessagesSseUsageHandler:
         if self._event_extractor is None:
             self._event_extractor = JsonSelectiveExtractor(
                 scalar_fields=_ANTHROPIC_SSE_SCALAR_FIELDS,
-                max_work_units=_ANTHROPIC_MESSAGES_MAX_WORK_UNITS,
+                max_work_units=MODEL_JSON_MAX_WORK_UNITS,
             )
         self._extractor = self._event_extractor
 
     def on_data(self, chunk: bytes) -> None:
         if self._extractor is not None:
             self._extractor.feed(chunk)
-
-    def on_data_separator(self) -> None:
-        self.on_data(b"\n")
 
     def on_event_end(self, event_name: str | None) -> None:
         extractor = self._extractor
@@ -162,10 +145,8 @@ class _AnthropicMessagesSseUsageHandler:
             else extractor.observed_scalar_for_diagnostics(("type",))
         )
         extractor.reset()
+        event_type = resolve_event_name(event_name, data_type)
         if not result.complete:
-            event_type = event_name
-            if event_type is None and isinstance(data_type, str):
-                event_type = data_type
             if (
                 event_type is not None
                 and event_type in _ANTHROPIC_MESSAGES_USAGE_EVENTS
@@ -175,9 +156,6 @@ class _AnthropicMessagesSseUsageHandler:
                 self._on_parse_error(event_type, result.error)
             return
 
-        event_type = event_name
-        if event_type is None and isinstance(data_type, str):
-            event_type = data_type
         if isinstance(data_type, str) and event_name is not None and data_type != event_name:
             return
 

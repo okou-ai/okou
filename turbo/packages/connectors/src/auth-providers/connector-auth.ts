@@ -50,6 +50,10 @@ import {
   type ConnectorAuthProviderClientContract,
   type ConnectorAuthProviderMethodContract,
 } from "./provider-capabilities";
+import {
+  appStoreConnectTeamKeyProvider,
+  appStoreConnectIndividualKeyProvider,
+} from "./connectors/app-store-connect/provider";
 import { airtableProvider } from "./connectors/airtable/provider";
 import { asanaProvider } from "./connectors/asana/provider";
 import { awsProvider } from "./connectors/aws/provider";
@@ -76,12 +80,14 @@ import { googleContactsProvider } from "./connectors/google-contacts/provider";
 import { googleDocsProvider } from "./connectors/google-docs/provider";
 import { googleDriveProvider } from "./connectors/google-drive/provider";
 import { googleFormsProvider } from "./connectors/google-forms/provider";
+import { googlePlayProvider } from "./connectors/google-play/provider";
 import { googleMapsProvider } from "./connectors/google-maps/provider";
 import { googleMeetProvider } from "./connectors/google-meet/provider";
 import { googleSearchConsoleProvider } from "./connectors/google-search-console/provider";
 import { googleSheetsProvider } from "./connectors/google-sheets/provider";
 import { larkProvider } from "./connectors/lark/provider";
 import { linearProvider } from "./connectors/linear/provider";
+import { linkedinProvider } from "./connectors/linkedin/provider";
 import { mailchimpProvider } from "./connectors/mailchimp/provider";
 import { mercuryProvider } from "./connectors/mercury/provider";
 import { microsoft365Provider } from "./connectors/microsoft-365/provider";
@@ -968,6 +974,16 @@ function assertDeclaredProviderInputs(args: {
 
 const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("airtable", "oauth", airtableProvider),
+  refreshProviderEntry(
+    "app-store-connect",
+    "team-key",
+    appStoreConnectTeamKeyProvider,
+  ),
+  refreshProviderEntry(
+    "app-store-connect",
+    "individual-key",
+    appStoreConnectIndividualKeyProvider,
+  ),
   authCodeRefreshProviderEntry("asana", "oauth", asanaProvider),
   externalCodeRefreshProviderEntry("aws", "cli", awsProvider),
   deviceAuthRefreshProviderEntry("base44", "oauth", base44Provider),
@@ -1013,6 +1029,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   authCodeRefreshProviderEntry("google-forms", "oauth", googleFormsProvider),
   authCodeRefreshProviderEntry("google-maps", "oauth", googleMapsProvider),
   authCodeRefreshProviderEntry("google-meet", "oauth", googleMeetProvider),
+  authCodeRefreshProviderEntry("google-play", "oauth", googlePlayProvider),
   authCodeRefreshProviderEntry(
     "google-search-console",
     "oauth",
@@ -1024,6 +1041,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   refreshProviderEntry("lark", "api-token", larkProvider),
   authCodeProviderEntry("intervals-icu", "oauth", intervalsIcuProvider),
   authCodeRefreshTokenRevokeProviderEntry("linear", "oauth", linearProvider),
+  authCodeProviderEntry("linkedin", "oauth", linkedinProvider),
   authCodeProviderEntry("mailchimp", "oauth", mailchimpProvider),
   authCodeRefreshProviderEntry("mercury", "oauth", mercuryProvider),
   authCodeRefreshProviderEntry("microsoft-365", "oauth", microsoft365Provider),

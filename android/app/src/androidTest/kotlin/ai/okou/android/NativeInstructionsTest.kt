@@ -3,8 +3,19 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.instructions.PersonalInstructionsModel
+import android.app.Instrumentation
+import android.content.Context
+import android.os.Build
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inspector.WindowInspector
+import androidx.annotation.RequiresApi
+import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -32,7 +43,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeInstructionsTest {
     @Test
-    fun nativeEditingImeBackRecreationSaveAndExternalConflictKeepTheirOwners() {
+    fun nativeEditingImeBackRecreationSaveAndBackgroundRefreshKeepTheirOwners() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val authentication = app.authentication as TestAuthentication
@@ -48,6 +59,8 @@ class NativeInstructionsTest {
         val fixture = InstructionsApiFixture()
         val held = CountDownLatch(1)
         val entered = CountDownLatch(1)
+        val refreshHeld = CountDownLatch(1)
+        val refreshEntered = CountDownLatch(1)
         fixture.beforeRead = {
             entered.countDown()
             held.await()
@@ -57,13 +70,14 @@ class NativeInstructionsTest {
         authentication.state.value = testAuthenticationState()
         val device = UiDevice.getInstance(instrumentation)
         var scenario: ActivityScenario<MainActivity>? = null
+        lateinit var model: PersonalInstructionsModel
         var editorJob: Job? = null
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
                 )
             fun reveal(value: String) {
                 val target = By.pkg(app.packageName).text(value)
@@ -97,7 +111,7 @@ class NativeInstructionsTest {
                         device.wait(
                             Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
                             10_000,
-                        )
+                        ),
                     )
                     .click()
             }
@@ -107,11 +121,11 @@ class NativeInstructionsTest {
                         Until.findObject(
                             By.pkg(app.packageName).clazz("android.widget.EditText").apply {
                                 if (requireFocus) focused(true)
-                                if (expectedText != null) text(expectedText)
-                            }
+                                if (expectedText != null) this.text(expectedText)
+                            },
                         ),
                         10_000,
-                    )
+                    ),
                 ) {
                     "Instructions editor did not match focus=$requireFocus and text=$expectedText"
                 }
@@ -126,32 +140,22 @@ class NativeInstructionsTest {
                             override fun apply(unused: UiDevice): Boolean = imeVisible() == visible
                         },
                         10_000,
-                    ) == true
+                    ) == true,
                 )
             }
             device.awaitChatList(app)
-            checkNotNull(
-                    device.wait(
-                        Until.findObject(
-                            By.pkg(app.packageName)
-                                .desc(app.getString(R.string.settings))
-                                .enabled(true)
-                        ),
-                        10_000,
-                    )
-                )
-                .click()
+            device.openChatListSettings(app)
             reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             assertTrue(entered.await(10, TimeUnit.SECONDS))
             scenario.onActivity {
-                val editor =
+                model =
                     checkNotNull(
-                            ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                            ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                         )
                         .instructions
-                editorJob = editor.viewModelScope.coroutineContext[Job]
-                assertEquals(InstructionsPhase.Loading, editor.uiState.value.phase)
+                editorJob = model.viewModelScope.coroutineContext[Job]
+                assertEquals(InstructionsPhase.Loading, model.uiState.value.phase)
             }
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
@@ -165,10 +169,15 @@ class NativeInstructionsTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitIme(false)
             reveal(app.getString(R.string.instructions_title))
+            device.waitForIdle()
             scenario.recreate()
             assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
             device.waitForIdle()
             assertFalse("Recreation reopened the dismissed keyboard", imeVisible())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            reveal(app.getString(R.string.instructions_unsaved))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
 
             editor().click()
             awaitIme(true)
@@ -185,23 +194,81 @@ class NativeInstructionsTest {
                             fixture.saved.content.contains("Native **instructions** 👋")
                     },
                     10_000,
-                ) == true
+                ) == true,
             )
             assertTrue(fixture.saved.content.contains("Native **instructions** 👋"))
             reveal(app.getString(R.string.appearance))
+            fixture.beforeRead = {
+                refreshEntered.countDown()
+                refreshHeld.await()
+            }
             click(R.string.instructions_title)
-            editor().text = "Keep this local draft"
+            assertTrue(refreshEntered.await(10, TimeUnit.SECONDS))
+            assertTrue(editor().text.contains("Native **instructions** 👋"))
+            val localDraft = "Keep this local draft"
+            editor().text = localDraft
+            refreshHeld.countDown()
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice) = !model.uiState.value.busy
+                    },
+                    10_000,
+                ) == true,
+            )
+            editor().click()
+            editor(requireFocus = true)
+            awaitIme(true)
+            // Use the focused Compose view's platform connection with the system keyboard open.
+            val composition =
+                if (Build.VERSION.SDK_INT < 29) null
+                else
+                    instructionsInputConnection(instrumentation).also { input ->
+                        instrumentation.runOnMainSync {
+                            input.beginBatchEdit()
+                            try {
+                                assertTrue(input.setComposingRegion(0, localDraft.length))
+                                assertTrue(input.setComposingText("zhongwen", 1))
+                            } finally {
+                                input.endBatchEdit()
+                            }
+                        }
+                    }
+            val beforeRefresh = if (composition == null) localDraft else "zhongwen"
+            editor(requireFocus = true, expectedText = beforeRefresh)
             val webText = "Changed on Web"
             fixture.externalEdit(webText)
-            scenario.onActivity {
-                checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
-                    .instructions
-                    .refresh()
+            scenario.onActivity { model.refresh() }
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(unused: UiDevice) =
+                            model.uiState.value.let { !it.busy && it.saved?.content == webText }
+                    },
+                    10_000,
+                ) == true,
+            )
+            assertEquals(beforeRefresh, editor(requireFocus = true).text)
+            if (composition != null) {
+                instrumentation.runOnMainSync {
+                    assertTrue(
+                        "Markdown styling and the readback preserve the platform connection",
+                        composition.setComposingText("中文", 1),
+                    )
+                    assertTrue(composition.finishComposingText())
+                }
+                editor(requireFocus = true, expectedText = "中文")
             }
-            reveal(app.getString(R.string.instructions_conflict))
-            assertEquals("Keep this local draft", editor().text)
+            assertTrue(imeVisible())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitIme(false)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
-            click(R.string.instructions_reload)
+            assertTrue(text(app.getString(R.string.instructions_save)).isEnabled)
+            click(R.string.settings_cancel)
+            reveal(app.getString(R.string.instructions_unsaved))
+            device.confirmInstructionsDiscard(app)
+            reveal(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
             assertEquals(webText, editor(expectedText = webText).text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))
@@ -216,6 +283,7 @@ class NativeInstructionsTest {
             }
         } finally {
             held.countDown()
+            refreshHeld.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },
@@ -240,4 +308,46 @@ class NativeInstructionsTest {
         }
         MultipleFailureException.assertEmpty(failures)
     }
+}
+
+@RequiresApi(29)
+private fun instructionsInputConnection(instrumentation: Instrumentation): InputConnection {
+    fun View.activeEditor(): View? =
+        if (onCheckIsTextEditor()) this
+        else (this as? ViewGroup)?.children?.firstNotNullOfOrNull { it.activeEditor() }
+
+    var connection: InputConnection? = null
+    instrumentation.runOnMainSync {
+        connection =
+            WindowInspector.getGlobalWindowViews()
+                .asSequence()
+                .filter(View::hasWindowFocus)
+                .mapNotNull { it.activeEditor() }
+                .firstNotNullOfOrNull { it.onCreateInputConnection(EditorInfo()) }
+    }
+    return checkNotNull(connection) { "The focused Instructions editor has no input connection" }
+}
+
+internal fun UiDevice.confirmInstructionsDiscard(context: Context) {
+    val label = By.pkg(context.packageName).text(context.getString(R.string.instructions_discard))
+    val button =
+        checkNotNull(
+            wait(
+                object : Condition<UiDevice, UiObject2?> {
+                    override fun apply(device: UiDevice): UiObject2? =
+                        device.findObjects(label).firstNotNullOfOrNull { node ->
+                            // The heading also uses this label. Compose may expose button text
+                            // as a child of the actionable node.
+                            generateSequence(node) { it.parent }
+                                .firstOrNull {
+                                    it.isEnabled && it.isClickable
+                                }
+                        }
+                },
+                10_000,
+            ),
+        ) {
+            "Discard confirmation button was not reachable"
+        }
+    button.click()
 }

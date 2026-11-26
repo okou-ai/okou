@@ -247,7 +247,9 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.hostedSiteAuthorize,
-    setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$),
+    setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$, {
+      requireOrganization: false,
+    }),
     analytics: false,
   },
   {
@@ -316,6 +318,10 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.connectorAccountSelect,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
+  },
+  {
+    path: ROUTES.connectorAccountMemberApproval,
     setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
   },
   {
@@ -683,7 +689,6 @@ const completeBootstrap$ = command(
       set(setupKeyboardShortcutHints$, signal),
       set(setupChatThreadFilterShortcut$, signal),
       set(setupChatThreadPinShortcuts$, signal),
-      set(watchOrgSwitch$, signal),
       set(syncLocalePreference$, signal),
       set(syncThemePreferences$, signal),
     ]);
@@ -741,10 +746,16 @@ export const bootstrap$ = command(
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
+    const workspaceSwitch = set(watchOrgSwitch$, signal);
     const sharedDatabaseSetup = set(setupSharedDatabaseBridge$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
-    await Promise.all([clerkIdentitySetup, sharedDatabaseSetup, ready]);
+    await Promise.all([
+      clerkIdentitySetup,
+      workspaceSwitch,
+      sharedDatabaseSetup,
+      ready,
+    ]);
     signal.throwIfAborted();
   },
 );

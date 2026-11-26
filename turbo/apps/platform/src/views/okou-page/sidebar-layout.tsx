@@ -52,7 +52,6 @@ import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
-import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
@@ -451,9 +450,8 @@ function SidebarWorkspace({
 
 /**
  * The workspace sheet: one framed card holding the chat list and the
- * workspace pane, in the shape of shadcn's inset sidebar. It owns the margin,
- * hairline and corners. While the list is expanded the sheet joins the nav
- * rail's edge; collapsed, it keeps the frame on all four sides. Descendants
+ * workspace pane, in the shape of shadcn's inset sidebar. Its left edge stays
+ * against the desktop nav rail as the chat list expands or collapses. Descendants
  * read the list's state from `data-chat-list` through the `workspace-sheet`
  * group rather than a prop.
  *
@@ -474,7 +472,7 @@ function WorkspaceSheet({
     <div
       data-slot="workspace-sheet"
       data-chat-list={chatList && !chatListHidden ? "expanded" : "collapsed"}
-      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:m-2 md:rounded-2xl md:border md:border-border md:data-[chat-list=expanded]:ml-0"
+      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border"
     >
       {chatList}
       {children}
@@ -509,7 +507,6 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <ConcurrencyConfirmDialog />
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
-      <CheckoutAbandonedSurveyDialog />
       <AttachmentLightboxMount />
       <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />

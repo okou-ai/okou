@@ -21,72 +21,82 @@ impl sentry::Transport for Capture {
 
 #[tokio::test]
 async fn native_privacy_protects_worker_and_blocking_descendants_in_production_sinks() {
-    for mode in ["worker", "blocking", "auth_error", "body_error"] {
-        let evidence = tempfile::tempdir().unwrap();
-        let evidence_path = evidence.path().to_str().expect("UTF-8 evidence path");
-        let output = runner_host::test_fixtures::ignored_child::run_ignored_child_test(
-            "native_privacy::native_privacy_child",
-            ("OKOU_NATIVE_PRIVACY_CHILD", "1"),
-            &[
-                ("OKOU_NATIVE_PRIVACY_MODE", Some(mode)),
-                ("OKOU_NATIVE_PRIVACY_EVIDENCE", Some(evidence_path)),
-            ],
-            Duration::from_secs(30),
-        )
-        .await;
-        assert!(
-            !output.truncated,
-            "privacy checks require complete stdout and stderr"
+    for (first, second) in [("worker", "blocking"), ("auth_error", "body_error")] {
+        // Join both jobs before propagating either panic so the sibling can finish cleanup.
+        let (first, second) = tokio::join!(
+            tokio::spawn(assert_native_privacy_mode(first)),
+            tokio::spawn(assert_native_privacy_mode(second)),
         );
-        let stdout = output.stdout;
-        let stderr = output.stderr;
-        let report: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(evidence.path().join("report.json")).unwrap())
-                .unwrap();
-        for bytes in [stdout.as_str(), stderr.as_str(), &report.to_string()] {
-            assert!(
-                !bytes.contains(PRIVATE_CANARY),
-                "private diagnostic escaped its resource domain"
-            );
-        }
-        assert!(stderr.contains("native Tailscale resource domain failed"));
+        first.unwrap();
+        second.unwrap();
+    }
+}
+
+async fn assert_native_privacy_mode(mode: &'static str) {
+    let evidence = tempfile::tempdir().unwrap();
+    let evidence_path = evidence.path().to_str().expect("UTF-8 evidence path");
+    let output = runner_host::test_fixtures::ignored_child::run_ignored_child_test(
+        "native_privacy::native_privacy_child",
+        ("OKOU_NATIVE_PRIVACY_CHILD", "1"),
+        &[
+            ("OKOU_NATIVE_PRIVACY_MODE", Some(mode)),
+            ("OKOU_NATIVE_PRIVACY_EVIDENCE", Some(evidence_path)),
+        ],
+        Duration::from_secs(30),
+    )
+    .await;
+    assert!(
+        !output.truncated,
+        "privacy checks require complete stdout and stderr"
+    );
+    let stdout = output.stdout;
+    let stderr = output.stderr;
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(evidence.path().join("report.json")).unwrap())
+            .unwrap();
+    for bytes in [stdout.as_str(), stderr.as_str(), &report.to_string()] {
         assert!(
-            stderr.contains(ORDINARY_PANIC),
-            "unrelated panic behavior is preserved"
+            !bytes.contains(PRIVATE_CANARY),
+            "private diagnostic escaped its resource domain"
         );
-        assert!(stderr.contains("ordinary HTTP diagnostic"));
+    }
+    assert!(stderr.contains("native Tailscale resource domain failed"));
+    assert!(
+        stderr.contains(ORDINARY_PANIC),
+        "unrelated panic behavior is preserved"
+    );
+    assert!(stderr.contains("ordinary HTTP diagnostic"));
+    assert!(
+        report["files"]
+            .as_str()
+            .unwrap()
+            .contains("native Tailscale resource domain failed")
+    );
+    assert!(
+        report["axiom"]
+            .to_string()
+            .contains("native Tailscale resource domain failed")
+    );
+    if matches!(mode, "worker" | "blocking") {
         assert!(
-            report["files"]
-                .as_str()
-                .unwrap()
-                .contains("native Tailscale resource domain failed")
-        );
-        assert!(
-            report["axiom"]
+            report["sentry"]
                 .to_string()
                 .contains("native Tailscale resource domain failed")
         );
-        if matches!(mode, "worker" | "blocking") {
-            assert!(
-                report["sentry"]
-                    .to_string()
-                    .contains("native Tailscale resource domain failed")
-            );
-        }
-        assert!(report["sentry"].to_string().contains(ORDINARY_PANIC));
-        assert_eq!(
-            report["requested"].as_bool().unwrap(),
-            matches!(mode, "worker" | "blocking")
-        );
-        assert_eq!(
-            report["provider_operations"],
-            match mode {
-                "auth_error" => serde_json::json!(["oauth"]),
-                "body_error" => serde_json::json!(["oauth", "create", "delete"]),
-                _ => serde_json::json!(["oauth", "create", "http2", "delete"]),
-            }
-        );
     }
+    assert!(report["sentry"].to_string().contains(ORDINARY_PANIC));
+    assert_eq!(
+        report["requested"].as_bool().unwrap(),
+        matches!(mode, "worker" | "blocking")
+    );
+    assert_eq!(
+        report["provider_operations"],
+        match mode {
+            "auth_error" => serde_json::json!(["oauth"]),
+            "body_error" => serde_json::json!(["oauth", "create", "delete"]),
+            _ => serde_json::json!(["oauth", "create", "http2", "delete"]),
+        }
+    );
 }
 
 #[test]

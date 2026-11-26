@@ -310,6 +310,7 @@ const startCustomConnectorOAuth2AuthorizationResponseSchema = object({
   authorizationUrl: url(),
   connectionId: uuid().optional(),
   oauthAttemptId: uuid(),
+  nativeCallbackUrl: url().optional(),
 });
 
 const startCustomConnectorOAuth2ConnectedResponseSchema = object({

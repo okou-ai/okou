@@ -119,7 +119,7 @@ public struct ChatModelConfiguration: Sendable {
   public private(set) var preference: ModelPreference
   public let available: AvailableRunModels
   public let catalog: ModelCatalog
-  public let switches: [String: Bool]
+  public private(set) var switches: [String: Bool]
 
   public init(
     preference: ModelPreference, available: AvailableRunModels, catalog: ModelCatalog,
@@ -132,6 +132,12 @@ public struct ChatModelConfiguration: Sendable {
     self.available = available
     self.catalog = catalog
     self.switches = switches
+  }
+
+  public func withSwitches(_ switches: [String: Bool]) -> ChatModelConfiguration {
+    var updated = self
+    updated.switches = switches
+    return updated
   }
 
   public func withPreference(_ preference: ModelPreference) -> ChatModelConfiguration {

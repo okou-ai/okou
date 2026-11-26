@@ -1,17 +1,32 @@
+import type { infer as zInfer } from "zod";
+import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import {
+  HostedSiteDomains,
+  HostedSiteDomainRemoveDialog,
+  type HostedSiteDomainOperations,
+} from "./hosted-site-domains.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import {
   Check,
+  Circle,
   ChevronRight,
   Loader2,
   PanelTop,
   Pencil,
+  Plus,
   Share2,
+  Trash2,
 } from "lucide-react";
 import {
   Button,
   Input,
+  IconButton,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
   MENU_ROW_HEIGHT_CLASS,
   Popover,
   PopoverContent,
@@ -22,6 +37,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
+import { SharePeople } from "./share-people.tsx";
+import { ShareAudienceChoices } from "./share-audience-choices.tsx";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
@@ -58,7 +75,9 @@ function HostedSiteBannerSetting({
   const [operation, change] = useLoadableSet(session.changeBanner$);
   const signal = useGet(session.signal$);
   const features = useLastResolved(featureSwitches$);
-  const rows = features?.[FeatureSwitchKey.HostedSiteShareRows];
+  const rows =
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (
     !signal ||
@@ -127,15 +146,34 @@ function HostedSiteBannerSetting({
   );
 }
 
+function AccessHeading({ saving }: { readonly saving: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
+      {t(($) => {
+        return $.artifacts.sharing.accessLabel;
+      })}
+      {saving && <Loader2 size={14} className="animate-spin" />}
+    </div>
+  );
+}
+
 function HostedSitePermissions({
   session,
+  children,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly children: ReactNode;
 }) {
-  const { t } = useTranslation();
   const loadable = useLoadable(session.visibility$);
+  const current = useLastResolved(session.visibility$);
   const [operation, change] = useLoadableSet(session.changeVisibility$);
+  const pending = useGet(session.pendingVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
+  const emailSharing =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.HostedSiteEmailSharing
+    ];
   const signal = useGet(session.signal$);
   if (!signal || (loadable.state === "hasData" && !loadable.data)) {
     return null;
@@ -144,14 +182,32 @@ function HostedSitePermissions({
   const failed = loadable.state === "hasError";
   return (
     <>
-      <div className="flex items-center gap-2 px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">
-        {t(($) => {
-          return $.artifacts.sharing.accessLabel;
-        })}
-        {saving && <Loader2 size={14} className="animate-spin" />}
-      </div>
+      {!emailSharing && <AccessHeading saving={saving} />}
       {loadable.state === "loading" && !saving ? (
-        <ShareSkeleton showCopyButton={false} />
+        emailSharing ? (
+          <div aria-busy="true" className="space-y-2">
+            <Skeleton className="h-9 w-full rounded-lg" />
+            <Skeleton className="h-5 w-48" />
+          </div>
+        ) : (
+          <ShareSkeleton showCopyButton={false} />
+        )
+      ) : emailSharing ? (
+        <>
+          <ShareAudienceChoices
+            selected={current?.visibility}
+            pending={pending}
+            organizationName={organization?.name ?? null}
+            saving={saving}
+            unavailable={failed}
+            onChange={(visibility) => {
+              detach(change(visibility, signal), Reason.DomCallback);
+            }}
+          >
+            {children}
+          </ShareAudienceChoices>
+          {failed && <ShareLoadError />}
+        </>
       ) : (
         <>
           <SharePermissionChoices
@@ -269,16 +325,217 @@ function WebsiteUrlStatus({
   );
 }
 
-function WebsiteUrlEditor({
+function WebsiteDomainChoices({
+  session,
+  saving,
+  configuration,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema>;
+}) {
+  const { t } = useTranslation();
+  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const showDomains = useSet(session.domains.show$);
+  const manageDomain = useSet(session.domains.manage$);
+  const requestRemoval = useSet(session.domains.requestRemoval$);
+  const signal = useGet(session.signal$);
+  if (!signal) {
+    return null;
+  }
+  return (
+    <>
+      {configuration.domains.length > 0 && (
+        <ul
+          aria-label={t(($) => {
+            return $.artifacts.customDomain.yourDomains;
+          })}
+          className="space-y-2"
+        >
+          {configuration.domains.map((domain) => {
+            const selected = domain.id === selectedDomainId;
+            return (
+              <li
+                key={domain.id}
+                className={cn(
+                  "relative rounded-xl border border-border",
+                  selected && "bg-gray-50",
+                )}
+              >
+                <Button
+                  type="button"
+                  variant="quiet"
+                  className="h-auto w-full justify-start gap-3 whitespace-normal rounded-xl py-3 pl-3 pr-14 text-left text-foreground"
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.customDomain.manage;
+                    },
+                    {
+                      hostname: domain.hostname,
+                    },
+                  )}
+                  aria-current={selected ? "true" : undefined}
+                  disabled={saving || domain.removing}
+                  onClick={() => {
+                    return manageDomain(domain.id);
+                  }}
+                >
+                  {selected ? (
+                    <Check size={16} aria-hidden />
+                  ) : (
+                    <Circle
+                      size={16}
+                      className="text-muted-foreground"
+                      aria-hidden
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block break-all text-sm font-medium">
+                      {domain.hostname}
+                    </span>
+                    <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      {domain.ready && <Check size={12} aria-hidden />}
+                      {domain.ready
+                        ? t(($) => {
+                            return $.artifacts.customDomain.httpsReady;
+                          })
+                        : t(($) => {
+                            return $.artifacts.customDomain.needsSetup;
+                          })}
+                    </span>
+                  </span>
+                  <ChevronRight size={14} aria-hidden />
+                </Button>
+                <IconButton
+                  className="absolute right-2 top-1/2 -translate-y-1/2"
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.customDomain.removeHostname;
+                    },
+                    { hostname: domain.hostname },
+                  )}
+                  disabled={saving}
+                  onClick={() => {
+                    return requestRemoval(domain.id);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </IconButton>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <Button
+        type="button"
+        variant="quiet"
+        disabled={saving}
+        className="mt-3 w-full justify-start font-normal"
+        onClick={() => {
+          detach(showDomains(signal), Reason.DomCallback);
+        }}
+      >
+        <Plus size={14} />
+        {t(($) => {
+          return $.artifacts.customDomain.connect;
+        })}
+      </Button>
+    </>
+  );
+}
+function WebsiteSlugInput({
+  session,
+  saving,
+  suffix,
+  onChange,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly suffix: ReactNode;
+  readonly onChange: (value: string) => void;
+}) {
+  const id = session.inputId;
+  const draft = useGet(session.draft$);
+  const validation = useGet(session.validation$);
+  if (draft === null) {
+    return null;
+  }
+  return (
+    <Input
+      id={id}
+      autoFocus
+      value={draft}
+      disabled={saving}
+      autoComplete="off"
+      autoCapitalize="none"
+      spellCheck={false}
+      maxLength={63}
+      aria-describedby={`${id}-hint`}
+      aria-invalid={validation === "invalid" || validation === "taken"}
+      suffix={suffix}
+      className="mt-2"
+      onChange={(event) => {
+        onChange(event.target.value);
+      }}
+      onKeyDown={(event) => {
+        // Composition confirmation, including Safari's final key, cannot submit.
+        if (
+          event.key === "Enter" &&
+          (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+        ) {
+          event.preventDefault();
+        }
+      }}
+    />
+  );
+}
+function WebsiteUrlActions({
+  session,
+  saving,
+  disabled,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const cancel = useSet(session.cancel$);
+  return (
+    <div className="mt-4 flex justify-end gap-1">
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        disabled={saving}
+        onClick={() => {
+          cancel();
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.siteUrl.cancel;
+        })}
+      </Button>
+      <Button type="submit" size="sm" disabled={disabled}>
+        {saving && <Loader2 size={14} className="animate-spin" />}
+        {t(($) => {
+          return $.artifacts.siteUrl.save;
+        })}
+      </Button>
+    </div>
+  );
+}
+function PlatformWebsiteUrlForm({
   session,
   saving,
   saveFailed,
   onSave,
+  configuration,
 }: {
   readonly session: HostedSiteShareSession;
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema> | null;
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
@@ -287,20 +544,27 @@ function WebsiteUrlEditor({
   const draft = useGet(session.draft$);
   const validation = useGet(session.validation$);
   const [checking, change] = useLoadableSet(session.change$);
-  const cancel = useSet(session.cancel$);
   const feedback = useWebsiteUrlFeedback(
     session,
     checking.state === "loading",
     checking.state === "hasError",
     saveFailed,
   );
+  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const domainNotice = useGet(session.domains.notice$);
   if (!details || draft === null || !signal) {
     return null;
   }
+  const changedDomain =
+    configuration !== null &&
+    selectedDomainId !== configuration.selectedDomainId;
+  const canSavePlatform =
+    validation === "available" ||
+    (changedDomain && draft === details.publicSlug);
   const suffix = new URL(details.url).hostname.slice(details.publicSlug.length);
   return (
     <form
-      className="mt-4"
+      className={configuration ? undefined : "mt-4"}
       onSubmit={(event) => {
         // This form owns URL submission; keep navigation with the current preview.
         event.preventDefault();
@@ -315,31 +579,12 @@ function WebsiteUrlEditor({
         </label>
         <WebsiteUrlStatus status={feedback.status} />
       </div>
-
-      <Input
-        id={id}
-        autoFocus
-        value={draft}
-        disabled={saving}
-        autoComplete="off"
-        autoCapitalize="none"
-        spellCheck={false}
-        maxLength={63}
-        aria-describedby={`${id}-hint`}
-        aria-invalid={validation === "invalid" || validation === "taken"}
+      <WebsiteSlugInput
+        session={session}
+        saving={saving}
         suffix={suffix}
-        className="mt-2"
-        onChange={(event) => {
-          detach(change(event.target.value, signal), Reason.DomCallback);
-        }}
-        onKeyDown={(event) => {
-          // Composition confirmation, including Safari's final key, cannot submit.
-          if (
-            event.key === "Enter" &&
-            (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
-          ) {
-            event.preventDefault();
-          }
+        onChange={(value) => {
+          detach(change(value, signal), Reason.DomCallback);
         }}
       />
       <p
@@ -350,36 +595,186 @@ function WebsiteUrlEditor({
           feedback.error ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        {feedback.message}
+        {domainNotice ?? feedback.message}
       </p>
-      <div className="mt-4 flex justify-end gap-1">
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          disabled={saving}
-          onClick={() => {
-            cancel();
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.siteUrl.cancel;
-          })}
-        </Button>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={
-            saving || checking.state === "loading" || validation !== "available"
-          }
-        >
-          {saving && <Loader2 size={14} className="animate-spin" />}
-          {t(($) => {
-            return $.artifacts.siteUrl.save;
-          })}
-        </Button>
-      </div>
+      <WebsiteUrlActions
+        session={session}
+        saving={saving}
+        disabled={saving || checking.state === "loading" || !canSavePlatform}
+      />
     </form>
+  );
+}
+
+function WebsiteDomainSelectionForm({
+  session,
+  saving,
+  configuration,
+  onSave,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema>;
+  readonly onSave: () => void;
+}) {
+  const { t } = useTranslation();
+  const selected = useGet(session.domains.selectedDomainId$);
+  const notice = useGet(session.domains.notice$);
+  const domain = configuration.domains.find((item) => {
+    return item.id === selected && item.ready && !item.removing;
+  });
+  const changed = selected !== configuration.selectedDomainId;
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (domain && changed) {
+          onSave();
+        }
+      }}
+    >
+      <p className="mb-3 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.artifacts.customDomain.addressHint;
+        })}
+      </p>
+      <WebsiteDomainChoices
+        session={session}
+        saving={saving}
+        configuration={configuration}
+      />
+      <p
+        role="status"
+        className="mt-3 min-h-5 break-all text-xs text-muted-foreground"
+      >
+        {notice ??
+          (domain
+            ? t(
+                ($) => {
+                  return $.artifacts.customDomain.urlPreview;
+                },
+                { hostname: domain.hostname },
+              )
+            : null)}
+      </p>
+      <WebsiteUrlActions
+        session={session}
+        saving={saving}
+        disabled={saving || !domain || !changed}
+      />
+    </form>
+  );
+}
+
+function WebsiteUrlEditor({
+  session,
+  saving,
+  saveFailed,
+  onSave,
+  domainOperations,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly saveFailed: boolean;
+  readonly onSave: () => void;
+  readonly domainOperations: HostedSiteDomainOperations;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(session.signal$);
+  const details = useLastResolved(session.details$);
+  const domainSettings = useLoadable(session.domains.settings$);
+  const previousDomainSettings = useLastResolved(session.domains.settings$);
+  const addressMode = useGet(session.domains.addressMode$);
+  const changeAddressMode = useSet(session.domains.changeMode$);
+  const features = useLastResolved(featureSwitches$);
+  const domainOpen = useGet(session.domains.open$);
+  if (!details || !signal) {
+    return null;
+  }
+  const configuration =
+    domainSettings.state === "hasData"
+      ? domainSettings.data
+      : (previousDomainSettings ?? null);
+  const platformForm = (
+    <PlatformWebsiteUrlForm
+      session={session}
+      saving={saving}
+      saveFailed={saveFailed}
+      onSave={onSave}
+      configuration={configuration}
+    />
+  );
+  const busy =
+    saving ||
+    domainOperations.creating ||
+    domainOperations.verifying ||
+    domainOperations.removing;
+  if (!configuration) {
+    if (
+      domainSettings.state === "loading" &&
+      (features?.[FeatureSwitchKey.HostedSiteCustomDomains] ||
+        details.effectiveUrl)
+    ) {
+      return (
+        <div className="mt-4 space-y-4" aria-busy="true">
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <Skeleton className="h-9 w-full rounded-lg" />
+          <div className="flex justify-end">
+            <Skeleton className="h-8 w-16 rounded-lg" />
+          </div>
+        </div>
+      );
+    }
+    return platformForm;
+  }
+  return (
+    <>
+      <Tabs
+        className="mt-4"
+        value={addressMode}
+        onValueChange={(value) => {
+          if (value === "platform" || value === "custom") {
+            detach(changeAddressMode(value, signal), Reason.DomCallback);
+          }
+        }}
+      >
+        <TabsList className="w-full">
+          <TabsTrigger className="flex-1" value="platform" disabled={busy}>
+            {t(($) => {
+              return $.artifacts.customDomain.okouUrl;
+            })}
+          </TabsTrigger>
+          <TabsTrigger className="flex-1" value="custom" disabled={busy}>
+            {t(($) => {
+              return $.artifacts.customDomain.title;
+            })}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="platform" className="mt-4">
+          {platformForm}
+        </TabsContent>
+        <TabsContent value="custom" className="mt-4">
+          {domainOpen ? (
+            <HostedSiteDomains
+              session={session}
+              operations={domainOperations}
+            />
+          ) : (
+            <WebsiteDomainSelectionForm
+              session={session}
+              saving={busy}
+              configuration={configuration}
+              onSave={onSave}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
+      <HostedSiteDomainRemoveDialog
+        session={session}
+        operations={domainOperations}
+        configuration={configuration}
+      />
+    </>
   );
 }
 
@@ -443,10 +838,10 @@ function HostedSiteShareActions({
   const edit = useSet(session.edit$);
   const copy = useSet(session.copy$);
   const banner = useLoadable(session.banner$);
+  const features = useLastResolved(featureSwitches$);
   const rows =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteShareRows
-    ] === true;
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (!signal) {
     return null;
@@ -489,6 +884,11 @@ function HostedSiteShareActions({
         {loadFailedStatus}
         <ShareCopyButton
           className="mt-1.5 w-full"
+          size={
+            features?.[FeatureSwitchKey.HostedSiteEmailSharing]
+              ? "default"
+              : "sm"
+          }
           copied={link !== null && copiedUrl === link}
           disabled={link === null}
           onCopy={copyLink}
@@ -536,22 +936,24 @@ function HostedSiteShareUrl({
   saving,
   saveFailed,
   onSave,
+  domainOperations,
 }: {
   readonly session: HostedSiteShareSession;
   readonly surface: "dialog" | "sidebar";
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
+  readonly domainOperations: HostedSiteDomainOperations;
 }) {
   const link = useLoadable(session.copyUrl$);
   // Stays subscribed while the editor is open, so Cancel and Save return to
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
+  const features = useLastResolved(featureSwitches$);
   const rows =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteShareRows
-    ] === true;
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   return (
     <>
       {editing ? (
@@ -560,6 +962,7 @@ function HostedSiteShareUrl({
           saving={saving}
           saveFailed={saveFailed}
           onSave={onSave}
+          domainOperations={domainOperations}
         />
       ) : link.state === "loading" ? (
         // Nothing can be copied or customized until the current address is
@@ -579,7 +982,11 @@ function HostedSiteShareUrl({
           link={link.state === "hasData" ? link.data : null}
           address={
             details.state === "hasData" && details.data
-              ? new URL(details.data.url).hostname
+              ? new URL(
+                  link.state === "hasData" && link.data
+                    ? link.data
+                    : (details.data.effectiveUrl ?? details.data.url),
+                ).hostname
               : null
           }
           customizable={
@@ -600,18 +1007,21 @@ function HostedSiteShareBody({
   session,
   permissions,
   banner,
+  padded,
   children,
 }: {
   readonly session: HostedSiteShareSession;
   readonly permissions: ReactNode;
   readonly banner: ReactNode;
+  /** The people layout holds a field, so it takes dialog padding throughout. */
+  readonly padded: boolean;
   readonly children: ReactNode;
 }) {
   const editing = useGet(session.editing$);
   return (
-    <div className={editing ? "p-4" : "p-1.5"}>
+    <div className={editing || padded ? "p-4" : "p-1.5"}>
       {!editing && permissions}
-      <div className={cn(!editing && "px-2")}>
+      <div className={cn(!editing && !padded && "px-2")}>
         {!editing && banner}
         {children}
       </div>
@@ -681,17 +1091,33 @@ function HostedSiteSharePopover({
 function HostedSiteShareSessionMenu({
   session,
   surface,
-  permissions,
   banner,
   ...props
 }: ShareButtonProps & {
   readonly session: HostedSiteShareSession;
   readonly surface: "dialog" | "sidebar";
-  readonly permissions: ReactNode;
   readonly banner: ReactNode;
 }) {
   const signal = useGet(session.signal$);
+  const domainOpen = useGet(session.domains.open$);
+  const editing = useGet(session.editing$);
+  const [domainCreating, createDomain] = useLoadableSet(
+    session.domains.create$,
+  );
+  const [domainVerifying, verifyDomain] = useLoadableSet(
+    session.domains.verify$,
+  );
+  const [domainRemoving, removeDomain] = useLoadableSet(
+    session.domains.remove$,
+  );
   const [saving, save] = useLoadableSet(session.save$);
+  const [sharing, share] = useLoadableSet(session.people.share$);
+  const [removing, remove] = useLoadableSet(session.people.remove$);
+  const features = useLastResolved(featureSwitches$);
+  const emailSharing = features?.[FeatureSwitchKey.HostedSiteEmailSharing];
+  const domainEditor =
+    domainOpen ||
+    (editing && features?.[FeatureSwitchKey.HostedSiteCustomDomains]);
   if (!signal) {
     return null;
   }
@@ -699,17 +1125,50 @@ function HostedSiteShareSessionMenu({
   return (
     <HostedSiteSharePopover
       session={session}
-      saving={saving.state === "loading"}
+      saving={
+        saving.state === "loading" ||
+        sharing.state === "loading" ||
+        removing.state === "loading" ||
+        domainCreating.state === "loading" ||
+        domainVerifying.state === "loading" ||
+        domainRemoving.state === "loading"
+      }
       {...props}
     >
       <PopoverContent
         align="end"
         aria-label={props.ariaLabel}
-        className="w-90 max-w-[calc(100vw-2rem)] p-0"
+        className={cn(
+          "max-w-[calc(100vw-2rem)] p-0",
+          domainEditor
+            ? "max-h-[var(--available-height)] w-105 overflow-y-auto overscroll-contain"
+            : emailSharing
+              ? "w-100"
+              : "w-90",
+        )}
       >
         <HostedSiteShareBody
           session={session}
-          permissions={permissions}
+          padded={emailSharing === true}
+          permissions={
+            <HostedSitePermissions session={session}>
+              <SharePeople
+                session={session}
+                busy={
+                  sharing.state === "loading" || removing.state === "loading"
+                }
+                failed={
+                  sharing.state === "hasError" || removing.state === "hasError"
+                }
+                onShare={(email) => {
+                  detach(share(email, signal), Reason.DomCallback);
+                }}
+                onRemove={(id) => {
+                  detach(remove(id, signal), Reason.DomCallback);
+                }}
+              />
+            </HostedSitePermissions>
+          }
           banner={banner}
         >
           <HostedSiteShareUrl
@@ -717,6 +1176,26 @@ function HostedSiteShareSessionMenu({
             surface={surface}
             saving={saving.state === "loading"}
             saveFailed={saving.state === "hasError"}
+            domainOperations={{
+              creating: domainCreating.state === "loading",
+              verifying: domainVerifying.state === "loading",
+              verifyFailed: domainVerifying.state === "hasError",
+              removing: domainRemoving.state === "loading",
+              saving: saving.state === "loading",
+              saveFailed: saving.state === "hasError",
+              create: () => {
+                detach(createDomain(signal), Reason.DomCallback);
+              },
+              verify: () => {
+                detach(verifyDomain(signal), Reason.DomCallback);
+              },
+              remove: () => {
+                detach(removeDomain(signal), Reason.DomCallback);
+              },
+              save: () => {
+                detach(save(signal), Reason.DomCallback);
+              },
+            }}
             onSave={() => {
               detach(save(signal), Reason.DomCallback);
             }}
@@ -737,15 +1216,14 @@ export function HostedSiteShareMenu({
 }) {
   const scope = getHostedSiteShareScope(surface);
   const session = useGet(scope.session$);
-  const mountRef = useSet(scope.mountRef$);
   return (
-    <span key={url} ref={mountRef} data-share-url={url} className="inline-flex">
+    <span className="inline-flex">
       {session?.sourceUrl === url ? (
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
+          key={session.inputId}
           session={session}
           surface={surface}
-          permissions={<HostedSitePermissions session={session} />}
           banner={<HostedSiteBannerSetting session={session} />}
           {...props}
         />

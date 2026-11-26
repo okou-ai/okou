@@ -1,15 +1,18 @@
 package ai.okou.android.state
 
 import ai.okou.android.artifacts.ArtifactFilter
+import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.chat.ConversationAnchor
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.WorkspaceSearchType
+import ai.okou.android.hasPendingSearchText
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +42,8 @@ internal enum class SettingsDestination {
     ModelAccounts,
     CreditBalance,
     Account,
+    ProactiveServices,
+    BuiltInTools,
 }
 
 internal enum class SearchRoute {
@@ -72,9 +77,103 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 }
 
 @Composable
+internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
+    rememberSaveableStateHolder()
+
+@Composable
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
+
+internal data class ChatConnectorVisit(
+    val composerKey: String,
+    val slug: String?,
+    val accountId: String?,
+)
+
+@Composable
+internal fun rememberChatConnectorVisit(): MutableState<ChatConnectorVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<ChatConnectorVisit?, String>(
+                save = { visit ->
+                    if (visit == null) emptyList()
+                    else listOf(visit.composerKey, visit.slug.orEmpty(), visit.accountId.orEmpty())
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        ChatConnectorVisit(
+                            it,
+                            values[1].ifEmpty { null },
+                            values[2].ifEmpty { null },
+                        )
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
+internal enum class ComposerOptionsPage {
+    Closed,
+    Options,
+    Connectors,
+    Model,
+}
+
+internal data class ComposerOptionsPresentation(
+    val page: ComposerOptionsPage = ComposerOptionsPage.Closed,
+    val restoreEditor: Boolean = false,
+    val restoreKeyboard: Boolean = false,
+    val returnAccount: String? = null,
+)
+
+@Composable
+internal fun rememberComposerOptions(targetKey: String): MutableState<ComposerOptionsPresentation> =
+    rememberSaveable(
+        targetKey,
+        stateSaver =
+            listSaver<ComposerOptionsPresentation, Any>(
+                save = { value ->
+                    listOf(
+                        value.page.name,
+                        value.restoreEditor,
+                        value.restoreKeyboard,
+                        value.returnAccount ?: "-",
+                    )
+                },
+                restore = { values ->
+                    ComposerOptionsPresentation(
+                        ComposerOptionsPage.valueOf(values[0] as String),
+                        values[1] as Boolean,
+                        values[2] as Boolean,
+                        (values[3] as String).takeIf { it != "-" },
+                    )
+                },
+            ),
+    ) {
+        mutableStateOf(ComposerOptionsPresentation())
+    }
+
+internal data class WorkflowConnectorVisit(val slug: String, val ruleId: String?)
+
+@Composable
+internal fun rememberWorkflowConnectorVisit(): MutableState<WorkflowConnectorVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<WorkflowConnectorVisit?, String>(
+                save = { visit ->
+                    if (visit == null) emptyList() else listOf(visit.slug, visit.ruleId.orEmpty())
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        WorkflowConnectorVisit(it, values[1].ifEmpty { null })
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
 
 internal class ConnectorDirectoryState(
     slug: String? = null,
@@ -91,9 +190,6 @@ internal class ConnectorDirectoryState(
     var committedQuery by mutableStateOf(query)
         private set
 
-    val hasPendingSearchInput: Boolean
-        get() = query.composition != null && query.text != committedQuery.text
-
     fun editQuery(value: TextFieldValue) {
         query = value
         if (value.composition == null) committedQuery = value
@@ -101,8 +197,9 @@ internal class ConnectorDirectoryState(
 }
 
 @Composable
-internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+internal fun rememberConnectorDirectory(initialSlug: String?): ConnectorDirectoryState =
     rememberSaveable(
+        initialSlug,
         saver =
             listSaver<ConnectorDirectoryState, Any>(
                 save = {
@@ -127,58 +224,114 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
                         TextFieldValue(it[3] as String, TextRange(it[4] as Int, it[5] as Int)),
                     )
                 },
-            )
+            ),
     ) {
-        ConnectorDirectoryState()
+        ConnectorDirectoryState(slug = initialSlug)
     }
 
 @Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable
+internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberWorkflowEditorReturnFocus(
+    workflowId: String?,
+    tab: WorkflowTab,
+): MutableState<String?> = rememberSaveable(workflowId, tab) { mutableStateOf(null) }
+
+@Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
+
+@Composable
+internal fun rememberSearchWorkflowId(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
-internal data class SearchResultAnchor(val chatId: String, val offset: Int)
+internal data class SearchResultAnchor(val key: String, val offset: Int, val index: Int)
 
 internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
     anchor: SearchResultAnchor? = null,
+    type: WorkspaceSearchType = WorkspaceSearchType.All,
+    focusedResult: String? = null,
 ) {
-    private data class SearchInput(
-        val current: TextFieldValue,
-        val committed: TextFieldValue = current,
-    )
+    private var committed = query
+    var query by mutableStateOf(query)
+        private set
 
-    private var input by mutableStateOf(SearchInput(query))
-    val query: TextFieldValue
-        get() = input.current
+    var keyword by mutableStateOf(query.text.trim())
+        private set
 
-    val committedQuery: TextFieldValue
-        get() = input.committed
+    val hasPendingInput: Boolean
+        get() = hasPendingSearchText(query.text, query.composition, keyword)
+
+    var type by mutableStateOf(type)
+        private set
 
     val position = LazyListState()
     var pendingAnchor by mutableStateOf(anchor)
         private set
 
-    fun edit(value: TextFieldValue) {
-        val committed = if (value.composition == null) value else committedQuery
-        if (committedQuery.text != committed.text) {
-            pendingAnchor = null
-            position.requestScrollToItem(0)
-        }
-        input = SearchInput(value, committed)
+    var pendingFocus by mutableStateOf(focusedResult)
+        private set
+
+    private var announcedReadFailure = false
+
+    fun shouldAnnounceReadFailure(failed: Boolean): Boolean {
+        val announce = failed && !announcedReadFailure
+        announcedReadFailure = failed
+        return announce
     }
 
+    fun edit(value: TextFieldValue) {
+        query = value
+        if (value.composition != null) return
+        committed = value
+        if (keyword != value.text.trim()) {
+            keyword = value.text.trim()
+            resetPosition()
+        }
+    }
+
+    fun selectType(value: WorkspaceSearchType) {
+        if (type == value) return
+        type = value
+        resetPosition()
+    }
+
+    fun clearQuery() = edit(TextFieldValue())
+
+    fun returnToResult(key: String) {
+        query = committed
+        pendingAnchor = savedAnchor()
+        pendingFocus = key
+    }
+
+    fun restoreFocus() {
+        pendingFocus = null
+    }
+
+    fun savedQuery(): TextFieldValue = committed
+
     fun reset() {
+        type = WorkspaceSearchType.All
+        clearQuery()
+        resetPosition()
+    }
+
+    private fun resetPosition() {
         pendingAnchor = null
+        pendingFocus = null
+        announcedReadFailure = false
         position.requestScrollToItem(0)
-        input = SearchInput(TextFieldValue())
     }
 
     fun cancelComposition() {
-        if (query.composition != null) input = SearchInput(committedQuery)
+        query = committed
     }
 
     fun restorePosition(index: Int?) {
@@ -195,21 +348,10 @@ internal class ChatSearchState(
             .firstOrNull { it.index == position.firstVisibleItemIndex }
             ?.let { item ->
                 (item.key as? String)?.let {
-                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset, item.index)
                 }
             }
     }
-}
-
-private class DisplayedSearchValue<T>(var value: T)
-
-@Composable
-internal fun <T> ChatSearchState.retainWhileComposing(value: T): T {
-    val displayed = remember(this) { DisplayedSearchValue(value) }
-    if (query.composition != null) return displayed.value
-    // Keep the last rendered results if a refresh arrives in the same frame as an IME edit.
-    SideEffect { displayed.value = value }
-    return value
 }
 
 @Composable
@@ -218,27 +360,40 @@ internal fun rememberChatSearchState(): ChatSearchState =
         saver =
             listSaver<ChatSearchState, Any>(
                 save = {
-                    val query = it.committedQuery
+                    val query = it.savedQuery()
                     if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
                         val anchor = it.savedAnchor()
                         listOf(
                             query.text,
                             query.selection.start,
                             query.selection.end,
-                            anchor?.chatId.orEmpty(),
+                            anchor?.key.orEmpty(),
                             anchor?.offset ?: 0,
+                            it.type.name,
+                            it.pendingFocus.orEmpty(),
+                            anchor?.index ?: 0,
                         )
                     } else emptyList()
                 },
-                restore = { (text, start, end, chatId, offset) ->
+                restore = { fields ->
+                    val (text, start, end, key, offset) = fields
                     ChatSearchState(
                         TextFieldValue(text as String, TextRange(start as Int, end as Int)),
-                        (chatId as String)
+                        (key as String)
                             .takeIf { it.isNotEmpty() }
-                            ?.let { SearchResultAnchor(it, offset as Int) },
+                            ?.let {
+                                SearchResultAnchor(
+                                    it,
+                                    offset as Int,
+                                    fields.getOrNull(7) as? Int ?: 0,
+                                )
+                            },
+                        WorkspaceSearchType.entries.firstOrNull { it.name == fields.getOrNull(5) }
+                            ?: WorkspaceSearchType.All,
+                        (fields.getOrNull(6) as? String)?.ifEmpty { null },
                     )
                 },
-            )
+            ),
     ) {
         ChatSearchState()
     }
@@ -251,9 +406,19 @@ internal data class WorkspaceNavigation(
     val chatResourcesId: String? = null,
     val chatArtifactLink: String? = null,
     val chatArtifactFocusKey: String? = null,
+    val messageSequence: Long? = null,
 )
 
-internal data class ArtifactsDestination(val sourceId: String? = null)
+internal const val RetainedExternalImagePreview = "external-image"
+
+// Only the in-memory preview owner retains the external URL across recreation.
+private fun String.restorableArtifactLink() =
+    if (startsWith(ExternalImagePreviewPrefix)) RetainedExternalImagePreview else this
+
+internal data class ArtifactsDestination(
+    val sourceId: String? = null,
+    val searchResultId: String? = null,
+)
 
 internal data class ConversationLinkReturn(
     val navigation: WorkspaceNavigation,
@@ -268,7 +433,7 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
             listSaver<WorkspaceNavigation, Any>(
                 save = { it.savedFields() },
                 restore = ::restoreWorkspaceNavigation,
-            )
+            ),
     ) {
         mutableStateOf(WorkspaceNavigation())
     }
@@ -288,8 +453,10 @@ private fun WorkspaceNavigation.savedFields(): List<Any> {
         artifacts != null,
         artifacts?.sourceId.orEmpty(),
         chatResourcesId.orEmpty(),
-        chatArtifactLink.orEmpty(),
+        chatArtifactLink?.restorableArtifactLink().orEmpty(),
         chatArtifactFocusKey.orEmpty(),
+        messageSequence ?: 0L,
+        artifacts?.searchResultId.orEmpty(),
     )
 }
 
@@ -308,7 +475,10 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
     val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
     val artifacts =
         if (fields.getOrNull(4) == true) {
-            ArtifactsDestination((fields.getOrNull(5) as? String)?.ifEmpty { null })
+            ArtifactsDestination(
+                sourceId = (fields.getOrNull(5) as? String)?.ifEmpty { null },
+                searchResultId = (fields.getOrNull(10) as? String)?.ifEmpty { null },
+            )
         } else null
     return WorkspaceNavigation(
         target,
@@ -316,8 +486,9 @@ private fun restoreWorkspaceNavigation(fields: List<Any?>): WorkspaceNavigation 
         search ?: SearchRoute.Closed,
         artifacts,
         (fields.getOrNull(6) as? String)?.ifEmpty { null },
-        (fields.getOrNull(7) as? String)?.ifEmpty { null },
+        (fields.getOrNull(7) as? String)?.ifEmpty { null }?.restorableArtifactLink(),
         (fields.getOrNull(8) as? String)?.ifEmpty { null },
+        (fields.getOrNull(9) as? Long)?.takeIf { it > 0 },
     )
 }
 
@@ -352,7 +523,7 @@ internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLi
                         )
                     }
                 },
-            )
+            ),
     ) {
         mutableStateOf(emptyList())
     }
@@ -378,10 +549,10 @@ internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPo
                 restore = { (eventId, isRun) ->
                     ConversationLinkPosition(
                         destination =
-                            ConversationFindTarget(eventId as String, null, isRun as Boolean)
+                            ConversationFindTarget(eventId as String, null, isRun as Boolean),
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(null)
     }
@@ -424,7 +595,7 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
                         (pickerArtifactId as String).ifEmpty { null },
                     )
                 },
-            )
+            ),
     ) {
         ArtifactPageState()
     }
@@ -455,11 +626,20 @@ internal enum class WorkflowScope {
     Shared,
 }
 
+internal enum class WorkflowDraftAction {
+    Create,
+    Use,
+}
+
+internal data class WorkflowDraftReturn(val action: WorkflowDraftAction, val restoreFocus: Boolean)
+
 internal data class WorkflowsRoute(
     val mode: WorkflowsMode = WorkflowsMode.Closed,
     val id: String? = null,
     val tab: WorkflowTab = WorkflowTab.Instructions,
     val scope: WorkflowScope = WorkflowScope.All,
+    val draftReturn: WorkflowDraftReturn? = null,
+    val resourceReturnRow: String? = null,
 )
 
 @Composable
@@ -467,16 +647,34 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
     rememberSaveable(
         stateSaver =
             listSaver<WorkflowsRoute, String>(
-                save = { listOf(it.mode.name, it.id.orEmpty(), it.tab.name, it.scope.name) },
-                restore = { (mode, id, tab, scope) ->
+                save = {
+                    listOf(
+                        it.mode.name,
+                        it.id.orEmpty(),
+                        it.tab.name,
+                        it.scope.name,
+                        it.draftReturn?.action?.name.orEmpty(),
+                        (it.draftReturn?.restoreFocus == true).toString(),
+                        it.resourceReturnRow.orEmpty(),
+                    )
+                },
+                restore = { saved ->
+                    val (mode, id, tab, scope) = saved
                     WorkflowsRoute(
                         WorkflowsMode.valueOf(mode),
                         id.ifEmpty { null },
                         WorkflowTab.valueOf(tab),
                         WorkflowScope.valueOf(scope),
+                        saved.getOrNull(4)?.takeIf(String::isNotEmpty)?.let { action ->
+                            WorkflowDraftReturn(
+                                WorkflowDraftAction.valueOf(action),
+                                saved.getOrNull(5).toBoolean(),
+                            )
+                        },
+                        resourceReturnRow = saved.getOrNull(6)?.ifEmpty { null },
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(WorkflowsRoute())
     }
@@ -523,7 +721,20 @@ internal fun rememberConversationUiState(): ConversationUiState {
     return remember(holder, recent) { ConversationUiState(holder, recent) }
 }
 
-internal class JournalEditor(val value: TextFieldValue, val edit: (TextFieldValue) -> Unit)
+internal class JournalEditor(
+    val value: TextFieldValue,
+    private val updateNative: (TextFieldValue) -> Unit,
+) {
+    private var lastInputText = value.text
+
+    fun edit(input: TextFieldValue): Boolean {
+        // Several input events can arrive before the next composition.
+        val changed = input.text != lastInputText
+        lastInputText = input.text
+        updateNative(input)
+        return changed
+    }
+}
 
 /** Wait for journal hydration before consuming the restored native selection. */
 @Composable
@@ -550,3 +761,20 @@ internal fun rememberJournalEditor(
     val presented = if (native.text == text) native else TextFieldValue(text, replacementSelection)
     return JournalEditor(presented) { native = it }
 }
+
+@Composable
+internal fun rememberJournalTextField(text: String): TextFieldState =
+    rememberSaveable(
+        saver =
+            listSaver(
+                save = { listOf(it.selection.start, it.selection.end) },
+                restore = {
+                    TextFieldState(
+                        text,
+                        TextRange(it[0].coerceIn(0, text.length), it[1].coerceIn(0, text.length)),
+                    )
+                },
+            ),
+    ) {
+        TextFieldState(text, TextRange.Zero)
+    }

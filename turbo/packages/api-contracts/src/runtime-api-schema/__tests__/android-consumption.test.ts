@@ -3,20 +3,17 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import {
   renderKotlinFiles,
+  renderKotlinProductionFiles,
   generatedKotlinRelativeDirectory,
 } from "../../kotlin-bindings/generate";
-import { renderKotlinRunFailureReasons } from "../../kotlin-bindings/run-failure-reasons";
 import { runRuntimeApiSchemaCli } from "../command";
 
 let root: string;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "android-consumption-"));
-  for (const [file, source] of renderKotlinFiles())
-    await put(`${generatedKotlinRelativeDirectory}/${file}`, source);
-  await put(
-    `${generatedKotlinRelativeDirectory}/KnownRunFailureReason.kt`,
-    renderKotlinRunFailureReasons(),
-  );
+  for (const [file, source] of renderKotlinProductionFiles()) {
+    await put(file, source);
+  }
 });
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -35,14 +32,18 @@ describe("Android generated consumption CLI", () => {
   it("accepts formatting/comments but rejects stale generated response types", async () => {
     expect(await lint()).toBe(0);
     const source = renderKotlinFiles().get("ApiModels.kt")!;
+    const type = "List<String>";
+    const formattedType = "List<\n    String,\n  >";
+    expect(source).toContain(type);
+    const formattedSource = source.replace(type, formattedType);
     await put(
       `${generatedKotlinRelativeDirectory}/ApiModels.kt`,
-      `/* formatting */\n${source.replaceAll("    ", "  ")}`,
+      `/* formatting */\n${formattedSource}`,
     );
     expect(await lint()).toBe(0);
     await put(
       `${generatedKotlinRelativeDirectory}/ApiModels.kt`,
-      source.replace("String", "Boolean"),
+      formattedSource.replace(formattedType, "List<\n    Boolean,\n  >"),
     );
     expect(await lint()).toBe(1);
   });

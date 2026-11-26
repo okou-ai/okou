@@ -29,12 +29,6 @@ extension WorkspaceStore {
     return true
   }
 
-  var billingURL: URL { webURL.appending(path: "settings/billing") }
-
-  var newChatProject: ChatProject? {
-    projects.projects.first { $0.id == newChatProjectID }
-  }
-
   var newChatDraft: String {
     get { newComposer.text }
     set { newComposer.text = newValue }
@@ -59,16 +53,4 @@ extension WorkspaceStore {
     guard !isClosed, !needsUpgrade else { return }
     do { try settingsResources.prepareSettings() } catch { reportWorkspaceFailure(error) }
   }
-
-  func loadSettingsBilling() async {
-    guard !isClosed, !needsUpgrade, !Task.isCancelled else { return }
-    do { try await settingsResources.loadSettingsBilling() } catch is CancellationError {
-    } catch { reportWorkspaceFailure(error) }
-  }
-
-  func refreshSettingsBilling() async {
-    prepareSettings()
-    await loadSettingsBilling()
-  }
-
 }

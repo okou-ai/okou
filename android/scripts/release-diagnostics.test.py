@@ -24,11 +24,10 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
         def surface(xml):
             return smoke["AUTH_HEADINGS"] & smoke["app_labels"](xml)
 
-        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Restoring your session…"/></hierarchy>'))
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Couldn’t load your session or workspace"/></hierarchy>'))
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Continue to Okou"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
-        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Restoring your session…"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Continue to Okou"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
         self.assertFalse(surface('<hierarchy>'))
 
@@ -230,6 +229,31 @@ else:
                             f'<!DOCTYPE testsuites SYSTEM "file:///etc/passwd"><testsuites>{cases}</testsuites>'):
                 report.write_text(content)
                 self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_native_gate_requires_all_shards_with_distinct_passing_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            shards = [Path(temporary) / f"shard-{index}" for index in range(3)]
+            command = [sys.executable, str(SCRIPTS / "check-native-results.py"),
+                       str(shards[0]), "3", str(shards[1]), str(shards[2])]
+            for index, directory in enumerate(shards):
+                directory.mkdir()
+                (directory / "test-result-exit-code.txt").write_text("0")
+                (directory / "TEST-pixel2Api35.xml").write_text(
+                    f'<testsuite><testcase classname="Native" name="case{index}"/></testsuite>'
+                )
+            result = subprocess.run(command, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            report = shards[2] / "TEST-pixel2Api35.xml"
+            original = report.read_text()
+            for content in ('<testsuite/>', original.replace("case2", "case1")):
+                report.write_text(content)
+                self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            report.unlink()
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            report.write_text(original)
+            (shards[2] / "test-result-exit-code.txt").write_text("1")
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
     def test_pairing_accepts_signatures_but_rejects_changed_payload_or_mapping(self):
         with tempfile.TemporaryDirectory() as temporary:

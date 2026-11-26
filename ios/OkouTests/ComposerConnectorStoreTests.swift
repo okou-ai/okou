@@ -707,7 +707,8 @@ extension XCTestCase {
     ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.client),
       authorizationService: ChatConnectorService(client: fixture.client),
-      webURL: URL(string: "https://app.example.invalid")!, thread: thread, didFail: { _ in })
+      webURL: URL(string: "https://app.example.invalid")!, graph: makeTestWorkspaceGraph(),
+      threadID: thread?.id, didFail: { _ in })
   }
 }
 

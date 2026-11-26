@@ -1,19 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Warteschlange (%1$d)</string>
+    <string name="conversation_queue_empty">Keine Einträge in der Warteschlange</string>
+    <string name="conversation_queue_message">Nachricht</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Nachricht · %d Anhang</item>
+        <item quantity="other">Nachricht · %d Anhänge</item>
+    </plurals>
+    <string name="conversation_run_queued">Wartet auf den Start</string>
     <string name="conversation_welcome">Was möchtest du heute erledigen?</string>
     <string name="conversation_welcome_detail">Sag Okou, was du tun möchtest.</string>
     <string name="conversation_jump_latest">Zur neuesten Nachricht</string>
     <string name="conversation_new_reply">Neue Antwort</string>
     <string name="conversation_view_progress">Fortschritt ansehen</string>
     <string name="conversation_processing">In Bearbeitung…</string>
-    <string name="conversation_history_offline">Der Chatverlauf wird geladen, sobald du online bist.</string>
-    <string name="conversation_offline_send">Geh zum Senden online. Dein Entwurf bleibt hier.</string>
-    <string name="conversation_work">Arbeitsverlauf</string>
+    <string name="conversation_reply_summary">Antwortübersicht</string>
+    <string name="conversation_turn_continued">In der nächsten Runde fortgesetzt</string>
+    <string name="conversation_replying">Antwort wird erstellt …</string>
+    <string name="conversation_turn_done">Abgeschlossen</string>
+    <string name="conversation_replies_expanded">Erweitert</string>
+    <string name="conversation_replies_collapsed">Eingeklappt</string>
+    <string name="conversation_work_elapsed">Seit %1$s aktiv</string>
+    <string name="conversation_work_total">%1$s gearbeitet</string>
+    <string name="conversation_work_seconds">%1$d s</string>
+    <string name="conversation_work_minutes">%1$d min</string>
+    <string name="conversation_work_hours">%1$d h</string>
+    <string name="conversation_work_minutes_seconds">%1$d min %2$d s</string>
+    <string name="conversation_work_hours_minutes">%1$d h %2$d min</string>
+    <string name="conversation_followup_continue">Fortsetzen</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="one">%d Schritt</item>
+        <item quantity="other">%d Schritte</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>Abgeschlossen</item>
+        <item>Alles erledigt</item>
+        <item>Geliefert</item>
+        <item>Fertiggestellt</item>
+        <item>Erledigt</item>
+        <item>Mission abgeschlossen</item>
+        <item>Abgemeldet</item>
+        <item>Vollständig erledigt</item>
+    </string-array>
     <string name="conversation_reply_actions">Antwortaktionen</string>
     <string name="conversation_copy_reply">Antwort kopieren</string>
     <string name="conversation_reply_copied">Antwort kopiert</string>
-    <string name="conversation_revoke">Zurückziehen</string>
-    <string name="conversation_stop">Stopp</string>
+    <string name="conversation_revoke">Nachricht in der Warteschlange zurückziehen</string>
+    <string name="conversation_queue">Warteschlange</string>
+    <string name="conversation_queue_automation">Workflow-Automatisierung</string>
+    <string name="conversation_skip_automation">Diese Automatisierung überspringen</string>
+    <string name="conversation_withdraw_failed">Die Nachricht konnte nicht zurückgezogen werden.</string>
+    <string name="conversation_skip_failed">Die Automatisierung konnte nicht übersprungen werden.</string>
     <string name="conversation_find">Nachrichten suchen</string>
     <string name="conversation_find_turns">Unterhaltungsrunden durchsuchen</string>
     <string name="conversation_find_empty">Keine Nachrichten zum Durchsuchen</string>
@@ -27,4 +65,6 @@
     </plurals>
     <string name="conversation_link_unavailable">Dieser Unterhaltungslink ist nicht verfügbar</string>
     <string name="conversation_link_no_browser">Kein Browser kann diesen Link öffnen</string>
+    <string name="chat_model_check_required">Das gespeicherte Modell konnte nicht geprüft werden.</string>
+    <string name="chat_model_save_rejected">Das Modell für diesen Chat konnte nicht gespeichert werden.</string>
 </resources>

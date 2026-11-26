@@ -1,12 +1,4 @@
-import type {
-  OfficialWorkflowAcceptedRevision,
-  OfficialWorkflowAcceptedDefinition,
-} from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import {
-  officialWorkflowCatalogState,
-  officialWorkflowCatalogReleases,
-  officialWorkflowDefinitionRevisions,
-} from "@okouai/db/schema/official-workflow-catalog";
+import type { OfficialWorkflowAcceptedRevision } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import {
   workflows,
   workflowWebhookAutomations,
@@ -17,18 +9,15 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
-import {
-  acceptedCatalogFromRow,
-  acceptedRevisionFromRow,
-  acceptedOfficialWorkflowCatalogReadPlan,
-  acceptedOfficialWorkflowRevisionReadPlan,
-} from "../services/official-workflow-catalog-read.service";
-import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/official-workflow-installation.service";
+import { canCopyInstalledBlueprint } from "./workflow-copy-blueprint";
 import type {
   WorkflowRow,
   WorkflowMember,
 } from "../services/workflow-data.service";
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
+import type { installedOfficialWorkflow } from "../services/builtin-workflows";
+import { workflowScheduleSchema } from "@okouai/api-contracts/contracts/workflows";
+import { isValidTimeZone } from "@okouai/core/timezone";
 
 interface WorkflowCopyObservation {
   readonly workflowXmin: string;
@@ -36,12 +25,10 @@ interface WorkflowCopyObservation {
     readonly id: string;
     readonly xmin: string;
   }[];
-  readonly acceptedReleaseId: string | null;
 }
 
 export interface WorkflowCopySource {
   readonly observation: WorkflowCopyObservation;
-  readonly revision: string | null;
   readonly sourceWorkflow: WorkflowRow;
   readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
   readonly webhooks: readonly {
@@ -66,7 +53,6 @@ export interface WorkflowCopyInput {
 }
 
 interface OfficialCopyMaterialization {
-  readonly revision: string;
   readonly sourceWorkflow: WorkflowRow;
   readonly sourceAutomations: readonly (typeof workflowAutomations.$inferSelect)[];
   readonly files: readonly {
@@ -92,7 +78,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
       "Official copy materialization requires an Official source",
     );
   }
-  const catalog = acceptedOfficialWorkflowCatalogReadPlan();
   const source = new QueryBuilder()
     .select({
       workflow: getTableColumns(workflows),
@@ -108,9 +93,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
         official ? eq(workflows.ownerUserId, args.userId) : undefined,
         definitionName !== null
           ? eq(workflows.officialDefinitionName, definitionName)
-          : undefined,
-        official
-          ? eq(workflows.officialInstallationState, "installed")
           : undefined,
       ),
     );
@@ -141,14 +123,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
     );
   return {
     official,
-    definitionName,
-    catalog: new QueryBuilder()
-      .select(catalog.columns)
-      .from(officialWorkflowCatalogState)
-      .innerJoin(officialWorkflowCatalogReleases, catalog.join)
-      .where(catalog.condition)
-      .limit(1)
-      .as("copy_catalog"),
     source: source.limit(1).as("copy_source"),
     visible: workflowCopyVisibleQuery({
       orgId: args.orgId,
@@ -157,23 +131,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
     }),
     automations: automations.as("copy_automations"),
   };
-}
-
-export function copyRevisionQuery(identity: {
-  readonly name: string;
-  readonly revision: string;
-}) {
-  const plan = acceptedOfficialWorkflowRevisionReadPlan(identity);
-  // The legacy single-identity bulk reader has this order and no LIMIT.
-  return new QueryBuilder()
-    .select(plan.columns)
-    .from(officialWorkflowDefinitionRevisions)
-    .where(and(plan.condition, plan.deliveryCondition))
-    .orderBy(
-      asc(officialWorkflowDefinitionRevisions.definitionName),
-      asc(officialWorkflowDefinitionRevisions.revision),
-    )
-    .as("copy_revision");
 }
 
 export function workflowCopyVisibleQuery(args: {
@@ -217,12 +174,11 @@ export function copyWebhooksQuery(
   return query.as("copy_webhooks");
 }
 
-export function officialCopyMaterialization(
-  sourceWorkflow: WorkflowRow,
-  revision: OfficialWorkflowAcceptedRevision,
+function archivedCopyAutomations(
+  blueprints: OfficialWorkflowAcceptedRevision["definition"]["blueprints"],
   rows: WorkflowCopySource["sourceAutomations"],
-): OfficialCopyMaterialization {
-  if (rows.length !== revision.definition.blueprints.length) {
+) {
+  if (rows.length !== blueprints.length) {
     throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
   }
   const rowsByBlueprint = new Map(
@@ -231,7 +187,7 @@ export function officialCopyMaterialization(
     }),
   );
   const sourceAutomations: (typeof workflowAutomations.$inferSelect)[] = [];
-  for (const blueprint of revision.definition.blueprints) {
+  for (const blueprint of blueprints) {
     const row = rowsByBlueprint.get(blueprint.key);
     if (
       !row ||
@@ -241,28 +197,60 @@ export function officialCopyMaterialization(
     ) {
       throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
     }
-    const resolved = resolveOfficialWorkflowBlueprintForReconciliation(
-      blueprint,
-      row.officialParameterBindings,
-      row.timezone,
-    );
-    if (!resolved.ok) {
+    if (
+      !canCopyInstalledBlueprint(
+        blueprint,
+        row.officialParameterBindings,
+        row.timezone,
+      )
+    ) {
       throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
     }
     sourceAutomations.push(row);
   }
+  return sourceAutomations;
+}
+
+export function officialCopyMaterialization(
+  sourceWorkflow: WorkflowRow,
+  official: NonNullable<ReturnType<typeof installedOfficialWorkflow>>,
+  rows: WorkflowCopySource["sourceAutomations"],
+): OfficialCopyMaterialization {
+  let sourceAutomations = rows;
+  if (official.kind === "builtin") {
+    const [row] = rows;
+    if (
+      rows.length !== 1 ||
+      !row ||
+      row.kind !== "schedule" ||
+      row.scheduleType !== "cron" ||
+      row.officialBlueprintKey !== official.builtin.blueprintKey ||
+      row.officialAppliedFingerprint !== official.builtin.fingerprint ||
+      row.officialReconciliationStatus !== "current" ||
+      !isValidTimeZone(row.timezone) ||
+      !workflowScheduleSchema.safeParse({
+        type: "cron",
+        cronExpression: row.cronExpression,
+        timezone: row.timezone,
+      }).success
+    ) {
+      throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
+    }
+  } else {
+    sourceAutomations = archivedCopyAutomations(official.blueprints, rows);
+  }
   return {
-    revision: revision.definition.revision,
     sourceWorkflow: {
       ...sourceWorkflow,
-      instruction: revision.definition.workflow.instruction,
-      displayName: revision.definition.workflow.displayName,
-      description: revision.definition.workflow.description,
+      // An editable copy becomes an ordinary Workflow and owns its instructions.
+      instruction: official.copyInstruction,
+      displayName: official.workflow.displayName,
+      description: official.workflow.description,
+      archivedOfficialSnapshot: null,
       officialDefinitionName: null,
-      officialInstallationState: null,
     },
     sourceAutomations,
-    files: revision.definition.workflow.files,
+    files: official.workflow.files,
   };
 }
 
@@ -277,7 +265,6 @@ export function copySourceResult(
     kind: "ok" as const,
     source: {
       observation: facts.observation,
-      revision: materialization?.revision ?? null,
       sourceWorkflow: materialization?.sourceWorkflow ?? visible,
       sourceAutomations: materialization?.sourceAutomations ?? rows,
       webhooks: facts.webhooks,
@@ -317,28 +304,6 @@ export function requireCopySource(
     );
   }
   return row;
-}
-export function requireCopyDefinition(
-  row: Parameters<typeof acceptedCatalogFromRow>[0],
-  name: string | null,
-): OfficialWorkflowAcceptedDefinition {
-  const definition = acceptedCatalogFromRow(row)?.payload.definitions.find(
-    (candidate) => {
-      return candidate.name === name;
-    },
-  );
-  if (!definition) {
-    throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
-  }
-  return definition;
-}
-export function requireCopyRevision(
-  row: Parameters<typeof acceptedRevisionFromRow>[0] | undefined,
-) {
-  if (!row) {
-    throw new CopyPreparationConflict(OFFICIAL_COPY_RECONFIGURE_MESSAGE);
-  }
-  return acceptedRevisionFromRow(row);
 }
 export function requireCopyVisibility(
   row: WorkflowRow | undefined,

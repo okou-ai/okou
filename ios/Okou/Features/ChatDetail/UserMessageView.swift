@@ -36,9 +36,13 @@ struct UserMessageView: View {
               sourceTitle: document.annotation?.isForwardedChat == true
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
-              Label(error, okouSymbol: "circle-alert")
-                .font(.okou(.subheadline)).foregroundStyle(OkouColor.destructive).textSelection(
-                  .enabled)
+              let reason = ChatFailure.BillingReason(diagnostic: error)
+              Label(
+                reason.map { AssistantFailureCopy.billing($0).title } ?? error,
+                okouSymbol: "circle-alert"
+              )
+              .font(.okou(.subheadline)).foregroundStyle(OkouColor.destructive).textSelection(
+                .enabled)
             }
           }
           .padding(14)
@@ -107,8 +111,8 @@ private struct UserMessageBody: View {
 
   private func feedbackHeading(_ parts: [ChatUserMessage.Part]) -> String {
     if let sourceTitle { return "Quoted from \(sourceTitle)" }
-    if let source = parts.first?.source, source.type == "mail" {
-      return source.status == "draft" ? "Feedback on email draft" : "Feedback on sent email"
+    if case .mail(_, let status, _)? = parts.first?.source {
+      return status == .draft ? "Feedback on email draft" : "Feedback on sent email"
     }
     return parts.count == 1 ? "Quoted passage" : "Quoted passages"
   }

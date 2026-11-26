@@ -97,12 +97,14 @@ describe("Builtin external-code session creation", () => {
           "aws",
           "cli",
         );
+        mockAwsExternalCodeProvider({ accountId: "111111111111" });
         const defaultAccount = await completeSession(actor, defaultSession);
         const siblingSession = await connectors.startExternalCode(
           actor,
           "aws",
           "cli",
         );
+        mockAwsExternalCodeProvider();
         const siblingAccount = await completeSession(actor, siblingSession);
         expect(siblingAccount.connectionId).not.toBe(
           defaultAccount.connectionId,
@@ -183,18 +185,22 @@ describe("Builtin external-code session creation", () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
       await connectors.updateFeatureSwitches(actor, {});
+      mockAwsExternalCodeProvider({ accountId: "111111111111" });
       const defaultAccount = await completeSession(
         actor,
         await connectors.startExternalCode(actor, "aws", "cli"),
       );
+      mockAwsExternalCodeProvider();
       const siblingAccount = await completeSession(
         actor,
         await connectors.startExternalCode(actor, "aws", "cli"),
       );
+      mockAwsExternalCodeProvider({ accountId: "222222222222" });
       const deletedAccount = await completeSession(
         actor,
         await connectors.startExternalCode(actor, "aws", "cli"),
       );
+      mockAwsExternalCodeProvider();
       await connectors.deleteBuiltinConnectorAccount(
         actor,
         "aws",
@@ -233,10 +239,12 @@ describe("Builtin external-code session creation", () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
       await connectors.updateFeatureSwitches(actor, {});
+      mockAwsExternalCodeProvider({ accountId: "111111111111" });
       const defaultAccount = await completeSession(
         actor,
         await connectors.startExternalCode(actor, "aws", "cli"),
       );
+      mockAwsExternalCodeProvider();
       const siblingAccount = await completeSession(
         actor,
         await connectors.startExternalCode(actor, "aws", "cli"),

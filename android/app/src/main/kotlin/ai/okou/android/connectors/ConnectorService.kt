@@ -2,6 +2,14 @@ package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ChatConnectorAccess
+import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
+import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1
+import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1Kind
+import ai.okou.android.api.generated.ChatConnectorAccessTargetVariant1
+import ai.okou.android.api.generated.ChatConnectorOverrideRequest
+import ai.okou.android.api.generated.ChatConnectorOverrideRequestTargetVariant1
+import ai.okou.android.api.generated.ChatConnectorOverrideRequestTargetVariant1Kind
 import ai.okou.android.api.generated.ConnectorAccountConnectionStatus
 import ai.okou.android.api.generated.ConnectorAccountDefaultRequest
 import ai.okou.android.api.generated.ConnectorAccountDefaultRequestTargetVariant1
@@ -17,6 +25,12 @@ import ai.okou.android.api.generated.ConnectorAccountInspectionRequestSelections
 import ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1
 import ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1ConnectionStatus
 import ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1TargetVariant1
+import ai.okou.android.api.generated.ConnectorAccountPoliciesQueryVariant1
+import ai.okou.android.api.generated.ConnectorAccountPoliciesQueryVariant1Kind
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequest
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestTargetVariant1
+import ai.okou.android.api.generated.ConnectorAccountPolicyRequestTargetVariant1Kind
 import ai.okou.android.api.generated.ConnectorAccountQueryVariant1
 import ai.okou.android.api.generated.ConnectorAccountQueryVariant1Kind
 import ai.okou.android.api.generated.ConnectorAccountRenameRequest
@@ -80,14 +94,21 @@ import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant1
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant1Intent
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2Intent
+import ai.okou.android.api.generated.ConnectorOverviewItem
 import ai.okou.android.api.generated.ConnectorOverviewItemTargetVariant1
+import ai.okou.android.api.generated.chatConnectorAccess
 import ai.okou.android.api.generated.connectorAccount
 import ai.okou.android.api.generated.connectorAccountDefaults
 import ai.okou.android.api.generated.connectorAccountImpact
+import ai.okou.android.api.generated.connectorAccountPolicies
 import ai.okou.android.api.generated.connectorAccounts
 import ai.okou.android.api.generated.connectorOauthCompletion
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -97,6 +118,13 @@ internal data class ConnectorEntry(
     val description: String,
     val category: String?,
     val rank: Long?,
+    val icon: ConnectorBrandIcon?,
+)
+
+internal data class ConnectorBrandIcon(
+    val url: HttpUrl,
+    val invertInDarkMode: Boolean,
+    val scale: Float,
 )
 
 internal enum class ConnectorAccountStatus {
@@ -113,9 +141,19 @@ internal data class ConnectorSavedAccount(
     val identity: String?,
     val status: ConnectorAccountStatus,
     val defaultEnabled: Boolean?,
+    val policy: ConnectorMemberPolicy? = null,
 )
 
-internal data class ConnectedService(val label: String, val accounts: List<ConnectorSavedAccount>)
+internal data class ConnectorMemberPolicy(
+    val allowed: Boolean,
+    val enabled: Boolean,
+    val expiresAt: Instant?,
+)
+
+internal data class ConnectedService(
+    val entry: ConnectorEntry,
+    val accounts: List<ConnectorSavedAccount>,
+)
 
 internal data class ConnectorBrowse(val entries: List<ConnectorEntry>, val categories: Set<String>)
 
@@ -131,7 +169,8 @@ internal data class ConnectorPermission(val name: String, val description: Strin
 internal data class ConnectorAccountTarget(val slug: String, val connectionId: String?)
 
 internal sealed interface ConnectorAuthorization {
-    data class Receipt(val connectionId: String) : ConnectorAuthorization
+    data class Receipt(val connectionId: String, val externalCodeSessionId: String? = null) :
+        ConnectorAuthorization
 
     data class Browser(val url: HttpUrl, val attemptId: String) : ConnectorAuthorization
 
@@ -143,6 +182,8 @@ internal sealed interface ConnectorAuthorization {
         val expiresIn: Duration,
         val interval: Duration,
     ) : ConnectorAuthorization
+
+    data class DeviceVerification(val attempt: Device) : ConnectorAuthorization
 
     data class External(
         val url: HttpUrl,
@@ -157,10 +198,17 @@ internal sealed interface ConnectorDeviceResult {
 
     data class Complete(val connectionId: String) : ConnectorDeviceResult
 
-    data object Rejected : ConnectorDeviceResult
+    enum class Terminal : ConnectorDeviceResult {
+        Denied,
+        Expired,
+        Failed,
+    }
 }
 
 class ConnectorService(private val api: ApiClient) {
+    internal suspend fun memberAccessEnabled(): Boolean =
+        api.featureSwitches().effectiveSwitches["memberConnectorAccountAccess"] == true
+
     internal suspend fun discover(keyword: String?, category: String?): ConnectorBrowse {
         val response = api.read { connectorDiscovery(it, keyword, category) }
         return ConnectorBrowse(
@@ -177,7 +225,7 @@ class ConnectorService(private val api: ApiClient) {
                 if (target == null || entry.accounts.isEmpty()) return@mapNotNull null
                 target.connectorSlug to
                     ConnectedService(
-                        entry.label,
+                        entry.directoryEntry(target.connectorSlug),
                         entry.accounts.map { account ->
                             ConnectorSavedAccount(
                                 account.connectionId,
@@ -196,38 +244,133 @@ class ConnectorService(private val api: ApiClient) {
             }
             .toMap()
 
-    internal suspend fun inspect(
-        connected: Map<String, ConnectedService>
-    ): Map<String, ConnectorAccountStatus> {
-        val selections =
-            connected.flatMap { (slug, service) ->
-                service.accounts.map { account ->
-                    ConnectorAccountInspectionRequestSelectionsItem(
-                        account.id,
-                        ConnectorAccountInspectionRequestSelectionsItemTargetVariant1(
-                            ConnectorAccountInspectionRequestSelectionsItemTargetVariant1Kind
-                                .BUILTIN,
-                            slug,
+    internal suspend fun chatAccounts(threadId: String?): ChatConnectorAccounts {
+        val memberAccess = memberAccessEnabled()
+        val overview = api.read { connectorOverview(it, threadId) }
+        val builtIns = overview.filter {
+            it.target is ConnectorOverviewItemTargetVariant1 && it.accounts.isNotEmpty()
+        }
+        // The overview has the current allowance, while the account list reports scope mismatch.
+        val groups =
+            builtIns.chunked(4).flatMap { entries ->
+                coroutineScope {
+                    entries
+                        .map { entry ->
+                            async {
+                                val slug =
+                                    (entry.target as ConnectorOverviewItemTargetVariant1)
+                                        .connectorSlug
+                                val byId = entry.accounts.associateBy { it.connectionId }
+                                val accounts =
+                                    if (memberAccess) {
+                                        accounts(slug, emptyMap(), accountPolicies(slug))
+                                    } else {
+                                        accounts(slug, byId.mapValues { it.value.defaultEnabled })
+                                    }
+                                ChatConnectorGroup(
+                                    entry.directoryEntry(slug),
+                                    accounts.mapNotNull { account ->
+                                        byId[account.id]?.let {
+                                            ChatConnectorAccount(
+                                                account,
+                                                it.overrideEnabled.takeUnless { memberAccess },
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        .awaitAll()
+                        .filter { it.accounts.isNotEmpty() }
+                }
+            }
+        return ChatConnectorAccounts(groups, memberAccess)
+    }
+
+    private suspend fun chatAccess(
+        threadId: String,
+        slug: String,
+    ): List<ChatConnectorAccessAccountsItem> =
+        api.read {
+                chatConnectorAccess(
+                    it,
+                    threadId,
+                    ChatConnectorAccessQueryVariant1(
+                        ChatConnectorAccessQueryVariant1Kind.BUILTIN,
+                        slug,
+                    ),
+                )
+            }
+            .accountsFor(slug)
+
+    internal suspend fun setChatOverride(
+        threadId: String,
+        choice: ChatConnectorOverride,
+        canReadBack: () -> Boolean,
+        onChecking: () -> Unit = {},
+    ): List<ChatConnectorAccessAccountsItem> =
+        try {
+            api.write {
+                    chatConnectorOverride(
+                        it,
+                        threadId,
+                        choice.connectionId,
+                        ChatConnectorOverrideRequest(
+                            ChatConnectorOverrideRequestTargetVariant1(
+                                ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
+                                choice.slug,
+                            ),
+                            choice.enabled,
                         ),
                     )
                 }
+                .accountsFor(choice.slug)
+                .also { if (!it.confirms(choice)) throw ApiFailure.IncompatibleResponse() }
+        } catch (error: ApiFailure) {
+            val missingReset =
+                choice.enabled == null && error is ApiFailure.Http && error.status == 404
+            if (!missingReset && (error.connectionFailed() || !error.hasUncertainResponse()))
+                throw error
+            if (!canReadBack()) throw error
+
+            if (!missingReset) onChecking()
+            chatAccess(threadId, choice.slug).also { accounts ->
+                // A reset of a removed account is complete when the account is absent from the
+                // chat.
+                val confirmed =
+                    if (missingReset) accounts.none { it.connectionId == choice.connectionId }
+                    else accounts.confirms(choice)
+                if (!confirmed) throw error
             }
-        val slugs =
-            selections.associate { selection ->
-                selection.connectionId to
-                    (selection.target
-                            as ConnectorAccountInspectionRequestSelectionsItemTargetVariant1)
-                        .connectorSlug
+        }
+
+    internal suspend fun inspect(
+        connected: Map<String, ConnectedService>,
+    ): Map<String, ConnectorAccountStatus> {
+        val selections = connected.flatMap { (slug, service) ->
+            service.accounts.map { account ->
+                ConnectorAccountInspectionRequestSelectionsItem(
+                    account.id,
+                    ConnectorAccountInspectionRequestSelectionsItemTargetVariant1(
+                        ConnectorAccountInspectionRequestSelectionsItemTargetVariant1Kind.BUILTIN,
+                        slug,
+                    ),
+                )
             }
+        }
+        val slugs = selections.associate { selection ->
+            selection.connectionId to
+                (selection.target as ConnectorAccountInspectionRequestSelectionsItemTargetVariant1)
+                    .connectorSlug
+        }
         return buildMap {
             for (batch in selections.chunked(256)) {
-                val response =
-                    api.read {
-                        connectorAccountInspect(it, ConnectorAccountInspectionRequest(batch))
-                    }
+                val response = api.read {
+                    connectorAccountInspect(it, ConnectorAccountInspectionRequest(batch))
+                }
                 for (item in
                     response.results.filterIsInstance<
-                        ConnectorAccountInspectionResultsItemVariant1
+                        ConnectorAccountInspectionResultsItemVariant1,
                     >()) {
                     val target =
                         item.target as? ConnectorAccountInspectionResultsItemVariant1TargetVariant1
@@ -257,6 +400,11 @@ class ConnectorService(private val api: ApiClient) {
                 connector.description,
                 connector.category,
                 connector.popularityRank,
+                brandIcon(
+                    connector.icon.url,
+                    connector.icon.invertInDarkMode,
+                    connector.icon.scale,
+                ),
             ),
             connector.authMethods.filter {
                 it.grantKind != ConnectorDetailConnectorAuthMethodsItemGrantKind.MANAGED
@@ -273,6 +421,9 @@ class ConnectorService(private val api: ApiClient) {
     }
 
     internal suspend fun accounts(slug: String): List<ConnectorSavedAccount> {
+        if (memberAccessEnabled()) {
+            return accounts(slug, emptyMap(), accountPolicies(slug))
+        }
         val defaults =
             api.read {
                     connectorAccountDefaults(
@@ -284,23 +435,30 @@ class ConnectorService(private val api: ApiClient) {
                     )
                 }
                 .associate { it.connectionId to it.defaultEnabled }
+        return accounts(slug, defaults)
+    }
+
+    private suspend fun accounts(
+        slug: String,
+        defaults: Map<String, Boolean>,
+        policies: Map<String, ConnectorMemberPolicy> = emptyMap(),
+    ): List<ConnectorSavedAccount> {
         return buildList {
             var cursor: String? = null
             val visited = mutableSetOf<String>()
             do {
-                val page =
-                    api.read {
-                        connectorAccounts(
-                            it,
-                            ConnectorAccountsQueryVariant1(
-                                ConnectorAccountsQueryVariant1Kind.BUILTIN,
-                                slug,
-                                ConnectorAccountsQueryVariant1IncludeScopeMismatch.TRUE,
-                                cursor,
-                                limit = 100,
-                            ),
-                        )
-                    }
+                val page = api.read {
+                    connectorAccounts(
+                        it,
+                        ConnectorAccountsQueryVariant1(
+                            ConnectorAccountsQueryVariant1Kind.BUILTIN,
+                            slug,
+                            ConnectorAccountsQueryVariant1IncludeScopeMismatch.TRUE,
+                            cursor,
+                            limit = 100,
+                        ),
+                    )
+                }
                 for (account in page.connections) {
                     val target = account.target as? ConnectorAccountsConnectionsItemTargetVariant1
                     if (target?.connectorSlug != slug) throw ApiFailure.IncompatibleResponse()
@@ -321,7 +479,8 @@ class ConnectorService(private val api: ApiClient) {
                                 account.scopeMismatch == true,
                             ),
                             defaults[account.id],
-                        )
+                            policy = policies[account.id],
+                        ),
                     )
                 }
                 cursor = page.nextCursor
@@ -330,15 +489,48 @@ class ConnectorService(private val api: ApiClient) {
         }
     }
 
-    internal suspend fun accountIsConnected(slug: String, id: String): Boolean {
-        val account =
-            api.read {
-                connectorAccount(
+    private suspend fun accountPolicies(slug: String): Map<String, ConnectorMemberPolicy> =
+        api.read {
+                connectorAccountPolicies(
                     it,
-                    id,
-                    ConnectorAccountQueryVariant1(ConnectorAccountQueryVariant1Kind.BUILTIN, slug),
+                    ConnectorAccountPoliciesQueryVariant1(
+                        ConnectorAccountPoliciesQueryVariant1Kind.BUILTIN,
+                        slug,
+                    ),
                 )
             }
+            .associate { it.connectionId to memberPolicy(it.allowed, it.enabled, it.expiresAt) }
+
+    internal suspend fun setAccountPolicy(
+        slug: String,
+        id: String,
+        choice: ConnectorAccountPolicyRequestPolicy,
+    ): ConnectorMemberPolicy {
+        val result = api.write {
+            connectorAccountPolicyUpdate(
+                it,
+                id,
+                ConnectorAccountPolicyRequest(
+                    ConnectorAccountPolicyRequestTargetVariant1(
+                        ConnectorAccountPolicyRequestTargetVariant1Kind.BUILTIN,
+                        slug,
+                    ),
+                    choice,
+                ),
+            )
+        }
+        if (result.connectionId != id) throw ApiFailure.IncompatibleResponse()
+        return memberPolicy(result.allowed, result.enabled, result.expiresAt)
+    }
+
+    internal suspend fun accountIsConnected(slug: String, id: String): Boolean {
+        val account = api.read {
+            connectorAccount(
+                it,
+                id,
+                ConnectorAccountQueryVariant1(ConnectorAccountQueryVariant1Kind.BUILTIN, slug),
+            )
+        }
         if (
             (account.target as? ConnectorAccountTargetVariant1)?.connectorSlug != slug ||
                 account.id != id
@@ -349,36 +541,34 @@ class ConnectorService(private val api: ApiClient) {
     }
 
     internal suspend fun impact(slug: String, id: String): Long {
-        val response =
-            api.read {
-                connectorAccountImpact(
-                    it,
-                    id,
-                    ConnectorAccountImpactQueryVariant1(
-                        ConnectorAccountImpactQueryVariant1Kind.BUILTIN,
-                        slug,
-                    ),
-                )
-            }
+        val response = api.read {
+            connectorAccountImpact(
+                it,
+                id,
+                ConnectorAccountImpactQueryVariant1(
+                    ConnectorAccountImpactQueryVariant1Kind.BUILTIN,
+                    slug,
+                ),
+            )
+        }
         if (response.connectionId != id) throw ApiFailure.IncompatibleResponse()
         return response.explicitSelectionCount
     }
 
     internal suspend fun rename(slug: String, id: String, label: String): String? {
-        val result =
-            api.write {
-                connectorAccountRename(
-                    it,
-                    id,
-                    ConnectorAccountRenameRequest(
-                        ConnectorAccountRenameRequestTargetVariant1(
-                            ConnectorAccountRenameRequestTargetVariant1Kind.BUILTIN,
-                            slug,
-                        ),
-                        label,
+        val result = api.write {
+            connectorAccountRename(
+                it,
+                id,
+                ConnectorAccountRenameRequest(
+                    ConnectorAccountRenameRequestTargetVariant1(
+                        ConnectorAccountRenameRequestTargetVariant1Kind.BUILTIN,
+                        slug,
                     ),
-                )
-            }
+                    label,
+                ),
+            )
+        }
         if (
             (result.target as? ConnectorAccountTargetVariant1)?.connectorSlug != slug ||
                 result.id != id
@@ -389,38 +579,36 @@ class ConnectorService(private val api: ApiClient) {
     }
 
     internal suspend fun setDefaultEnabled(slug: String, id: String, enabled: Boolean): Boolean {
-        val result =
-            api.write {
-                connectorAccountDefaultUpdate(
-                    it,
-                    id,
-                    ConnectorAccountDefaultRequest(
-                        ConnectorAccountDefaultRequestTargetVariant1(
-                            ConnectorAccountDefaultRequestTargetVariant1Kind.BUILTIN,
-                            slug,
-                        ),
-                        enabled,
+        val result = api.write {
+            connectorAccountDefaultUpdate(
+                it,
+                id,
+                ConnectorAccountDefaultRequest(
+                    ConnectorAccountDefaultRequestTargetVariant1(
+                        ConnectorAccountDefaultRequestTargetVariant1Kind.BUILTIN,
+                        slug,
                     ),
-                )
-            }
+                    enabled,
+                ),
+            )
+        }
         if (result.connectionId != id) throw ApiFailure.IncompatibleResponse()
         return result.defaultEnabled
     }
 
     internal suspend fun disconnect(slug: String, id: String) {
-        val result =
-            api.write {
-                connectorAccountDelete(
-                    it,
-                    id,
-                    ConnectorAccountTargetRequest(
-                        ConnectorAccountTargetRequestTargetVariant1(
-                            ConnectorAccountTargetRequestTargetVariant1Kind.BUILTIN,
-                            slug,
-                        )
+        val result = api.write {
+            connectorAccountDelete(
+                it,
+                id,
+                ConnectorAccountTargetRequest(
+                    ConnectorAccountTargetRequestTargetVariant1(
+                        ConnectorAccountTargetRequestTargetVariant1Kind.BUILTIN,
+                        slug,
                     ),
-                )
-            }
+                ),
+            )
+        }
         if (result.deletedConnectionId != id) throw ApiFailure.IncompatibleResponse()
     }
 
@@ -435,21 +623,20 @@ class ConnectorService(private val api: ApiClient) {
                 val account =
                     if (id == null)
                         ConnectorOauthStartRequestAccountVariant1(
-                            ConnectorOauthStartRequestAccountVariant1Intent.ADD
+                            ConnectorOauthStartRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorOauthStartRequestAccountVariant2(
                             ConnectorOauthStartRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorOauthStart(
-                            it,
-                            slug,
-                            ConnectorOauthStartRequest(method.id, account = account),
-                        )
-                    }
+                val response = api.write {
+                    connectorOauthStart(
+                        it,
+                        slug,
+                        ConnectorOauthStartRequest(method.id, account = account),
+                    )
+                }
                 ConnectorAuthorization.Browser(
                     authorizationUrl(response.authorizationUrl),
                     response.oauthAttemptId,
@@ -459,21 +646,20 @@ class ConnectorService(private val api: ApiClient) {
                 val account =
                     if (id == null)
                         ConnectorOpenIdStartRequestAccountVariant1(
-                            ConnectorOpenIdStartRequestAccountVariant1Intent.ADD
+                            ConnectorOpenIdStartRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorOpenIdStartRequestAccountVariant2(
                             ConnectorOpenIdStartRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorOpenIdStart(
-                            it,
-                            slug,
-                            ConnectorOpenIdStartRequest(method.id, account),
-                        )
-                    }
+                val response = api.write {
+                    connectorOpenIdStart(
+                        it,
+                        slug,
+                        ConnectorOpenIdStartRequest(method.id, account),
+                    )
+                }
                 ConnectorAuthorization.Browser(
                     authorizationUrl(response.authorizationUrl),
                     response.oauthAttemptId,
@@ -483,21 +669,20 @@ class ConnectorService(private val api: ApiClient) {
                 val account =
                     if (id == null)
                         ConnectorAutomaticStartRequestAccountVariant1(
-                            ConnectorAutomaticStartRequestAccountVariant1Intent.ADD
+                            ConnectorAutomaticStartRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorAutomaticStartRequestAccountVariant2(
                             ConnectorAutomaticStartRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorAutomaticStart(
-                            it,
-                            slug,
-                            ConnectorAutomaticStartRequest(method.id, account),
-                        )
-                    }
+                val response = api.write {
+                    connectorAutomaticStart(
+                        it,
+                        slug,
+                        ConnectorAutomaticStartRequest(method.id, account),
+                    )
+                }
                 when (response) {
                     is ConnectorAutomaticStartVariant1 ->
                         ConnectorAuthorization.Receipt(response.connectionId)
@@ -512,59 +697,56 @@ class ConnectorService(private val api: ApiClient) {
                 val account =
                     if (id == null)
                         ConnectorNoAuthRequestAccountVariant1(
-                            ConnectorNoAuthRequestAccountVariant1Intent.ADD
+                            ConnectorNoAuthRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorNoAuthRequestAccountVariant2(
                             ConnectorNoAuthRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorNoAuth(it, slug, ConnectorNoAuthRequest(method.id, account))
-                    }
+                val response = api.write {
+                    connectorNoAuth(it, slug, ConnectorNoAuthRequest(method.id, account))
+                }
                 ConnectorAuthorization.Receipt(response.connectionId)
             }
             ConnectorDetailConnectorAuthMethodsItemGrantKind.MANUAL -> {
                 val account =
                     if (id == null)
                         ConnectorManualRequestAccountVariant1(
-                            ConnectorManualRequestAccountVariant1Intent.ADD
+                            ConnectorManualRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorManualRequestAccountVariant2(
                             ConnectorManualRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorManual(
-                            it,
-                            slug,
-                            ConnectorManualRequest(method.id, account, values),
-                        )
-                    }
+                val response = api.write {
+                    connectorManual(
+                        it,
+                        slug,
+                        ConnectorManualRequest(method.id, account, values),
+                    )
+                }
                 ConnectorAuthorization.Receipt(response.connectionId)
             }
             ConnectorDetailConnectorAuthMethodsItemGrantKind.DEVICE_AUTH -> {
                 val account =
                     if (id == null)
                         ConnectorDeviceStartRequestAccountVariant1(
-                            ConnectorDeviceStartRequestAccountVariant1Intent.ADD
+                            ConnectorDeviceStartRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorDeviceStartRequestAccountVariant2(
                             ConnectorDeviceStartRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorDeviceStart(
-                            it,
-                            slug,
-                            ConnectorDeviceStartRequest(method.id, account, values),
-                        )
-                    }
+                val response = api.write {
+                    connectorDeviceStart(
+                        it,
+                        slug,
+                        ConnectorDeviceStartRequest(method.id, account, values),
+                    )
+                }
                 if (response.connectorSlug != slug) throw ApiFailure.IncompatibleResponse()
                 ConnectorAuthorization.Device(
                     authorizationUrl(response.verificationUriComplete ?: response.verificationUri),
@@ -579,21 +761,20 @@ class ConnectorService(private val api: ApiClient) {
                 val account =
                     if (id == null)
                         ConnectorExternalStartRequestAccountVariant1(
-                            ConnectorExternalStartRequestAccountVariant1Intent.ADD
+                            ConnectorExternalStartRequestAccountVariant1Intent.ADD,
                         )
                     else
                         ConnectorExternalStartRequestAccountVariant2(
                             ConnectorExternalStartRequestAccountVariant2Intent.RECONNECT,
                             id,
                         )
-                val response =
-                    api.write {
-                        connectorExternalStart(
-                            it,
-                            slug,
-                            ConnectorExternalStartRequest(method.id, account),
-                        )
-                    }
+                val response = api.write {
+                    connectorExternalStart(
+                        it,
+                        slug,
+                        ConnectorExternalStartRequest(method.id, account),
+                    )
+                }
                 if (response.connectorSlug != slug) throw ApiFailure.IncompatibleResponse()
                 ConnectorAuthorization.External(
                     authorizationUrl(response.authorizationUrl),
@@ -629,21 +810,20 @@ class ConnectorService(private val api: ApiClient) {
         step: ConnectorAuthorization.Device,
     ): ConnectorDeviceResult =
         when (
-            val result =
-                api.write {
-                    connectorDevicePoll(
-                        it,
-                        slug,
-                        step.sessionId,
-                        ConnectorDevicePollRequest(step.sessionToken),
-                    )
-                }
+            val result = api.write {
+                connectorDevicePoll(
+                    it,
+                    slug,
+                    step.sessionId,
+                    ConnectorDevicePollRequest(step.sessionToken),
+                )
+            }
         ) {
             is ConnectorDevicePollVariant1 -> ConnectorDeviceResult.Waiting(result.interval.seconds)
             is ConnectorDevicePollVariant2 -> ConnectorDeviceResult.Complete(result.connectionId)
-            is ConnectorDevicePollVariant3,
-            is ConnectorDevicePollVariant4,
-            is ConnectorDevicePollVariant5 -> ConnectorDeviceResult.Rejected
+            is ConnectorDevicePollVariant3 -> ConnectorDeviceResult.Terminal.Denied
+            is ConnectorDevicePollVariant4 -> ConnectorDeviceResult.Terminal.Expired
+            is ConnectorDevicePollVariant5 -> ConnectorDeviceResult.Terminal.Failed
         }
 
     internal suspend fun completeExternal(
@@ -662,8 +842,53 @@ class ConnectorService(private val api: ApiClient) {
             .connectionId
 }
 
+private fun ChatConnectorAccess.accountsFor(slug: String): List<ChatConnectorAccessAccountsItem> {
+    if (
+        (target as? ChatConnectorAccessTargetVariant1)?.connectorSlug != slug ||
+            accounts.distinctBy { it.connectionId }.size != accounts.size
+    )
+        throw ApiFailure.IncompatibleResponse()
+    return accounts
+}
+
+private fun memberPolicy(
+    allowed: Boolean,
+    enabled: Boolean,
+    expiresAt: String?,
+): ConnectorMemberPolicy =
+    try {
+        ConnectorMemberPolicy(allowed, enabled, expiresAt?.let(Instant::parse))
+    } catch (_: IllegalArgumentException) {
+        throw ApiFailure.IncompatibleResponse()
+    }
+
+private fun List<ChatConnectorAccessAccountsItem>.confirms(choice: ChatConnectorOverride) =
+    firstOrNull { it.connectionId == choice.connectionId }?.overrideEnabled == choice.enabled
+
+private fun ConnectorOverviewItem.directoryEntry(slug: String) =
+    ConnectorEntry(
+        slug,
+        label,
+        "",
+        null,
+        null,
+        icon?.let { brandIcon(it.url, it.invertInDarkMode, it.scale) },
+    )
+
 private fun ConnectorDiscoveryConnectorsItem.entry() =
-    ConnectorEntry(slug, label, description, category, popularityRank)
+    ConnectorEntry(
+        slug,
+        label,
+        description,
+        category,
+        popularityRank,
+        brandIcon(icon.url, icon.invertInDarkMode, icon.scale),
+    )
+
+private fun brandIcon(url: String, invertInDarkMode: Boolean, scale: Double?): ConnectorBrandIcon? =
+    url.toHttpUrlOrNull()
+        ?.takeIf { it.isHttps && it.username.isEmpty() && it.password.isEmpty() }
+        ?.let { ConnectorBrandIcon(it, invertInDarkMode, scale?.toFloat() ?: 1f) }
 
 private fun identity(vararg values: String?): String? = values.firstOrNull { !it.isNullOrBlank() }
 

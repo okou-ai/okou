@@ -166,12 +166,13 @@ jobs:
         env:
           API_URL: ${{ vars.OKOU_API_BACKEND_URL }}
           AWS_METAL_RUNNER_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
           ROLLBACK_MODE: ${{ inputs.rollback_mode }}
           RUNNER_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
           RUNNER_TARGET: ${{ matrix.target }}
           RUNNER_VERSION: ${{ needs.resolve-target.outputs.runner_version }}
+          RUNNER_ASSET_URL: ${{ matrix.asset_url }}
+          RUNNER_ASSET_CHECKSUM: ${{ matrix.asset_checksum }}
           SENTRY_DSN_RUNNER: ${{ secrets.SENTRY_DSN_RUNNER }}
         run: |
           cd ansible
@@ -185,7 +186,8 @@ jobs:
             -e "sentry_dsn=${SENTRY_DSN_RUNNER}" \
             -e "official_runner_secret=${OFFICIAL_RUNNER_SECRET}" \
             -e "api_url=${API_URL}" \
-            -e "github_token=${GH_TOKEN}" \
+            -e "runner_asset_url=${RUNNER_ASSET_URL}" \
+            -e "runner_asset_checksum=${RUNNER_ASSET_CHECKSUM}" \
             -v
 
       - name: Notify Slack - Success

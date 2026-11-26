@@ -1,13 +1,102 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.HISTORY_RUN
 import ai.okou.android.RecoveryApiFixture
+import ai.okou.android.WORKFLOW_RELEASE
+import ai.okou.android.WORKFLOW_SHARED
 import ai.okou.android.historyEventWire
 import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryProjectionTest {
+    @Test
+    fun chatResourcesUseTheFirstLaunchAndOnlyAdmittedWorkflowReferences() {
+        val launch =
+            event(
+                HISTORY_RUN,
+                2,
+                "input.automation",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowId":"$WORKFLOW_RELEASE","workflowName":"Historical title"},{"type":"source","kind":"slack","href":"https://app.slack.com/archives/channel/p123"}]}}""",
+            )
+        val queued =
+            event(
+                "queued",
+                1,
+                "input.automation",
+                run = null,
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowId":"$WORKFLOW_SHARED","workflowName":"Queued only"}]}}""",
+            )
+        val nextRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val later =
+            event(
+                nextRun,
+                3,
+                "input.automation",
+                run = nextRun,
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"source","kind":"discord"},{"type":"automation","workflowId":"$WORKFLOW_RELEASE","workflowName":"Renamed"}]}}""",
+            )
+        val projected = checkNotNull(transcript(queued, launch, later).resources)
+        assertEquals(
+            ChatResourceOrigin.External(
+                "slack",
+                "https://app.slack.com/archives/channel/p123",
+                null,
+            ),
+            projected.origin,
+        )
+        assertEquals(setOf(WORKFLOW_RELEASE), projected.workflowIds)
+    }
+
+    @Test
+    fun onlyAServerRecordedForwardInTheFirstLaunchIsAnOrigin() {
+        val mention =
+            """{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":"Prior chat"}"""
+        val originRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val forwarded =
+            """{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":"Origin","runId":"$originRun"}"""
+        val launch =
+            event(
+                HISTORY_RUN,
+                1,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$mention,$forwarded]}}""",
+            )
+        assertEquals(
+            ChatResourceOrigin.Forwarded(CHAT_IN_PROJECT, originRun),
+            transcript(launch).resources?.origin,
+        )
+        val plain =
+            event(
+                HISTORY_RUN,
+                1,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$mention]}}""",
+            )
+        val steer =
+            event(
+                "steer",
+                2,
+                "input.prompt",
+                payload = """{"userMessage":{"version":1,"parts":[$forwarded]}}""",
+            )
+        assertNull(transcript(plain, steer).resources?.origin)
+    }
+
+    @Test
+    fun searchTargetsTheDeliveredMessageWhenAnEarlierPromptIsStillQueued() {
+        val queued = input("queued", 1, run = null)
+        val delivered = input("delivered", 2)
+        val history = transcript(queued, delivered)
+
+        assertNull(history.searchMessage(1))
+        assertEquals(delivered.id, history.searchMessage(2)?.id)
+    }
+
     @Test
     fun runFailureReasonsIncludingFutureTokensSurviveHistory() {
         for (reason in
@@ -48,7 +137,9 @@ class HistoryProjectionTest {
             assertEquals(HistoryExecution.Failed, failed.execution)
             assertEquals("run.failed", failed.messages.single().status)
             assertFalse(
-                failed.messages.flatMap { it.blocks }.any { it.text.contains("private diagnostic") }
+                failed.messages
+                    .flatMap { it.blocks }
+                    .any { it.text.contains("private diagnostic") },
             )
         }
         val output =
@@ -58,7 +149,7 @@ class HistoryProjectionTest {
                     1,
                     "output.error",
                     payload = """{"error":"Ordinary output error"}""",
-                )
+                ),
             )
         assertTrue(output.messages.flatMap { it.blocks }.any { it.text == "Ordinary output error" })
     }
@@ -74,7 +165,8 @@ class HistoryProjectionTest {
         val stillLate = event("still-older-late", 5, "output.message")
         assertEquals(HISTORY_RUN, transcript(old, next, lateOld, terminal, stillLate).activeRunId)
         assertNull(
-            transcript(old, next, terminal, event("older-terminal", 5, "run.completed")).activeRunId
+            transcript(old, next, terminal, event("older-terminal", 5, "run.completed"))
+                .activeRunId,
         )
         assertEquals(
             nextRun,
@@ -92,7 +184,7 @@ class HistoryProjectionTest {
         revoke: String? = null,
     ) =
         HistoryEvent.decode(
-            historyEventWire(id, seq, type = type, run = run, payload = payload, revoke = revoke)
+            historyEventWire(id, seq, type = type, run = run, payload = payload, revoke = revoke),
         )
 
     private fun input(id: String, seq: Long, run: String? = HISTORY_RUN) =
@@ -110,7 +202,7 @@ class HistoryProjectionTest {
                 CHAT_PERSONAL,
                 rows.toList(),
                 HistoryCursor(rows.last().id, rows.last().seqId),
-            )
+            ),
         )
 
     @Test
@@ -196,6 +288,7 @@ class HistoryProjectionTest {
         )
         assertFalse(result.messages.first().queued)
         assertTrue(result.messages.last().queued)
+        assertEquals(setOf(waiting.id, automation.id, nextAutomation.id), result.pendingInputIds)
         assertEquals(HistoryExecution.Running, result.execution)
         assertEquals(HistoryExecution.Queued, transcript(waiting).execution)
     }
@@ -204,7 +297,7 @@ class HistoryProjectionTest {
     fun queuedAutomationWithoutAUserDocumentKeepsItsActionTarget() {
         val queued = event("automation", 1, "input.automation", run = null)
         val pending = transcript(queued)
-        assertEquals(listOf(queued.id), pending.queuedEventIds)
+        assertEquals(setOf(queued.id), pending.pendingInputIds)
         val message = pending.messages.single()
         assertEquals(queued.id, message.id)
         assertTrue(message.queued)
@@ -212,7 +305,7 @@ class HistoryProjectionTest {
 
         val delivered = event("delivered", 2, "input.automation", revoke = queued.id)
         val consumed = transcript(queued, delivered)
-        assertTrue(consumed.queuedEventIds.isEmpty())
+        assertTrue(consumed.pendingInputIds.isEmpty())
         assertTrue(consumed.messages.isEmpty())
     }
 

@@ -761,10 +761,11 @@ export function workflowAutomationDisplayMessage(
  */
 export function workflowAutomationAgentPrompt(
   context: WorkflowAutomationContext,
+  instruction?: string,
 ): string {
   const notes = AGENT_EVENT_CONTEXT[context.eventType];
   return [
-    `/${context.workflowName}`,
+    instruction ?? `/${context.workflowName}`,
     "",
     "Automation event",
     `Type: ${context.eventType}`,

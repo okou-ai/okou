@@ -1,42 +1,69 @@
 import CCState
 import ChatData
 import Foundation
-import Observation
 
 /// Confirmed Project names, membership operations and native list disclosure for one workspace.
-@MainActor @Observable
+/// The state lives in the workspace session's Store. The sidebar and the Project picker read
+/// `presentation`, and the sidebar projection reads `confirmedValue`, through CCStateSwiftUI;
+/// the synchronous accessors serve actions and tests.
+@MainActor
 final class ChatProjectStore {
+  /// What the sidebar and the Project picker render.
+  struct Presentation: Equatable {
+    var projects: [ChatProject] = []
+    /// The last failed Project action.
+    var actionError: String?
+    /// Mutation keys in flight: a Project ID, or `create`.
+    var pending: Set<String> = []
+    var expansion: [String: Bool] = [:]
+
+    func isExpanded(_ id: String) -> Bool { expansion[id] ?? false }
+  }
+
+  /// Action and disclosure state beside the confirmed Projects.
+  private struct Actions: Equatable {
+    var error: String?
+    var pending: Set<String> = []
+    var expansion: [String: Bool] = [:]
+  }
+
   private let lifecycleTasks: LifecycleTasks
   /// Confirmed names reconcile mutations and the durable baseline, independently of read phase.
-  @ObservationIgnored private let confirmedProjects = CCState.State<[ChatProject]>([])
-  @ObservationIgnored private let replaceProjects: Command<Void, [ChatProject]>
+  private let confirmedProjects = CCState.State<[ChatProject]>([])
+  private let actionState = CCState.State(Actions())
+  private let replaceProjects: Command<Void, [ChatProject]>
   let confirmedValue: Computed<[ChatProject]>
+  let presentation: Computed<Presentation>
   private(set) var projects: [ChatProject] {
     get {
-      access(keyPath: \.projects)
       do { return try stateStore.get(confirmedValue) } catch {
         preconditionFailure("Cannot read confirmed Projects: \(error)")
       }
     }
     set {
-      withMutation(keyPath: \.projects) {
-        do { try stateStore.set(replaceProjects, newValue) } catch {
-          preconditionFailure("Cannot publish confirmed Projects: \(error)")
-        }
+      do { try stateStore.set(replaceProjects, newValue) } catch {
+        preconditionFailure("Cannot publish confirmed Projects: \(error)")
       }
     }
   }
   private(set) var active = false
-  private(set) var actionError: String?
-  private(set) var pending: Set<String> = []
-  private(set) var expansion: [String: Bool] = [:]
+  var actionError: String? { currentActions.error }
+  var pending: Set<String> { currentActions.pending }
+  /// The synchronous value of `presentation`, for a render whose graph read has not resolved.
+  var currentPresentation: Presentation {
+    let actions = currentActions
+    return Presentation(
+      projects: projects, actionError: actions.error, pending: actions.pending,
+      expansion: actions.expansion)
+  }
   private let service: ChatProjects
   private let resources: WorkspaceResources
   private let sync: ChatSync
   private let didFail: @MainActor (Error) -> Void
   private let didChangeMembership: @MainActor () async -> Void
-  @ObservationIgnored private var subscription: Subscription?
-  @ObservationIgnored private var publication: Task<Void, Never>?
+  private var publication: Task<Void, Never>?
+  /// The list read the latest publication confirms; a repeated activation does not restart it.
+  private var publishedRead: Task<[ChatProject], Error>?
   private var readID = UUID()
   private var restoredSnapshot = false
   private var tasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
@@ -58,7 +85,15 @@ final class ChatProjectStore {
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let confirmedProjects = confirmedProjects
+    let actionState = actionState
     confirmedValue = Computed { try $0(confirmedProjects) }
+    presentation = Computed { get in
+      let projects = try get(confirmedProjects)
+      let actions = try get(actionState)
+      return Presentation(
+        projects: projects, actionError: actions.error, pending: actions.pending,
+        expansion: actions.expansion)
+    }
     replaceProjects = Command { context, value in
       guard try context.get(confirmedProjects) != value else { return }
       try context.set(confirmedProjects, value)
@@ -81,8 +116,10 @@ final class ChatProjectStore {
         let known = Set(projects.map(\.id))
         let restored = saved.filter { !hasConfirmedProjects || known.contains($0) }
         // A click during the disk read wins, including an explicit collapse.
-        expansion = Dictionary(uniqueKeysWithValues: restored.map { ($0, true) })
-          .merging(expansion) { _, current in current }
+        updateActions {
+          $0.expansion = Dictionary(uniqueKeysWithValues: restored.map { ($0, true) })
+            .merging($0.expansion) { _, current in current }
+        }
         restoredDisclosure = true
       } catch is CancellationError {
         return
@@ -98,38 +135,33 @@ final class ChatProjectStore {
     }
   }
 
-  func isExpanded(_ id: String) -> Bool { expansion[id] ?? false }
+  func isExpanded(_ id: String) -> Bool { currentActions.expansion[id] ?? false }
 
+  /// Starts confirming the workspace's list read. This owner triggers every reload of that read
+  /// (here and in `refresh`), so it continues each one itself instead of subscribing to it.
   func activate() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
     do { try resources.retryProjects() } catch {
       didFail(error)
       return
     }
-    if !active, subscription == nil {
-      do {
-        subscription = try stateStore.watch(listValue) { [weak self] in
-          self?.confirmProjects()
-        }
-        active = true
-        confirmProjects()
-      } catch is CancellationError {
-      } catch { didFail(error) }
-    }
+    active = true
+    confirmProjects()
     await publication?.value
   }
 
   @discardableResult
   func toggle(_ id: String) -> Task<Void, Never>? {
     guard !closed else { return nil }
-    expansion[id] = !isExpanded(id)
-    return persistDisclosure(id, expanded: isExpanded(id))
+    let expanded = !isExpanded(id)
+    updateActions { $0.expansion[id] = expanded }
+    return persistDisclosure(id, expanded: expanded)
   }
 
   @discardableResult
   func expand(_ id: String) -> Task<Void, Never>? {
     guard !closed else { return nil }
-    expansion[id] = true
+    updateActions { $0.expansion[id] = true }
     return persistDisclosure(id, expanded: true)
   }
 
@@ -168,48 +200,56 @@ final class ChatProjectStore {
     }
     do {
       try stateStore.set(resources.reloadProjects)
+      confirmProjects()
       await publication?.value
     } catch is CancellationError {
     } catch { didFail(error) }
   }
 
   /// Only confirmed business state is published here; views observe the original Task's phase.
+  /// Each list read is confirmed once, as a subscription would on its invalidation.
   private func confirmProjects() {
     guard !closed, !blocked else { return }
+    let read: Task<[ChatProject], Error>
+    do { read = try stateStore.get(listValue) } catch is CancellationError {
+      publication?.cancel()
+      publication = nil
+      return
+    } catch {
+      didFail(error)
+      return
+    }
+    guard read != publishedRead else { return }
+    publishedRead = read
     publication?.cancel()
     let id = UUID()
     readID = id
     let previous = revision
-    do {
-      let read = try stateStore.get(listValue)
-      publication = Task { [weak self] in
-        guard let self else { return }
-        defer { if readID == id { publication = nil } }
-        do {
-          let result = try await read.value
-          try Task.checkCancellation()
-          guard !closed, !blocked, readID == id, previous == revision, pending.isEmpty else {
-            return
-          }
-          revision += 1
-          projects = result
-          restoredSnapshot = true
-          hasConfirmedProjects = true
-          let knownIDs = Set(result.map(\.id))
-          expansion = expansion.filter { knownIDs.contains($0.key) }
-          if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
-          await sync.persistProjects(result)
-        } catch is CancellationError {
-        } catch {
-          guard !closed, !Task.isCancelled, readID == id else { return }
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
+    publication = Task { [weak self] in
+      guard let self else { return }
+      defer { if readID == id { publication = nil } }
+      do {
+        let result = try await read.value
+        try Task.checkCancellation()
+        guard !closed, !blocked, readID == id, previous == revision, pending.isEmpty else {
+          return
         }
+        revision += 1
+        projects = result
+        restoredSnapshot = true
+        hasConfirmedProjects = true
+        let knownIDs = Set(result.map(\.id))
+        updateActions { $0.expansion = $0.expansion.filter { knownIDs.contains($0.key) } }
+        if let disclosure { observeDisclosure(disclosure.retainProjects(knownIDs)) }
+        await sync.persistProjects(result)
+      } catch is CancellationError {
+      } catch {
+        guard !closed, !Task.isCancelled, readID == id else { return }
+        blocked = (error as? APIClientError)?.statusCode == 426
+        didFail(error)
       }
-      if let publication { lifecycleTasks.track(publication) }
-    } catch is CancellationError {
-      publication = nil
-    } catch { didFail(error) }
+    }
+    if let publication { lifecycleTasks.track(publication) }
   }
 
   @discardableResult
@@ -245,6 +285,18 @@ final class ChatProjectStore {
     return project != nil
   }
 
+  func setArchived(_ id: String, archived: Bool) async {
+    _ = await mutate(
+      key: id, payload: "archive:\(archived)",
+      body: { [service] eventID in
+        try await service.setArchived(id, archived: archived, eventID: eventID)
+      },
+      confirm: { [self] project in
+        if let index = projects.firstIndex(where: { $0.id == id }) { projects[index] = project }
+        await sync.persistProjects(projects)
+      })
+  }
+
   @discardableResult
   func delete(_ id: String) async -> Bool {
     let result = await mutate(
@@ -253,7 +305,8 @@ final class ChatProjectStore {
       confirm: { [self] _ in
         projects.removeAll { $0.id == id }
         // Retain a collapse overlay until an in-flight preference restore finishes.
-        expansion[id] = restoredDisclosure ? nil : false
+        let restored = restoredDisclosure
+        updateActions { $0.expansion[id] = restored ? nil : false }
         persistDisclosure(id, expanded: false)
         await sync.persistProjects(projects)
         guard !closed, !Task.isCancelled else { return }
@@ -277,7 +330,7 @@ final class ChatProjectStore {
       id = ChatProjects.operationID()
     }
     operations[key] = (payload, id)
-    pending.insert(key)
+    updateActions { $0.pending.insert(key) }
     revision += 1
     publication?.cancel()
     let taskID = UUID()
@@ -286,7 +339,7 @@ final class ChatProjectStore {
       guard let self else { return }
       defer {
         if tasks[key]?.id == taskID {
-          pending.remove(key)
+          updateActions { $0.pending.remove(key) }
           tasks[key] = nil
         }
       }
@@ -296,18 +349,18 @@ final class ChatProjectStore {
         guard !closed else { return }
         revision += 1
         operations[key] = nil
-        actionError = nil
+        updateActions { $0.error = nil }
         // Confirmation and persistence belong to the workspace, not its departing UI waiter.
         await confirm(value)
         try Task.checkCancellation()
         guard !closed else { return }
-        pending.remove(key)
+        updateActions { $0.pending.remove(key) }
         await refresh()
         result = value
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled else { return }
-        actionError = error.localizedDescription
+        updateActions { $0.error = error.localizedDescription }
         blocked = (error as? APIClientError)?.statusCode == 426
         didFail(error)
       }
@@ -318,19 +371,34 @@ final class ChatProjectStore {
     return result
   }
 
-  func dismissError() { actionError = nil }
+  func dismissError() { updateActions { $0.error = nil } }
 
   func close() {
     closed = true
     readID = UUID()
     publication?.cancel()
     publication = nil
-    do { try subscription?.cancel() } catch { didFail(error) }
-    subscription = nil
+    publishedRead = nil
     for entry in tasks.values { entry.task.cancel() }
     for task in disclosureTasks.values { task.cancel() }
     disclosureTasks.removeAll()
     // Storage owns accepted disk mutations; UI teardown cancels only their waiters.
     _ = disclosure?.close()
+  }
+
+  private var currentActions: Actions {
+    do { return try stateStore.get(actionState) } catch {
+      preconditionFailure("Cannot read the Project action state: \(error)")
+    }
+  }
+
+  private func updateActions(_ mutation: (inout Actions) -> Void) {
+    let previous = currentActions
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try stateStore.set(actionState, next) } catch {
+      preconditionFailure("Cannot update the Project action state: \(error)")
+    }
   }
 }

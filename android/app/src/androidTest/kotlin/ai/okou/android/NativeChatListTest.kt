@@ -72,7 +72,7 @@ class NativeChatListTest {
             text(projectAction)
             assertTrue(device.wait(Until.gone(projectUnavailable), 10_000))
             assertFalse(
-                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty)))
+                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty))),
             )
             takeScreenshot().writeToTestStorage("android-list-empty-project")
             text(projectAction).click()
@@ -160,7 +160,7 @@ class NativeChatListTest {
         app.chatService = fixture.service
         fun text(value: String) =
             checkNotNull(
-                device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
             ) {
                 "Missing $value"
             }
@@ -173,7 +173,7 @@ class NativeChatListTest {
                             ViewModelProvider(activity)[SessionModel::class.java]
                                 .uiState
                                 .value
-                                .ready
+                                .ready,
                         )
                         .chats
                 jobs += checkNotNull(chats.viewModelScope.coroutineContext[Job])
@@ -188,7 +188,7 @@ class NativeChatListTest {
                         override fun apply(device: UiDevice) = unreadFiles() != originalUnread
                     },
                     10_000,
-                )
+                ),
             )
             checkNotNull(scenario).close()
             runBlocking { withTimeout(10_000) { jobs.last().join() } }
@@ -204,10 +204,10 @@ class NativeChatListTest {
             checkNotNull(
                     device.wait(
                         Until.findObject(
-                            By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+                            By.pkg(app.packageName).desc(app.getString(R.string.chat_filter)),
                         ),
                         10_000,
-                    )
+                    ),
                 )
                 .click()
             val unread = app.getString(R.string.chat_unread)
@@ -215,10 +215,10 @@ class NativeChatListTest {
             assertTrue(
                 device.wait(
                     Until.hasObject(
-                        By.pkg(app.packageName).text(unread).hasAncestor(chatListRegion(app))
+                        By.pkg(app.packageName).text(unread).hasAncestor(chatListRegion(app)),
                     ),
                     10_000,
-                )
+                ),
             )
             // An unread Project remains visible with its chat rows folded.
             text("Research")
@@ -229,12 +229,17 @@ class NativeChatListTest {
             assertTrue(requested.await(10, TimeUnit.SECONDS))
             assertTrue(!device.hasObject(By.pkg(app.packageName).text("Personal chat")))
 
+            val syncing = By.pkg(app.packageName).desc(app.getString(R.string.chat_syncing))
+            assertFalse(device.hasObject(syncing))
             release.countDown()
-            text(app.getString(R.string.chat_refresh_failed))
+            assertTrue(device.wait(Until.hasObject(syncing), 10_000))
             text("Research")
+            assertFalse(
+                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.retry))),
+            )
             fail.set(false)
-            text(app.getString(R.string.retry)).click()
             text(app.getString(R.string.chat_empty_unread))
+            assertTrue(device.wait(Until.gone(syncing), 10_000))
         } catch (error: Throwable) {
             failures.add(error)
             try {
@@ -322,11 +327,11 @@ class NativeChatListTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
                 )
             fun tool(label: String) =
                 checkNotNull(
-                        device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000)
+                        device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000),
                     ) {
                         "Missing workspace tool $label"
                     }
@@ -377,17 +382,20 @@ class NativeChatListTest {
                             ViewModelProvider(activity)[SessionModel::class.java]
                                 .uiState
                                 .value
-                                .ready
+                                .ready,
                         )
                         .chats
                         .viewModelScope
                         .coroutineContext[Job]
             }
             assertNotNull(
-                device.wait(Until.findObject(By.desc(app.getString(R.string.chat_loading))), 10_000)
+                device.wait(
+                    Until.findObject(By.desc(app.getString(R.string.chat_loading))),
+                    10_000,
+                ),
             )
             takeScreenshot().writeToTestStorage("android-list-loading")
-            click(UiSelector().description(app.getString(R.string.settings)))
+            device.openChatListSettings(app)
             text(app.getString(R.string.settings))
             revealText(app.getString(R.string.appearance), By.pkg(app.packageName))
             gate.countDown()
@@ -421,21 +429,26 @@ class NativeChatListTest {
                 device.wait(
                     Until.findObject(By.desc(app.getString(R.string.history_loading))),
                     10_000,
-                )
+                ),
             )
             takeScreenshot().writeToTestStorage("android-conversation-loading")
             firstHistory.countDown()
             text("Native history reply")
             text("Research")
             click(UiSelector().description(app.getString(R.string.chat_actions)))
-            clickText(app.getString(R.string.settings))
+            val find = app.getString(R.string.conversation_find)
+            text(find)
+            assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(find)), 10_000))
+            click(UiSelector().description(app.getString(R.string.back)))
+            device.awaitChatList(app)
+            device.openChatListSettings(app)
             text(app.getString(R.string.appearance))
             scenario.recreate()
             text(app.getString(R.string.appearance))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(device.wait(Until.gone(By.textContains("Native history")), 10_000))
+            device.awaitChatList(app)
             revealText("Research")
             clickText("Research")
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
@@ -520,7 +533,7 @@ class NativeChatListTest {
                 text(app.getString(R.string.chat_inbox))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
                 device.awaitKeyboardFocus(
-                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
                 )
                 assertTrue(device.pressDPadUp())
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
@@ -530,23 +543,23 @@ class NativeChatListTest {
                 assertTrue(
                     device.wait(
                         Until.hasObject(
-                            By.pkg(app.packageName).text(archived).hasAncestor(chatListRegion(app))
+                            By.pkg(app.packageName).text(archived).hasAncestor(chatListRegion(app)),
                         ),
                         10_000,
-                    )
+                    ),
                 )
                 text("Native history reply")
                 assertTrue(device.pressDPadCenter())
                 text(app.getString(R.string.chat_inbox))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
                 device.awaitKeyboardFocus(
-                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted)),
                 )
                 repeat(3) { assertTrue(device.pressDPadUp()) }
                 device.awaitKeyboardFocus(inbox)
                 assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
-                click(UiSelector().description(app.getString(R.string.settings)))
+                device.openChatListSettings(app)
                 text(app.getString(R.string.appearance))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)

@@ -5,13 +5,16 @@ import ai.okou.android.api.generated.ThreadDetail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -34,6 +37,8 @@ data class ConversationUiState(
     val detailPhase: ChatReadPhase = ChatReadPhase.Idle,
     val detailFailure: Exception? = null,
     val initialReadFailed: Boolean = false,
+    val syncProgressDelayMillis: Long? = null,
+    val consecutiveReadFailures: Int = 0,
 )
 
 /** A completed network read, distinct from both selection identity and the event cursor. */
@@ -49,6 +54,7 @@ class ConversationHistoryModel(
     private val onRead: () -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val precedingReadWrite: (String) -> Job? = { null },
+    private val wallMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
@@ -94,32 +100,33 @@ class ConversationHistoryModel(
         reading[threadId] = anchor
         if (reading.size > 4) reading.remove(reading.keys.first())
         val previousWrite = readingWrite
-        readingWrite =
-            scope.launch {
-                // Preserve the order of the UI actions across the IO dispatcher.
-                previousWrite?.join()
-                cache.saveReadingAnchor(threadId, anchor)
-            }
+        readingWrite = scope.launch {
+            // Preserve the order of the UI actions across the IO dispatcher.
+            previousWrite?.join()
+            cache.saveReadingAnchor(threadId, anchor)
+        }
     }
 
     internal fun checkpoint(threadId: String): HistoryCheckpoint? =
         confirmed?.history?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
 
     private val dirty = mutableMapOf<String, CachedHistory>()
+    // Confirmed access loss survives navigation until a successful history read. A new cache
+    // commit waits for the workspace-owned eviction of the denied history.
+    private val accessEvictions = mutableMapOf<String, Job>()
     private val invalidations = Channel<Long>(Channel.CONFLATED)
     private val invalidationJob = scope.launch { for (ticket in invalidations) catchUp(ticket) }
     private val detailInvalidations = Channel<Long>(Channel.CONFLATED)
-    private val detailInvalidationJob =
-        scope.launch {
-            for (ticket in detailInvalidations) {
-                if (!current(ticket)) continue
+    private val detailInvalidationJob = scope.launch {
+        for (ticket in detailInvalidations) {
+            if (!current(ticket)) continue
+            detailJob?.join()
+            if (current(ticket)) {
+                refreshDetail()
                 detailJob?.join()
-                if (current(ticket)) {
-                    refreshDetail()
-                    detailJob?.join()
-                }
             }
         }
+    }
 
     private fun current(ticket: Long) = !retired && authorized() && ticket == generation
 
@@ -148,10 +155,13 @@ class ConversationHistoryModel(
             ConversationUiState(
                 thread = thread,
                 transcript = restored?.transcript,
+                phase =
+                    if (thread.id in accessEvictions) HistoryPhase.Missing
+                    else HistoryPhase.Loading,
                 source = restored?.let { ChatListSource.Cache },
                 cacheUnavailable = thread.id in dirty,
                 generation = generation,
-            )
+            ),
         )
         refresh()
     }
@@ -181,11 +191,13 @@ class ConversationHistoryModel(
         if (visit === value) {
             visit = null
             output.visible(false)
+            if (mutable.value.consecutiveReadFailures > 0) job?.cancel()
         }
     }
 
-    internal fun readSessionFor(threadId: String): ConversationReadSession? =
-        visit?.takeIf { mutable.value.thread?.id == threadId }
+    internal fun readSessionFor(threadId: String): ConversationReadSession? = visit?.takeIf {
+        mutable.value.thread?.id == threadId
+    }
 
     fun refresh() {
         refreshHistory()
@@ -193,95 +205,142 @@ class ConversationHistoryModel(
     }
 
     private fun refreshHistory() {
-        val thread = mutable.value.thread ?: return
+        val state = mutable.value
+        val thread = state.thread ?: return
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation
-        publish(mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null))
-        job =
-            scope.launch {
-                var saved = dirty[thread.id] ?: confirmed?.history
-                if (saved == null) {
-                    try {
-                        saved = cache.loadHistory(thread.id)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        requireCurrent(ticket)
-                        publish(mutable.value.copy(cacheUnavailable = true))
-                    }
-                }
-                if (saved != null && confirmed == null) {
-                    val transcript = withContext(dispatcher) { projectHistory(saved.checkpoint) }
-                    requireCurrent(ticket)
-                    confirmed = ConfirmedTimeline(saved, transcript)
-                    publish(
-                        mutable.value.copy(
-                            transcript = transcript,
-                            source = ChatListSource.Cache,
-                            initialReadFailed = false,
-                        )
-                    )
-                }
+        val eviction = accessEvictions[thread.id]
+        publish(
+            state.copy(
+                phase = if (eviction == null) HistoryPhase.Loading else HistoryPhase.Missing,
+                confirmation = null,
+                syncProgressDelayMillis = confirmed?.history?.progressDelayMillis(),
+                consecutiveReadFailures = 0,
+                initialReadFailed = false,
+            ),
+        )
+        job = scope.launch {
+            var saved = if (eviction == null) dirty[thread.id] ?: confirmed?.history else null
+            if (saved == null && eviction == null) {
                 try {
-                    var next =
-                        CachedHistory(
-                            sync.synchronize(thread.id, saved?.checkpoint),
-                            System.currentTimeMillis(),
-                        )
-                    requireCurrent(ticket)
-                    dirty[thread.id] = next
-                    var diskFailed = false
-                    try {
-                        val committed = cache.saveHistory(next.checkpoint, next.confirmedAt, saved)
-                        val disk = cache.loadHistory(thread.id, committed)
-                        requireCurrent(ticket)
-                        if (disk != null) next = disk
-                        dirty.remove(thread.id)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        requireCurrent(ticket)
-                        diskFailed = true
-                    }
-                    // Room may select a different prefix at the same cursor.
-                    val transcript =
-                        confirmed?.takeIf { it.history.checkpoint === next.checkpoint }?.transcript
-                            ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
-                    requireCurrent(ticket)
-                    confirmed = ConfirmedTimeline(next, transcript)
-                    publish(
-                        mutable.value.copy(
-                            transcript = transcript,
-                            phase = HistoryPhase.Ready,
-                            source = ChatListSource.Network,
-                            cacheUnavailable = diskFailed,
-                            initialReadFailed = false,
-                            // Equal rows still complete a new read; StateFlow may conflate phases.
-                            confirmation =
-                                HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
-                        )
-                    )
+                    saved = cache.loadHistory(thread.id)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (error: Exception) {
+                } catch (_: Exception) {
                     requireCurrent(ticket)
-                    if (error is ApiFailure.Http && error.status in setOf(403, 404)) {
-                        detailJob?.cancel()
-                        missing(thread.id, ticket, error)
-                    } else {
-                        reportAuthorization(error)
-                        if (current(ticket)) {
-                            val state = mutable.value
-                            publish(
-                                state.copy(
-                                    phase = HistoryPhase.Failed,
-                                    initialReadFailed = state.transcript == null,
-                                )
-                            )
-                        }
+                    publish(mutable.value.copy(cacheUnavailable = true))
+                }
+            }
+            if (saved != null && confirmed == null) {
+                val transcript = withContext(dispatcher) { projectHistory(saved.checkpoint) }
+                requireCurrent(ticket)
+                confirmed = ConfirmedTimeline(saved, transcript)
+                publish(
+                    mutable.value.copy(
+                        transcript = transcript,
+                        source = ChatListSource.Cache,
+                        initialReadFailed = false,
+                        syncProgressDelayMillis = saved.progressDelayMillis(),
+                    ),
+                )
+            }
+            try {
+                var next =
+                    CachedHistory(
+                        readWithRetry(thread.id, saved?.checkpoint, ticket),
+                        wallMillis(),
+                    )
+                eviction?.join()
+                requireCurrent(ticket)
+                dirty[thread.id] = next
+                var diskFailed = false
+                try {
+                    val committed = cache.saveHistory(next.checkpoint, next.confirmedAt, saved)
+                    val disk = cache.loadHistory(thread.id, committed)
+                    requireCurrent(ticket)
+                    if (disk != null) next = disk
+                    dirty.remove(thread.id)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    requireCurrent(ticket)
+                    diskFailed = true
+                }
+                // Room may select a different prefix at the same cursor.
+                val transcript =
+                    confirmed?.takeIf { it.history.checkpoint === next.checkpoint }?.transcript
+                        ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
+                requireCurrent(ticket)
+                confirmed = ConfirmedTimeline(next, transcript)
+                accessEvictions.remove(thread.id)
+                publish(
+                    mutable.value.copy(
+                        transcript = transcript,
+                        phase = HistoryPhase.Ready,
+                        source = ChatListSource.Network,
+                        cacheUnavailable = diskFailed,
+                        initialReadFailed = false,
+                        syncProgressDelayMillis = null,
+                        consecutiveReadFailures = 0,
+                        // Equal rows still complete a new read; StateFlow may conflate phases.
+                        confirmation =
+                            HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(ticket)
+                if (error is ApiFailure.Http && error.status in setOf(403, 404)) {
+                    detailJob?.cancel()
+                    missing(thread.id, ticket, error)
+                } else {
+                    reportAuthorization(error)
+                    if (current(ticket) && eviction == null) {
+                        val state = mutable.value
+                        publish(
+                            state.copy(
+                                phase = HistoryPhase.Failed,
+                                // A transient read can end before the visible visit starts its
+                                // retries. Keep the same initial feedback across that handoff.
+                                initialReadFailed =
+                                    state.transcript == null &&
+                                        chatReadRetryAfterMillis(error) == null,
+                                syncProgressDelayMillis = null,
+                                consecutiveReadFailures = 0,
+                            ),
+                        )
                     }
                 }
             }
+        }
+    }
+
+    private fun CachedHistory.progressDelayMillis() =
+        chatSyncNoticeDelayMillis(confirmedAt, wallMillis())
+
+    private suspend fun readWithRetry(
+        threadId: String,
+        checkpoint: HistoryCheckpoint?,
+        ticket: Long,
+    ): HistoryCheckpoint {
+        var failures = 0
+        while (true) {
+            try {
+                return sync.synchronize(threadId, checkpoint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(ticket)
+                val retryAfter = chatReadRetryAfterMillis(error)
+                if (visit == null || retryAfter == null) throw error
+                failures = (failures + 1).coerceAtMost(chatReadRetryDelays.size)
+                publish(mutable.value.copy(consecutiveReadFailures = failures))
+                delay(maxOf(chatReadRetryDelays[failures - 1], retryAfter))
+                requireCurrent(ticket)
+                if (visit == null) throw CancellationException("Conversation visit ended")
+            }
+        }
     }
 
     private fun refreshDetail() {
@@ -289,37 +348,50 @@ class ConversationHistoryModel(
         if (retired || !authorized() || detailJob?.isActive == true) return
         val ticket = generation
         publish(mutable.value.copy(detailPhase = ChatReadPhase.Loading, detailFailure = null))
-        detailJob =
-            scope.launch {
-                try {
-                    val detail = service.threadDetail(thread.id)
-                    requireCurrent(ticket)
-                    publish(mutable.value.copy(detail = detail, detailPhase = ChatReadPhase.Ready))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    requireCurrent(ticket)
-                    if (error is ApiFailure.Http && error.status in setOf(403, 404)) {
-                        job?.cancel()
-                        missing(thread.id, ticket, error)
-                    } else {
-                        reportAuthorization(error)
-                        if (current(ticket))
-                            publish(
-                                mutable.value.copy(
-                                    detailPhase = ChatReadPhase.Failed,
-                                    detailFailure = error,
-                                )
-                            )
-                    }
+        detailJob = scope.launch {
+            try {
+                val detail = service.threadDetail(thread.id)
+                requireCurrent(ticket)
+                publish(mutable.value.copy(detail = detail, detailPhase = ChatReadPhase.Ready))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(ticket)
+                if (error is ApiFailure.Http && error.status in setOf(403, 404)) {
+                    job?.cancel()
+                    missing(thread.id, ticket, error)
+                } else {
+                    reportAuthorization(error)
+                    if (current(ticket))
+                        publish(
+                            mutable.value.copy(
+                                detailPhase = ChatReadPhase.Failed,
+                                detailFailure = error,
+                            ),
+                        )
                 }
             }
+        }
     }
 
-    private suspend fun missing(threadId: String, ticket: Long, error: Exception) {
+    private fun missing(threadId: String, ticket: Long, error: Exception) {
         confirmed = null
         recent.remove(threadId)
         dirty.remove(threadId)
+        val eviction =
+            accessEvictions[threadId]?.takeUnless { it.isCompleted }
+                ?: scope
+                    .launch(start = CoroutineStart.LAZY) {
+                        try {
+                            cache.deleteHistory(threadId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            if (current(ticket))
+                                publish(mutable.value.copy(cacheUnavailable = true))
+                        }
+                    }
+                    .also { accessEvictions[threadId] = it }
         publish(
             mutable.value.copy(
                 transcript = null,
@@ -327,19 +399,14 @@ class ConversationHistoryModel(
                 phase = HistoryPhase.Missing,
                 confirmation = null,
                 initialReadFailed = false,
+                syncProgressDelayMillis = null,
+                consecutiveReadFailures = 0,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,
                 detailFailure = error,
-            )
+            ),
         )
-        try {
-            cache.deleteHistory(threadId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            requireCurrent(ticket)
-            publish(mutable.value.copy(cacheUnavailable = true))
-        }
+        eviction.start()
     }
 
     internal fun forgetWarmedHistory(threadId: String) {
@@ -349,11 +416,8 @@ class ConversationHistoryModel(
     }
 
     fun refreshAfterSend(threadId: String) {
-        val ticket = generation
-        scope.launch {
-            job?.join()
-            if (current(ticket) && mutable.value.thread?.id == threadId) refresh()
-        }
+        invalidate(threadId)
+        invalidateDetail(threadId)
     }
 
     fun invalidate(threadId: String? = null) {
@@ -376,6 +440,33 @@ class ConversationHistoryModel(
             job?.join()
         }
     }
+
+    internal suspend fun searchMessageIsMissing(threadId: String, sequence: Long): Boolean {
+        val selected = mutable.value
+        if (selected.thread?.id != threadId || selected.hasSearchMessage(sequence)) return false
+        val ticket = generation
+        job?.join()
+        requireCurrent(ticket)
+        val latest = mutable.value
+        if (latest.hasSearchMessage(sequence)) return false
+        // The search index can be ahead of this visit's last synchronized history.
+        if (
+            latest.phase != HistoryPhase.Missing &&
+                (latest.confirmation?.cursor?.seqId ?: 0L) < sequence
+        ) {
+            refreshHistory()
+        }
+        val resolved = mutable.first {
+            it.generation != ticket ||
+                it.phase == HistoryPhase.Ready ||
+                it.phase == HistoryPhase.Missing
+        }
+        requireCurrent(ticket)
+        return !resolved.hasSearchMessage(sequence)
+    }
+
+    private fun ConversationUiState.hasSearchMessage(sequence: Long) =
+        transcript?.searchMessage(sequence) != null
 
     private fun reportAuthorization(error: Exception) {
         if (
@@ -401,6 +492,8 @@ class ConversationHistoryModel(
         confirmed = null
         recent.clear()
         dirty.clear()
+        accessEvictions.values.forEach { it.cancel() }
+        accessEvictions.clear()
         mutable.value = ConversationUiState(generation = generation)
     }
 }

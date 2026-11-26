@@ -20,7 +20,8 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef, settle } from "../utils.ts";
+import { detach, onRef, Reason } from "../utils.ts";
+import { rootSignal$ } from "../root-signal.ts";
 import {
   prepareRecentWorkflowUse$,
   recordRecentWorkflowUse$,
@@ -57,10 +58,11 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import { presentationOutputFormat$ } from "./presentation-output-format.ts";
 import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+  createPresentationFormatSetupSignals,
+  type PresentationFormatSetupSignals,
+} from "./composer-presentation-format-setup.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -81,6 +83,7 @@ import {
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
   | "editor"
+  | "voiceChips$"
   | "setContainerRef$"
   | "focus$"
   | "hasInput$"
@@ -135,7 +138,7 @@ type ComposerSuggestionSignals = Pick<
 
 type ComposerTemplateEditorSignals = Pick<
   WorkflowComposerSignals,
-  "hasTemplateAttachment$" | "insertTemplate$" | "openTemplatePicker$"
+  "hasTemplateAttachment$" | "insertTemplate$"
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
@@ -213,9 +216,11 @@ interface ComposerComputerSignals {
   readonly setComputerUseDownloadDialogOpen$: Command<void, [boolean]>;
 }
 
-interface ComposerSubmissionSignals {
+interface ComposerSubmissionSignals extends ReturnType<
+  typeof createComposerPrimaryActionSignals
+> {
+  readonly presentationFormatSetup: PresentationFormatSetupSignals;
   readonly sending$: Computed<Promise<boolean>>;
-  readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
   /**
    * Sends what the composer currently holds. The second argument is agent-only
@@ -291,7 +296,7 @@ export interface ComposerSignals {
   readonly imageAnnotation: ImageAnnotationSignals;
   /** Previews draft media; images can also be marked up in the lightbox. */
   readonly openAttachmentPreview$: Command<
-    Promise<void>,
+    void,
     [ChatAttachment, AnnotationImage, AbortSignal]
   >;
   /** Produces a draft image's annotated copy again after it failed. */
@@ -379,6 +384,7 @@ function composerEditorSignals(
     singleLineOnMobile: options.singleLineOnMobile,
     forwardComposer: options.forwardComposer,
     editor: composer.editor,
+    voiceChips$: composer.voiceChips$,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
     hasInput$: composer.hasInput$,
@@ -463,7 +469,6 @@ function composerTemplateSignals(
   return {
     hasTemplateAttachment$: composer.hasTemplateAttachment$,
     insertTemplate$: composer.insertTemplate$,
-    openTemplatePicker$: composer.openTemplatePicker$,
   };
 }
 
@@ -514,6 +519,11 @@ function createComposerVoiceInput(
   );
   return createComposerVoiceInputSignals(
     deliverText$,
+    command(async ({ set }, fileId: string, signal: AbortSignal) => {
+      await set(options.draft.load$, signal);
+      signal.throwIfAborted();
+      set(workflowComposer.insertVoiceClip$, fileId);
+    }),
     workflowComposer.readVoiceContext$,
     options.voiceDraftTarget,
   );
@@ -566,7 +576,6 @@ export function createComposerSignals(
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
-    ui.openTemplatePickerDialog$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -580,7 +589,6 @@ export function createComposerSignals(
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
     clearPrompt$: workflowComposer.clearUnchangedPrompt$,
-    openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
@@ -652,7 +660,6 @@ export function createComposerSignals(
     template: {
       previewRecommendation$: createTemplateRecommendationPreviewCommand(
         ui.template,
-        workflowComposer.openTemplatePicker$,
       ),
       selectTemplateAndSave$: createComposerTemplateSelection(
         taskChips,
@@ -748,7 +755,7 @@ function createComposerAttachmentAnnotation(
     },
   );
   const openAttachmentPreview$ = command(
-    async (
+    (
       { set },
       attachment: ChatAttachment,
       image: AnnotationImage,
@@ -766,16 +773,15 @@ function createComposerAttachmentAnnotation(
         splitViewAvailable: false,
       };
       if (attachment.contentType.startsWith("video/")) {
-        await set(openVideoLightbox$, input, undefined, signal);
+        set(openVideoLightbox$, input, signal);
         return;
       }
-      await set(
+      set(
         openImageLightbox$,
         {
           ...input,
           annotationTarget: { attachment, annotate$: annotateAttachment$ },
         },
-        undefined,
         signal,
       );
     },
@@ -821,10 +827,6 @@ function createComposerChatEventSignals(
   events: CreateComposerSignalsOptions["eventSignals"],
 ) {
   const { hasEvents$, sending$, runningModelSelection$ } = events;
-  const actionsLoading$ = computed(async (get): Promise<boolean> => {
-    await get(hasEvents$);
-    return false;
-  });
   // The thread owns queue selection and ordering; the composer formats labels.
   const pendingEvents$ = computed(
     (get): Promise<readonly ComposerPendingEvent[]> => {
@@ -848,7 +850,6 @@ function createComposerChatEventSignals(
     },
   );
   return {
-    actionsLoading$,
     sending$,
     runningModelSelection$,
     pendingEvents$,
@@ -856,48 +857,76 @@ function createComposerChatEventSignals(
   };
 }
 
-function createComposerPrimaryActionSignal(args: {
+// Reuse the same choices when a thread refresh leaves its actions unchanged.
+function composerActionsForRun(
+  submit: ComposerSubmissionAction,
+  unavailable: "disabled" | "stop",
+) {
+  const blocked = {
+    missingNote: unavailable,
+    withoutInput: unavailable,
+    withInput: unavailable,
+  } as const;
+  const withoutAttachments = { ...blocked, withInput: submit } as const;
+  const withAttachments = {
+    ...withoutAttachments,
+    withoutInput: submit,
+  } as const;
+  return { blocked, withoutAttachments, withAttachments };
+}
+
+const idleActions = composerActionsForRun("send", "disabled");
+const runningActions = composerActionsForRun("queue", "stop");
+
+function createComposerPrimaryActionSignals(args: {
   readonly options: CreateComposerSignalsOptions;
   readonly eventSignals: ReturnType<typeof createComposerChatEventSignals>;
   readonly workflowComposer: WorkflowComposerSignals;
   readonly voiceState$: ComposerVoiceInputSignals["state$"];
-}): Computed<Promise<ComposerPrimaryAction>> {
+}) {
   const { options, eventSignals, workflowComposer } = args;
   const draft = options.draft.signals;
-  return computed(async (get): Promise<ComposerPrimaryAction> => {
-    if (await get(eventSignals.actionsLoading$)) {
-      return "disabled";
-    }
-    if ((await get(args.voiceState$)).status !== "idle") {
-      return "disabled";
-    }
-    // A chat can start in a just-created Project once the server has it.
-    if (options.project && get(options.project.pending$)) {
-      return "disabled";
-    }
-
-    const uploadsReady = await get(draft.attachmentUploadsReady$);
-    const attachments = await get(draft.usableAttachments$);
-    const hasContent =
-      get(workflowComposer.hasInput$) || attachments.length > 0;
+  const inputState$ = computed((get) => {
     const needsSuggestionNote = get(workflowComposer.feedback.items$).some(
       (item) => {
         return item.suggestionContext && !item.note.trim();
       },
     );
-    const canSend = uploadsReady && hasContent && !needsSuggestionNote;
-    const sending = await get(eventSignals.sending$);
-    if (sending && !canSend) {
-      return "stop";
+    if (needsSuggestionNote) {
+      return "missingNote";
     }
-    if (!canSend) {
-      return "disabled";
-    }
-    if (!sending) {
-      return "send";
-    }
-    return "queue";
+    return get(workflowComposer.hasInput$) ? "withInput" : "withoutInput";
   });
+
+  // Resolve the actions before the next edit so the button and keyboard can
+  // select one as soon as the editor changes between empty and nonempty.
+  const runActions$ = computed(async (get) => {
+    await get(eventSignals.hasEvents$);
+    if ((await get(args.voiceState$)).status !== "idle") {
+      return idleActions.blocked;
+    }
+    const uploadsReady = await get(draft.attachmentUploadsReady$);
+    const attachments = await get(draft.usableAttachments$);
+    const sending = await get(eventSignals.sending$);
+    const actions = sending ? runningActions : idleActions;
+    if (!uploadsReady) {
+      return actions.blocked;
+    }
+    return attachments.length > 0
+      ? actions.withAttachments
+      : actions.withoutAttachments;
+  });
+  const actionsByInput$ = computed((get) => {
+    // A chat can start in a just-created Project once the server has it.
+    return options.project && get(options.project.pending$)
+      ? idleActions.blocked
+      : get(runActions$);
+  });
+  const primaryAction$ = computed(async (get) => {
+    const actions = await get(actionsByInput$);
+    return actions[get(inputState$)];
+  });
+  return { actionsByInput$, inputState$, primaryAction$ } as const;
 }
 
 /**
@@ -983,7 +1012,6 @@ function createSubmitCurrentInput({
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
-  const voiceState$ = voice.state$;
   const readTaskSelection$ = createReadComposerTaskSelection(create, taskChips);
   const submitMessage$ = createSubmitMessageWithVisualization(
     options.submitMessage$,
@@ -1004,11 +1032,13 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const voiceState = await get(voiceState$);
+      const voiceState = await get(voice.state$);
       signal.throwIfAborted();
       if (voiceState.status !== "idle") {
         return false;
       }
+      const presentationFormat =
+        (await get(presentationOutputFormat$)) ?? undefined;
       const submission = await set(
         workflowComposer.readInputForSubmission$,
         signal,
@@ -1036,11 +1066,6 @@ function createSubmitCurrentInput({
       const visualization =
         taskSelection.task === "visualization"
           ? taskSelection.visualization
-          : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
           : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
@@ -1077,21 +1102,24 @@ function createSubmitCurrentInput({
         workflowComposer.workflows$,
         signal,
       );
+      const recencySignal = get(rootSignal$);
       const submitted = await set(
         submitMessage$,
         action,
         nextSubmission,
         signal,
       );
+      if (submitted && workflowUse) {
+        // The send is already accepted. Optional persistence belongs to the
+        // authenticated root, not the composer that navigation may replace.
+        detach(
+          set(recordRecentWorkflowUse$, workflowUse, recencySignal),
+          Reason.Daemon,
+          "accepted send workflow recency",
+        );
+      }
       if (submitted) {
         await set(taskChips.home.dismissMenu$, menuRevision, signal);
-      }
-      if (submitted && workflowUse) {
-        // Browser history must never turn an accepted send into a send error.
-        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-        await settle(() => {
-          set(recordRecentWorkflowUse$, workflowUse, signal);
-        }, signal);
       }
       return submitted;
     },
@@ -1121,19 +1149,24 @@ function createComposerSubmissionSignals(
     const invocation = get(invocation$);
     return invocation !== null && invocation.owner === get(owner$);
   });
-  const primaryAction$ = createComposerPrimaryActionSignal({
+  const primaryAction = createComposerPrimaryActionSignals({
     options,
     eventSignals,
     workflowComposer,
     voiceState$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput({
-    options,
-    workflowComposer,
-    voice,
-    create,
-    taskChips,
+  const presentationFormatSetup = createPresentationFormatSetupSignals({
+    task$: taskChips.task$,
+    primaryAction$: primaryAction.primaryAction$,
+    submitCurrentInput$: createSubmitCurrentInput({
+      options,
+      workflowComposer,
+      voice,
+      create,
+      taskChips,
+    }),
   });
+  const submitCurrentInput$ = presentationFormatSetup.submit$;
   const activatePrimaryAction$ = command(
     async (
       { get, set },
@@ -1156,8 +1189,9 @@ function createComposerSubmissionSignals(
   );
 
   return {
+    presentationFormatSetup,
     hasCurrentInvocation$,
-    primaryAction$,
+    ...primaryAction,
     submitCurrentInput$,
     activatePrimaryAction$,
   };

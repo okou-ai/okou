@@ -1,0 +1,35 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "7d5e1e2368cbb047f138882711115fe39e22551a",
+    "opening": "ba94a6d69d155584c69fbdc3ded478fc62b069ae"
+  },
+  "filesPerRevision": {
+    "frozen": 1894,
+    "beforeFirstWithdrawal": 1896,
+    "beforeSecondWithdrawal": 1614,
+    "main": 1880,
+    "opening": 1976
+  },
+  "distinctSourceBlobs": 4048,
+  "method": "Compared independently written, title-free callbacks against whitespace-normalized App, extension-client and evidence source at five revisions. Checked five-line excerpts of at least 130 nonspace characters across tests and helpers. The native bridge, API transcripts, public Router helpers and clock controls are reused fixtures.",
+  "registrations": {
+    "client-003": {
+      "path": "test-rebuild-evidence/113/browser-ownership.native.test.mjs",
+      "completeBodyMatches": [],
+      "sharedExcerpts": {}
+    },
+    "browser-response-deadlines-023": {
+      "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx",
+      "completeBodyMatches": [],
+      "sharedExcerpts": {}
+    },
+    "browser-response-deadlines-039": {
+      "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
+      "completeBodyMatches": [],
+      "sharedExcerpts": {}
+    }
+  }
+}

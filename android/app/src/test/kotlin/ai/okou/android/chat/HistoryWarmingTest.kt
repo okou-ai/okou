@@ -9,6 +9,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.HistoryCatchUpRequest
+import ai.okou.android.api.generated.HistorySnapshot
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import androidx.lifecycle.ViewModelProvider
@@ -21,7 +22,9 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -66,6 +69,7 @@ class HistoryWarmingTest {
     private suspend fun TestScope.withModel(
         prepare: (ChatListApiFixture) -> Unit = {},
         expectFailure: Boolean = false,
+        service: (ChatListApiFixture) -> ChatListService = { it.service },
         block: suspend TestScope.(Ready) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -86,7 +90,7 @@ class HistoryWarmingTest {
                         viewModelFactory {
                             initializer {
                                 ChatListModel(
-                                    api.service,
+                                    service(api),
                                     cache,
                                     api.identity,
                                     allowed::get,
@@ -137,7 +141,7 @@ class HistoryWarmingTest {
 
     private fun batch(seq: Long, text: String = "Warmed $seq") =
         jsonResponse(
-            """{"events":{"$CHAT_IN_PROJECT":[${event(seq, text)}]},"notFoundThreads":[]}"""
+            """{"events":{"$CHAT_IN_PROJECT":[${event(seq, text)}]},"notFoundThreads":[]}""",
         )
 
     private suspend fun TestScope.warm(ready: Ready) {
@@ -152,11 +156,13 @@ class HistoryWarmingTest {
 
     private val recoveringThreads = listOf(CHAT_IN_PROJECT, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 
-    private fun recoveryCohort(api: ChatListApiFixture) {
-        api.historyThreadIds = api.historyThreadIds + recoveringThreads
+    private fun recoveryCohort(api: ChatListApiFixture) = recoveryCohort(api, recoveringThreads)
+
+    private fun recoveryCohort(api: ChatListApiFixture, threads: List<String>) {
+        api.historyThreadIds = api.historyThreadIds + threads
         api.indicators = {
             jsonResponse(
-                """{"threads":{${recoveringThreads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}"""
+                """{"threads":{${threads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}""",
             )
         }
     }
@@ -164,35 +170,82 @@ class HistoryWarmingTest {
     private fun recoverSnapshots(
         api: ChatListApiFixture,
         seq: Long,
+        threads: List<String> = recoveringThreads,
         beforeSnapshot: (String) -> MockResponse? = { null },
     ) {
         api.historyCatchUp = {
             jsonResponse(
-                """{"events":{},"notFoundThreads":[${recoveringThreads.joinToString(",") { "\"$it\"" }}]}"""
+                """{"events":{},"notFoundThreads":[${threads.joinToString(",") { "\"$it\"" }}]}""",
             )
         }
         val rows = api.historyRows
         api.historyRows = { request ->
             val id = checkNotNull(request.requestUrl).pathSegments[2]
-            if (id in recoveringThreads)
+            if (id in threads)
                 jsonResponse(
-                    """{"rows":[],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}"""
+                    """{"rows":[],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}""",
                 )
             else rows(request)
         }
         api.commandResponse = { request ->
             val path = checkNotNull(request.requestUrl).encodedPath
-            val id = recoveringThreads.firstOrNull { path.contains(it) }
+            val id = threads.firstOrNull { path.contains(it) }
             when {
                 id == null -> null
                 path.endsWith("/event-snapshot") ->
                     beforeSnapshot(id)
                         ?: jsonResponse(
-                            """{"url":"${api.server.url("/recovery-archive/$id")}","expiresInSeconds":60,"lastEventId":"$id","lastSeqId":$seq}"""
+                            """{"url":"${api.server.url("/recovery-archive/$id")}","expiresInSeconds":60,"lastEventId":"$id","lastSeqId":$seq}""",
                         )
                 path.startsWith("/recovery-archive/") ->
                     MockResponse().setBody(historyEventWire(id, seq, id) + "\n")
                 else -> null
+            }
+        }
+    }
+
+    @Test
+    fun snapshotRecoveryQueuesExtraWorkWithoutBlockingTheSelectedConversation() = runTest {
+        val threads = recoveringThreads + "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val started = Channel<String>(Channel.UNLIMITED)
+        val release = CompletableDeferred<Unit>()
+        withModel(
+            prepare = { recoveryCohort(it, threads) },
+            service = { api ->
+                val upstream = api.service
+                object : ChatListService by upstream {
+                    override suspend fun historySnapshot(threadId: String): HistorySnapshot {
+                        if (threadId in threads) {
+                            started.send(threadId)
+                            release.await()
+                        }
+                        return upstream.historySnapshot(threadId)
+                    }
+                }
+            },
+        ) { ready ->
+            val (api, model, realtime) = ready
+            recoverSnapshots(api, 55, threads)
+            val revision = model.warming.state.value.revision
+            val confirmation = model.history.uiState.value.confirmation
+            realtime.invalidate(ChatChanges(messageThreads = threads.toSet()))
+            advanceTimeBy(1_000)
+            val running = setOf(started.receive(), started.receive())
+            runCurrent()
+            assertTrue(started.tryReceive().isFailure)
+
+            model.history.refresh()
+            model.history.uiState.first {
+                it.phase == HistoryPhase.Ready && it.confirmation != confirmation
+            }
+            assertTrue(started.tryReceive().isFailure)
+            release.complete(Unit)
+            assertEquals(threads.toSet() - running, setOf(started.receive()))
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > revision }
+            ready.store.clear()
+            val lease = ready.cache.open(api.identity) { true }
+            for (threadId in threads) {
+                assertEquals(55L, lease.loadHistory(threadId)!!.checkpoint.cursor.seqId)
             }
         }
     }
@@ -275,7 +328,7 @@ class HistoryWarmingTest {
                         api.historyCatchUp = { request ->
                             assertEquals(recoveringThreads.associateWith { 37L }, cursors(request))
                             jsonResponse(
-                                """{"events":{${recoveringThreads.joinToString(",") { "\"$it\":[]" }}},"notFoundThreads":[]}"""
+                                """{"events":{${recoveringThreads.joinToString(",") { "\"$it\":[]" }}},"notFoundThreads":[]}""",
                             )
                         }
                         model.updates.foreground(true)
@@ -344,7 +397,7 @@ class HistoryWarmingTest {
                         it.phase == HistoryPhase.Failed && it.source == ChatListSource.Cache
                     }
                 assertTrue(
-                    shown.transcript!!.messages.any { row -> row.blocks.any { it.text == text } }
+                    shown.transcript!!.messages.any { row -> row.blocks.any { it.text == text } },
                 )
                 assertEquals(0, api.readRequests.get())
             } finally {
@@ -376,11 +429,11 @@ class HistoryWarmingTest {
                         val fresh =
                             request.requestUrl!!.queryParameter("sinceSeqId")!!.toLong() < 52
                         jsonResponse(
-                            """{"rows":[${if (fresh) event(52, "Foreground 52") else ""}],"cursor":{"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000052","lastSeqId":52},"hasMore":false}"""
+                            """{"rows":[${if (fresh) event(52, "Foreground 52") else ""}],"cursor":{"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000052","lastSeqId":52},"hasMore":false}""",
                         )
                     } else
                         jsonResponse(
-                            """{"rows":[],"cursor":{"lastEventId":"88888888-8888-4888-8888-888888888888","lastSeqId":37},"hasMore":false}"""
+                            """{"rows":[],"cursor":{"lastEventId":"88888888-8888-4888-8888-888888888888","lastSeqId":37},"hasMore":false}""",
                         )
                 }
                 model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
@@ -401,7 +454,7 @@ class HistoryWarmingTest {
                 assertTrue(
                     projectHistory(saved.checkpoint).messages.any { row ->
                         row.blocks.any { it.text == "Foreground 52" }
-                    }
+                    },
                 )
             } finally {
                 release.countDown()
@@ -420,20 +473,20 @@ class HistoryWarmingTest {
             }
             api.historySnapshot = {
                 jsonResponse(
-                    """{"url":"${api.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000055","lastSeqId":55}"""
+                    """{"url":"${api.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000055","lastSeqId":55}""",
                 )
             }
             api.historyArchive = { MockResponse().setBody(event(55) + "\n") }
             api.historyRows = {
                 jsonResponse(
-                    """{"rows":[],"cursor":{"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000055","lastSeqId":55},"hasMore":false}"""
+                    """{"rows":[],"cursor":{"lastEventId":"aaaaaaaa-aaaa-4aaa-8aaa-000000000055","lastSeqId":55},"hasMore":false}""",
                 )
             }
             warm(ready)
             expectedCursor = 55L
             api.historySnapshot = {
                 jsonResponse(
-                        """{"error":{"code":"CHAT_THREAD_NOT_FOUND","message":"Missing thread"}}"""
+                        """{"error":{"code":"CHAT_THREAD_NOT_FOUND","message":"Missing thread"}}""",
                     )
                     .setResponseCode(404)
             }
@@ -453,7 +506,7 @@ class HistoryWarmingTest {
             val (api, model, realtime) = ready
             api.historyCatchUp = {
                 jsonResponse(
-                    """{"events":{"$CHAT_IN_PROJECT":[${event(41)}]},"notFoundThreads":["$CHAT_IN_PROJECT"]}"""
+                    """{"events":{"$CHAT_IN_PROJECT":[${event(41)}]},"notFoundThreads":["$CHAT_IN_PROJECT"]}""",
                 )
             }
             val revision = model.warming.state.value.revision
@@ -525,18 +578,18 @@ class HistoryWarmingTest {
                 api.historyThreadIds = ids.toSet()
                 api.snapshot = {
                     jsonResponse(
-                        """{"url":"${api.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                        """{"url":"${api.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$CHAT_EVENT","latestSeqId":17}""",
                     )
                 }
                 api.archive = {
                     jsonResponse(
-                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}"""
+                        """{"chatThreads":[${ids.joinToString(",") { id -> """{"id":"$id","title":"History","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"hidden":${id == hidden},"renamedAt":null}""" }}]}""",
                     )
                 }
                 api.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
                 api.indicators = {
                     jsonResponse(
-                        """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"active"},"unreadAt":{}}"""
+                        """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"active"},"unreadAt":{}}""",
                     )
                 }
                 val original = api.historyCatchUp
@@ -544,7 +597,7 @@ class HistoryWarmingTest {
                     requested = cursors(request).keys
                     original(request)
                 }
-            }
+            },
         ) { ready ->
             assertEquals(recent.sortedDescending().take(100).toSet() + CHAT_IN_PROJECT, requested)
             val model = ready.model
@@ -689,7 +742,7 @@ class HistoryWarmingTest {
         )
         for (invalid in
             listOf("""[["$CHAT_IN_PROJECT"]]""", """[["$CHAT_IN_PROJECT",37,99]]""")) assertThrows(
-            SerializationException::class.java
+            SerializationException::class.java,
         ) {
             historyJson.decodeFromString<HistoryCatchUpRequest>(invalid)
         }

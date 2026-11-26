@@ -1,11 +1,13 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
-import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
+import ai.okou.android.committedSearchText
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.searchClearAction
 import ai.okou.android.workspaceSearchControlHeight
+import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,10 +23,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.Icon
@@ -46,7 +46,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -57,32 +56,39 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
 /** The snapshot and native search state live for one visit in the current conversation. */
 internal class ConversationFindVisit(
-    private val messages: List<HistoryMessage>,
+    transcript: HistoryTranscript?,
     private val rows: List<HistoryEvent>,
     private val artifactCards: Boolean,
     val restoreActionsFocus: Boolean,
+    private val imageNames: Flow<Map<String, String>>? = null,
 ) {
+    private val messages = transcript?.messages.orEmpty()
+    private val pendingInputIds = transcript?.pendingInputIds.orEmpty()
+    private var indexedImageNames: Map<String, String>? = null
+
     val hasLoadedMessages: Boolean
         get() = messages.isNotEmpty()
 
@@ -115,8 +121,24 @@ internal class ConversationFindVisit(
     }
 
     suspend fun prepareIndex() {
-        if (index == null) {
-            index = withContext(Dispatchers.Default) { findMessages(messages, rows, artifactCards) }
+        (imageNames ?: flowOf(emptyMap())).collectLatest { names ->
+            if (index != null && indexedImageNames == names) return@collectLatest
+            // Remove revoked names from the visible results before rebuilding off Main.
+            if (indexedImageNames.orEmpty().any { (source, name) -> names[source] != name }) {
+                index = null
+            }
+            val refreshed =
+                withContext(Dispatchers.Default) {
+                    findMessages(messages, rows, pendingInputIds, artifactCards, names)
+                }
+            if (input.composition != null) {
+                snapshotFlow {
+                    input.composition == null || normalizeFindText(input.text.toString()) == keyword
+                }
+                    .first { it }
+            }
+            index = refreshed
+            indexedImageNames = names
         }
     }
 
@@ -135,6 +157,8 @@ internal class ConversationFindVisit(
             ConversationFindTarget(
                 message.id,
                 result.passage?.index.takeIf { message.role == HistoryRole.Assistant },
+                bodyIndex = result.passage?.bodyIndex,
+                markdownImage = result.passage?.imagePath,
             )
     }
 
@@ -148,6 +172,8 @@ internal class ConversationFindTarget(
     val id: String,
     val markdownBlock: Int?,
     val isRun: Boolean = false,
+    val bodyIndex: Int? = null,
+    val markdownImage: String? = null,
 ) {
     var positioned by mutableStateOf(false)
         private set
@@ -175,7 +201,13 @@ private val findWhitespace = Regex("[\\s\\p{Z}]+")
 
 private fun normalizeFindText(text: String): String = text.replace(findWhitespace, " ").trim()
 
-internal data class FindPassage(val index: Int, val start: Int, val end: Int)
+internal data class FindPassage(
+    val index: Int,
+    val start: Int,
+    val end: Int,
+    val bodyIndex: Int,
+    val imagePath: String?,
+)
 
 internal data class FindMessage(
     val id: String,
@@ -191,33 +223,34 @@ internal data class FindResult(
     val passage: FindPassage? = null,
 )
 
-internal fun findMessages(
+private fun findMessages(
     messages: List<HistoryMessage>,
     rows: List<HistoryEvent>,
+    pendingInputIds: Set<String>,
     artifactCards: Boolean,
+    imageNames: Map<String, String>,
 ): List<FindMessage> {
     val byId = messages.associateBy { it.id }
     return rows.asReversed().mapNotNull { row ->
         val message = byId[row.id] ?: return@mapNotNull null
-        if (message.role == HistoryRole.System || message.rejected || message.queued)
+        if (message.role == HistoryRole.System || message.rejected || row.id in pendingInputIds)
             return@mapNotNull null
-        val parts =
-            message.blocks
-                .filter { it.kind == HistoryBlockKind.Text }
-                .flatMap {
-                    if (message.role == HistoryRole.Assistant)
-                        conversationMarkdownFindPassages(it.text, artifactCards)
-                    else listOf(it.text)
-                }
         val text = StringBuilder()
         val passages = buildList {
-            for ((index, part) in parts.withIndex()) {
-                val normalized = normalizeFindText(part)
-                if (normalized.isEmpty()) continue
-                if (text.isNotEmpty()) text.append(' ')
-                val start = text.length
-                text.append(normalized)
-                add(FindPassage(index, start, text.length))
+            for ((bodyIndex, block) in message.blocks.withIndex()) {
+                if (block.kind != HistoryBlockKind.Text) continue
+                val parts =
+                    if (message.role == HistoryRole.Assistant)
+                        conversationMarkdownFindPassages(block.text, artifactCards, imageNames)
+                    else listOf(MarkdownFindPassage(0, block.text))
+                for (part in parts) {
+                    val normalized = normalizeFindText(part.text)
+                    if (normalized.isEmpty()) continue
+                    if (text.isNotEmpty()) text.append(' ')
+                    val start = text.length
+                    text.append(normalized)
+                    add(FindPassage(part.block, start, text.length, bodyIndex, part.imagePath))
+                }
             }
         }
         if (text.isNotEmpty()) {
@@ -231,16 +264,15 @@ internal fun findMessages(
         }
         val references = message.blocks.filter { it.kind == HistoryBlockKind.Reference }
         if (references.isEmpty() || message.role != HistoryRole.User) return@mapNotNull null
-        val attachments =
-            references.all { reference ->
-                val part = Json.parseToJsonElement(reference.text)
-                when ((part as? JsonObject)?.text("type")) {
-                    "attachment",
-                    "file",
-                    "image" -> true
-                    else -> false
-                }
+        val attachments = references.all { reference ->
+            val part = Json.parseToJsonElement(reference.text)
+            when ((part as? JsonObject)?.text("type")) {
+                "attachment",
+                "file",
+                "image" -> true
+                else -> false
             }
+        }
         FindMessage(message.id, message.role, "", emptyList(), attachments)
     }
 }
@@ -248,20 +280,19 @@ internal fun findMessages(
 internal fun conversationFindResults(
     messages: List<FindMessage>,
     keyword: String,
-): List<FindResult> =
-    messages.mapNotNull { message ->
-        if (keyword.isEmpty()) {
-            FindResult(message).takeIf { message.role == HistoryRole.User }
-        } else {
-            val match = message.text.indexOf(keyword, ignoreCase = true)
-            if (match < 0) return@mapNotNull null
-            val passage =
-                message.passages.firstOrNull {
-                    match >= it.start && match + keyword.length <= it.end
-                }
-            FindResult(message, match, passage)
-        }
+): List<FindResult> = messages.mapNotNull { message ->
+    if (keyword.isEmpty()) {
+        FindResult(message).takeIf { message.role == HistoryRole.User }
+    } else {
+        val match = message.text.indexOf(keyword, ignoreCase = true)
+        if (match < 0) return@mapNotNull null
+        val passage =
+            message.passages.firstOrNull {
+                match >= it.start && match + keyword.length <= it.end
+            }
+        FindResult(message, match, passage)
     }
+}
 
 @Composable
 internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit) {
@@ -272,27 +303,26 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val keyboard = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
     val resultFocus = remember { FocusRequester() }
-    val focusColor = LocalActivityStatusColor.current
+    val focusColor = colors.onSurface
     val keyboardMode = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val rowShape = RoundedCornerShape(8.dp)
     LaunchedEffect(visit) { visit.prepareIndex() }
     LaunchedEffect(visit) {
-        snapshotFlow { visit.input.text.toString().takeIf { visit.input.composition == null } }
+        snapshotFlow { visit.input.committedSearchText() }
             .filterNotNull()
             .collect(visit::commitQuery)
     }
     val index = visit.index
     val keyword = visit.keyword
     val filtered by
-        produceState<Pair<String, List<FindResult>>?>(null, index, keyword) {
-            value =
-                index?.let { loaded ->
-                    withContext(Dispatchers.Default) {
-                        keyword to conversationFindResults(loaded, keyword)
-                    }
+        produceState<Triple<List<FindMessage>, String, List<FindResult>>?>(null, index, keyword) {
+            value = index?.let { loaded ->
+                withContext(Dispatchers.Default) {
+                    Triple(loaded, keyword, conversationFindResults(loaded, keyword))
                 }
+            }
         }
-    val results = filtered?.takeIf { it.first == keyword }?.second
+    val results = filtered?.takeIf { it.first === index && it.second == keyword }?.third
     LaunchedEffect(visit) {
         if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
             visit.focusRestored()
@@ -310,7 +340,9 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                 leading = {
                     IconButton(
                         onClick = onClose,
-                        modifier = Modifier.size(workspaceSearchControlHeight()),
+                        modifier =
+                            Modifier.size(workspaceSearchControlHeight())
+                                .workspaceSearchFocusOutline(CircleShape),
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_arrow_back),
@@ -319,54 +351,15 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                     }
                 },
                 field = { modifier ->
-                    BasicTextField(
+                    WorkspaceSearchInput(
                         state = visit.input,
+                        label = label,
+                        onClear = searchClearAction(inputFocus) { visit.input.clearText() },
                         modifier =
                             modifier
                                 .focusRequester(inputFocus)
                                 .onFocusChanged { visit.onInputFocusChanged(it.isFocused) }
-                                .testTag("conversation_find_query")
-                                .semantics { contentDescription = label },
-                        textStyle = titleStyle.copy(color = colors.onSurface),
-                        lineLimits = TextFieldLineLimits.SingleLine,
-                        cursorBrush = SolidColor(colors.onSurface),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        onKeyboardAction = { keyboard?.hide() },
-                        decorator = { input ->
-                            WorkspaceSearchField(
-                                Modifier.fillMaxWidth(),
-                                focused = visit.inputFocused,
-                                hasTrailingAction = visit.input.text.isNotEmpty(),
-                            ) {
-                                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                                    if (visit.input.text.isEmpty())
-                                        Text(
-                                            label,
-                                            style = titleStyle,
-                                            color = colors.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    input()
-                                }
-                                if (visit.input.text.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = {
-                                            visit.input.clearText()
-                                            inputFocus.requestFocus()
-                                            keyboard?.show()
-                                        }
-                                    ) {
-                                        Icon(
-                                            painterResource(R.drawable.ic_close),
-                                            stringResource(R.string.chat_search_clear),
-                                            modifier = Modifier.size(20.dp),
-                                            tint = colors.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
-                        },
+                                .testTag("conversation_find_query"),
                     )
                 },
             )
@@ -411,21 +404,22 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             .then(
                                 if (rowFocused && keyboardMode)
                                     Modifier.border(2.dp, focusColor, rowShape)
-                                else Modifier
+                                else Modifier,
                             )
                             .onFocusChanged { rowFocused = it.isFocused }
                             .then(
                                 if (restoreFocus)
                                     Modifier.focusProperties { canFocus = true }
                                         .focusRequester(resultFocus)
-                                else Modifier
+                                else Modifier,
                             )
                             .clickable(role = Role.Button) {
                                 keyboard?.hide()
                                 visit.open(result)
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                        verticalArrangement =
+                            Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
                         if (keyword.isEmpty()) {
                             Text(
@@ -433,7 +427,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                     stringResource(
                                         if (message.attachmentOnly)
                                             R.string.conversation_find_attachment
-                                        else R.string.history_reference
+                                        else R.string.history_reference,
                                     )
                                 },
                                 maxLines = 2,
@@ -445,7 +439,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                 stringResource(
                                     if (message.role == HistoryRole.User)
                                         R.string.conversation_find_you
-                                    else R.string.app_name
+                                    else R.string.app_name,
                                 ),
                                 style = titleStyle,
                             )

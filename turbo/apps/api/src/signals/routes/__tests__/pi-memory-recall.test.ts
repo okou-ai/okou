@@ -6,7 +6,6 @@ import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readPiExecutionMemory } from "./helpers/pi-memory-session";
 
 const context = testContext();
@@ -22,9 +21,6 @@ describe("ordinary Pi published personal Memory", () => {
         throw new Error("Expected member organization");
       }
       const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
-      await updateFeatureSwitchesForUser(context, actor, {
-        agentSuggestion: true,
-      });
       createRouteMocks(context).clerk.session(
         actor.userId,
         actor.orgId,
@@ -42,9 +38,6 @@ describe("ordinary Pi published personal Memory", () => {
         [200],
       );
       expect(preference.body.enabled).toBeFalsy();
-      await updateFeatureSwitchesForUser(context, actor, {
-        agentSuggestion: false,
-      });
       fixture.installObjects();
 
       async function publish(
@@ -81,7 +74,6 @@ describe("ordinary Pi published personal Memory", () => {
         versionId: published,
         mountPath: "/home/user/.pi/agent/memory",
       });
-      expect(selected.execution.featureFlags?.agentSuggestion).toBeFalsy();
       const queued = await fixture.enqueue(
         "Keep the accepted Memory version while queued",
         "gpt-6-luna",

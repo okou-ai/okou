@@ -11,16 +11,53 @@ struct AssistantFailureRecoveryCard: View {
   let providerMessage: String?
 
   var body: some View {
-    if let context = conversation.failureContext, context.failureID == failure.id {
+    // Transcript cells host this card outside the workspace root, so it provides the session
+    // Store that keeps the recovery state.
+    StoreProvider(conversation.graph) {
+      FailureRecoveryCardContent(
+        failure: failure, conversation: conversation, providerMessage: providerMessage)
+    }
+  }
+}
+
+/// Reads the recovery and model selection state in the session Store. A failure context's own
+/// reads may live in another Store, so that state is handed to the cards below as values.
+private struct FailureRecoveryCardContent: View {
+  let failure: ChatFailure
+  let conversation: ConversationStore
+  let providerMessage: String?
+  @LoadableValue private var recovery: Loadable<ConversationFailureRecovery.Recovery>
+  @ResolvedValue private var resolvedModels: ChatModelSelectionStore.Presentation??
+
+  init(failure: ChatFailure, conversation: ConversationStore, providerMessage: String?) {
+    self.failure = failure
+    self.conversation = conversation
+    self.providerMessage = providerMessage
+    _recovery = LoadableValue(conversation.failureRecoveryActions.recovery)
+    _resolvedModels = ResolvedValue(
+      ChatModelSelectionStore.presentation(of: conversation.modelSelection))
+  }
+
+  private var current: ConversationFailureRecovery.Recovery {
+    recovery.data ?? conversation.failureRecoveryActions.currentRecovery
+  }
+  private var models: ChatModelSelectionStore.Presentation? {
+    resolvedModels ?? conversation.modelSelection?.presentation
+  }
+
+  var body: some View {
+    if let context = current.context, context.failureID == failure.id {
       StoreProvider(context.store) {
         if let accounts = context.accounts {
           FailureAccountCard(
             failure: failure, conversation: conversation, providerMessage: providerMessage,
-            context: context, accounts: accounts)
+            context: context, accounts: accounts, models: models,
+            isRecovering: current.isRecovering)
         } else if let billing = context.billing {
           FailureBillingCard(
             failure: failure, conversation: conversation, providerMessage: providerMessage,
-            context: context, billing: billing)
+            context: context, billing: billing, models: models,
+            isRecovering: current.isRecovering)
         } else {
           content
         }
@@ -32,8 +69,8 @@ struct AssistantFailureRecoveryCard: View {
 
   private var content: some View {
     AssistantFailureCard(
-      state: conversation.failureState(failure), conversation: conversation,
-      providerMessage: providerMessage)
+      state: conversation.failureState(failure, models: models), conversation: conversation,
+      providerMessage: providerMessage, isRecovering: current.isRecovering)
   }
 }
 
@@ -42,24 +79,30 @@ private struct FailureAccountCard: View {
   let conversation: ConversationStore
   let providerMessage: String?
   let context: FailureRecoveryResources
+  let models: ChatModelSelectionStore.Presentation?
+  let isRecovering: Bool
   @LoadableValue private var accounts: Loadable<[PersonalSubscription]>
 
   init(
     failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
-    context: FailureRecoveryResources, accounts: Signal<Task<[PersonalSubscription], Error>>
+    context: FailureRecoveryResources, accounts: Signal<Task<[PersonalSubscription], Error>>,
+    models: ChatModelSelectionStore.Presentation?, isRecovering: Bool
   ) {
     self.failure = failure
     self.conversation = conversation
     self.providerMessage = providerMessage
     self.context = context
+    self.models = models
+    self.isRecovering = isRecovering
     _accounts = LoadableValue(task: accounts)
   }
 
   var body: some View {
     AssistantFailureCard(
       state: conversation.failureState(
-        failure, context: context, accounts: accounts.data, accountsError: accounts.error),
-      conversation: conversation, providerMessage: providerMessage)
+        failure, models: models, context: context, accounts: accounts.data,
+        accountsError: accounts.error),
+      conversation: conversation, providerMessage: providerMessage, isRecovering: isRecovering)
   }
 }
 
@@ -68,43 +111,44 @@ private struct FailureBillingCard: View {
   let conversation: ConversationStore
   let providerMessage: String?
   let context: FailureRecoveryResources
+  let models: ChatModelSelectionStore.Presentation?
+  let isRecovering: Bool
   @LoadableValue private var billing: Loadable<ChatBillingRecovery>
 
   init(
     failure: ChatFailure, conversation: ConversationStore, providerMessage: String?,
-    context: FailureRecoveryResources, billing: Signal<Task<ChatBillingRecovery, Error>>
+    context: FailureRecoveryResources, billing: Signal<Task<ChatBillingRecovery, Error>>,
+    models: ChatModelSelectionStore.Presentation?, isRecovering: Bool
   ) {
     self.failure = failure
     self.conversation = conversation
     self.providerMessage = providerMessage
     self.context = context
+    self.models = models
+    self.isRecovering = isRecovering
     _billing = LoadableValue(task: billing)
   }
 
   var body: some View {
     AssistantFailureCard(
       state: conversation.failureState(
-        failure, context: context, billing: billing.data, billingError: billing.error),
-      conversation: conversation, providerMessage: providerMessage)
+        failure, models: models, context: context, billing: billing.data,
+        billingError: billing.error),
+      conversation: conversation, providerMessage: providerMessage, isRecovering: isRecovering)
   }
 }
 
 struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
-  /// The provider's own error line from the same run, shown instead of the generic description.
+  /// The provider's own error line from the same run.
   var providerMessage: String?
+  /// Whether an explicit recovery is running, from the session graph.
+  var isRecovering = false
   @State private var showsModels = false
 
-  private var copy: (title: String, description: String) {
-    let content = AssistantFailureCopy.content(state)
-    if let providerMessage {
-      return (content.title, providerMessage)
-    }
-    return content
-  }
-
   var body: some View {
+    let copy = AssistantFailureCopy.content(state, providerMessage: providerMessage)
     VStack(alignment: .leading, spacing: OkouSpace.md) {
       ChatCardHeader(
         title: copy.title,
@@ -139,7 +183,7 @@ struct AssistantFailureCard: View {
           OkouLoadErrorRow(message: error)
         }
       }
-      if let outputError = state.failure.outputError,
+      if state.recovery.kind != .billing, let outputError = state.failure.outputError,
         outputError != copy.description && !outputError.isEmpty
       {
         DisclosureGroup("Details") {
@@ -170,22 +214,11 @@ struct AssistantFailureCard: View {
 
   @ViewBuilder private var actions: some View {
     if state.recovery.kind == .billing {
-      if let billing = state.billing {
-        if billing.canManageBilling && !billing.hasCredits {
-          Link(
-            billing.canBuyCredits ? "Add credits" : "Upgrade to Pro",
-            destination: conversation.webURL.appending(queryItems: [
-              URLQueryItem(name: "settings", value: "billing"),
-              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans")
-            ])
-          )
-          .buttonStyle(ChatCardButtonStyle())
-          .accessibilityIdentifier("failure-billing")
-        }
+      if state.billing != nil {
         Button("Check credits") { Task { await conversation.refreshFailureAccounts() } }
           .disabled(state.isBusy)
       } else if state.billingError == nil {
-        OkouLoadingRow("Checking billing permissions…")
+        OkouLoadingRow("Checking credits…")
       }
     } else {
       ViewThatFits(in: .horizontal) {
@@ -207,7 +240,7 @@ struct AssistantFailureCard: View {
         Task { await conversation.recoverFailure(state.failure.id) }
       } label: {
         HStack {
-          if conversation.isRecoveringFailure { ProgressView().controlSize(.mini) }
+          if isRecovering { ProgressView().controlSize(.mini) }
           Text(state.actionTitle)
         }
       }
@@ -243,27 +276,39 @@ struct AssistantFailureCard: View {
 }
 
 enum AssistantFailureCopy {
-  static func content(_ state: AssistantFailureState) -> (title: String, description: String) {
+  static func billing(_ reason: ChatFailure.BillingReason) -> (title: String, description: String) {
+    switch reason {
+    case .insufficientCredits:
+      structured(.insufficientCredits)
+    case .planRestricted:
+      (
+        String(localized: "Plan restricted"),
+        String(localized: "This model is restricted by your plan.")
+      )
+    }
+  }
+
+  static func content(_ state: AssistantFailureState, providerMessage: String? = nil)
+    -> (title: String, description: String)
+  {
+    if let reason = state.failure.billingReason {
+      if reason == .insufficientCredits, state.billing?.hasCredits == true {
+        return (
+          String(localized: "Credits available", table: "RunFailures"),
+          String(localized: "You can continue chatting.", table: "RunFailures")
+        )
+      }
+      return billing(reason)
+    }
+    let copy = recoveryContent(state)
+    return (copy.title, providerMessage ?? copy.description)
+  }
+
+  private static func recoveryContent(_ state: AssistantFailureState) -> (
+    title: String, description: String
+  ) {
     let recovery = state.recovery
     let outputError = state.failure.outputError ?? ""
-    if recovery.kind == .billing {
-      guard let billing = state.billing else {
-        return state.isCurrent
-          ? ("Out of credits", "Checking billing permissions…")
-          : ("Workspace billing needs attention", "Check your workspace's plan or credit balance.")
-      }
-      if billing.hasCredits {
-        return ("Credits available", "Credits added. You can continue chatting.")
-      }
-      let title = billing.canBuyCredits ? "Out of credits" : "Upgrade to run"
-      let description =
-        billing.canManageBilling
-        ? (billing.canBuyCredits ? "Add credits to continue." : "Upgrade your plan to continue.")
-        : (billing.canBuyCredits
-          ? "Ask your workspace admin to add credits."
-          : "Ask your workspace admin to upgrade the plan.")
-      return (title, description)
-    }
     if recovery.kind == .usage {
       let title: String
       if !state.failure.isRunFailure, let framework = recovery.framework {

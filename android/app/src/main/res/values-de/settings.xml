@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">Integrierte Tools</string>
+    <string name="settings_tool_scope">Tools in %1$s verbrauchen Guthaben.</string>
+    <string name="settings_common_tools">Häufige Tools</string>
+    <string name="settings_data_tools">Datentools</string>
+    <string name="settings_tool_web_search">Websuche</string>
+    <string name="settings_tool_image_generation">Bildgenerierung</string>
+    <string name="settings_tool_image_model">Bildgenerierungsmodell</string>
+    <string name="settings_tools_unavailable">Tools sind vorübergehend nicht verfügbar.</string>
+    <string name="settings_tool_save_failed">Die Änderung konnte nicht bestätigt werden.</string>
+    <string name="settings_tool_image_save_failed">Das Bildgenerierungsmodell konnte nicht gespeichert werden</string>
+    <string name="settings_preferences_save_rolled_back">Die Einstellungen konnten nicht gespeichert werden. Die vorherigen Werte wurden wiederhergestellt.</string>
+    <string name="settings_appearance_sync_failed">Das Erscheinungsbild konnte nicht synchronisiert werden. Es wurde auf diesem Gerät angewendet.</string>
+    <string name="settings_email_updates">E-Mail-Updates</string>
+    <string name="settings_email_scope">Erhalte Kurzberichte, Erinnerungen und Updates aus allen Arbeitsbereichen.</string>
+    <string name="settings_email_receive">E-Mails erhalten</string>
+    <string name="settings_email_unavailable">E-Mail nicht verfügbar</string>
+    <string name="settings_email_check_address">E-Mail-Adresse des Kontos prüfen</string>
+    <string name="settings_email_load_failed">E-Mail-Einstellungen sind vorübergehend nicht verfügbar.</string>
+    <string name="settings_email_refresh_failed">Synchronisierung fehlgeschlagen. Das zuletzt gespeicherte Abonnement wird angezeigt.</string>
+    <string name="settings_email_refreshing">E-Mail-Abonnement wird synchronisiert</string>
+    <string name="settings_email_saving">E-Mail-Abonnement wird aktualisiert…</string>
+    <string name="settings_email_save_failed">Das E-Mail-Abonnement konnte nicht aktualisiert werden.</string>
+    <string name="settings_email_save_unconfirmed">Die Änderung des E-Mail-Abonnements ist noch nicht bestätigt.</string>
     <string name="settings_models">Modelle</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">Mein Okou</string>
@@ -14,8 +37,6 @@
     <string name="settings_accounts_scope">Wähle die Abokonten für „%1$s“.</string>
     <string name="settings_accounts_scope_empty">Modellkonten in „%1$s“</string>
     <string name="settings_workspace_status">„%1$s“ · %2$s</string>
-    <string name="settings_accounts_offline">Offline. Stelle eine Verbindung her, um Konten zu wechseln.</string>
-    <string name="settings_accounts_offline_connect">Offline. Stelle eine Verbindung her, um ein Modellkonto zu verknüpfen.</string>
     <string name="settings_accounts_unavailable">Modellkonten sind momentan nicht verfügbar.</string>
     <string name="settings_accounts_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekannte Informationen werden angezeigt.</string>
     <string name="settings_accounts_empty">Keine Modellkonten verbunden</string>
@@ -29,7 +50,8 @@
     <string name="settings_account_select">Auswählen</string>
     <string name="settings_account_reconnect">Erneute Verbindung erforderlich</string>
     <string name="settings_account_switching">Wird gewechselt…</string>
-    <string name="settings_account_switch_failed">Kontowechsel fehlgeschlagen.</string>
+    <string name="settings_account_switch_unconfirmed">Wechsel unbestätigt</string>
+    <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
     <string name="settings_day_quota">%1$d-Tage-Kontingent</string>
@@ -43,8 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Guthaben</string>
     <string name="settings_credit_scope">Okou-Guthaben in „%1$s“</string>
-    <string name="settings_credit_offline">Offline. Zuletzt bekanntes Guthaben wird angezeigt.</string>
-    <string name="settings_credit_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekanntes Guthaben wird angezeigt.</string>
     <string name="settings_credit_unavailable">Guthaben momentan nicht verfügbar.</string>
     <string name="settings_credit_member">Persönliches Nutzungspaket</string>
     <string name="settings_credit_workspace">Arbeitsbereichsguthaben</string>
@@ -59,8 +79,7 @@
     <string name="settings_auto_model_detail">Okou wählt ein verfügbares Modell</string>
     <string name="settings_model_plan_restricted">Anderer Tarif erforderlich</string>
     <string name="settings_model_fast">Schnellmodus</string>
-    <string name="settings_model_fast_usage">Benötigt etwa das %1$s-Fache des Kontingents</string>
-    <string name="settings_model_load_when_online">Die Inhalte werden geladen, sobald du wieder online bist.</string>
+    <string name="settings_model_fast_usage">Bei Aktivierung ist der Verbrauch des ChatGPT-Abos %1$s-mal so hoch wie im Standardmodus</string>
     <string name="settings_model_save_rolled_back">Das Standardmodell konnte nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
     <string name="settings_model_save_unconfirmed">Das Speichern des Standardmodells wurde noch nicht bestätigt.</string>
     <string name="settings_model_effort">Denkaufwand</string>
@@ -70,4 +89,28 @@
     <string name="settings_model_effort_extra">Sehr hoch</string>
     <string name="settings_model_effort_max">Maximal</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Modellkonten werden aktualisiert</string>
+    <string name="settings_refreshing_credit_balance">Guthaben wird aktualisiert</string>
+    <string name="settings_proactive_services">Proaktive Dienste</string>
+    <string name="settings_proactive_scope">Diese Einstellungen gelten in „%1$s“.</string>
+    <string name="settings_proactive_loading">Proaktive Dienste werden geladen</string>
+    <string name="settings_proactive_needs_timezone">Wähle eine Zeitzone, um den Versand zu planen.</string>
+    <string name="settings_proactive_read_failed">Diese Einstellung kann gerade nicht geladen werden.</string>
+    <string name="settings_proactive_refresh_failed">Synchronisierung fehlgeschlagen. Die zuletzt bestätigte Einstellung wird angezeigt.</string>
+    <string name="settings_proactive_preparing">Zeitplan wird vorbereitet …</string>
+    <string name="settings_proactive_schedule_failed">Deine Auswahl wurde gespeichert. Prüfe den Zeitplan.</string>
+    <string name="settings_proactive_save_unconfirmed">Das Speichern ist noch nicht bestätigt.</string>
+    <string name="settings_morning_brief">Morgenbriefing</string>
+    <string name="settings_morning_brief_detail">Wird vor 7:00 Uhr in deiner gewählten Zeitzone zugestellt</string>
+    <string name="settings_morning_brief_save_failed">Das Morgenbriefing konnte nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
+    <string name="settings_suggestions">Vorschläge</string>
+    <string name="settings_suggestions_detail">Verbundene Inhalte prüfen, dein Profil aktualisieren und Vorschläge machen</string>
+    <string name="settings_suggestions_partial">Teilweise aktiviert</string>
+    <string name="settings_suggestions_hourly_only">Derzeit werden nur Inhalte geprüft und dein Profil aktualisiert.</string>
+    <string name="settings_suggestions_cards_only">Derzeit werden nur Vorschlagskarten zugestellt.</string>
+    <string name="settings_suggestions_enable_both">Beides aktivieren</string>
+    <string name="settings_suggestions_disable_both">Beides deaktivieren</string>
+    <string name="settings_suggestions_save_failed">Die Vorschläge konnten nicht gespeichert werden. Die vorherige Einstellung wurde wiederhergestellt.</string>
+    <string name="settings_timezone_save_rejected">Die Zeitzone konnte nicht gespeichert werden. Die vorherige Zeitzone wurde wiederhergestellt.</string>
+    <string name="settings_timezone_schedule_update_failed">Die Zeitzone wurde gespeichert. Der Zeitplan für das Morgenbriefing konnte nicht aktualisiert werden.</string>
 </resources>

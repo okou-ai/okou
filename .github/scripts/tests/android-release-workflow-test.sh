@@ -89,7 +89,8 @@ screenshots = json.loads(subprocess.check_output(
 
 # A path or pin mismatch changes the Actions cache version even when the key matches.
 restores = []
-for consumer in (android['build-test'], android['instrumentation'], android['release-smoke'], screenshots, job):
+for consumer in (android['build-test'], android['build'], android['instrumentation'],
+                 android['release-smoke'], screenshots, job):
     setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
     assert setup['with']['cache-provider'] == 'external'
     restore, = (step for step in consumer['steps'] if step.get('uses', '').startswith('actions/cache/restore@'))
@@ -99,7 +100,7 @@ for consumer in (android['build-test'], android['instrumentation'], android['rel
         save, = saves
         assert save['with']['path'] == restore['with']['path']
         assert save['with']['key'] == '${{ steps.' + restore['id'] + '.outputs.cache-primary-key }}'
-        assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
+        assert "matrix.shard == 0 && github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
     else:
         assert not saves
 assert all(spec == restores[0] for spec in restores)
@@ -107,19 +108,40 @@ action = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/actions/detect-release/action.yml')], text=True))
 classify = action['runs']['steps'][0]['run']
 gate = android['ci-gate-android']['steps'][0]['run']
-assert android['detect-release']['permissions']['pull-requests'] == 'read'
-assert android['detect']['needs'] == ['detect-release']
-assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
-build_steps = android['build-test']['steps']
+selection = android['detect']
+release_step, = (step for step in selection['steps'] if step.get('uses') == './.github/actions/detect-release')
+selection_steps = [step for step in selection['steps'] if 'run' in step]
+assert selection['permissions']['pull-requests'] == 'read'
+assert selection['outputs']['skip'] == '${{ steps.' + release_step['id'] + '.outputs.skip }}'
+assert selection['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
+build_steps = android['build']['steps']
 shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
 history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
 assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
 assert 'if' not in history
 assert build_steps.index(shallow) < build_steps.index(history)
-assert 'detect-release' in android['ci-gate-android']['needs']
+assert 'detect' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
-for native in ['build-test', 'instrumentation', 'release-smoke']:
+for native in ['build', 'build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
+for sharded in ['build-test', 'instrumentation']:
+    assert android[sharded]['strategy'] == {'fail-fast': False, 'matrix': {'shard': [0, 1, 2]}}
+jvm_steps = android['build-test']['steps']
+jvm_step, = (step for step in jvm_steps if step.get('name') == 'Run Debug JVM test shard')
+assert all(step.get('name') != shallow['name'] for step in jvm_steps)
+assert 'continue-on-error' not in jvm_step
+assert {'build', 'build-test'} <= set(android['ci-gate-android']['needs'])
+build_step, = (step for step in build_steps if step.get('name') == 'Run source checks, lint, and build the Debug APK')
+assert 'continue-on-error' not in build_step
+debug_artifact, = (step for step in build_steps if step.get('with', {}).get('name', '').startswith('okou-android-debug-'))
+assert debug_artifact['with']['retention-days'] == 1
+assert not any(step.get('with', {}).get('name', '').startswith('okou-android-debug-') for step in jvm_steps)
+native_results, = (
+    step['with'] for step in android['instrumentation']['steps']
+    if step.get('with', {}).get('name', '').startswith('android-native-results-')
+)
+assert native_results['retention-days'] == 1
+assert native_results['overwrite'] is True
 retrace = android['retrace-failure']
 assert retrace['needs'] == 'release-smoke'
 assert '!cancelled()' in retrace['if']
@@ -127,6 +149,37 @@ assert "needs.release-smoke.result == 'failure'" in retrace['if']
 assert 'retrace-failure' not in android['ci-gate-android']['needs']
 download, = (step for step in retrace['steps'] if step.get('uses', '').startswith('actions/download-artifact@'))
 assert download['with']['artifact-ids'] == '${{ needs.release-smoke.outputs.retrace-artifact-id }}'
+
+with tempfile.TemporaryDirectory() as temp:
+    work = Path(temp)
+    scripts = work / 'scripts'
+    scripts.mkdir()
+    shutil.copyfile(root / 'android/scripts/check.sh', scripts / 'check.sh')
+    python = work / 'python3'
+    python.write_text('#!/usr/bin/env bash\nexit 0\n')
+    python.chmod(0o755)
+    gradlew = work / 'gradlew'
+    gradlew.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\nexit "${GRADLE_EXIT:-0}"\n')
+    gradlew.chmod(0o755)
+    env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'], SHARD_COUNT='3')
+    for shard in range(3):
+        args = ['--no-daemon', '-Pokou.debugUnitTestForks=2',
+                f'-Pokou.debugUnitTestShardIndex={shard}', '-Pokou.debugUnitTestShardCount=3']
+        result = subprocess.run(['bash', '-c', jvm_step['run']], cwd=work,
+                                env=env | {'SHARD_INDEX': str(shard), 'GRADLE_EXIT': '7'},
+                                text=True, capture_output=True)
+        assert result.returncode == 7, result.stderr
+        assert result.stdout.splitlines() == [':app:testDebugUnitTest', *args], result.stdout
+    result = subprocess.run(['bash', '-c', build_step['run']], cwd=work, env=env | {'GRADLE_EXIT': '7'},
+                            text=True, capture_output=True)
+    assert result.returncode == 7, result.stderr
+    assert result.stdout.splitlines() == [
+        'spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', '--no-daemon',
+        '--exclude-task', ':app:testDebugUnitTest',
+    ], result.stdout
+    local = subprocess.check_output(['bash', 'scripts/check.sh'], cwd=work, env=env, text=True)
+    assert local.splitlines() == ['spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug',
+                                  ':app:assembleDebug', '--no-daemon']
 
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
@@ -166,8 +219,9 @@ print(os.environ['QUEUED_BRANCH'])
         assert result.returncode == 0, result.stderr
         decision = Path(env['GITHUB_OUTPUT']).read_text().strip()
         assert decision == 'skip=' + expected, (event, decision)
-        condition = android['detect']['if'].replace('needs.detect-release.outputs.skip', repr(expected))
-        assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
+        for step in selection_steps:
+            condition = step['if'].replace(f"steps.{release_step['id']}.outputs.skip", repr(expected))
+            assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
     Path(env['GITHUB_OUTPUT']).write_text('')
     failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': queued, 'FAIL_LOOKUP': 'true'})
     assert failed.returncode == 0, failed.stderr
@@ -175,18 +229,20 @@ print(os.environ['QUEUED_BRANCH'])
     failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': 'unexpected-ref'})
     assert failed.returncode != 0, failed.stderr
 
-    gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
-                    NEEDED='true', BUILD='success', INSTRUMENTATION='success', RELEASE_SMOKE='success')
+    gate_env = dict(IS_RELEASE='false', DETECT='success',
+                    NEEDED='true', BUILD='success', JVM='success',
+                    INSTRUMENTATION='success', RELEASE_SMOKE='success')
+    skipped = dict(BUILD='skipped', JVM='skipped', INSTRUMENTATION='skipped', RELEASE_SMOKE='skipped')
     for values, passed in [
         ({}, True),
-        ({'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': '', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
-        ({'NEEDED': 'false', 'BUILD': 'skipped', 'INSTRUMENTATION': 'skipped', 'RELEASE_SMOKE': 'skipped'}, True),
-        ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
-        ({'RELEASE_DETECT': 'cancelled'}, False),
+        (skipped | {'IS_RELEASE': 'true', 'NEEDED': ''}, True),
+        (skipped | {'NEEDED': 'false'}, True),
+        ({'DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
         ({'IS_RELEASE': ''}, False),
         ({'IS_RELEASE': 'unknown'}, False),
         ({'DETECT': 'failure'}, False),
         ({'BUILD': 'failure'}, False),
+        ({'JVM': 'failure'}, False),
         ({'INSTRUMENTATION': 'cancelled'}, False),
         ({'INSTRUMENTATION': 'skipped'}, False),
         ({'RELEASE_SMOKE': 'failure'}, False),

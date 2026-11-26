@@ -7,6 +7,14 @@ export const clientDescriptorManifest = [
     contracts: ["androidUpdatesContract"],
   },
   {
+    module: "antigravity-device-auth",
+    contracts: ["antigravityDeviceAuthContract"],
+  },
+  {
+    module: "antigravity-personal-subscription",
+    contracts: ["antigravityPersonalSubscriptionContract"],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
   },
@@ -29,6 +37,10 @@ export const clientDescriptorManifest = [
   {
     module: "artifact-shares",
     contracts: ["artifactSharesContract"],
+  },
+  {
+    module: "artifact-sharing",
+    contracts: ["artifactSharingContract"],
   },
   {
     module: "atom-subscription-grants",
@@ -55,13 +67,13 @@ export const clientDescriptorManifest = [
       "billingConcurrencySubscriptionContract",
       "billingCreditCheckoutContract",
       "billingDowngradeContract",
+      "billingFeedbackRewardContract",
       "billingInvoicesContract",
       "billingPortalContract",
       "billingRedeemCodeContract",
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
-      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",
@@ -171,6 +183,7 @@ export const clientDescriptorManifest = [
       "computerUseHostsContract",
       "computerUseSessionHostsContract",
       "computerUseWriteCommandContract",
+      "runnerAppStateContract",
     ],
   },
   {
@@ -229,7 +242,6 @@ export const clientDescriptorManifest = [
       "cronDrainEmailOutboxContract",
       "cronExecuteWorkflowAutomationsContract",
       "cronMonitorChatEventQueueContract",
-      "cronOfficialWorkflowCatalogContract",
       "cronProcessBackgroundJobsContract",
       "cronProcessUsageEventsContract",
       "cronProjectChatEventSearchContract",
@@ -260,7 +272,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "data-router",
-    contracts: ["dataRouterHistoryContract", "dataRouterRequestContract"],
+    contracts: ["dataRouterHistoryContract", "runDataRouterRequestContract"],
   },
   {
     module: "debug-morning-brief",
@@ -353,6 +365,10 @@ export const clientDescriptorManifest = [
   {
     module: "host",
     contracts: ["hostContract"],
+  },
+  {
+    module: "hosted-site-sharing",
+    contracts: ["hostedSiteSharingContract"],
   },
   {
     module: "image-io-generate",
@@ -546,7 +562,6 @@ export const clientDescriptorManifest = [
     contracts: [
       "onboardingCompleteContract",
       "onboardingDraftContract",
-      "onboardingNativeAvailabilityContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",
@@ -590,6 +605,10 @@ export const clientDescriptorManifest = [
     contracts: ["phoneUseContract"],
   },
   {
+    module: "posthog-surveys",
+    contracts: ["posthogSurveysContract"],
+  },
+  {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
   },
@@ -618,6 +637,10 @@ export const clientDescriptorManifest = [
     contracts: ["registryResourceDownloadContract"],
   },
   {
+    module: "remote-devices",
+    contracts: ["remoteDevicesContract"],
+  },
+  {
     module: "remotes",
     contracts: ["remotesContract"],
   },
@@ -644,6 +667,10 @@ export const clientDescriptorManifest = [
       "runsCancelContract",
       "runsQueueContract",
     ],
+  },
+  {
+    module: "run-wss",
+    contracts: ["runWssContract"],
   },
   {
     module: "runner-ssh",
@@ -838,6 +865,7 @@ export const clientDescriptorManifest = [
       "webhookGoogleFormsContract",
       "webhookGoogleWorkspaceEventsContract",
       "webhookHeartbeatContract",
+      "webhookMemoryArchiveContract",
       "webhookNotionContract",
       "webhookSessionOutputContract",
       "webhookStoragesCommitContract",

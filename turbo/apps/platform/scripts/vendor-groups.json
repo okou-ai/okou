@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "493ab3e02e1e14003b0c79ac4fbb347b6b61dd80",
+  "sourceCommit": "aed5c807f83db32b0ff74782cf1aad802dae3d57",
   "method": "existing acyclic partition extended from resolved production dependency layers; generated, do not hand-classify packages",
   "packages": {
     "@axiomhq/js": 3,
@@ -8,6 +8,7 @@
     "@clerk/localizations": 4,
     "@clerk/react": 4,
     "@clerk/shared": 4,
+    "@expo-google-fonts/noto-sans": 1,
     "@floating-ui/core": 2,
     "@floating-ui/dom": 2,
     "@floating-ui/react-dom": 2,
@@ -16,6 +17,7 @@
     "@fontpkg/sarasa-gothic-sc": 1,
     "@fontsource/noto-emoji": 1,
     "@okouai/mermaid-lite": 5,
+    "@posthog/core": 1,
     "@ricky0123/vad-web": 5,
     "@sentry/browser": 4,
     "@sentry/browser-utils": 4,
@@ -48,6 +50,7 @@
     "@tiptap/pm": 3,
     "@tiptap/react": 3,
     "@ungap/structured-clone": 1,
+    "@zip.js/zip.js": 5,
     "ably": 1,
     "anchorme": 1,
     "bail": 1,

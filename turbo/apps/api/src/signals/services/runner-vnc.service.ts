@@ -11,17 +11,16 @@ import {
   vncQemuScramAuthenticationSchema,
   vncRsaAesAuthenticationSchema,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { clerk$, type ClerkClient } from "../external/clerk";
 import {
   isVncRsaAesSecurityType,
   isVncRsaAesAuthenticationOnly,
 } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle, safeSync } from "../utils";
-import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
 import {
   currentRunnerVncAuthority$,
   type CurrentVncAuthority,
+  type RunnerVncContext,
 } from "./runner-vnc-authority.service";
 import {
   storedVncSecurity,
@@ -129,12 +128,10 @@ function selectedCapability(
   });
 }
 
-async function isSameCurrentHandoff(
-  current: Awaited<ReturnType<(typeof currentRunnerVncAuthority$)["write"]>>,
+function isSameCurrentHandoff(
+  current: CurrentVncAuthority | null,
   initial: CurrentVncAuthority,
   transport: TransportSnapshot,
-  clerk: ClerkClient,
-  signal: AbortSignal,
 ) {
   if (!current) {
     return false;
@@ -142,6 +139,7 @@ async function isSameCurrentHandoff(
   const currentTransport = storedTransportSnapshot(current);
   return (
     currentTransport !== null &&
+    current.remoteDeviceMode === initial.remoteDeviceMode &&
     hasTransportAuthority(current, currentTransport) &&
     hasKdcAuthority(current) &&
     sameKdc(current, initial) &&
@@ -150,27 +148,25 @@ async function isSameCurrentHandoff(
       current.credentialRevision === initial.credentialRevision) &&
     current.generation === initial.generation &&
     sameTransport(currentTransport, transport) &&
-    (await hasCurrentVncMembership(clerk, current, signal)) &&
     hasLiveKerberosTicket(current)
   );
 }
 
 export const checkRunnerVnc$ = command(
   async (
-    { get, set },
-    input: RunnerVncCheckRequest & { readonly runId: string },
+    { set },
+    input: RunnerVncCheckRequest & RunnerVncContext,
     signal: AbortSignal,
   ): Promise<
     | Exclude<RunnerVncCheckResponse, { outcome: "valid" }>
     | {
         readonly outcome: "valid";
         readonly owner: { readonly orgId: string; readonly userId: string };
+        readonly createdAt: string;
       }
   > => {
-    const clerk = get(clerk$);
-
     const row = await set(currentRunnerVncAuthority$, input, signal);
-    if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+    if (!row) {
       return { outcome: "unavailable" };
     }
     validateStoredProfile(row);
@@ -202,6 +198,7 @@ export const checkRunnerVnc$ = command(
       ? {
           outcome: "valid" as const,
           owner: { orgId: row.orgId, userId: row.userId },
+          createdAt: row.createdAt,
         }
       : { outcome: "configuration_changed" as const };
   },
@@ -574,17 +571,16 @@ function resolvedRunnerResponse(
 
 export const resolveRunnerVnc$ = command(
   async (
-    { get, set },
-    input: RunnerVncResolveRequest & { readonly runId: string },
+    { set },
+    input: RunnerVncResolveRequest & RunnerVncContext,
     signal: AbortSignal,
   ): Promise<{
     readonly response: RunnerVncResolveResponse;
     readonly createdAt: string | null;
+    readonly remoteDeviceMode?: boolean;
   }> => {
-    const clerk = get(clerk$);
-
     const row = await set(currentRunnerVncAuthority$, input, signal);
-    if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+    if (!row) {
       return { response: { outcome: "unavailable" }, createdAt: null };
     }
     validateStoredProfile(row);
@@ -628,7 +624,7 @@ export const resolveRunnerVnc$ = command(
         : await decryptVncRoleTransport(row, "kdc", kdc, signal);
     const security = storedRunnerSecurity(row, kdcTransport);
     const current = await set(currentRunnerVncAuthority$, input, signal);
-    if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
+    if (!isSameCurrentHandoff(current, row, transport)) {
       return { response: { outcome: "unavailable" }, createdAt: null };
     }
     return {
@@ -639,6 +635,7 @@ export const resolveRunnerVnc$ = command(
         authentication,
       ),
       createdAt: row.createdAt,
+      remoteDeviceMode: row.remoteDeviceMode,
     };
   },
 );

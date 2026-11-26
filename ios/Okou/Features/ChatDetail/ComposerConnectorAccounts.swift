@@ -47,6 +47,10 @@ private struct ComposerConnectorAccountsContent: View {
   @LoadableValue private var pagination: Loadable<Void>
   @LoadableStatus<ComposerConnectorAccountResources.Page> private var status: LoadableState
   @LoadableStatus<Void> private var paginationStatus: LoadableState
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  /// The authorization attempt, kept in the same Store.
+  @ResolvedValue private var authorization: ConnectorActionStore.Presentation?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorAccountResources) {
     self.store = store
@@ -56,7 +60,11 @@ private struct ComposerConnectorAccountsContent: View {
     _pagination = LoadableValue(task: resources.pagination)
     _status = LoadableStatus(task: resources.page)
     _paginationStatus = LoadableStatus(task: resources.pagination)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+    _authorization = ResolvedValue(store.authorization.presentationValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   private var busy: Bool {
     status == .loading || paginationStatus == .loading || store.isSaving
@@ -88,6 +96,8 @@ private struct ComposerConnectorAccountsContent: View {
         } else {
           ComposerChatConnectorAccounts(
             store: store, resources: resources, page: value, busy: busy, search: search,
+            canConfigurePermissions: store.canConfigurePermissions(
+              slug: resources.connector.target.connectorSlug, in: snapshot),
             openPermissions: {
               if let slug = resources.connector.target.connectorSlug {
                 permissionDestination = store.openPermissions(
@@ -119,15 +129,19 @@ private struct ComposerConnectorAccountsContent: View {
     .navigationBarTitleDisplayMode(.inline)
     .connectorPermissionDestination(store: store, destination: $permissionDestination)
     .connectorAccountDestination(store: store, destination: $accountDestination)
-    .searchable(
-      text: Binding(
-        get: { search },
-        set: { resources.update(search: $0) }), prompt: "Find accounts"
+    .connectorSearch(
+      text: Binding(get: { search }, set: { resources.update(search: $0) }),
+      enabled: accountCount > 6 || !search.isEmpty, prompt: "Find accounts"
     )
     .refreshable { await resources.retry() }
-    .onChange(of: store.authorization.active?.id) { _, flowID in
+    .onChange(of: (authorization ?? store.authorization.presentation).active?.id) { _, flowID in
       if flowID == nil { Task { await resources.refresh() } }
     }
+  }
+
+  private var accountCount: Int {
+    if case .hasData(let value) = page { return value.accounts.count }
+    return resources.connector.access.accounts.count
   }
 
 }

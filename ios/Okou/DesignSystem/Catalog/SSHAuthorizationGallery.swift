@@ -1,4 +1,5 @@
 #if DEBUG || STAGING
+  import CCState
   import ChatData
   import ChatDomain
   import SwiftUI
@@ -64,10 +65,13 @@
         id: SSHAuthorizationPreviewTransport.threadID,
         title: "SSH preview",
         createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
+      // The gallery has no workspace session, so its cards share a Store of their own.
+      let graph = CCState.Store()
       approvals = ApprovalCardRegistry(
-        thread: thread, commands: commands, sync: sync, didFail: { _ in }, didContinue: {})
+        thread: thread, commands: commands, sync: sync, graph: graph,
+        didFail: { _ in }, didContinue: {})
       connectors = ConnectorActionStore(
-        service: commands.connectorActions, commands: commands, thread: thread,
+        service: commands.connectorActions, graph: graph, commands: commands, thread: thread,
         didContinue: {}, didFail: { _ in })
       markdown = MessageMarkdownCache(baseURL: origin)
       let ids = (3...5).map { "74000000-0000-4000-8000-00000000000\($0)" }

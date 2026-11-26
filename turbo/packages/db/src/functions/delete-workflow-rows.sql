@@ -2,9 +2,7 @@
 -- the fresh snapshot after a preceding lock owner commits.
 CREATE OR REPLACE FUNCTION public.delete_workflow_rows(
   p_org_id text,
-  p_workflow_id uuid,
-  p_allow_official_installation_deletion boolean,
-  p_required_official_installation_state text
+  p_workflow_id uuid
 ) RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
@@ -21,7 +19,7 @@ DECLARE
 BEGIN
   SELECT workflow.id, workflow.org_id, workflow.attachments,
     workflow.name, workflow.owner_user_id,
-    workflow.official_definition_name, workflow.official_installation_state
+    workflow.official_definition_name
   INTO locked_workflow
   FROM public.workflows AS workflow
   WHERE workflow.org_id = p_org_id AND workflow.id = p_workflow_id
@@ -29,17 +27,11 @@ BEGIN
   IF NOT FOUND THEN
     RETURN jsonb_build_object('deleted', false);
   END IF;
-  IF p_required_official_installation_state IS NOT NULL
-    AND locked_workflow.official_installation_state IS DISTINCT FROM
-      p_required_official_installation_state THEN
-    RETURN jsonb_build_object('deleted', false);
-  END IF;
-  IF locked_workflow.official_definition_name IS NOT NULL
-    AND p_allow_official_installation_deletion IS DISTINCT FROM true THEN
+  IF locked_workflow.official_definition_name IS NOT NULL THEN
     RAISE EXCEPTION USING
       ERRCODE = 'P0001',
       CONSTRAINT = 'workflow_deletion_official_protected',
-      MESSAGE = 'Uninstall Official Workflows through the Official installation endpoint';
+      MESSAGE = 'Official Workflow installations are read-only';
   END IF;
 
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
@@ -52,10 +44,6 @@ BEGIN
   INTO observed_automations
   FROM public.workflow_automations AS automation
   WHERE automation.workflow_id = locked_workflow.id;
-
-  -- Active identities must be removed before their Automation's SET NULL.
-  DELETE FROM public.official_workflow_automation_identities
-  WHERE workflow_id = locked_workflow.id;
 
   WITH removed AS (
     DELETE FROM public.workflow_automations

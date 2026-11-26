@@ -26,6 +26,9 @@ final class PermissionCardResources {
     private var live: [Key: WeakRead] = [:]
     private var active = false
     private var closed = false
+    private let store: CCState.Store
+
+    init(store: CCState.Store) { self.store = store }
 
     func read(
       key: Key, didFail: @escaping @MainActor (Error) -> Void,
@@ -33,7 +36,7 @@ final class PermissionCardResources {
     ) -> PermissionCardRead<Value> {
       if let read = cache.object(forKey: key) ?? live[key]?.value { return read }
       live = live.filter { $0.value.value != nil }
-      let read = PermissionCardRead(active: active, load: load, didFail: didFail)
+      let read = PermissionCardRead(store: store, active: active, load: load, didFail: didFail)
       if closed {
         read.close()
       } else {
@@ -65,12 +68,17 @@ final class PermissionCardResources {
     }
   }
 
-  private let singles = Cache<ChatPermissionSnapshot>()
-  private let batches = Cache<ChatPermissionBatchSnapshot>()
+  private let singles: Cache<ChatPermissionSnapshot>
+  private let batches: Cache<ChatPermissionBatchSnapshot>
   private let commands: ChatCommands
   private let didFail: @MainActor (Error) -> Void
 
-  init(commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void) {
+  /// Each read keeps its values in `graph`, the workspace session's Store.
+  init(
+    commands: ChatCommands, graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
+  ) {
+    singles = Cache(store: graph)
+    batches = Cache(store: graph)
     self.commands = commands
     self.didFail = didFail
   }
@@ -113,7 +121,8 @@ final class PermissionCardResources {
 /// One original Task per normalized read and detail visit. Row waiters never own its cancellation.
 @MainActor
 final class PermissionCardRead<Value: Sendable> {
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps this read's values.
+  let store: CCState.Store
   let requested: Computed<Bool>
   private let available: CCState.State<Bool>
   private let demand = CCState.State(false)
@@ -129,9 +138,10 @@ final class PermissionCardRead<Value: Sendable> {
   private var closed = false
 
   fileprivate init(
-    active: Bool, load: @escaping @MainActor () async throws -> Value,
+    store: CCState.Store, active: Bool, load: @escaping @MainActor () async throws -> Value,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
+    self.store = store
     self.active = active
     available = CCState.State(active)
     loadValue = load

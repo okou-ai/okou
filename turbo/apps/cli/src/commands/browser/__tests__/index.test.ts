@@ -125,20 +125,99 @@ describe("okou browser command", () => {
     processExit.mockRestore();
   });
 
-  it("exposes only thread-keyed lifecycle commands", () => {
+  it("exposes the shared restart and chat Browser commands", () => {
     expect(
       browserCommand.commands.map((command) => {
         return command.name();
       }),
     ).toStrictEqual([
       "use",
+      "restart",
       "lease",
+      "diagnose",
       "new",
       "status",
       "view",
       "tab",
       "input-request",
     ]);
+  });
+
+  it("stops the observed instance before opening and attaching the replacement", async () => {
+    const stopped: unknown[] = [];
+    const current = browser();
+    const replacement = {
+      ...current,
+      window: {
+        instanceId: "d0000000-0000-4000-a000-000000000020",
+        primaryWindowId: 0,
+      },
+    };
+    server.use(
+      http.get("http://localhost:3000/api/browsers/current", () => {
+        return HttpResponse.json({ browser: current });
+      }),
+      http.post(
+        "http://localhost:3000/api/browsers/restart",
+        async ({ request }) => {
+          stopped.push(await request.json());
+          return HttpResponse.json({ ok: true });
+        },
+      ),
+      http.post("http://localhost:3000/api/browsers/use", () => {
+        expect(stopped).toStrictEqual([
+          { instanceId: current.window?.instanceId },
+        ]);
+        return HttpResponse.json({
+          browser: replacement,
+          cdpUrl: CDP_URL,
+          extension: EXTENSION,
+        });
+      }),
+    );
+
+    await browserCommand.parseAsync(["node", "cli", "restart", "--json"]);
+
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      "agent-browser",
+      ["--session", "okou-browser", "--no-pin-tab", "connect", PROXY_URL],
+      { stdio: "ignore", timeout: 30_000 },
+    );
+    const output = consoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain(replacement.viewerUrl);
+    expect(output).not.toContain(CDP_URL);
+  });
+
+  it("does not open a replacement if stopping the old instance fails", async () => {
+    let opens = 0;
+    server.use(
+      http.get("http://localhost:3000/api/browsers/current", () => {
+        return HttpResponse.json({ browser: browser() });
+      }),
+      http.post("http://localhost:3000/api/browsers/restart", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "BROWSER_USE_ERROR",
+              message: "Browser stop failed",
+            },
+          },
+          { status: 502 },
+        );
+      }),
+      http.post("http://localhost:3000/api/browsers/use", () => {
+        opens += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync(["node", "cli", "restart"]),
+    ).rejects.toThrow("process.exit called");
+    expect(opens).toBe(0);
+    expect(consoleError.mock.calls.flat().join("\n")).toContain(
+      "Browser stop failed",
+    );
   });
 
   it("guides agents to native credential input before last-resort takeover", () => {
@@ -343,8 +422,6 @@ describe("okou browser command", () => {
         "node",
         "cli",
         "use",
-        "--agent-session",
-        "booking-browser",
         ...(json ? ["--json"] : []),
       ]);
 
@@ -358,7 +435,7 @@ describe("okou browser command", () => {
         expect(guidance).toContain(`${slug} ("work@example.test")`);
         expect(guidance).toContain("Ask whether the user wants to sign in");
         expect(guidance).toContain(
-          "agent-browser --session booking-browser eval --stdin",
+          "agent-browser --session okou-browser eval --stdin",
         );
       } else {
         expect(output).not.toContain("Connected-email login:");
@@ -476,35 +553,6 @@ describe("okou browser command", () => {
 
     expect(help).toContain(
       `agent-browser --session ${agentBrowserSession} open`,
-    );
-  });
-
-  it("attaches to an explicitly named agent-browser session", async () => {
-    server.use(
-      http.post("http://localhost:3000/api/browsers/use", () => {
-        return HttpResponse.json(
-          {
-            browser: browser("active"),
-            cdpUrl: CDP_URL,
-            extension: EXTENSION,
-          },
-          { status: 200 },
-        );
-      }),
-    );
-
-    await browserCommand.parseAsync([
-      "node",
-      "cli",
-      "use",
-      "--agent-session",
-      "booking-browser",
-    ]);
-
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      "agent-browser",
-      ["--session", "booking-browser", "--no-pin-tab", "connect", PROXY_URL],
-      { stdio: "ignore", timeout: 30_000 },
     );
   });
 
@@ -632,8 +680,6 @@ describe("okou browser command", () => {
       "tab",
       "select",
       "t2",
-      "--agent-session",
-      "booking-browser",
       "--json",
     ]);
 
@@ -642,8 +688,8 @@ describe("okou browser command", () => {
         return call[1];
       }),
     ).toStrictEqual([
-      ["--session", "booking-browser", "tab", "t2"],
-      ["--session", "booking-browser", "tab", "list", "--json"],
+      ["--session", "okou-browser", "tab", "t2"],
+      ["--session", "okou-browser", "tab", "list", "--json"],
     ]);
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(JSON.parse(output)).toStrictEqual({
@@ -698,12 +744,10 @@ describe("okou browser command", () => {
     ]);
   });
 
-  it("does not echo invalid tab IDs or session names in command errors", async () => {
+  it("does not echo invalid tab IDs in command errors", async () => {
     const secret = "synthetic-private-param";
     const invalidArguments = [
       ["tab", "select", `https://accounts.example.test/?code=${secret}`],
-      ["tab", "list", "--agent-session", `${secret}@`],
-      ["tab", "select", "t1", "--agent-session", `${secret}@`],
     ];
     for (const args of invalidArguments) {
       consoleError.mockClear();

@@ -16,6 +16,7 @@ final class AttachmentDownloadTests: XCTestCase {
     let server = try ChatFileHTTPServer { request in
       XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
       XCTAssertNil(request.value(forHTTPHeaderField: "X-Client-Type"))
+      XCTAssertNil(request.value(forHTTPHeaderField: "X-Client-Distribution"))
       XCTAssertNil(request.value(forHTTPHeaderField: "X-Client-Session-Id"))
       XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
       return request.url?.path == "/expired"

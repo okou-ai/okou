@@ -37,16 +37,14 @@ also supports muting. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the saved
 model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
-The server's `nativeOnboarding` rollout enables native workspace creation and
-source-first setup: industry, service connections, personal subscriptions, optional
-skill import, chat channels, tool preferences and a first-task draft. Progress uses
-the same revisioned member draft and completion contracts as Web. Chat-channel
-installation opens Works in the system Safari sheet; connector and subscription
-account authorization reuse the existing native sheets. Existing completed members
-enter chat directly. Older APIs and disabled rollouts retain Web workspace setup.
-Settings shows the profile, workspace,
+Eligible new accounts get a workspace on iOS. The server's `nativeOnboarding`
+rollout enables three native steps: choose a role, connect services, then review
+and run a first task. Progress uses the same revisioned member draft and completion
+contracts as Web. Connector authorization uses the shared native flow, including
+connection-method selection and external-browser return handling. Completed members
+enter chat directly. Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
-Account deletion is available only on the web.
+The Account footer links to the web security page where users can confirm account deletion.
 
 Conversation history renders durable user messages and assistant results using
 the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,
@@ -208,9 +206,11 @@ downloads carry none of these headers. The API can use these values to identify
 the client. Builds that predate these headers cannot be identified through them.
 The API owns a source-controlled
 [iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-for the marketing version. A null minimum leaves the floor inactive; changing
-it requires the API's review and release process. HTTP 426 responses show a
-blocking update screen. Preserve this response handling when changing
+for the marketing version. The main app and notification extension send
+`X-Client-Distribution` on first-party requests. App Store and TestFlight each
+have a minimum. A null App Store minimum is valid before the first public
+release. HTTP 426 responses open the blocking update screen for the installation
+channel. Preserve this response handling when changing
 authentication, workspace startup, or data loading.
 
 The iOS icon retains the Desktop flower geometry from
@@ -374,19 +374,21 @@ reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
 remains unchanged.
 
-On an initial or full iOS pull request run, the package runner compiles the
-App for testing while the simulator runner boots the iPhone. The package runner
-uploads the complete Xcode products and runs the standalone ChatDomain and
-ChatData suites. The simulator runner verifies the artifact digest, run,
-checkout, package lock and toolchain, then uses the transferred `.xctestrun` to
-execute the full App suite. Both test results are required. A failed-job rerun
-can rebuild the App on the simulator runner without waiting for the package job.
+On an initial or full run of an iOS pull request or a merge group with source
+changes, the package runner compiles the App for testing while the simulator
+runner boots the iPhone. The package runner uploads the complete Xcode products
+and runs the standalone ChatDomain and ChatData suites. The simulator runner
+verifies the artifact digest, run, checkout, package lock and toolchain, then
+uses the transferred `.xctestrun` to execute the full App suite. Both test
+results are required. A failed-job rerun can rebuild the App on the simulator
+runner without waiting for the package job.
 
-Manual runs and merge groups compile on the simulator runner before booting,
-with package tests on their own runner. App tests retain a 30-minute limit,
-and the package and device archive jobs each retain a 15-minute limit. Measure
-from the first required job to the gate: compilation and simulator startup may
-overlap, and a build-cache hit still runs the tests.
+Manual runs and release-only groups that require fresh tests compile on the
+simulator runner before booting, with package tests on their own runner. App
+tests retain a 30-minute limit, and the package and device archive jobs each
+retain a 15-minute limit. Measure from the first required job to the gate.
+Compilation and simulator startup may overlap, and a build-cache hit still runs
+the tests.
 Release-only merge groups can reuse App test evidence only when exact input fingerprints match
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).

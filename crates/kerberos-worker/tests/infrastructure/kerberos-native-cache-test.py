@@ -46,7 +46,9 @@ set -eu
 context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)
 fixture_root=${context%/*}
 source "$context.fixture-env"
-env > "$fixture_root/compiler.env"
+if [[ -f "$fixture_root/record-compiler-environment" ]]; then
+  env > "$fixture_root/compiler.env"
+fi
 if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
 echo compile >> "$fixture_root/compiles"
 while [[ $1 != -o ]]; do shift; done
@@ -84,7 +86,9 @@ class CacheTest(unittest.TestCase):
         configure = ("#!/bin/sh\nset -e\n"
                      f"CACHE_TEST_ROOT={shlex.quote(str(self.root))}\n"
                      'if [ -n "${CONFIG_SITE:-}" ]; then . "$CONFIG_SITE"; fi\n'
-                     'env > configure.env\nmkdir -p include\n'
+                     'if [ -f "$CACHE_TEST_ROOT/record-dependency-environment" ]; then\n'
+                     '  env > configure.env\n'
+                     'fi\nmkdir -p include\n'
                      'if [ "${ac_cv_func_getentropy:-yes}" = yes ]; then\n'
                      '  echo "#define HAVE_GETENTROPY 1" > include/autoconf.h\n'
                      'else echo "/* #undef HAVE_GETENTROPY */" > include/autoconf.h; fi\n')
@@ -93,14 +97,26 @@ class CacheTest(unittest.TestCase):
         self.command("curl", """#!/bin/bash
 set -eu
 while [[ $1 != -o ]]; do url=$1; shift; done
-case "$url" in *ziglang*) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
+case "$url" in */zig-*-linux-0.15.2.tar.xz) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
+host=${url#https://}
+host=${host%%/*}
+printf '%s\n' "$host" >> "$CACHE_TEST_ROOT/download-hosts"
+case " ${CACHE_TEST_TIMEOUT_HOSTS:-} " in
+  *" $host "*) printf 'partial\n' > "$2"; exit 28 ;;
+esac
+if [[ ${CACHE_TEST_BAD_ARCHIVE:-} == "$name" ]]; then
+  printf 'unverified archive\n' > "$2"
+  exit 0
+fi
 exec cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
 if [[ -f "${PWD%/build}.fixture-env" ]]; then source "${PWD%/build}.fixture-env"; fi
 if [[ -f "${PWD%/dependencies/build}.fixture-env" ]]; then source "${PWD%/dependencies/build}.fixture-env"; fi
-env > make.env
+if [[ -f "$fixture_root/record-dependency-environment" ]]; then
+  env > make.env
+fi
 echo "$*" >> "$fixture_root/makes"
 if [[ $4 == util/et && -n ${CACHE_TEST_READY:-} ]]; then
   echo ready > "$CACHE_TEST_READY"
@@ -228,6 +244,34 @@ exec /usr/bin/flock "$@"
         self.run_build(False)
         self.run_build(True)
 
+    def test_download_timeouts_recover_through_alternate_hosts(self):
+        entry = self.run_build(False, extra={"CACHE_TEST_TIMEOUT_HOSTS": "ziglang.org kerberos.org"})
+        self.assertEqual((self.root / "download-hosts").read_text().splitlines(),
+                         ["ziglang.org", "zig.squirl.dev", "kerberos.org", "distfiles.macports.org"])
+        for name in ("zig.tar.xz", "krb5.tar.gz"):
+            self.assertEqual(sha(entry / name), sha(self.root / name))
+        self.assertTrue((entry / "complete").is_file())
+
+    def test_exhausted_downloads_report_both_sources_and_remove_partial_bytes(self):
+        process, _ = self.start(extra={"CACHE_TEST_TIMEOUT_HOSTS": "ziglang.org zig.squirl.dev"})
+        log, _ = process.communicate(timeout=15)
+        self.assertEqual(process.returncode, 28, log)
+        self.assertEqual(log.count("(curl exit 28)"), 2, log)
+        self.assertIn("https://ziglang.org/download/0.15.2/zig-", log)
+        self.assertIn("https://zig.squirl.dev/zig-", log)
+        self.assertFalse(list(self.cache.glob("*/zig.tar.xz*")))
+        self.assertFalse(list(self.cache.glob("*/complete")))
+
+    def test_downloaded_checksum_mismatch_stops_before_publication(self):
+        process, _ = self.start(extra={"CACHE_TEST_BAD_ARCHIVE": "zig.tar.xz"})
+        log, _ = process.communicate(timeout=15)
+        self.assertNotEqual(process.returncode, 0, log)
+        self.assertIn("SHA-256 verification failed for zig-", log)
+        self.assertIn("https://ziglang.org/download/0.15.2/zig-", log)
+        self.assertEqual((self.root / "download-hosts").read_text().splitlines(), ["ziglang.org"])
+        self.assertFalse(list(self.cache.glob("*/zig.tar.xz*")))
+        self.assertFalse(list(self.cache.glob("*/complete")))
+
     def test_unsafe_archive_is_rejected_even_with_matching_receipt(self):
         entry = self.run_build(False)
         for symlink in (False, True):
@@ -328,6 +372,7 @@ exec /usr/bin/flock "$@"
                      "ax_cv_check_cflags___Werror": "no", "k5_cv_attr_constructor_destructor": "no,no",
                      "pkg_cv_COM_ERR_LIBS": "foreign", "LIBS": "-lforeign", "DEFCCNAME": "foreign",
                      "with_crypto_impl": "foreign", "MAKEFILES": "foreign", "GNUMAKEFLAGS": "-e"}
+        (self.root / "record-dependency-environment").touch()
         entry = self.run_build(False, extra=overrides)
         with tarfile.open(entry / "libraries.tar.gz") as archive:
             with archive.extractfile("include/autoconf.h") as header:
@@ -500,6 +545,7 @@ exit 73
         log, _ = process.communicate(timeout=15)
         self.assertEqual(process.returncode, 24, log)
         self.assertFalse(list(self.cache.glob("helper-*/complete")))
+        (self.root / "record-compiler-environment").touch()
         self.run_helper(False, extra={"CPATH": "foreign", "ZIG_LIB_DIR": "foreign",
                                       "SOURCE_DATE_EPOCH": "1", "CFLAGS": "foreign"})
         observed = dict(line.split("=", 1) for line in (self.root / "compiler.env").read_text().splitlines())

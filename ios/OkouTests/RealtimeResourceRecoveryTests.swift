@@ -423,7 +423,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 
     fixture.http.setRemoteModel("claude-model")
     sdk.connect()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: fixture.workspace.newModelSelection) {
       fixture.workspace.newModelSelection.selection.model == "claude-model"
     }
 
@@ -470,7 +470,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
 
     try fixture.server.attached(fixture.channel, resumed: true)
     try fixture.server.notify("userPreferenceChanged", channel: fixture.channel)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: fixture.workspace.newModelSelection) {
       fixture.workspace.newModelSelection.selection.model == "claude-model"
     }
 
@@ -640,11 +640,15 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
     remote.withLock { $0 = "unread" }
     try fixture.server.notify("chatIndicatorsChanged", channel: fixture.channel)
-    try await waitForBusinessResult { fixture.workspace.list.hasUnreadThreads }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { fixture.workspace.list.hasUnreadThreads }
 
     remote.withLock { $0 = "none" }
     try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.channel)
-    try await waitForBusinessResult { !fixture.workspace.list.hasUnreadThreads }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) { !fixture.workspace.list.hasUnreadThreads }
     XCTAssertEqual(
       fixture.http.history.requests.values.withLock {
         $0.filter { $0 == "GET /api/chat-threads/events" }.count
@@ -652,7 +656,9 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
     remote.withLock { $0 = "active" }
     try fixture.server.attached(fixture.channel)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: fixture.workspace.list.threadsValue, in: fixture.workspace.graph
+    ) {
       fixture.workspace.list.threads.first?.indicator == .active
     }
     XCTAssertEqual(

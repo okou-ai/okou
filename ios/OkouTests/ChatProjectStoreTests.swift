@@ -62,6 +62,11 @@ final class ChatProjectStoreTests: XCTestCase {
     XCTAssertFalse(failed)
     XCTAssertEqual(store.projects.first?.name, "Launch")
     XCTAssertEqual(server.withLock { $0.writes.count }, 1)
+    // The sidebar and the picker read the failure and the settled action from the graph.
+    let afterFailure = try store.stateStore.get(store.presentation)
+    XCTAssertNotNil(afterFailure.actionError)
+    XCTAssertTrue(afterFailure.pending.isEmpty)
+    XCTAssertEqual(afterFailure.projects.first?.name, "Launch")
     let saved = await store.rename(Self.project, name: "Release")
     XCTAssertTrue(saved)
     XCTAssertEqual(store.projects.first?.name, "Release")
@@ -69,6 +74,9 @@ final class ChatProjectStoreTests: XCTestCase {
     XCTAssertEqual(writes.count, 2)
     XCTAssertEqual(writes.first, writes.last)
     XCTAssertNil(store.actionError)
+    XCTAssertEqual(
+      try store.stateStore.get(store.presentation),
+      ChatProjectStore.Presentation(projects: store.projects))
   }
 
   func testProjectsRespectUnreadAndArchiveFilters() async throws {

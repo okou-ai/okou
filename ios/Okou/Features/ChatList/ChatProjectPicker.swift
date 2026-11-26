@@ -78,12 +78,19 @@ struct ChatProjectPicker: View {
   let thread: ChatThread
   let create: () -> Void
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
+  /// Confirmed Projects and the last action error, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
 
   init(workspace: WorkspaceStore, thread: ChatThread, create: @escaping () -> Void) {
     self.workspace = workspace
     self.thread = thread
     self.create = create
     _projectRead = LoadableValue(task: workspace.projects.listValue, keepLast: true)
+    _resolvedProjects = ResolvedValue(workspace.projects.presentation)
+  }
+
+  private var projectState: ChatProjectStore.Presentation {
+    resolvedProjects ?? workspace.projects.currentPresentation
   }
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
@@ -99,7 +106,7 @@ struct ChatProjectPicker: View {
           }
         }
         ForEach(
-          workspace.projects.projects.filter {
+          projectState.projects.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
           }
         ) { project in
@@ -124,7 +131,7 @@ struct ChatProjectPicker: View {
             Button("Remove from project", okouSymbol: "folder-minus") { move(to: nil) }
           }
         }
-        if let error = workspace.projects.actionError {
+        if let error = projectState.actionError {
           Text(error).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
       }

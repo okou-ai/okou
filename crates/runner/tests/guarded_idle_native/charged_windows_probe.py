@@ -16,12 +16,6 @@ from pathlib import Path
 
 from charged_windows import FALSE_CLAIMS, MIB, ChargeWindows
 
-SOURCES = (
-    "charged_windows.py",
-    "charged_windows_probe.py",
-    "charged_windows_worker.py",
-    "charged_windows_report.py",
-)
 MINIMUM_AVAILABLE = 8192 * MIB
 DURATION_SECONDS = 60
 
@@ -59,6 +53,8 @@ def run(output, parent):
         raise ValueError("output must be new and have a canonical absolute parent")
     output.mkdir(mode=0o700)
     invocation = str(uuid.uuid4())
+    from charged_windows_report import SOURCES
+
     sources = {}
     for name in SOURCES:
         content = Path(__file__).with_name(name).read_bytes()

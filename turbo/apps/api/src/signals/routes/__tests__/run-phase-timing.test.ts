@@ -6,6 +6,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { runPhaseTimingRoutes } from "../run-phase-timing";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -22,7 +23,6 @@ const client = () => {
   );
 };
 const receipt = Object.freeze({ schemaVersion: 2, status: "accepted" });
-const timingOwnerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
 
 async function fixture(
   options: {
@@ -31,8 +31,7 @@ async function fixture(
   } = {},
 ) {
   const owned = await publicChatActor(context, {
-    actor:
-      options.actor ?? createBddApi(context).user({ userId: timingOwnerId }),
+    actor: options.actor ?? createBddApi(context).user(),
   });
   owned.ownsFeatureSwitches();
   return await owned.run(async () => {
@@ -66,47 +65,48 @@ async function fixture(
 }
 
 describe("current Run phase timing", () => {
-  it("gives the allowlisted owner three-point guidance and accepts legal raw observations", async () => {
-    const f = await fixture();
-    expect(f.execution.appendSystemPrompt).toContain(
-      "the only AI phase marks are research-start and generation-start",
-    );
-    expect(f.execution.appendSystemPrompt).toContain(
-      "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
-    );
-    for (const mark of [
-      { phase: "generation-start", kind: "report", skipResearch: false },
-      { phase: "research-start" },
-      { phase: "generation-start", kind: "image", skipResearch: true },
-      { phase: "research-start" },
-    ] satisfies readonly RunPhaseMark[]) {
-      await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
-    }
-  });
-
   it.each([
-    { scenario: "default", threePointEnabled: undefined },
-    { scenario: "stored opt-in", threePointEnabled: true },
-  ])(
-    "keeps timing unavailable to a non-audience user with $scenario settings",
-    async ({ threePointEnabled }) => {
-      const f = await fixture({
-        actor: createBddApi(context).user(),
-        threePointEnabled,
-      });
-      expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
-      for (const body of [
-        { phase: "research-start" },
+    ["external workspace member", { orgRole: "org:member" }],
+    ["external workspace admin", { orgRole: "org:admin" }],
+    [
+      "staff workspace member",
+      { orgId: createUniqueStaffOrgIdFixture(), orgRole: "org:member" },
+    ],
+  ] as const)(
+    "gives the %s three-point guidance and accepts legal raw observations",
+    async (_audience, identity) => {
+      const f = await fixture({ actor: createBddApi(context).user(identity) });
+      expect(f.execution.appendSystemPrompt).toContain(
+        "the only AI phase marks are research-start and generation-start",
+      );
+      expect(f.execution.appendSystemPrompt).toContain(
+        "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
+      );
+      for (const mark of [
         { phase: "generation-start", kind: "report", skipResearch: false },
-      ] as const) {
-        const response = await accept(
-          client().mark({ headers: f.headers, body }),
-          [404],
-        );
-        expect(response.headers.get("cache-control")).toBe("no-store");
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "image", skipResearch: true },
+        { phase: "research-start" },
+      ] satisfies readonly RunPhaseMark[]) {
+        await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
       }
     },
   );
+
+  it("honors a personal opt-out in Run guidance and phase observations", async () => {
+    const f = await fixture({ threePointEnabled: false });
+    expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
+    for (const body of [
+      { phase: "research-start" },
+      { phase: "generation-start", kind: "report", skipResearch: false },
+    ] as const) {
+      const response = await accept(
+        client().mark({ headers: f.headers, body }),
+        [404],
+      );
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
 
   it("accepts a generation observation with the default skip declaration", async () => {
     const f = await fixture();
@@ -145,7 +145,7 @@ describe("current Run phase timing", () => {
     ).resolves.toStrictEqual(receipt);
   });
 
-  it("accepts the originally issued Run token after the owner enables timing live", async () => {
+  it("accepts the originally issued Run token after the user enables timing live", async () => {
     const f = await fixture({ threePointEnabled: false });
     expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
     const unavailable = await accept(

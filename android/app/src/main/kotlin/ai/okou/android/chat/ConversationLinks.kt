@@ -1,7 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.BuildConfig
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -144,7 +143,7 @@ internal fun ConversationLinkText(
         return
     }
     val colors = MaterialTheme.colorScheme
-    val focusColor = LocalActivityStatusColor.current
+    val focusColor = colors.onSurface
     val focusFill = focusColor.copy(alpha = 0.16f)
     val focus = remember { FocusRequester() }
     val latestActions = rememberUpdatedState(actions)
@@ -172,13 +171,11 @@ internal fun ConversationLinkText(
                                         textDecoration = TextDecoration.Underline,
                                     ),
                                 focusedStyle = SpanStyle(background = focusFill),
-                                pressedStyle =
-                                    SpanStyle(background = focusColor.copy(alpha = 0.12f)),
                             ),
                         ) {
                             if (chat) focus.saveFocusedChild()
                             latestActions.value.open(link, key)
-                        }
+                        },
                     ) {
                         if (chat) appendInlineContent(ChatLinkIcon, "\u2060")
                         append(text.subSequence(range.start, range.end))
@@ -208,7 +205,7 @@ internal fun ConversationLinkText(
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
-                        }
+                        },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_chat),
@@ -225,7 +222,7 @@ internal fun ConversationLinkText(
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
-                        }
+                        },
                     ) {},
             )
         }

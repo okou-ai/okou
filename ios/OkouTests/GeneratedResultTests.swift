@@ -266,7 +266,8 @@ final class GeneratedResultTests: XCTestCase {
     let markdown = MessageMarkdownCache(baseURL: fixture.baseURL)
     let viewer = MessageArtifactStore(
       service: commands.artifacts, threadID: "thread", webURL: fixture.baseURL,
-      markdown: markdown, didFail: { _ in XCTFail("Cancellation must not expire the account") })
+      markdown: markdown, graph: makeTestWorkspaceGraph(),
+      didFail: { _ in XCTFail("Cancellation must not expire the account") })
     defer { viewer.close() }
     let resource = try XCTUnwrap(viewer.resource("/artifacts/text000001.txt"))
     viewer.open(resource)

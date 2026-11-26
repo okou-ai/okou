@@ -12,7 +12,7 @@ import {
 } from "./chat-thread-pane-state.ts";
 
 // Keep aligned with the shell's `hidden xl:flex` transcript visibility.
-const THREAD_SIDEBAR_SPLIT_MEDIA_QUERY = "(min-width: 80rem)";
+export const THREAD_SIDEBAR_SPLIT_MEDIA_QUERY = "(min-width: 80rem)";
 const resetHiddenLayoutRestore$ = resetSignal();
 
 /** Preserve before publication, while the narrow transcript still has geometry. */

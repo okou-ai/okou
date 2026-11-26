@@ -38,17 +38,16 @@ internal constructor(
 ) {
     private val access = Mutex()
 
-    internal suspend fun load(identity: WorkspaceIdentity): DefaultModelRecord =
-        access.withLock {
-            try {
-                preferences.data.first()[key(identity)]?.let { Json.decodeFromString(it) }
-                    ?: DefaultModelRecord()
-            } catch (_: IOException) {
-                DefaultModelRecord()
-            } catch (_: SerializationException) {
-                DefaultModelRecord()
-            }
+    internal suspend fun load(identity: WorkspaceIdentity): DefaultModelRecord = access.withLock {
+        try {
+            preferences.data.first()[key(identity)]?.let { Json.decodeFromString(it) }
+                ?: DefaultModelRecord()
+        } catch (_: IOException) {
+            DefaultModelRecord()
+        } catch (_: SerializationException) {
+            DefaultModelRecord()
         }
+    }
 
     internal fun save(identity: WorkspaceIdentity, record: DefaultModelRecord) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {

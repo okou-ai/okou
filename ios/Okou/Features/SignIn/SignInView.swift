@@ -6,8 +6,7 @@ import SwiftUI
 
 struct SignInView: View {
   let authentication: AuthenticationService
-  let configuration: AppConfiguration
-  private var webURL: URL { configuration.webURL }
+  let webURL: URL
   var body: some View {
     Group {
       if let clerk = authentication.clerk, !authentication.isLoading,
@@ -19,7 +18,7 @@ struct SignInView: View {
           if authentication.isLoading {
             ProgressView("Restoring your session…")
           } else if authentication.needsWorkspaceSelection {
-            WorkspaceSignInView(authentication: authentication, configuration: configuration)
+            WorkspaceSignInView(authentication: authentication)
           } else {
             unavailableView
           }
@@ -65,16 +64,14 @@ struct SignInView: View {
   }
 }
 
-/// Resolve the account's existing workspaces before offering server-gated native setup.
 private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
-  let configuration: AppConfiguration
 
   var body: some View {
     if let resources = authentication.membershipResources {
       StoreProvider(resources.store) {
         WorkspaceSignInContent(
-          authentication: authentication, configuration: configuration, scopeID: resources.scopeID,
+          authentication: authentication, setup: resources.setup, scopeID: resources.scopeID,
           memberships: resources.value)
       }
       .id(resources.scopeID)
@@ -86,19 +83,18 @@ private struct WorkspaceSignInView: View {
 
 private struct WorkspaceSignInContent: View {
   let authentication: AuthenticationService
-  let configuration: AppConfiguration
-  private var webURL: URL { configuration.webURL }
+  let setup: FirstWorkspaceSetup
   private let scopeID: String
   @LoadableValue private var memberships: Loadable<[WorkspacePresentation]>
   @State private var actionError: String?
   @State private var confirmsSignOut = false
 
   init(
-    authentication: AuthenticationService, configuration: AppConfiguration, scopeID: String,
+    authentication: AuthenticationService, setup: FirstWorkspaceSetup, scopeID: String,
     memberships: Signal<Task<[WorkspacePresentation], Error>>
   ) {
     self.authentication = authentication
-    self.configuration = configuration
+    self.setup = setup
     self.scopeID = scopeID
     _memberships = LoadableValue(task: memberships)
   }
@@ -122,13 +118,32 @@ private struct WorkspaceSignInContent: View {
         .foregroundStyle(OkouColor.mutedForeground)
       if memberships.state == .loading && authentication.workspaces.isEmpty {
         OkouLoadingRow("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty && memberships.error == nil
-        && authentication.errorMessage == nil
+      } else if authentication.workspaces.isEmpty && setup.invitations.isEmpty
+        && memberships.error == nil && authentication.errorMessage == nil
       {
-        NativeWorkspaceSetup(authentication: authentication, configuration: configuration)
-          .id(scopeID)
+        VStack(alignment: .leading, spacing: OkouSpace.lg) {
+          Text("You need a workspace invitation to continue.")
+            .foregroundStyle(OkouColor.mutedForeground)
+          Button("Refresh workspaces") { Task { await authentication.refresh() } }
+            .buttonStyle(OkouButtonStyle(isPrimary: false))
+        }
       } else {
         VStack(spacing: OkouSpace.md) {
+          ForEach(setup.invitations) { invitation in
+            Button("Join \(invitation.publicOrganizationData.name)") {
+              Task {
+                do {
+                  try await authentication.acceptInvitation(invitation)
+                } catch {
+                  guard !Task.isCancelled, authentication.membershipResources?.scopeID == scopeID
+                  else { return }
+                  actionError = error.localizedDescription
+                }
+              }
+            }
+            .buttonStyle(OkouProviderButtonStyle())
+            .disabled(setup.acceptingInvitation || authentication.isSwitchingWorkspace)
+          }
           ForEach(authentication.workspaces) { workspace in
             Button {
               Task {
@@ -158,7 +173,7 @@ private struct WorkspaceSignInContent: View {
               .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(OkouProviderButtonStyle())
-            .disabled(authentication.isSwitchingWorkspace)
+            .disabled(setup.acceptingInvitation || authentication.isSwitchingWorkspace)
           }
         }
       }

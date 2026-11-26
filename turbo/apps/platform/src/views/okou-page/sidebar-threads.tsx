@@ -30,6 +30,7 @@ import {
   useLastLoadable,
   useSet,
   useLastResolved,
+  useResolved,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -48,6 +49,7 @@ import {
   BellOff,
   Bell,
   FolderInput,
+  GitFork,
 } from "lucide-react";
 import {
   ChatThreadStateIndicator,
@@ -77,6 +79,9 @@ import {
   DialogFooter,
 } from "@okouai/ui/components/ui/dialog";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+import { forkChatThread$ } from "../../signals/chat-page/chat-thread-fork.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
@@ -216,7 +221,7 @@ function ChatThreadArchiveMenuItem({
     <DropdownMenuItem
       aria-label={label}
       aria-keyshortcuts={
-        GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.ariaKeyShortcuts
+        GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.ariaKeyShortcuts
       }
       onClick={() => {
         detach(toggleArchived(pageSignal), Reason.DomCallback);
@@ -229,7 +234,7 @@ function ChatThreadArchiveMenuItem({
       )}
       {label}
       <ChatThreadMenuShortcut
-        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding}
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.binding}
       />
     </DropdownMenuItem>
   );
@@ -332,13 +337,13 @@ function ChatThreadRenameMenuItem({
   const openRename = useSet(signals.openRename$);
   const pageSignal = useGet(pageSignal$);
   const label = t(($) => {
-    return $.chat.sidebar.rename;
+    return $.chat.actions.rename;
   });
 
   return (
     <DropdownMenuItem
       aria-label={label}
-      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts}
+      aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.rename.ariaKeyShortcuts}
       onClick={() => {
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
@@ -346,7 +351,7 @@ function ChatThreadRenameMenuItem({
       <Pencil size={16} className="mr-2" />
       {label}
       <ChatThreadMenuShortcut
-        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.rename.binding}
       />
     </DropdownMenuItem>
   );
@@ -474,8 +479,11 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
-
   const move = useSet(openProjectMembership$);
+  const fork = useSet(forkChatThread$);
+  const pageSignal = useGet(pageSignal$);
+  const forkEnabled =
+    useResolved(featureSwitches$)?.[FeatureSwitchKey.ChatThreadFork];
 
   return (
     <>
@@ -483,6 +491,18 @@ function ChatThreadMenuItems({
       <ChatThreadMarkUnreadMenuItem signals={signals} />
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
+      {forkEnabled && (
+        <DropdownMenuItem
+          onClick={() => {
+            detach(fork(signals.threadId, pageSignal), Reason.DomCallback);
+          }}
+        >
+          <GitFork size={16} className="mr-2" />
+          {t(($) => {
+            return $.chat.fork.action;
+          })}
+        </DropdownMenuItem>
+      )}
       <ChatThreadRenameMenuItem signals={signals} />
       <DropdownMenuItem
         onClick={() => {
@@ -502,7 +522,7 @@ function ChatThreadMenuItems({
       >
         <Trash size={16} className="mr-2" />
         {t(($) => {
-          return $.chat.sidebar.delete;
+          return $.chat.actions.delete;
         })}
       </DropdownMenuItem>
     </>
@@ -1203,7 +1223,6 @@ function useNewChatAction() {
 }
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
-  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
   const [markReadLoadable, markWorkspaceThreadsRead] = useLoadableSet(
     markWorkspaceThreadsRead$,
   );
@@ -1214,7 +1233,7 @@ function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   }
 
   return {
-    disabled: markReadLoadable.state === "loading" || !hasUnread,
+    disabled: markReadLoadable.state === "loading",
     onSelect,
     visible: showMarkAllRead,
   };
@@ -1228,9 +1247,10 @@ function MarkAllReadMenuItem({
   onSelect: () => void;
 }) {
   const { t } = useTranslation("common");
+  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
 
   return (
-    <DropdownMenuItem onClick={onSelect} disabled={disabled}>
+    <DropdownMenuItem onClick={onSelect} disabled={disabled || !hasUnread}>
       <CheckCheck size={16} className="mr-2" />
       {t(($) => {
         return $.sidebar.markAllRead;
@@ -1461,12 +1481,11 @@ function ChatThreadsSkeleton() {
 function ChatThreadsContent({
   scrollSignals,
   contentClassName,
-  stylesheetLoaded,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
-  stylesheetLoaded: boolean;
 }) {
+  const stylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {stylesheetLoaded ? (
@@ -1584,14 +1603,28 @@ function AllChatThreadsContent({
   );
 }
 
-function CurrentChatThreadScrollMarker({
-  listSignals,
-  scrollSignals,
-}: {
+interface CurrentChatThreadScrollMarkerProps {
   listSignals: SidebarChatThreadListSignals;
   scrollSignals: SidebarChatThreadScrollSignals;
-}) {
+}
+
+function CurrentChatThreadScrollMarker(
+  props: CurrentChatThreadScrollMarkerProps,
+) {
   const currentMainThreadId = useGet(currentChatThreadId$);
+  return currentMainThreadId ? (
+    <ListedChatThreadScrollMarker
+      {...props}
+      currentMainThreadId={currentMainThreadId}
+    />
+  ) : null;
+}
+
+function ListedChatThreadScrollMarker({
+  listSignals,
+  scrollSignals,
+  currentMainThreadId,
+}: CurrentChatThreadScrollMarkerProps & { currentMainThreadId: string }) {
   const currentMainThreadListed = useLastResolved(
     listSignals.currentThreadListed$,
   );
@@ -1599,7 +1632,7 @@ function CurrentChatThreadScrollMarker({
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
 
-  return currentMainThreadId && currentMainThreadListed ? (
+  return currentMainThreadListed ? (
     <span
       ref={scrollCurrentChatThreadOnRef}
       data-chat-thread-id={currentMainThreadId}
@@ -1714,8 +1747,6 @@ export function ChatThreadsSection({
   /** False when the surrounding header already carries the title actions. */
   showTitle?: boolean;
 }) {
-  const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
-
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
       {showTitle ? (
@@ -1732,7 +1763,6 @@ export function ChatThreadsSection({
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
-        stylesheetLoaded={mainStylesheetLoaded === true}
       />
     </div>
   );

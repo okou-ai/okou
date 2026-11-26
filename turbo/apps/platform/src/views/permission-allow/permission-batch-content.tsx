@@ -1,11 +1,5 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-import {
-  useLastResolved,
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
@@ -23,11 +17,10 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  useDialogActionsRef,
 } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { user$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
@@ -38,20 +31,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { PermissionGrantDurationSelect } from "../components/permission-grant-duration-select.tsx";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
-
-export function PermissionBatchContent({
-  signals,
-  detailsHref,
-}: {
-  signals: PermissionBatchSignals;
-  detailsHref?: string;
-}) {
-  const features = useLastResolved(featureSwitches$);
-  if (!features?.[FeatureSwitchKey.BatchConnectorPermissions]) {
-    return null;
-  }
-  return <BatchContent signals={signals} detailsHref={detailsHref} />;
-}
 
 function useBatchResources(signals: PermissionBatchSignals) {
   const target = useLoadable(signals.target$);
@@ -456,7 +435,8 @@ function BatchFeedback({ batch }: BatchViewProps) {
 function BatchActions({
   batch,
   standalone,
-}: BatchViewProps & { standalone: boolean }) {
+  onAllowed,
+}: BatchViewProps & { standalone: boolean; onAllowed?: () => void }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const {
@@ -469,6 +449,11 @@ function BatchActions({
     descriptor,
     dismiss,
   } = batch;
+  async function allow() {
+    if (await confirm(pageSignal)) {
+      onAllowed?.();
+    }
+  }
   return (
     <>
       {!allowed && (
@@ -476,7 +461,7 @@ function BatchActions({
           type="button"
           disabled={busy || loadFailed || !complete || saveFailed}
           onClick={() => {
-            detach(confirm(pageSignal), Reason.DomCallback);
+            detach(allow(), Reason.DomCallback);
           }}
           className="h-9 w-full rounded-[10px]"
         >
@@ -703,8 +688,9 @@ function BatchCardSummary({ batch }: BatchViewProps) {
 
 function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
   const { t } = useTranslation();
+  const actionsRef = useDialogActionsRef();
   return (
-    <Dialog>
+    <Dialog actionsRef={actionsRef}>
       <BatchCardSummary batch={batch} />
       <DialogContent maxWidth={640} position="top" showCloseButton={false}>
         <DialogHeader className="flex-row items-center gap-3 text-left">
@@ -730,7 +716,13 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
         {batch.allowed && <BatchHeader batch={batch} standalone={false} />}
         <BatchPermissionDetails batch={batch} />
         <BatchFeedback batch={batch} />
-        <BatchActions batch={batch} standalone={false} />
+        <BatchActions
+          batch={batch}
+          standalone={false}
+          onAllowed={() => {
+            actionsRef.current?.close();
+          }}
+        />
         <a
           href={href}
           className="break-words text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
@@ -744,7 +736,7 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
   );
 }
 
-function BatchContent({
+export function PermissionBatchContent({
   signals,
   detailsHref,
 }: {

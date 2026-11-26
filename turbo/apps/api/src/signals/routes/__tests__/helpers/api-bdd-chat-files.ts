@@ -1,4 +1,4 @@
-import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import { chatThreadDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
@@ -42,7 +42,7 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   artifactCatalogContract,
-  type ArtifactCatalogKind,
+  type ArtifactCatalogListQuery,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -398,8 +398,18 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMetadataContract);
   }
 
-  function threadDraftClient() {
-    return chatFilesApp(context)(chatThreadDraftContract);
+  async function requestReadThreadDraft<Status extends 200 | 404>(
+    actor: ApiTestUser,
+    threadId: string,
+    statuses: readonly Status[],
+  ) {
+    return await accept(
+      chatFilesApp(context)(chatThreadDraftContract).readComposer({
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+      }),
+      statuses,
+    );
   }
 
   function threadEventsClient() {
@@ -802,17 +812,38 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    legacyThreadDraft(actor: ApiTestUser, threadId: string) {
+      const params = { id: threadId };
+      return {
+        read: async () => {
+          return (
+            await accept(
+              chatFilesApp(context)(chatThreadDraftContract).get({
+                headers: authenticate(context, actor),
+                params,
+              }),
+              [200],
+            )
+          ).body;
+        },
+        save: async (body: ChatThreadDraft) => {
+          return await accept(
+            threadByIdClient().patch({
+              headers: authenticate(context, actor),
+              params,
+              body,
+            }),
+            [204],
+          );
+        },
+      };
+    },
+    requestReadThreadDraft,
     async readThreadDraft(
       actor: ApiTestUser,
       threadId: string,
     ): Promise<ChatThreadDraft> {
-      const response = await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        [200],
-      );
+      const response = await requestReadThreadDraft(actor, threadId, [200]);
       return response.body;
     },
 
@@ -820,11 +851,14 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       body: {
+        readonly suggestionPreset?: ChatThreadDraft["suggestionPreset"];
         readonly draftUserMessage: UserMessageInputDocument | null;
         readonly draftAttachments?: readonly PersistedAttachment[] | null;
       },
-    ): Promise<void> {
+      expectedStatus: 204 | 404 = 204,
+    ) {
       const requestBody = {
+        suggestionPreset: body.suggestionPreset,
         draftUserMessage: body.draftUserMessage,
         ...(body.draftAttachments === undefined
           ? {}
@@ -835,13 +869,13 @@ export function createChatFilesBddApi(context: TestContext) {
             }),
       };
 
-      await accept(
-        threadByIdClient().patch({
+      return await accept(
+        chatFilesApp(context)(chatThreadDraftContract).saveComposer({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: composerDraftSchema.parse(requestBody),
+          body: chatThreadDraftSchema.parse(requestBody),
         }),
-        [204],
+        [expectedStatus],
       );
     },
 
@@ -1354,13 +1388,7 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async listArtifactCatalog(
       actor: ApiTestUser,
-      query: {
-        readonly limit?: number;
-        readonly cursor?: string;
-        readonly kind?: ArtifactCatalogKind;
-        readonly chatThreadId?: string;
-        readonly keyword?: string;
-      } = {},
+      query: ArtifactCatalogListQuery = {},
     ): Promise<{
       readonly artifacts: readonly ArtifactSummary[];
       readonly nextCursor: string | null;

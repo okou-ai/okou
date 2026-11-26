@@ -1,4 +1,4 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Edit, HandHeart } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
@@ -7,15 +7,12 @@ import {
   agentChatPageActive$,
 } from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import {
-  followForYouFeedOnRef$,
-  suggestionsEnabled$,
-} from "../../signals/okou-page/agent-suggestion-session.ts";
-import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
-import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
+import {
+  forYouEntryVisible$,
+  forYouSummary$,
+} from "../../signals/okou-page/for-you-sources.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -52,7 +49,6 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 
 /** New chat leads the conversation list; suggestions have their own entry. */
 export function OkouChatListRow() {
-  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const active = useGet(agentChatPageActive$);
   const { t } = useTranslation();
 
@@ -71,11 +67,7 @@ export function OkouChatListRow() {
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
         {/* The rail entry carries the Okou mark, so New chat reads as an action. */}
-        {okouEntry ? (
-          <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
-        ) : (
-          <OkouLogomark className="size-4 shrink-0 opacity-70" />
-        )}
+        <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
       </span>
       <span className="min-w-0 flex-1 truncate">
         {t(($) => {
@@ -93,17 +85,15 @@ export function ForYouChatListRow({
   readonly touch?: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useLastResolved(suggestionsEnabled$) ?? false;
   const active = useGet(activeRoute$) === "forYou";
-  const unread = useLastResolved(forYouHasUnread$) === true;
-  const followFeed = useSet(followForYouFeedOnRef$);
-  if (!enabled) {
+  const unread = useLastResolved(forYouSummary$)?.hasUnread === true;
+  const visible = useLastResolved(forYouEntryVisible$);
+  if (!visible) {
     return null;
   }
   return (
     <Link
       pathname={ROUTES.forYou}
-      ref={followFeed}
       aria-current={active ? "page" : undefined}
       className={cn(
         ENTRY_ROW,

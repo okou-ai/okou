@@ -2,12 +2,15 @@ import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-r
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
   type RunnerVncObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -16,12 +19,15 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { sshConnectionsRoutes } from "../ssh-connections";
+import { vncAccessRoutes } from "../vnc-access";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { requireVncCredentialId } from "./helpers/vnc-response";
 import { certificateChain, privateKey } from "./helpers/vnc-synthetic-client";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -70,10 +76,11 @@ function check(
   f: VncRuntimeFixture,
   expectedGeneration: number,
   override: Partial<RunnerVncCheckRequest> = {},
+  headers: Readonly<Record<string, string>> = vncRunnerHeaders,
 ) {
   return accept(
     api.runner().check({
-      headers: vncRunnerHeaders,
+      headers,
       params: { runId: f.runId },
       body: {
         connectionId: f.connectionId,
@@ -127,21 +134,29 @@ describe("private Runner VNC authority", () => {
         [200],
       );
     });
-    const sandboxToken = input.sandboxToken;
-    if (!sandboxToken) {
-      throw new Error("Expected execution input to include its sandbox token");
+    const { sandboxToken } = input;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
+    if (!sandboxToken || !agentToken) {
+      throw new Error(
+        "Expected execution input to include its Run credentials",
+      );
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
     });
     api.authenticate(owner);
-    return { runId, threadId, runnerIdentity, sandboxToken };
+    return { runId, threadId, runnerIdentity, sandboxToken, agentToken };
   }
 
   /** Ordinary chat Runs use production launch and dispatch. */
   async function executionFixture(
     options: { readonly defaultEnabled?: boolean } = {},
-  ): Promise<VncRuntimeFixture & { readonly connectionCreatedAt: string }> {
+  ): Promise<
+    VncRuntimeFixture & {
+      readonly connectionCreatedAt: string;
+      readonly agentToken: string;
+    }
+  > {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
@@ -175,6 +190,121 @@ describe("private Runner VNC authority", () => {
       credentialId: requireVncCredentialId(connection.body),
     };
   }
+
+  it.each(["display", "kdc"] as const)(
+    "requires a separate current device grant for the saved %s SSH hop",
+    async (hop) => {
+      const f = await executionFixture();
+      const ssh = await accept(
+        setupApp({ context, routes: sshConnectionsRoutes })(
+          sshConnectionsContract,
+        ).create({
+          headers: vncSessionHeaders,
+          body: {
+            id: randomUUID(),
+            displayName: "Saved SSH hop",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "private-key"),
+          },
+        }),
+        [201],
+      );
+      await api.enableDefault(f, "ssh", ssh.body.id);
+      const gateway = { type: "ssh" as const, connectionId: ssh.body.id };
+      const updated = await accept(
+        api.connections().update({
+          headers: vncSessionHeaders,
+          params: { connectionId: f.connectionId },
+          body: {
+            expectedGeneration: 1,
+            ...(hop === "display"
+              ? { transport: gateway }
+              : {
+                  security: {
+                    type: "qemu_x509_gssapi",
+                    trust: { mode: "system" },
+                    service: {
+                      realm: "EXAMPLE.INVALID",
+                      components: ["vnc", "desktop.example.com"],
+                    },
+                    kdc: {
+                      host: "127.0.0.1",
+                      port: 88,
+                      transport: gateway,
+                      ticketLifetimeSeconds: 1200,
+                      renewableLifetimeSeconds: 7200,
+                    },
+                  },
+                  credential: {
+                    create: {
+                      name: "KDC test credentials",
+                      authentication: {
+                        method: "qemu_kerberos_password",
+                        initiator: {
+                          realm: "EXAMPLE.INVALID",
+                          components: ["alice"],
+                        },
+                        password: "synthetic test password",
+                      },
+                    },
+                  },
+                }),
+          },
+        }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(context, f, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      api.authenticate(f);
+      const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+        remoteDevicesContract,
+      );
+      const { devices } = (
+        await accept(policy.list({ headers: vncSessionHeaders }), [200])
+      ).body;
+      const desktop = devices.find((device) => {
+        return device.displayName === "VNC desktop";
+      });
+      const carrier = devices.find((device) => {
+        return device.displayName === "Saved SSH hop";
+      });
+      if (!desktop || !carrier) {
+        throw new Error("Expected separate devices for VNC and its SSH hop");
+      }
+      const transport = { ...gateway, generation: 1 };
+      const binding: Partial<RunnerVncCheckRequest> =
+        hop === "display"
+          ? { expectedTransport: transport }
+          : { expectedCredentialRevision: 1, expectedKdcTransport: transport };
+      const runner = {
+        ...vncRunnerHeaders,
+        "X-Okou-Remote-Device-Policy": "1",
+      };
+      const setMode = (deviceId: string, mode: "always" | "denied") => {
+        return accept(
+          policy.setAccess({
+            headers: vncSessionHeaders,
+            params: { deviceId },
+            body: { mode },
+          }),
+          [200],
+        );
+      };
+      await setMode(desktop.id, "always");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("unavailable");
+      await setMode(carrier.id, "always");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("valid");
+      await setMode(carrier.id, "denied");
+      expect(
+        (await check(f, updated.body.generation, binding, runner)).body.outcome,
+      ).toBe("unavailable");
+    },
+  );
 
   async function observe(
     f: VncRuntimeFixture & { readonly connectionCreatedAt: string },
@@ -578,27 +708,98 @@ describe("private Runner VNC authority", () => {
     },
   );
 
-  it("checks current membership and chat access before recording or handing off VNC authority", async () => {
+  it("uses current chat access for Runner operations when the Clerk membership lookup is unavailable", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await executionFixture();
-    await api.setDefault(f, "vnc", f.connectionId, false);
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(observations(f)).resolves.toStrictEqual([]);
-    await api.setDefault(f, "vnc", f.connectionId, true);
+    const membership =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const unavailable = new Error("Clerk membership lookup is unavailable");
+    membership.mockRejectedValue(unavailable);
     const { generation } = await api.resolved(f);
-    const kms = useSecretKmsProbe();
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [], totalCount: 0 },
-    );
-    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
+    expect((await check(f, generation)).body).toStrictEqual({
+      outcome: "valid",
     });
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+
+    await api.setDefault(f, "vnc", f.connectionId, false);
+    membership.mockRejectedValue(unavailable);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await check(f, generation)).body).toStrictEqual({
       outcome: "unavailable",
     });
-    expect(kms.decryptCalls).toBe(0);
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
   });
+
+  it.each([
+    "self-leave",
+    "administrator removal",
+    "membership-deletion webhook",
+  ] as const)(
+    "denies an existing Run's VNC authority after %s",
+    async (entry) => {
+      const f = await executionFixture();
+      const { generation } = await api.resolved(f);
+      const inventory = setupApp({ context, routes: vncAccessRoutes })(
+        vncHostsContract,
+      );
+      const headers = { authorization: `Bearer ${f.agentToken}` };
+      const before = await accept(inventory.list({ headers }), [200]);
+      expect(before.body.hosts).toMatchObject([{ id: f.connectionId }]);
+
+      const auth = createAuthOrgBddApi(context);
+      const member = auth.user({ ...f, orgRole: "org:member" });
+      const admin = auth.user({ orgId: f.orgId, orgRole: "org:admin" });
+      const membershipId = `orgmem_${randomUUID()}`;
+      auth.mockClerkOrg(admin, {
+        members: [{ actor: admin }, { actor: member, membershipId }],
+      });
+      const membership =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      if (entry === "self-leave") {
+        await auth.leaveOrg(member);
+      } else if (entry === "administrator removal") {
+        await auth.removeMember(admin, { email: member.email });
+      } else {
+        // Clerk has deleted the membership, but local revocation has yet to arrive.
+        membership.mockResolvedValue({ data: [], totalCount: 0 });
+        const pending = await accept(inventory.list({ headers }), [200]);
+        expect(pending.body.hosts).toMatchObject([{ id: f.connectionId }]);
+        expect((await check(f, generation)).body).toStrictEqual({
+          outcome: "valid",
+        });
+
+        const webhooks = createWebhookCallbackApi(context);
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type: "organizationMembership.deleted",
+          data: {
+            id: membershipId,
+            organization_id: f.orgId,
+            user_id: f.userId,
+          },
+        });
+        await webhooks.requestClerkWebhook("{}", {}, [200]);
+        await flushWaitUntilForTest();
+      }
+
+      membership.mockRejectedValue(
+        new Error("Clerk membership lookup is unavailable"),
+      );
+      const after = await accept(inventory.list({ headers }), [404]);
+      expect(after.body.error.code).toBe("VNC_UNAVAILABLE");
+      expect((await check(f, generation)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(api.resolve(f)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+      await expect(runs.readRun(member, f.runId)).resolves.toMatchObject({
+        status: "cancelled",
+      });
+    },
+  );
 
   it("admits exact online Kerberos capabilities before KMS and independently fences source revision and KDC route", async () => {
     const f = await executionFixture();

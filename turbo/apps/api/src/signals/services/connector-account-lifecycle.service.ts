@@ -62,6 +62,7 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
@@ -72,7 +73,7 @@ import {
   preparedDefaultAccountProjectionPlan,
   type PreparedDefaultAccountProjection,
 } from "./workflow-automation-account-projection.service";
-import { workflowAutomationSelectedAccountReadPlan } from "./workflow-automation-account.service";
+import { workflowAutomationConnectorAfterDefaultChangeSql } from "./workflow-automation-account.service";
 import {
   notionPendingEventsSkipWrite,
   NOTION_ACCOUNT_CHANGED_SKIP_REASON,
@@ -1358,7 +1359,7 @@ export const setDefaultGoogleFormsAccount$ = command(
         googleFormsAccountProjectionUpdate({
           orgId: args.orgId,
           userId: args.userId,
-          defaultConnectorId: sql`${db.select({ id: chosen.id }).from(chosen)}`,
+          nextDefault: sql`${db.select({ id: chosen.id }).from(chosen)}`,
         }),
       );
     const discarded = db.$with("discarded_forms_cursors").as(
@@ -1470,24 +1471,29 @@ const prepareConnectorDefaultProjections$ = command(
     signal.throwIfAborted();
     const projections: PreparedDefaultAccountProjection[] = [];
     for (const automation of automations) {
-      const selected = workflowAutomationSelectedAccountReadPlan({
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: automation.workflowId,
-        connectorSlug: plan.connectorSlug,
-      });
-      const [selection] = await db
-        .select(selected.columns)
-        .from(selected.from)
-        .innerJoin(selected.join.table, selected.join.on)
-        .where(selected.where)
-        .limit(selected.limit);
+      const [selection] = parseRawRows(
+        object({ connectorId: uuid().nullable() }),
+        await db.execute(
+          workflowAutomationConnectorAfterDefaultChangeSql(
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              workflowId: automation.workflowId,
+              connectorSlug: plan.connectorSlug,
+            },
+            args.connectionId,
+          ),
+        ),
+      );
       signal.throwIfAborted();
-      // An explicit null selection still overrides the new default.
-      const connectorId = selection ? selection.connectorId : args.connectionId;
+      if (!selection) {
+        throw new Error(
+          "Workflow automation default change returned no account selection",
+        );
+      }
       const values = workflowAutomationProjectionValues(
         automation,
-        connectorId,
+        selection.connectorId,
         plan.connectorSlug,
       );
       if (values !== null) {

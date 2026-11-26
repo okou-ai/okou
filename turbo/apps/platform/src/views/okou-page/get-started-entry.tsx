@@ -39,6 +39,7 @@ import {
   setQuestIntroKey$,
   setRewardsNoteOpen$,
   setGetStartedMenuOpen$,
+  setGetStartedMenuTrigger$,
   type GetStartedQuest,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
@@ -50,6 +51,7 @@ import {
   setAgentPhoneConnectDialogOpen$,
 } from "../../signals/okou-page/agentphone.ts";
 import { AgentPhoneConnectDialog } from "./agentphone-connect-dialog.tsx";
+import { GetStartedCheckinDialog } from "./get-started-checkin-dialog.tsx";
 import {
   GetStartedQuestIntroDialog,
   questHasIntro,
@@ -616,11 +618,21 @@ function GetStartedPanel({
  * than as a control and a banner. The ring is the only mark the corner gains.
  */
 export function GetStartedEntry() {
+  return (
+    <>
+      <GetStartedMenu />
+      <GetStartedCheckinDialog />
+    </>
+  );
+}
+
+function GetStartedMenu() {
   const { t } = useTranslation();
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
   const menuOpen = useGet(getStartedMenuOpen$);
   const setMenuOpen = useSet(setGetStartedMenuOpen$);
+  const setMenuTrigger = useSet(setGetStartedMenuTrigger$);
   // The phone dialog outlives the dropdown that opened it, so its connection
   // code stays with this shared owner.
   const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
@@ -689,6 +701,7 @@ export function GetStartedEntry() {
         <DropdownMenuTrigger
           render={
             <Button
+              ref={setMenuTrigger}
               type="button"
               variant="quiet"
               size="sm"

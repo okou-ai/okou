@@ -1,5 +1,6 @@
 import CCStateSwiftUI
 import ChatData
+import ChatDomain
 import Foundation
 import SwiftUI
 
@@ -8,14 +9,13 @@ struct OkouApp: App {
   @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var delegate
   @State private var authentication: AuthenticationService?
   @State private var lifecycle: AppLifecycle?
-  @State private var composerPreferences: ComposerPreferences?
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
     if isSSHAuthorizationPreview { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus || isComputerAuthorizationPreview
+        || isChatSyncStatus || isComputerAuthorizationPreview || isForYouDeck
     #else
       return false
     #endif
@@ -46,6 +46,15 @@ struct OkouApp: App {
     #endif
   }
 
+  /// The For you deck against a local fixture (`ForYouDeckGallery`), without signing in.
+  private static var isForYouDeck: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--for-you-deck")
+    #else
+      false
+    #endif
+  }
+
   private static var isSSHAuthorizationPreview: Bool {
     #if DEBUG || STAGING
       ProcessInfo.processInfo.arguments.contains("--ssh-access-cards")
@@ -67,10 +76,6 @@ struct OkouApp: App {
     OkouNavigationBar.applySearchField()
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
-    if !isTestHost {
-      _composerPreferences = State(
-        initialValue: ComposerPreferences(storage: ComposerPreferencesStorage()))
-    }
     let authentication = isTestHost || Self.isDesignPreview ? nil : AuthenticationService()
     _authentication = State(initialValue: authentication)
     if let authentication, case .success(let configuration) = configuration {
@@ -92,6 +97,8 @@ struct OkouApp: App {
             #if DEBUG
               if Self.isComputerAuthorizationPreview {
                 NavigationStack { ComputerAuthorizationGallery() }
+              } else if Self.isForYouDeck {
+                ForYouDeckGallery()
               } else if Self.isChatSyncStatus {
                 NavigationStack { ChatSyncStatusGallery() }
               } else if Self.isResultStyles {
@@ -110,7 +117,6 @@ struct OkouApp: App {
         #endif
       }
       .modifier(OkouAppearance())
-      .environment(\.composerPreferences, composerPreferences)
       .task {
         if let lifecycle {
           await lifecycle.run()
@@ -120,6 +126,7 @@ struct OkouApp: App {
       }
       .onOpenURL { url in
         if OkouWidgetLinks.shared.receive(url) { return }
+        if ConnectorProviderAuthorization.returnAttemptID(url) != nil { return }
         Task { await authentication?.handleURL(url) }
       }
     }
@@ -172,7 +179,7 @@ struct AppRootView: View {
           OkouColor.background.ignoresSafeArea()
         }
       } else {
-        SignInView(authentication: authentication, configuration: configuration)
+        SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
     .task(id: authentication.presentationScopeID) { await lifecycle.updateScope() }
@@ -226,32 +233,40 @@ private struct WorkspaceRootView: View {
   }
 
   var body: some View {
-    WorkspaceNavigation(sidebar: sidebar) {
+    // Every workspace view reads the session's graph from this one provider.
+    StoreProvider(store.graph) { workspace }
+  }
+
+  private var workspace: some View {
+    WorkspaceNavigation(sidebar: sidebar, forYouBusy: store.forYou.busy) {
       // Mount the sidebar after identity and its complete local baseline are restored.
       Group {
         if store.hasRestoredSidebar,
           authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
-          StoreProvider(store.projects.stateStore) {
-            ChatSidebarView(
-              store: store, authentication: authentication, workspaceID: workspaceID,
-              notifications: notifications,
-              headerHeight: headerHeight,
-              accountError: $accountError,
-              close: closeSidebar,
-              newChat: startNewChat
-            )
-            .id(ObjectIdentifier(store))
-            .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
-          }
+          ChatSidebarView(
+            store: store, authentication: authentication, workspaceID: workspaceID,
+            notifications: notifications,
+            headerHeight: headerHeight,
+            accountError: $accountError,
+            close: closeSidebar,
+            newChat: startNewChat
+          )
+          .id(ObjectIdentifier(store))
+          .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
         }
       }
+    } forYou: {
+      ForYouView(workspace: store, showChat: closeSidebar, goBack: sidebar.goBack)
     } chat: {
       chatPage
     }
     .ignoresSafeArea()
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
+    .task(id: sidebar.path.contains(.forYou)) {
+      if sidebar.path.contains(.forYou) { await store.forYou.beginVisit() }
+    }
     .task(id: store.threadFeedback?.id) {
       guard let feedback = store.threadFeedback else { return }
       UIAccessibility.post(notification: .announcement, argument: feedback.message)
@@ -266,8 +281,12 @@ private struct WorkspaceRootView: View {
       await openPendingNotification()
     }
     // The widgets show this workspace's confirmed chat list; republish only when it changes.
-    .task(id: widgetSnapshot) { [snapshot = widgetSnapshot] in
-      OkouWidgetPublishing.publish(snapshot)
+    .background {
+      SelectedConversationReader(store: store) { selected in
+        WorkspaceWidgetPublisher(
+          store: store, selected: selected, workspaceID: workspaceID,
+          name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
+      }
     }
     .task(id: OkouWidgetLinks.shared.requestID) {
       guard let threadID = OkouWidgetLinks.shared.takeChat(in: workspaceID) else { return }
@@ -297,31 +316,19 @@ private struct WorkspaceRootView: View {
       Text(store.list.actionError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
-      OkouEmptyState(
-        "Update required", icon: "download",
-        description: Text(
-          "This build no longer supports the current API. Install the latest Okou build to continue."
-        )
-      ) {
-        Link("Open TestFlight", destination: URL(string: "itms-beta://")!)
-          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
-      }
-      .background(OkouColor.background)
-      .interactiveDismissDisabled()
+      RequiredUpdateView()
+        .background(OkouColor.background)
+        .interactiveDismissDisabled()
     }
   }
 
   private var chatPage: some View {
-    Group {
-      if let conversation = store.selectedConversation {
-        ChatDetailView(
-          conversation: conversation,
+    SelectedConversationReader(store: store) { selected in
+      if let conversation = selected {
+        WorkspaceChatDetail(
+          store: store, conversation: conversation,
           workspaceName: authentication.workspacePresentation(workspaceID)?.name,
-          didSend: { await notifications.requestAfterSend() },
-          topContentInset: topContentHeight,
-          mentionSource: ComposerMentionSource(threads: store.list.threads),
-          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
-          fork: { store.startFork($0, from: conversation) }
+          notifications: notifications, topContentInset: topContentHeight
         )
         .id(conversation.thread.id)
       } else {
@@ -331,9 +338,10 @@ private struct WorkspaceRootView: View {
             newChatComposer
               .chatFeedbackAnchor()
           }
-          .animation(
-            reduceMotion ? nil : .easeInOut(duration: 0.22),
-            value: store.newComposer.voice?.phase ?? .idle)
+          .modifier(
+            ComposerVoiceAnimation(
+              voice: store.newComposer.voice,
+              animation: reduceMotion ? nil : .easeInOut(duration: 0.22)))
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -347,7 +355,7 @@ private struct WorkspaceRootView: View {
       }
     }
     .safeAreaBar(edge: .top, spacing: 0) {
-      ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
+      ChatWorkspaceHeader(store: store, height: headerHeight)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {
@@ -358,39 +366,17 @@ private struct WorkspaceRootView: View {
     .sheet(
       item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } })
     ) { flow in
-      ChatForkView(
-        flow: flow, webURL: store.webURL, threads: store.list.threads,
-        project: store.projects.projects.first(where: { $0.id == flow.projectID }),
-        needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+      WorkspaceForkSheet(store: store, flow: flow)
     }
-    .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
+    .chatFeedbackOverlay(store: store, isPresented: sidebar.showsChat)
     .composerSuggestionOverlay(
-      topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
+      topInset: topContentHeight, isEnabled: sidebar.showsChat && !sidebar.isTransitioning
     )
   }
 
   @ViewBuilder private var newChatComposer: some View {
-    @Bindable var composer = store.newComposer
-    ChatComposerView(
-      draft: $composer.text, isBusy: store.isCreating,
-      showsProgress: store.isCreating, canStop: false,
-      needsUpgrade: store.needsUpgrade,
-      error: store.error, attachmentURL: store.webURL,
-      attachments: composer.attachments,
-      draftState: composer,
-      submit: {
-        await store.sendNewChat(
-          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-        await notifications.requestAfterSend()
-      },
-      refresh: nil,
-      modelSelection: store.newModelSelection,
-      connectorSelection: store.newModelSelection.connectors,
-      mentionSource: ComposerMentionSource(threads: store.list.threads),
-      workflowSource: store.composerWorkflows,
-      placeholder: String(localized: "Message Okou"),
-      project: store.newChatProject,
-      removeProject: store.removeNewChatProject
+    WorkspaceNewChatComposer(
+      store: store, notifications: notifications, reduceMotion: reduceMotion
     )
     .transition(.identity)
   }
@@ -415,9 +401,7 @@ private struct WorkspaceRootView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    .onChange(of: store.selectedThreadID) { _, id in
-      if id == nil { taglineIndex = Int.random(in: 0..<64) }
-    }
+    .modifier(NewChatTaglineReset(store: store, taglineIndex: $taglineIndex))
   }
 
   private var greetingText: String {
@@ -426,21 +410,10 @@ private struct WorkspaceRootView: View {
       name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines))
   }
 
-  private var widgetSnapshot: OkouWidgetSnapshot {
-    OkouWidgetPublishing.snapshot(
-      workspaceID: workspaceID, threads: store.list.threads,
-      name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines),
-      hasDraft: store.hasDraft)
-  }
-
   private func openPendingNotification() async {
     if await lifecycle.openPendingNotification(), !Task.isCancelled {
       closeSidebar()
     }
-  }
-
-  private func openSidebar() {
-    sidebar.setOpen(true)
   }
 
   private func closeSidebar() {
@@ -449,5 +422,204 @@ private struct WorkspaceRootView: View {
 
   private func startNewChat() {
     NewChatRequests.shared.request()
+  }
+}
+
+/// Resolves the selected chat's owner from the workspace session's graph, for content under the
+/// workspace's Store provider.
+private struct SelectedConversationReader<Content: View>: View {
+  let store: WorkspaceStore
+  let content: (ConversationStore?) -> Content
+  @ResolvedValue private var selected: ConversationStore??
+
+  init(store: WorkspaceStore, @ViewBuilder content: @escaping (ConversationStore?) -> Content) {
+    self.store = store
+    self.content = content
+    _selected = ResolvedValue(store.selectedConversationValue, equals: { $0 === $1 })
+  }
+
+  var body: some View { content(selected ?? store.selectedConversation) }
+}
+
+/// Publishes the widget snapshot. The selected chat's draft mark and the API's draft list are
+/// read from the session graph, so the publisher sits under the workspace's Store provider.
+private struct WorkspaceWidgetPublisher: View {
+  let store: WorkspaceStore
+  let workspaceID: String
+  let name: String?
+  private let selectedThreadID: String?
+  @ResolvedValue private var selectedDraft: Bool?
+  @ResolvedValue private var listedDrafts: Set<String>?
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, selected: ConversationStore?, workspaceID: String, name: String?) {
+    self.store = store
+    self.workspaceID = workspaceID
+    self.name = name
+    selectedThreadID = selected?.thread.id
+    _selectedDraft = ResolvedValue(
+      selected?.composer.unsentContent ?? ComposerDraftSignals.noContent)
+    _listedDrafts = ResolvedValue(store.listedDraftIDs)
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    let listed = listedDrafts
+    let snapshot = OkouWidgetPublishing.snapshot(
+      workspaceID: workspaceID, threads: threads ?? store.list.threads, name: name,
+      hasDraft: { id in
+        id == selectedThreadID ? selectedDraft == true : store.hasDraft(id, listed: listed)
+      })
+    Color.clear
+      .frame(width: 0, height: 0)
+      .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
+  }
+}
+
+/// Picks a new tagline when the selection clears. The selection is read from the workspace
+/// session's graph, so this applies under the workspace's Store provider.
+private struct NewChatTaglineReset: ViewModifier {
+  @Binding var taglineIndex: Int
+  @ResolvedValue private var selection: String??
+
+  init(store: WorkspaceStore, taglineIndex: Binding<Int>) {
+    _taglineIndex = taglineIndex
+    _selection = ResolvedValue(store.selectedThreadValue)
+  }
+
+  func body(content: Content) -> some View {
+    content.onChange(of: selection ?? nil) { _, id in
+      if id == nil { taglineIndex = Int.random(in: 0..<64) }
+    }
+  }
+}
+
+/// The selected chat. Its mention candidates are read from the workspace session's graph, so
+/// the detail sits under the workspace's Store provider.
+private struct WorkspaceChatDetail: View {
+  let store: WorkspaceStore
+  let conversation: ConversationStore
+  let workspaceName: String?
+  let notifications: NotificationService
+  let topContentInset: CGFloat
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(
+    store: WorkspaceStore, conversation: ConversationStore, workspaceName: String?,
+    notifications: NotificationService, topContentInset: CGFloat
+  ) {
+    self.store = store
+    self.conversation = conversation
+    self.workspaceName = workspaceName
+    self.notifications = notifications
+    self.topContentInset = topContentInset
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    ChatDetailView(
+      conversation: conversation, workspaceName: workspaceName,
+      didSend: { await notifications.requestAfterSend() },
+      topContentInset: topContentInset,
+      mentionSource: ComposerMentionSource(threads: threads ?? store.list.threads),
+      onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
+      fork: { store.startFork($0, from: conversation) }
+    )
+  }
+}
+
+/// The new chat's composer. Its Project is read from the workspace session's graph, so the
+/// composer sits under the workspace's Store provider.
+private struct WorkspaceNewChatComposer: View {
+  let store: WorkspaceStore
+  let notifications: NotificationService
+  let reduceMotion: Bool
+  @ResolvedValue private var projects: [ChatProject]?
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, notifications: NotificationService, reduceMotion: Bool) {
+    self.store = store
+    self.notifications = notifications
+    self.reduceMotion = reduceMotion
+    _projects = ResolvedValue(store.projects.confirmedValue)
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    let composer = store.newComposer
+    ChatComposerView(
+      isBusy: store.isCreating,
+      showsProgress: store.isCreating, canStop: false,
+      needsUpgrade: store.needsUpgrade,
+      error: store.error, attachmentURL: store.webURL,
+      draftState: composer,
+      submit: {
+        await store.sendNewChat(
+          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+        await notifications.requestAfterSend()
+      },
+      refresh: nil,
+      modelSelection: store.newModelSelection,
+      connectorSelection: store.newModelSelection.connectors,
+      mentionSource: ComposerMentionSource(threads: threads ?? store.list.threads),
+      workflowSource: store.composerWorkflows,
+      project: store.newChatProjectID.flatMap { id in
+        (projects ?? store.projects.projects).first { $0.id == id }
+      },
+      removeProject: store.removeNewChatProject
+    )
+  }
+}
+
+/// The fork sheet. Its Project is read from the workspace session's graph.
+private struct WorkspaceForkSheet: View {
+  let store: WorkspaceStore
+  let flow: ChatForkStore
+  @ResolvedValue private var projects: [ChatProject]?
+  @ResolvedValue private var threads: [ChatThread]?
+
+  init(store: WorkspaceStore, flow: ChatForkStore) {
+    self.store = store
+    self.flow = flow
+    _projects = ResolvedValue(store.projects.confirmedValue)
+    _threads = ResolvedValue(store.list.threadsValue)
+  }
+
+  var body: some View {
+    ChatForkView(
+      flow: flow, webURL: store.webURL, threads: threads ?? store.list.threads,
+      project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
+      needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+  }
+}
+
+private struct RequiredUpdateView: View {
+  @State private var distribution: ClientDistribution?
+  @State private var attempt = 0
+
+  var body: some View {
+    OkouEmptyState(
+      "Update required", icon: "download",
+      description: Text(
+        "This build no longer supports the current API. Install the latest Okou build to continue."
+      )
+    ) {
+      switch distribution {
+      case .appStore:
+        Link("Open App Store", destination: URL(string: "https://apps.apple.com/app/id6815550027")!)
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case .testFlight:
+        Link("Open TestFlight", destination: URL(string: "itms-beta://")!)
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case .unknown:
+        Button("Try again") { attempt += 1 }
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case nil:
+        ProgressView()
+      }
+    }
+    .task(id: attempt) {
+      distribution = await InstallationDistribution.shared.current(retryUnknown: attempt > 0)
+    }
   }
 }

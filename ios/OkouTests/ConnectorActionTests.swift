@@ -33,9 +33,9 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture, callbackQuery: "I+connected+Slack%2BChat")
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
@@ -54,12 +54,12 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertEqual(starts.withLock { $0 }, 2)
   }
   func testUncertainContinuationRetriesTheSameEventWithoutAnotherReconnect() async throws {
@@ -84,9 +84,9 @@ final class ConnectorActionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
     // Unrelated read demand may evict cached rows, never the uncertain operation's identity.
     for _ in 0..<80 {
@@ -95,16 +95,28 @@ final class ConnectorActionTests: XCTestCase {
           target: .builtin("slack"), threadID: UUID().uuidString))
     }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(starts.withLock { $0 }, 1)
     XCTAssertEqual(eventIDs.withLock { Set($0).count }, 1)
     XCTAssertEqual(eventIDs.withLock { $0.count }, 2)
   }
   func testAccountConfirmationSavesTheChatsCurrentAccountBeforeContinuing() async throws {
+    try await verifyAccountConfirmation(
+      "select", endpoint: "connector-account-approval", memberWide: false)
+  }
+
+  func testMemberApprovalUsesTheDistinctEndpointBeforeContinuing() async throws {
+    try await verifyAccountConfirmation(
+      "member-approval", endpoint: "member-connector-account-approval", memberWide: true)
+  }
+
+  private func verifyAccountConfirmation(_ actionPath: String, endpoint: String, memberWide: Bool)
+    async throws
+  {
     let selected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/connector-account-approval") {
+      if request.url!.path == "/api/chat-threads/\(FixtureData.threadID)/\(endpoint)" {
         XCTAssertEqual(request.httpMethod, "POST")
         let body = try JSONDecoder().decode(
           ChatConnectorSelection.self, from: chatRequestBody(request))
@@ -127,33 +139,59 @@ final class ConnectorActionTests: XCTestCase {
     }
     let store = store(fixture)
     defer { store.close() }
+    let actionURL =
+      "/connectors/accounts/\(FixtureData.accountID)/\(actionPath)?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue"
     let action = try XCTUnwrap(
       ChatConnectorAction.parse(
-        "/connectors/accounts/\(FixtureData.accountID)/select?kind=builtin&connectorSlug=slack&threadId=\(FixtureData.threadID)&callbackPrompt=Continue",
+        memberWide ? actionURL + "&requestId=\(FixtureData.attemptID)" : actionURL,
         webURL: fixture.baseURL, threadID: FixtureData.threadID))
+    XCTAssertEqual(action.isMemberApproval, memberWide)
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
     let loaded = try await store.resources.read(action).load()
     let status = try XCTUnwrap(loaded)
     XCTAssertTrue(status.selected)
+    if memberWide {
+      selected.withLock { $0 = false }
+      let fresh = try XCTUnwrap(
+        ChatConnectorAction.parse(
+          actionURL + "&requestId=\(FixtureData.siblingID)", webURL: fixture.baseURL,
+          threadID: FixtureData.threadID))
+      let latest = try await store.resources.read(fresh).load()
+      XCTAssertFalse(try XCTUnwrap(latest).selected)
+    }
   }
 
 }
 
 @MainActor
 final class ConnectorAuthorizationSessionTests: XCTestCase {
-  func testOAuthBrowserCancellationDoesNotContinueAndCanRestart() async throws {
-    let scheduled = expectation(description: "OAuth completion polling was scheduled")
-    let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
+  func testOAuthConnectStartsImmediatelyAndCancellationCanRestartFromTheEntry() async throws {
+    let scheduled = (1...2).map { expectation(description: "OAuth attempt \($0) is waiting") }
+    let sleeps = Mutex(0)
+    let clock = ConnectorPollingClock(didSchedule: { _ in
+      let index = sleeps.withLock { value in
+        defer { value += 1 }
+        return value
+      }
+      guard scheduled.indices.contains(index) else { return XCTFail("Unexpected poll") }
+      scheduled[index].fulfill()
+    })
+    let starts = Mutex(0)
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
       if request.url!.path == "/api/connectors/slack/oauth/start" {
+        let index = starts.withLock { value in
+          value += 1
+          return value
+        }
+        let id = index == 1 ? FixtureData.attemptID : FixtureData.siblingID
         return ChatHTTPResponse(
           body:
-            "{\"authorizationUrl\":\"https://auth.example.invalid/start\",\"oauthAttemptId\":\"\(FixtureData.attemptID)\"}"
+            "{\"authorizationUrl\":\"https://auth.example.invalid/start?attempt=\(index)\",\"oauthAttemptId\":\"\(id)\"}"
         )
       }
       if request.url!.path.contains("oauth-completions") {
@@ -166,18 +204,20 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     }
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
-    store.activate(try descriptor(fixture))
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
-    await fulfillment(of: [scheduled], timeout: 3)
-    XCTAssertNotNil(store.active?.browserURL)
+    let action = try descriptor(fixture)
+    store.activate(action)
+    await fulfillment(of: [scheduled[0]], timeout: 3)
+    let firstBrowser = try XCTUnwrap(store.active?.browserURL)
     XCTAssertEqual(reads.withLock { $0 }, 0)
     store.browserDismissed()
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active?.notice != nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(reads.withLock { $0 }, 1)
-    XCTAssertNil(store.active?.session)
-    XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
+    store.activate(action)
+    await fulfillment(of: [scheduled[1]], timeout: 3)
+    XCTAssertNotEqual(try XCTUnwrap(store.active?.browserURL), firstBrowser)
+    XCTAssertEqual(store.active?.session?.oauthAttemptId, FixtureData.siblingID)
+    XCTAssertEqual(starts.withLock { $0 }, 2)
   }
   func testClosingScopeBeforeALateStartResponseCannotContinue() async throws {
     for closing in [false, true] {
@@ -209,7 +249,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       defer { store.close() }
       let action = try descriptor(fixture)
       store.activate(action)
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       let flow = try XCTUnwrap(store.active)
       store.submit()
       await fulfillment(of: [started], timeout: 3)
@@ -262,17 +302,17 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture)
     defer { store.close() }
     store.activate(try descriptor(fixture, reconnect: true))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: store) {
       store.active?.isExternalCode == true && store.active?.busy == false
     }
     store.active?.code = "wrong-code"
     store.submit()
-    try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
+    try await waitForBusinessResult(watching: store) { store.attemptFailed }
     store.active?.code = "correct-code"
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(submissions.withLock { $0 }, 2)
   }
   func testOAuthCompletionReceiptVerifiesOwnedAccountBeforeContinuing() async throws {
@@ -299,16 +339,17 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
-    store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
-    XCTAssertNotNil(store.active?.browserURL)
+    let flow = try XCTUnwrap(store.active)
+    XCTAssertNotNil(flow.browserURL)
     XCTAssertEqual(callbacks.withLock { $0 }, 0)
-    store.browserDismissed()
+    store.authorizationSceneChanged(isActive: false, isBackground: true)
+    store.authorizationSceneChanged(isActive: true, isBackground: false)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
+
   func testDeviceAuthorizationPollsSessionTokenAndCompletesOnlyAfterServerReadiness() async throws {
     let scheduled = (1...2).map { expectation(description: "Device poll \($0) was scheduled") }
     let sleeps = Mutex(0)
@@ -350,7 +391,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled[0]], timeout: 3)
     XCTAssertNotNil(store.active?.session)
@@ -362,7 +403,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     XCTAssertEqual(polls.withLock { $0 }, 1)
     XCTAssertNotNil(store.active)
     clock.advance(.seconds(1))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertEqual(polls.withLock { $0 }, 2)
   }
   func testCustomOAuthAndAutomaticDoNotRequestProviderOwnedCredentialFields() async throws {
@@ -412,7 +453,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
       let store = store(fixture, pollSleep: clock.sleep)
       defer { store.close() }
       store.activate(try descriptor(fixture, custom: true))
-      try await waitForBusinessResult { store.active != nil }
+      try await waitForBusinessResult(watching: store) { store.active != nil }
       XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
       XCTAssertTrue(try XCTUnwrap(store.active).values.isEmpty)
       store.submit()
@@ -421,7 +462,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
         XCTAssertEqual(callbacks.withLock { $0 }, 0)
         clock.advance(.seconds(2))
       }
-      try await waitForBusinessResult { store.active == nil }
+      try await waitForBusinessResult(watching: store) { store.active == nil }
       XCTAssertEqual(callbacks.withLock { $0 }, 1)
     }
   }
@@ -462,7 +503,7 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let store = store(fixture, pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(try descriptor(fixture))
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     store.submit()
     await fulfillment(of: [firstPoll], timeout: 3)
     XCTAssertEqual(polls.withLock { $0 }, 0)
@@ -606,7 +647,8 @@ final class ConnectorStatusReadTests: XCTestCase {
         return try XCTUnwrap(FixtureData.response(request))
       }
       let store = ConnectorActionStore(
-        service: ChatConnectorService(client: fixture.client), didContinue: {},
+        service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+        didContinue: {},
         didFail: { error in
           if let code = (error as? APIClientError)?.statusCode {
             reported.withLock { $0.append(code) }
@@ -711,7 +753,7 @@ final class ConnectorStatusReadTests: XCTestCase {
     }
     XCTAssertEqual((error as? APIClientError)?.statusCode, 403)
     store.activate(action)
-    try await waitForBusinessResult { store.activationError != nil }
+    try await waitForBusinessResult(watching: store) { store.activationError != nil }
     XCTAssertNil(store.active)
   }
 
@@ -747,7 +789,12 @@ extension XCTestCase {
       createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast, pinnedAt: nil,
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
-      service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
+      service: commands.connectorActions, graph: makeTestWorkspaceGraph(),
+      commands: commands, thread: thread, didContinue: {},
       didFail: { _ in }, pollSleep: pollSleep)
   }
+}
+
+extension ConnectorActionStore {
+  fileprivate var attemptFailed: Bool { active?.error != nil && active?.busy == false }
 }

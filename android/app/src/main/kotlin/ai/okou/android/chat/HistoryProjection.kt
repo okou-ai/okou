@@ -30,7 +30,7 @@ enum class HistoryExecution {
     Cancelled,
 }
 
-data class HistoryBlock(val kind: HistoryBlockKind, val text: String)
+data class HistoryBlock(val kind: HistoryBlockKind, val text: String, val title: String? = null)
 
 data class HistoryMessage(
     val id: String,
@@ -41,9 +41,25 @@ data class HistoryMessage(
     val rejected: Boolean = false,
     val status: String? = null,
     val failureReason: String? = null,
+    val queueSequence: Long? = null,
+    val queuedWorkflow: QueuedWorkflow? = null,
+    val sourceSeqId: Long? = null,
+    val occurredAtMillis: Long? = null,
+    val followups: List<ConversationFollowup>? = null,
 )
 
-data class HistoryTranscript(
+data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
+
+internal fun HistoryMessage.visibleInConversation() =
+    when (status) {
+        null,
+        "run.completed" -> blocks.isNotEmpty() || queued || rejected
+        else -> true
+    }
+
+@ConsistentCopyVisibility
+data class HistoryTranscript
+internal constructor(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,
     val workSteps: Int,
@@ -51,8 +67,17 @@ data class HistoryTranscript(
     val persistedIds: Set<String> = emptySet(),
     val liveRunIds: List<String> = listOfNotNull(activeRunId),
     val terminatedRunIds: Set<String> = emptySet(),
-    val queuedEventIds: List<String> = emptyList(),
-)
+    val pendingInputIds: Set<String> = emptySet(),
+    val revocableInputIds: Set<String> = emptySet(),
+    internal val resources: ChatResourceReferences? = null,
+) {
+    internal fun searchMessage(sequence: Long): HistoryMessage? = messages.firstOrNull {
+        it.sourceSeqId == sequence && it.visibleInConversation() && it.id !in pendingInputIds
+    }
+}
+
+internal fun HistoryTranscript.hasSettledInput(eventId: String) =
+    eventId in persistedIds && eventId !in pendingInputIds
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
 
@@ -60,13 +85,19 @@ internal data class HistoryControlFacts(
     val rows: List<HistoryEvent>,
     val liveRunIds: List<String>,
     val terminatedRunIds: Set<String>,
-    val queuedEventIds: List<String>,
+    val pendingInputIds: Set<String>,
+    val revocableInputIds: Set<String>,
 )
 
 /** Control readback uses event identities without re-decoding user documents on Main. */
 internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlFacts {
     val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
     val rows = checkpoint.rows.filter { it.id !in revoked }
+    val pending = rows.filter {
+        it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
+    }
+    // The recall endpoint requires an original queue entry.
+    val revocable = pending.filter { it.revokesId == null }
     val ended =
         checkpoint.rows
             .filter { it.terminal || it.type == "control.interrupt" }
@@ -81,7 +112,8 @@ internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlF
             .distinct()
             .toList(),
         ended,
-        rows.filter { it.type == "input.automation" && it.runId == null }.map { it.id },
+        pending.mapTo(mutableSetOf()) { it.id },
+        revocable.mapTo(mutableSetOf()) { it.id },
     )
 }
 
@@ -95,26 +127,23 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
     val interrupted =
         rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
-    val pending =
-        rows
-            .filter { it.runId == null && it.type in setOf("input.prompt", "input.automation") }
-            .mapTo(hashSetOf()) { it.id }
+    val pending = controls.pendingInputIds
     // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
-    val queued = controls.queuedEventIds.toSet()
+    val queued = pending.intersect(automationInputs)
     // Match Web's transcript visibility without discarding the underlying confirmed rows.
-    val visible =
-        rows.filterNot {
-            it.type == "control.revoke" ||
-                it.type == "input.budget" ||
-                (it.type == "run.cancelled" && it.runId in interrupted) ||
-                (it.type == "input.rejected" && it.revokesId in automationInputs)
-        }
+    val visible = rows.filterNot {
+        it.type == "control.revoke" ||
+            it.type == "input.budget" ||
+            it.type == "usage.recorded" ||
+            (it.type == "run.cancelled" && it.runId in interrupted) ||
+            (it.type == "input.rejected" && it.revokesId in automationInputs)
+    }
     // Like Web, place an older run's late event with its run; queued inputs come last.
     val turns = linkedMapOf<String, MutableList<HistoryEvent>>()
     for (row in visible) turns
         .getOrPut(
             if (row.id in queued) "queued:${row.id}"
-            else row.runId?.let { "run:$it" } ?: "event:${row.id}"
+            else row.runId?.let { "run:$it" } ?: "event:${row.id}",
         ) {
             mutableListOf()
         }
@@ -122,82 +151,89 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     val ordered =
         turns.values.filter { it.none { row -> row.id in queued } }.flatten() +
             visible.filter { it.id in queued }
-    val messages =
-        ordered.mapNotNull { row ->
-            val blocks = mutableListOf<HistoryBlock>()
-            val role =
-                when (row.type) {
-                    "input.prompt",
-                    "input.rejected",
-                    "input.automation" -> {
-                        val document = row.userMessage
-                        if (
-                            row.type == "input.automation" &&
-                                (document == null || document === JsonNull)
-                        ) {
-                            if (row.id !in queued) return@mapNotNull null
-                        } else {
-                            blocks.addAll(userBlocks(document))
-                        }
-                        row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
-                        HistoryRole.User
+    val messages = ordered.mapNotNull { row ->
+        val blocks = mutableListOf<HistoryBlock>()
+        val role =
+            when (row.type) {
+                "input.prompt",
+                "input.rejected",
+                "input.automation" -> {
+                    val document = row.userMessage
+                    if (
+                        row.type == "input.automation" &&
+                            (document == null || document === JsonNull)
+                    ) {
+                        if (row.id !in queued) return@mapNotNull null
+                    } else {
+                        blocks.addAll(userBlocks(document))
                     }
-                    "output.message" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                            ?: blocks.add(
-                                HistoryBlock(HistoryBlockKind.Unsupported, row.archiveJson())
-                            )
-                        HistoryRole.Assistant
-                    }
-                    "run.failed" -> HistoryRole.System
-                    "output.error" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                        row.outputError?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
-                        }
-                        row.failureReason?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
-                        }
-                        HistoryRole.System
-                    }
-                    "run.cancelled",
-                    "control.interrupt" -> {
-                        if (row.type == "control.interrupt" && row.runId == null)
-                            return@mapNotNull null
-                        HistoryRole.Assistant
-                    }
-                    "run.completed" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                        HistoryRole.Assistant
-                    }
-                    "usage.recorded" -> {
-                        row.usage?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it.toString()))
-                        }
-                        if (blocks.isEmpty()) return@mapNotNull null
-                        HistoryRole.System
-                    }
-                    "output.followups" -> {
-                        row.content?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
-                        }
-                        if (blocks.isEmpty()) return@mapNotNull null
-                        HistoryRole.System
-                    }
-                    else -> return@mapNotNull null
+                    row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
+                    HistoryRole.User
                 }
-            HistoryMessage(
-                row.id,
-                row.runId,
-                role,
-                blocks,
-                row.id in queued,
-                row.type == "input.rejected",
-                if (row.type == "control.interrupt") "run.cancelled"
-                else row.type.takeIf { row.terminal || it == "output.error" },
-                if (row.type == "run.failed") row.failureReason else null,
-            )
-        }
+                "output.message" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                        ?: blocks.add(
+                            HistoryBlock(HistoryBlockKind.Unsupported, row.archiveJson()),
+                        )
+                    HistoryRole.Assistant
+                }
+                "run.failed" -> HistoryRole.System
+                "output.error" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                    row.outputError?.let {
+                        blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                    }
+                    HistoryRole.System
+                }
+                "run.cancelled",
+                "control.interrupt" -> {
+                    if (row.type == "control.interrupt" && row.runId == null) return@mapNotNull null
+                    HistoryRole.Assistant
+                }
+                "run.completed" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                    HistoryRole.Assistant
+                }
+                "output.followups" -> {
+                    if (row.content == null) return@mapNotNull null
+                    HistoryRole.System
+                }
+                else -> return@mapNotNull null
+            }
+        HistoryMessage(
+            row.id,
+            row.runId,
+            role,
+            blocks,
+            row.id in queued,
+            row.type == "input.rejected",
+            if (row.type == "control.interrupt") "run.cancelled"
+            else row.type.takeIf { row.terminal || it == "output.error" },
+            if (row.type == "run.failed") row.failureReason else null,
+            queueSequence = row.seqId.takeIf { row.id in pending },
+            queuedWorkflow =
+                if (row.id in queued) {
+                    val document = row.userMessage as? JsonObject
+                    val part =
+                        (document?.get("parts") as? JsonArray)
+                            ?.asSequence()
+                            ?.mapNotNull { it as? JsonObject }
+                            ?.firstOrNull { it.text("type") == "automation" }
+                    QueuedWorkflow(part?.text("workflowName"), part?.text("automationBrief"))
+                } else null,
+            sourceSeqId = row.seqId,
+            occurredAtMillis =
+                if (
+                    role == HistoryRole.User && row.runId != null ||
+                        row.terminal ||
+                        row.type == "control.interrupt"
+                )
+                    row.timeMillis()
+                else null,
+            followups =
+                if (row.type == "output.followups") conversationFollowups(row.content) else null,
+        )
+    }
     val endedRuns = terminals + interrupted
     val running = historyIsRunning(rows, endedRuns)
     // Web selects the last distinct live run, independently of the overall run indicator.
@@ -231,7 +267,9 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
         liveRunIds,
         controls.terminatedRunIds,
-        controls.queuedEventIds,
+        pending,
+        controls.revocableInputIds,
+        chatResourceReferences(checkpoint.rows),
     )
 }
 
@@ -264,28 +302,29 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
     val parts = document?.get("parts") as? JsonArray
     if ((document?.get("version") as? JsonPrimitive)?.intOrNull != 1 || parts == null)
         return listOf(HistoryBlock(HistoryBlockKind.Unsupported, value?.toString() ?: "null"))
-    return parts
-        .map { part ->
-            val objectPart = part as? JsonObject
-            when (objectPart?.text("type")) {
-                "text" ->
-                    objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
-                        ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
-                // Preserve the complete reference/annotation, including IDs and capability
-                // metadata.
-                "attachment",
-                "file",
-                "image",
-                "annotation",
-                "feedback",
-                "chat_thread",
-                "project",
-                "template",
-                "source",
-                "automation",
-                "model" -> HistoryBlock(HistoryBlockKind.Reference, part.toString())
-                else -> HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
-            }
+    if (parts.isEmpty()) return listOf(HistoryBlock(HistoryBlockKind.Unsupported, value.toString()))
+    return parts.mapNotNull { part ->
+        val objectPart = part as? JsonObject
+        when (objectPart?.text("type")) {
+            "text" ->
+                objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
+                    ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
+            "model",
+            "additional_info",
+            "source" -> null
+            "chat_thread",
+            "template" -> objectPart.reference("titleSnapshot")
+            "project" -> objectPart.reference("nameSnapshot")
+            "file" -> objectPart.reference("filenameSnapshot")
+            "automation" -> objectPart.reference("workflowName")
+            "feedback" -> objectPart.reference("quote")
+            "attachment",
+            "image",
+            "annotation" -> objectPart.reference()
+            else -> HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
         }
-        .ifEmpty { listOf(HistoryBlock(HistoryBlockKind.Unsupported, value.toString())) }
+    }
 }
+
+private fun JsonObject.reference(titleKey: String? = null) =
+    HistoryBlock(HistoryBlockKind.Reference, toString(), titleKey?.let { text(it) })

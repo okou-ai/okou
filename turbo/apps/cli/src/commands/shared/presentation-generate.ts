@@ -1,4 +1,14 @@
 import { Command, InvalidArgumentError, Option } from "commander";
+import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import {
+  featureSwitchesContract,
+  featureSwitchesResponseSchema,
+} from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  getClientConfig,
+  handleError,
+} from "../../lib/api/core/client-factory";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
 import { isPaidToolEnabled } from "../../lib/command/paid-tools";
@@ -14,6 +24,7 @@ import {
 import {
   presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
@@ -139,6 +150,24 @@ ${formatPresentationTemplateListing(templates)}`;
           prompt: options.prompt,
         });
         if (dispatch.outcome === "handled") return;
+        const client = initClient(
+          featureSwitchesContract,
+          await getClientConfig(),
+        );
+        const response = await client.get({
+          fetchOptions: { cache: "no-store" },
+        });
+        if (response.status !== 200) {
+          handleError(
+            response,
+            "Could not check presentation output format availability",
+          );
+        }
+        const { effectiveSwitches } = featureSwitchesResponseSchema.parse(
+          response.body,
+        );
+        const presentationOutputFormatEnabled =
+          effectiveSwitches[FeatureSwitchKey.PresentationOutputFormat] === true;
         const prompt = dispatch.prompt;
         const outputFormat = options.format;
         const resourceDir =
@@ -187,11 +216,15 @@ ${formatPresentationTemplateListing(templates)}`;
               "",
               `Requested output format: ${outputFormat}`,
               "",
+              ...(presentationOutputFormatEnabled
+                ? [PRESENTATION_OUTPUT_FORMAT_INSTRUCTION]
+                : []),
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
                 imageGenerationEnabled: isPaidToolEnabled("image-generation"),
                 hostCommand,
+                presentationOutputFormatEnabled,
               }),
               ...deliveryInstructions,
               "",
@@ -206,6 +239,9 @@ ${formatPresentationTemplateListing(templates)}`;
             "# Okou generate presentation",
             "",
             "Select a built-in presentation template from the catalog below, then use its authoring workflow.",
+            ...(presentationOutputFormatEnabled
+              ? [PRESENTATION_OUTPUT_FORMAT_INSTRUCTION]
+              : []),
             "",
             "## User Prompt",
             prompt,
@@ -240,9 +276,13 @@ ${formatPresentationTemplateListing(templates)}`;
             `- Pull only the selected package once: \`okou resource pull <Package from the catalog> --dir ${resourceDir}\`.`,
             "- Read SKILL.md in the source directory printed by the pull command fully, then read the workflow instructions it references. Follow that package's authoring, worker startup, layout and verification workflow, using its listed default color system unless the request specifies another supported palette.",
             "- Use the source understanding above in the selected workflow; do not restart source preparation unnecessarily. Preserve the requested slide count and substantive content rather than copying the reference deck's sample story, wording, metrics, imagery or page count.",
-            outputFormat === "html"
-              ? PRESENTATION_STATIC_HTML_INSTRUCTION
-              : "- Author the deck natively as PPTX using the selected package's workflow; keep slide content editable instead of authoring HTML and converting it. If the package is unavailable, report the failure instead of substituting an HTML package.",
+            ...(outputFormat === "html"
+              ? [PRESENTATION_STATIC_HTML_INSTRUCTION]
+              : presentationOutputFormatEnabled
+                ? []
+                : [
+                    "- Author the deck natively as PPTX using the selected package's workflow; keep slide content editable instead of authoring HTML and converting it. If the package is unavailable, report the failure instead of substituting an HTML package.",
+                  ]),
             ...presentationImageInstructions(
               isPaidToolEnabled("image-generation"),
             ),
@@ -251,6 +291,7 @@ ${formatPresentationTemplateListing(templates)}`;
             ...presentationDeliveryInstructions({
               outputFormat,
               hostCommand,
+              presentationOutputFormatEnabled,
             }),
             ...deliveryInstructions,
           ].join("\n"),

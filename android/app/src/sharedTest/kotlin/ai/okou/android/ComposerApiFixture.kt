@@ -19,7 +19,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 
 /** Isolated external HTTP content; installed session, transport and native consumers are real. */
-class ComposerApiFixture : Closeable {
+class ComposerApiFixture(private val simulateHistory: Boolean = true) : Closeable {
     val chats = ChatListApiFixture()
     val service
         get() = chats.service
@@ -31,6 +31,7 @@ class ComposerApiFixture : Closeable {
     val inputs = ConcurrentHashMap<String, JsonObject>()
     private val inputOrder = CopyOnWriteArrayList<String>()
     val created = CopyOnWriteArrayList<JsonObject>()
+    @Volatile var rejectCreate = false
     @Volatile var disconnectSend = false
     @Volatile var rejectSend = false
     @Volatile var beforeCreateReturn: () -> Unit = {}
@@ -72,8 +73,14 @@ class ComposerApiFixture : Closeable {
                     requests += request
                     beforeContextReturn()
                     json(
-                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
+                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
                     )
+                }
+                path == "/api/chat-threads" && request.method == "POST" && rejectCreate -> {
+                    requests += request
+                    beforeCreateReturn()
+                    json("""{"error":{"code":"FORBIDDEN","message":"Chat creation rejected"}}""")
+                        .setResponseCode(403)
                 }
                 path == "/api/chat-threads" && request.method == "POST" -> {
                     requests += request
@@ -84,14 +91,14 @@ class ComposerApiFixture : Closeable {
                     beforeCreateReturn()
                     json(
                             buildJsonObject {
-                                    put("id", JsonPrimitive(id))
-                                    put("projectId", body["projectId"] ?: JsonNull)
-                                    put("title", JsonNull)
-                                    put("createdAt", JsonPrimitive(CHAT_DATE))
-                                    put("selectedModel", JsonNull)
-                                    put("serviceTier", JsonNull)
-                                }
-                                .toString()
+                                put("id", JsonPrimitive(id))
+                                put("projectId", body["projectId"] ?: JsonNull)
+                                put("title", JsonNull)
+                                put("createdAt", JsonPrimitive(CHAT_DATE))
+                                put("selectedModel", JsonNull)
+                                put("serviceTier", JsonNull)
+                            }
+                                .toString(),
                         )
                         .setResponseCode(201)
                 }
@@ -113,7 +120,7 @@ class ComposerApiFixture : Closeable {
                     else {
                         beforeSendReturn()
                         json(
-                                """{"threadId":${body.getValue("threadId")},"createdAt":"$CHAT_DATE"}"""
+                                """{"threadId":${body.getValue("threadId")},"createdAt":"$CHAT_DATE"}""",
                             )
                             .setResponseCode(201)
                             .also {
@@ -146,18 +153,18 @@ class ComposerApiFixture : Closeable {
                             "{\"eventId\":\"$CHAT_EVENT\",\"seqId\":42,\"createdAt\":\"$CHAT_DATE\"}"
                         else "null"
                     json(
-                        """{"threadId":"${parts[2]}","eventId":"${parts[4]}","input":$coordinate,"replacement":$replacement,"status":"$status","runId":${if (consumed) "\"$HISTORY_RUN\"" else "null"},"terminal":$terminal}"""
+                        """{"threadId":"${parts[2]}","eventId":"${parts[4]}","input":$coordinate,"replacement":$replacement,"status":"$status","runId":${if (consumed) "\"$HISTORY_RUN\"" else "null"},"terminal":$terminal}""",
                     )
                 }
                 created.any {
                     path.startsWith(
-                        "/api/chat-threads/" + it.getValue("clientThreadId").jsonPrimitive.content
+                        "/api/chat-threads/" + it.getValue("clientThreadId").jsonPrimitive.content,
                     )
                 } ->
                     when {
                         path.endsWith("/event-snapshot") ->
                             json(
-                                    """{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"Not archived"}}"""
+                                    """{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"Not archived"}}""",
                                 )
                                 .setResponseCode(404)
                         path.endsWith("/event-rows") -> rows(request)
@@ -180,7 +187,7 @@ class ComposerApiFixture : Closeable {
                                 thread = CHAT_IN_PROJECT,
                                 extra = ",\"projectId\":\"$CHAT_PROJECT\"",
                                 title = "Project chat",
-                            )
+                            ),
                         )
                         .jsonObject
             val existingRows = rows.size
@@ -196,22 +203,24 @@ class ComposerApiFixture : Closeable {
                                     title = "New conversation",
                                     extra =
                                         body["projectId"]?.let { ",\"projectId\":$it" }.orEmpty(),
-                                )
+                                ),
                             )
                             .jsonObject
             }
             beforeListReturn(rows.size > existingRows)
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
-        chats.historyRows = ::rows
-        chats.historyCatchUp = { request ->
-            val events =
-                Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate {
-                    val tuple = it.jsonArray
-                    val thread = tuple[0].jsonPrimitive.content
-                    thread to JsonArray(history(thread, tuple[1].jsonPrimitive.long))
-                }
-            json("""{"events":${JsonObject(events)},"notFoundThreads":[]}""")
+        if (simulateHistory) {
+            chats.historyRows = ::rows
+            chats.historyCatchUp = { request ->
+                val events =
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate {
+                        val tuple = it.jsonArray
+                        val thread = tuple[0].jsonPrimitive.content
+                        thread to JsonArray(history(thread, tuple[1].jsonPrimitive.long))
+                    }
+                json("""{"events":${JsonObject(events)},"notFoundThreads":[]}""")
+            }
         }
     }
 
@@ -228,7 +237,7 @@ class ComposerApiFixture : Closeable {
                             type = "input.prompt",
                             payload = "{\"userMessage\":${body.getValue("userMessage")}}",
                             run = null,
-                        )
+                        ),
                     )
                     .jsonObject
             }

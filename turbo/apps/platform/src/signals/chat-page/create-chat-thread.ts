@@ -731,11 +731,16 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
       attachments: persisted,
     });
 
+    const direction = get(draft.suggestionDirection$);
     await set(
       patchChatThreadDraft$,
       {
         threadId,
         ...payload,
+        suggestionPreset:
+          payload.userMessage && direction?.direction_type === "preset"
+            ? direction
+            : undefined,
       },
       signal,
     );
@@ -1445,7 +1450,9 @@ function createThreadArtifactRuns(
   threadId: string,
   driveAccountRevision$: Computed<string>,
 ) {
-  return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+  const reloadVersion$ = state(0);
+  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+    get(reloadVersion$);
     get(artifactCatalogRevision$);
     get(driveAccountRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1457,6 +1464,12 @@ function createThreadArtifactRuns(
     );
     return result.body.runs;
   });
+  const reloadArtifacts$ = command(({ set }) => {
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  return { artifacts$, reloadArtifacts$ };
 }
 
 interface EventTreeRegistries {
@@ -1717,7 +1730,6 @@ interface EventTree {
   /** The same text and ID can switch from a streaming URL tail to final. */
   readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
-  readonly batchConnectorPermissions: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
   readonly diagramCodes?: readonly string[];
 }
@@ -1728,7 +1740,6 @@ interface RichEventTreePlan {
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
   readonly requireUrlTerminator: boolean;
-  readonly batchConnectorPermissions: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1782,7 +1793,6 @@ function planEventTreeUpdates(
   events: readonly ChatEvent[],
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
-  batchConnectorPermissions: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1798,16 +1808,11 @@ function planEventTreeUpdates(
     const cached = current.get(event.id);
     if (
       cached?.content === content &&
-      cached.requireUrlTerminator === requireUrlTerminator &&
-      cached.batchConnectorPermissions === batchConnectorPermissions
+      cached.requireUrlTerminator === requireUrlTerminator
     ) {
       continue;
     }
-    const plan = chatEventTreePlan(
-      event,
-      chatActionContext,
-      batchConnectorPermissions,
-    );
+    const plan = chatEventTreePlan(event, chatActionContext);
     if (plan === null) {
       continue;
     }
@@ -1819,7 +1824,6 @@ function planEventTreeUpdates(
       next.set(event.id, {
         content: plan.content,
         requireUrlTerminator: plan.requireUrlTerminator,
-        batchConnectorPermissions,
         tree: plainTree,
       });
       continue;
@@ -1829,10 +1833,9 @@ function planEventTreeUpdates(
     next.set(event.id, {
       content: plan.content,
       requireUrlTerminator: plan.requireUrlTerminator,
-      batchConnectorPermissions,
       tree: undefined,
     });
-    richPlans.push({ eventId: event.id, ...plan, batchConnectorPermissions });
+    richPlans.push({ eventId: event.id, ...plan });
   }
   return { next, richPlans };
 }
@@ -1886,8 +1889,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         if (
           pendingEntry?.content !== plan.content ||
           pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
-          pendingEntry.batchConnectorPermissions !==
-            plan.batchConnectorPermissions ||
           pendingEntry.tree !== undefined
         ) {
           continue;
@@ -1897,7 +1898,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         parsed.set(plan.eventId, {
           content: plan.content,
           requireUrlTerminator: plan.requireUrlTerminator,
-          batchConnectorPermissions: plan.batchConnectorPermissions,
           tree,
           diagramCodes,
         });
@@ -1922,14 +1922,12 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       events: readonly ChatEvent[],
       signal: AbortSignal,
     ): Promise<void> => {
-      const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const current = get(internalEventTrees$);
       const { next, richPlans } = planEventTreeUpdates(
         events,
         current,
         chatActionContext,
-        features[FeatureSwitchKey.BatchConnectorPermissions],
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -2483,6 +2481,23 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    refreshArtifactPreviews$: command(({ get, set }) => {
+      set(resources.artifactCardSignals.refresh$);
+      const target = get(effects.sidebar.target$);
+      if (target?.type !== "artifact" || target.source.kind !== "attachment") {
+        return;
+      }
+      const refresh$ = target.source.ref.refreshOnArtifactChange$;
+      // Raw URLs own a graph outside the card registry; shared card refs
+      // were already invalidated above.
+      if (
+        !get(resources.artifactCardSignals.values$).some((card) => {
+          return card.refreshOnArtifactChange$ === refresh$;
+        })
+      ) {
+        set(refresh$);
+      }
+    }),
     resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
@@ -2571,13 +2586,18 @@ interface RunTrackingDeps {
   threadId: string;
   messages: Pick<
     MessageListSignals,
-    "setup$" | "catchUp$" | "subscribeBrowserSessions$" | "sidebar"
+    | "setup$"
+    | "catchUp$"
+    | "subscribeBrowserSessions$"
+    | "sidebar"
+    | "refreshArtifactPreviews$"
   >;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
+  reloadArtifacts$: Command<void, []>;
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -2788,7 +2808,7 @@ function createEnsureVisibleEventTrees({
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
-  syncVisibleRows$,
+  publishRows$,
   initialEventsReady$,
 }: {
   readonly visibleChatGroups$: Computed<ChatEventGroup[]>;
@@ -2797,7 +2817,7 @@ function createEnsureVisibleEventTrees({
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly syncVisibleRunUsage$: ChatRenderWindowOptions["syncVisibleRunUsage$"];
-  readonly syncVisibleRows$: Command<void, []>;
+  readonly publishRows$: Command<Promise<void>, [AbortSignal]>;
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2817,16 +2837,19 @@ function createEnsureVisibleEventTrees({
       signal.throwIfAborted();
       // Rows reflect the window once its bodies are parsed; diagram layout
       // below does not change them.
-      set(syncVisibleRows$);
+      const aligned = set(publishRows$, signal);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
       }
-      await set(
-        prewarmMermaidDiagrams$,
-        mermaidDiagrams,
-        set(diagramCodesForEvents$, visibleEvents),
-        signal,
-      );
+      await Promise.all([
+        aligned,
+        set(
+          prewarmMermaidDiagrams$,
+          mermaidDiagrams,
+          set(diagramCodesForEvents$, visibleEvents),
+          signal,
+        ),
+      ]);
     },
   );
 }
@@ -2886,6 +2909,7 @@ function createChatRenderWindow({
   });
   const { visibleRows$, syncVisibleRows$ } = createChatThreadRows({
     includesTail$,
+    hasLaterReply$: transcriptWindow.hasLaterReply$,
     renderedGroups$: renderedVisibleChatGroups$,
     threadScrollPosition$,
   });
@@ -2893,6 +2917,7 @@ function createChatRenderWindow({
   const transcriptPages = createTranscriptPages(
     transcriptWindow,
     visibleRows$,
+    syncVisibleRows$,
     threadScrollPosition$,
   );
 
@@ -2909,7 +2934,7 @@ function createChatRenderWindow({
     diagramCodesForEvents$,
     mermaidDiagrams,
     syncVisibleRunUsage$,
-    syncVisibleRows$,
+    publishRows$: transcriptPages.publishRows$,
     initialEventsReady$,
   });
 
@@ -3004,6 +3029,28 @@ const onWorkflowsChanged$ = command(
   },
 );
 
+function createArtifactRealtimeHandlers(
+  messages: RunTrackingDeps["messages"],
+  reloadArtifacts$: RunTrackingDeps["reloadArtifacts$"],
+) {
+  const onArtifactCatalogChanged$ = command(
+    async ({ set }, signal: AbortSignal) => {
+      set(reloadArtifacts$);
+      set(messages.sidebar.artifactCatalog.reload$);
+      set(messages.refreshArtifactPreviews$);
+      await set(messages.sidebar.refreshPreviewSessions$, signal);
+      return false;
+    },
+  );
+  const onArtifactsChanged$ = command(async ({ set }, signal: AbortSignal) => {
+    set(messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$);
+    set(messages.refreshArtifactPreviews$);
+    await set(messages.sidebar.refreshPreviewSessions$, signal);
+    return false;
+  });
+  return { onArtifactCatalogChanged$, onArtifactsChanged$ };
+}
+
 function createRunTracking({
   threadId,
   messages,
@@ -3012,12 +3059,17 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
+  reloadArtifacts$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$: messages.catchUp$,
     cancellationRecovery,
   });
+  const artifactHandlers = createArtifactRealtimeHandlers(
+    messages,
+    reloadArtifacts$,
+  );
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ start", { threadId });
@@ -3033,10 +3085,6 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [messages.sidebar.artifactCatalog.reload$],
-            artifacts: [
-              messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
-            ],
             threadDetail: [
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
@@ -3046,6 +3094,7 @@ function createRunTracking({
             ],
           },
           handlers: {
+            ...artifactHandlers,
             onWorkflowsChanged$,
             onSubscribed$,
           },
@@ -3245,6 +3294,9 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         generationTemplate,
         attachments: result.attachments,
       });
+      const suggestionDirection = request.options?.editorDocument
+        ? get(draft.suggestionDirection$)
+        : undefined;
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
@@ -3257,13 +3309,16 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         }),
         set(
           sendEvent$,
-          sendInputForRequest({
-            request,
-            result,
-            userMessage,
-            runOptions,
-            realAgentInPreviewEnabled,
-          }),
+          {
+            suggestionDirection,
+            ...sendInputForRequest({
+              request,
+              result,
+              userMessage,
+              runOptions,
+              realAgentInPreviewEnabled,
+            }),
+          },
           signal,
         ),
       ]);
@@ -3345,6 +3400,7 @@ function createQueueMessage(deps: SendMessageDeps) {
       const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
+      const suggestionDirection = get(draft.suggestionDirection$);
 
       set(cancelDraftSync$);
       set(draft.clear$);
@@ -3360,6 +3416,7 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
+            suggestionDirection,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
@@ -3926,7 +3983,10 @@ export function createChatPanelSignals(
     kind: "builtin",
     connectorSlug: "google-drive",
   });
-  const artifacts$ = createThreadArtifactRuns(threadId, driveAccountRevision$);
+  const { artifacts$, reloadArtifacts$ } = createThreadArtifactRuns(
+    threadId,
+    driveAccountRevision$,
+  );
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -3976,6 +4036,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
+    reloadArtifacts$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {

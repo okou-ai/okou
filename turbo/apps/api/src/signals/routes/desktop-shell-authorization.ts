@@ -9,7 +9,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { publishUserSignal } from "../external/realtime";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   createDesktopShellAuthorization$,
   readDesktopShellAuthorization$,
@@ -26,14 +26,10 @@ function error<T extends 400 | 403 | 404 | 409 | 410>(
   return { status, body: { error: { code, message } } };
 }
 
-const shellEnabled$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const context = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
+const shellFeatures$ = createUserFeatureSwitchContext(organizationAuthContext$);
+const shellEnabled$ = command(async ({ get }, signal: AbortSignal) => {
+  const context = await get(shellFeatures$);
+  signal.throwIfAborted();
   return isFeatureEnabled(FeatureSwitchKey.DesktopShell, context);
 });
 const disabled = error(403, "FORBIDDEN", "Desktop Shell is disabled");
@@ -51,7 +47,18 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  if (auth.tokenType !== "agent" || !auth.computerUseHostId) {
+  const deviceMode = isFeatureEnabled(
+    FeatureSwitchKey.RemoteDevices,
+    await get(shellFeatures$),
+  );
+  signal.throwIfAborted();
+  const target =
+    auth.tokenType === "agent"
+      ? deviceMode
+        ? (body.data.hostId ?? auth.computerUseHostId)
+        : auth.computerUseHostId
+      : undefined;
+  if (auth.tokenType !== "agent" || !target) {
     return error(
       403,
       "SHELL_CONTEXT_UNSUPPORTED",
@@ -64,7 +71,7 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       runId: auth.runId,
-      computerUseHostId: auth.computerUseHostId,
+      computerUseHostId: target,
       reason: body.data.reason,
     },
     signal,

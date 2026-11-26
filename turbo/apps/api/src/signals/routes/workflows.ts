@@ -1,4 +1,5 @@
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
+import { workflowRecencyRoutes } from "./workflow-recency";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -52,13 +53,14 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
 import {
   autonomyBudgetExhausted,
+  badRequestMessage,
   conflict,
   notFound,
   providerUnavailable,
@@ -69,6 +71,10 @@ import { deleteWorkflow$ } from "../services/workflow-delete.service";
 import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
 import { loadWorkflowOwnerProfile$ } from "../services/workflow-owner-profile.service";
 import { workflowDetail$ } from "../services/workflow-detail.service";
+import {
+  parseWorkflowRunHistoryCursor,
+  workflowRunHistory,
+} from "../services/workflow-run-history.service";
 import {
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
@@ -127,6 +133,22 @@ const workflowWriteAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
 } as const;
+
+const getWorkflowRunHistoryInner$ = computed(async (get) => {
+  const { orgId, userId } = get(organizationAuthContext$);
+  const { workflowId } = get(pathParamsOf(workflowsDetailContract.runHistory));
+  const { cursor } = get(queryOf(workflowsDetailContract.runHistory));
+  const before = cursor ? parseWorkflowRunHistoryCursor(cursor) : undefined;
+  if (before && !before.success) {
+    return badRequestMessage("Invalid workflow run history cursor");
+  }
+  const page = await get(
+    workflowRunHistory({ workflowId, orgId, userId, before: before?.data }),
+  );
+  return page
+    ? { status: 200 as const, body: page }
+    : workflowNotFound(workflowId);
+});
 
 function memberFromAuth(auth: {
   readonly userId: string;
@@ -408,14 +430,12 @@ function workflowCreationSource(
       description: sql`${sql.param(v.description, workflows.description)}`
         .mapWith(nullableDriverValueDecoder(workflows.description))
         .as("description"),
+      archivedOfficialSnapshot: sql`NULL::jsonb`
+        .mapWith(nullableDriverValueDecoder(workflows.archivedOfficialSnapshot))
+        .as("archived_official_snapshot"),
       officialDefinitionName: sql`NULL`
         .mapWith(nullableDriverValueDecoder(workflows.officialDefinitionName))
         .as("official_definition_name"),
-      officialInstallationState: sql`NULL`
-        .mapWith(
-          nullableDriverValueDecoder(workflows.officialInstallationState),
-        )
-        .as("official_installation_state"),
       importSource: sql`${sql.param(v.importSource, workflows.importSource)}`
         .mapWith(nullableDriverValueDecoder(workflows.importSource))
         .as("import_source"),
@@ -1729,6 +1749,7 @@ export const workflowsRoutes: readonly RouteEntry[] = [
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),
   },
   // Registered before the `/:workflowId` routes so the static path wins.
+  ...workflowRecencyRoutes,
   {
     route: workflowsCollectionContract.composer,
     handler: authRoute(workflowReadAuth, listComposerWorkflowsInner$),
@@ -1740,6 +1761,10 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   {
     route: workflowsDetailContract.get,
     handler: authRoute(workflowReadAuth, getWorkflowDetailInner$),
+  },
+  {
+    route: workflowsDetailContract.runHistory,
+    handler: authRoute(workflowReadAuth, getWorkflowRunHistoryInner$),
   },
   {
     route: workflowsDetailContract.update,

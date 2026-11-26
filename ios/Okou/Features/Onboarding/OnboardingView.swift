@@ -20,12 +20,14 @@ private struct OnboardingGateContent<Content: View>: View {
   let content: () -> Content
   @Environment(\.scenePhase) private var scenePhase
   @LoadableValue private var status: Loadable<OnboardingStatus>
+  @ResolvedValue private var resolvedState: OnboardingStore.Snapshot?
 
   init(store: OnboardingStore, needsUpgrade: Bool, content: @escaping () -> Content) {
     self.store = store
     self.needsUpgrade = needsUpgrade
     self.content = content
     _status = LoadableValue(task: store.resources.status, keepLast: true)
+    _resolvedState = ResolvedValue(store.value)
   }
 
   var body: some View {
@@ -55,7 +57,9 @@ private struct OnboardingGateContent<Content: View>: View {
             }
           }
         case .hasData(let value):
-          if value.presentsOnboarding {
+          if value.presentsOnboarding
+            || (resolvedState?.task != nil && resolvedState?.didFinish != true)
+          {
             OnboardingView(store: store)
           } else {
             content()
@@ -65,7 +69,9 @@ private struct OnboardingGateContent<Content: View>: View {
     }
     .background(OkouColor.background.ignoresSafeArea())
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active, status.data?.presentsOnboarding == true, !store.isWorking {
+      if phase == .active, status.data?.presentsOnboarding == true, !store.snapshot.isWorking,
+        store.snapshot.task == nil
+      {
         store.retry(.status)
       }
     }
@@ -77,20 +83,26 @@ private struct OnboardingGateContent<Content: View>: View {
 }
 
 struct OnboardingView: View {
-  @Bindable var store: OnboardingStore
-  @State private var showsSubscriptions = false
+  let store: OnboardingStore
+  @ResolvedValue private var resolvedState: OnboardingStore.Snapshot?
+  @ResolvedValue private var resolvedConnectors: ComposerConnectorStore.Snapshot?
   @State private var confirmsSignOut = false
-  @State private var channelPage: ComposerConnectorStore.WebDestination?
   @Environment(\.scenePhase) private var scenePhase
 
+  init(store: OnboardingStore) {
+    self.store = store
+    _resolvedState = ResolvedValue(store.value)
+    _resolvedConnectors = ResolvedValue(store.connectors.snapshotValue)
+  }
+
+  private var state: OnboardingStore.Snapshot { resolvedState ?? store.snapshot }
+
   var body: some View {
-    let connectorAuthorization = store.connectors.authorization.active
-    let connectorPage = store.connectors.webDestination
     NavigationStack {
       Group {
-        if store.isPrepared {
+        if state.isPrepared {
           stepContent
-        } else if let error = store.error {
+        } else if let error = state.error {
           OkouEmptyState(
             "Unable to restore setup", icon: "triangle-alert", description: Text(error)
           ) {
@@ -105,9 +117,9 @@ struct OnboardingView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
-          if store.stepIndex > 0 {
+          if state.stepIndex > 0, state.task == nil {
             Button("Back", okouSymbol: "chevron-left") { Task { await store.back() } }
-              .disabled(store.isWorking)
+              .disabled(state.isWorking)
           }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -116,41 +128,20 @@ struct OnboardingView: View {
               Button("Sign out", role: .destructive) { confirmsSignOut = true }
             }
           } label: {
-            Text("\(store.stepIndex + 1) of \(store.steps.count)")
+            Text("\(state.stepIndex + 1) of \(OnboardingStore.Snapshot.steps.count)")
               .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
               .accessibilityLabel(
-                "Step \(store.stepIndex + 1) of \(store.steps.count), account options")
+                "Step \(state.stepIndex + 1) of \(OnboardingStore.Snapshot.steps.count), account options"
+              )
           }
         }
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
-        if store.isPrepared { footer }
+        if state.isPrepared { footer }
       }
-      .sheet(isPresented: $showsSubscriptions, onDismiss: store.subscriptions.cancelAuth) {
-        SubscriptionAuthorizationView(store: store.subscriptions)
-      }
+      .connectorAuthorizationPresentation(store: store.connectors)
       .signOutConfirmation(isPresented: $confirmsSignOut) {
         Task { await store.signOut() }
-      }
-      .sheet(
-        item: Binding(
-          get: { connectorAuthorization },
-          set: { if $0 == nil { store.connectors.authorization.cancel() } })
-      ) { flow in
-        ConnectorAuthorizationSheet(flow: flow, store: store.connectors.authorization)
-          .okouSheetBackground()
-      }
-      .sheet(
-        item: Binding(
-          get: { connectorPage },
-          set: { store.connectors.webDestination = $0 }),
-        onDismiss: { Task { await store.connectors.refresh() } },
-        content: { destination in
-          ConnectorSafariView(url: destination.url) { store.connectors.webDestination = nil }
-        }
-      )
-      .sheet(item: $channelPage) { page in
-        ConnectorSafariView(url: page.url) { channelPage = nil }
       }
     }
     .task {
@@ -160,8 +151,8 @@ struct OnboardingView: View {
     .onDisappear { store.endPresentation() }
     .onChange(of: scenePhase) { _, phase in
       store.setForeground(phase == .active)
-      if phase == .active, store.step == .ready { Task { await store.refreshReady() } }
-      if phase == .active, store.step == .skills { Task { await store.prepareSkills() } }
+      if phase == .active, state.step == .ready { Task { await store.refreshReady() } }
+      if phase == .active, state.step == .sources { Task { await store.connectors.refresh() } }
     }
   }
 
@@ -169,81 +160,59 @@ struct OnboardingView: View {
     List {
       Section {
         VStack(alignment: .leading, spacing: OkouSpace.md) {
-          Text(store.step.title).font(.okou(.title).weight(.semibold))
+          Text(state.step.title).font(.okou(.title).weight(.semibold))
             .accessibilityAddTraits(.isHeader)
-          Text(store.step.detail).font(.okou(.subheadline))
+          Text(state.step.detail).font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
         }
         .padding(.vertical, OkouSpace.md)
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
       }
-      switch store.step {
+      switch state.step {
       case .industry: OnboardingIndustryContent(store: store)
       case .sources:
         OnboardingSourcesContent(store: store)
-      case .experience:
-        OnboardingExperienceContent(
-          store: store,
-          onConnect: {
-            guard let provider = store.draft.answers.provider else { return }
-            store.subscriptions.start(type: provider == "codex" ? .codex : .claude)
-            showsSubscriptions = true
-          })
-      case .skills: OnboardingSkillsContent(store: store)
-      case .slack:
-        Section {
-          Button {
-            channelPage = ComposerConnectorStore.WebDestination(
-              url: store.connectors.webURL.appending(path: "works"))
-          } label: {
-            OkouRowLabel("Connect chat apps", okouSymbol: "messages-square")
-          }
-          Text("Slack, Microsoft Teams, Discord, Telegram and iMessage")
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-        } footer: {
-          Text(
-            "Choose a channel to finish its account authorization. You can also keep chatting here."
-          )
-          .okouSectionNote()
-        }
-      case .capabilities: OnboardingCapabilitiesContent(store: store)
       case .ready: OnboardingReadyContent(store: store)
       }
     }
     .listSectionSpacing(OkouSpace.lg)
     .okouGroupedBackground()
     .scrollDismissesKeyboard(.interactively)
-    .id(store.step)
-    .disabled(store.isWorking)
+    .id(state.step)
+    .disabled(state.isWorking)
   }
 
   private var footer: some View {
     VStack(spacing: OkouSpace.sm) {
-      if let error = store.error {
+      if let error = state.error {
         Text(error).font(.okou(.footnote)).foregroundStyle(OkouColor.destructive)
           .accessibilityAddTraits(.updatesFrequently)
       }
-      if store.hasDraftConflict {
+      if state.hasDraftConflict {
         Button("Reload saved setup") { Task { await store.retryPreparation() } }
           .buttonStyle(OkouButtonStyle(isPrimary: false))
-          .disabled(store.isWorking)
+          .disabled(state.isWorking)
           .accessibilityIdentifier("onboarding-reload")
       }
       Button {
         Task { await store.next() }
       } label: {
         ChatSettingsActionLabel(
-          title: store.step == .ready ? "Open in chat" : "Continue", isBusy: store.isWorking)
+          title: state.step == .ready ? "Confirm and run" : "Continue", isBusy: state.isWorking)
       }
       .buttonStyle(OkouButtonStyle(isPrimary: true))
-      .disabled(!store.canContinue || store.isWorking || store.hasDraftConflict)
+      .disabled(
+        !state.canContinue(
+          connected: !(resolvedConnectors ?? store.connectors.snapshot).connectors.isEmpty)
+          || state.isWorking || state.hasDraftConflict
+      )
       .accessibilityIdentifier("onboarding-continue")
-      Button(store.step == .ready ? "Explore on my own" : "Not now") {
+      Button(state.step == .ready ? "Explore on my own" : "Not now") {
         Task { await store.next(skip: true) }
       }
       .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-      .disabled(store.isWorking || store.hasDraftConflict)
+      .disabled(state.isWorking || state.hasDraftConflict || state.task != nil)
       .accessibilityIdentifier("onboarding-skip")
     }
     .padding(.horizontal, OkouControl.pageInset)
@@ -252,29 +221,19 @@ struct OnboardingView: View {
   }
 }
 
-extension OnboardingStep {
+extension NativeOnboardingStep {
   var title: LocalizedStringKey {
     switch self {
-    case .industry: "What kind of work do you do?"
-    case .sources: "Give Okou some context"
-    case .experience: "Bring your AI subscription"
-    case .skills: "Bring your skills"
-    case .slack: "Where would you like to chat?"
-    case .capabilities: "Choose what Okou can do"
+    case .industry: "What's your role?"
+    case .sources: "Connect your services"
     case .ready: "Your first task"
     }
   }
   var detail: LocalizedStringKey {
     switch self {
-    case .industry: "We'll tailor your setup and first task to your work."
+    case .industry: "We'll suggest a first task that fits your work."
     case .sources: "Connect the services you work in. You stay in control of access."
-    case .experience:
-      "Already use Codex or Claude Code? Connect your account, or continue with Okou."
-    case .skills:
-      "Copy an import prompt into your coding assistant to bring your local skills to Okou."
-    case .slack: "Use Okou in your team's tools, or keep the conversation in this app."
-    case .capabilities: "Enable the tools you want. You can change these choices later in Settings."
-    case .ready: "Try a suggested task, or write something of your own."
+    case .ready: "Review the suggested task or write your own, then confirm to run it."
     }
   }
 }

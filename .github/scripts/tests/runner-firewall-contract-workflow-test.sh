@@ -78,14 +78,6 @@ for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
     assert native_step['env']['NATIVE_TEST_OWNER'] == 'ubuntu'
     assert not any('rustup toolchain install' in step.get('run', '') for step in job['steps'])
 
-native_wrappers = ['crates/kerberos-worker/tests/check-native-kerberos.sh',
-                   'crates/rfb-client/tests/check-native-gssapi-peer.sh',
-                   'crates/runner-remote/tests/check-native-vnc-kerberos.sh']
-for wrapper in native_wrappers:
-    source = (root / wrapper).read_text()
-    assert not re.search(r'^python3\s', source, re.MULTILINE), \
-        f'{wrapper}: receipt metadata must use the ordinary build owner'
-
 home_job = jobs['guest-home-cleanup-test']
 assert home_job['container']['image'] == jobs['check']['container']['image']
 assert home_job['container']['options'] == '--cap-add=SYS_ADMIN --security-opt apparmor=unconfined'
@@ -145,6 +137,11 @@ home_needed_labels = {
     'workspace-config', 'ci', 'native-routing-tests', 'base-selector',
     'crate-selector', 'toolchain', 'fixture-and-ci',
 }
+native_lane_cases = {
+    'guest-agent': 'guest-home-cleanup-test',
+    'rfb-client': 'native-gssapi-independent-peer',
+    'vnc-admission': 'native-kerberos-runtime',
+}
 
 target = root / 'crates/target'
 assert not target.is_symlink() and target.resolve() == target
@@ -177,58 +174,8 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=targe
     else:
         owner = run(['id', '-un'], native).strip()
         root_command = ['sudo', '-n']
-    # Bootstrap each real wrapper prefix from an unrelated working directory,
-    # with a root caller but an ordinary-owned Git repository. No compiler,
-    # signed provider, KDC or native runtime is invoked by this canary.
-    bootstrap_repo = directory / 'bootstrap-repo'
-    bootstrap_repo.mkdir()
-    (bootstrap_repo / 'crates').mkdir()
-    copied_helper = bootstrap_repo / 'crates/kerberos-worker/tests/native-test-environment.sh'
-    copied_helper.parent.mkdir(parents=True)
-    shutil.copy2(helper, copied_helper)
-    run(['git', 'init', '-q', '--initial-branch=main'], bootstrap_repo)
-    bootstrap_uid = int(run(['id', '-u', owner], native).strip())
-    bootstrap_gid = int(run(['id', '-g', owner], native).strip())
-    assert bootstrap_uid != 0
-    if os.geteuid() == 0:
-        for path in (bootstrap_repo, bootstrap_repo / '.git'):
-            assert not path.is_symlink() and path.is_dir()
-            os.chown(path, bootstrap_uid, bootstrap_gid, follow_symlinks=False)
-    assert bootstrap_repo.stat().st_uid == bootstrap_uid
-    assert (bootstrap_repo / '.git').stat().st_uid == bootstrap_uid
-    bootstrap_home = directory / 'bootstrap-home'
-    bootstrap_home.mkdir()
-    bootstrap_env = host_env | {'HOME': str(bootstrap_home), 'GIT_CONFIG_NOSYSTEM': '1',
-                               'GIT_CONFIG_GLOBAL': '/dev/null'}
-    for wrapper in native_wrappers:
-        source = (root / wrapper).read_text()
-        prefix, separator, _ = source.partition('source crates/kerberos-worker/tests/native-test-environment.sh\n')
-        assert separator, f'{wrapper}: native environment bootstrap missing'
-        program = bootstrap_repo / wrapper
-        program.parent.mkdir(parents=True, exist_ok=True)
-        program.write_text(prefix + separator + '''
-[[ $PWD == "$EXPECTED_BOOTSTRAP_ROOT" ]]
-[[ $(native_build git rev-parse --show-toplevel) == "$EXPECTED_BOOTSTRAP_ROOT" ]]
-native_build python3 - "$native_uid" "$native_gid" <<'BOOTSTRAP'
-import os
-from pathlib import Path
-import sys
-assert os.geteuid() == int(sys.argv[1]) != 0
-assert os.getegid() == int(sys.argv[2])
-assert os.getgroups() == []
-status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines())
-for name in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'):
-    assert int(status[name].strip(), 16) == 0
-assert int(status['NoNewPrivs'].strip()) == 1
-BOOTSTRAP
-''')
-        result = subprocess.run(root_command + [
-            'env', '-i', f'PATH={os.environ["PATH"]}', f'HOME={bootstrap_home}',
-            'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null',
-            f'NATIVE_TEST_OWNER={owner}', f'EXPECTED_BOOTSTRAP_ROOT={bootstrap_repo}',
-            'bash', str(program)], cwd=directory, env=bootstrap_env, text=True, capture_output=True)
-        assert result.returncode == 0 and 'fatal:' not in result.stderr, \
-            f'{wrapper}: root bootstrap refused or hid a Git ownership error: exit={result.returncode}: {result.stderr}'
+    owner_uid = int(run(['id', '-u', owner], native).strip())
+    assert owner_uid != 0
 
     # Exercise the actual setpriv/UID/capability/environment boundary, not a
     # fabricated compiler or a namespace mock. This is not Docker/native success.
@@ -240,7 +187,7 @@ BOOTSTRAP
         f'KERBEROS_NATIVE_CACHE_DIR={cold_cache}', 'bash', '-euo', 'pipefail',
         '-c', 'source "$1"; native_build touch "$KERBEROS_NATIVE_CACHE_DIR/cold-lock"',
         'bash', helper], native, host_env)
-    assert cold_cache.stat().st_uid == (cold_cache / 'cold-lock').stat().st_uid == bootstrap_uid
+    assert cold_cache.stat().st_uid == (cold_cache / 'cold-lock').stat().st_uid == owner_uid
     container_check = '''
 # Model Actions restoring trusted material as root, including private entry
 # directories and the lock inode that the unprivileged compiler must reopen.
@@ -253,13 +200,15 @@ source "$1"
 [[ $native_uid != 0 && ${#native_privileged_command[@]} == 0 ]]
 printf 'synthetic caller receipt\\n' > crates/target/caller-receipt.txt
 chmod 0644 crates/target/caller-receipt.txt
-native_build python3 - "$native_uid" <<'CHECK'
+native_build python3 - "$native_uid" "$native_gid" <<'CHECK'
 import json
 import fcntl
 import os
 from pathlib import Path
 import sys
 assert os.geteuid() == int(sys.argv[1]) != 0
+assert os.getegid() == int(sys.argv[2]) != 0
+assert os.getgroups() == []
 status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines())
 for name in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'):
     assert int(status[name].strip(), 16) == 0
@@ -441,12 +390,14 @@ cat "$CARGO_METADATA_FIXTURE"
         normal = {name: 'success' if name == owner else 'skipped' for name in ['coverage', standalone]}
         normal.update({name: 'success' if needed else 'skipped' for name, needed in native_selection.items()})
         assert_gate(values, normal, True, label)
-        for name, needed in native_selection.items():
-            for result in ['failure', 'cancelled', 'skipped', '']:
-                assert_gate(values, normal | {name: result}, result == 'skipped' and not needed,
-                            f'{label}: {name} {result!r}')
 
-        if owner:
+        # Check result handling once per native lane, with the other lanes skipped.
+        if label in native_lane_cases:
+            name = native_lane_cases[label]
+            for result in ['failure', 'cancelled', 'skipped', '']:
+                assert_gate(values, normal | {name: result}, False, f'{label}: {name} {result!r}')
+
+        if label in {'workspace-lock', 'fixture-only'}:
             for result in ['failure', 'cancelled', 'skipped', '']:
                 assert_gate(values, normal | {owner: result}, False, f'{label}: {owner} {result!r}')
             # A successful wrong owner cannot hide a failed or skipped owner.

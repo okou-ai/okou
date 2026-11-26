@@ -22,7 +22,7 @@ final class ConnectorActionResources {
         kind = "reconnect"
         target = .builtin(slug)
         account = id
-      case .select(let value, let id):
+      case .select(let value, let id, _):
         kind = "select"
         target = value
         account = id
@@ -38,7 +38,7 @@ final class ConnectorActionResources {
       components = [
         kind, action.threadID?.lowercased(), target?.kind,
         target?.connectorSlug, target?.customConnectorId?.lowercased(),
-        account?.lowercased()
+        account?.lowercased(), action.isMemberApproval ? action.id : nil
       ]
     }
 
@@ -54,6 +54,8 @@ final class ConnectorActionResources {
   }
 
   private let service: ChatConnectorService
+  /// The workspace session's Store in production; every status read keeps its values here.
+  fileprivate let graph: CCState.Store
   private let didFail: @MainActor (Error) -> Void
   private let cache: NSCache<Key, ConnectorActionRead> = {
     let cache = NSCache<Key, ConnectorActionRead>()
@@ -64,8 +66,12 @@ final class ConnectorActionResources {
   private var pending: [Key: ConnectorActionRead] = [:]
   private var closed = false
 
-  init(service: ChatConnectorService, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    service: ChatConnectorService, graph: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.service = service
+    self.graph = graph
     self.didFail = didFail
   }
 
@@ -124,7 +130,8 @@ final class ConnectorActionResources {
 
 @MainActor
 final class ConnectorActionRead {
-  let store = CCState.Store()
+  /// Its owner's Store, the workspace session's in production.
+  let store: CCState.Store
   /// Native measurement-only rows may observe an existing read without starting one.
   let requested: Computed<Bool>
   fileprivate let action: ChatConnectorAction
@@ -146,6 +153,7 @@ final class ConnectorActionRead {
   fileprivate init(action: ChatConnectorAction, owner: ConnectorActionResources) {
     self.action = action
     self.owner = owner
+    store = owner.graph
     let demand = demand
     let lifetime = lifetime
     let revision = revision

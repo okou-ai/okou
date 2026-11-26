@@ -36,13 +36,11 @@
     <string name="connector_rename">Renomear</string>
     <string name="connector_rename_title">Renomear conta</string>
     <string name="connector_account_name">Nome da conta</string>
-    <string name="connector_rename_hint">Os espaços no início e no fim são removidos. Até %1$d caracteres.</string>
     <string name="connector_rename_required">Digite um nome para a conta.</string>
     <string name="connector_rename_too_long">O nome da conta pode ter até %1$d caracteres.</string>
     <string name="connector_disconnect">Desconectar conta</string>
     <string name="connector_disconnect_title">Desconectar esta conta?</string>
     <string name="connector_disconnect_copy">Conversas e automações que usam esta conta podem precisar de outra conexão. As outras contas continuam disponíveis.</string>
-    <string name="connector_load_when_online">O conteúdo será carregado quando você voltar a ficar online.</string>
     <string name="connector_loading">Carregando conectores…</string>
     <string name="connector_loading_accounts">Carregando contas…</string>
     <string name="connector_loading_permissions">Carregando permissões…</string>
@@ -52,7 +50,6 @@
     <string name="connector_accounts_failed">Não foi possível carregar as contas.</string>
     <string name="connector_permissions_failed">Não foi possível carregar as permissões.</string>
     <string name="connector_impact_failed">Não foi possível verificar onde esta conta é usada.</string>
-    <string name="connector_offline">Sem conexão</string>
     <string name="connector_network_failed">Não foi possível acessar o Okou. Verifique a conexão e tente novamente.</string>
     <string name="connector_account_unavailable">Esta conta não está mais disponível.</string>
     <string name="connector_unavailable">A autorização não está disponível para esta conta.</string>
@@ -75,6 +72,9 @@
     <string name="connector_change_failed">Não foi possível concluir a ação. Verifique a conta e tente novamente.</string>
     <string name="connector_device_code">Digite este código na página do provedor</string>
     <string name="connector_external_code">Código de autorização</string>
+    <string name="connector_checking_code">Verificando…</string>
+    <string name="connector_external_code_too_long">O limite de tamanho do código é %1$d.</string>
+    <string name="connector_external_code_failed">Não foi possível verificar o código.</string>
     <string name="connector_external_instructions">Conclua a autorização na página do provedor e digite o código aqui.</string>
     <string name="connector_submit_code">Confirmar código</string>
     <string name="connector_working">Verificando a conta…</string>
@@ -110,4 +110,30 @@
         <item quantity="many">%d de conversas selecionaram explicitamente esta conta.</item>
         <item quantity="other">%d conversas selecionaram explicitamente esta conta.</item>
     </plurals>
+    <string name="chat_options_title">Opções do chat</string>
+    <string name="chat_options_settings">Configurações da conversa</string>
+    <string name="chat_options_model">Modelo</string>
+    <string name="chat_connector_scope">Aplica-se a este chat. Inicialmente, são usadas as contas padrão do espaço de trabalho.</string>
+    <string name="chat_connector_empty">Não há contas conectadas neste espaço de trabalho.</string>
+    <string name="chat_connector_manage">Gerenciar conectores</string>
+    <string name="chat_connector_restore_defaults">Restaurar os padrões do espaço de trabalho</string>
+    <string name="chat_connector_saving">Salvando a escolha do conector…</string>
+    <string name="chat_connector_save_failed">Não foi possível salvar a escolha do conector.</string>
+    <string name="chat_connector_first_send_failed">Não foi possível aplicar as escolhas de conectores. Revise-as nas opções do chat e tente enviar esta mensagem novamente.</string>
+    <string name="connector_device_denied">O provedor negou a autorização.</string>
+    <string name="connector_device_expired">O código do dispositivo expirou. Inicie a autorização novamente.</string>
+    <string name="connector_device_failed">Não foi possível concluir a autorização do dispositivo.</string>
+    <string name="connector_access_scope">Aplica-se a todos os seus chats.</string>
+    <string name="connector_access_label">Acesso para %1$s, %2$s</string>
+    <string name="connector_access_allow">Permitir</string>
+    <string name="connector_access_deny">Negar</string>
+    <string name="connector_access_always">Sempre</string>
+    <string name="connector_access_expired">Expirado</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d d</string>
+    <string name="connector_access_allow_always">Permitir sempre</string>
+    <string name="connector_access_allow_hour">Permitir por 1 hora</string>
+    <string name="connector_access_allow_day">Permitir por 24 horas</string>
+    <string name="connector_access_allow_week">Permitir por 7 dias</string>
 </resources>

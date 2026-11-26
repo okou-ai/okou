@@ -229,6 +229,13 @@ impl Manager {
         let Some(entry) = self.get(id) else {
             return Response::failed(FailureReason::Unavailable, Effects::NotStarted);
         };
+        if let Err(reason) = entry
+            .access
+            .check_device_policy(&self.runtime.authority, scope)
+            .await
+        {
+            return Response::failed(reason, Effects::NotStarted);
+        }
         {
             let data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
             if !data.lifecycle.is_running() {
@@ -273,17 +280,34 @@ impl Manager {
                 #[serde(deny_unknown_fields)]
                 struct Empty {}
                 let _: Empty = parse(raw)?;
-                let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
-                let sessions = entries
+                let entries = self
+                    .entries
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
                     .values()
-                    .filter(|entry| entry.authorized())
-                    .map(|entry| entry.info(&entry.data.lock().unwrap_or_else(|p| p.into_inner())))
-                    .collect();
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let mut sessions = Vec::new();
+                for entry in entries {
+                    match entry
+                        .access
+                        .check_device_policy(&self.runtime.authority, scope)
+                        .await
+                    {
+                        Ok(()) if entry.authorized() => sessions.push(
+                            entry.info(&entry.data.lock().unwrap_or_else(|p| p.into_inner())),
+                        ),
+                        Ok(())
+                        | Err(FailureReason::Unavailable | FailureReason::ConfigurationChanged) => {
+                        }
+                        Err(reason) => return Ok(Response::failed(reason, Effects::NotStarted)),
+                    }
+                }
                 Ok(Response::Sessions { sessions })
             }
             "ssh.session.read" => {
                 let params: protocol::Read = parse(raw)?;
-                self.read(params).await
+                self.read(params, scope).await
             }
             "ssh.session.status" => {
                 let params: protocol::Id = parse(raw)?;
@@ -293,6 +317,13 @@ impl Manager {
                         Effects::NotStarted,
                     ));
                 };
+                if let Err(reason) = entry
+                    .access
+                    .check_device_policy(&self.runtime.authority, scope)
+                    .await
+                {
+                    return Ok(Response::failed(reason, Effects::NotStarted));
+                }
                 let data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
                 Ok(Response::Status {
                     session: entry.info(&data),

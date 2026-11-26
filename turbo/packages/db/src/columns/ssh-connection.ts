@@ -14,6 +14,7 @@ export function sshConnectionColumns() {
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     displayName: varchar("display_name", { length: 128 }).notNull(),
+    remoteDeviceId: uuid("remote_device_id").notNull(),
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(22),
     credentialId: uuid("credential_id"),

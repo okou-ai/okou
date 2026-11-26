@@ -22,9 +22,10 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -41,6 +42,7 @@ class MemberPreferencesModelTest {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override val artifacts: ArtifactService
             get() = error("Artifacts are outside this fixture")
@@ -56,17 +58,25 @@ class MemberPreferencesModelTest {
             error("Feature switches are outside this fixture")
 
         override suspend fun updateDefaultModelPreference(
-            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
         ): ai.okou.android.api.generated.DefaultModelPreference =
             error("Default model is outside this fixture")
 
         override suspend fun activateModelAccount(
-            accountId: String
+            accountId: String,
         ): ai.okou.android.api.generated.ActivatedModelAccount =
             error("Accounts are outside this fixture")
 
+        override suspend fun emailSubscription(): ai.okou.android.api.generated.EmailSubscription =
+            error("Email subscriptions are outside this fixture")
+
+        override suspend fun updateEmailSubscription(
+            subscribed: Boolean,
+        ): ai.okou.android.api.generated.EmailSubscriptionUpdate =
+            error("Email subscriptions are outside this fixture")
+
         override suspend fun sendControl(
-            request: ai.okou.android.api.generated.SendRequest
+            request: ai.okou.android.api.generated.SendRequest,
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
 
         override suspend fun personalInstructions():
@@ -115,7 +125,6 @@ class MemberPreferencesModelTest {
 
     private fun check(
         service: Service = Service(),
-        online: MutableStateFlow<Boolean> = MutableStateFlow(true),
         block: suspend TestScope.(MemberPreferencesModel, Service, ViewModelStore) -> Unit,
     ) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -126,7 +135,7 @@ class MemberPreferencesModelTest {
                     store,
                     viewModelFactory {
                         initializer {
-                            MemberPreferencesModel(service.stored, service, { true }, {}, online)
+                            MemberPreferencesModel(service.stored, service, { true }, {})
                         }
                     },
                 )[MemberPreferencesModel::class.java]
@@ -135,6 +144,36 @@ class MemberPreferencesModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun preferenceRefreshKeepsConfirmedDataThroughTwoRetries() {
+        check { model, service, _ ->
+            val confirmed = model.uiState.value.confirmed
+            val attempts = mutableListOf<Long>()
+            service.load = {
+                attempts += currentTime
+                throw ApiFailure.Http(503, null, null, null)
+            }
+            val started = currentTime
+            model.refresh()
+            advanceTimeBy(6_000)
+            assertEquals(listOf(started, started + 3_000), attempts)
+            assertEquals(PreferenceStatus.Refreshing, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+
+            runCurrent()
+            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
+            assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+            advanceTimeBy(60_000)
+            assertEquals(3, attempts.size)
+
+            service.load = { confirmed.copy(locale = UserPreferencesLocale.JA_JP) }
+            model.refresh()
+            runCurrent()
+            assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.confirmed.locale)
         }
     }
 
@@ -159,6 +198,104 @@ class MemberPreferencesModelTest {
             assertTrue(api.requests.isEmpty())
             assertEquals(UserPreferencesLocale.JA_JP, api.stored.locale)
         }
+    }
+
+    @Test
+    fun missingServerTimezoneCanConfirmTheExistingLocalZone() = check { model, api, _ ->
+        val timezone = model.uiState.value.timezone
+        model.selectTimezone(timezone)
+        runCurrent()
+        assertTrue(api.requests.isEmpty())
+
+        model.selectTimezone(timezone, missingOnServer = true)
+        runCurrent()
+        assertEquals(listOf(timezone), api.requests.map { it.timezone })
+        assertEquals(timezone, model.uiState.value.confirmed.timezone)
+        assertEquals(1L, model.uiState.value.timezoneConfirmation)
+    }
+
+    @Test
+    fun rejectedTimezoneRestoresTheConfirmedValueAndAllowsAnotherSelection() =
+        check { model, api, _ ->
+            val confirmed = model.uiState.value.timezone
+            val save = api.write
+            api.write = { throw ApiFailure.Http(400, "BAD_REQUEST", null, null) }
+            model.selectTimezone("Asia/Tokyo")
+            assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+            runCurrent()
+
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.timezone)
+            assertNull(model.uiState.value.pending)
+            assertEquals(listOf("Asia/Tokyo"), api.requests.map { it.timezone })
+
+            api.write = save
+            model.selectTimezone("Asia/Shanghai")
+            runCurrent()
+            assertEquals("Asia/Shanghai", api.stored.timezone)
+            assertNull(model.uiState.value.pending)
+        }
+
+    @Test
+    fun rejectionOfAnOlderTimezonePreservesNewerChoicesAndSendsThem() = check { model, api, _ ->
+        val release = CompletableDeferred<Unit>()
+        val save = api.write
+        api.write = { update ->
+            if (update.timezone == "Asia/Tokyo") {
+                release.await()
+                throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.selectTimezone("Asia/Shanghai")
+        model.selectTheme(UserPreferencesTheme.DARK)
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                UpdatePreferencesRequest(timezone = "Asia/Tokyo"),
+                UpdatePreferencesRequest(
+                    timezone = "Asia/Shanghai",
+                    theme = UpdatePreferencesRequestTheme.DARK,
+                ),
+            ),
+            api.requests,
+        )
+        assertEquals("Asia/Shanghai", api.stored.timezone)
+        assertEquals(UserPreferencesTheme.DARK, api.stored.theme)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
+    fun rejectedTimezonePreservesThePreviousScheduleRepair() = check { model, api, _ ->
+        val save = api.write
+        api.write = { update ->
+            save(update)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        assertEquals("Asia/Tokyo", model.uiState.value.confirmed.timezone)
+        assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+
+        api.write = { update ->
+            if (update.timezone == "Asia/Shanghai") {
+                throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Shanghai")
+        runCurrent()
+
+        assertEquals(
+            listOf("Asia/Tokyo", "Asia/Shanghai", "Asia/Tokyo"),
+            api.requests.map { it.timezone },
+        )
+        assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+        assertNull(model.uiState.value.pending)
     }
 
     @Test
@@ -226,7 +363,7 @@ class MemberPreferencesModelTest {
                     .copy(
                         colorTheme =
                             UserPreferencesColorTheme.valueOf(
-                                checkNotNull(request.colorTheme).name
+                                checkNotNull(request.colorTheme).name,
                             ),
                         locale = UserPreferencesLocale.valueOf(checkNotNull(request.locale).name),
                     )
@@ -254,8 +391,8 @@ class MemberPreferencesModelTest {
                         stored.copy(
                             colorTheme =
                                 UserPreferencesColorTheme.valueOf(
-                                    checkNotNull(request.colorTheme).name
-                                )
+                                    checkNotNull(request.colorTheme).name,
+                                ),
                         )
                     throw IOException("response lost")
                 }
@@ -316,19 +453,24 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun timezoneConflictRetriesAfterReconnectAndPreservesLaterAppearanceChanges() {
-        val online = MutableStateFlow(false)
+    fun timezoneConflictRetriesAndPreservesLaterAppearanceChanges() {
         val service = Service()
         val save = service.write
         service.write = { request ->
             save(request)
             throw ApiFailure.Http(409, "CONFLICT", null, null)
         }
-        check(service, online) { model, api, _ ->
+        check(service) { model, api, _ ->
+            val read = CompletableDeferred<Unit>()
+            api.load = {
+                read.await()
+                api.stored
+            }
+            model.refresh()
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTimezone("Asia/Tokyo")
-            online.value = true
+            read.complete(Unit)
             runCurrent()
             assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
             assertEquals("Asia/Tokyo", api.stored.timezone)
@@ -336,13 +478,7 @@ class MemberPreferencesModelTest {
 
             api.stored = api.stored.copy(theme = UserPreferencesTheme.LIGHT)
             api.write = save
-            online.value = false
-            runCurrent()
             model.retry()
-            runCurrent()
-            assertEquals(1, api.requests.size)
-
-            online.value = true
             runCurrent()
 
             assertEquals(
@@ -357,6 +493,77 @@ class MemberPreferencesModelTest {
             )
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+            assertNull(model.uiState.value.pending)
+        }
+    }
+
+    @Test
+    fun newerTimezoneSavesAfterAnEarlierScheduleConflict() = check { model, api, _ ->
+        val release = CompletableDeferred<Unit>()
+        val save = api.write
+        api.write = { update ->
+            if (update.timezone == "Asia/Tokyo") {
+                release.await()
+                save(update)
+                throw ApiFailure.Http(409, "CONFLICT", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.selectTimezone("Asia/Seoul")
+        model.selectTimezone("Asia/Shanghai")
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            listOf("Asia/Tokyo", "Asia/Shanghai"),
+            api.requests.map { it.timezone },
+        )
+        assertEquals("Asia/Shanghai", api.stored.timezone)
+        assertEquals("Asia/Shanghai", model.uiState.value.confirmed.timezone)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
+    fun queuedAppearanceSavesWithoutRepeatingAnObsoleteTimezone() {
+        check { model, api, _ ->
+            val release = CompletableDeferred<Unit>()
+            val readback = CompletableDeferred<Unit>()
+            api.load = {
+                readback.await()
+                api.stored
+            }
+            val save = api.write
+            api.write = { update ->
+                if (update.timezone == "Asia/Tokyo") {
+                    release.await()
+                    save(update)
+                    throw ApiFailure.Http(409, "CONFLICT", null, null)
+                }
+                save(update)
+            }
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            model.selectTheme(UserPreferencesTheme.DARK)
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(1, api.requests.size)
+            assertEquals("Asia/Tokyo", model.uiState.value.confirmed.timezone)
+
+            api.stored = api.stored.copy(timezone = "Asia/Shanghai")
+            readback.complete(Unit)
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    UpdatePreferencesRequest(timezone = "Asia/Tokyo"),
+                    UpdatePreferencesRequest(theme = UpdatePreferencesRequestTheme.DARK),
+                ),
+                api.requests,
+            )
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals(UserPreferencesTheme.DARK, api.stored.theme)
             assertNull(model.uiState.value.pending)
         }
     }
@@ -412,9 +619,14 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun offlineChoicesStayLocalUntilReconnectAndOnlyTheLastValueIsSent() {
-        val online = MutableStateFlow(false)
-        check(online = online) { model, api, _ ->
+    fun choicesQueuedDuringAReadOnlySendTheLastValue() {
+        check { model, api, _ ->
+            val read = CompletableDeferred<Unit>()
+            api.load = {
+                read.await()
+                api.stored
+            }
+            model.refresh()
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTheme(UserPreferencesTheme.LIGHT)
@@ -426,7 +638,7 @@ class MemberPreferencesModelTest {
             assertEquals("UTC", model.uiState.value.confirmed.timezone)
             assertTrue(api.requests.isEmpty())
 
-            online.value = true
+            read.complete(Unit)
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
             assertEquals(UpdatePreferencesRequestTheme.LIGHT, api.requests.single().theme)
@@ -436,7 +648,78 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun sharedAppearanceReadsCanonicalModeAndRetriesASave() =
+    fun exhaustedLocaleSaveUsesTwoThreeSecondRetriesAndRestoresConfirmedLocale() =
+        check { model, api, _ ->
+            val confirmed = model.uiState.value.locale
+            val events = mutableListOf<Pair<String, Long>>()
+            api.load = {
+                events += "read" to currentTime
+                api.stored
+            }
+            api.write = {
+                events += "write" to currentTime
+                throw IOException("request outcome unknown")
+            }
+            model.selectLocale(UserPreferencesLocale.JA_JP)
+            runCurrent()
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.locale)
+            assertEquals(listOf("write" to 0L, "read" to 3_000L, "write" to 3_000L), events)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(
+                listOf(
+                    "write" to 0L,
+                    "read" to 3_000L,
+                    "write" to 3_000L,
+                    "read" to 6_000L,
+                    "write" to 6_000L,
+                    "read" to 6_000L,
+                ),
+                events,
+            )
+            assertEquals(confirmed, model.uiState.value.locale)
+            assertNull(model.uiState.value.pending)
+            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            assertTrue(notice.rolledBack)
+            assertFalse(notice.keptAppearance)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(3, api.requests.size)
+        }
+
+    @Test
+    fun unconfirmedSaveWaitsForAuthoritativeReadWithoutReplayingTheWrite() =
+        check { model, api, _ ->
+            val save = api.write
+            api.write = { request ->
+                save(request)
+                throw IOException("response lost")
+            }
+            api.load = { throw IOException("cannot confirm") }
+            model.setCloudBrowser(true)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveUnconfirmed, model.uiState.value.status)
+            assertTrue(model.uiState.value.cloudBrowser)
+            assertNull(model.pendingForWorkspaceRestore())
+            assertTrue(model.notices.value is PreferenceSaveNotice.Unconfirmed)
+
+            api.load = { api.stored }
+            model.refreshFromForeground()
+            runCurrent()
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertTrue(model.uiState.value.confirmed.cloudBrowserEnabledByDefault)
+            assertNull(model.uiState.value.pending)
+            assertNull(model.notices.value)
+            assertEquals(1, api.requests.size)
+        }
+
+    @Test
+    fun sharedAppearanceReadsCanonicalModeAndKeepsLocalModeOnRejection() =
         check(Service().apply { stored = stored.copy(theme = null) }) { model, api, _ ->
             assertEquals(UserPreferencesTheme.SYSTEM, model.uiState.value.theme)
             assertTrue(api.requests.isEmpty())
@@ -447,22 +730,29 @@ class MemberPreferencesModelTest {
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
 
             val save = api.write
-            api.write = { throw IOException("offline") }
+            api.write = { throw ApiFailure.Http(400, "BAD_REQUEST", null, null) }
             model.selectTheme(UserPreferencesTheme.LIGHT)
             runCurrent()
-            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
-            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.appearance.theme)
             assertEquals(UserPreferencesTheme.DARK, model.uiState.value.confirmed.theme)
+            assertNull(model.uiState.value.pending)
+            val notice = model.notices.value as PreferenceSaveNotice.Rejected
+            assertFalse(notice.rolledBack)
+            assertTrue(notice.keptAppearance)
             assertEquals(
                 UpdatePreferencesRequest(theme = UpdatePreferencesRequestTheme.LIGHT),
                 api.requests.single(),
             )
 
             api.write = save
-            model.retry()
+            model.selectLocale(UserPreferencesLocale.JA_JP)
             runCurrent()
-            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
-            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+            assertNull(api.requests.last().theme)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            model.refreshFromForeground()
+            runCurrent()
+            assertEquals(UserPreferencesTheme.DARK, model.uiState.value.theme)
         }
 
     @Test

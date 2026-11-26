@@ -1,9 +1,16 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntry
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryEventType
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.chat.plainDraftDocument
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -13,24 +20,61 @@ import org.junit.Assert.assertNull
 
 internal const val WORKFLOW_RELEASE = "a1111111-1111-4111-8111-111111111111"
 internal const val WORKFLOW_SHARED = "a2222222-2222-4222-8222-222222222222"
+internal const val WORKFLOW_SOURCE_RUN = "b1111111-1111-4111-8111-111111111111"
+internal const val WORKFLOW_NO_SOURCE_RUN = "b2222222-2222-4222-8222-222222222222"
 private const val WORKFLOW_FEEDBACK = "a3333333-3333-4333-8333-333333333333"
 
-internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCloseable {
-    val chats = ChatListApiFixture()
+internal class WorkflowApiFixture(
+    private val chinese: Boolean = false,
+    val chats: ChatListApiFixture = ChatListApiFixture(),
+) : AutoCloseable {
     val service = chats.service
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
     val gmailEnabled = AtomicBoolean(false)
     val gmailConnected = AtomicBoolean(false)
     private val githubEnabled = AtomicBoolean(false)
-    private val sharedScheduleEnabled = AtomicBoolean(true)
-    @Volatile private var sharedScheduleCron = "0 9 * * 1-5"
+    @Volatile private var sharedAutomation: SharedSchedule? = null
     @Volatile var githubAppInstalled: Boolean? = null
     @Volatile var githubAccountConnected = false
-    @Volatile var hasSharedSchedule = false
     @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeReleaseDetailRead: () -> Unit = {}
+    @Volatile var beforeSharedScheduleCreate: () -> Unit = {}
+    @Volatile var beforeHistoryRead: () -> Unit = {}
+    @Volatile
+    var firstRunHistory =
+        WorkflowRunHistory(
+            runs =
+                listOf(
+                    WorkflowRunHistoryEntry(
+                        id = WORKFLOW_SOURCE_RUN,
+                        createdAt = "2026-11-23T01:00:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.RUNNING,
+                        trigger = WorkflowRunHistoryEntryTrigger.SCHEDULE,
+                        eventType = null,
+                        chatThreadId = CHAT_PERSONAL,
+                    ),
+                    WorkflowRunHistoryEntry(
+                        id = WORKFLOW_NO_SOURCE_RUN,
+                        createdAt = "2026-11-22T08:15:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.FAILED,
+                        trigger = WorkflowRunHistoryEntryTrigger.EVENT,
+                        eventType = WorkflowRunHistoryEntryEventType.GMAIL_NEW_MESSAGE,
+                        chatThreadId = null,
+                    ),
+                    WorkflowRunHistoryEntry(
+                        id = "b3333333-3333-4333-8333-333333333333",
+                        createdAt = "2026-11-21T09:30:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.COMPLETED,
+                        trigger = WorkflowRunHistoryEntryTrigger.MANUAL,
+                        eventType = null,
+                        chatThreadId = CHAT_PERSONAL,
+                    ),
+                ),
+            nextCursor = null,
+        )
+    @Volatile var earlierRunHistory = WorkflowRunHistory(emptyList(), null)
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var beforeInstructionSave: () -> Unit = {}
@@ -43,7 +87,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         if (chinese) "1. 核对发布文案和产品说明。\n2. 查看官网、邮件和社区素材，列出缺项。\n3. 汇总负责人、发布时间和要确认的阻塞项。"
         else
             "Review launch copy and product notes.\nCheck the website, email, and community assets."
-    val releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
+    @Volatile var releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
     val sharedTitle = if (chinese) "发布后跟进" else "Release follow-up"
     private val feedbackTitle = if (chinese) "客户反馈汇总" else "Customer feedback"
     val releasePurpose =
@@ -51,7 +95,8 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val ruleTitle = if (chinese) "工作日 09:00" else "Weekdays at 09:00"
 
     init {
-        chats.commandResponse = ::respond
+        val composerResponse = chats.commandResponse
+        chats.commandResponse = { request -> respond(request) ?: composerResponse(request) }
     }
 
     private fun respond(request: RecordedRequest): MockResponse? {
@@ -66,13 +111,13 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     if (calendarId != null) add(connector("google-calendar", "Google Calendar"))
                 }
                 jsonResponse(
-                    """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}"""
+                    """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}""",
                 )
             }
             "/api/workflows" -> {
                 assertNull(request.requestUrl?.query)
                 beforeCatalog()
-                jsonResponse("[${release()},${shared()},${feedback()}]")
+                jsonResponse("[${release()},${shared()},${feedback()},${official()}]")
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
                 if (request.method == "GET") beforeReleaseDetailRead()
@@ -82,10 +127,11 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     if (instructionSaveConflict)
                         return jsonResponse(
-                                """{"error":{"code":"CONFLICT","message":"Workflow changed during update; retry the request"}}"""
+                                """{"error":{"code":"CONFLICT","message":"Workflow changed during update; retry the request"}}""",
                             )
                             .setResponseCode(409)
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                    body["displayName"]?.jsonPrimitive?.content?.let { releaseTitle = it }
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
                 jsonResponse(detail(release(), instruction, "[${releaseRules().joinToString()}]"))
@@ -95,13 +141,31 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     detail(
                         shared(),
                         if (chinese) "整理发布发现。" else "Collect launch findings.",
-                        if (hasSharedSchedule) "[${sharedSchedule()}]" else "[]",
-                    )
+                        sharedAutomation?.let { "[${it.response()}]" } ?: "[]",
+                    ),
                 )
+            "/api/workflows/$WORKFLOW_SHARED/automations" -> {
+                if (request.method != "POST") return null
+                beforeSharedScheduleCreate()
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                val confirmed =
+                    readSharedSchedule(body, body.getValue("enabled").jsonPrimitive.boolean)
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response()).setResponseCode(201)
+            }
+            "/api/workflows/$WORKFLOW_RELEASE/run-history" -> {
+                beforeHistoryRead()
+                val page =
+                    if (request.requestUrl?.queryParameter("cursor") == null) firstRunHistory
+                    else earlierRunHistory
+                jsonResponse(Json.encodeToString(page))
+            }
+            "/api/workflows/$WORKFLOW_SHARED/run-history" ->
+                jsonResponse(Json.encodeToString(WorkflowRunHistory(emptyList(), null)))
             "/api/workflow-automations" -> {
                 val rules = buildList {
                     releaseRules().forEach { add(automationEntry(release(), it)) }
-                    if (hasSharedSchedule) add(automationEntry(shared(), sharedSchedule()))
+                    sharedAutomation?.let { add(automationEntry(shared(), it.response())) }
                     add(automationEntry(feedback(), schedule(id = "feedback", enabled = true)))
                 }
                 jsonResponse(rules.joinToString(prefix = "[", postfix = "]"))
@@ -116,19 +180,16 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             }
             "/api/workflow-automations/shared-weekday/enable",
             "/api/workflow-automations/shared-weekday/disable" -> {
-                sharedScheduleEnabled.set(path.endsWith("/enable"))
-                jsonResponse(sharedSchedule())
+                val confirmed =
+                    checkNotNull(sharedAutomation).copy(enabled = path.endsWith("/enable"))
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response())
             }
             "/api/workflow-automations/shared-weekday" -> {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
-                sharedScheduleCron =
-                    body
-                        .getValue("schedule")
-                        .jsonObject
-                        .getValue("cronExpression")
-                        .jsonPrimitive
-                        .content
-                jsonResponse(sharedSchedule())
+                val confirmed = readSharedSchedule(body, checkNotNull(sharedAutomation).enabled)
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response())
             }
             "/api/workflow-automations/calendar-created" -> {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
@@ -148,14 +209,14 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     jsonResponse(github())
                 } else {
                     jsonResponse(
-                            """{"error":{"code":"BAD_REQUEST","message":"Install GitHub before creating GitHub webhook automations"}}"""
+                            """{"error":{"code":"BAD_REQUEST","message":"Install GitHub before creating GitHub webhook automations"}}""",
                         )
                         .setResponseCode(400)
                 }
             }
             "/api/onboarding/status" ->
                 jsonResponse(
-                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
+                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
                 )
             "/api/chat-drafts/composer" -> {
                 if (request.method == "GET") {
@@ -164,14 +225,15 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 } else {
-                    previousDraft =
+                    val document =
                         Json.parseToJsonElement(request.body.clone().readUtf8())
                             .jsonObject["draftUserMessage"]
-                            ?.jsonObject
-                            ?.let { document -> document.toString() }
-                            ?.let { document ->
+                            as? JsonObject
+                    previousDraft =
+                        document
+                            ?.let {
                                 // Read through the same wire format as a normal draft response.
-                                Json.decodeFromString<DraftFixtureMessage>(document)
+                                Json.decodeFromString<DraftFixtureMessage>(it.toString())
                                     .parts
                                     .single()
                                     .text
@@ -207,6 +269,17 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             else "Summarize today's feedback and track action items.",
         )
 
+    private fun official() =
+        summary(
+            "a4444444-4444-4444-8444-444444444444",
+            "launch-official",
+            "Official launch workflow",
+            "Installed workflow",
+            manage = false,
+            official =
+                """{"definitionName":"launch-official","installationState":"installed","definitionLifecycle":"active","readOnly":true}""",
+        )
+
     private fun summary(
         id: String,
         name: String,
@@ -215,8 +288,9 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         visibility: String = "private",
         manage: Boolean = true,
         owner: String = "user-a",
+        official: String = "null",
     ) =
-        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"$owner","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"$owner","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":$official,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +
@@ -226,13 +300,24 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         id: String = "weekday",
         enabled: Boolean = active.get(),
         cron: String = "0 9 * * 1-5",
+        timezone: String = "Asia/Shanghai",
     ): String {
         val next = if (enabled) """"2026-11-23T01:00:00.000Z"""" else "null"
-        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"$cron","timezone":"Asia/Shanghai"},"scheduleSummary":"Weekdays at 09:00"}"""
+        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"$cron","timezone":"$timezone"},"scheduleSummary":"Weekdays at 09:00"}"""
     }
 
-    private fun sharedSchedule() =
-        schedule("shared-weekday", sharedScheduleEnabled.get(), sharedScheduleCron)
+    private data class SharedSchedule(val cron: String, val timezone: String, val enabled: Boolean)
+
+    private fun readSharedSchedule(body: JsonObject, enabled: Boolean): SharedSchedule {
+        val schedule = body.getValue("schedule").jsonObject
+        return SharedSchedule(
+            schedule.getValue("cronExpression").jsonPrimitive.content,
+            schedule.getValue("timezone").jsonPrimitive.content,
+            enabled,
+        )
+    }
+
+    private fun SharedSchedule.response() = schedule("shared-weekday", enabled, cron, timezone)
 
     private fun automationEntry(workflow: String, rule: String) =
         """{"workflow":$workflow,"automation":$rule}"""

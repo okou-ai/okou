@@ -15,7 +15,7 @@ import report
 import report_test
 import returned_guest_report as returned
 import snapshot_report as startup
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class ReturnedGuestTests(unittest.TestCase):
@@ -70,9 +70,9 @@ class ReturnedGuestTests(unittest.TestCase):
                 {"policy": self.policy, "inputs_sha256": hashlib.sha256(raw.encode()).hexdigest(),
                  "snapshot_sha256": self.artifacts["snapshot_files"]["memory.bin"], "snapshot_bytes": startup.BYTES,
                  "stage": stage, "allocated": [2,4096,1], "checkpoint_models_stalled_io": False},
-                {"actual": actual, "samples": [{"started_ns": clock(ms), "finished_ns": clock(ms)+3,
-                    "read_start_offset_ns": ms*1_000_000, "available_bytes": 32*1024**3, "age_ns": 2, "read_duration_ns": 1}
-                    for ms in (200,400)], "available_bytes": 32*1024**3,
+                {"actual": actual, "samples": [
+                    memory_read_receipt(clock(ms), clock(ms) + 3, ms * 1_000_000)
+                    for ms in (200, 400)], "available_bytes": 32*1024**3,
                  "allocated": [4,8192,2], "accounting": held, "release_byte_withheld": True},
                 {"cancelled_ns": clock(510), "first_dropped_ns": clock(520), "second_pending_ns": clock(530),
                  "foreground_acquired_ns": clock(540), "first_pending": True, "first_dropped": True, "second_pending": True,
@@ -129,34 +129,11 @@ class ReturnedGuestTests(unittest.TestCase):
     def test_every_original_ownership_clock_byte_and_join_field_is_required(self):
         original = copy.deepcopy(self.witnesses)
         self.witnesses = original
-        def leaves(value, path=()):
-            if isinstance(value, dict):
-                for key, item in value.items(): yield from leaves(item, path+(key,))
-            elif isinstance(value, list):
-                for index, item in enumerate(value): yield from leaves(item, path+(index,))
-            else: yield path, value
-        for index, event in enumerate(original[:8]):
-            for path, value in leaves(event):
-                node = event
-                for key in path[:-1]: node = node[key]
-                try:
-                    node[path[-1]] = not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
-                    with self.subTest(index=index, path=path):
-                        with self.assertRaises((ValueError, KeyError, TypeError)): self.validate()
-                finally:
-                    node[path[-1]] = value
+        report_test.assert_scalar_refusals(self, original[:8], self.validate)
         self.validate()
 
     def test_all_missing_duplicate_and_out_of_order_phases_are_refused(self):
-        original = self.witnesses
-        for index in range(len(original)):
-            self.witnesses = original.copy()
-            self.witnesses.pop(index)
-            with self.assertRaises(ValueError): self.validate()
-        self.witnesses = original.copy()
-        self.validate()
-        self.witnesses.append(copy.deepcopy(original[-1]))
-        with self.assertRaises(ValueError): self.validate()
+        report_test.assert_witness_omission_and_duplication_refused(self)
 
     def test_floating_lease_and_growth_values_are_refused(self):
         for index, path in ((1,("allocated",1)), (2,("accounting","ordinary_growth_bytes")), (4,("accounting","cleanup_growth_bytes"))):

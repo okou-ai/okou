@@ -1,12 +1,20 @@
 import type { ComputerUseTestConnection } from "./helpers/api-bdd-computer-use";
 import { aroundEach, describe, expect, it } from "vitest";
+import { computerUseCommandContract } from "@okouai/api-contracts/contracts/computer-use";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import { computerUseRoutes } from "../computer-use";
+import { remoteDevicesRoutes } from "../remote-devices";
 
 const context = testContext();
 
@@ -143,6 +151,63 @@ function createScenario() {
 }
 
 describe("Computer Use command creation", () => {
+  it(
+    "checks the current device policy for an unbound Run and again when Desktop claims a command",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const scenario = createScenario();
+      const actor = scenario.orgScoped(scenario.user());
+      const connection = await scenario.startCapableHost(actor);
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.RemoteDevices]: true,
+      });
+      const run = await scenario.launchRun(actor);
+      const headers = { authorization: "Bearer clerk-session" };
+      createRouteMocks(context).clerk.session(
+        actor.userId,
+        actor.orgId,
+        actor.orgRole,
+      );
+      const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+        remoteDevicesContract,
+      );
+      const client = setupApp({ context, routes: computerUseRoutes })(
+        computerUseCommandContract,
+      );
+      const [device] = (await accept(policy.list({ headers }), [200])).body
+        .devices;
+      if (!device) {
+        throw new Error("Expected the registered Desktop's Remote Device");
+      }
+      const request = {
+        headers: { authorization: `Bearer ${run.token}` },
+        body: { kind: "apps.list" as const, hostId: connection.hostId },
+      };
+      await accept(client.create(request), [404]);
+      await accept(
+        policy.approve({
+          headers,
+          params: { threadId: run.threadId },
+          body: { deviceId: device.id },
+        }),
+        [200],
+      );
+      await accept(client.create(request), [200]);
+      await accept(
+        policy.setAccess({
+          headers,
+          params: { deviceId: device.id },
+          body: { mode: "denied" },
+        }),
+        [200],
+      );
+      const claimed = await scenario.computerUse.claimNextComputerUseCommand(
+        connection.connection,
+        HOST_CAPABILITIES,
+      );
+      expect(claimed).toMatchObject({ status: "idle" });
+    },
+  );
   it(
     "preserves exact session, PAT and bound Agent creation semantics with public read/claim/audit evidence",
     { timeout: CASE_TIMEOUT_MS },

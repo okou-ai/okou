@@ -6,19 +6,19 @@ import {
   text,
   varchar,
   integer,
-  boolean,
   uniqueIndex,
   index,
   check,
-  foreignKey,
   jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
-import type { OfficialWorkflowParameterBindings } from "@okouai/db/jsonb-contracts/workflow";
-import type { WorkflowAttachments } from "../jsonb-contracts/workflow";
+import type {
+  WorkflowAttachments,
+  OfficialWorkflowArchivedSnapshot,
+} from "../jsonb-contracts/workflow";
 export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/workflow";
 
 /**
@@ -28,13 +28,10 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  * only to their owner.
  */
 export type WorkflowVisibility = "public" | "private";
-export type OfficialWorkflowInstallationState = "installing" | "installed";
 /** The local tool a skill-imported workflow came from. */
 export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
-  "current" | "reconciling" | "needs_reconfiguration" | "failed";
-export type OfficialWorkflowAutomationIdentityState =
-  "active" | "reconciling" | "needs_reconfiguration" | "failed" | "removed";
+  "current" | "needs_reconfiguration" | "failed";
 
 /** Org-scoped Workflow definitions and their published content references. */
 export const workflows = pgTable(
@@ -56,10 +53,10 @@ export const workflows = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
     description: text("description"),
+    archivedOfficialSnapshot: jsonb(
+      "archived_official_snapshot",
+    ).$type<OfficialWorkflowArchivedSnapshot>(),
     officialDefinitionName: varchar("official_definition_name", { length: 64 }),
-    officialInstallationState: varchar("official_installation_state", {
-      length: 32,
-    }).$type<OfficialWorkflowInstallationState>(),
     // Set once by the skill import when it creates the workflow; null for a
     // workflow made in Okou or imported by a session that named no tool.
     importSource: varchar("import_source", {
@@ -94,9 +91,8 @@ export const workflows = pgTable(
       )
         .on(table.orgId, table.ownerUserId, table.officialDefinitionName)
         .where(sql`official_definition_name IS NOT NULL`),
-      // Both rollout definitions are one Morning Brief installation identity.
-      // At GA (#39591), remove this index after installations converge to
-      // morning-brief; the canonical Official definition index then suffices.
+      // A draining or rolled-back API can still install the retired definition.
+      // Keep one owner identity across both names during the #41334 cutover.
       morningBriefOwnerIdx: uniqueIndex(
         "idx_workflows_morning_brief_owner_unique",
       )
@@ -111,13 +107,8 @@ export const workflows = pgTable(
       ),
       officialInstallationCheck: check(
         "workflows_official_installation_check",
-        sql`(
-          ${table.officialDefinitionName} IS NULL
-          AND ${table.officialInstallationState} IS NULL
-        ) OR (
-          ${table.officialDefinitionName} IS NOT NULL
-          AND ${table.officialInstallationState} IN ('installing', 'installed')
-          AND ${table.officialDefinitionName} = ${table.name}
+        sql`${table.officialDefinitionName} IS NULL OR (
+          ${table.officialDefinitionName} = ${table.name}
           AND ${table.visibility} = 'private'
           AND ${table.instruction} IS NULL
           AND ${table.displayName} IS NULL
@@ -295,84 +286,10 @@ export const workflowAutomations = pgTable(
         ) OR (
           ${table.officialBlueprintKey} IS NOT NULL
           AND ${table.officialAppliedFingerprint} ~ '^[0-9a-f]{64}$'
-          AND ${table.officialReconciliationStatus} IN ('current', 'reconciling', 'needs_reconfiguration', 'failed')
+          AND ${table.kind} = 'schedule'
+          AND ${table.officialReconciliationStatus} IN ('current', 'needs_reconfiguration', 'failed')
           AND jsonb_typeof(${table.officialParameterBindings}) = 'array'
           AND ${table.officialIntendedEnabled} IS NOT NULL
-        )`,
-      ),
-    ];
-  },
-);
-
-/**
- * Permanent logical identity for one Official Automation Blueprint projection.
- *
- * Executable configuration remains in `workflow_automations`. This row
- * survives Blueprint removal and can represent a newly introduced Blueprint
- * whose required parameters are not yet resolvable, without exposing an
- * incomplete trigger configuration to mixed-version readers.
- */
-export const officialWorkflowAutomationIdentities = pgTable(
-  "official_workflow_automation_identities",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    workflowId: uuid("workflow_id").notNull(),
-    automationId: uuid("automation_id"),
-    blueprintKey: varchar("blueprint_key", { length: 64 }).notNull(),
-    state: varchar("state", { length: 32 })
-      .$type<OfficialWorkflowAutomationIdentityState>()
-      .notNull(),
-    retainedParameterBindings: jsonb(
-      "retained_parameter_bindings",
-    ).$type<OfficialWorkflowParameterBindings>(),
-    retainedIntendedEnabled: boolean("retained_intended_enabled"),
-    retainedAppliedFingerprint: varchar("retained_applied_fingerprint", {
-      length: 64,
-    }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (table) => {
-    return [
-      foreignKey({
-        name: "official_workflow_automation_identity_workflow_fk",
-        columns: [table.workflowId],
-        foreignColumns: [workflows.id],
-      }).onDelete("cascade"),
-      foreignKey({
-        name: "official_workflow_automation_identity_automation_fk",
-        columns: [table.automationId],
-        foreignColumns: [workflowAutomations.id],
-      }).onDelete("set null"),
-      uniqueIndex("idx_official_workflow_automation_identities_key").on(
-        table.workflowId,
-        table.blueprintKey,
-      ),
-      uniqueIndex(
-        "idx_official_workflow_automation_identities_automation_unique",
-      )
-        .on(table.automationId)
-        .where(sql`${table.automationId} IS NOT NULL`),
-      index("idx_official_workflow_automation_identities_workflow").on(
-        table.workflowId,
-      ),
-      check(
-        "official_workflow_automation_identities_state_check",
-        sql`(
-          ${table.state} = 'active'
-          AND ${table.automationId} IS NOT NULL
-          AND ${table.retainedParameterBindings} IS NULL
-          AND ${table.retainedIntendedEnabled} IS NULL
-          AND ${table.retainedAppliedFingerprint} IS NULL
-        ) OR (
-          ${table.state} IN ('reconciling', 'needs_reconfiguration', 'failed', 'removed')
-          AND ${table.automationId} IS NULL
-          AND jsonb_typeof(${table.retainedParameterBindings}) = 'array'
-          AND ${table.retainedIntendedEnabled} IS NOT NULL
-          AND (
-            ${table.retainedAppliedFingerprint} IS NULL
-            OR ${table.retainedAppliedFingerprint} ~ '^[0-9a-f]{64}$'
-          )
         )`,
       ),
     ];

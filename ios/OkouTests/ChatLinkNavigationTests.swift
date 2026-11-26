@@ -50,6 +50,14 @@ final class ChatLinkNavigationTests: XCTestCase {
     let firstRun = try XCTUnwrap(store.selectedConversation)
     XCTAssertEqual(firstRun.readingPosition?.messageID, ChatLinkFixture.eventID(1))
     XCTAssertTrue(firstRun.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(1) })
+    // The detail view reveals the input from the scroll target in the session graph.
+    let firstTarget = try firstRun.graph.get(firstRun.navigation)
+    XCTAssertEqual(firstTarget.readingMessageID, ChatLinkFixture.eventID(1))
+    XCTAssertEqual(firstTarget.request?.position.messageID, ChatLinkFixture.eventID(1))
+    XCTAssertTrue(
+      try firstRun.graph.get(firstRun.window).items.contains {
+        $0.id == ChatLinkFixture.eventID(1)
+      })
     firstRun.draft = "Draft in the source chat"
 
     // A second link in the current chat changes the reading target without losing the draft.
@@ -59,11 +67,35 @@ final class ChatLinkNavigationTests: XCTestCase {
     let nextRun = try XCTUnwrap(store.selectedConversation)
     XCTAssertEqual(nextRun.readingPosition?.messageID, ChatLinkFixture.eventID(22))
     XCTAssertTrue(nextRun.visibleMessages.contains { $0.id == ChatLinkFixture.eventID(22) })
+    let nextTarget = try nextRun.graph.get(nextRun.navigation)
+    XCTAssertEqual(nextTarget.request?.position.messageID, ChatLinkFixture.eventID(22))
+    XCTAssertNotEqual(nextTarget.request, firstTarget.request)
     XCTAssertEqual(nextRun.draft, "Draft in the source chat")
     store.selectChat(ChatLinkFixture.homeID)
     XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.homeID)
     XCTAssertEqual(store.selectedConversation?.draft, "Keep my unsent reply")
     XCTAssertTrue(fixture.requests.values.withLock { $0.allSatisfy { $0.hasPrefix("GET ") } })
+  }
+
+  func testSourceChatReturnsToForYouAndAnUnavailableSourceLeavesTheDeckOpen() async {
+    let fixture = ChatLinkFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    let sidebar = store.sidebarInteraction
+    sidebar.openForYou()
+
+    await store.forYou.openSource(ChatLinkFixture.sourceID)
+    XCTAssertEqual(store.selectedThreadID, ChatLinkFixture.sourceID)
+    XCTAssertTrue(sidebar.showsChat)
+    sidebar.goBack()
+    XCTAssertEqual(sidebar.path, [.forYou])
+
+    await store.forYou.openSource(UUID().uuidString)
+    XCTAssertNotNil(store.forYou.error)
+    XCTAssertEqual(sidebar.path, [.forYou])
+    sidebar.goBack()
+    XCTAssertTrue(sidebar.isOpen)
   }
 
   func testUnavailableWorkflowStaysInTheCurrentChatWithANativeError() async throws {

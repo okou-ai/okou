@@ -22,7 +22,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
   public enum Kind: Equatable, Sendable {
     case connect(slug: String)
     case reconnect(slug: String, connectionID: String)
-    case select(target: ChatConnectorTarget, connectionID: String)
+    case select(target: ChatConnectorTarget, connectionID: String, memberWide: Bool = false)
     case configuration(target: ChatConnectorTarget, connectionID: String?)
     case unavailable
   }
@@ -31,6 +31,11 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
 
   public let threadID: String?
   public let callbackPrompt: String?
+
+  public var isMemberApproval: Bool {
+    if case .select(_, _, let memberWide) = kind { return memberWide }
+    return false
+  }
 
   public static func configuration(
     target: ChatConnectorTarget, threadID: String?, connectionID: String? = nil
@@ -62,7 +67,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       && ["connect", "authorize", "reconnect"].contains(String(path[3]))
     let accountPath =
       path.count == 5 && path[1] == "connectors"
-      && path[2] == "accounts" && path[4] == "select"
+      && path[2] == "accounts" && (path[4] == "select" || path[4] == "member-approval")
     guard connectorPath || accountPath else { return nil }
     // Match URLSearchParams form decoding without changing percent-encoded literal plus signs.
     components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
@@ -102,6 +107,10 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       guard prompt != nil, callbackThread != nil, UUID(uuidString: String(path[3])) != nil else {
         return invalid()
       }
+      let memberWide = path[4] == "member-approval"
+      if memberWide && param("requestId").flatMap(UUID.init(uuidString:)) == nil {
+        return invalid()
+      }
       let target: ChatConnectorTarget
       if param("kind") == "builtin", let slug = param("connectorSlug"),
         slug.range(of: "^[a-z0-9][a-z0-9-]*$", options: .regularExpression) != nil,
@@ -115,7 +124,9 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       } else {
         return invalid()
       }
-      kind = .select(target: target, connectionID: String(path[3]).lowercased())
+      kind = .select(
+        target: target, connectionID: String(path[3]).lowercased(),
+        memberWide: memberWide)
     }
     return Self(id: value, kind: kind, threadID: threadID, callbackPrompt: prompt)
   }

@@ -32,26 +32,24 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_pause_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid native physical pause witness",
     )
-    identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or reordered native physical pause phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("native physical pause changed original physical owner")
-        ordered = [terminal[1], *events[:7], terminal[2], terminal[3], *events[7:10],
-                   terminal[4], *events[10:], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "native physical pause phase clocks lost ordering")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=7, tail_end_index=10,
+            message="native physical pause phase clocks lost ordering",
+        )
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
         baseline = status_evidence.validate_initial_status_receipt(
@@ -59,22 +57,20 @@ def validate(directory):
             path_error="invalid or replayed native physical pause status path",
             receipt_error="native physical pause changed original inputs",
         )
-        history, operation = later.history_operation(
-            captured, identities, "native physical pause replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            captured, identities, baseline, identity[0],
+            replay_error="native physical pause replayed run or resource identity",
+            binding_error="native physical pause lost original history binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key":reuse,"sandbox_id":identity[0]}],
-              "native physical pause lost original history binding")
         started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         verified = batch.clock(captured.get("data_verified_ns"), started, events[1]["monotonic_ns"])
         reparking = batch.clock(captured.get("repark_started_ns"), verified, observed)
-        original = history.encode()
-        payload_sha = hashlib.sha256((original*(65536//len(original)+1))[:65536]).hexdigest()
+        payload_sha = hashlib.sha256(report.history_payload(history)).hexdigest()
         request_sha = wire(captured.get("request_raw"), state="Paused")
         exact(captured, {"mode":mode,"history_run_id":history,"operation_run_id":operation,"reuse_key":reuse,
             "prepare_started_ns":started,"capture_observed_ns":observed,"request_raw":captured["request_raw"],
-            "data_verified_ns":verified,"repark_started_ns":reparking,"payload_bytes":65536,"payload_sha256":payload_sha,
+            "data_verified_ns":verified,"repark_started_ns":reparking,"payload_bytes":report.HISTORY_PAYLOAD_BYTES,"payload_sha256":payload_sha,
             "production_restore_completed":True,"private_history_verified":True,"ordinary_home_verified":True,
             "request_sha256":request_sha,"backend_dispatched":False,"restore_callback_reached":True,
             "backend_socket":"/run/vm0/sock/"+identity[0]+"/api.sock",

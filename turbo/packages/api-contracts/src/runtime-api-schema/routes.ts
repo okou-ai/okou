@@ -1,3 +1,4 @@
+import { runDataRouterRequestContract } from "../contracts/data-router";
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
@@ -7,11 +8,7 @@ import {
 } from "../contracts/runners";
 import {
   runWebhookContract,
-  webhookFirewallAuthContract,
-  webhookStoragesCommitContract,
-  webhookStoragesPrepareContract,
-  webhookTelemetryContract,
-  webhookUsageEventContract,
+  webhookMemoryArchiveContract,
 } from "../contracts/webhooks";
 import { iosRouteBindings } from "./ios-routes";
 import { androidRouteBindings } from "./android-routes";
@@ -108,29 +105,24 @@ const runtimeServiceRouteBindings = [
     route: runWebhookContract.storageCommit,
   },
   {
-    id: "webhooks.agent.telemetry",
-    owner: "guest-agent",
-    route: webhookTelemetryContract.send,
+    id: "webhooks.run.storages.memoryArchive",
+    owner: "runner",
+    route: webhookMemoryArchiveContract.read,
   },
   {
-    id: "webhooks.agent.storages.prepare",
-    owner: "guest-agent",
-    route: webhookStoragesPrepareContract.prepare,
-  },
-  {
-    id: "webhooks.agent.storages.commit",
-    owner: "guest-agent",
-    route: webhookStoragesCommitContract.commit,
-  },
-  {
-    id: "webhooks.agent.firewall.auth",
+    id: "webhooks.run.firewall.auth",
     owner: "mitm-addon",
-    route: webhookFirewallAuthContract.resolve,
+    route: runWebhookContract.firewallAuth,
   },
   {
-    id: "webhooks.agent.usageEvent",
+    id: "webhooks.run.usageEvent",
     owner: "mitm-addon",
-    route: webhookUsageEventContract.send,
+    route: runWebhookContract.usageEvent,
+  },
+  {
+    id: "webhooks.run.dataRequest",
+    owner: "mitm-addon",
+    route: runDataRouterRequestContract.register,
   },
 ] as const satisfies readonly RuntimeApiRouteBinding[];
 

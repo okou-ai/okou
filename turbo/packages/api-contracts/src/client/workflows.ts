@@ -186,6 +186,35 @@ export const workflowsCollectionContract: ClientDescriptor<
       403: true,
     },
   },
+  recent: {
+    method: "GET",
+    path: "/api/workflows/recent",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+    },
+  },
+  recordRecentUse: {
+    method: "POST",
+    path: "/api/workflows/recent/use",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+    },
+  },
+  importRecent: {
+    method: "POST",
+    path: "/api/workflows/recent/import",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+    },
+  },
   create: {
     method: "POST",
     path: "/api/workflows",
@@ -221,6 +250,17 @@ export const workflowsDetailContract: ClientDescriptor<
     path: "/api/workflows/:workflowId",
     statuses: {
       200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  runHistory: {
+    method: "GET",
+    path: "/api/workflows/:workflowId/run-history",
+    statuses: {
+      200: true,
+      400: true,
       401: true,
       403: true,
       404: true,

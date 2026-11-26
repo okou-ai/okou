@@ -157,7 +157,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun offlineChangesCoalesceAndReopeningRestoresOnlyConfirmedValues() = runTest {
+    fun queuedChangesCoalesceAndReopeningRestoresOnlyConfirmedValues() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -191,7 +191,7 @@ class DefaultModelSettingsTest {
                         },
                     )
                 assertEquals("gpt-test", model.openAfterSync().selected?.id)
-                model.online(false)
+                assertNull(store.load(api.identity).confirmed.serviceTier)
                 model.select("claude-test")
                 assertEquals(ModelEffort.HIGH, model.state.value.effort)
                 model.select("gpt-test")
@@ -199,9 +199,7 @@ class DefaultModelSettingsTest {
                 assertEquals(ModelEffort.HIGH, model.state.value.effort)
                 model.fast(true)
                 assertTrue(fixture.writes.isEmpty())
-                assertNull(store.load(api.identity).confirmed.serviceTier)
 
-                model.online(true)
                 val synced = model.state.first { it.pending == null }
                 assertTrue(synced.fast)
                 assertEquals(ModelEffort.HIGH, synced.effort)
@@ -232,11 +230,11 @@ class DefaultModelSettingsTest {
                                         mapOf(
                                             "selectedModel" to JsonPrimitive("claude-test"),
                                             "serviceTier" to JsonNull,
-                                        )
+                                        ),
                                     ),
                                 "failedAttempts" to JsonPrimitive(1),
                                 "lastFailureMillis" to JsonPrimitive(currentTime),
-                            )
+                            ),
                         )
                     values[key] =
                         JsonObject(
@@ -244,7 +242,7 @@ class DefaultModelSettingsTest {
                                     mapOf(
                                         "edit" to oldEdit,
                                         "label" to JsonPrimitive("Claude Sonnet 5"),
-                                    )
+                                    ),
                             )
                             .toString()
                 }
@@ -261,15 +259,13 @@ class DefaultModelSettingsTest {
             assertNull(reopened.load(otherWorkspace).confirmed.selectedModel)
             assertNull(reopened.load(api.identity.copy(userId = "other")).confirmed.selectedModel)
             val model = model(api, reopened, identity = api.identity.copy(sessionId = "renewed"))
-            model.online(false)
-            model.showSettings(SettingsDestination.Overview)
-            model.foreground(true)
             val restored = model.state.first { it.record != null }
             assertEquals("gpt-test", restored.selectedModel)
             assertNull(restored.record?.confirmedLabel)
             assertNull(restored.pending)
 
-            model.online(true)
+            model.showSettings(SettingsDestination.Overview)
+            model.foreground(true)
             val cached = model.state.first { it.options != null }
             assertEquals("gpt-test", cached.selected?.id)
             assertEquals(ModelEffort.HIGH, cached.effort)
@@ -312,7 +308,7 @@ class DefaultModelSettingsTest {
             fixture.preference =
                 JsonObject(
                     fixture.preference +
-                        ("modelSettings" to JsonObject(mapOf("claude-test" to changedElsewhere)))
+                        ("modelSettings" to JsonObject(mapOf("claude-test" to changedElsewhere))),
                 )
 
             model.effort(ModelEffort.HIGH)
@@ -323,7 +319,6 @@ class DefaultModelSettingsTest {
                 fixture.writes.single()["modelSettingsPatch"]?.jsonObject?.get("model"),
             )
 
-            model.online(false)
             model.select("claude-test")
             assertEquals(ModelEffort.HIGH, model.state.value.effort)
         }
@@ -347,11 +342,6 @@ class DefaultModelSettingsTest {
                 model(api, onFailure = { assertEquals(503, (it as ApiFailure.Http).status) })
             model.showSettings(SettingsDestination.Overview)
             model.foreground(true)
-            val failed = model.state.first { it.catalogUnavailable }
-            assertNull(failed.selected)
-            assertNull(failed.selectedModel)
-            assertNull(failed.options)
-            assertEquals(1, reads.get())
             val recovered = model.state.first { it.options != null }
             assertFalse(recovered.catalogUnavailable)
             assertNull(recovered.selected)
@@ -360,7 +350,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun cachedCatalogKeepsItsOptionsUntilTheFailureWindowExpiresAndThenRecovers() = runTest {
+    fun cachedCatalogKeepsItsOptionsAfterThreeAttemptsAndRecoversOnForegrounding() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val catalog = api.service.recoveryCatalog()
@@ -383,16 +373,18 @@ class DefaultModelSettingsTest {
             unavailable = true
             val started = currentTime
             model.showSettings(SettingsDestination.Overview)
-            advanceTimeBy(29_999)
-            assertEquals(listOf(started, started + 5_000, started + 15_000), attempts)
+            advanceTimeBy(6_000)
+            assertEquals(listOf(started, started + 3_000), attempts)
             assertFalse(model.state.value.catalogUnavailable)
-            advanceTimeBy(1)
             runCurrent()
+            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
             assertTrue(model.state.value.catalogUnavailable)
             assertEquals("gpt-test", model.state.value.selected?.id)
+            advanceTimeBy(60_000)
+            assertEquals(3, attempts.size)
             unavailable = false
-            model.online(false)
-            model.online(true)
+            model.foreground(false)
+            model.foreground(true)
             runCurrent()
             assertFalse(model.state.value.catalogUnavailable)
             assertEquals("gpt-test", model.state.value.selected?.id)
@@ -410,7 +402,7 @@ class DefaultModelSettingsTest {
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         if (update.selectedModel == "gpt-test") {
                             first.complete(Unit)
@@ -490,7 +482,7 @@ class DefaultModelSettingsTest {
                     override suspend fun defaultModelPreference() = pref
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         if (writes.size < 3) throw ApiFailure.Network(UnknownHostException())
@@ -537,7 +529,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         throw ApiFailure.Http(503, null, null, null)
@@ -564,8 +556,8 @@ class DefaultModelSettingsTest {
             assertEquals("gpt-test", store.load(api.identity).confirmed.selectedModel)
 
             advanceTimeBy(1_000)
-            model.online(false)
-            model.online(true)
+            model.foreground(false)
+            model.foreground(true)
             runCurrent()
             assertEquals(7_000L, reads.last())
             assertTrue(model.state.value.pending != null)
@@ -590,7 +582,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun rejectedReadbackDoesNotRepeatTheWriteAndReconnectReconciles() = runTest {
+    fun rejectedReadbackReconcilesOnForegroundingWithoutRepeatingTheWrite() = runTest {
         ChatListApiFixture().use { api ->
             val fixture = DefaultModelApiFixture(api)
             val fixtureResponse = api.commandResponse
@@ -620,11 +612,11 @@ class DefaultModelSettingsTest {
             assertEquals(1, blockedReads.get())
             assertEquals(1, writes.get())
 
-            model.online(false)
+            model.foreground(false)
             fixture.preference =
                 JsonObject(fixture.preference + ("serviceTier" to JsonPrimitive("priority")))
             rejectReadback.set(false)
-            model.online(true)
+            model.foreground(true)
             val confirmed = model.state.first { it.pending == null }
             assertTrue(confirmed.fast)
             assertEquals(1, writes.get())
@@ -642,7 +634,7 @@ class DefaultModelSettingsTest {
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += update.selectedModel to update.serviceTier?.name
                         if (update.serviceTier != null) {
@@ -688,7 +680,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         if (update.selectedModel == "claude-test") {
                             started.complete(Unit)
@@ -717,7 +709,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun saveRetriesKeepTheirScheduleAcrossReconnectAndYieldToScheduledRead() = runTest {
+    fun saveRetriesRespectTheirScheduleAndYieldToScheduledRead() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val confirmed = api.service.defaultModelPreference()
@@ -737,7 +729,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         throw ApiFailure.Network(NoRouteToHostException())
@@ -753,10 +745,7 @@ class DefaultModelSettingsTest {
             assertTrue(model.state.value.fast)
 
             advanceTimeBy(1_000)
-            model.online(false)
-            runCurrent()
             advanceTimeBy(1_000)
-            model.online(true)
             runCurrent()
             assertEquals(listOf(0L), writes)
             advanceTimeBy(1_000)
@@ -775,8 +764,6 @@ class DefaultModelSettingsTest {
             assertNull(store.load(api.identity).confirmed.serviceTier)
 
             advanceTimeBy(30_000)
-            model.online(false)
-            model.online(true)
             runCurrent()
             assertEquals(listOf(0L, 3_000L, 6_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SaveRolledBack), notices)
@@ -855,9 +842,9 @@ class DefaultModelSettingsTest {
                             JsonObject(
                                 mapOf(
                                     "gpt-test" to
-                                        JsonObject(mapOf("effort" to JsonPrimitive("ultra")))
-                                )
-                            ))
+                                        JsonObject(mapOf("effort" to JsonPrimitive("ultra"))),
+                                ),
+                            )),
                 )
             val model = model(api)
             val pi = model.openAfterSync()

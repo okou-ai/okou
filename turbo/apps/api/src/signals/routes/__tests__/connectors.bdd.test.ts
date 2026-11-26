@@ -846,7 +846,7 @@ describe("CONN-02: OAuth device authorization", () => {
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
-  it("re-polls the exact non-default account added by a device authorization session", async () => {
+  it("re-polls the existing account when device authorization repeats its identity", async () => {
     const provider = mockTestOAuthDeviceConnectorProvider();
     const actor = createBddApi(context).user();
     await connectorsApi.updateFeatureSwitches(actor, {
@@ -891,23 +891,16 @@ describe("CONN-02: OAuth device authorization", () => {
       );
     }
 
-    expect(siblingPoll.connectionId).not.toBe(defaultPoll.connectionId);
+    expect(siblingPoll.connectionId).toBe(defaultPoll.connectionId);
     const accounts = await connectorsApi.listBuiltinConnectorAccounts(
       actor,
       "test-oauth-device",
     );
-    expect(accounts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: defaultPoll.connectionId,
-          isDefault: true,
-        }),
-        expect.objectContaining({
-          id: siblingPoll.connectionId,
-          isDefault: false,
-        }),
-      ]),
-    );
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({
+      id: defaultPoll.connectionId,
+      isDefault: true,
+    });
 
     const rePoll = await connectorsApi.pollDeviceAuth(
       actor,
@@ -927,11 +920,6 @@ describe("CONN-02: OAuth device authorization", () => {
       actor,
       "test-oauth-device",
       siblingPoll.connectionId,
-    );
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      "test-oauth-device",
-      defaultPoll.connectionId,
     );
     await connectorsApi.deleteFeatureSwitches(actor);
   });

@@ -33,7 +33,7 @@ import type { PickedThreadInputEvent } from "./types";
 
 type IncompletePromptEvent = Pick<
   PickedThreadInputEvent,
-  "chatThreadId" | "contextType" | "thread"
+  "chatThreadId" | "contextType" | "preparation"
 >;
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
@@ -182,42 +182,14 @@ export function createIncompletePrompt(
 ): Computed<Promise<string>> {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
-    if (!event?.contextType || !isWebChatContextType(event.contextType)) {
+    if (
+      !event?.contextType ||
+      !isWebChatContextType(event.contextType) ||
+      event.preparation.hasCompletedPredecessorHistory
+    ) {
       return "";
     }
     const db = get(db$);
-    const predecessorId = event.thread.frameworkSessionRunId;
-    if (predecessorId !== null) {
-      const [completed] = await db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, predecessorId),
-            eq(agentRuns.chatThreadId, event.chatThreadId),
-            eq(agentRuns.userId, event.thread.userId),
-            eq(agentRuns.status, "completed"),
-            exists(
-              db
-                .select({ id: chatEvents.id })
-                .from(chatEvents)
-                .where(
-                  and(
-                    eq(chatEvents.chatThreadId, event.chatThreadId),
-                    eq(chatEvents.runId, predecessorId),
-                    runOwnedChatEventCondition(),
-                    visibleChatEventCondition(),
-                  ),
-                ),
-            ),
-          ),
-        );
-      // A visible, completed predecessor already supplies native session history.
-      if (completed) {
-        return "";
-      }
-    }
-
     const anchors = recentRoundAnchors(event);
     const completedBoundary = new QueryBuilder()
       .select({ firstSeq: anchors.firstSeq })

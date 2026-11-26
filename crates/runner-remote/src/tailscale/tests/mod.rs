@@ -16,7 +16,7 @@ pub(super) mod startup;
 use super::{Control, Failure, Key, Work};
 use crate::ssh::FailureReason;
 use crate::tailscale::tests::fixture::Cache;
-use fixture::{Blocking, Http, SocketClosure, bounded};
+use fixture::{Blocking, Http, SocketClosure, at_native_cleanup_deadline, bounded};
 use http_body_util::{BodyExt, Limited};
 use runner_types::ids::RunId;
 use std::{
@@ -451,9 +451,10 @@ async fn actual_guest_rpc_shutdown(reset_on_close: bool, without_ssh: bool, canc
         .await;
         drop(shutdown);
     } else {
-        let started = std::time::Instant::now();
-        assert_eq!(dispatcher.shutdown().await, Err(CleanupError::Native));
-        assert!(started.elapsed() >= Duration::from_secs(5));
+        assert_eq!(
+            at_native_cleanup_deadline(dispatcher.shutdown()).await,
+            Err(CleanupError::Native)
+        );
     }
     let (number, inode) = fd.lock().unwrap().clone().unwrap();
     assert_eq!(
@@ -546,12 +547,10 @@ async fn five_second_failure_and_cancelled_waiter(reset_on_close: bool) {
     bounded(poll_observed).await.unwrap();
     waiter.abort();
     assert!(waiter.await.unwrap_err().is_cancelled());
-    let started = std::time::Instant::now();
     assert_eq!(
-        retiring.shutdown_native().await,
+        at_native_cleanup_deadline(retiring.shutdown_native()).await,
         Err(Failure::CleanupTimedOut)
     );
-    assert!(started.elapsed() >= Duration::from_secs(5));
     for (_, http, _, fd) in &held {
         let (number, inode) = fd.lock().unwrap().clone().unwrap();
         assert_eq!(

@@ -1,3 +1,4 @@
+import { resolveInvitedArtifactFile$ } from "../services/artifact-file-share-access.service";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -68,11 +69,18 @@ const resolveFileReference$ = command(
         if (ownerKind) {
           return notFound("Artifact unavailable");
         }
-        const shared = await set(
-          resolveArtifactTargetShare$,
-          { target: { kind: "file", id }, targetId: id, userId: auth.userId },
+        const invited = await set(
+          resolveInvitedArtifactFile$,
+          { file, userId: auth.userId },
           signal,
         );
+        const shared =
+          invited ??
+          (await set(
+            resolveArtifactTargetShare$,
+            { target: { kind: "file", id }, targetId: id, userId: auth.userId },
+            signal,
+          ));
         return shared
           ? { status: 200 as const, body: shared }
           : notFound("Artifact unavailable");

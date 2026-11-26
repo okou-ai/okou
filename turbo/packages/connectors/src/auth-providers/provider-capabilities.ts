@@ -76,6 +76,46 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "app-store-connect",
+    authMethodId: "team-key",
+    contract: {
+      client: { kind: "none" },
+      grant: {
+        kind: "manual",
+        callbackOrigin: null,
+        outputNames: [],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["issuerId", "keyId", "privateKey"],
+        outputNames: ["accessToken"],
+        platformSecrets: [],
+      },
+      revoke: { kind: "none", inputNames: [] },
+    },
+  },
+  {
+    connectorSlug: "app-store-connect",
+    authMethodId: "individual-key",
+    contract: {
+      client: { kind: "none" },
+      grant: {
+        kind: "manual",
+        callbackOrigin: null,
+        outputNames: [],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["keyId", "privateKey"],
+        outputNames: ["accessToken"],
+        platformSecrets: [],
+      },
+      revoke: { kind: "none", inputNames: [] },
+    },
+  },
+  {
     connectorSlug: "asana",
     authMethodId: "oauth",
     contract: {
@@ -760,6 +800,33 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "google-play",
+    authMethodId: "oauth",
+    contract: {
+      client: {
+        kind: "static-confidential-env",
+        clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
+        clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
+      },
+      grant: {
+        kind: "auth-code",
+        callbackOrigin: "web",
+        outputNames: ["accessToken", "refreshToken"],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["refreshToken"],
+        outputNames: ["accessToken", "refreshToken"],
+        platformSecrets: [],
+      },
+      revoke: {
+        kind: "none",
+        inputNames: [],
+      },
+    },
+  },
+  {
     connectorSlug: "google-search-console",
     authMethodId: "oauth",
     contract: {
@@ -944,6 +1011,30 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
         kind: "token-revoke",
         inputNames: ["accessToken"],
       },
+    },
+  },
+  {
+    connectorSlug: "linkedin",
+    authMethodId: "oauth",
+    contract: {
+      client: {
+        kind: "static-confidential-env",
+        clientIdEnv: "LINKEDIN_OAUTH_CLIENT_ID",
+        clientSecretEnv: "LINKEDIN_OAUTH_CLIENT_SECRET",
+      },
+      grant: {
+        kind: "auth-code",
+        callbackOrigin: "web",
+        outputNames: ["accessToken"],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "static",
+        inputNames: [],
+        outputNames: [],
+        platformSecrets: [],
+      },
+      revoke: { kind: "none", inputNames: [] },
     },
   },
   {

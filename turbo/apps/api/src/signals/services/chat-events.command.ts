@@ -1,4 +1,7 @@
-import { resolveVoiceClips$ } from "./voice-clips.service";
+import {
+  resolveVoiceClipRecords,
+  voiceClipRequestError,
+} from "./voice-clips.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -53,7 +56,7 @@ import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command, computed, type Computed } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   asc,
@@ -62,6 +65,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -80,6 +84,7 @@ import {
   type NormalChatInputWrite,
 } from "./normal-chat-input-publication-sql";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { remoteDeviceMode } from "./remote-device-access";
 import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
@@ -181,7 +186,7 @@ import {
 import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
 import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { ExecutionOrgPlan } from "./execution-org-context.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import { selectedUserTemplateIds } from "./user-template-data.service";
 import {
@@ -195,6 +200,8 @@ import {
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
+  readPrivateAttachmentRows,
+  type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
 import { webChatContextId } from "./web-chat-queue-context.service";
@@ -260,7 +267,7 @@ interface NormalSendRequest {
    * caller inside an auth route whose `orgId` is that organization, so the
    * send and its model selection share one read.
    */
-  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  readonly orgPlanCapabilities?: ExecutionOrgPlan | null;
   /**
    * Route-entry time of `POST /api/chat/events`. A run picked by this request
    * for this input is measured from it; other callers omit it.
@@ -552,6 +559,27 @@ function clientEventIdResolutionResponse(
   }
   return acceptedSendResponse(threadId, resolution.createdAt, true);
 }
+// MCP returns the accepted input identity, including on retries. A duplicate
+// Web send can also acknowledge a collision with another kind of event.
+export const readAcceptedChatInputReceipt$ = command(
+  async (
+    { get, set },
+    threadId: string,
+    clientEventId: string,
+    signal: AbortSignal,
+  ) => {
+    const { orgId, userId } = get(organizationAuthContext$);
+    const resolution = await set(
+      resolveClientEventId$,
+      { orgId, userId, threadId, clientEventId },
+      signal,
+    );
+    return (
+      clientEventIdResolutionResponse(resolution, threadId) ??
+      duplicateClientEventIdResponse()
+    );
+  },
+);
 function isCancelResult(value: unknown): value is CancelRunResult {
   return (
     typeof value === "object" && value !== null && "alreadyCancelled" in value
@@ -577,7 +605,7 @@ function isNormalSendBody(
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-type AttachmentRecord = typeof runUploadedFiles.$inferSelect;
+type AttachmentRecord = PrivateAttachmentRow;
 type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "metadata">;
 interface ResolvedChatAttachment {
   readonly file: ChatEventAttachFileMetadata;
@@ -617,34 +645,73 @@ function attachmentResolutionCounts(
     ].sort(),
   };
 }
+interface IncomingAttachmentRecords {
+  readonly files: ReturnType<typeof userMessagePhysicalFiles>;
+  readonly voiceIds: readonly string[];
+  readonly rows: ReturnType<
+    typeof settleIncludingAbort<Map<string, AttachmentRecord>>
+  >;
+  readonly counts: ReturnType<typeof attachmentResolutionCounts>;
+}
 const startIncomingAttachmentRecords$ = command(
-  ({ get }, userMessage: UserMessageDocument, signal: AbortSignal) => {
+  (
+    { get },
+    userMessage: UserMessageDocument,
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): IncomingAttachmentRecords | undefined => {
     const files = userMessagePhysicalFiles(userMessage);
-    if (files.length === 0) {
+    const voiceIds = userMessage.parts.flatMap((part) => {
+      return part.type === "voice"
+        ? part.clips.map((clip) => {
+            return clip.fileId;
+          })
+        : [];
+    });
+    if (files.length === 0 && voiceIds.length === 0) {
       return undefined;
     }
     const counts = attachmentResolutionCounts(files);
     const rows = settleIncludingAbort(async () => {
       signal.throwIfAborted();
-      const ids = [
+      const fileIds = [
         ...new Set(
-          files.flatMap((file) => {
-            return uuid().safeParse(file.fileId).success
-              ? [file.fileId.toLowerCase()]
+          files.flatMap(({ fileId }) => {
+            return uuid().safeParse(fileId).success
+              ? [fileId.toLowerCase()]
               : [];
           }),
         ),
       ];
-      if (ids.length === 0) {
+      const clipIds = [
+        ...new Set(
+          voiceIds.map((id) => {
+            return id.toLowerCase();
+          }),
+        ),
+      ];
+      if (fileIds.length === 0 && clipIds.length === 0) {
         return new Map<string, AttachmentRecord>();
       }
       counts.sqlReads += 1;
       // One statement captures every referenced record together. Binding the
       // UUID array also keeps the parameter count independent of file count.
-      const loaded = await get(db$)
-        .select()
-        .from(runUploadedFiles)
-        .where(sql`${runUploadedFiles.id} = ANY(${sql.param(ids)}::uuid[])`);
+      const loaded = await readPrivateAttachmentRows(
+        get(db$),
+        or(
+          fileIds.length
+            ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+            : undefined,
+          clipIds.length
+            ? and(
+                sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                eq(runUploadedFiles.orgId, owner.orgId),
+                eq(runUploadedFiles.userId, owner.userId),
+                isNull(runUploadedFiles.deletedAt),
+              )
+            : undefined,
+        ),
+      );
       signal.throwIfAborted();
       return new Map(
         loaded.map((row) => {
@@ -652,12 +719,31 @@ const startIncomingAttachmentRecords$ = command(
         }),
       );
     });
-    return { files, rows, counts };
+    return { files, voiceIds, rows, counts };
   },
 );
-type IncomingAttachmentRecords = NonNullable<
-  ReturnType<(typeof startIncomingAttachmentRecords$)["write"]>
->;
+
+async function validateIncomingVoiceClips(
+  args: { readonly orgId: string; readonly userId: string },
+  { voiceIds, rows }: IncomingAttachmentRecords,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const error = voiceClipRequestError(voiceIds);
+  if (error) {
+    return error;
+  }
+  const records = await rows;
+  signal.throwIfAborted();
+  if (!records.ok) {
+    throw records.error;
+  }
+  const voice = resolveVoiceClipRecords(
+    { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+    records.value,
+  );
+  return "status" in voice ? voice : null;
+}
 
 const resolveIncomingAttachmentObject$ = command(
   async (
@@ -971,6 +1057,7 @@ const requestedThreadComputerAccess$ = command(
       .where(
         and(
           eq(computerUseHosts.id, requestedHostId),
+          sql`NOT ${remoteDeviceMode(params)}`,
           eq(computerUseHosts.orgId, params.orgId),
           eq(computerUseHosts.userId, params.userId),
           isNull(computerUseHosts.revokedAt),
@@ -1056,7 +1143,7 @@ const resolveSendThread$ = command(
       readonly existing?: {
         readonly thread: ExistingSendThreadRow;
       };
-      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly orgPlanCapabilities: ExecutionOrgPlan | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
       readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
       readonly context: AgentRunContextSignals;
@@ -1339,7 +1426,7 @@ function userModelPreferencePlan(
 }
 /** Reject a server-owned Official Workflow claim that cannot be authoritative. */
 function assertOfficialSourceClaim(
-  args: NormalSendArgs,
+  args: Pick<NormalSendArgs, "auth" | "requiredOfficialWorkflowIds">,
   chatRunSource: ChatRunSourceAnnotation | null,
 ): void {
   if (args.requiredOfficialWorkflowIds?.length === 0) {
@@ -1374,9 +1461,9 @@ function normalSendUserMessage(
       });
 }
 /**
- * A conflict on the insert is accepted as a duplicate without a lookup. Only
- * a follow-up with a server-generated id cannot have collided on its id, so
- * its conflict is the revoke edge taken concurrently.
+ * An ordinary input's ID conflict is accepted as a duplicate without a lookup.
+ * Follow-ups can also conflict on their revoke edge, so their caller-supplied
+ * identities are resolved separately after publication loses a race.
  */
 function normalSendEvent(params: {
   readonly modelSelection: ChatInputModelSelection;
@@ -2094,47 +2181,6 @@ const appendNormalSendInput$ = command(
   },
 );
 
-const authorizeNormalSend$ = command(
-  async (
-    _context,
-    args: NormalSendArgs & {
-      readonly existing: ExistingSendThreadRow | undefined;
-      readonly chatRunSource: NormalSendChatRunSourceRead;
-    },
-    signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly chatRunSource: ChatRunSourceAnnotation | null;
-        readonly sourceAutonomyBudget: number | null;
-      }
-    | NormalSendFailure
-    | CreatedChatEventResponse
-  > => {
-    const resolvedSource = await args.chatRunSource;
-    signal.throwIfAborted();
-    if (args.existing?.isOfficialWorkflowThread) {
-      return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
-    }
-    if (!resolvedSource.ok) {
-      throw resolvedSource.error;
-    }
-    const source = resolvedSource.value;
-    if ("response" in source) {
-      return source.response;
-    }
-    assertOfficialSourceClaim(args, source.source);
-    const invalidTemplate = invalidGenerationTemplateSelection(
-      args.body.userMessage,
-    );
-    if (invalidTemplate) {
-      return invalidTemplate;
-    }
-    return {
-      chatRunSource: source.source,
-      sourceAutonomyBudget: source.sourceAutonomyBudget,
-    };
-  },
-);
 const normalSendThreadTouch$ = command(
   async (
     { set },
@@ -2279,11 +2325,21 @@ const readNormalSendAttachments$ = command(
     args: Pick<NormalSendArgs, "userId" | "orgId" | "enqueueTiming"> & {
       readonly context: AgentRunContextSignals;
     },
-    attachmentRecords: IncomingAttachmentRecords | undefined,
+    prefetch:
+      | {
+          readonly authorize: NormalSendBootstrap["authorize"];
+          readonly records: IncomingAttachmentRecords;
+        }
+      | undefined,
     signal: AbortSignal,
   ) => {
     return settleIncludingAbort(async () => {
-      if (attachmentRecords) {
+      if (prefetch) {
+        const authorization = await prefetch.authorize;
+        signal.throwIfAborted();
+        if (!authorization.ok || "status" in authorization.value) {
+          return [];
+        }
         // Capture member settings before object I/O can delay the send.
         await get(args.context.memberMetadata$);
         signal.throwIfAborted();
@@ -2295,7 +2351,7 @@ const readNormalSendAttachments$ = command(
             userId: args.userId,
             orgId: args.orgId,
             enqueueTiming: args.enqueueTiming,
-            attachmentRecords,
+            attachmentRecords: prefetch?.records,
           },
           signal,
         );
@@ -2307,6 +2363,11 @@ type NormalSendAttachmentRead = ReturnType<
   (typeof readNormalSendAttachments$)["write"]
 >;
 
+interface NormalSendAttachmentPreparation {
+  readonly result: NormalSendAttachmentRead;
+  readonly finish: () => void;
+}
+
 const prepareNormalSendInput$ = command(
   async (
     { set },
@@ -2316,7 +2377,7 @@ const prepareNormalSendInput$ = command(
       readonly body: NormalSendBody;
       readonly thread: SendThread;
       readonly catalog: ModelCatalog;
-      readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
+      readonly orgPlanCapabilities: ExecutionOrgPlan | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
       readonly attachments: NormalSendAttachmentRead;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
@@ -2391,12 +2452,10 @@ function preparedNormalSendEvent(
  * Direct send, shared by the web, the CLI, and MCP: authorize the agent and
  * thread, validate a follow-up revocation, record attachment references, then
  * enqueue the input (creating a new thread's minimal row in the same
- * transaction) and schedule its pick without waiting for it. A retried client
- * event id conflicts on the input's insert and is accepted again without
- * enqueueing anything. The model is captured at enqueue. Credit admission,
- * the autonomy budget, templates, session, and context are resolved by the
- * pick; a rejection appears in the thread as `input.rejected`. A direct
- * message's sidebar touch runs after the pick.
+ * transaction) and schedule its pick without waiting for it. The model is
+ * captured at enqueue. The pick resolves credit admission, the autonomy
+ * budget, templates, session, and context and publishes rejections as
+ * `input.rejected`. The direct message's sidebar touch runs after the pick.
  */
 function settledNormalSendResponse(
   body: NormalSendBody,
@@ -2404,23 +2463,62 @@ function settledNormalSendResponse(
   createdAt: Date | null,
 ) {
   if (createdAt === null) {
-    // A conflict on the insert is accepted as a duplicate without a
-    // lookup. Only a follow-up with a server-generated id cannot have
-    // collided on its id, so its conflict is the revoke edge taken
-    // concurrently.
+    // Caller-supplied follow-up IDs resolve their receipt before this fast
+    // path. A server-generated ID cannot collide on its ID, so a follow-up
+    // conflict here is the revoke edge taken concurrently.
     return body.revokesEventId && body.clientEventId === undefined
       ? conflict("Recommended follow-up has already been used")
       : acceptedSendResponse(threadId, nowDate(), true);
   }
   return acceptedSendResponse(threadId, createdAt, false);
 }
+function followupRevokerResponse(
+  threadId: string,
+  clientEventId: string | undefined,
+  revoker: { readonly id: string; readonly createdAt: Date },
+) {
+  // PostgreSQL returns UUIDs in lowercase.
+  return revoker.id === clientEventId?.toLowerCase()
+    ? acceptedSendResponse(threadId, revoker.createdAt, true)
+    : conflict("Recommended follow-up has already been used");
+}
+const resolveFollowupPublicationConflict$ = command(
+  async (
+    { get },
+    params: {
+      readonly threadId: string;
+      readonly revokesEventId: string;
+      readonly clientEventId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    // The insert may have waited for a concurrent winner. Read the committed
+    // revoker in a fresh statement after the conflict has settled.
+    const [revoker] = await get(db$)
+      .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, params.threadId),
+          eq(chatEvents.revokesEventId, params.revokesEventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return revoker
+      ? followupRevokerResponse(params.threadId, params.clientEventId, revoker)
+      : duplicateClientEventIdResponse();
+  },
+);
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
-    const [orgModels, memberModels, memberMetadata] = await Promise.all([
-      get(context.modelFacts$),
-      get(context.memberModels$),
-      get(context.memberMetadata$),
-    ]);
+    const [orgModels, memberModels, memberMetadata, featureSwitchContext] =
+      await Promise.all([
+        get(context.modelFacts$),
+        get(context.memberModels$),
+        get(context.memberMetadata$),
+        get(context.featureSwitches$),
+      ]);
     signal.throwIfAborted();
     return {
       orgModels,
@@ -2428,6 +2526,7 @@ const prepareNormalSendModels$ = command(
         org: orgModels,
         member: memberModels,
         memberMetadata,
+        featureSwitchContext,
       },
     };
   },
@@ -2439,77 +2538,228 @@ function forgedMcpSource(body: NormalSendBody): boolean {
   });
 }
 
-interface NormalSendBootstrap {
-  readonly context: AgentRunContextSignals;
-  readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
-  readonly inputId: string;
-}
-
-function createNormalSendBootstrap(
-  owner: Pick<OrganizationAuthContext, "userId" | "orgId">,
-  body: NormalSendBody,
-  requireVisibleThread?: boolean,
-): NormalSendBootstrap {
-  // Shared input and template reads match PostgreSQL's canonical UUID form.
-  const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
-  const templates = projectUserMessage(body.userMessage).templates;
-  const graph = createAgentRunContextSignals(
-    {
-      userId: owner.userId,
-      orgId: owner.orgId,
-      chatThreadId: body.threadId ?? body.clientThreadId ?? randomUUID(),
-    },
-    {
-      inputId,
-      newThread: body.threadId === undefined,
-      requireVisibleThread,
-      presentationIds: selectedUserPresentationTemplateIds(templates),
-      userTemplateIds: selectedUserTemplateIds(templates),
-    },
-  );
-  return { ...graph, inputId };
-}
-
-export const startNormalSendBootstrap$ = command(
+const startNormalSendRevocation$ = command(
   (
-    { get },
+    { set },
     args: {
-      readonly auth: OrganizationAuthContext;
-      readonly body: SendBody;
-      readonly requireVisibleThread?: boolean;
+      readonly body: NormalSendBody;
+      readonly existingThread: Promise<ExistingSendThreadRow | null>;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
+    signal: AbortSignal,
   ) => {
-    const { body } = args;
-    if (
-      !isNormalSendBody(body) ||
-      isInterruptSendBody(body) ||
-      forgedMcpSource(body)
-    ) {
-      return undefined;
-    }
-    const bootstrap = createNormalSendBootstrap(
-      args.auth,
-      body,
-      args.requireVisibleThread,
-    );
-    waitUntil(settle(get(bootstrap.context.modelFacts$)));
-    waitUntil(settle(get(bootstrap.context.memberMetadata$)));
-    return bootstrap;
+    return settleIncludingAbort(async () => {
+      const existing = await args.existingThread;
+      signal.throwIfAborted();
+      if (!existing) {
+        return undefined;
+      }
+      return await measureChatEnqueue(
+        args.enqueueTiming,
+        "followup_validation",
+        () => {
+          return set(
+            validateNormalRevocationTarget$,
+            {
+              threadId: existing.id,
+              revokesEventId: args.body.revokesEventId,
+              clientEventId: args.body.clientEventId,
+            },
+            signal,
+          );
+        },
+      );
+    });
   },
 );
 
-const prepareNormalSendContext$ = command(
-  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
-    if (forgedMcpSource(request.body)) {
-      return badRequestMessage("MCP source annotations are server-managed");
+interface NormalSendBootstrap {
+  readonly context: AgentRunContextSignals;
+  readonly existingThread: Promise<ExistingSendThreadRow | null> | undefined;
+  readonly inputId: string;
+  readonly authorize: ReturnType<
+    (typeof prepareNormalSendAuthorization$)["write"]
+  >;
+  readonly attachments?: NormalSendAttachmentPreparation;
+  readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
+  readonly revocation?: ReturnType<
+    (typeof startNormalSendRevocation$)["write"]
+  >;
+}
+
+const prepareNormalSendAuthorization$ = command(
+  (
+    _context,
+    args: Pick<
+      NormalSendArgs,
+      "auth" | "body" | "requiredOfficialWorkflowIds"
+    > & {
+      readonly existingThread:
+        Promise<ExistingSendThreadRow | null> | undefined;
+      readonly chatRunSource: NormalSendChatRunSourceRead;
+      readonly attachmentRecords: IncomingAttachmentRecords | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(async () => {
+      const { chatRunSource, attachmentRecords } = args;
+      const existing = await args.existingThread;
+      signal.throwIfAborted();
+      if (args.body.threadId !== undefined && !existing) {
+        return notFound("Chat thread not found");
+      }
+      const resolvedSource = await chatRunSource;
+      signal.throwIfAborted();
+      if (existing?.isOfficialWorkflowThread) {
+        return forbidden(OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE);
+      }
+      if (!resolvedSource.ok) {
+        throw resolvedSource.error;
+      }
+      const source = resolvedSource.value;
+      if ("response" in source) {
+        return source.response;
+      }
+      assertOfficialSourceClaim(args, source.source);
+      const invalidTemplate = invalidGenerationTemplateSelection(
+        args.body.userMessage,
+      );
+      if (invalidTemplate) {
+        return invalidTemplate;
+      }
+      if (attachmentRecords?.voiceIds.length) {
+        const voiceError = await validateIncomingVoiceClips(
+          args.auth,
+          attachmentRecords,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (voiceError) {
+          return voiceError;
+        }
+      }
+      return {
+        chatRunSource: source.source,
+        sourceAutonomyBudget: source.sourceAutonomyBudget,
+      };
+    });
+  },
+);
+
+const startNormalSendAttachmentPreparation$ = command(
+  (
+    { set },
+    args: Pick<
+      NormalSendArgs,
+      "auth" | "body" | "requiredOfficialWorkflowIds" | "enqueueTiming"
+    > & {
+      readonly chatRunSource: NormalSendChatRunSourceRead;
+      readonly existingThread:
+        Promise<ExistingSendThreadRow | null> | undefined;
+      readonly context: AgentRunContextSignals;
+    },
+    signal: AbortSignal,
+  ) => {
+    const attachmentRecords = set(
+      startIncomingAttachmentRecords$,
+      args.body.userMessage,
+      args.auth,
+      signal,
+    );
+    const authorize = set(
+      prepareNormalSendAuthorization$,
+      { ...args, attachmentRecords },
+      signal,
+    );
+    waitUntil(authorize);
+    if (!attachmentRecords) {
+      return { authorize, attachments: undefined };
     }
-    const { context, existingThread$, inputId } =
-      request.bootstrap ?? createNormalSendBootstrap(request, request.body);
-    const existingRead =
-      request.body.threadId === undefined ? undefined : get(existingThread$);
-    const args = request;
-    const models = settle(set(prepareNormalSendModels$, context, signal));
-    waitUntil(models);
+    waitUntil(attachmentRecords.rows);
+    const stop = new AbortController();
+    let finished = false;
+    const result = set(
+      readNormalSendAttachments$,
+      {
+        orgId: args.auth.orgId,
+        userId: args.auth.userId,
+        context: args.context,
+        enqueueTiming: args.enqueueTiming,
+      },
+      { authorize, records: attachmentRecords },
+      AbortSignal.any([signal, stop.signal]),
+    ).finally(() => {
+      finished = true;
+    });
+    return {
+      authorize,
+      attachments: {
+        result,
+        finish() {
+          if (!finished) {
+            // An early exit cancels speculative I/O and retains its cleanup.
+            stop.abort();
+            waitUntil(result);
+          }
+        },
+      },
+    };
+  },
+);
+
+const startNormalSendReads$ = command(
+  (
+    { get, set },
+    args: {
+      readonly auth: OrganizationAuthContext;
+      readonly body: NormalSendBody;
+      readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
+      readonly requiredOfficialWorkflowIds?: readonly string[];
+    },
+    signal: AbortSignal,
+  ): NormalSendBootstrap => {
+    signal.throwIfAborted();
+    const { body, auth } = args;
+    // Shared input and template reads match PostgreSQL's canonical UUID form.
+    const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
+    const templates = projectUserMessage(body.userMessage).templates;
+    const presentationIds = selectedUserPresentationTemplateIds(templates);
+    const userTemplateIds = selectedUserTemplateIds(templates);
+    const graph = createAgentRunContextSignals(
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        chatThreadId: body.threadId ?? body.clientThreadId ?? randomUUID(),
+      },
+      {
+        inputId,
+        newThread: body.threadId === undefined,
+        requireVisibleThread: args.requireVisibleThread,
+        presentationIds,
+        userTemplateIds,
+      },
+    );
+    const { context } = graph;
+    const existingThread =
+      body.threadId === undefined ? undefined : get(graph.existingThread$);
+    waitUntil(settle(get(context.modelFacts$)));
+    waitUntil(settle(get(context.memberMetadata$)));
+    waitUntil(settle(get(context.executionPackageSources$)));
+    waitUntil(
+      settle(
+        (async () => {
+          if (existingThread && !(await existingThread)) {
+            return;
+          }
+          signal.throwIfAborted();
+          await get(context.catalog$);
+        })(),
+      ),
+    );
+    if (presentationIds.length || userTemplateIds.length) {
+      waitUntil(settle(get(context.requestTemplateSources$)));
+    }
     // A forwarded or agent-token send also awaits its source Run. The read is
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization.
@@ -2517,65 +2767,28 @@ const prepareNormalSendContext$ = command(
       set(
         resolveNormalSendChatRunSource$,
         {
-          auth: args.auth,
-          userMessage: args.body.userMessage,
-          sourceRunId: args.body.sourceRunId,
+          auth,
+          userMessage: body.userMessage,
+          sourceRunId: body.sourceRunId,
         },
         signal,
       ),
     );
     waitUntil(chatRunSource);
-    // Only a validated send consumes these records and verifies the objects.
-    const attachmentRecords = set(
-      startIncomingAttachmentRecords$,
-      args.body.userMessage,
+    const attachmentPreparation = set(
+      startNormalSendAttachmentPreparation$,
+      { ...args, context, existingThread, chatRunSource },
       signal,
     );
-    if (attachmentRecords) {
-      waitUntil(attachmentRecords.rows);
-    }
-    // Package sources only depend on the authenticated member.
-    waitUntil(settle(get(context.executionPackageSources$)));
-    const existing = await existingRead;
-    signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
-    set(preloadAgentRunContext$, context, signal);
-    const prepared = await set(
-      authorizeNormalSend$,
-      { ...args, existing: existing ?? undefined, chatRunSource },
-      signal,
-    );
-    if ("status" in prepared) {
-      return prepared;
-    }
-    const voiceIds = args.body.userMessage.parts.flatMap((part) => {
-      return part.type === "voice"
-        ? part.clips.map((clip) => {
-            return clip.fileId;
-          })
-        : [];
-    });
-    if (voiceIds.length) {
-      const voice = await set(
-        resolveVoiceClips$,
-        { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
-        signal,
-      );
-      if ("status" in voice) {
-        return voice;
-      }
-    }
     const host =
-      args.body.computerUseHostId && args.body.cloudBrowserEnabled !== true
+      body.computerUseHostId && body.cloudBrowserEnabled !== true
         ? settleIncludingAbort(() => {
             return set(
               requestedThreadComputerAccess$,
               {
-                orgId: args.orgId,
-                userId: args.userId,
-                body: args.body,
+                orgId: auth.orgId,
+                userId: auth.userId,
+                body,
                 current: {
                   computerUseHostId: null,
                   cloudBrowserEnabled: false,
@@ -2589,27 +2802,86 @@ const prepareNormalSendContext$ = command(
       waitUntil(host);
     }
     const revocation =
-      existing && args.body.revokesEventId
-        ? settleIncludingAbort(() => {
-            return measureChatEnqueue(
-              args.enqueueTiming,
-              "followup_validation",
-              () => {
-                return set(
-                  validateNormalRevocationTarget$,
-                  {
-                    threadId: existing.id,
-                    revokesEventId: args.body.revokesEventId,
-                    clientEventId: args.body.clientEventId,
-                  },
-                  signal,
-                );
-              },
-            );
-          })
+      existingThread && body.revokesEventId
+        ? set(
+            startNormalSendRevocation$,
+            {
+              body,
+              existingThread,
+              enqueueTiming: args.enqueueTiming,
+            },
+            signal,
+          )
         : undefined;
     if (revocation) {
       waitUntil(revocation);
+    }
+    return {
+      context,
+      existingThread,
+      inputId,
+      ...attachmentPreparation,
+      host,
+      revocation,
+    };
+  },
+);
+
+export const startNormalSendBootstrap$ = command(
+  (
+    { set },
+    args: {
+      readonly auth: OrganizationAuthContext;
+      readonly body: SendBody;
+      readonly requireVisibleThread?: boolean;
+      readonly enqueueTiming?: ChatEnqueueTimingCollector;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { body } = args;
+    if (
+      !isNormalSendBody(body) ||
+      isInterruptSendBody(body) ||
+      forgedMcpSource(body)
+    ) {
+      return undefined;
+    }
+    return set(startNormalSendReads$, { ...args, body }, signal);
+  },
+);
+
+const prepareNormalSendContext$ = command(
+  async (
+    { set },
+    request: NormalSendRequest,
+    bootstrap: NormalSendBootstrap,
+    signal: AbortSignal,
+  ) => {
+    const {
+      context,
+      existingThread,
+      inputId,
+      authorize,
+      attachments,
+      host,
+      revocation,
+    } = bootstrap;
+    const args = request;
+    const models = settle(set(prepareNormalSendModels$, context, signal));
+    waitUntil(models);
+    const existing = await existingThread;
+    signal.throwIfAborted();
+    if (request.body.threadId === undefined || existing) {
+      set(preloadAgentRunContext$, context, signal);
+    }
+    const authorization = await authorize;
+    signal.throwIfAborted();
+    if (!authorization.ok) {
+      throw authorization.error;
+    }
+    const prepared = authorization.value;
+    if ("status" in prepared) {
+      return prepared;
     }
     return {
       ...prepared,
@@ -2618,7 +2890,7 @@ const prepareNormalSendContext$ = command(
       context,
       existing,
       inputId,
-      attachmentRecords,
+      attachments: attachments?.result,
       revocation,
       host,
     };
@@ -2743,33 +3015,41 @@ const resolveFailedNormalSend$ = command(
 const prepareNormalSendPublicationInput$ = command(
   async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
     signal.throwIfAborted();
-    let unusedAttachmentRead: NormalSendAttachmentRead | undefined;
-    const result = await settleIncludingAbort(async () => {
+    let bootstrap = request.bootstrap;
+    const preparation = settleIncludingAbort(async () => {
       const prepared = await measureChatEnqueue(
         request.enqueueTiming,
         "context_ready",
         async () => {
+          if (forgedMcpSource(request.body)) {
+            return badRequestMessage(
+              "MCP source annotations are server-managed",
+            );
+          }
+          bootstrap ??= set(startNormalSendReads$, request, signal);
           const authorized = await set(
             prepareNormalSendContext$,
             request,
+            bootstrap,
             signal,
           );
           signal.throwIfAborted();
           if ("status" in authorized) {
             return authorized;
           }
-          const attachments = set(
-            readNormalSendAttachments$,
-            {
-              orgId: request.orgId,
-              userId: request.userId,
-              enqueueTiming: request.enqueueTiming,
-              context: authorized.context,
-            },
-            authorized.attachmentRecords,
-            signal,
-          );
-          unusedAttachmentRead = authorized.attachmentRecords && attachments;
+          const attachments =
+            authorized.attachments ??
+            set(
+              readNormalSendAttachments$,
+              {
+                orgId: request.orgId,
+                userId: request.userId,
+                enqueueTiming: request.enqueueTiming,
+                context: authorized.context,
+              },
+              undefined,
+              signal,
+            );
           return set(captureSendModels$, authorized, attachments, signal);
         },
       );
@@ -2823,7 +3103,6 @@ const prepareNormalSendPublicationInput$ = command(
         },
         signal,
       );
-      unusedAttachmentRead = undefined;
       if ("status" in input) {
         return input;
       }
@@ -2851,10 +3130,12 @@ const prepareNormalSendPublicationInput$ = command(
         },
       };
     });
+    const result = await (request.bootstrap
+      ? preparation
+      : preparation.finally(() => {
+          bootstrap?.attachments?.finish();
+        }));
     signal.throwIfAborted();
-    if (unusedAttachmentRead) {
-      waitUntil(unusedAttachmentRead);
-    }
     if (!result.ok) {
       throw result.error;
     }
@@ -2894,6 +3175,21 @@ export const sendNormalEvent$ = command(
       );
     }
     const accepted = enqueued.value;
+    if (
+      accepted === null &&
+      args.body.revokesEventId &&
+      args.body.clientEventId !== undefined
+    ) {
+      return await set(
+        resolveFollowupPublicationConflict$,
+        {
+          clientEventId: args.body.clientEventId,
+          threadId: thread.threadId,
+          revokesEventId: args.body.revokesEventId,
+        },
+        signal,
+      );
+    }
     if (accepted) {
       args.onAcceptedDocument?.(publication.input.event.userMessage);
     }
@@ -3138,14 +3434,11 @@ const validateNormalRevocationTarget$ = command(
       return badRequestMessage("Recommended follow-up is no longer available");
     }
     if (target.existingRevoker) {
-      // Postgres returns the uuid lowercase; the request may use any case.
-      return target.existingRevoker.id === params.clientEventId?.toLowerCase()
-        ? acceptedSendResponse(
-            params.threadId,
-            target.existingRevoker.createdAt,
-            true,
-          )
-        : conflict("Recommended follow-up has already been used");
+      return followupRevokerResponse(
+        params.threadId,
+        params.clientEventId,
+        target.existingRevoker,
+      );
     }
     // The publication's unique revokes index still guards single use.
     return {

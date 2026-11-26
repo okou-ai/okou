@@ -32,13 +32,22 @@ def accounting(value, closed, policy=None):
         raise ValueError("cleanup prematurely released accepted physical custody")
 
 
+def exact_coverage(value, allocation, accounting_state, message):
+    """Check the held-lease and I/O receipt after accounting validation."""
+    exact(value, {
+        "allocated": allocation,
+        "accounting": accounting_state,
+        "original_lease_active": True,
+        "io_release_withheld": True,
+    }, message)
+
+
 def coverage(value, policy, closed):
     if not isinstance(value, dict) or "accounting" not in value:
         raise ValueError("cleanup has no original coverage")
     accounting(value["accounting"], closed, policy)
-    exact(value, {"allocated": [2, 4096, 1], "accounting": value["accounting"],
-                  "original_lease_active": True, "io_release_withheld": True},
-          "cleanup released its original full lease or IO gate")
+    exact_coverage(value, [2, 4096, 1], value["accounting"],
+                   "cleanup released its original full lease or IO gate")
 
 
 def supplied_policy(collector, result, key):

@@ -139,10 +139,13 @@ fn run_scoped_cleanup_paths(paths: &paths::GuestPaths, include_session: bool) ->
 }
 
 #[test]
-fn framework_supports_active_input_for_all_cli_frameworks() {
+fn active_input_is_admitted_only_for_interactive_backends() {
     assert!(framework_supports_active_input(env::Framework::ClaudeCode));
     assert!(framework_supports_active_input(env::Framework::Codex));
     assert!(framework_supports_active_input(env::Framework::Pi));
+    assert!(!framework_supports_active_input(
+        env::Framework::Antigravity
+    ));
 }
 
 struct TestRuntimeRootGuard;
@@ -759,7 +762,7 @@ async fn complete_after_workload_resource_limit(
         failure_diagnostic.as_mut(),
         evidence,
     );
-    let exit_code = complete_execution(
+    let (exit_code, _) = complete_execution(
         &masker,
         cli_exit_code,
         cli_exit_code,
@@ -1027,7 +1030,7 @@ async fn complete_execution_writes_finalization_failure_diagnostic_inner() {
         http.clone(),
     );
     let runtime = test_guest_runtime(config, http.clone());
-    let exit_code = complete_execution(
+    let (exit_code, _) = complete_execution(
         &masker,
         0,
         0,
@@ -1099,7 +1102,7 @@ async fn complete_execution_treats_combined_report_failure_as_finalization_failu
     let runtime = test_guest_runtime(config, http);
     let session_metadata =
         session_metadata::CapturedSessionMetadata::for_test("combined-failure-session", None);
-    let exit_code = complete_execution(
+    let (exit_code, _) = complete_execution(
         &masker,
         0,
         0,
@@ -1174,7 +1177,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
     let runtime = test_guest_runtime(config, http.clone());
     let session_metadata =
         session_metadata::CapturedSessionMetadata::for_test("zero-turn-session", None);
-    let exit_code = complete_execution(
+    let (exit_code, memory_published) = complete_execution(
         &masker,
         0,
         0,
@@ -1192,6 +1195,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
     telemetry.shutdown().await;
 
     assert_eq!(exit_code, 0);
+    assert!(!memory_published);
     assert_eq!(complete_mock.calls_async().await, 1);
 
     for path in cleanup_paths {
@@ -1279,7 +1283,7 @@ async fn complete_execution_after_cli_failure_inner(
     .with_cli_exit_code(failure_exit_code)
     .with_failure_reason(failure_reason)
     .with_session_history_status(SessionHistoryStatus::Present);
-    let exit_code = complete_execution(
+    let (exit_code, _) = complete_execution(
         &masker,
         failure_exit_code,
         failure_exit_code,

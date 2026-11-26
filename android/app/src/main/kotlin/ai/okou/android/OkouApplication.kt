@@ -10,10 +10,12 @@ import ai.okou.android.auth.initialLocale
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
-import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlOwners
+import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.settings.DefaultModelStore
+import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
@@ -25,21 +27,9 @@ import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.shareIn
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 open class OkouApplication : Application() {
-    open val connectivity: Flow<Boolean> by lazy {
-        observeValidatedConnectivity()
-            .shareIn(
-                CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
-                SharingStarted.WhileSubscribed(replayExpirationMillis = 0),
-                replay = 1,
-            )
-    }
-
     open val updates by lazy {
         val directory = File(filesDir, "updates")
         AppUpdates(
@@ -52,7 +42,6 @@ open class OkouApplication : Application() {
             FileUpdateStore(directory),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,
-            connectivity = connectivity,
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }
@@ -60,7 +49,14 @@ open class OkouApplication : Application() {
         ProjectExpansionStore(
             PreferenceDataStoreFactory.create {
                 noBackupFilesDir.resolve("project-expansion.preferences_pb")
-            }
+            },
+        )
+    }
+    internal val searchRecents by lazy {
+        SearchRecentChatsStore(
+            PreferenceDataStoreFactory.create {
+                noBackupFilesDir.resolve("workspace-search-recents.preferences_pb")
+            },
         )
     }
     val memberAppearanceCache by lazy {
@@ -76,8 +72,14 @@ open class OkouApplication : Application() {
         )
     }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
+    internal val workspaceSettingsCache by lazy {
+        val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        WorkspaceSettingsCache.create(storageScope) {
+            noBackupFilesDir.resolve("workspace-settings.preferences_pb")
+        }
+    }
     open val composerJournal by lazy { ComposerJournalStore(this) }
-    open val runControlJournal by lazy { RunControlJournalStore(this) }
+    val runControlOwners by lazy { RunControlOwners() }
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)

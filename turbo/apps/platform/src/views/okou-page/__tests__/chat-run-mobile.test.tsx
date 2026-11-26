@@ -1,105 +1,89 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { fireEvent } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
 
-import { fill } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
-  activeElementIsInside,
-  chatComposerTextarea,
-  chatScrollContainer,
-  setupPage,
-} from "./chat-lifecycle-test-helpers.ts";
-import {
-  assistantEvent,
+  createChatRunFixtures,
   promptEvent,
   readyChat,
   RUN_PATH,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
+const RUN_ID = "a0000000-0000-4000-a000-000000000e61";
 
-const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000601";
-
-function setKeyboardOpenFixture(): void {
-  const root = document.documentElement;
-  const previous = root.dataset.keyboardOpen;
-  root.dataset.keyboardOpen = "true";
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (previous === undefined) {
-        delete root.dataset.keyboardOpen;
-      } else {
-        root.dataset.keyboardOpen = previous;
-      }
-    },
-    { once: true },
-  );
+/** The phone's visual viewport, which shrinks when the keyboard opens. */
+class PhoneViewport extends EventTarget {
+  height = window.innerHeight;
+  width = 390;
+  scale = 1;
+  offsetTop = 0;
+  offsetLeft = 0;
+  pageTop = 0;
+  pageLeft = 0;
 }
 
-function swipe(
-  target: Element,
-  start: { readonly x: number; readonly y: number },
-  end: { readonly x: number; readonly y: number },
-): boolean {
-  fireEvent.touchStart(target, {
-    touches: [{ clientX: start.x, clientY: start.y }],
-  });
-  const allowed = fireEvent.touchMove(target, {
-    cancelable: true,
-    touches: [{ clientX: end.x, clientY: end.y }],
-  });
+function swipe(target: Element, fromY: number, toY: number): void {
+  fireEvent.touchStart(target, { touches: [{ clientX: 120, clientY: fromY }] });
+  fireEvent.touchMove(target, { touches: [{ clientX: 120, clientY: toY }] });
   fireEvent.touchEnd(target, { touches: [] });
-  return allowed;
-}
-
-function installScrollableActiveChat(): void {
-  installRunChat({
-    activeRunIds: [ACTIVE_RUN_ID],
-    chatEvents: [
-      promptEvent({
-        id: "mobile-request",
-        runId: ACTIVE_RUN_ID,
-        seqId: 1,
-        text: "Prepare the mobile launch plan",
-      }),
-      assistantEvent({
-        id: "mobile-update",
-        runId: ACTIVE_RUN_ID,
-        seqId: 2,
-        text: "The first launch section is ready.",
-      }),
-    ],
-  });
 }
 
 test("Keep mobile chat gestures predictable in the standalone app", async () => {
-  context.mocks.browser.standaloneDisplayMode(true);
-  context.mocks.browser.maxTouchPoints(5);
-  installScrollableActiveChat();
-
+  const viewport = new PhoneViewport();
+  vi.stubGlobal("visualViewport", viewport);
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === "(display-mode: standalone)" || query === "(pointer: coarse)"
+    );
+  });
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "audit-request",
+        runId: RUN_ID,
+        seqId: 1,
+        text: "Audit the release notes",
+      }),
+    ],
+    activeRunIds: [RUN_ID],
+  });
   await setupPage({ context, path: RUN_PATH });
-
   await readyChat();
-  const composer = chatComposerTextarea();
-  await fill(composer, "Short standalone draft");
-  composer.focus();
-  setKeyboardOpenFixture();
+  const editor = await findComposerEditor();
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.paste("Add a summary");
+  // The on-screen keyboard covers the lower part of the screen.
+  viewport.height = window.innerHeight - 340;
+  viewport.dispatchEvent(new Event("resize"));
+  await waitFor(() => {
+    expect(document.documentElement).toHaveAttribute(
+      "data-keyboard-open",
+      "true",
+    );
+  });
 
-  const upwardAllowed = swipe(composer, { x: 40, y: 120 }, { x: 40, y: 80 });
-  expect(upwardAllowed).toBeFalsy();
-  expect(activeElementIsInside(composer)).toBeTruthy();
-  expect(composer.closest("[data-chat-composer]")).not.toBeNull();
+  swipe(editor, 520, 470);
+  expect(editor).toHaveFocus();
 
-  swipe(composer, { x: 40, y: 80 }, { x: 40, y: 120 });
-  expect(activeElementIsInside(composer)).toBeFalsy();
-  expect(composer.closest("[data-chat-composer]")).not.toBeNull();
+  swipe(editor, 470, 520);
+  expect(editor).not.toHaveFocus();
+  expect(editor).toBeInTheDocument();
 
-  composer.focus();
-  const history = chatScrollContainer();
-  swipe(history, { x: 40, y: 80 }, { x: 40, y: 120 });
-  expect(activeElementIsInside(composer)).toBeFalsy();
-  expect(composer.closest("[data-chat-composer]")).not.toBeNull();
+  await user.click(editor);
+  expect(editor).toHaveFocus();
+  const history = document.querySelector(
+    "[data-scroll-container]",
+  ) as HTMLElement;
+  swipe(history, 200, 260);
+
+  expect(editor).not.toHaveFocus();
+  await expect(findComposerEditor()).resolves.toHaveTextContent(
+    "Add a summary",
+  );
 });

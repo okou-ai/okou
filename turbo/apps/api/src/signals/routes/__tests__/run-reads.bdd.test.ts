@@ -1124,6 +1124,7 @@ function networkHardeningRows(
       model_catalog_cache_validation_latency_ms: -1,
       model_catalog_cache_eviction_count: 33,
       model_catalog_prefetch_role: "credential-specific-value",
+      openrouter: { generation_id: "invalid" },
     },
     {
       _time: "2026-06-10T12:01:00Z",
@@ -1141,6 +1142,14 @@ function networkHardeningRows(
       model_catalog_cache_validation_latency_ms: 1700,
       model_catalog_cache_eviction_count: 1,
       model_catalog_prefetch_role: "inflight_consumer",
+      "openrouter.generation_id": "gen-network-log",
+      "openrouter.model": "author/model",
+      "openrouter.provider": "Fallback Host",
+      "openrouter.attempts": [
+        { provider: "First Host", model: "author/model", status: 429 },
+        { provider: "Fallback Host", model: "author/model", status: 200 },
+      ],
+      "openrouter.pipeline": "ignored",
       upstream_binding_reason: "connector_auth",
       upstream_binding_trusted_host: "api.github.com",
       upstream_binding_request_host: "203.0.113.10",
@@ -1305,12 +1314,6 @@ describe("RUN-04: agent run telemetry families", () => {
       noCache: true,
       format: "tabular",
     });
-
-    const outgoingTab = await reads.rawApiRequest(
-      actor,
-      `/api/runs/${run.runId}/telemetry/agent?limit=1&order=asc`,
-    );
-    expect(outgoingTab).toStrictEqual({ status: 200, body: firstPage.body });
   });
 
   it.each(["asc", "desc"] as const)(
@@ -1539,6 +1542,15 @@ describe("RUN-04: agent run telemetry families", () => {
         model_catalog_cache_validation_latency_ms: 1700,
         model_catalog_cache_eviction_count: 1,
         model_catalog_prefetch_role: "inflight_consumer",
+        openrouter: {
+          generation_id: "gen-network-log",
+          model: "author/model",
+          provider: "Fallback Host",
+          attempts: [
+            { provider: "First Host", model: "author/model", status: 429 },
+            { provider: "Fallback Host", model: "author/model", status: 200 },
+          ],
+        },
         upstream_binding_reason: "connector_auth",
         upstream_binding_trusted_host: "api.github.com",
         upstream_binding_request_host: "203.0.113.10",
@@ -2698,7 +2710,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         if (sent.status !== 201) {
           throw new Error("Expected the pending input to be accepted");
         }
-        await signing.entered;
+        await signing.waitForPending();
         const messages = await chat.listThreadEvents(actor, sent.body.threadId);
         pendingRunId = messages.events.find((event) => {
           return event.revokesEventId === clientEventId;

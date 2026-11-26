@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useLastResolved, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { forYouIllustrations$ } from "../../signals/okou-page/for-you-artwork.ts";
 
@@ -17,7 +17,7 @@ export function ForYouCardHeading({
   readonly active: boolean;
 }) {
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
-  const illustration = useLastResolved(forYouIllustrations$)?.[id];
+  const illustration = useGet(forYouIllustrations$)[id];
   return (
     <header className="grid grid-cols-[minmax(0,1fr)_7rem] items-start gap-4 max-[360px]:grid-cols-[minmax(0,1fr)_5.75rem] max-[360px]:gap-2.5 sm:grid-cols-[minmax(0,1fr)_11rem] sm:gap-6">
       <div className="min-w-0">

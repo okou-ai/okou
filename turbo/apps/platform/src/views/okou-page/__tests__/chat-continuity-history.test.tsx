@@ -1,537 +1,238 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  chatEventsContract,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
-
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { fastButton } from "./chat-list-test-helpers.ts";
+import { SECOND_ATTACHMENT_THREAD_ID } from "./chat-attachment-test-helpers.ts";
 import {
-  continuityEventRow,
+  continuityAttachment,
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
+import {
+  conversationEvents,
+  mockChatGeometry,
+  requiredElement,
+} from "./chat-conversation-locator-test-helpers.ts";
+import {
+  mockChatEventRows,
+  normalizeMockChatEvents,
+} from "./chat-event-test-helpers.ts";
+import {
+  findComposer,
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
+import { RUN_PATH, RUN_THREAD_ID } from "./chat-run-test-fixtures.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-interface CapturedSend {
-  readonly clientEventId: string;
-  readonly threadId: string;
-  readonly userMessage: UserMessageDocument;
-}
-
-function textDocument(text: string): UserMessageDocument {
-  return { version: 1, parts: [{ type: "text", text }] };
-}
-
-function promptRow(
-  caseId: number,
-  sequence: number,
-  threadId: string,
-  text: string,
-  options: {
-    readonly id?: string;
-    readonly runId?: string;
-    readonly revokesEventId?: string;
-    readonly userMessage?: UserMessageDocument;
-  } = {},
-): ChatEventRow {
-  const row = continuityEventRow(caseId, sequence, threadId, "input.prompt", {
-    payload: { userMessage: options.userMessage ?? textDocument(text) },
-    ...(options.runId === undefined ? {} : { runId: options.runId }),
-    ...(options.revokesEventId === undefined
-      ? {}
-      : { revokesEventId: options.revokesEventId }),
+test("chat-continuity-history-003 scrolling to the end then using Control Up restores the top of six turns", async () => {
+  mockChatGeometry();
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    chatEvents: conversationEvents(6),
   });
-  return options.id === undefined ? row : { ...row, id: options.id };
-}
-
-function outputRow(
-  caseId: number,
-  sequence: number,
-  threadId: string,
-  text: string,
-  run: { readonly id: string },
-): ChatEventRow {
-  return continuityEventRow(caseId, sequence, threadId, "output.message", {
-    payload: { content: text },
-    runId: run.id,
-  });
-}
-
-function completedRow(
-  caseId: number,
-  sequence: number,
-  threadId: string,
-  runId: string,
-): ChatEventRow {
-  return continuityEventRow(caseId, sequence, threadId, "run.completed", {
-    runId,
-  });
-}
-
-function threadContainer(threadId: string): HTMLElement {
-  const container = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${threadId}"]`,
-  );
-  if (!container) {
-    throw new Error(`Expected chat pane ${threadId}`);
-  }
-  return container;
-}
-
-function scrollContainer(threadId: string): HTMLElement {
-  const scroller = threadContainer(threadId).querySelector<HTMLElement>(
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Locator answer 6");
+  const viewport = requiredElement(
     "[data-scroll-container]",
+    requiredElement("[data-chat-thread-container-id]"),
   );
-  if (!scroller) {
-    throw new Error(`Expected scroll container for ${threadId}`);
-  }
-  return scroller;
-}
-
-function setScrollableGeometry(
-  scroller: HTMLElement,
-  scrollHeight: number,
-  clientHeight: number,
-): void {
-  Object.defineProperties(scroller, {
-    scrollHeight: { configurable: true, value: scrollHeight },
-    clientHeight: { configurable: true, value: clientHeight },
-  });
-}
-
-function eventAnchorCount(container: ParentNode, eventId: string): number {
-  return container.querySelectorAll(
-    `[data-chat-scroll-anchor-event-id="${eventId}"]`,
-  ).length;
-}
-
-function userTurnCount(container: ParentNode, text: string): number {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>('[data-role="user"]'),
-  ).filter((turn) => {
-    return turn.textContent?.includes(text) === true;
-  }).length;
-}
-
-function queuedMessage(container: ParentNode): HTMLElement | undefined {
-  return (
-    container.querySelector<HTMLElement>(
-      '[role="listitem"][aria-label="Queued message"]',
-    ) ?? undefined
-  );
-}
-
-async function prepareLongConversation() {
-  const thread = continuityThread(20, 1, "Long history");
-  const rows: ChatEventRow[] = [];
-  let sequence = 1;
-  const addPair = (
-    prompt: string,
-    response: string,
-    runId: string,
-    userMessage?: UserMessageDocument,
-  ): { readonly prompt: ChatEventRow; readonly response: ChatEventRow } => {
-    const promptEvent = promptRow(20, sequence++, thread.id, prompt, {
-      runId,
-      ...(userMessage === undefined ? {} : { userMessage }),
-    });
-    const responseEvent = outputRow(20, sequence++, thread.id, response, {
-      id: runId,
-    });
-    rows.push(promptEvent, responseEvent);
-    return { prompt: promptEvent, response: responseEvent };
-  };
-  const earliest = addPair(
-    "Earliest retained request",
-    "Earliest retained answer",
-    "history-run-earliest",
-  );
-  addPair("Older planning request", "Older planning answer", "history-run-2");
-  addPair("Earlier review request", "Earlier review answer", "history-run-3");
-  const beforeRepeated = addPair(
-    "Context before repeated work",
-    "Neighboring answer before repeated work",
-    "history-run-before-repeated",
-  );
-  addPair(
-    "Build the launch brief from these references",
-    "First launch brief result",
-    "history-repeated-run-1",
-  );
-  addPair(
-    "Build the launch brief from these references",
-    "Second launch brief result",
-    "history-repeated-run-2",
-  );
-  const latestRepeated = addPair(
-    "Build the launch brief from these references",
-    "Final launch brief is ready",
-    "history-repeated-run-3",
-    {
-      version: 1,
-      parts: [
-        {
-          type: "text",
-          text: "Build the launch brief from these references",
-        },
-        {
-          type: "file",
-          fileId: "f8000000-0000-4000-a000-000000020001",
-          filenameSnapshot: "launch-evidence.pdf",
-          contentType: "application/pdf",
-        },
-      ],
-    },
-  );
-  const afterRepeated = addPair(
-    "Review the final launch brief",
-    "Neighboring answer after repeated work",
-    "history-run-after-repeated",
-  );
-  addPair("Most recent follow-up", "Most recent answer", "history-run-recent");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 20,
-    threads: [thread],
-    chatEventRows: rows,
-  });
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const container = threadContainer(thread.id);
-  return {
-    thread,
-    composer,
-    container,
-    latestRepeated,
-    earliest,
-    beforeRepeated,
-    afterRepeated,
-  };
-}
-
-test("Render the latest turns of a long conversation", async () => {
-  const { composer, container, latestRepeated } =
-    await prepareLongConversation();
   await waitFor(() => {
-    expect(container).toHaveTextContent("Final launch brief is ready");
-    expect(container).toHaveTextContent(
-      "Neighboring answer after repeated work",
+    return expect(
+      viewport.scrollTop + viewport.clientHeight,
+    ).toBeGreaterThanOrEqual(viewport.scrollHeight);
+  });
+  fireEvent.wheel(viewport, { deltaY: -300 });
+  viewport.scrollTop = 35;
+  fireEvent.scroll(viewport);
+  fireEvent.wheel(viewport, { deltaY: -34 });
+  viewport.scrollTop = 1;
+  fireEvent.scroll(viewport);
+  click(await findFastControl("button", "Scroll to bottom"));
+  await waitFor(() => {
+    expect(viewport.scrollTop + viewport.clientHeight).toBeGreaterThanOrEqual(
+      viewport.scrollHeight,
     );
-    expect(container).toHaveTextContent("Most recent answer");
+    expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
   });
-  expect(composer).toBeVisible();
-  expect(container).not.toHaveTextContent(
-    "Neighboring answer before repeated work",
-  );
-  expect(eventAnchorCount(container, latestRepeated.response.id)).toBe(1);
-});
-
-test("Page older conversation history without losing turn anchors", async () => {
-  const { thread, container, earliest, beforeRepeated, afterRepeated } =
-    await prepareLongConversation();
-  await waitFor(() => {
-    expect(container).toHaveTextContent("Final launch brief is ready");
-  });
-  expect(container).not.toHaveTextContent("Earliest retained request");
-  const scroller = scrollContainer(thread.id);
-  setScrollableGeometry(scroller, 2400, 600);
-  fireEvent.scroll(scroller);
-  fireEvent.wheel(scroller, { deltaY: 50 - scroller.scrollTop });
-  scroller.scrollTop = 50;
-  fireEvent.scroll(scroller);
-  await waitFor(() => {
-    expect(container).toHaveTextContent(
-      "Neighboring answer before repeated work",
-    );
-    expect(container).toHaveTextContent("launch-evidence.pdf");
-  });
-  expect(container).toHaveTextContent("First launch brief result");
-  expect(container).toHaveTextContent("Second launch brief result");
-
-  fireEvent.scroll(scroller);
-  fireEvent.wheel(scroller, { deltaY: 50 - scroller.scrollTop });
-  scroller.scrollTop = 50;
-  fireEvent.scroll(scroller);
-  await waitFor(() => {
-    expect(container).toHaveTextContent("Earliest retained request");
-    expect(container).toHaveTextContent("Earliest retained answer");
-  });
-  expect(eventAnchorCount(container, earliest.prompt.id)).toBe(1);
-  expect(eventAnchorCount(container, beforeRepeated.prompt.id)).toBe(1);
-  expect(eventAnchorCount(container, afterRepeated.response.id)).toBe(1);
-});
-
-test("Navigate chat history with scroll controls and keyboard commands", async () => {
-  const thread = continuityThread(21, 1, "Scrollable conversation");
-  const rows: ChatEventRow[] = [];
-  for (let index = 1; index <= 6; index++) {
-    const runId = `scroll-run-${index.toString()}`;
-    rows.push(
-      promptRow(21, index * 2 - 1, thread.id, `History request ${index}`, {
-        runId,
-      }),
-      outputRow(21, index * 2, thread.id, `History answer ${index}`, {
-        id: runId,
-      }),
-    );
-  }
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 21,
-    threads: [thread],
-    chatEventRows: rows,
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-  const container = threadContainer(thread.id);
-  await waitFor(() => {
-    expect(container).toHaveTextContent("History answer 6");
-  });
-  const scroller = scrollContainer(thread.id);
-  setScrollableGeometry(scroller, 2400, 600);
-  scroller.scrollTop = 2400;
-
-  fireEvent.scroll(scroller);
-  fireEvent.wheel(scroller, { deltaY: 800 - scroller.scrollTop });
-  scroller.scrollTop = 800;
-  fireEvent.scroll(scroller);
-  await waitFor(() => {
-    expect(container.querySelector("[data-scroll-to-bottom]")).toBeVisible();
-  });
-
-  click(fastButton("Scroll to bottom", container));
-  await waitFor(() => {
-    expect(scroller.scrollTop).toBe(2400);
-    expect(container.querySelector("[data-scroll-to-bottom]")).toBeNull();
-  });
-  expect(container).toHaveTextContent("History answer 6");
-
-  container.focus();
+  expect(screen.getByText("Locator answer 6")).toBeInTheDocument();
+  viewport.focus();
   await userEvent.keyboard("{Control>}{ArrowUp}{/Control}");
   await waitFor(() => {
-    expect(scroller.scrollTop).toBe(0);
-    expect(container.querySelector("[data-scroll-to-bottom]")).toBeVisible();
+    return expect(viewport.scrollTop).toBe(0);
   });
+  await expect(
+    findFastControl("button", "Scroll to bottom"),
+  ).resolves.toBeInTheDocument();
+});
+test("chat-continuity-history-001 opening a long history keeps its final repeated request anchored once", async () => {
+  mockChatGeometry();
+  const file = continuityAttachment(769, 1, "request.pdf", "application/pdf");
+  const rows = conversationEvents(24);
+  const events = rows.map((e, i) => {
+    return e.role === "user" && i >= 22 && i < 44
+      ? {
+          ...e,
+          content: "Prepare the same report",
+          ...(i === 26
+            ? {
+                fileParts: [
+                  {
+                    type: "file" as const,
+                    fileId: file.id,
+                    filenameSnapshot: file.filename,
+                    contentType: file.contentType,
+                  },
+                ],
+              }
+            : {}),
+        }
+      : e;
+  });
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID, chatEvents: events });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Locator answer 24");
+  const final = await screen.findByText("Locator answer 22");
+  expect(screen.queryByText("Locator answer 11")).toBeNull();
+  await expect(findComposer()).resolves.toBeEnabled();
+  const anchor = final.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  );
+  expect(anchor).toBeInTheDocument();
+  expect(
+    document.querySelectorAll(
+      '[data-chat-scroll-anchor-event-id="' +
+        anchor!.dataset.chatScrollAnchorEventId +
+        '"]',
+    ),
+  ).toHaveLength(1);
 });
 
-test("Keep both open chats live without mixing their messages", async () => {
-  const main = continuityThread(22, 1, "Live main conversation");
-  const side = continuityThread(22, 2, "Live side conversation");
-  const mainRunId = "b9000000-0000-4000-a000-000000000001";
-  const sideRunId = "b9000000-0000-4000-a000-000000000002";
-  const initialRows = [
-    promptRow(22, 1, main.id, "Existing main request", { runId: mainRunId }),
-    outputRow(22, 2, main.id, "Existing main answer", { id: mainRunId }),
-    promptRow(22, 1, side.id, "Existing side request", { runId: sideRunId }),
-    outputRow(22, 2, side.id, "Existing side answer", { id: sideRunId }),
-  ];
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 22,
-    threads: [main, side],
-    chatEventRows: initialRows,
+test("chat-continuity-history-006 acknowledging a steer replaces the main pending turn without writing the side pane", async () => {
+  const side = SECOND_ATTACHMENT_THREAD_ID,
+    gate = context.mocks.deferred<void>(),
+    queued = context.mocks.deferred<string>();
+  const text = "Steer this active run once";
+  const runId = "a9000000-0000-4000-a000-000000000761";
+  const lifecycle = mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    threadTitle: "Main plan",
+    activeRunIds: [runId],
+    chatEvents: [
+      {
+        id: "1ed06126-f705-43b6-8347-2807ee800101",
+        role: "user",
+        content: "Previous task",
+        runId,
+        createdAt: "2026-08-01T10:00:00Z",
+      },
+    ],
+    appendGate: gate.promise,
+    onQueuedEventAppend: (body) => {
+      return queued.resolve(body.clientEventId);
+    },
   });
-
+  const mainRows = mockChatEventRows(
+    normalizeMockChatEvents(
+      [
+        {
+          id: "1ed06126-f705-43b6-8347-2807ee800101",
+          role: "user",
+          content: "Previous task",
+          runId,
+          createdAt: "2026-08-01T10:00:00Z",
+        },
+      ],
+      RUN_THREAD_ID,
+    ),
+  );
+  const sideRows = mockChatEventRows(
+    normalizeMockChatEvents(
+      [
+        {
+          id: "1ed06126-f705-43b6-8347-2807ee800102",
+          role: "assistant",
+          content: "Side answer",
+          createdAt: "2026-08-01T10:01:00Z",
+        },
+      ],
+      side,
+    ),
+  );
+  const mainThread = {
+    ...continuityThread(788, 1, "Main plan"),
+    id: RUN_THREAD_ID,
+  };
+  const sideThread = { ...continuityThread(788, 2, "Side plan"), id: side };
+  const view = installContinuityWorkspace(context, {
+    caseId: 788,
+    threads: [mainThread, sideThread],
+    chatEventRows: [...mainRows, ...sideRows],
+  });
   await setupPage({
     context,
-    path: `/chats/${main.id}?sidebar=${side.id}`,
-    ...workspace.pageOptions,
+    path: RUN_PATH + "?sidebar=" + side,
+    ...view.pageOptions,
   });
-
-  await waitFor(() => {
-    expect(threadContainer(main.id)).toHaveTextContent("Existing main answer");
-    expect(threadContainer(side.id)).toHaveTextContent("Existing side answer");
-  });
-  const mainContainer = threadContainer(main.id);
-  const sideContainer = threadContainer(side.id);
-
-  const mainReply = outputRow(
-    22,
-    3,
-    main.id,
-    "A live reply for the main conversation",
-    { id: mainRunId },
-  );
-  const sideReply = outputRow(
-    22,
-    3,
-    side.id,
-    "A live reply for the side conversation",
-    { id: sideRunId },
-  );
-  workspace.setChatEventRows([...initialRows, mainReply, sideReply]);
-  createChatEvent(main.id);
-  createChatEvent(side.id);
-
-  await waitFor(() => {
-    expect(mainContainer).toHaveTextContent(
-      "A live reply for the main conversation",
-    );
-    expect(sideContainer).toHaveTextContent(
-      "A live reply for the side conversation",
-    );
-  });
-  expect(mainContainer).not.toHaveTextContent(
-    "A live reply for the side conversation",
-  );
-  expect(sideContainer).not.toHaveTextContent(
-    "A live reply for the main conversation",
-  );
-  expect(mainContainer).toBeVisible();
-  expect(sideContainer).toBeVisible();
-});
-
-test.each([
-  {
-    caseId: 220,
-    scenario: "a new run",
-    activeRun: false,
-    message: "Send this exactly once",
-  },
-  {
-    caseId: 221,
-    scenario: "an active run",
-    activeRun: true,
-    message: "Steer this active run once",
-  },
-])(
-  "Confirm a message for $scenario in split chats without duplicating it",
-  async ({ caseId, activeRun, message }) => {
-    const thread = continuityThread(caseId, 1, "Message confirmation");
-    const side = continuityThread(caseId, 2, "Independent side conversation");
-    const initialRunId = "b9000000-0000-4000-a000-000000000001";
-    const sideRunId = "b9000000-0000-4000-a000-000000000003";
-    const confirmedRunId = activeRun
-      ? initialRunId
-      : "b9000000-0000-4000-a000-000000000002";
-    const mainRows = [
-      promptRow(caseId, 1, thread.id, "Existing request", {
-        runId: initialRunId,
-      }),
-      outputRow(caseId, 2, thread.id, "Existing answer", { id: initialRunId }),
-      ...(activeRun ? [] : [completedRow(caseId, 3, thread.id, initialRunId)]),
-    ];
-    const initialRows = [
-      ...mainRows,
-      promptRow(caseId, 1, side.id, "Existing side request", {
-        runId: sideRunId,
-      }),
-      outputRow(caseId, 2, side.id, "Existing side answer", { id: sideRunId }),
-    ];
-    const workspace = installContinuityWorkspace(context, {
-      caseId,
-      threads: [thread, side],
-      chatEventRows: initialRows,
-    });
-    const send = context.mocks.deferred<CapturedSend>();
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      if (
-        !("userMessage" in body) ||
-        body.userMessage === undefined ||
-        body.clientEventId === undefined ||
-        body.threadId === undefined
-      ) {
-        throw new Error("Expected a normal chat message send");
-      }
-      send.resolve({
-        clientEventId: body.clientEventId,
-        threadId: body.threadId,
-        userMessage: body.userMessage,
-      });
-      return respond(201, {
-        threadId: body.threadId,
-      });
-    });
-
-    await setupPage({
-      context,
-      path: `/chats/${thread.id}?sidebar=${side.id}`,
-      ...workspace.pageOptions,
-    });
-
-    await waitFor(() => {
-      expect(threadContainer(thread.id)).toHaveTextContent("Existing answer");
-      expect(threadContainer(side.id)).toHaveTextContent(
-        "Existing side answer",
-      );
-    });
-    const container = threadContainer(thread.id);
-    const sideContainer = threadContainer(side.id);
-    const composer = await within(container).findByLabelText("Message");
-    const sideComposer = await within(sideContainer).findByLabelText("Message");
-    expect(sideComposer).toBeVisible();
-
-    expect(
-      container.querySelectorAll('button[aria-label="Stop"]'),
-    ).toHaveLength(activeRun ? 1 : 0);
-
-    await fill(composer, message);
-    await waitFor(() => {
-      expect(fastButton("Send", container)).toBeEnabled();
-    });
-    click(fastButton("Send", container));
-    const sent = await send.promise;
-    await waitFor(() => {
-      expect(userTurnCount(container, message)).toBe(1);
-    });
-    expect(sent.threadId).toBe(thread.id);
-    expect(sideContainer).not.toHaveTextContent(message);
-
-    const confirmedPrompt = promptRow(
-      caseId,
-      mainRows.length + 2,
-      thread.id,
-      message,
-      {
-        runId: confirmedRunId,
-        revokesEventId: sent.clientEventId,
-        userMessage: sent.userMessage,
-      },
-    );
-    workspace.setChatEventRows([
-      ...initialRows,
-      promptRow(caseId, mainRows.length + 1, thread.id, message, {
-        id: sent.clientEventId,
-        userMessage: sent.userMessage,
-      }),
-      confirmedPrompt,
-      outputRow(
-        caseId,
-        mainRows.length + 3,
-        thread.id,
-        "Assistant acknowledged the message",
-        { id: confirmedRunId },
+  const other = (await screen.findByText("Side answer")).closest<HTMLElement>(
+    "[data-chat-thread-container-id]",
+  )!;
+  const main = (await screen.findByText("Previous task")).closest<HTMLElement>(
+    "[data-chat-thread-container-id]",
+  )!;
+  expect(main).toHaveAttribute("data-chat-thread-container-id", RUN_THREAD_ID);
+  expect(other).toHaveAttribute("data-chat-thread-container-id", side);
+  await findFastControl("button", /stop|interrupt/i, main);
+  await fill(within(main).getByRole("textbox", { name: "Message" }), text);
+  click(await findFastControl("button", "Send", main));
+  const turn = await queued.promise;
+  const pending = main.querySelectorAll("[data-role=user]");
+  expect(
+    Array.from(pending).filter((row) => {
+      return row.textContent?.includes(text);
+    }),
+  ).toHaveLength(1);
+  expect(within(other).queryByText(text)).toBeNull();
+  gate.resolve();
+  mainRows.push(
+    ...mockChatEventRows(
+      normalizeMockChatEvents(
+        [
+          {
+            id: turn,
+            seqId: 2,
+            role: "user",
+            content: text,
+            runId,
+            createdAt: "2026-08-01T10:02:00Z",
+          },
+          {
+            id: "1ed06126-f705-43b6-8347-2807ee800104",
+            seqId: 3,
+            role: "assistant",
+            content: "Acknowledged main steer",
+            runId,
+            createdAt: "2026-08-01T10:03:00Z",
+          },
+        ],
+        RUN_THREAD_ID,
       ),
-    ]);
-    createChatEvent(thread.id);
-
-    await waitFor(() => {
-      expect(container).toHaveTextContent("Assistant acknowledged the message");
-    });
-    expect(userTurnCount(container, message)).toBe(1);
-    expect(eventAnchorCount(container, confirmedPrompt.id)).toBe(1);
-    expect(eventAnchorCount(container, sent.clientEventId)).toBe(0);
-    expect(queuedMessage(container)).toBeUndefined();
-    expect(container).toBeVisible();
-    expect(sideContainer).toBeVisible();
-    expect(sideContainer).toHaveTextContent("Existing side answer");
-    expect(sideContainer).not.toHaveTextContent(message);
-    expect(sideContainer).not.toHaveTextContent(
-      "Assistant acknowledged the message",
+    ),
+  );
+  view.setChatEventRows([...mainRows, ...sideRows]);
+  lifecycle.completeRun("Acknowledged main steer");
+  await within(main).findByText("Acknowledged main steer");
+  await waitFor(() => {
+    expect(within(main).getAllByText(text)).toHaveLength(1);
+    const match = main.querySelectorAll(
+      '[data-chat-scroll-anchor-event-id="' + turn + '"]',
     );
-  },
-);
+    expect(match).toHaveLength(1);
+    expect(match[0]).toHaveTextContent(text);
+  });
+  expect(within(other).queryByText(text)).toBeNull();
+  expect(within(other).getByText("Side answer")).toBeInTheDocument();
+});

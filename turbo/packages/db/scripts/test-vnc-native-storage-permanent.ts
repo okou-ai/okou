@@ -9,6 +9,7 @@ import { cloudflareAccessConfigs } from "../src/schema/cloudflare-access-config"
 import { tailscaleConfigs } from "../src/schema/tailscale-config";
 import { sshConnections } from "../src/runtime/ssh-connection";
 import { sshCredentials } from "../src/schema/ssh-credential";
+import { remoteDevices } from "../src/schema/remote-device";
 import { vncConnections } from "../src/schema/vnc-connection";
 import { vncCredentials } from "../src/schema/vnc-credential";
 import { vncConnectionObservations } from "../src/schema/vnc-connection-observation";
@@ -22,6 +23,7 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
   const primary = randomUUID();
   const alternate = randomUUID();
   const foreign = randomUUID();
+  const remoteDeviceId = randomUUID();
   const sshId = randomUUID();
   const sshCredentialId = randomUUID();
   const passwordId = randomUUID();
@@ -47,6 +49,11 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
         return { ...row, tags: ["tag:vnc"] };
       }),
     );
+    await db.insert(remoteDevices).values({
+      ...owner,
+      id: remoteDeviceId,
+      displayName: "Native desktop",
+    });
     await db.insert(sshCredentials).values({
       ...owner,
       id: sshCredentialId,
@@ -59,6 +66,7 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
       ...owner,
       id: sshId,
       displayName: "SSH identity collision",
+      remoteDeviceId,
       host: "ssh.example.test",
       port: 22,
       connectionMode: "direct",
@@ -84,6 +92,7 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
     const base = {
       ...owner,
       displayName: "Native desktop",
+      remoteDeviceId,
       host: "100.64.0.2",
       authMethod: "none",
       securityType: "x509_none",
@@ -266,6 +275,7 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
               .values({
                 ...owner,
                 displayName: `${rfb}/${kdc}`,
+                remoteDeviceId,
                 host:
                   rfb === "cloudflare_access"
                     ? "rfb-gateway.example.test"
@@ -485,6 +495,9 @@ export async function validatePermanentNativeVncStorage(databaseUrl: string) {
             eq(sshConnections.id, sshId),
           ),
         );
+      await db
+        .delete(remoteDevices)
+        .where(eq(remoteDevices.id, remoteDeviceId));
       await db
         .delete(vncCredentials)
         .where(eq(vncCredentials.orgId, owner.orgId));

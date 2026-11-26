@@ -15,6 +15,13 @@ extension ThreadListStore {
   var error: String? { actionError ?? syncError }
 
   func threads(archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
+    Self.threads(threads, archived: archived, onlyUnread: onlyUnread)
+  }
+
+  /// The list a filter shows, from chats a view resolved from `threadsValue`.
+  static func threads(
+    _ threads: [ChatThread], archived: Bool, onlyUnread: Bool = false
+  ) -> [ChatThread] {
     threads.filter {
       if onlyUnread {
         // PWA's unread list includes archived chats and retains active-indicator precedence.

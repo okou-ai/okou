@@ -13,48 +13,46 @@ permissions:
 
 env:
   npm_config_audit: false
+  # Match the hosted Android publishing build's Gradle heap.
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs='-Xmx4g -Dfile.encoding=UTF-8'
 
 concurrency:
   group: android-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Detect release-please context across all event types (PR, push, merge queue).
-  detect-release:
+  detect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      skip: ${{ steps.check.outputs.skip }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions/detect-release
-          persist-credentials: false
-      - uses: ./.github/actions/detect-release
-        id: check
-
-  detect:
-    needs: [detect-release]
-    if: needs.detect-release.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
+      skip: ${{ steps.release.outputs.skip }}
       needed: ${{ steps.changes.outputs.needed }}
       shallow-discovery: ${{ steps.changes.outputs.shallow-discovery }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 32
+          # The selector compares complete Git trees, so only its scripts need checkout.
+          sparse-checkout: |
+            .github/actions/detect-release
+            .github/scripts/checks
+            android/scripts
+          persist-credentials: false
+      - uses: ./.github/actions/detect-release
+        id: release
       - name: Verify change detection and scripts
+        if: steps.release.outputs.skip == 'false'
         run: |
           for script in android/scripts/*.sh; do bash -n "$script"; done
           shellcheck android/scripts/*.sh
           python3 android/scripts/ci-changed.test.py
       - name: Select Android checks
         id: changes
+        if: steps.release.outputs.skip == 'false'
         env:
           EVENT_NAME: ${{ github.event_name }}
           CHECKOUT_REF: ${{ github.ref }}
@@ -68,13 +66,23 @@ jobs:
     if: needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: ${{ strategy.job-total }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+      - &android-checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &android-java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - &android-gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-provider: external
       - &restore-android-gradle-dependencies
@@ -88,33 +96,87 @@ jobs:
             ~/.gradle/caches/modules-2/files-2.1
             ~/.gradle/caches/modules-2/metadata-*
           key: android-instrumentation-gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle', 'android/**/*.gradle.kts', 'android/**/gradle.properties', 'android/gradle/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+      - &android-complete-history
+        name: Fetch complete history for versioned builds
+        # versionCode counts the ancestors of this checkout.
+        run: >-
+          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
+          --unshallow --filter=tree:0 origin "$GITHUB_SHA"
+      - &android-sdk
+        name: Install Android SDK
+        run: bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Run Debug JVM test shard
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :app:testDebugUnitTest --no-daemon \
+            -Pokou.debugUnitTestForks=2 \
+            "-Pokou.debugUnitTestShardIndex=$SHARD_INDEX" \
+            "-Pokou.debugUnitTestShardCount=$SHARD_COUNT"
+      - name: Check JVM test class size
+        run: python3 android/scripts/check-jvm-test-counts.py android/app/build/test-results/testDebugUnitTest
+      - name: Retain JVM shard reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-jvm-results-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: android/app/build/test-results/testDebugUnitTest/TEST-*.xml
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - *android-checkout
+      - *android-java
+      - *android-gradle
+      - *restore-android-gradle-dependencies
       - name: Verify dependency discovery with shallow history
         if: needs.detect.outputs.shallow-discovery == 'true'
         run: |
           test "$(git rev-parse --is-shallow-repository)" = true
           android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
-      - name: Fetch complete history for versioned builds
-        # versionCode counts the ancestors of this checkout.
-        run: >-
-          git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
-          --unshallow --filter=tree:0 origin "$GITHUB_SHA"
-      - name: Install Android SDK
-        run: bash android/scripts/setup-sdk.sh --accept-licenses
-      - name: Test native state and application, lint, and assemble
-        run: bash android/scripts/check.sh
+      - *android-complete-history
+      - *android-sdk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: android/scripts/theme/package.json
+      - name: Verify generated Android palette
+        working-directory: android
+        run: |
+          pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+          node scripts/theme/generate.mjs --check
+      - name: Run source checks, lint, and build the Debug APK
+        working-directory: android
+        run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 1
 
   instrumentation:
     needs: detect
     if: needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: ${{ strategy.job-total }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fetch complete history for versioned builds
@@ -136,7 +198,7 @@ jobs:
           test -c /dev/kvm
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
-      - name: Run Debug device integration tests
+      - name: Run Debug device test shard
         timeout-minutes: 20
         shell: bash
         working-directory: android
@@ -146,26 +208,36 @@ jobs:
           mkdir -p build/reports/instrumentation
           python3 scripts/run-native-tests.py build/reports/instrumentation/logcat -- \
             ./gradlew :app:pixel2Api35DebugAndroidTest --no-daemon \
+            "-Pandroid.testInstrumentationRunnerArguments.shardIndex=$SHARD_INDEX" \
+            "-Pandroid.testInstrumentationRunnerArguments.numShards=$SHARD_COUNT" \
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
             --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
-          python3 scripts/check-native-results.py \
-            app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35 12
       - name: Retain Debug device reports and diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-instrumentation-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
+          name: android-instrumentation-api35-${{ github.sha }}-shard-${{ matrix.shard }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: |
             android/build/reports/instrumentation/
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
             android/app/build/outputs/managed_device_android_test_additional_output/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
+      - name: Retain Debug device shard results for the gate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-native-results-${{ github.sha }}-shard-${{ matrix.shard }}
+          path: |
+            android/app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35/TEST-pixel2Api35.xml
+            android/app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35/test-result-exit-code.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
 
       - name: Save shared Android Gradle dependencies
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'
+        if: matrix.shard == 0 && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *android-gradle-dependencies
@@ -233,7 +305,7 @@ jobs:
             ${{ steps.release-smoke.outputs.release-directory }}/okou-android-*-mapping.txt.gz
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 1
       - name: Retain Release smoke evidence
         id: smoke-evidence
         if: always()
@@ -242,7 +314,7 @@ jobs:
           name: android-release-smoke-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: android/build/reports/release/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
 
   retrace-failure:
     needs: release-smoke
@@ -295,26 +367,26 @@ jobs:
           name: android-retraced-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: retraced/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
 
   ci-gate-android:
-    needs: [detect-release, detect, build-test, instrumentation, release-smoke]
+    needs: [detect, build, build-test, instrumentation, release-smoke]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Validate CI results
         env:
-          RELEASE_DETECT: ${{ needs.detect-release.result }}
-          IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           DETECT: ${{ needs.detect.result }}
+          IS_RELEASE: ${{ needs.detect.outputs.skip }}
           NEEDED: ${{ needs.detect.outputs.needed }}
-          BUILD: ${{ needs.build-test.result }}
+          BUILD: ${{ needs.build.result }}
+          JVM: ${{ needs.build-test.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
         run: |
-          if [ "$RELEASE_DETECT" != success ]; then
-            echo "::error::Android release classification must succeed; got $RELEASE_DETECT"
+          if [ "$DETECT" != success ]; then
+            echo "::error::Android CI selection must succeed; got $DETECT"
             exit 1
           fi
           if [ "$IS_RELEASE" != true ] && [ "$IS_RELEASE" != false ]; then
@@ -325,19 +397,32 @@ jobs:
             echo 'Release-please: skipping Android validation; production builds its own APK.'
             exit 0
           fi
-          if [ "$DETECT" != success ]; then
-            echo "::error::Android change detection must succeed; got $DETECT"
-            exit 1
-          fi
-          case "$NEEDED:$BUILD:$INSTRUMENTATION:$RELEASE_SMOKE" in
-            true:success:success:success)
-              echo 'Android JVM tests, Debug device tests, lint, and Release smoke passed.'
+          case "$NEEDED:$BUILD:$JVM:$INSTRUMENTATION:$RELEASE_SMOKE" in
+            true:success:success:success:success)
+              echo 'All Android jobs succeeded.'
               ;;
-            false:skipped:skipped:skipped)
+            false:skipped:skipped:skipped:skipped)
               echo 'Android checks were not needed for these changes.'
               ;;
             *)
-              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, build-test=$JVM, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
               exit 1
               ;;
           esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.detect.outputs.needed == 'true'
+        with:
+          sparse-checkout: android/scripts
+          persist-credentials: false
+      - name: Download Debug device shard results
+        if: needs.detect.outputs.needed == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: android-native-results-${{ github.sha }}-shard-*
+          path: native-results
+      - name: Verify complete Debug device coverage
+        if: needs.detect.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          prefix="native-results/android-native-results-${GITHUB_SHA}-shard-"
+          python3 android/scripts/check-native-results.py "${prefix}0" 12 "${prefix}1" "${prefix}2"

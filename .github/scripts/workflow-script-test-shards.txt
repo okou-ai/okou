@@ -46,7 +46,6 @@
 2 crates-coverage-workflow-test.sh
 2 deploy-desktop-workflow-test.sh
 2 implicit-npm-audit-test.sh
-2 ios-published-version-test.sh
 2 android-published-version-test.sh
 2 android-release-workflow-test.sh
 2 ios-testflight-workflow-test.sh
@@ -107,6 +106,7 @@
 3 runner-image-operation-test.sh
 3 runner-lifecycle-lock-diagnostics-test.sh
 3 runner-promotion-ansible-test.sh
+3 runner-release-staging-ansible-test.sh
 3 tunnel-test.sh
 3 turbo-playwright-runner-workflow-test.sh
 3 verify-okou-production-domains-test.sh

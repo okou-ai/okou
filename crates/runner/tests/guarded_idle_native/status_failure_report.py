@@ -31,7 +31,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered status-failure phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
                 or report.witness_identity_changed(events, identity)):
@@ -44,12 +44,10 @@ def validate(directory):
         exact(blocked, {"policy": policy, "published_status": blocked["published_status"],
                         "status_path": status_path, "receiver_polled_pending": True,
                         "coverage": blocked["coverage"]}, "original status or accepted saving missing")
-        held, status_held, heartbeat_pending = [pool.get(k) for k in (
-            "pool_held_ns", "status_held_ns", "heartbeat_pending_ns")]
-        if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
-                or not events[0]["monotonic_ns"] < held <= status_held < heartbeat_pending < events[1]["monotonic_ns"]):
-            raise ValueError("status-failure original pool/status contention absent")
-        foreground.observer(pool.get("observer"), heartbeat_pending, events[1]["monotonic_ns"])
+        held, status_held, heartbeat_pending = foreground.held_pool_observer(
+            pool, events[0]["monotonic_ns"], events[1]["monotonic_ns"],
+            "status-failure original pool/status contention absent",
+        )
         coverage(pool.get("coverage"), policy, True)
         exact(pool, {"pool_held_ns": held, "status_held_ns": status_held,
                      "heartbeat_pending_ns": heartbeat_pending, "heartbeat_polled_pending": True,
@@ -75,9 +73,10 @@ def validate(directory):
                 or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("status fault was not after complete IO and a positive final wait")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, injected, (0, 0))
-        if first != second or first in runners:
-            raise ValueError("status-failure heartbeat changed or replayed its runner")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "status-failure heartbeat changed or replayed its runner",
+        )
         accounting(waiting.get("accounting"), True)
         exact(waiting, {"io_released_ns": io_released, "status_held_ns": status_held,
                         "status_wait_polled_ns": polled, "status_waits_before": before,

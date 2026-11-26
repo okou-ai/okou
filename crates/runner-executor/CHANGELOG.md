@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.24.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.7...runner-executor-v0.24.8) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** finish antigravity runs and forward their disallowed tools ([#50962](https://github.com/okou-ai/okou/issues/50962)) ([ab3428a](https://github.com/okou-ai/okou/commit/ab3428a58305077c974be77fa604f962424d66b4))
+
+## [0.24.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.6...runner-executor-v0.24.7) (2026-11-25)
+
+## [0.24.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.5...runner-executor-v0.24.6) (2026-11-25)
+
+## [0.24.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.4...runner-executor-v0.24.5) (2026-11-24)
+
+## [0.24.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.3...runner-executor-v0.24.4) (2026-11-24)
+
+## [0.24.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.2...runner-executor-v0.24.3) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner:** compact decoded storage apply manifests ([#50508](https://github.com/okou-ai/okou/issues/50508)) ([65487f7](https://github.com/okou-ai/okou/commit/65487f765b77fdb941a715f238660dc3add05f81))
+
+## [0.24.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.1...runner-executor-v0.24.2) (2026-11-24)
+
+## [0.24.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.24.0...runner-executor-v0.24.1) (2026-11-24)
+
+## [0.24.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.28...runner-executor-v0.24.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
+## [0.23.28](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.27...runner-executor-v0.23.28) (2026-11-24)
+
+## [0.23.27](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.26...runner-executor-v0.23.27) (2026-11-24)
+
+## [0.23.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.25...runner-executor-v0.23.26) (2026-11-24)
+
+## [0.23.25](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.24...runner-executor-v0.23.25) (2026-11-23)
+
+## [0.23.24](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.23...runner-executor-v0.23.24) (2026-11-23)
+
+## [0.23.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.22...runner-executor-v0.23.23) (2026-11-23)
+
+## [0.23.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.21...runner-executor-v0.23.22) (2026-11-23)
+
+## [0.23.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.20...runner-executor-v0.23.21) (2026-11-23)
+
+## [0.23.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.19...runner-executor-v0.23.20) (2026-11-23)
+
+## [0.23.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.18...runner-executor-v0.23.19) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
+## [0.23.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.17...runner-executor-v0.23.18) (2026-11-23)
+
 ## [0.23.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.16...runner-executor-v0.23.17) (2026-11-22)
 
 

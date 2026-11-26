@@ -272,7 +272,7 @@ function useGetStartedShown(): boolean {
   return summaryLoadable.state === "hasData" && summaryLoadable.data.total > 0;
 }
 
-export function GrowthEntryHeader({ children }: { children?: ReactNode }) {
+function AdminGrowthEntrySlot() {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
   const getStartedShown = useGetStartedShown();
@@ -281,7 +281,10 @@ export function GrowthEntryHeader({ children }: { children?: ReactNode }) {
   // control — for every role, since a member can connect, build, share and
   // check in alone. Where it does not, the split control remains the admin's
   // entry. Friend referrals have their own independently gated entry.
-  const showGrowthEntry = isAdmin && !getStartedShown;
+  return isAdmin && !getStartedShown ? <AdminGrowthEntry /> : null;
+}
+
+export function GrowthEntryHeader({ children }: { children?: ReactNode }) {
   // The labelled entry closes the row and the icon buttons lead into it. An
   // icon pair at the far end of a row reads as stray chrome hung off a
   // labelled control rather than as part of the corner, and the corner is
@@ -291,7 +294,7 @@ export function GrowthEntryHeader({ children }: { children?: ReactNode }) {
       {children}
       <FriendReferralEntry />
       <GetStartedEntry />
-      {showGrowthEntry ? <AdminGrowthEntry /> : null}
+      <AdminGrowthEntrySlot />
     </>
   );
   return (

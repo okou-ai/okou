@@ -10,13 +10,13 @@
     <string name="workflow_chat_finished">Chat run finished</string>
     <string name="workflow_clear_search">Clear search</string>
     <string name="workflow_connect_provider">Connect %1$s to enable this rule.</string>
-    <string name="workflow_connection_unavailable">Could not open connections.</string>
     <string name="workflow_create_uncertain">Could not confirm creation. Close the editor and check the rules before trying again.</string>
     <string name="workflow_creation_prompt">Help me create a private workflow. Use the workflow-setup skill. Ask what task I want to repeat and show the instructions for my confirmation before saving. Create no automation unless I ask for it.</string>
     <string name="workflow_daily">Daily</string>
     <string name="workflow_daily_schedule">Daily at %1$s</string>
     <string name="workflow_discard">Discard</string>
     <string name="workflow_discard_title">Discard unsaved changes?</string>
+    <string name="workflow_discard_detail">Unsaved changes to “%1$s” on this device will be discarded.</string>
     <string name="workflow_draft_unavailable">Could not open the new chat draft. Your existing draft is preserved.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit automation</string>
@@ -44,6 +44,7 @@
     <string name="workflow_instructions_heading">Workflow instructions</string>
     <string name="workflow_keep_editing">Keep editing</string>
     <string name="workflow_load_failed">Could not load workflows</string>
+    <string name="workflow_rules_load_failed">Could not load workflow trigger rules.</string>
     <string name="workflow_mail_from_contains">Sender contains %1$s</string>
     <string name="workflow_mail_labeled">Gmail label applied</string>
     <string name="workflow_mail_received">Gmail message received</string>
@@ -66,9 +67,6 @@
     <string name="workflow_notion_child">Notion child page created</string>
     <string name="workflow_notion_item">Notion database item created</string>
     <string name="workflow_notion_updated">Notion page updated</string>
-    <string name="workflow_offline">Connect to load workflows</string>
-    <string name="workflow_offline_cache">Offline · Showing last loaded data</string>
-    <string name="workflow_offline_changes">Connect to save. Your changes are still here.</string>
     <string name="workflow_pause">Pause</string>
     <string name="workflow_paused">Automations paused</string>
     <string name="workflow_private">Only me</string>
@@ -90,7 +88,7 @@
     <string name="workflow_shared_usable">Workspace shared · Can use</string>
     <string name="workflow_show_all">Show all</string>
     <string name="workflow_status_connection">%1$s · Needs connection</string>
-    <string name="workflow_time">Time (HH:mm)</string>
+    <string name="workflow_time">Time</string>
     <string name="workflow_timezone">Time zone</string>
     <string name="workflow_transcript">Google Meet transcript ready</string>
     <string name="workflow_trigger">Trigger</string>
@@ -106,8 +104,27 @@
         <item quantity="one">%d automation enabled</item>
         <item quantity="other">%d automations enabled</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Could not open the new chat draft. Your existing draft is preserved. Check your connection and try again.</string>
     <string name="workflow_rule_change_failed">Could not change this rule.</string>
     <string name="workflow_rule_network_failed">Could not change this rule. Check your connection and try again.</string>
     <string name="workflow_write_conflict">This workflow changed while saving. Your edits are preserved.</string>
+    <string name="workflow_history_earlier">Show earlier runs</string>
+    <string name="workflow_history_event">Event</string>
+    <string name="workflow_history_failed">Could not load run history</string>
+    <string name="workflow_history_loading">Loading run history…</string>
+    <string name="workflow_history_open_chat">Open source chat</string>
+    <string name="workflow_history_unavailable">Run history unavailable</string>
+    <string name="workflow_run_pending">Pending</string>
+    <string name="workflow_run_running">Running</string>
+    <string name="workflow_run_timeout">Timed out</string>
+    <string name="workflow_history_trigger_unavailable">Trigger unavailable</string>
+    <string name="workflow_history_scheduled">Scheduled trigger</string>
+    <string name="workflow_history_manual">Manual run</string>
+    <string name="workflow_catalog_refresh_failed">Could not refresh the workflow directory. Showing loaded workflows.</string>
+    <string name="workflow_history_earlier_failed">Could not load earlier runs.</string>
+    <string name="workflow_rule_checking">Checking the result…</string>
+    <string name="workflow_rule_unconfirmed">The result is still unconfirmed.</string>
+    <string name="workflow_event">Event</string>
+    <string name="workflow_event_source">Event source</string>
+    <string name="workflow_source_gmail">Gmail · Message received</string>
+    <string name="workflow_source_calendar">Google Calendar · Event created</string>
 </resources>

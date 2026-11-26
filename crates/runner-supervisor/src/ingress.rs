@@ -1,12 +1,14 @@
 //! Host ingress with startup-only public reachability validation.
 //! Caddy's runtime availability never acquires or cancels Run ownership.
-//! Health and complete-input dispatch share service authentication. Sandbox
-//! paths stay reserved. Caddy terminates TLS and preserves the original URI.
+//! Health, dispatch and ticket issuance share service authentication. Caddy
+//! terminates TLS and preserves the original URI.
 
+mod app_state;
 pub(crate) mod dispatch;
+mod run_wss;
 
 use std::convert::Infallible;
-use std::io;
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -21,6 +23,8 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use runner_host::runner_ingress_socket::RunnerIngressSocket;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_lifecycle::active_runs::ActiveRuns;
+use runner_provider::RunCancellationRegistry;
 use runner_types::ids::RunId;
 use subtle::ConstantTimeEq;
 use tokio::task::{JoinHandle, JoinSet};
@@ -44,6 +48,8 @@ struct IngressHandler {
     token: String,
     runner_version: &'static str,
     dispatch: OnceLock<dispatch::DispatchIntake>,
+    app_state: OnceLock<runner_remote::app_state::Runtime>,
+    run_wss: OnceLock<Arc<run_wss::RunWebSocket>>,
 }
 
 impl IngressHandler {
@@ -59,6 +65,8 @@ impl IngressHandler {
             token: token.to_owned(),
             runner_version,
             dispatch: OnceLock::new(),
+            app_state: OnceLock::new(),
+            run_wss: OnceLock::new(),
         }
     }
 
@@ -122,29 +130,20 @@ impl IngressHandler {
             .and_then(|run| run.parse::<RunId>().ok().filter(|id| id.to_string() == run));
         // Hyper keeps the raw URI: no decoding/rewriting may turn a reserved
         // sandbox path, traversal or encoded separator into a control request.
-        if (request.uri().path() != path && dispatch_run.is_none())
-            || request.uri().query().is_some()
-        {
+        let upload = app_state::target(self.identity.runner_id(), request.uri().path());
+        if request.uri().query().is_some() {
             return response(StatusCode::NOT_FOUND, "");
         }
-        let host = request.headers().get("host").and_then(|v| v.to_str().ok());
-        if request.headers().get_all("host").iter().count() != 1
-            || !host.is_some_and(|host| {
-                host == self.hostname || host == format!("{}:443", self.hostname)
-            })
-        {
+        if request.uri().path() != path && dispatch_run.is_none() && upload.is_none() {
+            return self.handle_run_wss(request).await;
+        }
+        if !self.matches_host(&request) {
             return response(StatusCode::NOT_FOUND, "");
         }
-        let credential = request
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "));
-        if request.headers().get_all("authorization").iter().count() != 1
-            || !credential.is_some_and(|credential| {
-                bool::from(credential.as_bytes().ct_eq(self.token.as_bytes()))
-            })
-        {
+        if let Some((run_id, command)) = upload {
+            return self.handle_app_state(request, run_id, command).await;
+        }
+        if !self.has_service_auth(&request) {
             return response(StatusCode::UNAUTHORIZED, "");
         }
         if let Some(run_id) = dispatch_run {
@@ -160,16 +159,30 @@ impl IngressHandler {
         if request.method() != Method::GET {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
-        if request.headers().contains_key("upgrade")
-            || request.headers().contains_key("transfer-encoding")
-            || request
-                .headers()
-                .get("content-length")
-                .is_some_and(|v| v != "0")
-        {
+        if request.headers().contains_key("upgrade") || !has_empty_body(&request) {
             return response(StatusCode::BAD_REQUEST, "");
         }
         response(StatusCode::OK, "ok")
+    }
+
+    fn matches_host(&self, request: &Request<Incoming>) -> bool {
+        let host = request.headers().get("host").and_then(|v| v.to_str().ok());
+        request.headers().get_all("host").iter().count() == 1
+            && host.is_some_and(|host| {
+                host == self.hostname || host == format!("{}:443", self.hostname)
+            })
+    }
+
+    fn has_service_auth(&self, request: &Request<Incoming>) -> bool {
+        let credential = request
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+        request.headers().get_all("authorization").iter().count() == 1
+            && credential.is_some_and(|credential| {
+                bool::from(credential.as_bytes().ct_eq(self.token.as_bytes()))
+            })
     }
 
     async fn handle_dispatch(
@@ -182,7 +195,6 @@ impl IngressHandler {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
         if request.headers().contains_key("upgrade")
-            || request.headers().contains_key("content-encoding")
             || request
                 .headers()
                 .get("content-type")
@@ -190,6 +202,12 @@ impl IngressHandler {
         {
             return response(StatusCode::BAD_REQUEST, "");
         }
+        let mut encodings = request.headers().get_all("content-encoding").iter();
+        let gzip = match (encodings.next(), encodings.next()) {
+            (None, None) => false,
+            (Some(encoding), None) if encoding.as_bytes().eq_ignore_ascii_case(b"gzip") => true,
+            _ => return response(StatusCode::BAD_REQUEST, ""),
+        };
         if request
             .headers()
             .get("content-length")
@@ -206,6 +224,8 @@ impl IngressHandler {
             return self.dispatch_response(run_id, dispatch::Disposition::Busy);
         };
         let read_started = Instant::now();
+        let mut first_data_at = None;
+        let mut last_data_at = None;
         let read = async {
             let mut bytes = Vec::new();
             while let Some(frame) = request.body_mut().frame().await {
@@ -213,6 +233,11 @@ impl IngressHandler {
                 if let Ok(data) = frame.into_data() {
                     if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
                         return Err(StatusCode::PAYLOAD_TOO_LARGE);
+                    }
+                    if !data.is_empty() {
+                        let received_at = Instant::now();
+                        first_data_at.get_or_insert(received_at);
+                        last_data_at = Some(received_at);
                     }
                     bytes.extend_from_slice(&data);
                 } else {
@@ -223,10 +248,26 @@ impl IngressHandler {
         };
         let read = tokio::time::timeout(Duration::from_secs(5), read).await;
         timing.body_read_ms = Some(read_started.elapsed().as_secs_f64() * 1000.0);
+        timing.body_first_frame_ms =
+            first_data_at.map(|at| at.duration_since(read_started).as_secs_f64() * 1000.0);
         let bytes = match read {
             Ok(Ok(bytes)) => bytes,
             Ok(Err(status)) => return response(status, ""),
             Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
+        };
+        timing.body_first_to_last_frame_ms = first_data_at
+            .zip(last_data_at)
+            .map(|(first, last)| last.duration_since(first).as_secs_f64() * 1000.0);
+        let bytes = if gzip {
+            let started = Instant::now();
+            let decoded = decode_dispatch_gzip(&bytes);
+            timing.body_gzip_decode_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            match decoded {
+                Ok(decoded) => decoded,
+                Err(status) => return response(status, ""),
+            }
+        } else {
+            bytes
         };
         let verdict = intake
             .submit(
@@ -271,6 +312,21 @@ impl IngressHandler {
     }
 }
 
+fn decode_dispatch_gzip(bytes: &[u8]) -> Result<Vec<u8>, StatusCode> {
+    let mut decoder = flate2::bufread::GzDecoder::new(bytes);
+    let mut decoded = Vec::new();
+    let result = (&mut decoder)
+        .take(dispatch::MAX_BODY as u64 + 1)
+        .read_to_end(&mut decoded);
+    if decoded.len() > dispatch::MAX_BODY {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    if result.is_err() || !decoder.into_inner().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(decoded)
+}
+
 fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
     let mut result = Response::new(Full::new(Bytes::copy_from_slice(body.as_bytes())));
     *result.status_mut() = status;
@@ -283,6 +339,14 @@ fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
         hyper::header::HeaderValue::from_static("text/plain; charset=utf-8"),
     );
     result
+}
+
+fn has_empty_body(request: &Request<Incoming>) -> bool {
+    !request.headers().contains_key("transfer-encoding")
+        && request
+            .headers()
+            .get("content-length")
+            .is_none_or(|value| value == "0")
 }
 
 /// Owned by startup and then the running reactor, independently of Caddy.
@@ -332,6 +396,7 @@ impl IngressRuntime {
                     biased;
                     () = cancel.cancelled() => break,
                     _ = expiry_tick.tick() => {
+                        if let Some(receiver) = handler.app_state.get() { receiver.expire(); }
                         if let Some(intake) = handler.dispatch.get() {
                             intake.expire(dispatch::now_ms());
                         }
@@ -362,8 +427,12 @@ impl IngressRuntime {
                     }
                 }
             }
+            cancel.cancel();
             connections.abort_all();
             while connections.join_next().await.is_some() {}
+            if let Some(run_wss) = handler.run_wss.get() {
+                run_wss.join().await;
+            }
             drop(socket);
         }));
         Ok(runtime)
@@ -374,10 +443,29 @@ impl IngressRuntime {
         self.handler.check_public().await
     }
 
+    pub(crate) fn enable_app_state(&self, receiver: runner_remote::app_state::Runtime) {
+        assert!(
+            self.handler.app_state.set(receiver).is_ok(),
+            "app state receiver configured once"
+        );
+    }
+
     pub(crate) fn enable_dispatch(&self, intake: dispatch::DispatchIntake) {
         assert!(
             self.handler.dispatch.set(intake).is_ok(),
             "dispatch intake configured once"
+        );
+    }
+
+    pub(crate) fn enable_run_wss(
+        &self,
+        active_runs: ActiveRuns,
+        cancellations: RunCancellationRegistry,
+    ) {
+        let run_wss = run_wss::RunWebSocket::new(active_runs, cancellations, self.cancel.clone());
+        assert!(
+            self.handler.run_wss.set(Arc::new(run_wss)).is_ok(),
+            "Run WSS configured once"
         );
     }
 

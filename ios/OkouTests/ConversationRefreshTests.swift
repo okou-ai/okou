@@ -33,7 +33,7 @@ final class ConversationRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [recoveryStarted], timeout: 3)
-    try await waitForBusinessResult { conversation.messages.count == 3 }
+    try await waitForBusinessResult(watching: conversation) { conversation.messages.count == 3 }
     XCTAssertEqual(conversation.history?.executionState, .recovering)
     gate.open()
     await refresh.value
@@ -60,11 +60,17 @@ final class ConversationRefreshTests: XCTestCase {
     XCTAssertEqual(conversation.messages.count, 3)
     XCTAssertEqual(conversation.history?.executionState, .recovering)
     XCTAssertNotNil(conversation.syncError)
+    // The detail view and the chat list's sync status read the same status from the graph.
+    let failed = try conversation.graph.get(conversation.syncStatus)
+    XCTAssertEqual(failed.error, conversation.syncError)
+    XCTAssertFalse(failed.isLoading)
     outcome.withLock { $0 = 2 }
     await conversation.refresh()
     XCTAssertEqual(conversation.messages.count, 3)
     XCTAssertEqual(conversation.history?.executionState, .queued)
     XCTAssertNil(conversation.syncError)
+    XCTAssertEqual(
+      try conversation.graph.get(conversation.syncStatus), ConversationPresentation.SyncStatus())
   }
 
   func testHiddenDetailAndCancelledWaiterKeepResidentHistoryAndDraft() async throws {
@@ -332,7 +338,7 @@ final class ConversationRefreshTests: XCTestCase {
       await reading.value
     }
     await fulfillment(of: [began], timeout: 3)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation) {
       conversation.messages.last?.id == ConversationHistoryFixture.id(2)
     }
     fixture.appendMessage()

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { VOICE_TRANSCRIPTION_MODEL } from "@okouai/api-contracts/contracts/voice-clips";
 import { transcribeContract } from "@okouai/api-contracts/contracts/transcribe";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
@@ -12,7 +11,6 @@ import { billingStatusRoutes } from "../billing-status";
 import { transcribeRoutes } from "../transcribe";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
@@ -36,11 +34,6 @@ test("ordered private recordings share one Vertex request and one credit settlem
   await createRunsApi(context).grantProEntitlement(actor);
   const mocks = createRouteMocks(context);
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.VoiceMessages]: true },
-  );
   installSharedThreadStorage(context);
   const headers = { authorization: "Bearer clerk-session" };
   const api = setupApp({
@@ -117,11 +110,6 @@ test("ordered private recordings share one Vertex request and one credit settlem
   const path = { fileId };
   await accept(playback({ headers: uploadHeaders, params: path }), [403]);
   const otherUser = "user_other";
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId, userId: otherUser },
-    { [FeatureSwitchKey.VoiceMessages]: true },
-  );
   await accept(
     playback({
       headers: {
@@ -197,8 +185,14 @@ test("ordered private recordings share one Vertex request and one credit settlem
     }),
   };
   const mcp = createMcpWebApi(context);
+  const attachment = {
+    type: "file" as const,
+    fileId,
+    filenameSnapshot: clip.filename,
+    contentType: clip.contentType,
+  };
   const sent = await mcp.call(authorize(), "send_chat_message", {
-    userMessage: { version: 1, parts: [voice] },
+    userMessage: { version: 1, parts: [voice, attachment] },
   });
   expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
   const accepted = mcpSendChatMessageOutputSchema.parse(sent.structuredContent);
@@ -215,6 +209,7 @@ test("ordered private recordings share one Vertex request and one credit settlem
     throw new Error("Expected the MCP voice message to launch a run");
   }
   expect(launched.userMessage?.parts).toContainEqual(voice);
+  expect(launched.userMessage?.parts).toContainEqual(attachment);
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(launched.runId);
   const token = execution.platformEnvironment.OKOU_TOKEN;
@@ -260,10 +255,6 @@ test("ordered private recordings share one Vertex request and one credit settlem
   if (!stranger.orgId) {
     throw new Error("Expected second organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...stranger, orgId: stranger.orgId },
-    { [FeatureSwitchKey.VoiceMessages]: true },
-  );
+  mocks.clerk.session(stranger.userId, stranger.orgId, "org:admin");
   await accept(api(transcribeContract).transcribe({ headers, body }), [404]);
 });

@@ -3,6 +3,8 @@ import { createArtifactViewerFullscreenSignals } from "./artifact-viewer-fullscr
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
+import { isZipArtifact } from "../lib/zip-artifact.ts";
+import { createZipArtifactPreviewScope } from "./zip-artifact-preview.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
 import type { MermaidDiagramPreviewCommand } from "./mermaid-diagram.ts";
 import { createArtifactDiagramPreviewSignals } from "./artifact-diagram-preview.ts";
@@ -60,6 +62,7 @@ export function createSharedArtifactPreview(
         });
   const base = {
     filename: artifact.filename,
+    contentType: artifact.contentType,
     url: referenceUrl,
     preview: previewSignals,
     ...previewSignals,
@@ -77,7 +80,14 @@ export function createSharedArtifactPreview(
           }
         : { ...base, kind, text$ };
   } else {
-    preview = { ...base, kind };
+    preview = {
+      ...base,
+      kind,
+      ...(kind === "file" &&
+      isZipArtifact(artifact.filename, artifact.contentType)
+        ? { zipPreview: createZipArtifactPreviewScope(base.resourceUrl$) }
+        : {}),
+    };
   }
   return {
     filename: artifact.filename,

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
 import { on, once } from "node:events";
@@ -7,6 +8,7 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createSecureContext,
   getCACertificates,
@@ -14,7 +16,20 @@ import {
 } from "node:tls";
 import "../src/__tests__/global-setup-env.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
+import { runnerDispatchHeaderTimings } from "../src/signals/external/runner-dispatch-transport.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
+
+const dispatcherKeys = [
+  Symbol.for("undici.globalDispatcher.1"),
+  Symbol.for("undici.globalDispatcher.2"),
+];
+void globalThis.Request;
+const nativeDispatchers = dispatcherKeys.map((key) => {
+  return globalThis[key];
+});
+const { createRunnerDispatchPool } =
+  await import("../src/runner-dispatch-pool.node.ts");
+const { Agent } = await import("undici");
 
 async function createPeerCredentials() {
   const directory = await mkdtemp(join(tmpdir(), "runner-transport-tls-"));
@@ -55,12 +70,12 @@ setDefaultCACertificates([
 ]);
 const dispatchBody = JSON.stringify({ prompt: "Summarize the café menu" });
 
-async function withPeer(signal, run) {
+async function withPeer(signal, run, pool, reply) {
   const handshake = Promise.withResolvers();
   const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
   const context = createSecureContext({ key, cert });
-  const transport = createRunnerDispatchTransport({ observe() {} });
+  const transport = createRunnerDispatchTransport({ ...pool, observe() {} });
   const sockets = new Set();
   const ports = [];
   const bodyPorts = [];
@@ -78,6 +93,7 @@ async function withPeer(signal, run) {
     {
       key,
       cert,
+      ...(pool && { keepAliveTimeout: 300_000 }),
       SNICallback(_servername, callback) {
         handshake.resolve();
         if (released) {
@@ -89,15 +105,30 @@ async function withPeer(signal, run) {
     },
     (request, response) => {
       requestPaths.push(request.url);
-      let body = "";
-      request.setEncoding("utf8");
+      if (pool) {
+        // Omit the timeout hint so the client uses its configured idle limit.
+        response.setHeader("keep-alive", "max=1000");
+      }
+      const chunks = [];
       request.on("data", (chunk) => {
-        body += chunk;
+        chunks.push(chunk);
       });
       request.once("end", () => {
+        const bytes = Buffer.concat(chunks);
+        const body =
+          request.headers["content-encoding"] === "gzip"
+            ? gunzipSync(bytes).toString("utf8")
+            : bytes.toString("utf8");
         bodyPorts.push(request.socket.remotePort ?? 0);
         bodies.push(body);
-        response.end(JSON.stringify({ disposition: "accepted" }));
+        const accept = () => {
+          response.end(JSON.stringify({ disposition: "accepted" }));
+        };
+        if (reply) {
+          reply(accept);
+        } else {
+          accept();
+        }
       });
     },
   );
@@ -145,13 +176,7 @@ async function withPeer(signal, run) {
   }
 }
 
-async function waitForFetchClientDrain(origin, signal) {
-  // Observe the default dispatcher shared by native fetch and Undici. Node 22
-  // uses the v1 key, while newer Node versions expose the agent under v2.
-  const dispatcher =
-    globalThis[Symbol.for("undici.globalDispatcher.2")] ??
-    globalThis[Symbol.for("undici.globalDispatcher.1")];
-  assert.ok(dispatcher, "Expected native fetch to initialize its dispatcher");
+async function waitForClientDrain(dispatcher, origin, signal) {
   for await (const [connectedOrigin, targets] of on(dispatcher, "connect", {
     signal,
   })) {
@@ -163,32 +188,46 @@ async function waitForFetchClientDrain(origin, signal) {
   throw new Error("Expected native fetch to connect to the HTTPS peer");
 }
 
-function reserve(transport, runId, url, signal) {
+function waitForFetchClientDrain(origin, signal) {
+  // Observe the default dispatcher shared by native fetch and Undici. Node 22
+  // uses the v1 key, while newer Node versions expose the agent under v2.
+  const dispatcher =
+    globalThis[Symbol.for("undici.globalDispatcher.2")] ??
+    globalThis[Symbol.for("undici.globalDispatcher.1")];
+  assert.ok(dispatcher, "Expected native fetch to initialize its dispatcher");
+  return waitForClientDrain(dispatcher, origin, signal);
+}
+
+function reserve(transport, runId, url, signal, encoding = "identity") {
   transport.reserve(
     runId,
     url,
     (body, connectionSignal) => {
       return {
-        response: globalThis.fetch(url, {
+        response: transport.request(url, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(encoding === "gzip" ? { "content-encoding": "gzip" } : {}),
+          },
           body,
           duplex: "half",
           signal: connectionSignal,
         }),
-        timing: { startedAt: 0, sendCount: 0 },
+        timing: { sendCount: 0 },
       };
     },
     signal,
+    encoding,
   );
 }
 
 async function send(transport, url) {
   const signal = globalThis.AbortSignal.timeout(3000);
-  const reserved = transport.take(url, dispatchBody, 1, signal);
+  const reserved = transport.take(url, dispatchBody, signal);
   try {
     const response = await (reserved?.response ??
-      globalThis.fetch(url, {
+      transport.request(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: dispatchBody,
@@ -199,6 +238,93 @@ async function send(transport, url) {
     reserved?.clearDeadline();
   }
 }
+
+test("preserves the process-wide Fetch dispatcher", async () => {
+  const pool = createRunnerDispatchPool();
+  try {
+    for (const [index, key] of dispatcherKeys.entries()) {
+      assert.equal(globalThis[key], nativeDispatchers[index]);
+    }
+  } finally {
+    await pool.destroy();
+  }
+});
+
+test("measures header emission from the preconnection and dispatch boundaries", () => {
+  const dispatchStartedAt = 25;
+  const early = { preconnectStartedAt: 10, sentHeadersAt: 20, sendCount: 1 };
+  assert.deepEqual(runnerDispatchHeaderTimings(early, dispatchStartedAt), {
+    api_preconnect_send_headers_ms: 10,
+    api_send_headers_ms: undefined,
+  });
+  assert.deepEqual(
+    runnerDispatchHeaderTimings(
+      { ...early, sentHeadersAt: 30 },
+      dispatchStartedAt,
+    ),
+    { api_preconnect_send_headers_ms: 20, api_send_headers_ms: 5 },
+  );
+  assert.deepEqual(
+    runnerDispatchHeaderTimings(
+      { sentHeadersAt: 30, sendCount: 1 },
+      dispatchStartedAt,
+    ),
+    { api_preconnect_send_headers_ms: undefined, api_send_headers_ms: 5 },
+  );
+  assert.deepEqual(
+    runnerDispatchHeaderTimings({ ...early, sendCount: 2 }, dispatchStartedAt),
+    {},
+  );
+});
+
+test(
+  "releases gzip bytes on its reserved HTTPS request",
+  { timeout: 5000 },
+  async (t) => {
+    await withPeer(t.signal, async (peer) => {
+      reserve(peer.transport, "gzip", peer.origin, t.signal, "gzip");
+      await peer.firstHandshake;
+      assert.deepEqual(peer.requestPaths, []);
+      const reserved = peer.transport.take(
+        peer.origin,
+        gzipSync(dispatchBody),
+        t.signal,
+        "gzip",
+      );
+      assert.ok(reserved);
+      try {
+        peer.releaseHandshake();
+        const response = await reserved.response;
+        assert.deepEqual(await response.json(), { disposition: "accepted" });
+        assert.deepEqual(peer.bodies, [dispatchBody]);
+        assert.deepEqual(peer.bodyPorts, peer.ports);
+      } finally {
+        reserved.clearDeadline();
+      }
+    });
+  },
+);
+
+test(
+  "discards a reserved gzip POST when the offer uses plain JSON",
+  { timeout: 5000 },
+  async (t) => {
+    await withPeer(t.signal, async (peer) => {
+      reserve(peer.transport, "gzip", peer.origin, t.signal, "gzip");
+      await peer.firstHandshake;
+      assert.equal(
+        peer.transport.take(peer.origin, dispatchBody, t.signal),
+        undefined,
+      );
+      peer.releaseHandshake();
+      await peer.firstClosed;
+      assert.deepEqual(peer.requestPaths, []);
+      await send(peer.transport, peer.origin);
+      assert.deepEqual(peer.bodies, [dispatchBody]);
+    });
+  },
+);
+
 test(
   "starts TLS before sending a POST and reuses the resulting socket",
   { timeout: 5000 },
@@ -224,6 +350,98 @@ test(
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
     });
+  },
+);
+
+test(
+  "shares the socket across reserved and direct POSTs once idle",
+  { timeout: 5000 },
+  async (t) => {
+    const pool = createRunnerDispatchPool();
+    try {
+      await withPeer(
+        t.signal,
+        async (peer) => {
+          const { transport, origin } = peer;
+          // Capture the Agent that native Fetch actually dispatches through.
+          const dispatchObserver = t.mock.method(Agent.prototype, "dispatch");
+          try {
+            reserve(transport, "retained", origin, t.signal);
+            await awaitWithSignal(peer.firstHandshake, t.signal);
+          } finally {
+            dispatchObserver.mock.restore();
+          }
+          const dispatcher = dispatchObserver.mock.calls[0]?.this;
+          assert.ok(dispatcher, "Expected Fetch to use the Runner Agent");
+          assert.deepEqual(peer.requestPaths, []);
+
+          // Observe the effective idle delay while keeping real timer scheduling.
+          const timerObserver = t.mock.method(globalThis, "setTimeout");
+          try {
+            const reusable = waitForClientDrain(dispatcher, origin, t.signal);
+            peer.releaseHandshake();
+            await Promise.all([send(transport, origin), reusable]);
+            assert.ok(
+              timerObserver.mock.calls.some(
+                ({ arguments: [, milliseconds] }) => {
+                  return milliseconds === 120_000;
+                },
+              ),
+              "Expected the Runner Agent to schedule a 120-second idle timeout",
+            );
+          } finally {
+            timerObserver.mock.restore();
+          }
+          await send(transport, origin + "/next");
+          assert.deepEqual(peer.requestPaths, ["/", "/next"]);
+          assert.deepEqual(peer.bodies, [dispatchBody, dispatchBody]);
+          assert.equal(peer.ports.length, 1);
+          assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
+          assert.equal(transport.poolStats(origin).connected, 1);
+        },
+        pool,
+      );
+    } finally {
+      await pool.destroy();
+    }
+  },
+);
+
+test(
+  "opens another socket while every existing socket is busy",
+  { timeout: 5000 },
+  async (t) => {
+    const pool = createRunnerDispatchPool();
+    const replies = [];
+    const received = Promise.withResolvers();
+    try {
+      await withPeer(
+        t.signal,
+        async ({ transport, origin, bodyPorts, releaseHandshake }) => {
+          releaseHandshake();
+          const sends = Promise.all(
+            Array.from({ length: 5 }, (_, i) => {
+              return send(transport, origin + "/" + i);
+            }),
+          );
+          await Promise.race([received.promise, sends]);
+          assert.equal(new Set(bodyPorts).size, 5);
+          for (const reply of replies) {
+            reply();
+          }
+          await sends;
+        },
+        pool,
+        (reply) => {
+          replies.push(reply);
+          if (replies.length === 5) {
+            received.resolve();
+          }
+        },
+      );
+    } finally {
+      await pool.destroy();
+    }
   },
 );
 

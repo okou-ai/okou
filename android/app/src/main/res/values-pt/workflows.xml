@@ -10,13 +10,13 @@
     <string name="workflow_chat_finished">Execução do chat encerrada</string>
     <string name="workflow_clear_search">Limpar pesquisa</string>
     <string name="workflow_connect_provider">Conecte %1$s para ativar esta regra.</string>
-    <string name="workflow_connection_unavailable">Não foi possível abrir as conexões.</string>
     <string name="workflow_create_uncertain">Não foi possível confirmar a criação. Feche o editor e verifique as regras antes de tentar novamente.</string>
     <string name="workflow_creation_prompt">Ajude-me a criar um fluxo de trabalho privado. Use a habilidade workflow-setup. Pergunte qual tarefa quero repetir e mostre as instruções para eu confirmar antes de salvar. Crie uma automação só se eu pedir.</string>
     <string name="workflow_daily">Todos os dias</string>
     <string name="workflow_daily_schedule">Todos os dias às %1$s</string>
     <string name="workflow_discard">Descartar</string>
     <string name="workflow_discard_title">Descartar as alterações não salvas?</string>
+    <string name="workflow_discard_detail">As alterações não salvas em “%1$s” neste dispositivo serão descartadas.</string>
     <string name="workflow_draft_unavailable">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado.</string>
     <string name="workflow_edit">Editar</string>
     <string name="workflow_edit_automation">Editar automação</string>
@@ -44,6 +44,7 @@
     <string name="workflow_instructions_heading">Instruções do fluxo de trabalho</string>
     <string name="workflow_keep_editing">Continuar editando</string>
     <string name="workflow_load_failed">Não foi possível carregar os fluxos de trabalho</string>
+    <string name="workflow_rules_load_failed">Não foi possível carregar as regras de acionamento.</string>
     <string name="workflow_mail_from_contains">Remetente contém %1$s</string>
     <string name="workflow_mail_labeled">Marcador do Gmail aplicado</string>
     <string name="workflow_mail_received">Mensagem do Gmail recebida</string>
@@ -66,9 +67,6 @@
     <string name="workflow_notion_child">Subpágina do Notion criada</string>
     <string name="workflow_notion_item">Item de banco de dados do Notion criado</string>
     <string name="workflow_notion_updated">Página do Notion atualizada</string>
-    <string name="workflow_offline">Conecte-se para carregar os fluxos de trabalho</string>
-    <string name="workflow_offline_cache">Offline · Últimos dados carregados</string>
-    <string name="workflow_offline_changes">Conecte-se para salvar. Suas alterações foram preservadas.</string>
     <string name="workflow_pause">Pausar</string>
     <string name="workflow_paused">Automações pausadas</string>
     <string name="workflow_private">Só eu</string>
@@ -90,7 +88,7 @@
     <string name="workflow_shared_usable">Compartilhado no espaço · Pode usar</string>
     <string name="workflow_show_all">Mostrar todos</string>
     <string name="workflow_status_connection">%1$s · Requer conexão</string>
-    <string name="workflow_time">Hora (HH:mm)</string>
+    <string name="workflow_time">Hora</string>
     <string name="workflow_timezone">Fuso horário</string>
     <string name="workflow_transcript">Transcrição do Google Meet disponível</string>
     <string name="workflow_trigger">Gatilho</string>
@@ -107,8 +105,27 @@
         <item quantity="many">%d automações ativas</item>
         <item quantity="other">%d automações ativas</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Não foi possível abrir o rascunho do novo chat. Seu rascunho atual foi preservado. Verifique sua conexão e tente novamente.</string>
     <string name="workflow_rule_change_failed">Não foi possível alterar esta regra.</string>
     <string name="workflow_rule_network_failed">Não foi possível alterar esta regra. Verifique sua conexão e tente novamente.</string>
     <string name="workflow_write_conflict">Este fluxo de trabalho mudou durante o salvamento. Suas alterações foram preservadas.</string>
+    <string name="workflow_history_earlier">Mostrar execuções anteriores</string>
+    <string name="workflow_history_event">Evento</string>
+    <string name="workflow_history_failed">Não foi possível carregar o histórico de execuções</string>
+    <string name="workflow_history_loading">Carregando histórico de execuções…</string>
+    <string name="workflow_history_open_chat">Abrir o chat de origem</string>
+    <string name="workflow_history_unavailable">Histórico de execuções indisponível</string>
+    <string name="workflow_run_pending">Pendente</string>
+    <string name="workflow_run_running">Em execução</string>
+    <string name="workflow_run_timeout">Tempo esgotado</string>
+    <string name="workflow_history_trigger_unavailable">Acionador indisponível</string>
+    <string name="workflow_history_scheduled">Acionamento programado</string>
+    <string name="workflow_history_manual">Execução manual</string>
+    <string name="workflow_catalog_refresh_failed">Não foi possível atualizar o diretório de fluxos de trabalho. A mostrar os fluxos carregados.</string>
+    <string name="workflow_history_earlier_failed">Não foi possível carregar as execuções anteriores.</string>
+    <string name="workflow_rule_checking">A verificar o resultado…</string>
+    <string name="workflow_rule_unconfirmed">O resultado ainda não foi confirmado.</string>
+    <string name="workflow_event">Evento</string>
+    <string name="workflow_event_source">Origem do evento</string>
+    <string name="workflow_source_gmail">Gmail · E-mail recebido</string>
+    <string name="workflow_source_calendar">Google Calendar · Evento criado</string>
 </resources>

@@ -323,7 +323,7 @@ describe("client contract import metadata", () => {
     ]);
   });
 
-  it("includes moved original schemas, borrowed constants, and the renamed composer draft", () => {
+  it("includes moved original schemas, borrowed constants, and distinct thread and workspace draft bindings", () => {
     const bindings = (module: string) => {
       return clientContractImportManifest.find((entry) => {
         return entry.module === module;
@@ -336,6 +336,11 @@ describe("client contract import metadata", () => {
     });
     expect(bindings("chat-threads")).toContainEqual({
       name: "chatThreadDraftSchema",
+      source: "validators/chat-threads",
+      imported: "chatThreadDraftSchema",
+    });
+    expect(bindings("composer-draft")).toContainEqual({
+      name: "composerDraftResponseSchema",
       source: "validators/chat-threads",
       imported: "composerDraftSchema",
     });

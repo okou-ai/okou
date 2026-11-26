@@ -2319,6 +2319,15 @@ async fn finalizer_destroys_candidate_when_cancelled_after_park() {
 
 #[tokio::test]
 async fn finalizer_destroys_candidate_when_cancelled_before_idle_pool_transfer() {
+    assert_cancelled_candidate_destroyed_before_idle_pool_transfer(false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn finalizer_destroys_cancelled_candidate_with_contended_transfer_gate() {
+    assert_cancelled_candidate_destroyed_before_idle_pool_transfer(true).await;
+}
+
+async fn assert_cancelled_candidate_destroyed_before_idle_pool_transfer(hold_transfer_gate: bool) {
     let (_budget, lease) = test_budget_lease();
     let fixture = FinalizeTestFixture::new().await;
     let network_log_session = fixture.network_log_session().await;
@@ -2358,7 +2367,7 @@ async fn finalizer_destroys_candidate_when_cancelled_before_idle_pool_transfer()
             Duration::from_secs(5),
         )
         .await;
-    cancel.request_hard_cancellation().await;
+    assert!(cancel.request_hard_cancellation().await);
     assert!(
         !fixture
             .network_log_manager
@@ -2369,13 +2378,37 @@ async fn finalizer_destroys_candidate_when_cancelled_before_idle_pool_transfer()
             .await,
         "network-log attribution must be closed before waiting for idle-pool ownership",
     );
-    drop(pool_guard);
+    let pool_during_destroy = if hold_transfer_gate {
+        let transfer_guard = cancel
+            .try_transfer_guard()
+            .expect("test should acquire the gate while finalization waits for the pool");
+        drop(pool_guard);
+        // The pre-transfer event and the finalizer's pool lock poll happen in
+        // the same current-thread runtime turn. This lock follows its waiter.
+        let pool = tokio::time::timeout(Duration::from_secs(5), fixture.idle_pool.lock())
+            .await
+            .expect("finalizer should release the pool before waiting for the transfer gate");
+        drop(transfer_guard);
+        Some(pool)
+    } else {
+        drop(pool_guard);
+        None
+    };
     assert_eq!(
         destroy_gate
             .wait_entered(1, Duration::from_secs(5))
             .await
             .expect("cancelled candidate should enter destroy gate"),
         1
+    );
+    assert!(
+        cancel.try_transfer_guard().is_some(),
+        "destruction must leave the transfer gate available"
+    );
+    drop(pool_during_destroy);
+    assert!(
+        fixture.idle_pool.try_lock().is_ok(),
+        "destruction must leave the pool available"
     );
 
     destroy_gate.release_one();

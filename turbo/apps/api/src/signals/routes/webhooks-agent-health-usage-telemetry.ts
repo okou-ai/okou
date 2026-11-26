@@ -4,7 +4,6 @@ import {
   runWebhookContract,
   webhookHeartbeatContract,
   webhookTelemetryContract,
-  webhookUsageEventContract,
   type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
@@ -1058,15 +1057,11 @@ export const webhooksAgentHealthUsageTelemetryRoutes: readonly RouteEntry[] = [
     handler: heartbeat$,
   },
   {
-    route: webhookUsageEventContract.send,
+    route: runWebhookContract.usageEvent,
     handler: usageEvent$,
   },
   {
     route: webhookTelemetryContract.send,
-    handler: telemetry$,
-  },
-  {
-    route: runWebhookContract.telemetry,
     handler: telemetry$,
   },
 ];

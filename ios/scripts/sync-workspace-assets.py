@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 SYSTEM = ROOT / "ios/Okou/DesignSystem/Components/Identity"
 ASSETS = ROOT / "ios/Okou/Resources/Assets.xcassets"
-SOURCES = ["turbo/packages/core/src/workspace-logo.ts", "turbo/packages/core/src/agent-avatar-texture.ts", "turbo/apps/platform/src/views/components/okou-logomark.tsx"]
+SOURCES = ["turbo/packages/core/src/workspace-logo.ts", "turbo/packages/core/src/agent-avatar-texture.ts"]
 MANIFEST = SYSTEM / "workspace-assets.json"
 
 def main():
@@ -31,19 +31,19 @@ def main():
         return
     dark = re.search(r'TONAL_DARK_GROUND_BASE =\s*"([^"]+)"', texts[0])[1]
     light = re.search(r'AVATAR_TEXTURE_BASE =\s*"([^"]+)"', texts[1])[1]
-    matches = re.findall(r'textureUrl: (.*?),\s*ground: "(#[0-9A-Fa-f]+)",\s*ink: "(#[0-9A-Fa-f]+)",\s*mark: "(#[0-9A-Fa-f]+)"', texts[0])
+    matches = re.findall(r'^    textureUrl: (.*),$', texts[0], re.MULTILINE)
     assert len(matches) == 8, "Review changed Web colorway schema"
-    mark = re.search(r'(<path\s.*?/>)', texts[2], re.S)[1]
+
     def bundle(entry):
-        index, (expression, _, _, ink) = entry
+        index, expression = entry
         texture = re.search(r'avatarTextureUrl\("([^"]+)"\)', expression)
         url = light + "/" + texture[1] + ".svg" if texture else expression.strip("`").replace("${TONAL_DARK_GROUND_BASE}", dark)
         raw = subprocess.run(["curl", "--http1.1", "-fsSL", "--max-time", "30", "--retry", "3", "--retry-all-errors", url], capture_output=True, check=True).stdout
         root = ET.fromstring(raw)
         viewbox = root.attrib["viewBox"]
         content = b"".join(ET.tostring(child) for child in root).decode()
-        # Web paints the texture at 160%, centered, with the mark at 58% width.
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="328" height="328" viewBox="0 0 328 328"><defs><clipPath id="tile"><rect width="328" height="328"/></clipPath></defs><g clip-path="url(#tile)"><svg x="-98.4" y="-98.4" width="524.8" height="524.8" viewBox="{viewbox}">{content}</svg><svg x="68.88" y="67.50" width="190.24" height="193" viewBox="0 0 138 140">{mark.replace("currentColor", ink)}</svg></g></svg>\n'
+        # Web paints the texture at 160%, centered.
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="328" height="328" viewBox="0 0 328 328"><defs><clipPath id="tile"><rect width="328" height="328"/></clipPath></defs><g clip-path="url(#tile)"><svg x="-98.4" y="-98.4" width="524.8" height="524.8" viewBox="{viewbox}">{content}</svg></g></svg>\n'
         name = f"WorkspaceDefault-{index}"
         directory = ASSETS / (name + ".imageset")
         directory.mkdir(exist_ok=True)

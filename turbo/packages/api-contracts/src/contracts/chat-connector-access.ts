@@ -5,6 +5,7 @@ import {
   literal,
   object,
   string,
+  enum as zEnum,
   uuid,
   type infer as zInfer,
 } from "zod";
@@ -30,6 +31,25 @@ const accountDefaultsSchema = object({
   defaultEnabled: boolean(),
   isDefault: boolean(),
 }).strict();
+
+const connectorAccountPolicySchema = object({
+  connectionId: uuid(),
+  allowed: boolean(),
+  enabled: boolean(),
+  expiresAt: string().nullable(),
+}).strict();
+
+const connectorAccountPolicyChoiceSchema = zEnum([
+  "deny",
+  "allow-always",
+  "allow-1h",
+  "allow-24h",
+  "allow-7d",
+]);
+
+export type ConnectorAccountPolicyChoice = zInfer<
+  typeof connectorAccountPolicyChoiceSchema
+>;
 const chatConnectorAccessSchema = object({
   target: connectorAccountTargetSchema,
   accounts: array(
@@ -78,6 +98,25 @@ const errors = {
 
 /** New owner configuration contracts leave strict existing account shapes intact. */
 export const chatConnectorAccessContract = c.router({
+  accountPolicies: {
+    method: "GET",
+    path: "/api/connector-account-access/policies",
+    headers: authHeadersSchema,
+    query: connectorAccountTargetQuerySchema,
+    responses: { 200: array(connectorAccountPolicySchema), ...errors },
+    summary: "Read the member's access policies for a connector target",
+  },
+  updateAccountPolicy: {
+    method: "PUT",
+    path: "/api/connector-account-access/:connectionId/policy",
+    headers: authHeadersSchema,
+    pathParams: object({ connectionId: uuid() }),
+    body: targetBody
+      .extend({ policy: connectorAccountPolicyChoiceSchema })
+      .strict(),
+    responses: { 200: connectorAccountPolicySchema, ...errors },
+    summary: "Set a member-wide access policy for a saved connector account",
+  },
   overview: {
     method: "GET",
     path: "/api/chat-connector-overview",

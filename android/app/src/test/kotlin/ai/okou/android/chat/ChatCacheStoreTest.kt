@@ -9,6 +9,15 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.artifacts.ArtifactItem
+import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.artifacts.ArtifactPage
+import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChatRead
+import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
+import ai.okou.android.artifacts.RelatedChatResource
+import ai.okou.android.artifacts.WorkflowResource
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -79,7 +88,7 @@ class ChatCacheStoreTest {
                 assertEquals(checkpoint, prepared.saved.checkpoint)
                 assertEquals(replayChatList(checkpoint), prepared.rows)
                 assertNull(
-                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default)
+                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default),
                 )
                 val rejected = runCatching {
                     store.prepareChatList(
@@ -102,7 +111,7 @@ class ChatCacheStoreTest {
                     listOf(ConfirmedProject(CHAT_PROJECT, "Example", CHAT_DATE, CHAT_DATE)),
                     null,
                     0,
-                )
+                ),
             )
         val store = cache(root)
         store
@@ -117,12 +126,15 @@ class ChatCacheStoreTest {
         val driver = BundledSQLiteDriver()
         driver.open(database.path).use {
             it.execSQL(
-                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
+                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0",
             )
             it.execSQL("ALTER TABLE chat_scopes ADD COLUMN hasAgents INTEGER NOT NULL DEFAULT 0")
             it.execSQL(
-                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)"
+                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)",
             )
+            it.execSQL("DROP TABLE chat_artifact_items")
+            it.execSQL("DROP TABLE chat_artifact_catalogs")
+            it.execSQL("DROP TABLE chat_related_resources")
             it.execSQL("PRAGMA user_version = 2")
         }
 
@@ -138,6 +150,105 @@ class ChatCacheStoreTest {
                 assertEquals(2345L, savedProjects.confirmedAt)
             }
         upgraded.close()
+    }
+
+    @Test
+    fun artifactCatalogReopensConfirmedItemsCursorAndEmptyResultOnlyInTheirAuthorizedScope() =
+        runTest {
+            val root = temporary.newFolder()
+            val first = ArtifactItem("first", "First", ArtifactKind.File, 2_000)
+            val second = ArtifactItem("second", "Second", ArtifactKind.Presentation, 1_000)
+            val prefix = ConfirmedArtifactCatalog(ArtifactPage(listOf(first), "page-2"), 3_000)
+            val all = prefix.copy(page = ArtifactPage(listOf(first, second), null))
+            val empty = ConfirmedArtifactCatalog(ArtifactPage(emptyList(), null), 4_000)
+            val relations =
+                ConfirmedRelatedChats(
+                    created =
+                        ConfirmedRelatedChatRead(
+                            listOf(
+                                RelatedChatResource(CHAT_PROJECT, "Related chat", CHAT_DATE, true),
+                            ),
+                            4_000,
+                        ),
+                )
+            val workflows =
+                ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
+            val store = cache(root)
+            store
+                .open(identity) { true }
+                .use { lease ->
+                    assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    lease.saveArtifactCatalog(CHAT_PERSONAL, prefix, appendedTo = null)
+                    lease.saveArtifactCatalog(CHAT_PERSONAL, all, appendedTo = prefix)
+                    lease.saveArtifactCatalog(CHAT_PROJECT, empty, appendedTo = null)
+                    lease.saveRelatedResources(CHAT_PERSONAL, relations)
+                    lease.saveWorkflowResources(CHAT_PERSONAL, workflows)
+                }
+            store.close()
+            val reopened = cache(root)
+            for (owner in
+                listOf(
+                    identity.copy(workspaceId = "different"),
+                    identity.copy(userId = "different"),
+                    identity.copy(authorizationScope = "different"),
+                )) {
+                reopened
+                    .open(owner) { true }
+                    .use { lease ->
+                        assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                        assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                        assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
+                    }
+            }
+            reopened
+                .open(identity.copy(sessionId = "new")) { true }
+                .use { lease ->
+                    assertEquals(all, lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    assertEquals(relations, lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PROJECT))
+                    lease.saveRelatedResources(CHAT_PERSONAL, null)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertEquals(workflows, lease.loadWorkflowResources(CHAT_PERSONAL))
+                    lease.deleteRelatedResources(CHAT_PERSONAL)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
+                    assertNull(lease.loadWorkflowResources(CHAT_PERSONAL))
+                    assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
+                    lease.deleteArtifactCatalog(CHAT_PERSONAL)
+                    assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
+                    lease.deleteArtifactCatalog()
+                    assertNull(lease.loadArtifactCatalog(CHAT_PROJECT))
+                }
+        }
+
+    @Test
+    fun freshRelationsCanReplaceAnUnreadableCacheAndPreserveEachOthersData() = runTest {
+        val root = temporary.newFolder()
+        val store = cache(root)
+        val workflows =
+            ConfirmedWorkflowResources(listOf(WorkflowResource("workflow", "Release")), 5_000)
+        val related = ConfirmedRelatedChats(created = ConfirmedRelatedChatRead(emptyList(), 6_000))
+        store.open(identity) { true }.use { it.saveWorkflowResources(CHAT_PERSONAL, workflows) }
+        store.close()
+        BundledSQLiteDriver().open(root.resolve("chats.db").path).use {
+            it.execSQL("UPDATE chat_related_resources SET payload = '{'")
+        }
+
+        val reopened = cache(root)
+        reopened
+            .open(identity) { true }
+            .use {
+                it.saveRelatedResources(CHAT_PERSONAL, related)
+                it.saveWorkflowResources(CHAT_PERSONAL, workflows)
+            }
+        reopened.close()
+        cache(root)
+            .open(identity) { true }
+            .use {
+                assertEquals(related, it.loadRelatedResources(CHAT_PERSONAL))
+                assertEquals(workflows, it.loadWorkflowResources(CHAT_PERSONAL))
+            }
     }
 
     @Test
@@ -162,7 +273,7 @@ class ChatCacheStoreTest {
         }
         assertTrue(
             runCatching { returning.saveUnread(snapshot) }.exceptionOrNull()
-                is CancellationException
+                is CancellationException,
         )
         reopened.open(identity) { true }.use { assertEquals(snapshot, it.loadUnread()) }
     }
@@ -193,16 +304,16 @@ class ChatCacheStoreTest {
                     listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
                     null,
                     0,
-                )
+                ),
             )
         val renamed =
             snapshot.copy(
                 events =
                     json
                         .decodeFromString<ProjectEvents>(
-                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}""",
                         )
-                        .events
+                        .events,
             )
         store
             .open(identity) { true }
@@ -239,7 +350,7 @@ class ChatCacheStoreTest {
         val first = cache(root)
         val deferred =
             checkpoint(
-                chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\"")
+                chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
             )
         first.open(identity) { true }.use { it.save(deferred, 1234) }
         first.close()
@@ -253,7 +364,7 @@ class ChatCacheStoreTest {
                 ChatListApiFixture().use { fixture ->
                     fixture.events = {
                         jsonResponse(
-                            """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23)}],"hasMore":false}"""
+                            """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23)}],"hasMore":false}""",
                         )
                     }
                     val confirmed =
@@ -310,7 +421,7 @@ class ChatCacheStoreTest {
                 replacement.save(newer, 2345)
                 assertTrue(
                     runCatching { old.save(checkpoint(), 1234) }.exceptionOrNull()
-                        is CancellationException
+                        is CancellationException,
                 )
                 assertEquals(newer.cursor, checkNotNull(replacement.load()).checkpoint.cursor)
             }
@@ -334,7 +445,7 @@ class ChatCacheStoreTest {
                                 seq = 23,
                                 kind = "renamed",
                                 title = "New title",
-                            )
+                            ),
                     )
                 assertTrue(lease.save(newer, 2345))
                 assertFalse(lease.save(original, 1234))
@@ -373,7 +484,7 @@ class ChatCacheStoreTest {
             )
             .use {
                 it.execSQL(
-                    "CREATE TRIGGER fail_event BEFORE INSERT ON chat_thread_events BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END"
+                    "CREATE TRIGGER fail_event BEFORE INSERT ON chat_thread_events BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
                 )
             }
         store
@@ -387,7 +498,7 @@ class ChatCacheStoreTest {
                             seq = 23,
                             kind = "renamed",
                             title = "New title",
-                        )
+                        ),
                     )
                 val replacement =
                     tail.copy(archive = ChatArchive(replayChats(original)), snapshotCursor = cursor)
@@ -457,7 +568,7 @@ class ChatCacheStoreTest {
                                         id = "77777777-7777-4777-8777-777777777777",
                                         seq = 23,
                                         kind = "renamed",
-                                    )
+                                    ),
                             ),
                             2345,
                         )
@@ -539,7 +650,7 @@ class ChatCacheStoreTest {
                 assertTrue(
                     restored.archive.chatThreads.zip(rows).all { (saved, expected) ->
                         saved == expected
-                    }
+                    },
                 )
             }
         store

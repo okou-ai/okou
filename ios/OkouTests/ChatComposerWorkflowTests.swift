@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -32,19 +33,50 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.insertText(" /rel after")
     let slash = (input.text as NSString).range(of: "/rel")
     input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
-    let workflow = try await workflowCell("release", in: host.view)
-    XCTAssertTrue(workflow.accessibilityActivate())
-    try await eventually { input.text.contains("/release after") }
+    let workflows = workspace.newComposer.editor.workflows
+    try await waitForBusinessResult(
+      message: "Waiting for the /rel query; " + mentionInputStatus(input)
+        + "; selection: \(input.selectedRange)"
+    ) {
+      workflows.query == "rel"
+    }
+    _ = try await workflows.resources.store.get(workflows.resources.matches).value
+    // Native keyboard activation uses the displayed candidate snapshot without requiring
+    // UIKit to materialize a particular cell. The next test retains row activation coverage.
+    try await eventually(
+      message:
+        "Waiting for native Workflow keyboard candidates; query: \(String(reflecting: workflows.query)); "
+        + "matches: \(workflows.matches.map(\.id)); " + mentionInputStatus(input)
+    ) {
+      workflows.matches.contains { $0.id == "release" }
+        && input.keyCommands?.contains { $0.input == UIKeyCommand.inputDownArrow } == true
+    }
+    let down = try XCTUnwrap(input.keyCommands?.first { $0.input == UIKeyCommand.inputDownArrow })
+    _ = input.perform(down.action, with: down)
+    let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
+    _ = input.perform(confirm.action, with: confirm)
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/release after")
+    }
+    XCTAssertTrue(input.text.contains("/release after"))
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await eventually { input.text.contains("/rel after") }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/rel after")
+    }
+    XCTAssertTrue(input.text.contains("/rel after"))
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     input.undoManager?.redo()
-    try await eventually { input.text.contains("/release after") }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newChatDraft.contains("/release after")
+    }
+    XCTAssertTrue(input.text.contains("/release after"))
+    XCTAssertEqual(
+      workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
     let chat = try XCTUnwrap(
@@ -80,16 +112,22 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.selectedRange = NSRange(location: "🌷 Keep /rel".utf16.count, length: 0)
     let workflow = try await workflowCell("release", in: host.view)
     XCTAssertTrue(workflow.accessibilityActivate())
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == "🌷 Keep /release tail"
+    }
     XCTAssertEqual(input.selectedRange, NSRange(location: "🌷 Keep /release".utf16.count, length: 0))
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(source.recentIDs().isEmpty)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /rel tail" }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == "🌷 Keep /rel tail"
+    }
     input.undoManager?.redo()
-    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == "🌷 Keep /release tail"
+    }
     input.insertText(" edited")
     XCTAssertTrue(conversation.draft.contains("edited"))
   }
@@ -128,7 +166,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     _ = try await workflowCell("12", in: host.view)
     let numeric = try XCTUnwrap(workflows.matches.first { $0.id == "12" })
     workflows.insert(numeric)
-    try await waitForBusinessResult { conversation.draft == "/report-12 " }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == "/report-12 "
+    }
     try await type("/r14", in: input, conversation: conversation)
     _ = try await workflows.resources.store.get(workflows.resources.matches).value
     input.insertText("\n")
@@ -170,7 +210,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
     XCTAssertEqual(confirm.modifierFlags, [])
     _ = input.perform(confirm.action, with: confirm)
-    try await waitForBusinessResult { conversation.draft == "/release " }
+    try await waitForBusinessResult(watching: conversation.composer) {
+      conversation.draft == "/release "
+    }
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
   }
@@ -194,7 +236,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     conversation.composer.editBlock(note, text: "Please /release ")
     XCTAssertEqual(conversation.composer.document.parts.first?["quote"]?.string, "Quoted /rel")
     conversation.attachmentDraft.importFiles([try attachmentFile()])
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: conversation.composer) {
       conversation.attachmentDraft.isReady && conversation.attachmentDraft.hasAttachments
     }
     await conversation.send()
@@ -353,7 +395,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     })
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
-    let resources = ComposerWorkflowResources()
+    let resources = ComposerWorkflowResources(graph: makeTestWorkspaceGraph())
     defer {
       resources.dismiss()
       source.close()
@@ -414,7 +456,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     })
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
-    let resources = ComposerWorkflowResources()
+    let resources = ComposerWorkflowResources(graph: makeTestWorkspaceGraph())
     defer {
       resources.dismiss()
       source.close()
@@ -465,17 +507,18 @@ extension XCTestCase {
       })
   }
   fileprivate func composer(_ conversation: ConversationStore) -> some View {
-    ChatComposerView(
-      draft: Binding(get: { conversation.draft }, set: { conversation.draft = $0 }),
-      isBusy: conversation.isSending, showsProgress: false, canStop: false, needsUpgrade: false,
-      error: conversation.error, attachmentURL: conversation.webURL,
-      attachments: conversation.attachmentDraft, draftState: conversation.composer,
-      submit: { await conversation.send() }, refresh: nil,
-      workflowSource: conversation.workflowSource
-    )
-    .frame(maxHeight: .infinity, alignment: .bottom)
-    .background(Color(uiColor: .systemBackground))
-    .composerSuggestionOverlay()
+    StoreProvider(conversation.composer.store) {
+      ChatComposerView(
+        isBusy: conversation.isSending, showsProgress: false, canStop: false, needsUpgrade: false,
+        error: conversation.error, attachmentURL: conversation.webURL,
+        draftState: conversation.composer,
+        submit: { await conversation.send() }, refresh: nil,
+        workflowSource: conversation.workflowSource
+      )
+      .frame(maxHeight: .infinity, alignment: .bottom)
+      .background(Color(uiColor: .systemBackground))
+      .composerSuggestionOverlay()
+    }
   }
   fileprivate func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }
@@ -501,7 +544,7 @@ extension XCTestCase {
   {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText(text)
-    try await waitForBusinessResult { conversation.draft == text }
+    try await waitForBusinessResult(watching: conversation.composer) { conversation.draft == text }
   }
   fileprivate func attachmentFile() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -515,17 +558,19 @@ extension XCTestCase {
 private struct WorkflowNewChatHost: View {
   let workspace: WorkspaceStore
   var body: some View {
-    @Bindable var composer = workspace.newComposer
-    ChatComposerView(
-      draft: $composer.text, isBusy: workspace.isCreating, showsProgress: false, canStop: false,
-      needsUpgrade: workspace.needsUpgrade, error: workspace.error,
-      attachmentURL: workspace.webURL, attachments: composer.attachments, draftState: composer,
-      submit: { await workspace.sendNewChat() }, refresh: nil,
-      mentionSource: workspace.mentionTestSource,
-      workflowSource: workspace.composerWorkflows
-    )
-    .frame(maxHeight: .infinity, alignment: .bottom)
-    .composerSuggestionOverlay()
+    let composer = workspace.newComposer
+    StoreProvider(workspace.graph) {
+      ChatComposerView(
+        isBusy: workspace.isCreating, showsProgress: false, canStop: false,
+        needsUpgrade: workspace.needsUpgrade, error: workspace.error,
+        attachmentURL: workspace.webURL, draftState: composer,
+        submit: { await workspace.sendNewChat() }, refresh: nil,
+        mentionSource: workspace.mentionTestSource,
+        workflowSource: workspace.composerWorkflows
+      )
+      .frame(maxHeight: .infinity, alignment: .bottom)
+      .composerSuggestionOverlay()
+    }
     // Production replaces the workspace root at its scope boundary.
     .id(ObjectIdentifier(workspace))
   }

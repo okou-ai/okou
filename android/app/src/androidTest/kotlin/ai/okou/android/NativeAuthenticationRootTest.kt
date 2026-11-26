@@ -15,7 +15,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class NativeAuthenticationRootTest {
     @Test
-    fun pendingAuthenticationDisplaysNativeLoginBeforeAndAfterActivityRecreation() {
+    fun pendingAuthenticationShowsBrandWithoutWorkspaceContentAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val authentication = app.authentication as TestAuthentication
@@ -27,9 +27,9 @@ class NativeAuthenticationRootTest {
                 fun verify() {
                     assertNotNull(
                         device.wait(
-                            Until.findObject(By.text(app.getString(R.string.auth_restoring))),
+                            Until.findObject(By.text(app.getString(R.string.app_name))),
                             10_000,
-                        )
+                        ),
                     )
                     assertFalse(device.hasObject(chatListRegion(app)))
                     assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))

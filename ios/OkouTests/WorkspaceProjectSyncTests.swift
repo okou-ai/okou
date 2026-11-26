@@ -27,9 +27,9 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     try await fixture.start()
     fixture.setRemoteVersion(1)
     try fixture.server.notify("threadListChanged", channel: fixture.channel)
-    try await waitForBusinessResult {
-      fixture.workspace.projects.projects.first?.name == "Release"
-    }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.projects.confirmedValue, in: fixture.workspace.graph
+    ) { fixture.workspace.projects.projects.first?.name == "Release" }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(fixture.reads, 2)
 
@@ -37,7 +37,9 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     XCTAssertEqual(fixture.reads, 3)
     fixture.setRemoteVersion(2)
     try fixture.server.notify("threadListChanged", channel: fixture.channel)
-    try await waitForBusinessResult { fixture.workspace.projects.projects.isEmpty }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.projects.confirmedValue, in: fixture.workspace.graph
+    ) { fixture.workspace.projects.projects.isEmpty }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(fixture.reads, 4)
   }
@@ -74,9 +76,9 @@ final class WorkspaceProjectSyncTests: XCTestCase {
 
     fixture.setRemoteVersion(1)
     try fixture.realtime.reconnectTransport()
-    try await waitForBusinessResult {
-      fixture.workspace.projects.projects.first?.name == "Release"
-    }
+    try await waitForBusinessResult(
+      watching: fixture.workspace.projects.confirmedValue, in: fixture.workspace.graph
+    ) { fixture.workspace.projects.projects.first?.name == "Release" }
     await fixture.workspace.resumePendingRefresh()?.value
     XCTAssertEqual(fixture.reads, 3)
   }

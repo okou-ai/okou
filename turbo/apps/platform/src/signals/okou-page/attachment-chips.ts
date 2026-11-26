@@ -4,12 +4,7 @@ import {
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { ChatAttachment } from "./chat-draft.ts";
-import {
-  openArtifactInOpenSidebar$,
-  openArtifactSidebar$,
-} from "../chat-page/thread-sidebar-coordinator.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
+import { openArtifactSidebar$ } from "../chat-page/thread-sidebar-coordinator.ts";
 import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
@@ -24,11 +19,20 @@ import {
 } from "../text-preview.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import {
+  createZipArtifactPreviewScope,
+  type ZipArtifactPreviewScope,
+} from "../zip-artifact-preview.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
-import { createCrossChatArtifactPreview } from "../chat-page/chat-artifact-preview.ts";
+import {
+  createChatArtifactDeletionIdentity,
+  createCrossChatArtifactPreview,
+} from "../chat-page/chat-artifact-preview.ts";
+import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
 
 // ---------------------------------------------------------------------------
 // Lightbox state — tracks which attachment is open in the global preview UI
@@ -59,7 +63,6 @@ export type AttachmentArtifactMetadata = {
 };
 
 interface AttachmentNamedLightboxBase {
-  readonly catalogArtifactId?: string;
   readonly contentType?: string | undefined;
   readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
   readonly threadId?: string;
@@ -109,7 +112,6 @@ export interface AttachmentAnnotationTarget {
 }
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
-  readonly catalogArtifactId?: string;
   readonly contentType?: string | undefined;
   readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
   /** Reuse the initiating surface's already resolved credential. */
@@ -166,6 +168,7 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
     /** The owner passed into every subsequent preview surface. */
     readonly preview: AttachmentPreviewSignals;
     readonly ownerSignal?: AbortSignal;
+    readonly zipPreview?: ZipArtifactPreviewScope;
   };
 
 export const attachmentDiagramPreview = createArtifactDiagramPreviewSignals();
@@ -244,6 +247,37 @@ export const crossChatLightboxArtifact = createCrossChatArtifactPreview(
   }),
 );
 
+const lightboxDeletionIdentity$ = createChatArtifactDeletionIdentity(
+  computed((get) => {
+    const preview = get(internalLightboxState$);
+    return preview
+      ? {
+          url: preview.url,
+          threadId: preview.threadId ?? preview.artifact?.threadId,
+          artifactId: preview.artifact?.artifactId,
+        }
+      : undefined;
+  }),
+  crossChatLightboxArtifact,
+);
+
+const selectLightboxSessions$ = command(({ get, set }, signal: AbortSignal) => {
+  const preview = get(internalLightboxState$);
+  if (preview) {
+    set(
+      selectArtifactPreviewSessions$,
+      "dialog",
+      {
+        url: preview.url,
+        shareAvailable: preview.shareAvailable,
+        artifactShareIdentity$: preview.artifactShareIdentity$,
+        deletionIdentity: lightboxDeletionIdentity$,
+      },
+      signal,
+    );
+  }
+});
+
 export const lightboxDialogVisible$ = computed((get) => {
   return get(internalLightboxDialogVisible$);
 });
@@ -277,17 +311,8 @@ export const closeLightboxWithDialogExit$ = command(
 );
 
 /**
- * An open artifact sidebar owns every artifact click that could live in it, so
- * the preview swaps the sidebar content instead of stacking a dialog over it.
- * Previews that cannot move into the sidebar keep the lightbox.
- *
- * Without sidebar-first previews, an explicit lightbox target lets a modal
- * stack its preview without disabling the split-view action. Sidebar-first
- * previews instead open a sidebar directly, including explicit lightbox targets.
- * Disable split view for previews that do not belong in the thread sidebar,
- * such as a pending composer upload. File-backed previews pass
- * the File metadata so each destination can create an object URL for its own
- * consumer lifetime while preserving the name and content type.
+ * File-backed previews let each destination own its object URL lifetime.
+ * Pending uploads and standalone previews can opt out of the thread sidebar.
  */
 type AttachmentSidebarPreviewInput = AttachmentPreviewSource & {
   readonly threadId?: string;
@@ -325,29 +350,16 @@ export function attachmentSidebarRef(
 }
 
 const routeToOpenArtifactSidebar$ = command(
-  async (
-    { get, set },
-    value: AttachmentSidebarPreviewInput,
-    target: "lightbox" | undefined,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
+  ({ set }, value: AttachmentSidebarPreviewInput): boolean => {
     // Composer drafts and standalone previews retain their own preview surface.
     if (value.splitViewAvailable === false) {
       return false;
     }
-    const sidebar = (await get(featureSwitches$))[
-      FeatureSwitchKey.ArtifactSidebarPreview
-    ];
-    signal.throwIfAborted();
-    const ref = attachmentSidebarRef(value);
-    const threadId = value.threadId ?? value.artifact?.threadId;
-    if (sidebar) {
-      return set(openArtifactSidebar$, ref, threadId);
-    }
-    if (target === "lightbox") {
-      return false;
-    }
-    return set(openArtifactInOpenSidebar$, ref, threadId);
+    return set(
+      openArtifactSidebar$,
+      attachmentSidebarRef(value),
+      value.threadId ?? value.artifact?.threadId,
+    );
   },
 );
 
@@ -367,17 +379,16 @@ function imageLightboxState(
 }
 
 export const openImageLightbox$ = command(
-  async (
+  (
     { get, set },
     value: string | AttachmentImageLightboxInput,
-    target: "lightbox" | undefined,
     signal: AbortSignal,
   ) => {
     const input = typeof value === "string" ? { url: value } : value;
-    if (await set(routeToOpenArtifactSidebar$, input, target, signal)) {
+    signal.throwIfAborted();
+    if (set(routeToOpenArtifactSidebar$, input)) {
       return;
     }
-    signal.throwIfAborted();
     set(attachmentLightboxImageCanvasSignals.reset$);
     const previewSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
@@ -391,6 +402,7 @@ export const openImageLightbox$ = command(
       ...preview,
       ownerSignal: previewSignal,
     });
+    set(selectLightboxSessions$, previewSignal);
   },
 );
 
@@ -399,14 +411,8 @@ export const openImageLightbox$ = command(
  * rendered in the reader's browser, so it has no stable link to share.
  */
 export const openDiagramLightbox$ = command(
-  async ({ set }, file: File, _trigger: HTMLElement, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    await set(
-      openImageLightbox$,
-      { file, shareAvailable: false },
-      undefined,
-      signal,
-    );
+  ({ set }, file: File, _trigger: HTMLElement, signal: AbortSignal) => {
+    set(openImageLightbox$, { file, shareAvailable: false }, signal);
   },
 );
 
@@ -440,20 +446,20 @@ export const navigateImageLightbox$ = command(
       preview,
       ...preview,
     });
+    set(selectLightboxSessions$, ownerSignal);
   },
 );
 
 export const openDocumentLightbox$ = command(
-  async (
+  (
     { get, set },
     value: AttachmentDocumentLightboxInput,
-    target: "lightbox" | undefined,
     signal: AbortSignal,
   ) => {
-    if (await set(routeToOpenArtifactSidebar$, value, target, signal)) {
+    signal.throwIfAborted();
+    if (set(routeToOpenArtifactSidebar$, value)) {
       return;
     }
-    signal.throwIfAborted();
     const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
     set(internalLightboxDialogVisible$, true);
@@ -477,6 +483,7 @@ export const openDocumentLightbox$ = command(
             value.threadId ?? value.artifact?.threadId,
           ),
         });
+        set(selectLightboxSessions$, ownerSignal);
         return;
       }
       set(internalLightboxState$, {
@@ -487,36 +494,39 @@ export const openDocumentLightbox$ = command(
         preview,
         ...preview,
       });
+      set(selectLightboxSessions$, ownerSignal);
       return;
     }
     set(internalLightboxState$, { ...value, preview, ...preview, ownerSignal });
+    set(selectLightboxSessions$, ownerSignal);
   },
 );
 
 function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
   return command(
-    async (
-      { get, set },
-      value: AttachmentNamedLightboxBase,
-      target: "lightbox" | undefined,
-      signal: AbortSignal,
-    ) => {
-      if (await set(routeToOpenArtifactSidebar$, value, target, signal)) {
+    ({ get, set }, value: AttachmentNamedLightboxBase, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (set(routeToOpenArtifactSidebar$, value)) {
         return;
       }
-      signal.throwIfAborted();
       const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
       set(attachmentDiagramPreview.dispose$);
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
       const preview = attachmentPreviewSignalsFor(value);
+      const zipPreview =
+        kind === "file" && isZipArtifact(value.filename, value.contentType)
+          ? createZipArtifactPreviewScope(preview.resourceUrl$)
+          : undefined;
       set(internalLightboxState$, {
         ownerSignal,
         kind,
         ...value,
         preview,
         ...preview,
+        ...(zipPreview ? { zipPreview } : {}),
       });
+      set(selectLightboxSessions$, ownerSignal);
     },
   );
 }

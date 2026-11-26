@@ -1,16 +1,20 @@
-"""Normalized model token categories shared by provider extractors.
+"""Model token categories and quantity rules shared by provider extractors.
 
 Extractors write only the base categories in ``MODEL_USAGE_CATEGORIES``.
 Model-provider reporting may remap those keys to reporter-owned billing
 categories after selecting a tier.
 """
 
-from .quantities import is_usage_quantity
+from .json_selective import ScalarField
+from .quantities import MAX_USAGE_QUANTITY, is_usage_quantity
 
 MODEL_USAGE_CATEGORY_INPUT = "tokens.input"
 MODEL_USAGE_CATEGORY_OUTPUT = "tokens.output"
 MODEL_USAGE_CATEGORY_CACHE_READ = "tokens.cache_read"
 MODEL_USAGE_CATEGORY_CACHE_CREATION = "tokens.cache_creation"
+
+MODEL_USAGE_IDENTITY_FIELD = ScalarField("string", max_bytes=1024)
+MODEL_USAGE_QUANTITY_FIELD = ScalarField("int", max_bytes=64, max_int_value=MAX_USAGE_QUANTITY)
 
 # Canonical normalized category keys accepted from provider extractors.
 MODEL_USAGE_CATEGORIES = (

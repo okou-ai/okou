@@ -142,9 +142,24 @@ def test_multi_item_container_preserves_same_name_representation_fields():
     ]
 
 
+@pytest.fixture(scope="module")
+def large_connection_values() -> dict[str, str]:
+    suffix = ",".join(f"x{i:06x}" for i in range(131_072))
+    return {
+        "unmatched": suffix,
+        "both-first": "content-type, content-encoding," + suffix,
+        "one-last": suffix + ",content-type",
+        "long-token": "x" * len(suffix) + ",content-type",
+        "long-whitespace": "\u3000" * 131_072 + "content-type" + "\u3000" * 131_072,
+        "repeated-name": "content-type," * 65_536 + "content-encoding",
+    }
+
+
 @pytest.mark.parametrize("native", [True, False], ids=["native", "text"])
-def test_connection_values_are_not_decoded_or_split_into_arbitrary_nominations(native):
-    value = "content-type, content-encoding," + ",".join(f"x{i:06x}" for i in range(131_072))
+def test_connection_values_are_not_decoded_or_split_into_arbitrary_nominations(
+    native, large_connection_values
+):
+    value = large_connection_values["both-first"]
     if native:
         headers = http.Headers(
             (
@@ -164,18 +179,9 @@ def test_connection_values_are_not_decoded_or_split_into_arbitrary_nominations(n
     "shape",
     ["unmatched", "both-first", "one-last", "long-token", "long-whitespace", "repeated-name"],
 )
-def test_connection_selection_has_bounded_peak_allocation(native, shape):
+def test_connection_selection_has_bounded_peak_allocation(native, shape, large_connection_values):
     # Build the input before tracing so the bound measures selection, not the fixture.
-    suffix = ",".join(f"x{i:06x}" for i in range(131_072))
-    values = {
-        "unmatched": suffix,
-        "both-first": "content-type, content-encoding," + suffix,
-        "one-last": suffix + ",content-type",
-        "long-token": "x" * len(suffix) + ",content-type",
-        "long-whitespace": "\u3000" * 131_072 + "content-type" + "\u3000" * 131_072,
-        "repeated-name": "content-type," * 65_536 + "content-encoding",
-    }
-    headers = _representation_headers([values[shape]], native=native)
+    headers = _representation_headers([large_connection_values[shape]], native=native)
     expected = [("cOnTeNt-TyPe", "application/json")] if shape == "unmatched" else []
     if shape not in {"both-first", "repeated-name"}:
         expected += [("Content-Encoding", "gzip"), ("CONTENT-ENCODING", "br")]

@@ -187,9 +187,9 @@ const publishCommand = new Command()
     `
 This is the publish step, not page rendering. First follow the authoritative extract-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration passes the example pictures the member approved as --examples. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
 
-A document published without --cover still appears under Custom; the catalog names it by its file rather than showing its first page.
+A document published without --cover still appears in Create recommendations; the catalog names it by its file rather than showing its first page.
 
-A published template appears under Custom in the template picker, private to you until you share it with your organization.`,
+A published template appears in the matching Create recommendations, private to you until you share it with your organization.`,
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {

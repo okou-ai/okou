@@ -1,0 +1,1 @@
+ALTER TABLE "phone_use_operations" ADD COLUMN "device_generation" integer;

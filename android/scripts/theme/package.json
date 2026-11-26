@@ -1,0 +1,9 @@
+{
+  "name": "okou-android-theme-generator",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "dependencies": {
+    "@material/material-color-utilities": "0.4.0"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "baseline": "6d74f8001914677e20aca3fea5ed28c3858672de",
+  "preMigration": "557f30ebbb771a9006ca3e9389e5129ab274e560",
+  "baselineOpenOwners": 49,
+  "baselineSelected": 540,
+  "baselineResolved": 391,
+  "baselineOpen": 149,
+  "batch101OriginalFirstAcceptances": [
+    "browser-domain-initialization-018",
+    "browser-viewer-interaction-107",
+    "chat-navigation-artifact-drive-017"
+  ],
+  "resolvedAfterBatch101": 394,
+  "openBefore": 146,
+  "openAfter": 146,
+  "removedFromOpen": [],
+  "addedToOpen": [],
+  "duplicates": 0,
+  "beforeSha256": "2e40743c5c94522166146c0d4dbfe57d2efb6994eae637e5d44b542fa8501fec",
+  "afterSha256": "2e40743c5c94522166146c0d4dbfe57d2efb6994eae637e5d44b542fa8501fec",
+  "hashFormat": "sorted IDs separated by LF including final LF, UTF-8",
+  "frozenOwners": 47,
+  "originalGWTMatched": 146,
+  "firstPassAnchors": 146,
+  "batch101PendingAnchors": 59,
+  "deletedFrozenDocuments": 47,
+  "upstreamCases": 68,
+  "upstreamBlob": "21a1d635dc7c56edba5bbb58216353f086b5f19e",
+  "reservedProductDecisions": 6,
+  "migrationAcceptances": 0
+}

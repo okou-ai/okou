@@ -9,10 +9,11 @@ with a selected workspace opens the native conversation list while access is
 checked. The toolbar uses the bundled workspace logo and shows filter and
 Settings as soon as the selected workspace is identified. The tool shortcuts
 stay in place in the same shell, and a known optional update uses the toolbar.
-A fresh selected membership with known permissions allows cached conversations
-and Projects to appear while the app refreshes the list and loads workspace
-metadata and member preferences. The full membership check and organization
-gate still apply when selected permissions are unavailable.
+A restored active session with known permissions for its selected workspace can
+show matching cached conversations and Projects while Clerk verifies access.
+Local filters and Settings are usable during verification. Online confirmation
+enables chat actions and starts synchronization. The full membership check and
+organization gate still apply when selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
@@ -30,23 +31,40 @@ Simplified and Traditional Chinese.
 
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. Settings can show those
-values after workspace authorization while its preference controls wait for
-the initial response. The server response takes precedence and refreshes the
-cache. Workspace content requires current authorization for the selected
-workspace.
+account and workspace and is read off the main thread. With known local
+workspace permissions, Settings can show these values while the app verifies
+workspace access. Preference controls become available after the app loads the
+server preferences, which take precedence and refresh the cache. Remote
+workspace content and operations require verified workspace access.
 Temporary workspace metadata and preference failures after authorization retry
-in the foreground and on reconnect. Cached chats stay usable, and the workspace
+while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
-Saves always carry the displayed base version; a concurrent Web edit preserves
-the local draft and requires explicitly loading the latest version. Clearing the
-field and saving clears Instructions. A lost save response reads the server back;
-an unresolved attempt stays frozen until that read or an explicit retry with the
-same version resolves it.
+Opening the editor displays a confirmed snapshot less than 10 minutes old and
+refreshes it in the background. A cold or expired open reserves the editor space
+through bounded read retries. A final failure shows the load-failure illustration
+in that space, or a Snackbar if confirmed content is already open. Content stays
+usable when the cache expires during an open session. Another window joining the
+session immediately shows the current text. A refresh updates the saved value
+and preserves any edited text, selection, and composition. The latest confirmed
+value determines whether Save is available and what to restore on discard.
+Discard still requires confirmation.
+The Material 3 text field keeps raw Markdown and native selection together.
+Output styling leaves the document and its offsets intact.
+Saving keeps the panel and its edit visible with a disabled saving action until
+the request settles. The panel closes after the save is confirmed. Field
+validation, save failures, and readback share the field's supporting line.
+An explicit save uses the latest confirmed
+version. A definitive stale-version rejection reads back the latest value and
+retries once with that version if the text differs. Clearing the field and saving
+clears Instructions. A lost save response reads the server back with the shared
+bounded read retry policy. Matching text confirms the save. A different server
+value restores the edit against the latest confirmed version. If reads end
+without a result, the editor retains the attempted draft until a later read or
+confirmed discard.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request
@@ -54,16 +72,17 @@ progress, read failures and persisted intent are separate facts. Preparation
 must acknowledge that exact frozen intent before HTTP; a superseded queued write
 is not a durability receipt. Cancelling or failing preparation restores the
 editable intent, while cancellation after dispatch preserves the unknown attempt.
-Settlement only replaces its captured local revision. Retiring a controller
-cancels its own network work; the shared editor is released after the last
+Only the active authorized request settles its result. Retiring a controller
+cancels its own network work. The shared editor is released after the last
 controller detaches, and accepted local IO remains application-owned.
 
-Unsaved text and unresolved save attempts live in a separate application-owned,
-versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
-Format 1 contains content, the base response and attempt state, scoped by normalized
-API origin/user/workspace. It contains no credentials and survives editor retirement
-and process restart independently of the rebuildable chat cache. Disk errors retain
-accepted edits in memory and expose retry; malformed files are never silently reset.
+Ordinary edits live in the open editor. A separate application-owned AtomicFile
+journal under `noBackupFilesDir/personal-instructions` retains unresolved save
+attempts. Format 1 remains readable, including older unsubmitted drafts; these
+are recovered for the user to save or discard. The journal uses normalized API
+origin/user/workspace identity and contains no credentials. A failed save
+preparation retains editable text and prevents remote submission. Malformed files
+are never silently reset.
 Activity saved state carries only the native selection, keeping large text out of
 the size-limited Binder bundle.
 Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
@@ -84,11 +103,10 @@ limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
 transactions with their synchronization position. Changed chat lists await the
 write transaction before publication and read back from disk if it kept a newer
-checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
-reuses the confirmed chat rows without another disk transaction when the cache is
-current. A storage
-failure leaves the network result usable with a visible cache warning, and a later
-refresh retries unsaved data.
+checkpoint. Changed Projects await persistence and readback. An unchanged
+catch-up reuses the confirmed chat rows and renews the cached confirmation time
+asynchronously. A failed data write leaves the network result usable with a
+visible cache warning, and a later refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 chat and Project data keep the scoped list usable after a process restart while
@@ -115,16 +133,27 @@ startup, the unread dots, filter, and collapsed Project counts can use that
 snapshot for up to two minutes from confirmation. A successful indicators read
 replaces it. Running indicators and run controls still use live responses.
 Signed archive URLs are confined to a snapshot fetch, and credentials belong to
-the authentication owner. Personal Instructions drafts use the separate intent
-store described above.
+the authentication owner. Personal Instructions saves use the separate intent
+journal described above.
 
 Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their
-local edits immediately, including any unsent reorder steps. Canonical event
-IDs settle submitted changes, including events observed before a snapshot
-rebase. Transient list reads retry in the background while the list is visible
-in the foreground. If an outcome stays unconfirmed, Refresh chats reads back
-the list and clears the unresolved projection once that read succeeds.
+local edits immediately, including any unsent reorder steps. A rejected chat
+deletion restores the row and shows one Snackbar in the chat list. Deleting a
+linked chat from a workflow run returns feedback to the run history.
+Canonical event IDs settle submitted changes, including events observed before
+a snapshot rebase. Chat list reads retry while the foreground needs the list,
+after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
+the wait. A first read with no available list shows the skeleton after 250 ms.
+Failures keep the available list or skeleton in place. With a confirmed list,
+the progress bar appears during an active read once the last confirmation is
+more than ten minutes old, or immediately after three consecutive read
+failures. It stays visible through retry gaps until success or a terminal
+failure. If a write stays unconfirmed, Refresh chats reads back the list and
+clears the unresolved projection once that read succeeds.
+
+A definitively failed Undo keeps the confirmed row state and closes its offer.
+An uncertain Undo keeps its receipt check available.
 
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an
@@ -137,12 +166,13 @@ Mark read, Mark unread, and Mark all as read immediately update chat list
 unread markers, filters, and collapsed Project counts. A pending read hides
 unread activity through its observed server watermark. A pending read on a
 locally marked unread chat without a server watermark displays as read until
-its own readback. The existing read
-endpoint still chooses the receipt watermark. Definitive write failures remove
-the local intent. A successful indicators read started after the write settles
-the current intent, including when the write response was lost. If both fail,
-the list keeps the projection until the next successful refresh. Bulk feedback
-counts receipts that cover the captured unread watermarks.
+its own readback. The read endpoint chooses the receipt watermark. A definitive
+rejection removes the failed intent. An indicators refresh reconciles unread
+activity after the write, and an ambiguous receipt can require the thread's
+authoritative read cursor. Bulk feedback distinguishes confirmed, rejected and
+unconfirmed targets. When the writes settle the outcome, feedback can appear
+while indicators continue refreshing. If the batch cannot confirm a target,
+the list returns that target to its latest indicator state.
 
 Conversation history shares this cache and its workspace authorization lease.
 The workspace retains the confirmed checkpoint and projected timeline for the
@@ -156,6 +186,10 @@ are recreated. Snapshot replacement and tail appends commit atomically,
 and disk readback precedes publication when storage succeeds. A failed write keeps
 the confirmed network result available and retries it on refresh. Thread-local
 403/404 clears that history without retiring the workspace.
+
+History cache reads page by sequence within one transaction. Writes serialize
+and insert records in batches within one transaction. These batches limit
+transient memory while preserving the complete history checkpoint.
 
 The reader streams gzip NDJSON snapshots and follows canonical paired-cursor raw
 rows, including valid zero cold start, missing snapshot fallback, gap-tolerant
@@ -193,6 +227,7 @@ Compile SDK is 37.2 and build tools are 37.0.0. The app targets API 37 and suppo
 (Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
 These pins align with the Clerk SDK release and are validated together.
 
+Use the repository's Node and pnpm versions for palette verification.
 From the repository root:
 
 ```bash
@@ -229,12 +264,13 @@ From the repository root:
 bash android/scripts/check.sh
 ```
 
-This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
+This audits source-manifest entry points, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
 assembly. Android Lint treats warnings as errors and reports newer dependency
 and Gradle toolchain versions as informational hints. Verification uses two Gradle
 workers, a 1536 MB build heap and in-process Kotlin compilation by default for
-small sandboxes.
+small sandboxes. Android CI also verifies generated palettes using the pinned Node
+and pnpm toolchain.
 
 Run the app's local JVM tests through Android Gradle Plugin with the configured
 Android SDK; no emulator is needed:
@@ -245,8 +281,8 @@ cd android
 ```
 
 The chat suites exercise real disk reopening, the generated canonical HTTP/codec
-boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
-holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+boundary, cursor/replay recovery and retired-owner publication. The chat-list
+Compose suites hold real HTTP responses while exercising native navigation. `NativeChatListTest`
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
@@ -268,7 +304,7 @@ standard Android build configuration; the project maintains one test entry.
 
 Text composer suites exercise the real private journal, shared controllers, frozen
 submission identity, duplicate taps, newer edits, disconnected acceptance and
-explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+automatic original-ID recovery. `ChatComposerApiTest` uses the installed generated
 201 methods and bounded input-status read; `ChatComposerRootTest` holds default
 availability and write responses through the actual native route.
 `NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
@@ -294,17 +330,16 @@ reconciles matching IDs, and the workspace owner releases remaining transient te
 Its external SDK observations are controlled; this is not provider-live evidence.
 
 Run controls use the same authenticated event endpoint and generated request union.
-Stop freezes the displayed live-run IDs; skipping targets one canonical queued
-automation. HTTP acceptance is not completion. The workspace control owner checks
-canonical control/target evidence and never retargets an uncertain request.
-All current controllers of the same origin/user/workspace attach to one shared
-command owner, including target deduplication, phases and journal mutations.
-Retiring one controller cancels only its network requests; peers retain unknown
-commands and can explicitly check/retry their original identities.
-Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
-format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
-POST, and restored intent only reads back until an explicit same-request retry.
-This adds no confirmed-cache or composer-journal migration and stores no stream text.
+Stop freezes the displayed run, and withdrawal or skip targets one original queue
+entry. The workspace control owner checks canonical control and target evidence
+after HTTP acceptance or an uncertain result. A recovered conversation sync can
+trigger a read-only outcome check for the original pending intent.
+Controllers of the same authorized workspace attach to one shared command owner,
+including target deduplication, in-memory pending intents and request phases.
+Retiring one controller cancels only its network requests. Peers retain unresolved
+commands and verify the original identity before allowing an explicit retry.
+After the workspace owner or app process ends, task and queue states recover
+from confirmed conversation history.
 Cancellation metadata reuses the conversation history owner's independent detail
 request and typed phase. Control outcome reads never take over that request's
 loading/completion state or create a second metadata producer.
@@ -359,7 +394,8 @@ From `android/`:
 ```bash
 ./gradlew spotlessApply
 ./gradlew :app:lintDebug :app:assembleDebug
-python3 scripts/sync-design-tokens.py --check
+pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+node scripts/theme/generate.mjs --check
 python3 scripts/ci-changed.test.py
 ```
 
@@ -396,9 +432,22 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 ```
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
-`:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
-in the `android-instrumentation-api35-<revision>` artifact.
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI runs
+three `instrumentation` shards on separate runners and verifies the combined
+JUnit results at `ci-gate-android`. JUnit, Test Storage, and logcat diagnostics
+are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with an
+attempt suffix on reruns.
+
+CI also runs three `build-test` shards on separate runners with two test JVMs
+each. All three run the same command with different shard indices. The `build`
+job runs format and policy checks, Android lint, and Debug APK assembly.
+Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The local commands above run the full suites by default. See
+[test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
+for case budgets and class boundaries.
+
+After running the full `:app:testDebugUnitTest` suite, check the JVM class size limit from
+`android/` with `python3 scripts/check-jvm-test-counts.py app/build/test-results/testDebugUnitTest`.
 
 ### Release Smoke Tests
 
@@ -447,7 +496,7 @@ locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
 MemberPreferencesModelTest covers shared display mode, confirmed and pending
 selections, failed saves, retry, readback and retired work. PaletteColorsTest resolves all sixteen
-mode/palette combinations from generated resources; LegacyLanguageSettingsTest
+mode/palette combinations from the generated Material 3 scheme. LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
 SessionModelTest holds workspace responses to exercise cached appearance,
@@ -468,14 +517,14 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. Two separate Linux/KVM jobs run the Debug device integration tests and
-the Release smoke tests. The Release job uploads the unsigned APK and compressed
-R8 map for seven days.
+assets. Three jobs run the Debug JVM suite. The `build` job uploads the Debug
+APK for one day. Separate Linux/KVM jobs run the three Debug device shards and
+the Release smoke tests. The Release job
+uploads the unsigned APK and compressed R8 map for one day.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and all three jobs
-to pass when Android checks are selected. Cancellation, failure or an unexpected
-skip fails the gate. Emulator functional evidence does not establish OEM
+non-release changes it requires successful change detection and every selected
+job to pass. Cancellation, failure or an unexpected skip fails the gate.
+Emulator functional evidence does not establish OEM
 input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
@@ -625,6 +674,11 @@ Optional releases appear in the chat-list toolbar and app update settings.
 Required updates own the full-screen recovery flow. Automatic checks run on
 foreground without holding the first native frame and reuse successful discovery
 for 10 minutes, including across process restarts.
+Recoverable checks and downloads get two automatic retries. Each uses the
+delay supplied by `Retry-After`, or three seconds when no delay is supplied. Opening
+details can start a new check after failure when no compatible update is known
+and the server's wait has passed. The retry actions in details and the required
+update screen can advance a scheduled attempt without starting a second job.
 
 Startup retains and revalidates an eligible pending APK for the current
 installed version. It removes other updater-owned APKs, including the package
@@ -635,9 +689,10 @@ during preparation is not queued against a later version or recovery result.
 
 Users initiate credential-free APK downloads inside Okou. The app streams into
 private files, validates byte count, SHA-256, package/version and signer, then
-offers installation through a narrowly scoped FileProvider and Android's
-installer. Android 8+ may require installation-source authorization. Activity
-recreation retains work; OS process termination can interrupt it. A later launch
+continues automatically through a narrowly scoped FileProvider and Android's
+installer once the Activity is resumed. Android 8+ may require installation-source
+authorization. A cancellation leaves the verified package available to retry.
+Activity recreation retains work; OS process termination can interrupt it. A later launch
 discards partial files and offers explicit retry, or revalidates a completed APK.
 No resident service, DownloadManager, silent installation or range resumption is
 implied. Installation handoff does not establish package replacement.
@@ -692,31 +747,53 @@ separate evidence; a configured Secret name proves only its presence.
 The native text composer reads and saves the same server draft as Web. Existing
 conversations use their thread ID; My Okou and Project new-chat editors share the
 workspace composer draft. Project selection only changes the new conversation context.
-Draft GET does not delay the initial screen. Edits persist locally before PATCH,
-with Web's 500ms debounce and immediate explicit clears. Requests are serialized
+Draft GET does not delay the initial screen. Hydration and synchronization leave
+the editor layout in place. Edits persist locally before PATCH, with Web's 500ms
+debounce and immediate explicit clears. Requests are serialized
 per target, and delayed hydration/save completions cannot replace newer local
 input. Independent clients retain Web's existing unconditional last-writer
 behavior; no server compare-and-swap or revision protocol is added.
 
-Format 3 separates canonical editable drafts/dirty intent from frozen sends and
-recovery records. Existing formats 1/2 migrate without changing request UUIDs.
+Format 3 stores canonical editable drafts, dirty intent and assistant recovery
+records. Existing formats 1/2 retain independent draft text and recovery identity.
 Divergent legacy Project drafts remain available for explicit restoration into
 an empty editor. Failed reads are never interpreted as empty. Rich documents,
 attachments or unknown content pause automatic synchronization rather than
 publishing a plain-text subset; the full server draft remains available on Web
-and local text stays on this device. Retry rechecks the server before saving.
+and local text stays on this device. Draft reads allow two retries for transient
+failures. PATCH retries apply only to confirmed connection failures and the same
+still-current durable draft.
 Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
-uncertain submissions retain their original identities and never replay on open.
+uncertain submissions retain their original identities in memory. Legacy pending
+text is available for explicit draft restoration after upgrade.
+
+Chat options lets users choose built-in connector accounts. Format 4 stores
+explicit account choices with the workspace draft shared by the ordinary and
+Project new-chat entry points. The first input carries those choices in memory
+until the client confirms them on the created chat. A rejected chat creation
+retains the original choices so they can be restored with the draft. A rejected
+connector choice leaves the unsent input and its identities available for
+correction in the current process. Existing chats save exact account overrides
+through the canonical chat API and display confirmed values.
 
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation
-and list catch-up run. The editor keeps its recovery controls until the first send
-and chat row are confirmed. Canonical history replaces the local bubble by input
-ID, including rejection and revocation. The existing journal restores unresolved
-input after recreation. Receipt-backed bubbles stay in workspace memory until
-history arrives, with confirmed messages read from canonical history after process
-restart.
+and list catch-up run. The same progress indicator stays visible during submit,
+readback and retry. After an ambiguous write the composer checks the original
+input, then only resends within the server's event retention window. Canonical
+history replaces the local bubble by input ID. A receipt removes progress while
+the queue state remains independently driven by input status and history.
+Status-confirmed queue entries can be withdrawn while the chat list and history
+catch up. An observed delivery or revocation also supersedes an older queued
+history row. The composer groups outstanding messages and workflow triggers in an
+independently scrolling queue, ordered by server sequence above the editor.
+Pending controls keep their feedback on the affected row while it is queued.
+Checking a withdrawal changes the request phase on that row only. A confirmed
+outcome removes the row even when the conversation still shows an older history
+checkpoint.
+Pending ordinary sends survive Activity recreation in memory. After process
+restart the app reads confirmed messages and queue entries from canonical history.
 
 Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
 serialized edits/clears, offline store reopening and send/recovery preservation.
@@ -785,16 +862,20 @@ Queued history and detail invalidations retain the selected conversation's
 generation. Their requests and failure states are independent: a held or failed
 detail read cannot delay history or erase its confirmation. Manual refresh and
 full resynchronization request both resources.
-Drafts and pending sends retain their existing durable journal ownership.
+Drafts retain their durable journal ownership. Pending ordinary sends belong to
+the in-process composer.
 
 Foreground message/recovery signals also request independent confirmed-history
 warming. Detail-only notifications do not request warming. Like Web, the
 cohort combines the 100 most recent non-hidden conversations
 with indicator thread IDs. The selected conversation keeps its own reader. A
 one-second serialized trailing worker reads lightweight Room cursors and uses the
-canonical batch catch-up endpoint; missing cursors rebuild through concurrent
-snapshot reads, matching Web. A recoverable failure in one snapshot does not
-discard successful siblings; authorization/update failures cancel the batch.
+canonical batch catch-up endpoint. Missing cursors rebuild in at most two
+concurrent jobs. Each job holds its slot until cache persistence or recovery
+cleanup completes, so the bound also covers decoded checkpoints waiting to be
+written. The selected conversation reads independently of those slots. A
+recoverable snapshot failure preserves successful siblings. Authorization and
+update failures cancel the batch.
 Warming never marks content read or drives list loading. Conditional transactions
 reject an obsolete baseline or a now-selected target, preserving newer foreground
 history. STOP/retirement cancels the worker, and failures remain owned separately
@@ -802,19 +883,19 @@ from visible reads. Every conversation remains fully readable on demand regardle
 of warming eligibility; the cohort is not a row, content or history-size limit.
 
 `HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
-large Unicode rows and disk reopen, concurrent snapshot/missing-thread recovery,
+large Unicode rows and disk reopen, bounded snapshot recovery and missing threads,
 held-background independence, stale foreground/background publication and
-stop/restart/retirement. Parallel recovery can increase concurrent network and
-memory use; its resource owner still cancels every child on STOP or retirement.
+stop/restart/retirement. The warming owner cancels both active and queued
+recoveries on STOP or retirement.
 
-The native connection notice reports connecting or unavailable with explicit
-retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
-manual refresh/navigation remains available. The generated empty-object
+The native conversation uses canonical history to show reading progress. The
+workspace observes realtime transport independently of that UI. The generated empty-object
 `POST /api/realtime/token` consumer uses the existing authenticated API transport
 and required-update handling. SDK callbacks obtain fresh single-use signed token
 requests for renewal; no API credentials are sent to Ably.
-A failed canonical token request closes that observation and offers explicit
-retry; a later transport callback cannot erase its authentication/update failure.
+A failed canonical token request closes that observation. The foreground owner
+reopens it after backoff for a retryable failure. Authentication and required
+updates follow the session flow. A connected SDK requests canonical catch-up.
 
 The pinned `io.ably.pubsub:device:2.0.0` supports the API24/JDK17 baseline. Its
 unused Firebase Messaging dependency is excluded: this slice registers no push

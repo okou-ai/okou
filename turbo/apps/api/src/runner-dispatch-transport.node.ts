@@ -1,5 +1,6 @@
 import { monotonicNow } from "./lib/time";
 import type {
+  RunnerDispatchEncoding,
   RunnerDispatchTransport,
   TakenRunnerDispatch,
 } from "./signals/external/runner-dispatch-transport";
@@ -12,6 +13,8 @@ type PreconnectionOutcome =
   "used" | "failed" | "expired" | "cancelled" | "instance_cap";
 
 interface TransportOptions {
+  readonly request?: RunnerDispatchTransport["request"];
+  readonly poolStats?: RunnerDispatchTransport["poolStats"];
   readonly observe: (
     runId: string,
     outcome: PreconnectionOutcome,
@@ -20,19 +23,23 @@ interface TransportOptions {
 }
 
 type TakeReservation = (
-  body: string,
-  startedAt: number,
+  body: string | Uint8Array<ArrayBuffer>,
   signal: AbortSignal,
+  encoding: RunnerDispatchEncoding,
 ) => TakenRunnerDispatch | undefined;
 
 export function createRunnerDispatchTransport({
   observe,
+  request = fetch,
+  poolStats,
 }: TransportOptions): RunnerDispatchTransport {
   const reservations = new Map<string, TakeReservation>();
   const reservedOrigins = new Set<string>();
 
   return {
-    reserve(runId, url, start, signal) {
+    request,
+    poolStats,
+    reserve(runId, url, start, signal, encoding = "identity") {
       const origin = new URL(url).origin;
       if (signal.aborted || reservedOrigins.has(origin)) {
         return;
@@ -83,12 +90,15 @@ export function createRunnerDispatchTransport({
       const onExpiry = () => {
         finish("expired");
       };
-      const take: TakeReservation = (body, dispatchStartedAt, deadline) => {
+      const take: TakeReservation = (body, deadline, bodyEncoding) => {
+        if (bodyEncoding !== encoding) {
+          finish("cancelled");
+          return undefined;
+        }
         if (cancelled) {
           finish("failed");
           return undefined;
         }
-        attempt.timing.startedAt = dispatchStartedAt;
         finish("used");
         // Keep abort ownership until the response body is consumed as well.
         const abortDispatch = () => {
@@ -99,7 +109,9 @@ export function createRunnerDispatchTransport({
         if (deadline.aborted) {
           abortDispatch();
         } else {
-          controller.enqueue(new TextEncoder().encode(body));
+          controller.enqueue(
+            typeof body === "string" ? new TextEncoder().encode(body) : body,
+          );
           controller.close();
         }
         return {
@@ -125,8 +137,8 @@ export function createRunnerDispatchTransport({
         "Runner dispatch preconnection cleanup",
       );
     },
-    take(url, body, startedAt, signal) {
-      return reservations.get(url)?.(body, startedAt, signal);
+    take(url, body, signal, encoding = "identity") {
+      return reservations.get(url)?.(body, signal, encoding);
     },
   };
 }

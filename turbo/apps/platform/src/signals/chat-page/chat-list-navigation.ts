@@ -1,8 +1,8 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { currentChatThreadNavigationList$ } from "../chat-thread-list.ts";
-import { suggestionsEnabled$ } from "../okou-page/agent-suggestion-session.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
+import { forYouEntryVisible$ } from "../okou-page/for-you-sources.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { currentLeftThread$ } from "./chat-thread-panes.ts";
 import {
@@ -20,19 +20,14 @@ type ChatListNavigationDirection = "prev" | "next";
 
 /** My Okou's New chat entry, whose page is the chat page at `/`. */
 export const NEW_CHAT_ENTRY_KEY = "entry:new-chat";
-/** The For you entry, shown while Suggestions are on. */
+/** The For you entry below New chat. */
 export const FOR_YOU_ENTRY_KEY = "entry:for-you";
 
 /**
  * The entries above the list's scroll viewport, in the order they appear.
  * Keyboard navigation passes them like rows, and filters never hide them.
  */
-const chatListEntryKeys$ = computed(async (get): Promise<readonly string[]> => {
-  return [
-    NEW_CHAT_ENTRY_KEY,
-    ...((await get(suggestionsEnabled$)) ? [FOR_YOU_ENTRY_KEY] : []),
-  ];
-});
+const entryKeys = Object.freeze([NEW_CHAT_ENTRY_KEY, FOR_YOU_ENTRY_KEY]);
 
 /**
  * The nearest visible list item from the current position. A current item that
@@ -40,7 +35,7 @@ const chatListEntryKeys$ = computed(async (get): Promise<readonly string[]> => {
  * navigation continues from where it stood. Without a current item, moving
  * down enters the list at its first visible item.
  */
-function findAdjacentListedKey({
+async function findAdjacentListedKey({
   currentKey,
   direction,
   orderedKeys,
@@ -51,8 +46,8 @@ function findAdjacentListedKey({
   direction: ChatListNavigationDirection;
   orderedKeys: readonly string[];
   listedKeys: readonly string[];
-  selectable: (key: string) => boolean;
-}): string | undefined {
+  selectable: (key: string) => boolean | Promise<boolean>;
+}): Promise<string | undefined> {
   const currentIndex =
     currentKey === null ? -1 : orderedKeys.indexOf(currentKey);
   if (currentKey !== null && currentIndex === -1) {
@@ -72,7 +67,7 @@ function findAdjacentListedKey({
     if (
       candidate !== undefined &&
       listed.has(candidate) &&
-      selectable(candidate)
+      (await selectable(candidate))
     ) {
       return candidate;
     }
@@ -97,25 +92,27 @@ export const navigateChatList$ = command(
   ): Promise<void> => {
     const navigation = await get(currentChatThreadNavigationList$);
     signal.throwIfAborted();
-    const entryKeys = await get(chatListEntryKeys$);
-    signal.throwIfAborted();
     const excludedKey =
       request.excludedThreadId === null
         ? null
         : threadRowKey(request.excludedThreadId);
-    const targetKey = findAdjacentListedKey({
+    const targetKey = await findAdjacentListedKey({
       currentKey: request.currentKey,
       direction: request.direction,
       orderedKeys: [...entryKeys, ...navigation.orderedKeys],
       listedKeys: [...entryKeys, ...navigation.listedKeys],
       // The entry and Project pages only open in the main pane.
       selectable: (key) => {
+        if (key === FOR_YOU_ENTRY_KEY && request.pane === "main") {
+          return get(forYouEntryVisible$);
+        }
         return (
           key !== excludedKey &&
           (request.pane === "main" || threadIdOfRowKey(key) !== null)
         );
       },
     });
+    signal.throwIfAborted();
     if (!targetKey) {
       return;
     }

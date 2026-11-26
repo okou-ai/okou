@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "モデル カタログ キャッシュ検証のレイテンシ",
         "modelCatalogPrefetchRole": "モデルカタログのプリフェッチの役割",
         "modelCatalogUpstreamEncoding": "モデルカタログのアップストリームエンコーディング",
+        "openrouterAttempts": "OpenRouter プロバイダーの試行",
+        "openrouterAttemptsIncomplete": "OpenRouter 不完全な試行記録",
+        "openrouterGenerationId": "OpenRouter 生成 ID",
+        "openrouterModel": "OpenRouter モデル",
+        "openrouterProvider": "OpenRouter プロバイダー",
         "params": "パラメータ",
         "permission": "許可",
         "permissionError": "許可エラー",
@@ -373,7 +378,6 @@
     },
     "sidebar": {
       "ariaLabel": "サイドバー",
-      "chat": "チャット",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",
@@ -431,7 +435,6 @@
       "close": "閉じる",
       "closeArtifact": "アーティファクトを閉じる",
       "closeNamed": "{{title}} を閉じる",
-      "closePreviewMenu": "プレビューメニューを閉じる",
       "download": "ダウンロード",
       "downloadArtifact": "アーティファクトをダウンロードする",
       "downloadMarkdownAs": "{{format}} としてダウンロード",
@@ -503,6 +506,77 @@
       "kindIcon": "{{kind}} アーティファクト",
       "loading": "アーティファクトをロードしています"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "サイトの CNAME と所有権確認用 TXT を設定します。下に表示される追加の証明書レコードを設定してから、ここに戻って確認してください。",
+      "backToDns": "DNS 設定に戻る",
+      "checkFailed": "対応が必要",
+      "checking": "確認中…",
+      "checkNotChecked": "未確認",
+      "checkPassed": "確認済み",
+      "checkPending": "待機中",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership",
+        "provider": "ドメインの有効化",
+        "route": "サイトへの接続"
+      },
+      "checkUnavailable": "確認できません",
+      "configureProvider": "{{provider}} で設定",
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecordName": "{{type}} の名前 {{name}} をコピー",
+      "copyRecordValue": "{{type}} の値 {{name}} をコピー",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS は設定済みです",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "findingProvider": "DNS の設定方法を確認中…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "同じ名前の既存の TXT 値は残してください。各値を個別の TXT レコードとして追加してください。",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "DNS 設定にレコードをコピーしてから、ここに戻って確認してください。",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "DNS レコードは一致しています。DNS の変更は不要です。",
+      "okouUrl": "Okou URL",
+      "openDns": "{{provider}} の DNS を開く",
+      "ownDomain": "Enter a domain you own",
+      "recordName": "名前",
+      "recordValue": "値",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "以下の結果を確認し、「検証」をクリックして再確認してください。",
+      "saveToEnable": "「保存」をクリックすると共有用アドレスが変更されます。",
+      "setUpDns": "DNS レコードを設定",
+      "setupStages": "ドメイン設定の手順",
+      "sharingAddress": "共有用アドレス",
+      "steps": {
+        "dns": "DNS 設定",
+        "enable": "有効化",
+        "verify": "検証"
+      },
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "ドメインの検証項目",
+      "verificationComplete": "すべてのチェックに合格しました。続行してドメインを有効にしてください。",
+      "verificationDetails": "検証の詳細",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "検証済みのレコード（{{total}}）",
+      "verify": "Verify",
+      "verifyAgain": "再確認",
+      "verifyDomain": "ドメインの検証",
+      "verifyFailed": "ドメインを確認できませんでした。もう一度お試しください。",
+      "verifyingHint": "ドメインを確認しています。結果は以下に表示されます。",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "キャンセル",
       "delete": "削除",
@@ -571,9 +645,47 @@
       "text": "テキスト",
       "video": "ビデオ"
     },
+    "library": {
+      "allArtifacts": "すべてのアーティファクト",
+      "allTypes": "すべての種類",
+      "clearFilters": "フィルターをクリア",
+      "clearSearch": "検索をクリア",
+      "created": "作成日",
+      "emptyDescription": "別の名前や種類で検索してください。",
+      "emptyTitle": "アーティファクトは見つかりませんでした",
+      "loadMore": "さらに読み込む",
+      "name": "名前",
+      "retry": "再試行",
+      "search": "アーティファクトを検索",
+      "sortAscending": "昇順で並べ替え",
+      "sortDescending": "降順で並べ替え",
+      "type": "種類"
+    },
     "metadata": {
       "generated": "{{date}} が生成されました",
       "updated": "{{date}} に更新"
+    },
+    "people": {
+      "accounts": "一致するワークスペースメンバー",
+      "anyone": "全員",
+      "invitationProcessed": "共有の招待を処理しました",
+      "label": "ユーザーに共有",
+      "noAccounts": "一致するメンバーがいません。完全なメールアドレスで招待できます。",
+      "owner": "オーナー",
+      "placeholder": "名前またはメールアドレス",
+      "remove": "{{email}} のアクセス権を削除",
+      "removed": "アクセス権を削除しました",
+      "restricted": "招待した人",
+      "restrictedDescription": "あなたと招待した人のみ",
+      "searching": "ワークスペースメンバーを検索中…",
+      "searchUnavailable": "メンバー検索を一時的に利用できません。しばらくしてからもう一度お試しください。",
+      "share": "招待",
+      "updateUnavailable": "共有設定を更新できませんでした。しばらくしてからもう一度お試しください。",
+      "viewers": "アクセスできるユーザー",
+      "workspace": "ワークスペース",
+      "workspaceDescription": "{{organization}}のメンバーと招待した人",
+      "workspaceDescriptionUnnamed": "ワークスペースのメンバーと招待した人",
+      "you": "{{name}}（あなた）"
     },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",
@@ -644,15 +756,9 @@
       "updated": "ウェブサイトの URL を更新しました"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
-      "all": "すべて",
       "avatar": "アバター",
-      "categories": "テンプレートのカテゴリ",
-      "category": "テンプレートカテゴリ",
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",
       "htmlPreview": "{{title}} HTML プレビュー",
-      "illustration": "イラストレーション",
-      "illustrationPreview": "{{title}} イラストのプレビュー",
       "importDeck": "自分のデッキをインポート",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "自分のドキュメントをインポート",
@@ -663,18 +769,10 @@
       "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
       "nextSlide": "次のスライドをプレビューする",
-      "noMatches": "一致しません",
-      "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
-      "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "searchConnector": "テンプレートを検索",
-      "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
-      "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
-      "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
-      "showVariant": "バリアント {{variantNumber}} を表示",
       "singleAccent": "シングルアクセント",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} スライド プレビュー",
@@ -702,15 +800,11 @@
         "terracottaClay": "土鍋",
         "warmSand": "朝刊"
       },
-      "tryDifferentSearch": "別の検索を試してください。",
-      "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
         "changeLabel": "テンプレートの公開範囲を変更"
       },
       "website": "ウェブサイト",
-      "websitePreview": "{{title}} Web サイト テンプレートのプレビュー",
-      "workflow": "ワークフロー",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Gmail のラベルが付いたときに実行し、そのメールを処理するワークフローを作成します。",
@@ -1145,6 +1239,12 @@
       "teamWarning": "チームのアクセスは、現在の請求期間が終了するまで有効のままです。その後、このワークスペースは {{plan}} に移動します。",
       "title": "ダウングレード計画"
     },
+    "feedback": {
+      "otherPlaceholder": "詳しく教えてください…",
+      "rewardTerms": "ワークスペースごとに1回 · クレジットは30日間有効",
+      "submitFeedback": "フィードバックを送信",
+      "thanks": "フィードバックありがとうございます"
+    },
     "invoices": {
       "amount": "金額",
       "date": "日付",
@@ -1288,40 +1388,6 @@
     "sidebar": {
       "description": "より多くのクレジットと同時実行",
       "getPlan": "{{plan}} を取得"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "価格を確認したかっただけ",
-          "needs_approval": "他の人の承認が必要",
-          "not_ready_yet": "まだ決めきれていない",
-          "not_seeing_value": "まだ価値を感じられなかった",
-          "other": "その他",
-          "payment_issue": "支払いで問題があった",
-          "price_higher_than_expected": "思っていたより価格が高かった",
-          "results_not_good_enough": "結果に満足できなかった"
-        },
-        "description": "質問は 1 つだけです。今後の改善に役立てます。",
-        "question": "購入を完了しなかった理由は何ですか？"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "今はこれ以上必要ない",
-          "not_sure_worth_it": "価値があるかまだわからない",
-          "other": "その他",
-          "still_trying": "もう少し試してみたい",
-          "too_expensive": "価格が高すぎる"
-        },
-        "question": "今日アップグレードしない理由は何ですか？",
-        "reward": "このワークスペースで最初の対象となる回答に、30日間有効な {{credits}} ボーナスクレジットを付与します。",
-        "thanksWithCredits": "ありがとうございます！{{credits}} クレジットを追加しました。このまま続けられます。"
-      },
-      "error": "回答を送信できませんでした。もう一度お試しください。",
-      "notNow": "今はしない",
-      "otherLabel": "回答",
-      "otherPlaceholder": "詳しく教えてください（任意）",
-      "submit": "送信",
-      "thanks": "ご回答ありがとうございます。"
     },
     "toasts": {
       "autoRechargeUpdated": "オートリチャージが更新されました",
@@ -1711,6 +1777,7 @@
       "waiting": "Mastercard Data Connectでの操作を待っています。そこで完了してから、チャットに戻ってください。"
     },
     "billing": {
+      "addCreditsOrUpgrade": "$5からクレジットを追加して続けるか、Proにアップグレードして限定機能を利用できます。",
       "addCreditsToContinue": "クレジットを追加すると、{{assistantName}} とのチャットを続けることができます。",
       "askAdminCredits": "{{assistantName}} とチャットを続けることができるように、ワークスペース管理者にクレジットを追加するように依頼してください。",
       "askAdminUpgrade": "{{assistantName}} とのチャットを継続できるように、ワークスペース管理者に Pro にアップグレードするよう依頼してください。",
@@ -1724,7 +1791,6 @@
       "customAmountError": "1 ドルから 10,000 ドルの間で入力してください",
       "customDollarAmount": "カスタムドル額",
       "outOfCredits": "クレジットが不足しています",
-      "redirecting": "リダイレクト中...",
       "upgradeToContinue": "{{assistantName}} とチャットを続けるには、Pro にアップグレードしてください。",
       "upgradeToPro": "プロにアップグレード",
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
@@ -1886,11 +1952,10 @@
       "add": "追加",
       "configureModel": "モデルの構成",
       "create": {
-        "addStyle": "スタイルを追加",
-        "addTemplate": "テンプレートを追加",
         "documentPlaceholder": "ドキュメントにどのような内容を含めますか？",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
+        "presentationPlaceholderWithDefault": "どんなプレゼンテーションですか？（既定: {{format}}）",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
@@ -1901,6 +1966,16 @@
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
+      "presentationFormatSetup": {
+        "htmlDescription": "どのブラウザでも開けるリンク",
+        "htmlLabel": "Web スライド",
+        "openSettings": "設定を開く",
+        "pptxDescription": "編集できる .pptx ファイル",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} をプレゼンテーションの既定に設定しました",
+        "settingsHint": "今後の新しい資料すべてに使われます。設定で変更できます。",
+        "title": "既定の形式を選んで開始"
+      },
       "selectedModelUnavailable": "選択されたモデルは使用できません。送信する前に設定してください。",
       "selectedModelUnavailableToast": "選択したモデルは利用できません",
       "selectModel": "モデルを選択してください",
@@ -1927,12 +2002,10 @@
         "scheduleHint": "定期的に実行",
         "share": "チャットを共有",
         "shareHint": "この会話のリンクを共有",
-        "templates": "テンプレート",
         "unpin": "ピン留めを解除"
       },
       "slashPanel": {
-        "browseAll": "すべてのテンプレートを見る",
-        "hint": "ワークフローを検索するか、テンプレートを選択…",
+        "hint": "アクションを選択",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -1974,8 +2047,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "コネクターアカウント",
       "actionFailed": "アカウントを切り替えられませんでした。",
+      "allowForHour": "1時間許可",
       "customConnector": "カスタムコネクター",
       "loadFailed": "このコネクターアカウントを読み込めませんでした。",
+      "memberScope": "すべてのチャットで許可し、このチャットでこのアカウントを選択します。",
       "reconnectRequired": "再接続が必要です。以降の実行では既存のフォールバックが使用される場合があります。",
       "selected": "{{account}}に切り替えました",
       "switch": "切り替える",
@@ -2129,6 +2204,12 @@
         },
         "inReview": "確認中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} クレジット",
+            "confirm": "仕事に戻る",
+            "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
+            "title": "今日のぶんは完了です"
+          },
           "connector": {
             "confirm": "すべてのコネクターを見る",
             "connected": "接続済み",
@@ -2503,11 +2584,10 @@
       "number": "番号"
     },
     "sidebar": {
-      "archive": "チャットをアーカイブ",
+      "archive": "アーカイブ",
       "archived": "アーカイブ済み",
       "chatsWith": "{{assistantName}} とのチャット",
       "chatThreads": "チャットスレッド",
-      "delete": "チャットを削除する",
       "deleteDescription": "これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。",
       "deleteTitle": "チャットを削除しますか?",
       "draft": "草案",
@@ -2518,7 +2598,7 @@
       "markUnread": "未読にする",
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
-      "mute": "チャットをミュート",
+      "mute": "ミュート",
       "muted": "ミュート中",
       "newChatWith": "{{assistantName}} との新しいチャット",
       "noArchived": "アーカイブ済みのチャットはありません",
@@ -2526,7 +2606,7 @@
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
-      "pin": "チャットをピン留めする",
+      "pin": "ピン留め",
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
@@ -2535,7 +2615,7 @@
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
       "unmute": "ミュートを解除",
-      "unpin": "チャットの固定を解除する",
+      "unpin": "ピン留めを解除",
       "unread": "未読",
       "unreadOnly": "未読"
     },
@@ -2562,11 +2642,6 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "presentationFormat": "プレゼンテーション形式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
@@ -2584,7 +2659,6 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "viewAll": "すべて表示",
       "visualization": {
         "allCharts": "すべてのグラフ",
         "back": "Back to visualization options",
@@ -2766,8 +2840,6 @@
         "workflow": "ワークフロー"
       },
       "previewTemplate": "プレビュー テンプレート {{title}}",
-      "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
-      "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します"
@@ -2839,6 +2911,7 @@
       "storageFailed": "音声を保存できませんでした。この端末に保存済みの音声のみ利用できます。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
+      "uploadingRecording": "録音をアップロード中…",
       "useRecording": "録音を使う"
     },
     "walletAction": {
@@ -2917,6 +2990,8 @@
     "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
     "manageAccounts": "アカウントを管理",
+    "memberPolicyLoadFailed": "アカウントへのアクセス設定を読み込めませんでした。",
+    "memberSettingsDescription": "Okou がすべてのチャットで使用できる {{connector}} アカウントを選択します。",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
     "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。",
@@ -2970,6 +3045,7 @@
       "edit": "編集",
       "grant": "グラント",
       "reconnect": "再接続",
+      "returnToOkou": "Okou に戻る",
       "revoke": "取り消し",
       "save": "保存",
       "saving": "保存中...",
@@ -3855,7 +3931,6 @@
         "overview": "提供者と顧客の情報"
       }
     },
-    "filter": "文書の分類",
     "formats": {
       "pdf": "PDF",
       "word": "Word 文書"
@@ -3865,10 +3940,8 @@
     "nextPage": "次のサンプルページ",
     "openLarger": "大きいプレビューを開く",
     "page": "{{page}} ページ",
-    "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
-    "title": "ドキュメント",
-    "useNamed": "{{title}} を使用"
+    "title": "ドキュメント"
   },
   "featureGuide": {
     "close": "新機能ガイドを閉じる",
@@ -4380,7 +4453,6 @@
   },
   "myOkou": {
     "conflict": "保存済みの指示が別の場所で変更されました。下書きは保持されています。内容を確認またはコピーしてから、保存済みの指示を再読み込みしてください。",
-    "description": "このワークスペースでのあなた専用の Okou への指示",
     "discard": "破棄",
     "draftKept": "ページやワークスペースを切り替えても、下書きはこのブラウザータブに保持されます。",
     "instructions": "指示",
@@ -5144,6 +5216,7 @@
     }
   },
   "projects": {
+    "archiveProject": "アーカイブ",
     "back": "Back",
     "close": "Close",
     "collapse": "折りたたむ",
@@ -5152,7 +5225,7 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
@@ -5180,6 +5253,7 @@
     "removeFromNewChat": "{{name}}を削除",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "プロジェクトを復元",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -5648,7 +5722,6 @@
           "title": "好み"
         },
         "proactiveLearning": {
-          "description": "Okou が先回りして行う作業を設定します。",
           "title": "Proactive"
         },
         "tools": {
@@ -5731,7 +5804,27 @@
       "actions": {
         "resetUsage": "使用量をリセットする"
       },
+      "antigravity": {
+        "title": "Google AI（Antigravity）"
+      },
       "deviceAuth": {
+        "antigravity": {
+          "address": "ブラウザのアドレス",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "続行するにはブラウザのアドレスを貼り付けてください。",
+          "connectedToast": "Google AI アカウントを接続しました",
+          "connectTitle": "Google AI（Antigravity）に接続",
+          "expired": "サインインの有効期限が切れました。もう一度開始してください。",
+          "failed": "Google サインインに失敗しました。もう一度お試しください。",
+          "instructions": "個人の Google AI Pro または Ultra アカウントでアクセスを承認してください。その後 Google が読み込めないページを開きます。ブラウザでそのページの完全なアドレスをコピーし、下に貼り付けてください。",
+          "openApproval": "Google サインインを開く",
+          "preparing": "Google サインインを準備しています…",
+          "reconnectAction": "もう一度サインイン",
+          "reconnectTitle": "Google AI（Antigravity）に再接続",
+          "signIn": "Google でサインイン",
+          "submit": "接続",
+          "usageNotice": "社内スタッフ向けのパイロットです。Google はサードパーティ クライアント経由で使用されるアカウントを制限する場合があります。"
+        },
         "claude": {
           "authorizationCode": "認証コード",
           "codePlaceholder": "Claude からコードを貼り付けます",
@@ -5930,6 +6023,14 @@
           "title": "デフォルトモデル"
         },
         "description": "新しいチャットの初期設定とメッセージの送信方法を選択します。",
+        "presentationFormat": {
+          "htmlDescription": "新しい資料はブラウザで開けるリンクになります",
+          "pptxDescription": "新しい資料は編集できる .pptx ファイルで届きます",
+          "saveFailed": "既定の形式を保存できませんでした。もう一度お試しください。",
+          "title": "プレゼンテーションの既定の形式",
+          "unavailable": "既定の形式を読み込めませんでした",
+          "unsetDescription": "初めて資料を作るときに確認します"
+        },
         "sectionTitle": "チャット"
       },
       "debug": {
@@ -6036,7 +6137,6 @@
         "title": "モーニングブリーフ"
       },
       "proactiveSuggestions": {
-        "description": "接続済みの情報源を毎時間確認し、ユーザープロフィールを毎日更新して、役立つ次のアクションを提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
@@ -6327,17 +6427,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "すべて",
     "markAllRead": "すべて既読としてマークする",
     "noResults": "結果が見つかりませんでした",
     "resultCount_other": "{{count}} 件の結果",
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "artifacts": "アーティファクト",
-      "chats": "チャット",
       "messages": "メッセージ",
-      "workflows": "ワークフロー"
+      "threads": "スレッド"
     }
   },
   "ssh": {
@@ -6495,11 +6592,8 @@
   "templates": {
     "actions": {
       "delete": "削除",
-      "menu": "{{title}} の操作",
-      "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
-    "builtIn": "組み込み",
     "custom": "カスタム",
     "delete": {
       "cancel": "キャンセル",
@@ -6514,11 +6608,6 @@
       "page": "{{number}} ページ目"
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
-    "rename": {
-      "action": "名前の変更",
-      "cancel": "キャンセル",
-      "save": "保存"
-    },
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "sharedBy": "{{owner}} が共有",
     "sharedByMember": "組織のメンバーが共有",
@@ -7325,6 +7414,8 @@
       "all": "すべて",
       "automated": "自動化",
       "automations": "オートメーション",
+      "clearFilters": "フィルターをクリア",
+      "clearSearch": "検索をクリア",
       "createdBy": "作成者",
       "createInChat": "チャットで作成",
       "description": "タスク用の再利用可能なSOP。ゼロから作成するか、日常業務から抽出して実行、編集、自動化します。",
@@ -7333,13 +7424,18 @@
         "automated": "ワークフローにオートメーションを追加すると、ここに表示されます。",
         "private": "プライベート ワークフローはまだありません。",
         "public": "公開ワークフローはまだありません。",
+        "search": "別のキーワードで検索するか、フィルターを変更してください。",
         "without": "ここでのすべてのワークフローは、スケジュールまたはイベントに基づいて実行されます。"
       },
+      "filter": "ワークフローを絞り込む",
+      "filters": "フィルター",
+      "noResults": "一致するワークフローがありません",
       "noWorkflows": "ワークフローなし",
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
       "ownerLoading": "作成者を読み込み中…",
       "ownerUnavailable": "作成者情報を取得できません",
+      "search": "ワークフローを検索…",
       "section": {
         "event": "オートメーションについて",
         "later": "後で",
@@ -7349,12 +7445,17 @@
       },
       "sort": {
         "alphabetical": "アルファベット順",
-        "created": "作成時間",
-        "label": "次の実行",
+        "created": "作成日時が新しい順",
+        "heading": "並べ替え",
+        "label": "ワークフローの並べ替え",
         "nextRun": "次の実行"
       },
       "title": "ワークフロー",
-      "viewAutomations": "オートメーションを表示する"
+      "viewAutomations": "オートメーションを表示する",
+      "visibility": "公開範囲",
+      "withAutomations": "自動化あり",
+      "withoutAutomations": "自動化なし",
+      "workspaceShared": "ワークスペースで共有"
     },
     "skillImport": {
       "action": "スキルをインポート",

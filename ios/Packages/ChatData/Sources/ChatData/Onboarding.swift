@@ -5,21 +5,21 @@ public struct OnboardingStatus: Decodable, Sendable {
   public let onboardingComplete: Bool
   public let isAdmin: Bool
   public let hasOrg: Bool
-  public let nativeOnboardingEnabled: Bool?
-  public var presentsOnboarding: Bool { nativeOnboardingEnabled == true && needsOnboarding }
+  public let nativeOnboardingEnabled: Bool
+  public var presentsOnboarding: Bool { nativeOnboardingEnabled && needsOnboarding }
 }
 
 public enum OnboardingStep: String, Codable, CaseIterable, Sendable {
   case industry, sources, experience, skills, slack, capabilities, ready
 }
 
-public struct OnboardingDraft: Codable, Sendable {
+public struct OnboardingDraft: Codable, Equatable, Sendable {
   public var answers = Answers()
   public var step: OnboardingStep? = .industry
   public var revision: String?
   public init() {}
 
-  public struct Answers: Codable, Sendable {
+  public struct Answers: Codable, Equatable, Sendable {
     public var industry: String?
     public var experienced: Bool?
     public var provider: String?
@@ -45,7 +45,7 @@ public struct OnboardingDraft: Codable, Sendable {
       try values.encode(recommendationStartedAt, forKey: .recommendationStartedAt)
     }
   }
-  public struct Output: Codable, Sendable {
+  public struct Output: Codable, Equatable, Sendable {
     public let format: String
     public let start: Int
     public let end: Int
@@ -81,30 +81,10 @@ public struct OnboardingRecommendation: Decodable, Sendable {
   }
 }
 
-public struct OnboardingSkillSession: Decodable, Sendable {
-  public let sessionId: String
-  public let uploadUrl: URL
-  public let token: String
-  public let expiresAt: Date
-}
-
-public struct OnboardingImportedSkill: Decodable, Identifiable, Sendable {
-  public let id: String
-  public let name: String
-}
-
-public struct OnboardingToolPreferences: Decodable, Sendable {
-  public let disabledTools: [String]
-}
-
 /// The Web and native flows write the same member-scoped draft and completion.
 public struct OnboardingService: Sendable {
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
-
-  public func nativeAvailability() async throws -> Bool {
-    try await client.nativeOnboardingAvailability()
-  }
 
   public func status() async throws -> OnboardingStatus {
     try await client.request("/api/onboarding/status")
@@ -172,25 +152,4 @@ public struct OnboardingService: Sendable {
     try await client.request("/api/onboarding/recommendations/\(id)")
   }
 
-  public func toolPreferences() async throws -> OnboardingToolPreferences {
-    try await client.request("/api/paid-tools")
-  }
-
-  public func setTool(_ id: String, enabled: Bool) async throws {
-    struct Body: Encodable { let disabled: Bool }
-    _ = try await client.data(
-      "/api/paid-tools/\(id)", method: "PATCH",
-      body: JSONEncoder().encode(Body(disabled: !enabled)))
-  }
-
-  public func createSkillSession(provider: String) async throws -> OnboardingSkillSession {
-    struct Body: Encodable { let provider: String }
-    return try await client.request(
-      "/api/skill-import/sessions", method: "POST",
-      body: JSONEncoder().encode(Body(provider: provider)))
-  }
-
-  public func importedSkills(sessionID: String) async throws -> [OnboardingImportedSkill] {
-    try await client.request("/api/skill-import/sessions/\(sessionID)/skills")
-  }
 }

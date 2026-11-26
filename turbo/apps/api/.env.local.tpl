@@ -6,6 +6,10 @@ CLERK_SECRET_KEY=op://Development/clerk/CLERK_SECRET_KEY
 CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 
+# For local subscription login, export these client IDs from Doppler vm0/dev.
+# CODEX_OAUTH_CLIENT_ID=
+# CLAUDE_CODE_OAUTH_CLIENT_ID=
+
 # Optional: external MCP resource server.
 # Use the exact MCP resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp
@@ -301,3 +305,6 @@ APNS_TEAM_ID=
 APNS_SANDBOX_PRIVATE_KEY_BASE64=
 APNS_SANDBOX_KEY_ID=
 APNS_SANDBOX_TEAM_ID=
+
+# PostHog survey destination credential; keep reward offers disabled until configured.
+BILLING_FEEDBACK_WEBHOOK_SECRET=

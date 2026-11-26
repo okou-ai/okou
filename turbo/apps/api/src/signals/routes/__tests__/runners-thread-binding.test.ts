@@ -56,7 +56,7 @@ describe("Runner first-start Thread binding", () => {
         },
         [201],
       );
-      await signing.entered;
+      await signing.waitForPending();
       const page = await chat.listThreadEvents(owned.actor, first.threadId);
       const pending = page.events.find((event) => {
         return event.revokesEventId === clientEventId;

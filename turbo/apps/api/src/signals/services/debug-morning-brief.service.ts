@@ -17,7 +17,6 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { loadMorningBriefState$ } from "./morning-brief-state.service";
-import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { workflowAutomationQueueEventPlan } from "./workflow-automation-enqueue.service";
 import {
@@ -171,8 +170,7 @@ const prepareDebugMorningBrief$ = command(
         ),
       };
     }
-    // An in-flight scheduled occurrence owns the empty slot and its captured
-    // definition. Do not switch that installation or interfere with its callback.
+    // An in-flight scheduled occurrence owns the empty slot until its callback.
     if (state.automation.nextRunAt === null) {
       return {
         kind: "error" as const,
@@ -204,22 +202,6 @@ const prepareDebugMorningBrief$ = command(
         response: conflict("Morning Brief changed. Retry the request."),
       };
     }
-    const selected = await set(
-      selectDueMorningBriefWorkflow$,
-      {
-        automation: target.automation,
-        workflowName: target.name,
-      },
-      signal,
-    );
-    if (!selected) {
-      return {
-        kind: "error" as const,
-        response: conflict(
-          "Morning Brief is not ready. Retry after its workflow is synchronized.",
-        ),
-      };
-    }
     const currentTime = nowDate();
     const chatThreadId = await set(
       ensureWorkflowUserAutomationThread$,
@@ -244,11 +226,11 @@ const prepareDebugMorningBrief$ = command(
       kind: "prepared" as const,
       owner,
       currentTime,
-      automation: selected.automation,
+      automation: target.automation,
       plan: debugMorningBriefPlan({
         requestId,
-        automation: selected.automation,
-        workflowName: selected.workflowName,
+        automation: target.automation,
+        workflowName: target.name,
         chatThreadId,
         displayName: target.displayName,
         modelSelection: model.modelSelection,
@@ -277,7 +259,6 @@ const commitDebugMorningBrief$ = command(
           eq(workflowAutomations.enabled, true),
           isNotNull(workflowAutomations.nextRunAt),
           eq(workflows.name, plan.context.workflowName),
-          eq(workflows.officialInstallationState, "installed"),
         ),
       );
     // The canonical input, source context and queue wake-up are one atomic

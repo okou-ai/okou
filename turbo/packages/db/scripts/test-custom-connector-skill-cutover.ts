@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { getViewConfig } from "drizzle-orm/pg-core";
 import postgres from "postgres";
-import { orgCustomConnectorSkillPublications } from "../src/schema/org-custom-connector-skill-publication";
 import { applyPendingMigrations } from "./migration-runner";
 
 export async function validateCustomConnectorSkillCutover(
@@ -11,9 +9,6 @@ export async function validateCustomConnectorSkillCutover(
   retirementMillis: number,
 ): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1 });
-  const { name: publicationView } = getViewConfig(
-    orgCustomConnectorSkillPublications,
-  );
   const id = randomUUID();
   const source = "a".repeat(64);
   const bundle = { sha256: "b".repeat(64), archiveBytes: 123 };
@@ -35,8 +30,9 @@ export async function validateCustomConnectorSkillCutover(
       constraint_name: "chk_custom_connector_skill_cutover_sources",
     });
     assert.equal(
-      (await sql`SELECT id FROM ${sql(publicationView)} WHERE id = ${id}`)
-        .length,
+      (
+        await sql`SELECT id FROM public.org_custom_connector_skill_publications WHERE id = ${id}`
+      ).length,
       0,
     );
     assert.equal(
@@ -48,9 +44,9 @@ export async function validateCustomConnectorSkillCutover(
 
     await sql`UPDATE org_custom_connectors SET skill_storage_version_id = ${source} WHERE id = ${id}`;
     const readPublication = () => {
-      return sql`SELECT ${publicationView}::regclass::oid AS view_id,
+      return sql`SELECT 'public.org_custom_connector_skill_publications'::regclass::oid AS view_id,
         skill_content_bundle, skill_content_bundle_source_version_id
-      FROM ${sql(publicationView)} WHERE id = ${id}`;
+      FROM public.org_custom_connector_skill_publications WHERE id = ${id}`;
     };
     const before = await readPublication();
     assert.equal(before.length, 1);
@@ -71,6 +67,51 @@ export async function validateCustomConnectorSkillCutover(
     await sql`UPDATE org_custom_connectors SET skill_storage_version_id = ${"c".repeat(64)} WHERE id = ${id}`;
     await applyPendingMigrations(sql, { beforeMillis: retirementMillis + 1 });
     assert.deepEqual(Array.from(await readPublication()), Array.from(before));
+  } finally {
+    await sql.end();
+  }
+}
+
+export async function validateCustomConnectorSkillPublicationViewRetirement(
+  databaseUrl: string,
+  migrationMillis: number,
+): Promise<void> {
+  const sql = postgres(databaseUrl, { max: 1 });
+  const id = randomUUID();
+  const source = "a".repeat(64);
+  const bundle = { sha256: "b".repeat(64), archiveBytes: 123 };
+  const readConnector = () => {
+    return sql`SELECT * FROM public.org_custom_connectors WHERE id = ${id}`;
+  };
+  const retire = () => {
+    return applyPendingMigrations(sql, { beforeMillis: migrationMillis + 1 });
+  };
+  try {
+    await applyPendingMigrations(sql, { beforeMillis: migrationMillis });
+    await sql`INSERT INTO public.org_custom_connectors
+      (id, org_id, slug, display_name, auth_mode, prefix_templates, fields, header_injections,
+       query_injections, created_by, skill_markdown, skill_content_bundle,
+       skill_content_bundle_source_version_id)
+      VALUES (${id}, 'publication-org', '_publication', 'Publication', 'none',
+       '["https://example.test/"]', '[]', '[]', '[]', 'publication-user',
+       'Skill instructions', ${sql.json(bundle)}, ${source})`;
+    const before = Array.from(await readConnector());
+    assert.equal(before.length, 1);
+
+    await sql`CREATE VIEW publication_retirement_dependency_fixture AS
+      SELECT id FROM public.org_custom_connector_skill_publications`;
+    await assert.rejects(retire, { code: "2BP01" });
+    const [pending] = await sql`SELECT
+      to_regclass('public.org_custom_connector_skill_publications') IS NOT NULL AS view_exists,
+      EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at = ${migrationMillis}) AS journaled`;
+    assert.deepEqual(pending, { view_exists: true, journaled: false });
+
+    await sql`DROP VIEW publication_retirement_dependency_fixture`;
+    await retire();
+    const [retired] = await sql`SELECT
+      to_regclass('public.org_custom_connector_skill_publications') IS NULL AS view_absent`;
+    assert.deepEqual(retired, { view_absent: true });
+    assert.deepEqual(Array.from(await readConnector()), before);
   } finally {
     await sql.end();
   }

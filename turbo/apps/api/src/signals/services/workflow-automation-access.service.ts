@@ -89,7 +89,7 @@ export const workflowAutomationCanFire$ = command(
         { orgId: automation.orgId, userId: automation.ownerUserId },
         signal,
       );
-      if (!eligibility[proactiveKind].active) {
+      if (!eligibility[proactiveKind]) {
         return false;
       }
       // Wait for any previous proactive check owned by this member.

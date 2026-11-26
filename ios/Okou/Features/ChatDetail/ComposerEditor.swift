@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Observation
@@ -51,7 +52,12 @@ final class ComposerEditor {
     return true
   }
 
-  let workflows = ComposerWorkflowSuggestions()
+  let workflows: ComposerWorkflowSuggestions
+
+  /// The slash suggestions keep their candidate request in the composer's Store.
+  init(graph: CCState.Store) {
+    workflows = ComposerWorkflowSuggestions(graph: graph)
+  }
   struct Input {
     weak var view: ComposerTextView?
     let blockID: UUID?
@@ -64,13 +70,18 @@ final class ComposerEditor {
   @ObservationIgnored private var inputs: [ObjectIdentifier: Input] = [:]
   private(set) var mentionQuery: String?
   private(set) var selectedMentionIndex = -1
-  var mentionSource: ComposerMentionSource?
   @ObservationIgnored private weak var mentionView: ComposerTextView?
   @ObservationIgnored private var mentionRange: NSRange?
   @ObservationIgnored private var dismissedMention: String?
 
+  /// The chats the menu shows for the active query, from the source its composer renders.
+  func mentionSuggestions(from source: ComposerMentionSource?) -> [ComposerMentionSuggestion] {
+    mentionQuery.map { source?.suggestions(for: $0) ?? [] } ?? []
+  }
+
+  /// Keyboard activation reads the source the mentioning input was last rendered with.
   var mentionSuggestions: [ComposerMentionSuggestion] {
-    mentionQuery.map { mentionSource?.suggestions(for: $0) ?? [] } ?? []
+    mentionSuggestions(from: mentionView?.mentionSource)
   }
 
   func updateMention(in view: ComposerTextView, textChanged: Bool = false) {
@@ -205,6 +216,11 @@ final class ComposerEditor {
     return input?.blockID
   }
 
+  func acceptFollowup(_ prompt: String) {
+    guard let view, view.followup == prompt else { return }
+    view.acceptFollowup()
+  }
+
   func selectOrAppendText(_ value: String) {
     let prompt = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty else { return }
@@ -231,11 +247,6 @@ final class ComposerEditor {
     let lastParagraph = text.components(separatedBy: "\n").last ?? ""
     let separator = lastParagraph.trimmingCharacters(in: .whitespaces).isEmpty ? "" : "\n"
     view.insertText(separator + prompt)
-    // UIKit can retain the empty keyboard's disabled Send key after this edit.
-    // Ordinary typing keeps its native input session.
-    if view.returnKeyPreference == .send {
-      view.requestReturnKeyReload(restartInputSession: true)
-    }
     target.focusRequested()
     view.scrollRangeToVisible(view.selectedRange)
   }

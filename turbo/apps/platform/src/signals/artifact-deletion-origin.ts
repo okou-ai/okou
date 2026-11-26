@@ -1,11 +1,16 @@
 import { command } from "ccstate";
-import { artifactPreviewDeletionScope } from "./artifact-deletion.ts";
+import {
+  artifactPreviewDeletionScope,
+  type ArtifactDeletionSession,
+} from "./artifact-deletion.ts";
+import { artifactCatalogRowDeletionScope } from "./artifacts-page/artifact-catalog-row-actions.ts";
 import { closeArtifactCatalogPreview$ } from "./artifacts-page/artifact-catalog-signals.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
 } from "./chat-page/chat-thread-pane-state.ts";
 import { closeDeletedThreadArtifact$ } from "./chat-page/thread-sidebar-coordinator.ts";
+import { closeLightboxWithDialogExit$ } from "./okou-page/attachment-chips.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { detachedNavigateTo$ } from "./route.ts";
 
@@ -17,12 +22,15 @@ import { detachedNavigateTo$ } from "./route.ts";
 export type ArtifactDeletionOrigin =
   /** The standalone artifact page, which returns to the catalog. */
   | { readonly kind: "artifact-page" }
-  /** The preview dialog over the catalog or a chat. */
+  /** The lightbox preview dialog. */
   | { readonly kind: "preview-dialog" }
   /** The artifacts page sidebar. */
   | { readonly kind: "catalog-sidebar" }
   /** The sidebar of the chat thread with this id. */
   | { readonly kind: "thread-sidebar"; readonly threadId: string };
+
+export type ArtifactDeletionConfirmationOrigin =
+  ArtifactDeletionOrigin | { readonly kind: "catalog-row" };
 
 export function artifactDeletionSurface(
   origin: ArtifactDeletionOrigin,
@@ -43,19 +51,29 @@ export function artifactDeletionSurface(
 
 /** Leaves the surface whose artifact was just deleted. */
 const leaveDeletedArtifactSurface$ = command(
-  ({ get, set }, origin: ArtifactDeletionOrigin, signal: AbortSignal): void => {
+  (
+    { get, set },
+    origin: ArtifactDeletionConfirmationOrigin,
+    signal: AbortSignal,
+  ): void => {
     switch (origin.kind) {
+      case "catalog-row": {
+        // Catalog invalidation reloads an active preview's detail. A row action
+        // must not close a different artifact's sidebar.
+        set(artifactCatalogRowDeletionScope.dismiss$);
+        return;
+      }
       case "artifact-page": {
         set(detachedNavigateTo$, "/artifacts");
         return;
       }
       case "preview-dialog": {
         // The preview may belong to a chat that outlives this page.
-        set(closeArtifactCatalogPreview$, get(rootSignal$));
+        set(closeLightboxWithDialogExit$, get(rootSignal$));
         return;
       }
       case "catalog-sidebar": {
-        set(closeArtifactCatalogPreview$, signal);
+        set(closeArtifactCatalogPreview$);
         return;
       }
       case "thread-sidebar": {
@@ -73,23 +91,45 @@ const leaveDeletedArtifactSurface$ = command(
   },
 );
 
+function artifactDeletionSession(origin: ArtifactDeletionConfirmationOrigin) {
+  return origin.kind === "catalog-row"
+    ? artifactCatalogRowDeletionScope.session$
+    : artifactPreviewDeletionScope(artifactDeletionSurface(origin)).session$;
+}
+
+export const closeArtifactDeletion$ = command(
+  (
+    { get, set },
+    origin: ArtifactDeletionConfirmationOrigin,
+    session: ArtifactDeletionSession,
+  ) => {
+    if (get(artifactDeletionSession(origin)) !== session) {
+      return;
+    }
+    set(session.close$);
+    if (origin.kind === "catalog-row") {
+      set(artifactCatalogRowDeletionScope.dismiss$);
+    }
+  },
+);
+
 /** Deletes the surface's pending artifact, then leaves that surface. */
 export const confirmArtifactDeletion$ = command(
   async (
     { get, set },
-    origin: ArtifactDeletionOrigin,
+    origin: ArtifactDeletionConfirmationOrigin,
+    session: ArtifactDeletionSession,
     signal: AbortSignal,
   ): Promise<void> => {
-    const session = get(
-      artifactPreviewDeletionScope(artifactDeletionSurface(origin)).session$,
-    );
-    if (!session) {
+    if (get(artifactDeletionSession(origin)) !== session) {
       return;
     }
     await set(
       session.confirm$,
       () => {
-        set(leaveDeletedArtifactSurface$, origin, signal);
+        if (get(artifactDeletionSession(origin)) === session) {
+          set(leaveDeletedArtifactSurface$, origin, signal);
+        }
       },
       signal,
     );

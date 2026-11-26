@@ -1,219 +1,111 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
+import { screen, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { externalProtocolHandler } from "../../../test/mocks/external-protocol-handler.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const HOME_PATH = "/";
-
-function mockAPIs(): void {}
-
-test("An unknown route offers both of its destinations", async () => {
-  mockAPIs();
-  await setupPage({ context, path: "/missing-platform-route" });
-
-  const homeLink = await waitFor(() => {
-    const links = queryAllByRoleFast("link");
-    const homeLink = links.find((link) => {
-      return link.textContent?.trim() === "Back to home";
-    });
-    const workflowsLink = links.find((link) => {
-      return link.textContent?.trim() === "Browse workflows";
-    });
-    if (!homeLink || !workflowsLink) {
-      throw new Error("Not-found destinations not found");
-    }
-
-    expect(
-      screen.getByRole("heading", { name: "That page isn't here." }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "It may have moved, or the link may be old. Everything else is where you left it.",
-      ),
-    ).toBeInTheDocument();
-    expect(homeLink).toHaveAttribute("href", "/");
-    expect(workflowsLink).toHaveAttribute("href", "/workflows");
-    return homeLink;
+const unknown = "/missing-navigation-case";
+function open(path: string) {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
   });
-
-  fireEvent.click(homeLink);
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("heading", { name: "That page isn't here." }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId("labeled-nav-rail")).getByText("Workflows"),
-    ).toBeInTheDocument();
-  });
-});
-
-test("The Okou error page uses Okou support", async () => {
-  await setupPage({
+  return setupPage({
     context,
-    path: "/_/error",
     host: "app.okou.ai",
+    path,
+    sharedWorkerTestTransport: "message-port",
   });
-
-  await waitFor(() => {
-    expect(screen.getByText("support")).toHaveAttribute(
-      "href",
-      "mailto:contact@okou.ai",
-    );
-  });
+}
+async function workflowsLink() {
+  const rail = await screen.findByRole("navigation", { name: "Sidebar" });
+  return within(rail).getByLabelText("Workflows");
+}
+test("link-navigation-001 Both exits from the missing page reach their labeled destinations", async () => {
+  await open(unknown);
+  const browse = await findAction("link", "Browse workflows");
+  expect(browse).toHaveAttribute("href", "/workflows");
+  await expect(findAction("link", "Back to home")).resolves.toHaveAttribute(
+    "href",
+    "/",
+  );
+  click(browse);
+  await expect(
+    screen.findByRole("heading", { name: "Workflows" }),
+  ).resolves.toBeInTheDocument();
+  expect(location.pathname).toBe("/workflows");
+  history.back();
+  click(await screen.findByText("Back to home"));
+  await expect(workflowsLink()).resolves.toBeInTheDocument();
+  expect(location.pathname).toBe("/");
+  expect(screen.queryByText("That page isn't here.")).not.toBeInTheDocument();
 });
-
-test("A link activation creates one reversible navigation", async () => {
-  mockAPIs();
-  await setupPage({ context, path: "/missing-platform-route" });
-  const link = await waitFor(() => {
-    const candidate = queryAllByRoleFast("link").find((element) => {
-      return element.textContent?.trim() === "Browse workflows";
-    });
-    if (!candidate) {
-      throw new Error("Expected the workflows link");
-    }
-    return candidate;
-  });
-
+test("link-navigation-002 The error page sends the support action to Okou's mail recipient", async () => {
+  const mail = externalProtocolHandler("mailto:");
+  await open("/_/error");
+  const alert = await screen.findByRole("alert");
+  click(within(alert).getByText("support"));
+  expect(mail).toStrictEqual(["mailto:contact@okou.ai"]);
+});
+test("link-navigation-004 Back traverses directly to the missing page after reselecting Workflows", async () => {
+  await open(unknown);
+  click(await screen.findByText("Browse workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  const link = await workflowsLink();
+  expect(link).toHaveAttribute("aria-current", "page");
   click(link);
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  });
-
-  act(() => {
-    window.history.back();
-  });
+  expect(location.pathname).toBe("/workflows");
+  history.back();
   await expect(
-    screen.findByRole("heading", { name: "That page isn't here." }),
+    screen.findByText("That page isn't here."),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/missing-platform-route");
+  expect(location.pathname).toBe(unknown);
 });
 
-test("A link to the open page adds no history entry", async () => {
-  mockAPIs();
-  await setupPage({ context, path: "/missing-platform-route" });
-  const browseLink = await waitFor(() => {
-    const candidate = queryAllByRoleFast("link").find((element) => {
-      return element.textContent?.trim() === "Browse workflows";
-    });
-    if (!candidate) {
-      throw new Error("Expected the workflows link");
-    }
-    return candidate;
-  });
-
-  click(browseLink);
-  const railLink = await waitFor(() => {
-    const candidate = queryAllByRoleFast(
-      "link",
-      screen.getByTestId("labeled-nav-rail"),
-    ).find((element) => {
-      return element.getAttribute("aria-label") === "Workflows";
-    });
-    if (!candidate) {
-      throw new Error("Expected the Workflows rail link");
-    }
-    expect(candidate).toHaveAttribute("aria-current", "page");
-    return candidate;
-  });
-  expect(pathname()).toBe("/workflows");
-
-  click(railLink);
-  expect(pathname()).toBe("/workflows");
-
-  act(() => {
-    window.history.back();
-  });
-  await expect(
-    screen.findByRole("heading", { name: "That page isn't here." }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/missing-platform-route");
-});
-
-test.each(["Meta"])(
-  "%s-click leaves the internal destination to the browser",
-  async (modifier) => {
-    mockAPIs();
-    context.mocks.browser.open();
-    const user = userEvent.setup({ delay: null });
-    await setupPage({ context, path: HOME_PATH });
-    const rail = screen.getByTestId("labeled-nav-rail");
-    const link = within(rail).getByText("Workflows").closest("a");
-    if (!link) {
-      throw new Error("Expected the Workflows link");
-    }
-    expect(link).toHaveAttribute("href", "/workflows");
-
-    await user.keyboard(`{${modifier}>}`);
-    await user.click(link);
-    await user.keyboard(`{/${modifier}}`);
-
-    expect(pathname()).toBe(HOME_PATH);
-    expect(link).toHaveAttribute("href", "/workflows");
-    expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-    // Native modifier/auxiliary browsing-context choices require a browser;
-    // Happy DOM does not expose them through the mocked window.open boundary.
+test.each([
+  {
+    modifier: "Meta",
+    title:
+      "link-navigation-005 Meta activation leaves the Workflows link to the browser",
   },
-);
-
-test("A valid sign-in ticket returns the user home", async () => {
-  mockAPIs();
-
-  await startPage({
-    context,
-    path: "/sign-in-token?token=clerk-ticket",
-    auth: null,
+  {
+    modifier: "plain",
+    title: "A plain Workflows link activation navigates in the current tab",
+  },
+] as const)("$title", async ({ modifier }) => {
+  await open("/");
+  const link = await workflowsLink();
+  const activation = context.mocks.deferred<{
+    claimed: boolean;
+    meta: boolean;
+  }>();
+  // The document sees the bubbling event after the Router has handled it.
+  document.addEventListener(
+    "click",
+    (event) => {
+      return activation.resolve({
+        claimed: event.defaultPrevented,
+        meta: event.metaKey,
+      });
+    },
+    { once: true, signal: context.signal },
+  );
+  const user = userEvent.setup();
+  if (modifier === "Meta") {
+    await user.keyboard("{Meta>}");
+  }
+  await user.click(link);
+  if (modifier === "Meta") {
+    await user.keyboard("{/Meta}");
+  }
+  await expect(activation.promise).resolves.toStrictEqual({
+    claimed: modifier === "plain",
+    meta: modifier === "Meta",
   });
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/");
-  });
-  expect(mockedClerk.clientSignInCreate).toHaveBeenCalledWith({
-    strategy: "ticket",
-    ticket: "clerk-ticket",
-  });
-  expect(mockedClerk.setActive).toHaveBeenCalledWith({
-    navigate: expect.any(Function),
-    session: "test-created-session-id",
-  });
-});
-
-test("A valid sign-in ticket returns to its trusted Okou destination", async () => {
-  const returnUrl = "https://app.okou.ai/?source=sign-in-ticket";
-  mockAPIs();
-
-  await startPage({
-    context,
-    host: "app.okou.ai",
-    path: `/sign-in-token?token=clerk-ticket&redirect_url=${encodeURIComponent(
-      returnUrl,
-    )}`,
-    auth: null,
-  });
-
-  await waitFor(() => {
-    expect(location.href).toBe(returnUrl);
-  });
-  expect(mockedClerk.clientSignInCreate).toHaveBeenCalledWith({
-    strategy: "ticket",
-    ticket: "clerk-ticket",
-  });
+  expect(link).toHaveAttribute("href", "/workflows");
+  if (modifier === "plain") {
+    await screen.findByRole("heading", { name: "Workflows" });
+  }
 });

@@ -94,11 +94,19 @@ async function floors(
   baseFloor: string | null,
   client: "desktop" | "ios" = "desktop",
 ): Promise<readonly string[]> {
+  const config = (version: string | null) => {
+    return client === "ios"
+      ? {
+          appStoreMinimumSupportedVersion: version,
+          testFlightMinimumSupportedVersion: floor,
+        }
+      : { minimumSupportedVersion: version };
+  };
   return [
     `--${client}-floor`,
-    await writeJson("floor.json", { minimumSupportedVersion: floor }),
+    await writeJson("floor.json", config(floor)),
     `--${client}-base-floor`,
-    await writeJson("base-floor.json", { minimumSupportedVersion: baseFloor }),
+    await writeJson("base-floor.json", config(baseFloor)),
   ];
 }
 
@@ -186,8 +194,19 @@ describe("runtime API schema CLI lint", () => {
         lintAddedStatus(client, "202", [
           // Synthetic floors stay below real bounded response transforms.
           ...(await floors("0.1.1", "0.1.0", client)),
-          `--${client}-published-version`,
-          "0.1.1",
+          ...(client === "ios"
+            ? [
+                "--ios-availability",
+                await writeJson("receipt.json", {
+                  "app-store": {
+                    version: "0.1.1",
+                    build: "1",
+                    commit: "a".repeat(40),
+                    publishedVersion: "0.1.1",
+                  },
+                }),
+              ]
+            : ["--desktop-published-version", "0.1.1"]),
         ]),
       ).resolves.toBe(0);
 

@@ -94,10 +94,15 @@ public struct ChatConnectorStatus: Sendable {
 
 /// Operation receipts never identify an account through a mutable default projection.
 public struct ChatConnectorReceipt: Decodable, Sendable {
+  public struct NativeAppAuthorization: Decodable, Sendable {
+    public let provider: String
+  }
   public let result: String?
   public let status: String?
   public let authorizationUrl: URL?
+  public let nativeCallbackUrl: URL?
   public let oauthAttemptId: String?
+  public let nativeAppAuthorization: NativeAppAuthorization?
   public let connectionId: String?
   public let sessionId: String?
   public let sessionToken: String?
@@ -177,7 +182,7 @@ public struct ChatConnectorService: Sendable {
     case .reconnect(let slug, let id):
       target = .builtin(slug)
       exactID = id
-    case .select(let selectedTarget, let id):
+    case .select(let selectedTarget, let id, _):
       target = selectedTarget
       exactID = id
     case .configuration(let selectedTarget, let id):
@@ -255,22 +260,29 @@ public struct ChatConnectorService: Sendable {
     return account
   }
   public func select(_ action: ChatConnectorAction, status: ChatConnectorStatus) async throws {
-    guard case .select(let target, let id) = action.kind, target == status.target,
+    guard case .select(let target, let id, let memberWide) = action.kind, target == status.target,
       let threadID = action.threadID
     else {
       throw APIClientError.invalidResponse
     }
     let selection = ChatConnectorSelection(target: target, connectionId: id)
-    let result: ChatConnectorSelection = try await client.request(
-      "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST",
-      body: JSONEncoder().encode(selection))
+    let body = try JSONEncoder().encode(selection)
+    let result: ChatConnectorSelection
+    if memberWide {
+      result = try await client.request(
+        "/api/chat-threads/\(threadID)/member-connector-account-approval", method: "POST",
+        body: body)
+    } else {
+      result = try await client.request(
+        "/api/chat-threads/\(threadID)/connector-account-approval", method: "POST", body: body)
+    }
     guard result.target == target, result.connectionId.lowercased() == id.lowercased() else {
       throw APIClientError.invalidResponse
     }
   }
   public func start(
     status: ChatConnectorStatus, method: ChatConnectorMethod?,
-    values: [String: String], options: [String: String]
+    values: [String: String], options: [String: String], nativeAppAuthorization: Bool = false
   ) async throws -> ChatConnectorReceipt {
     struct Account: Encodable {
       let intent: String
@@ -280,6 +292,8 @@ public struct ChatConnectorService: Sendable {
       let account: Account
       let authMethod: String
       var callbackTarget: String?
+      var nativeCallback: String?
+      var nativeAppAuthorization: String?
       var values: [String: String]?
       var options: [String: String]?
     }
@@ -288,12 +302,15 @@ public struct ChatConnectorService: Sendable {
       intent: connectionID == nil ? "add" : "reconnect", connectionId: connectionID)
     if let slug = status.target.connectorSlug, let method {
       guard status.builtin?.authMethods.contains(method) == true,
-        status.account == nil || status.account?.authMethod == method.id,
         method.hasRequiredInputs(values: values, options: options)
       else { throw ChatConnectorInputError.settingsChanged }
       let body = Body(
         account: account, authMethod: method.id,
         callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
+        nativeCallback: ["auth-code", "automatic", "openid-auth"].contains(method.grantKind)
+          ? "ios-https" : nil,
+        nativeAppAuthorization: nativeAppAuthorization && method.grantKind == "auth-code"
+          ? "ios" : nil,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,
         options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)
@@ -335,7 +352,8 @@ public struct ChatConnectorService: Sendable {
       }
       return try await client.request(
         "/api/custom-connectors/\(custom.id)/oauth2/start", method: "POST",
-        body: JSONEncoder().encode(Body(account: account)))
+        body: JSONEncoder().encode(Body(account: account)),
+        headers: ["X-Okou-Native-Connector-Callback": "ios-https"])
     }
     return try await configureCustom(custom, connectionID: connectionID, values: values)
   }

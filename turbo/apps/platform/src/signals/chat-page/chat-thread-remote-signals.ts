@@ -1,4 +1,7 @@
-import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  chatThreadDraftSchema,
+  type SuggestionPreset,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
 import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
@@ -41,12 +44,17 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
   readonly automations: RealtimeInvalidationCommands;
-  readonly artifactCatalog: RealtimeInvalidationCommands;
-  /** A member's artifact changed, for example after a Google Drive sync. */
-  readonly artifacts: RealtimeInvalidationCommands;
 }
 
 interface ChatThreadRealtimeHandlers {
+  readonly onArtifactCatalogChanged$: Command<
+    Promise<boolean> | boolean,
+    [AbortSignal]
+  >;
+  readonly onArtifactsChanged$: Command<
+    Promise<boolean> | boolean,
+    [AbortSignal]
+  >;
   readonly onWorkflowsChanged$: Command<
     Promise<boolean> | boolean,
     [AbortSignal]
@@ -55,6 +63,7 @@ interface ChatThreadRealtimeHandlers {
 }
 
 interface PatchDraftArgs {
+  readonly suggestionPreset?: SuggestionPreset;
   readonly threadId: string;
   readonly userMessage: UserMessageInputDocument | null;
   readonly attachments: PersistedAttachment[] | null;
@@ -113,16 +122,18 @@ type ChatRealtimeSubscription =
       readonly kind: "command";
       readonly topic: string;
       readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+      readonly runOnSubscribe?: boolean;
     };
 
 export const patchChatThreadDraft$ = command(
   async (
     { get, set },
-    { threadId, userMessage, attachments }: PatchDraftArgs,
+    { threadId, userMessage, attachments, suggestionPreset }: PatchDraftArgs,
     signal: AbortSignal,
   ) => {
     const client = get(apiClient$)(chatThreadByIdContract);
     const body = {
+      suggestionPreset,
       draftUserMessage: userMessage,
       draftAttachments: attachments,
     };
@@ -241,9 +252,9 @@ export const subscribeChatThreadRealtime$ = command(
     const ready = createDeferredPromise<void>(signal);
     const subscriptions: ChatRealtimeSubscription[] = [
       {
-        kind: "invalidate",
+        kind: "command",
         topic: chatArtifactCatalogChangedEvent(threadId),
-        invalidations: invalidations.artifactCatalog,
+        loopCommand$: handlers.onArtifactCatalogChanged$,
         // Close the gap between a cached page read and establishing Ably.
         runOnSubscribe: true,
       },
@@ -253,9 +264,9 @@ export const subscribeChatThreadRealtime$ = command(
         invalidations: invalidations.threadDetail,
       },
       {
-        kind: "invalidate",
+        kind: "command",
         topic: artifactChangedTopic,
-        invalidations: invalidations.artifacts,
+        loopCommand$: handlers.onArtifactsChanged$,
       },
       {
         kind: "invalidate",
@@ -307,7 +318,7 @@ export const subscribeChatThreadRealtime$ = command(
         {
           topic: subscription.topic,
           loopCommand$: subscription.loopCommand$,
-          options,
+          options: { ...options, runOnSubscribe: subscription.runOnSubscribe },
         },
         signal,
       );
@@ -373,6 +384,6 @@ export function createRemoteChatThreadDraft(threadId: string) {
       }),
       [200],
     );
-    return composerDraftSchema.parse(result.body);
+    return chatThreadDraftSchema.parse(result.body);
   });
 }

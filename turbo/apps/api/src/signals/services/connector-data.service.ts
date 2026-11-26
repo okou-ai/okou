@@ -1,3 +1,4 @@
+import { connectorConnectionPrincipalValue } from "./connector-account-mutation.service";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -155,6 +156,7 @@ const oauthScopesSchema = array(string());
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
 interface ExternalUserInfo {
   readonly id: string;
+  readonly identityNamespace?: string;
   readonly username: string | null;
   readonly email: string | null;
 }
@@ -2075,25 +2077,17 @@ async function prepareConnectorTokenState(
 
 function isExplicitReconnectIdentityMismatch(
   account: ConnectorAccountMutationIntent,
-  existing: StoredConnectorRow | null,
+  existing: (StoredConnectorRow & { readonly externalIssuer: string }) | null,
   nextExternalId: string,
+  nextIdentityNamespace?: string,
 ): boolean {
   return (
     account.intent === "reconnect" &&
-    existing?.externalId !== null &&
-    existing?.externalId !== undefined &&
-    existing.externalId !== nextExternalId
+    existing !== null &&
+    ((existing.externalId !== null && existing.externalId !== nextExternalId) ||
+      (existing.externalIssuer !== "" &&
+        existing.externalIssuer !== (nextIdentityNamespace ?? "")))
   );
-}
-
-function authorizedExternalIdForMutation(args: {
-  readonly mutation: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity: boolean | undefined;
-  readonly externalId: string;
-}): string | undefined {
-  return args.matchExistingExternalIdentity && args.mutation.intent === "add"
-    ? args.externalId
-    : undefined;
 }
 
 export interface PreparedBuiltinConnectorTokenConnection {
@@ -2113,7 +2107,6 @@ export interface PreparedBuiltinConnectorTokenConnection {
   readonly oauthGrantedScopes: readonly string[];
   readonly tokenExpiresAt: Date | null;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2145,6 +2138,7 @@ function builtinConnectorTokenConnectionValues(
         connectorSlug: connection.runtimeMethod.connectorSlug,
         identity: {
           kind: "external" as const,
+          issuer: connection.userInfo.identityNamespace,
           externalId: connection.userInfo.id,
           externalUsername: connection.userInfo.username,
           externalEmail: connection.userInfo.email,
@@ -2174,7 +2168,6 @@ interface BuiltinConnectorTokenConnectionArgs {
   readonly expiresIn?: number;
   readonly extraConnectorSecrets?: Readonly<Record<string, string>>;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2216,12 +2209,7 @@ function tokenCleanupResult(
 export function builtinConnectorTokenMutationValues(
   args: Pick<
     PreparedBuiltinConnectorTokenConnection,
-    | "orgId"
-    | "userId"
-    | "runtimeMethod"
-    | "account"
-    | "matchExistingExternalIdentity"
-    | "userInfo"
+    "orgId" | "userId" | "runtimeMethod" | "account" | "userInfo"
   >,
 ): ConnectorConnectionMutationArgs {
   return {
@@ -2233,11 +2221,13 @@ export function builtinConnectorTokenMutationValues(
     },
     mutation: args.account,
     allowSiblings: true,
-    matchExternalId: authorizedExternalIdForMutation({
-      mutation: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
-      externalId: args.userInfo.id,
-    }),
+    matchExternalPrincipal: connectorConnectionPrincipalValue(
+      args.runtimeMethod.connectorSlug,
+      args.userInfo.username,
+    ),
+    matchExternalIssuer: args.userInfo.identityNamespace,
+    matchExternalId:
+      args.account.intent === "add" ? args.userInfo.id : undefined,
   };
 }
 export const prepareBuiltinConnectorTokenConnection$ = command(
@@ -2331,7 +2321,6 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
       oauthGrantedScopes: args.oauthGrantedScopes,
       tokenExpiresAt,
       account: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
       insertConnectionId: args.insertConnectionId,
     };
   },
@@ -2495,6 +2484,7 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
         args.account,
         existing,
         args.userInfo.id,
+        args.userInfo.identityNamespace,
       )
     ) {
       return {

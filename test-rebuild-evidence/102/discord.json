@@ -1,0 +1,44 @@
+[
+  {
+    "control": "page alone",
+    "scope": "64f35c209e88874615fec86d204a9245f8f834d00169c956692cb674e4303776",
+    "openerAliveAtAcceptance": true,
+    "statusDelivered": 200,
+    "pageMessage": "This authorization was interrupted or refreshed.",
+    "openDiscordLinks": 0,
+    "cleanLocation": "/settings/discord?status=pending&guild_id=1656165849191829764",
+    "receipts": [
+      {
+        "scope": "64f35c209e88874615fec86d204a9245f8f834d00169c956692cb674e4303776",
+        "status": 200,
+        "kind": "/approve"
+      }
+    ],
+    "replay": null
+  },
+  {
+    "control": "relay resubmits the identical page payload",
+    "scope": "72c2c4eb2923bbbf77b9fd7c6396623446892df78819544fd6041be3fb64c985",
+    "openerAliveAtAcceptance": true,
+    "statusDelivered": 200,
+    "pageMessage": "This authorization was interrupted or refreshed.",
+    "openDiscordLinks": 0,
+    "cleanLocation": "/settings/discord?status=pending&guild_id=1656165849191829764",
+    "receipts": [
+      {
+        "scope": "72c2c4eb2923bbbf77b9fd7c6396623446892df78819544fd6041be3fb64c985",
+        "status": 200,
+        "kind": "/approve"
+      },
+      {
+        "scope": "72c2c4eb2923bbbf77b9fd7c6396623446892df78819544fd6041be3fb64c985",
+        "status": 400,
+        "kind": "/approve"
+      }
+    ],
+    "replay": {
+      "status": 400,
+      "code": "DISCORD_OAUTH_INVALID_ATTEMPT"
+    }
+  }
+]

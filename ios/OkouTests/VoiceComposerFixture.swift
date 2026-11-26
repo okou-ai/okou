@@ -1,4 +1,5 @@
 import AVFoundation
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -13,10 +14,28 @@ struct VoiceFocusHarness: View {
   let recordingPresented: XCTestExpectation
 
   var body: some View {
-    MentionComposerHarness(state: composer)
-      .onChange(of: composer.voice?.phase) { _, phase in
-        if phase == .recording { recordingPresented.fulfill() }
-      }
+    StoreProvider(composer.store) {
+      MentionComposerHarness(state: composer)
+        .modifier(
+          RecordingPresentation(voice: composer.voice, recordingPresented: recordingPresented))
+    }
+  }
+}
+
+/// Fulfills when the composer graph reports recording, as the composer itself renders it.
+private struct RecordingPresentation: ViewModifier {
+  let recordingPresented: XCTestExpectation
+  @ResolvedValue private var phase: ComposerVoiceInputStore.Phase?
+
+  init(voice: ComposerVoiceInputStore?, recordingPresented: XCTestExpectation) {
+    self.recordingPresented = recordingPresented
+    _phase = ResolvedValue(voice?.phaseValue ?? ComposerVoiceInputStore.idlePhase)
+  }
+
+  func body(content: Content) -> some View {
+    content.onChange(of: phase) { _, phase in
+      if phase == .recording { recordingPresented.fulfill() }
+    }
   }
 }
 
@@ -25,10 +44,15 @@ final class VoiceCaptureFixture: VoiceAudioCapture {
   var finalSeconds = 0
   var startGate: VoiceResponseGate?
   var startFailure: Error?
+  var permissionGranted: XCTestExpectation?
   private var continuation: AsyncThrowingStream<VoiceAudioChunk, Error>.Continuation?
-  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
+  func requestPermission() async throws {
     if let startGate { await startGate.wait() }
     if let startFailure { throw startFailure }
+    permissionGranted?.fulfill()
+  }
+
+  func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
     let (stream, continuation) = AsyncThrowingStream<VoiceAudioChunk, Error>.makeStream()
     self.continuation = continuation
     return stream
@@ -71,6 +95,7 @@ final class VoiceComposerState: Sendable {
     var quotaFailure: ChatHTTPResponse?
     var quotaError: URLError?
     var quotaGate: VoiceResponseGate?
+    var recordAsMessage = false
     var quotaAllowed = true
     var quotaApproved = false
     var audioUploads = 0
@@ -101,6 +126,29 @@ final class VoiceComposerFixture: Sendable {
         }
         let data = try JSONEncoder().encode(state.value.withLock { $0.remote })
         return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
+      case "/api/feature-switches":
+        let enabled = state.value.withLock { $0.recordAsMessage }
+        return try ChatHTTPResponse(json: [
+          "effectiveSwitches": ["composerVoiceMessages": enabled]
+        ])
+      case "/api/uploads/prepare/private":
+        let url = try XCTUnwrap(
+          request.url?.deletingLastPathComponent()
+            .appendingPathComponent("voice-object"))
+        return try ChatHTTPResponse(json: [
+          "id": MessageJSON.string("73000000-0000-4000-8000-000000000002"),
+          "filename": .string("Voice recording.wav"), "uploadHeaders": .object([:]),
+          "contentType": .string("audio/wav"), "uploadUrl": .string(url.absoluteString)
+        ])
+      case "/api/uploads/prepare/voice-object":
+        XCTAssertEqual(Data(chatRequestBody(request).prefix(4)), Data("RIFF".utf8))
+        return ChatHTTPResponse(body: "")
+      case "/api/uploads/complete":
+        return try ChatHTTPResponse(json: [
+          "id": MessageJSON.string("73000000-0000-4000-8000-000000000002"),
+          "filename": .string("Voice recording.wav"), "contentType": .string("audio/wav"),
+          "size": .number(32044), "url": .string("/artifacts/voice.wav")
+        ])
       case "/api/voice-io/quota":
         let quota = state.value.withLock { value in
           value.quotaApproved = false
@@ -157,6 +205,7 @@ final class VoiceComposerFixture: Sendable {
     return ComposerDraftStore(
       target: target,
       commands: ChatCommands(client: client, sync: ChatSync(client: client)),
+      graph: makeTestWorkspaceGraph(),
       repository: syncDrafts ? ChatDraftRepository(client: client) : nil,
       storage: storage, didFail: didFail, voiceCapture: capture)
   }

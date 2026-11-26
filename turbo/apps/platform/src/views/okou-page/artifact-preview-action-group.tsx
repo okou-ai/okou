@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Computed } from "ccstate";
-import { useGet, useLastLoadable } from "ccstate-react";
+import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
 import { cn } from "@okouai/ui";
 
 import { artifactPreviewDeletionScope } from "../../signals/artifact-deletion.ts";
@@ -13,7 +13,6 @@ import { getHostedSiteShareScope } from "../../signals/hosted-site-sharing.ts";
 import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
 
 type ArtifactPreviewActionGroupProps = {
-  readonly enabled: boolean;
   readonly artifactId?: string;
   readonly children: ReactNode;
   readonly metadataPending?: boolean;
@@ -23,13 +22,6 @@ type ArtifactPreviewActionGroupProps = {
   readonly surface: "dialog" | "sidebar";
   readonly url: string;
 };
-
-export function ArtifactPreviewActionGroup({
-  enabled,
-  ...props
-}: ArtifactPreviewActionGroupProps) {
-  return enabled ? <ReadyArtifactPreviewActions {...props} /> : props.children;
-}
 
 function usePreviewActionPending(
   action$: Computed<Promise<unknown>> | undefined,
@@ -43,7 +35,7 @@ function usePreviewActionPending(
   );
 }
 
-function ReadyArtifactPreviewActions({
+export function ArtifactPreviewActionGroup({
   artifactId,
   children,
   metadataPending,
@@ -52,12 +44,13 @@ function ReadyArtifactPreviewActions({
   shareUrl,
   surface,
   url,
-}: Omit<ArtifactPreviewActionGroupProps, "enabled">) {
+}: ArtifactPreviewActionGroupProps) {
   const deletion = artifactPreviewDeletionScope(surface);
   const deletionSession = useGet(deletion.session$);
+  const deletionIdentity = useLastResolved(deletion.identity$);
   const ownershipPending = usePreviewActionPending(
-    artifactId !== undefined && deletionSession?.artifactId === artifactId
-      ? deletionSession.detail$
+    artifactId !== undefined && deletionIdentity?.artifactId === artifactId
+      ? deletionSession?.detail$
       : undefined,
   );
   const sharing = getArtifactShareScope(surface);
@@ -81,7 +74,7 @@ function ReadyArtifactPreviewActions({
     (artifactId !== undefined && ownershipPending) ||
     sharingPending;
 
-  // Mounted controls own their requests even while the group is hidden.
+  // Preview commands own requests; visibility only reflects their readiness.
   return (
     <div
       hidden={pending}

@@ -26,10 +26,15 @@ export function useComposerActions(signals: ComposerSignals) {
     signals.submission.activatePrimaryAction$,
   );
   const hasCurrentSubmission = useGet(signals.submission.hasCurrentInvocation$);
+  const presentationConfirmation = useLoadable(
+    signals.submission.presentationFormatSetup.confirmation$,
+  );
   return {
     bind: bindVoiceShortcut,
     submit,
-    submitting: hasCurrentSubmission && submissionLoadable.state === "loading",
+    submitting:
+      presentationConfirmation.state === "loading" ||
+      (hasCurrentSubmission && submissionLoadable.state === "loading"),
   };
 }
 
@@ -38,10 +43,10 @@ export function useComposerPrimaryAction(
   actions: ComposerActions,
 ): ComposerPrimaryAction {
   const voiceDraft = useLoadable(signals.voice.state$);
-  // Keep the last action while the thread's events resync; falling back to
-  // "disabled" on every recompute would unmount and remount Stop mid-run.
-  const action =
-    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
+  // Keep Stop mounted while the thread's events resync.
+  const choices = useLastResolved(signals.submission.actionsByInput$);
+  const input = useGet(signals.submission.inputState$);
+  const action = choices?.[input] ?? "disabled";
   const uploads = useLoadable(signals.draft.attachmentUploadsReady$);
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const availableAction =

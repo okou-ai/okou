@@ -12,6 +12,7 @@ import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
+import ai.okou.android.api.generated.CreateProjectRequest
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DeleteProjectRequest
@@ -30,10 +31,15 @@ import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
 import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
+import ai.okou.android.api.generated.RunActivityRequest
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
+import ai.okou.android.api.generated.SetMorningBriefPreference
+import ai.okou.android.api.generated.SetProactiveSuggestionsPreference
+import ai.okou.android.api.generated.SetThreadModelRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
+import ai.okou.android.api.generated.UpdateEmailSubscriptionRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -79,9 +85,14 @@ fun interface WorkspaceTokenProvider {
      * reused.
      */
     suspend fun token(): String?
+
+    /** Resolve a replacement after the API rejected a credential for this workspace. */
+    suspend fun renew(rejectedToken: String): String? = null
 }
 
 data class RequiredUpdate(val minimumSupportedVersion: String?)
+
+internal val finiteReadRetryDelays = listOf(3_000L, 3_000L)
 
 sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Unauthenticated : ApiFailure("An authenticated workspace session is required")
@@ -128,7 +139,7 @@ class ApiClient(
     private val required = MutableStateFlow<RequiredUpdate?>(null)
     val updateRequired = required.asStateFlow()
     private val http: okhttp3.OkHttpClient
-    private val api: CanonicalApi
+    private val writes: CanonicalApi
     private val reads: CanonicalApi
 
     init {
@@ -146,7 +157,7 @@ class ApiClient(
                     check(
                         request.url.scheme == origin.scheme &&
                             request.url.host == origin.host &&
-                            request.url.port == origin.port
+                            request.url.port == origin.port,
                     ) {
                         "API request escaped its origin"
                     }
@@ -158,7 +169,7 @@ class ApiClient(
                             .header(ApiHeaders.SESSION_HEADER, sessionId)
                             .header(ApiHeaders.REQUEST_HEADER, UUID.randomUUID().toString())
                             .header("Accept", "application/json")
-                            .build()
+                            .build(),
                     )
                 }
                 .build()
@@ -169,7 +180,7 @@ class ApiClient(
                 .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
-        api = retrofit.create(CanonicalApi::class.java)
+        writes = retrofit.create(CanonicalApi::class.java)
         reads =
             retrofit
                 .newBuilder()
@@ -178,125 +189,124 @@ class ApiClient(
                 .create(CanonicalApi::class.java)
     }
 
-    suspend fun organization(): Organization = execute { reads.organization(it) }
+    suspend fun organization(): Organization = read { organization(it) }
 
-    suspend fun workflows() = execute { reads.workflows(it, WorkflowsQuery()) }
+    suspend fun workflows() = read { workflows(it, WorkflowsQuery()) }
 
-    suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
+    suspend fun workflow(id: String) = read { workflow(it, id) }
 
-    suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
+    internal suspend fun workflowRunHistory(id: String, cursor: String?) = read {
+        workflowRunHistory(it, id, cursor)
+    }
 
-    suspend fun workflowConnections() =
-        execute { reads.connectedConnectors(it) }
-            .builtinConnectors
-            .mapTo(mutableSetOf()) { it.slug }
+    suspend fun workspaceWorkflowAutomations() = read {
+        workspaceWorkflowAutomations(it)
+    }
 
-    suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = execute {
-        api.updateWorkflow(it, id, body)
+    suspend fun workflowConnections() = read {
+        connectedConnectors(it)
+    }
+        .builtinConnectors
+        .mapTo(mutableSetOf()) { it.slug }
+
+    suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = write {
+        updateWorkflow(it, id, body)
     }
 
     suspend fun createWorkflowAutomation(id: String, body: CreateWorkflowAutomationRequest) =
-        execute(201) { api.createWorkflowAutomation(it, id, body) }
+        write(201) { createWorkflowAutomation(it, id, body) }
 
     suspend fun updateWorkflowAutomation(id: String, body: UpdateWorkflowAutomationRequest) =
-        execute {
-            api.updateWorkflowAutomation(it, id, body)
+        write {
+            updateWorkflowAutomation(it, id, body)
         }
 
-    suspend fun setWorkflowAutomationEnabled(id: String, enabled: Boolean) = execute {
-        if (enabled) api.enableWorkflowAutomation(it, id) else api.disableWorkflowAutomation(it, id)
+    suspend fun setWorkflowAutomationEnabled(id: String, enabled: Boolean) = write {
+        if (enabled) enableWorkflowAutomation(it, id) else disableWorkflowAutomation(it, id)
     }
 
-    suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
+    suspend fun realtimeToken() = write { realtimeToken(it, RealtimeTokenRequest) }
 
-    suspend fun personalInstructions(): PersonalInstructions = execute {
-        reads.personalInstructions(it)
+    suspend fun personalInstructions(): PersonalInstructions = read {
+        personalInstructions(it)
     }
 
     suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
-        execute {
-            api.updatePersonalInstructions(it, body)
+        write {
+            updatePersonalInstructions(it, body)
         }
 
-    suspend fun chatSnapshot(): ChatSnapshot = execute { reads.chatSnapshot(it) }
+    suspend fun chatSnapshot(): ChatSnapshot = read { chatSnapshot(it) }
 
-    suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
+    suspend fun chatEvents(since: Long?): ChatEvents = read { chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute {
-        reads.indicators(it, queryIncludeActiveUnread = "true")
+    suspend fun indicators(): Indicators = read {
+        indicators(it, queryIncludeActiveUnread = "true")
     }
 
-    suspend fun createThread(body: CreateThreadRequest) =
-        execute(201) { api.createThread(it, body) }
+    suspend fun draftThreadIds(): List<String> = read { chatDraftIndex(it) }.draftThreadIds
 
-    suspend fun sendInput(body: SendRequest) = execute(201) { api.sendInput(it, body) }
+    suspend fun createThread(body: CreateThreadRequest) = write(201) { createThread(it, body) }
 
-    suspend fun inputStatus(threadId: String, eventId: String) = execute {
-        reads.inputStatus(it, threadId, eventId)
+    suspend fun sendInput(body: SendRequest) = write(201) { sendInput(it, body) }
+
+    suspend fun inputStatus(threadId: String, eventId: String) = read {
+        inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
+    suspend fun onboardingStatus() = read { onboardingStatus(it) }
 
-    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
-        if (target.threadId != null) reads.threadDraft(it, target.threadId)
-        else reads.workspaceDraft(it)
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = read {
+        if (target.threadId != null) threadDraft(it, target.threadId) else workspaceDraft(it)
     }
 
     suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
         val body = plainDraftDocument(text)
-        executeResponse(204) {
+        writeNoContent {
             if (target.threadId != null)
-                api.saveThreadDraft(
+                saveThreadDraft(
                     it,
                     target.threadId,
                     json.decodeFromJsonElement<SaveThreadDraft>(body),
                 )
-            else api.saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
+            else saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
         }
     }
 
-    suspend fun recoveryCatalog() = execute { reads.recoveryCatalog(it) }
+    suspend fun recoveryCatalog() = read { recoveryCatalog(it) }
 
-    suspend fun recoveryModels() = execute { reads.recoveryModels(it) }
+    suspend fun recoveryModels() = read { recoveryModels(it) }
 
-    suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
+    suspend fun recoverySubscriptions() = read { recoverySubscriptions(it) }
 
-    suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+    suspend fun recoveryBilling() = read { recoveryBilling(it) }
 
-    suspend fun usagePackCredits() = execute { reads.usagePackCredits(it) }
+    suspend fun usagePackCredits() = read { usagePackCredits(it) }
 
-    suspend fun activateModelAccount(accountId: String) = execute {
-        api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
+    suspend fun activateModelAccount(accountId: String) = write {
+        activateModelAccount(it, accountId, ActivateModelAccountRequest)
     }
 
-    internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
-        execute {
-            reads.request(it)
-        }
-
-    internal suspend fun <T> write(request: suspend CanonicalApi.(String) -> Response<T>): T =
-        execute {
-            api.request(it)
-        }
-
-    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
-        api.resetSubscription(
+    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = write {
+        resetSubscription(
             it,
             accountId,
             ai.okou.android.api.generated.ResetSubscriptionRequest(idempotencyKey),
         )
     }
 
-    suspend fun projectSnapshot(): ProjectSnapshot = execute { reads.projectSnapshot(it) }
+    suspend fun projectSnapshot(): ProjectSnapshot = read { projectSnapshot(it) }
 
-    suspend fun projectEvents(since: Long): ProjectEvents = execute {
-        reads.projectEvents(it, since)
+    suspend fun projectEvents(since: Long): ProjectEvents = read {
+        projectEvents(it, since)
     }
 
-    suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
+    suspend fun historySnapshot(threadId: String) = read {
+        historySnapshot(it, threadId)
+    }
 
-    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = execute { token ->
-        reads.historyCatchUp(
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = read { token ->
+        historyCatchUp(
             token,
             cursors.map { (threadId, cursor) ->
                 cursor.validate()
@@ -305,110 +315,158 @@ class ApiClient(
         )
     }
 
-    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = execute {
+    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = read {
         cursor.validate()
         val query =
             if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
             else HistoryRowsQueryVariant2(cursor.seqId, cursor.eventId, 50.0)
-        reads.historyRows(it, threadId, query)
+        historyRows(it, threadId, query)
     }
 
-    suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
+    suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
 
-    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = execute {
-        reads.artifactCatalog(it, query)
+    internal suspend fun summarizeRunActivity(threadId: String, runId: String) = read {
+        summarizeRunActivity(it, threadId, RunActivityRequest(runId))
     }
 
-    internal suspend fun artifactDetail(id: String) = execute {
-        reads.artifactDetail(it, id, ArtifactDetailQuery())
+    internal suspend fun relatedCreatedChats(threadId: String) = read {
+        relatedCreatedChats(it, threadId)
     }
 
-    internal suspend fun resolveArtifactReference(reference: String) = execute {
-        reads.resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
+    internal suspend fun relatedCommunicatingChats(threadId: String) = read {
+        relatedCommunicatingChats(it, threadId)
     }
 
-    internal suspend fun artifactDownload(reference: String) = execute {
-        reads.artifactDownload(it, reference)
+    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = read {
+        artifactCatalog(it, query)
     }
 
-    internal suspend fun artifactSitePreview(slug: String, host: String) = execute {
-        reads.artifactSitePreview(it, slug, host)
+    internal suspend fun artifactDetail(id: String) = read {
+        artifactDetail(it, id, ArtifactDetailQuery())
     }
 
-    suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
+    internal suspend fun resolveArtifactReference(reference: String) = read {
+        resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
+    }
 
-    suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
+    internal suspend fun artifactDownload(reference: String) = read {
+        artifactDownload(it, reference)
+    }
+
+    internal suspend fun artifactSitePreview(slug: String, host: String) = read {
+        artifactSitePreview(it, slug, host)
+    }
+
+    suspend fun searchChatMessages(keyword: String) = read {
+        searchChatMessages(it, keyword)
+    }
+
+    suspend fun markRead(threadId: String) = write { markRead(it, threadId) }
+
+    suspend fun markUnread(threadId: String) = write { markUnread(it, threadId) }
 
     suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
-        executeResponse(204) {
-            if (muted) api.muteThread(it, threadId, eventId)
-            else api.unmuteThread(it, threadId, eventId)
+        writeNoContent {
+            if (muted) muteThread(it, threadId, eventId) else unmuteThread(it, threadId, eventId)
         }
     }
 
     suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
-        executeResponse(204) {
-            if (archived) api.archiveThread(it, threadId, eventId)
-            else api.unarchiveThread(it, threadId, eventId)
+        writeNoContent {
+            if (archived) archiveThread(it, threadId, eventId)
+            else unarchiveThread(it, threadId, eventId)
         }
     }
 
     suspend fun deleteThread(threadId: String, eventId: String) {
-        executeResponse(204) { api.deleteThread(it, threadId, eventId) }
+        writeNoContent { deleteThread(it, threadId, eventId) }
     }
 
-    suspend fun renameProject(projectId: String, name: String, eventId: String) {
-        execute {
-            api.renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
+    internal suspend fun createProject(projectId: String, name: String) =
+        write(201) {
+            createProject(
+                it,
+                CreateProjectRequest(id = projectId, eventId = projectId, name = name),
+            )
         }
+
+    internal suspend fun projectDetail(projectId: String) = read { projectDetail(it, projectId) }
+
+    suspend fun renameProject(projectId: String, name: String, eventId: String) = write {
+        renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
     }
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String) {
-        val membership = execute {
-            api.moveThreadToProject(it, threadId, MoveThreadToProjectRequest(eventId, projectId))
+        val membership = write {
+            moveThreadToProject(it, threadId, MoveThreadToProjectRequest(eventId, projectId))
         }
         if (membership.threadId != threadId || membership.projectId != projectId)
             throw ApiFailure.IncompatibleResponse()
     }
 
     suspend fun deleteProject(projectId: String, eventId: String) {
-        executeResponse(204) { api.deleteProject(it, projectId, DeleteProjectRequest(eventId)) }
+        writeNoContent { deleteProject(it, projectId, DeleteProjectRequest(eventId)) }
     }
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {
-        executeResponse(204) { api.renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
+        writeNoContent { renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
+    }
+
+    suspend fun setThreadModel(threadId: String, request: SetThreadModelRequest) {
+        writeNoContent { setThreadModel(it, threadId, request) }
     }
 
     suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) {
-        executeResponse(204) {
-            if (pinOrder != null) api.pinThread(it, threadId, eventId, pinOrder)
-            else api.unpinThread(it, threadId, eventId)
+        writeNoContent {
+            if (pinOrder != null) pinThread(it, threadId, eventId, pinOrder)
+            else unpinThread(it, threadId, eventId)
         }
     }
 
     suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String) {
-        executeResponse(204) {
-            api.reorderPinnedThread(it, threadId, ReorderPinnedThreadRequest(pinOrder, eventId))
+        writeNoContent {
+            reorderPinnedThread(it, threadId, ReorderPinnedThreadRequest(pinOrder, eventId))
         }
     }
 
-    suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
+    suspend fun preferences(): UserPreferences = read { preferences(it) }
 
-    suspend fun defaultModelPreference() = execute { reads.defaultModelPreference(it) }
+    suspend fun defaultModelPreference() = read { defaultModelPreference(it) }
 
-    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
-        api.updateDefaultModelPreference(it, update)
+    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = write {
+        updateDefaultModelPreference(it, update)
     }
 
-    suspend fun featureSwitches() = execute { reads.featureSwitches(it) }
+    suspend fun emailSubscription() = read { emailSubscription(it) }
 
-    suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
-        execute {
-            api.initializePreferences(it, body)
-        }
+    suspend fun updateEmailSubscription(subscribed: Boolean) = write {
+        updateEmailSubscription(it, UpdateEmailSubscriptionRequest(subscribed))
+    }
 
-    suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = execute {
-        api.updatePreferences(it, body)
+    suspend fun featureSwitches() = read { featureSwitches(it) }
+
+    internal suspend fun morningBriefPreference() = read { morningBriefPreference(it) }
+
+    internal suspend fun setMorningBriefPreference(enabled: Boolean) = write {
+        updateMorningBriefPreference(it, SetMorningBriefPreference(enabled))
+    }
+
+    internal suspend fun proactiveSuggestionsPreference() = read {
+        proactiveSuggestionsPreference(it)
+    }
+
+    internal suspend fun setProactiveSuggestionsWithFeed(enabled: Boolean) = write {
+        updateProactiveSuggestionsWithFeed(it, SetProactiveSuggestionsPreference(enabled))
+    }
+
+    internal suspend fun suggestionFeedSources() = read { suggestionFeedSources(it) }
+
+    suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences = write {
+        initializePreferences(it, body)
+    }
+
+    suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = write {
+        updatePreferences(it, body)
     }
 
     private fun checkAccess() {
@@ -416,13 +474,27 @@ class ApiClient(
         required.value?.let { throw ApiFailure.UpdateRequired(it) }
     }
 
-    private suspend fun <T> execute(
-        success: Int = 200,
-        request: suspend (String) -> Response<T>,
-    ): T = executeResponse(success, request).body() ?: throw ApiFailure.IncompatibleResponse()
+    internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        send(200, renewOnUnauthorized = true) { reads.request(it) }.body()
+            ?: throw ApiFailure.IncompatibleResponse()
 
-    private suspend fun <T> executeResponse(
+    internal suspend fun <T> write(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        write(200, request)
+
+    private suspend fun <T> write(
         success: Int,
+        request: suspend CanonicalApi.(String) -> Response<T>,
+    ): T =
+        send(success, renewOnUnauthorized = false) { writes.request(it) }.body()
+            ?: throw ApiFailure.IncompatibleResponse()
+
+    private suspend fun writeNoContent(request: suspend CanonicalApi.(String) -> Response<Unit>) {
+        send(204, renewOnUnauthorized = false) { writes.request(it) }
+    }
+
+    private suspend fun <T> send(
+        success: Int,
+        renewOnUnauthorized: Boolean,
         request: suspend (String) -> Response<T>,
     ): Response<T> =
         withContext(dispatcher) {
@@ -431,20 +503,43 @@ class ApiClient(
                 tokens.token()?.takeIf { it.isNotBlank() } ?: throw ApiFailure.Unauthenticated()
             currentCoroutineContext().ensureActive()
             checkAccess()
-            try {
-                val response = request("Bearer $token")
-                currentCoroutineContext().ensureActive()
-                checkAccess()
-                if (response.code() != success) throw ApiFailure.IncompatibleResponse()
-                response
-            } catch (_: SerializationException) {
-                // Serializer diagnostics can contain response values or input snippets.
-                throw ApiFailure.IncompatibleResponse()
-            } catch (error: IOException) {
-                currentCoroutineContext().ensureActive()
-                error.httpRejection()?.let { reject(it) }
-                throw ApiFailure.Network(error)
-            }
+            val response =
+                try {
+                    requestWithToken(token, request)
+                } catch (error: ApiFailure.Http) {
+                    if (!renewOnUnauthorized || error.status != 401) throw error
+                    checkAccess()
+                    val replacement =
+                        try {
+                            tokens.renew(token)
+                        } catch (_: ApiFailure.Unauthenticated) {
+                            // A rejected credential alone does not establish membership loss.
+                            throw error
+                        }
+                    if (replacement.isNullOrBlank() || replacement == token) throw error
+                    currentCoroutineContext().ensureActive()
+                    checkAccess()
+                    requestWithToken(replacement, request)
+                }
+            currentCoroutineContext().ensureActive()
+            checkAccess()
+            if (response.code() != success) throw ApiFailure.IncompatibleResponse()
+            response
+        }
+
+    private suspend fun <T> requestWithToken(
+        token: String,
+        request: suspend (String) -> Response<T>,
+    ): Response<T> =
+        try {
+            request("Bearer $token")
+        } catch (_: SerializationException) {
+            // Serializer diagnostics can contain response values or input snippets.
+            throw ApiFailure.IncompatibleResponse()
+        } catch (error: IOException) {
+            currentCoroutineContext().ensureActive()
+            error.httpRejection()?.let { reject(it) }
+            throw ApiFailure.Network(error)
         }
 
     private fun reject(error: HttpRejection): Nothing {

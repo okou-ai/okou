@@ -12,6 +12,51 @@ import XCTest
 final class ComposerConnectorAccountTests: XCTestCase {
   private typealias FixtureData = ConnectorHTTPFixtures
 
+  func testClosingManagementCancelsCatalogAndDisconnectImpactHTTP() async throws {
+    for impact in [false, true] {
+      let gate = ModelResponseGate()
+      let started = expectation(description: "Management HTTP started")
+      let cancelled = expectation(description: "Original management HTTP cancelled")
+      let path =
+        impact
+        ? "/api/connector-accounts/\(FixtureData.accountID)/deletion-impact"
+        : "/api/connector-catalog/slack"
+      let fixture = AccountPageFixture { request in
+        guard request.url?.path == path else { return }
+        await withTaskCancellationHandler {
+          started.fulfill()
+          await gate.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
+      }
+      let composer = await makeComposer(fixture)
+      let resources = try open(composer, defaults: true)
+      if impact { resources.prepareDisconnect(FixtureData.accountID) }
+      let pending = Task<Void, Error> {
+        if impact {
+          _ = try await resources.store.get(resources.deletionImpact).value
+        } else {
+          _ = try await resources.store.get(resources.catalog).value
+        }
+      }
+      addTeardownBlock {
+        pending.cancel()
+        gate.open()
+        _ = await pending.result
+      }
+      defer {
+        composer.close()
+        gate.open()
+      }
+      await fulfillment(of: [started], timeout: 3)
+      resources.close()
+      await fulfillment(of: [cancelled], timeout: 3)
+      gate.open()
+      if case .success = await pending.result { XCTFail("A retired read published metadata") }
+    }
+  }
+
   func testSharedReadsPaginationTerminalCursorAndSearchReset() async throws {
     let fixture = AccountPageFixture()
     let composer = await makeComposer(fixture)
@@ -333,17 +378,11 @@ final class ComposerConnectorAccountTests: XCTestCase {
   private func makeComposer(_ fixture: AccountPageFixture, thread: Bool = false) async
     -> ComposerConnectorStore
   {
-    let value =
-      thread
-      ? ChatThread(
-        id: FixtureData.threadID, title: "Accounts",
-        selectedModel: nil,
-        createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
-        pinnedAt: nil, pinOrder: nil, indicator: nil) : nil
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, thread: value, didFail: { _ in })
+      webURL: fixture.http.baseURL, graph: makeTestWorkspaceGraph(),
+      threadID: thread ? FixtureData.threadID : nil, didFail: { _ in })
     await composer.refresh()
     return composer
   }
@@ -398,6 +437,12 @@ final class AccountPageFixture: Sendable {
       state.withLock { $0.requests.append(request) }
       await before(request)
       let path = request.url!.path
+      if path == "/api/connector-accounts/\(FixtureData.accountID)/deletion-impact" {
+        return ChatHTTPResponse(
+          body: """
+            {"connectionId":"\(FixtureData.accountID)","explicitSelectionCount":0,"hasSibling":true}
+            """)
+      }
       if path == "/api/connector-accounts/connections" {
         let cursor = Self.query("cursor", request)
         let search = Self.query("search", request) ?? ""

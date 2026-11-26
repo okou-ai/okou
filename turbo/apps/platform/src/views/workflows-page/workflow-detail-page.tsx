@@ -247,7 +247,7 @@ import {
   automationKindLabel,
   workflowTitle,
 } from "./workflow-shared.tsx";
-import { WorkflowTooltip } from "./workflows-page.tsx";
+import { WorkflowTooltip } from "./workflow-list-shared.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import {

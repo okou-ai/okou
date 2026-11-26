@@ -1,3 +1,4 @@
+import { iosGatePolicy } from "../ios-policy";
 import { object, string } from "zod";
 import { iosRouteBindings } from "../ios-routes";
 import { evaluateRuntimeApiGate, type RuntimeApiGateInput } from "../gate";
@@ -47,8 +48,8 @@ function gate(overrides: Partial<RuntimeApiGateInput> = {}) {
     blockingOwners: new Set(["ios", "desktop"]),
     desktopTransforms: [],
     iosTransforms: [],
-    iosFloor: { floor: "0.22.5", baseFloor: "0.22.5" },
-    iosPublishedVersion: "0.22.6",
+    iosAppStoreFloor: { floor: "0.22.5", baseFloor: "0.22.5" },
+    iosAppStorePublishedVersion: "0.22.6",
     ...overrides,
   });
 }
@@ -100,7 +101,7 @@ describe("iOS runtime API contract gate", () => {
       findings,
       blockingOwners: new Set(["android", "desktop", "ios"]),
       androidFloor: { floor: null, baseFloor: null },
-      iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
+      iosAppStoreFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
     });
     expect(result.findings).toEqual(
       expect.arrayContaining([
@@ -140,7 +141,8 @@ describe("iOS runtime API contract gate", () => {
 
   it("accepts an iOS floor raise to an available version but not a Desktop raise", () => {
     expect(
-      gate({ iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" } }).passed,
+      gate({ iosAppStoreFloor: { floor: "0.22.6", baseFloor: "0.22.5" } })
+        .passed,
     ).toBe(true);
     expect(
       gate({
@@ -149,12 +151,13 @@ describe("iOS runtime API contract gate", () => {
       }).passed,
     ).toBe(false);
     expect(
-      gate({ iosFloor: { floor: "0.22.7", baseFloor: "0.22.5" } }).passed,
+      gate({ iosAppStoreFloor: { floor: "0.22.7", baseFloor: "0.22.5" } })
+        .passed,
     ).toBe(false);
     expect(
       gate({
-        iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
-        iosPublishedVersion: undefined,
+        iosAppStoreFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
+        iosAppStorePublishedVersion: undefined,
       }).passed,
     ).toBe(false);
   });
@@ -180,7 +183,7 @@ describe("iOS runtime API contract gate", () => {
     expect(
       gate({
         iosTransforms: [{ ...transform, maxVersion: "0.22.6" }],
-        iosPublishedVersion: undefined,
+        iosAppStorePublishedVersion: undefined,
       }).passed,
     ).toBe(false);
   });
@@ -199,8 +202,10 @@ describe("iOS runtime API contract gate", () => {
       gate({ findings, iosTransforms: [{ ...transform, status: 426 }] }).passed,
     ).toBe(false);
     expect(
-      gate({ findings, iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" } })
-        .passed,
+      gate({
+        findings,
+        iosAppStoreFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
+      }).passed,
     ).toBe(true);
   });
 
@@ -240,8 +245,10 @@ describe("iOS runtime API contract gate", () => {
       expect(findings.length).toBeGreaterThan(0);
       expect(gate({ findings, iosTransforms: [transform] }).passed).toBe(false);
       expect(
-        gate({ findings, iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" } })
-          .passed,
+        gate({
+          findings,
+          iosAppStoreFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
+        }).passed,
       ).toBe(true);
     }
   });
@@ -311,7 +318,8 @@ describe("iOS runtime API contract gate", () => {
   it("rejects lowering or removing the iOS floor and unreachable transforms even without findings", () => {
     for (const floor of ["0.22.4", null]) {
       expect(
-        gate({ findings: [], iosFloor: { floor, baseFloor: "0.22.5" } }).errors,
+        gate({ findings: [], iosAppStoreFloor: { floor, baseFloor: "0.22.5" } })
+          .errors,
       ).toEqual([expect.objectContaining({ kind: "ios-floor-invalid" })]);
     }
     expect(
@@ -326,9 +334,11 @@ describe("iOS runtime API contract gate", () => {
     const dir = await mkdtemp(join(tmpdir(), "ios-api-gate-"));
     try {
       const paths = Object.fromEntries(
-        ["online", "current", "floor", "base", "report"].map((name) => {
-          return [name, join(dir, `${name}.json`)];
-        }),
+        ["online", "current", "floor", "base", "report", "receipt"].map(
+          (name) => {
+            return [name, join(dir, `${name}.json`)];
+          },
+        ),
       );
       await writeFile(
         paths.online!,
@@ -340,11 +350,28 @@ describe("iOS runtime API contract gate", () => {
       await writeFile(paths.current!, JSON.stringify(changedResponse("200")));
       await writeFile(
         paths.floor!,
-        JSON.stringify({ minimumSupportedVersion: "0.22.6" }),
+        JSON.stringify({
+          appStoreMinimumSupportedVersion: "0.22.6",
+          testFlightMinimumSupportedVersion: "0.22.7",
+        }),
       );
       await writeFile(
         paths.base!,
-        JSON.stringify({ minimumSupportedVersion: "0.22.5" }),
+        JSON.stringify({
+          appStoreMinimumSupportedVersion: "0.22.5",
+          testFlightMinimumSupportedVersion: "0.22.7",
+        }),
+      );
+      await writeFile(
+        paths.receipt!,
+        JSON.stringify({
+          "app-store": {
+            version: "0.22.6",
+            publishedVersion: "0.22.6",
+            build: "42",
+            commit: "a".repeat(40),
+          },
+        }),
       );
       const args = [
         "lint",
@@ -365,8 +392,8 @@ describe("iOS runtime API contract gate", () => {
       expect(
         await runRuntimeApiSchemaCli([
           ...args,
-          "--ios-published-version",
-          "0.22.6",
+          "--ios-availability",
+          paths.receipt!,
         ]),
       ).toBe(0);
       expect(JSON.parse(await readFile(paths.report!, "utf8"))).toMatchObject({
@@ -375,8 +402,219 @@ describe("iOS runtime API contract gate", () => {
           expect.objectContaining({ owner: "ios", outcome: "proven" }),
         ]),
       });
+      // With no production snapshot, a beta raise still cannot contract the base iOS API.
+      const bootstrap = {
+        appStoreMinimumSupportedVersion: null,
+        testFlightMinimumSupportedVersion: "0.22.5",
+      };
+      await writeFile(paths.base!, JSON.stringify(bootstrap));
+      await writeFile(
+        paths.floor!,
+        JSON.stringify({
+          ...bootstrap,
+          testFlightMinimumSupportedVersion: "0.22.6",
+        }),
+      );
+      await writeFile(
+        paths.receipt!,
+        JSON.stringify({
+          testflight: {
+            version: "0.22.6",
+            build: "42",
+            commit: "a".repeat(40),
+          },
+        }),
+      );
+      const missingOnline = args.map((value) => {
+        return value === paths.online
+          ? join(dir, "missing-production.json")
+          : value;
+      });
+      expect(
+        await runRuntimeApiSchemaCli([
+          ...missingOnline,
+          "--base-schema",
+          paths.online!,
+          "--ios-availability",
+          paths.receipt!,
+        ]),
+      ).toBe(1);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("iOS distribution policy", () => {
+  const upload = { version: "1.2.0", build: "42", commit: "a".repeat(40) };
+  const publicBuild = {
+    ...upload,
+    version: "1.0.0",
+    publishedVersion: "1.0.0",
+  };
+  const publicUpload = { ...upload, publishedVersion: upload.version };
+  const policy = {
+    appStoreMinimumSupportedVersion: "1.0.0",
+    testFlightMinimumSupportedVersion: "1.0.0",
+  };
+  const launch = { ...policy, appStoreMinimumSupportedVersion: null };
+  const legacy = { minimumSupportedVersion: "1.0.0" };
+
+  it("migrates a legacy floor to TestFlight and never treats it as public API proof", () => {
+    const migrated = iosGatePolicy(launch, legacy, { testflight: upload });
+    expect(migrated.iosAppStoreFloor).toEqual({ floor: null, baseFloor: null });
+    expect(gate({ ...migrated, findings: [] }).passed).toBe(true);
+    expect(gate(migrated).passed).toBe(false);
+    expect(() => {
+      return iosGatePolicy(legacy, legacy, {});
+    }).toThrow();
+  });
+
+  it("TestFlight may advance alone but cannot authorize removing a public response or request", () => {
+    const current = {
+      ...policy,
+      testFlightMinimumSupportedVersion: upload.version,
+    };
+    const change = iosGatePolicy(current, policy, { testflight: upload });
+    expect(gate({ ...change, findings: [] }).passed).toBe(true);
+    expect(gate(change).passed).toBe(false);
+    expect(
+      gate({
+        ...change,
+        iosTransforms: [{ ...transform, maxVersion: upload.version }],
+      }).passed,
+    ).toBe(false);
+    expect(gate({ ...change, iosTransforms: [transform] }).passed).toBe(true);
+    expect(
+      iosGatePolicy(current, policy, { "app-store": publicUpload })
+        .iosPolicyErrors,
+    ).not.toEqual([]);
+  });
+
+  it("requires independent evidence for both raises and enforces the relationship without schema findings", () => {
+    const raised = {
+      ...policy,
+      appStoreMinimumSupportedVersion: upload.version,
+      testFlightMinimumSupportedVersion: upload.version,
+    };
+    for (const evidence of [
+      {},
+      { testflight: upload },
+      { "app-store": publicUpload },
+    ]) {
+      expect(
+        gate({ ...iosGatePolicy(raised, policy, evidence), findings: [] })
+          .passed,
+      ).toBe(false);
+    }
+    expect(
+      gate({
+        ...iosGatePolicy(raised, policy, {
+          "app-store": publicUpload,
+          testflight: upload,
+        }),
+        findings: [],
+      }).passed,
+    ).toBe(true);
+    for (const beta of [null, "0.99.0"]) {
+      expect(
+        gate({
+          ...iosGatePolicy(
+            { ...policy, testFlightMinimumSupportedVersion: beta },
+            policy,
+            {},
+          ),
+          findings: [],
+        }).passed,
+      ).toBe(false);
+    }
+    expect(
+      gate({
+        ...iosGatePolicy(
+          { ...policy, appStoreMinimumSupportedVersion: null },
+          policy,
+          {},
+        ),
+        findings: [],
+      }).passed,
+    ).toBe(false);
+    expect(() => {
+      return iosGatePolicy(
+        { ...policy, testFlightMinimumSupportedVersion: "1.2.0-beta" },
+        policy,
+        {},
+      );
+    }).toThrow();
+  });
+
+  it("initializes a verified public floor independently of breaking API changes", () => {
+    const activating = iosGatePolicy(policy, launch, {
+      "app-store": publicBuild,
+    });
+    expect(gate({ ...activating, findings: [] }).passed).toBe(true);
+    expect(gate({ ...activating, iosTransforms: [transform] }).passed).toBe(
+      false,
+    );
+    expect(
+      gate({
+        ...iosGatePolicy(policy, launch, {
+          testflight: { ...upload, version: publicBuild.version },
+        }),
+        findings: [],
+      }).passed,
+    ).toBe(false);
+  });
+
+  it("rejects a TestFlight-only version between public releases and uses the latest public build for transforms", () => {
+    const unpublished = {
+      ...policy,
+      appStoreMinimumSupportedVersion: "1.1.0",
+      testFlightMinimumSupportedVersion: "1.2.0",
+    };
+    const receipts = { "app-store": publicUpload, testflight: upload };
+    expect(
+      gate({ ...iosGatePolicy(unpublished, policy, receipts), findings: [] })
+        .passed,
+    ).toBe(false);
+    const olderPublic = iosGatePolicy(policy, policy, {
+      "app-store": { ...publicBuild, publishedVersion: "1.2.0" },
+    });
+    expect(
+      gate({
+        ...olderPublic,
+        iosTransforms: [{ ...transform, maxVersion: "1.0.0" }],
+      }).passed,
+    ).toBe(false);
+    expect(
+      gate({
+        ...olderPublic,
+        iosTransforms: [{ ...transform, maxVersion: "1.2.0" }],
+      }).passed,
+    ).toBe(true);
+  });
+
+  it("reads older base policies without carrying their review lock into either floor", () => {
+    const next = { ...policy, testFlightMinimumSupportedVersion: "1.3.0" };
+    for (const previous of [null, upload]) {
+      const base = { ...policy, reviewCandidate: previous };
+      const change = iosGatePolicy(next, base, {
+        "app-store": publicBuild,
+        testflight: { ...upload, version: "1.3.0" },
+      });
+      expect(change.iosAppStoreFloor).toEqual({
+        floor: "1.0.0",
+        baseFloor: "1.0.0",
+      });
+      expect(
+        gate({
+          ...change,
+          iosTransforms: [{ ...transform, maxVersion: "1.0.0" }],
+        }).passed,
+      ).toBe(true);
+      expect(gate(change).passed).toBe(false);
+      expect(() => {
+        return iosGatePolicy(base, policy, {});
+      }).toThrow();
     }
   });
 });

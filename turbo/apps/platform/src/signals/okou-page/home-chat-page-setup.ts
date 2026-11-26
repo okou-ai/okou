@@ -30,7 +30,6 @@ import {
   isPwaComposeRequested,
   setPwaComposeRequested$,
 } from "./pwa-navigation.ts";
-import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 import { detach, Reason } from "../utils.ts";
 import {
@@ -120,9 +119,6 @@ export const setupHomeChatPage$ = command(
       await set(restoreMarketingWorkspaceDraft$, workspaceDraft, signal);
     }
     const queue = params.get("queue");
-    const templatePicker = parseTemplatePickerEntryCategory(
-      params.get("templatePicker"),
-    );
     if (workspaceDraft && !prompt && !params.get("handoff")) {
       await set(workspaceDraft.load$, signal);
     }
@@ -133,17 +129,6 @@ export const setupHomeChatPage$ = command(
       set(get(workspaceChatComposerSignals$).editor.focus$);
       const next = new URLSearchParams(params);
       next.delete("prompt");
-      set(updateSearchParams$, next);
-    }
-    if (templatePicker) {
-      const composerSignals = get(workspaceChatComposerSignals$);
-      set(composerSignals.template.setTemplatePickerSearch$, "");
-      set(composerSignals.template.clearPresentationTemplatePreviews$);
-      set(composerSignals.template.setTemplatePickerReferenceValue$, null);
-      set(composerSignals.template.setTemplatePickerCategory$, templatePicker);
-      set(composerSignals.template.setTemplatePickerOpen$, true);
-      const next = new URLSearchParams(get(searchParams$));
-      next.delete("templatePicker");
       set(updateSearchParams$, next);
     }
     if (queue === "1") {

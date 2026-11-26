@@ -107,12 +107,14 @@ describe("Builtin external-code completed replay", () => {
         "aws",
         "cli",
       );
+      mockAwsExternalCodeProvider({ accountId: "111111111111" });
       const defaultAccount = await completeSession(actor, defaultSession);
       const siblingSession = await connectors.startExternalCode(
         actor,
         "aws",
         "cli",
       );
+      mockAwsExternalCodeProvider();
       const siblingAccount = await completeSession(actor, siblingSession);
       expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
 
@@ -168,12 +170,14 @@ describe("Builtin external-code completed replay", () => {
         "aws",
         "cli",
       );
+      mockAwsExternalCodeProvider({ accountId: "111111111111" });
       const defaultAccount = await completeSession(actor, defaultSession);
       const siblingSession = await connectors.startExternalCode(
         actor,
         "aws",
         "cli",
       );
+      mockAwsExternalCodeProvider();
       const siblingAccount = await completeSession(actor, siblingSession);
       expect(siblingAccount.connectionId).not.toBe(defaultAccount.connectionId);
       await connectors.deleteBuiltinConnectorAccount(

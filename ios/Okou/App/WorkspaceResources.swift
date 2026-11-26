@@ -23,14 +23,14 @@ final class WorkspaceResources {
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
+  let featureSnapshot: WorkspaceFeatureSwitches
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
-  private let billing: WorkspaceRead<WorkspaceBilling>
-  private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
+  private let feedSummary: WorkspaceRead<Bool>
+  private let feedItems: WorkspaceRead<[ForYouCard]>
+  var forYouSummary: Computed<Task<Bool, Error>> { feedSummary.value }
   var featureSwitches: Computed<Task<SidebarFeatureSwitches, Error>> { features.value }
-  let billingValue: Computed<Task<WorkspaceBilling, Error>>
-  let billingCreditsValue: Computed<Task<Double, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -59,35 +59,24 @@ final class WorkspaceResources {
     let catalog = WorkspaceRead(
       "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       readiness: modelReadiness, read: service.catalog)
+    let featureSnapshot = WorkspaceFeatureSwitches(
+      sync: sync, service: service, store: store, lifecycleTasks: lifecycleTasks)
+    self.featureSnapshot = featureSnapshot
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: modelReadiness, read: service.featureSwitches)
+      readiness: modelReadiness, read: featureSnapshot.refresh)
     self.preference = preference
     self.available = available
     self.catalog = catalog
     self.features = features
-    let billingService = WorkspaceBillingService(client: client)
-    let billing = WorkspaceRead(
-      "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: billingService.status)
-    self.billing = billing
-    billingValue = billing.value
-    let creditBalance = WorkspaceRead(
-      "credit balance", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: billingService.creditBalance)
-    self.creditBalance = creditBalance
+    let feed = ForYouFeed(client: client)
+    feedSummary = WorkspaceRead(
+      "For you summary", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: feed.hasUnread)
+    feedItems = WorkspaceRead(
+      "For you items", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: feed.cards)
     let featureValue = features.value
-    let balanceValue = creditBalance.value
-    let statusValue = billing.value
-    billingCreditsValue = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      let balance = try get(balanceValue)
-      let status = try get(statusValue)
-      let (credits, billing) = try await (balance.value, status.value)
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return credits.availableCredits(organizationCredits: billing.credits)
-    }
     let projectReadiness: (@MainActor () async throws -> Void)?
     if let projectBootstrap {
       projectReadiness = {
@@ -125,7 +114,7 @@ final class WorkspaceResources {
       let features = try get(featureValue)
       let value = try await ChatModelConfiguration(
         preference: preference.value, available: available.value, catalog: catalog.value,
-        switches: features.value.effectiveSwitches)
+        switches: featureSnapshot.available(whileRefreshing: features).effectiveSwitches)
       try Task.checkCancellation()
       try options.signal.checkCancellation()
       return value
@@ -168,9 +157,26 @@ final class WorkspaceResources {
     try features.retryFailed(in: store)
     return try store.get(configuration)
   }
+  func availableFeatureSwitches() async throws -> SidebarFeatureSwitches {
+    try features.retryFailed(in: store)
+    return try await featureSnapshot.available(whileRefreshing: store.get(features.value))
+  }
+
+  /// The shared model catalog read, for views that resolve model names.
+  var catalogValue: Computed<Task<ModelCatalog, Error>> { catalog.value }
+
   func loadCatalog() throws -> Task<ModelCatalog, Error> {
     try catalog.retryFailed(in: store)
     return try store.get(catalog.value)
+  }
+
+  func loadForYou() async throws -> [ForYouCard] {
+    try store.set(feedItems.reload)
+    return try await store.get(feedItems.value).value
+  }
+
+  func refreshForYouSummary() throws {
+    try store.set(feedSummary.reload)
   }
 
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
@@ -187,31 +193,20 @@ final class WorkspaceResources {
 
   func prepareSettings() throws {
     try features.retryFailed(in: store)
-    try store.set(billing.reload)
-    try store.set(creditBalance.reload)
-  }
-
-  func loadSettingsBilling() async throws {
-    try Task.checkCancellation()
-    guard try store.get(lifetime) else { throw CancellationError() }
-    try billing.retryFailed(in: store)
-    try creditBalance.retryFailed(in: store)
-    let status = try store.get(billingValue)
-    let credits = try store.get(billingCreditsValue)
-    _ = try await (status.value, credits.value)
   }
 
   func close() {
     modelBootstrap?.close()
     projectBootstrap?.close()
+    feedSummary.close()
+    feedItems.close()
     preference.close()
     available.close()
     catalog.close()
     features.close()
+    featureSnapshot.close()
     projects.close()
     sidebarDrafts.close()
-    billing.close()
-    creditBalance.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(

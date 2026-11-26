@@ -1,8 +1,10 @@
 import { StrictMode } from "react";
 import type { Store } from "ccstate";
 import { StoreProvider, useGet, useLastResolved, useSet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
+import { BillingFeedbackSurvey } from "./okou-page/components/billing-feedback-survey.tsx";
 import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
@@ -15,7 +17,7 @@ import { rootSignal$ } from "../signals/root-signal.ts";
 import { theme$ } from "../signals/theme.ts";
 import { handleInvitationRedirect$ } from "../signals/invitation-redirect.ts";
 import { pollInstatusIssues$ } from "../signals/instatus-status.ts";
-import { handleBillingRedirect$ } from "../signals/okou-page/billing.ts";
+import { handleBillingFeedbackRedirect$ } from "../signals/billing-feedback.ts";
 import { detach, Reason } from "../signals/utils.ts";
 import {
   isStandalonePwa,
@@ -24,6 +26,8 @@ import {
 import { InstatusStatusNotice } from "./components/instatus-status-notice.tsx";
 import { setupViewportPinchPrevention } from "../lib/viewport-pinch.ts";
 import { IN_VITEST } from "../env.ts";
+import { featureSwitches$ } from "../signals/external/feature-switch.ts";
+import { setupProjectActionShortcuts$ } from "../signals/projects/project-action-shortcuts.ts";
 import { projects$ } from "../signals/projects/projects.ts";
 import { projectReorderEnabled$ } from "../signals/projects/project-order.ts";
 import { setupGlobalKeyboardShortcuts$ } from "../signals/okou-page/nav.ts";
@@ -39,6 +43,10 @@ function GlobalKeyboardShortcuts() {
   const setupGlobal = useSet(setupGlobalKeyboardShortcuts$);
   const setupFold = useSet(setupProjectFoldShortcuts$);
   const setupOrder = useSet(setupProjectOrderShortcuts$);
+  const archiveEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
+    true;
+  const setupActions = useSet(setupProjectActionShortcuts$);
 
   const shortcutRef = (element: HTMLSpanElement | null) => {
     if (!element) {
@@ -49,10 +57,12 @@ function GlobalKeyboardShortcuts() {
         return project.id;
       }) ?? [];
     const stopGlobal = setupGlobal(signal);
+    const stopActions = setupActions(archiveEnabled, signal);
     const stopFold = setupFold(ids, signal);
     const stopOrder = setupOrder(ids, reorderEnabled === true, signal);
     return () => {
       stopGlobal();
+      stopActions();
       stopFold();
       stopOrder();
     };
@@ -63,7 +73,7 @@ function GlobalKeyboardShortcuts() {
 function AppToaster() {
   const signal = useGet(rootSignal$);
   const theme = useGet(theme$);
-  const handleBillingRedirect = useSet(handleBillingRedirect$);
+  const handleBillingRedirect = useSet(handleBillingFeedbackRedirect$);
   const handleInvitationRedirect = useSet(handleInvitationRedirect$);
 
   const handleReady = () => {
@@ -125,6 +135,7 @@ export const setupRouter = (
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <FeatureGuideDialog />
+          <BillingFeedbackSurvey />
           <InstatusStatusNotice />
         </ErrorBoundary>
         <SharedWorkerFailureDialog />

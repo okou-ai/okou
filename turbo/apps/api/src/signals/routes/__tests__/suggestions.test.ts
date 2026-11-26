@@ -15,7 +15,6 @@ import {
   chatThreadByIdContract,
   chatEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { feedRoutes } from "../feed";
@@ -23,7 +22,6 @@ import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { cronCleanupSuggestionsContract } from "@okouai/api-contracts/contracts/cron";
 import { createRouteMocks } from "./helpers/route-test";
@@ -96,7 +94,7 @@ function makeOption(
     ...overrides,
   };
 }
-async function primaryRun(enabled = true) {
+async function primaryRun() {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user();
@@ -105,13 +103,6 @@ async function primaryRun(enabled = true) {
     throw new Error("Expected a workspace member");
   }
   await bdd.completeOnboarding(actor);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.AgentSuggestion]: enabled,
-    },
-  );
   bdd.acceptStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -141,17 +132,43 @@ describe("Agent suggestions", () => {
       fixture.actor.orgId,
     );
     const api = client();
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: false,
+      firstItem: null,
+    });
     const cards = Array.from({ length: 11 }, (_, priority) => {
-      return input(priority);
+      return input(Math.max(0, priority - 1));
     });
     for (const body of cards) {
       await accept(api.create({ headers: fixture.headers, body }), [200]);
     }
-    expect(
-      (await accept(api.summary({ headers: humanHeaders }), [200])).body
-        .hasUnread,
-    ).toBeTruthy();
     const displayed = await accept(api.list({ headers: humanHeaders }), [200]);
+    expect(displayed.body.items).toHaveLength(10);
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: true,
+      firstItem: displayed.body.items[0],
+    });
+    const last = cards.find((card) => {
+      return !displayed.body.items.some((item) => {
+        return item.id === card.id;
+      });
+    });
+    if (!last) {
+      throw new Error("Expected the overflow card");
+    }
+    const next = await accept(
+      api.list({
+        headers: humanHeaders,
+        query: { cursor: displayed.body.nextCursor },
+      }),
+      [200],
+    );
+    expect(next.body.items).toMatchObject([{ id: last.id }]);
+    expect(next.body.nextCursor).toBeUndefined();
     for (const card of displayed.body.items) {
       await accept(
         api.markRead({ headers: humanHeaders, params: { id: card.id } }),
@@ -159,13 +176,11 @@ describe("Agent suggestions", () => {
       );
     }
     expect(
-      (await accept(api.summary({ headers: humanHeaders }), [200])).body
-        .hasUnread,
-    ).toBeTruthy();
-    const last = cards[0];
-    if (!last) {
-      throw new Error("Expected the overflow card");
-    }
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: true,
+      firstItem: displayed.body.items[0],
+    });
     const receipt = await accept(
       api.markRead({ headers: humanHeaders, params: { id: last.id } }),
       [200],
@@ -257,7 +272,7 @@ describe("Agent suggestions", () => {
     expect(resumed.body.state.status).toBe("active");
   });
 
-  it("protects For you preferences and read receipts with rollout and owner boundaries", async () => {
+  it("protects For you preferences and read receipts across owners", async () => {
     const fixture = await primaryRun();
     const card = await accept(
       client().create({ headers: fixture.headers, body: input() }),
@@ -267,13 +282,6 @@ describe("Agent suggestions", () => {
       fixture.actor.userId,
       fixture.actor.orgId,
     );
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await accept(client().summary({ headers: humanHeaders }), [403]);
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
     await accept(client().summary({ headers: {} }), [401]);
     const saved = await accept(
       client().updateSources({
@@ -288,9 +296,6 @@ describe("Agent suggestions", () => {
       orgId: fixture.actor.orgId,
     };
     createRouteMocks(context).clerk.session(other.userId, other.orgId);
-    await updateFeatureSwitchesForUser(context, other, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
     await accept(
       client().markRead({
         headers: humanHeaders,
@@ -718,22 +723,14 @@ describe("Agent suggestions", () => {
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
     expect(pool.body.items).toStrictEqual([]);
   });
-  it("requires an enabled primary Agent capability and denies human publication", async () => {
-    const fixture = await primaryRun(false);
+  it("lets a member read Suggestions and reserves publication for the personal Run", async () => {
+    const fixture = await primaryRun();
     expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await accept(
-      client().create({ headers: fixture.headers, body: input() }),
-      [403],
-    );
     await accept(
       client().create({ headers: humanHeaders, body: input() }),
       [403],
     );
-    const result = await accept(
-      client().list({ headers: humanHeaders }),
-      [403],
-    );
-    expect(result.body.error.code).toBe("FORBIDDEN");
+    await accept(client().list({ headers: humanHeaders }), [200]);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();
@@ -858,7 +855,7 @@ describe("Agent suggestions", () => {
       ]),
     );
   });
-  it("updates one priority and revalidates feature disablement for an existing token", async () => {
+  it("updates one priority and preserves the terminal receipt after removal", async () => {
     const fixture = await primaryRun();
     const first = input(0);
     const second = input(20);
@@ -894,30 +891,6 @@ describe("Agent suggestions", () => {
     await accept(
       client().create({ headers: fixture.headers, body: first }),
       [409],
-    );
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await accept(client().list({ headers: fixture.headers }), [403]);
-    await accept(
-      client().manage({ headers: fixture.headers, query: {} }),
-      [403],
-    );
-    await accept(
-      client().update({
-        headers: fixture.headers,
-        params: { id: second.id },
-        body: { priority: 99 },
-      }),
-      [403],
-    );
-    await accept(
-      client().consume({
-        headers: humanHeaders,
-        params: { id: second.id },
-        body: { optionId: "review" },
-      }),
-      [403],
     );
   });
   it("selects one of several options once and retains the choice in compacted receipts", async () => {
@@ -1507,6 +1480,26 @@ describe("Suggestion custom follow-ups", () => {
       userMessage: document,
     };
     await accept(events.send({ headers: humanHeaders, body }), [400]);
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: {
+          ...body,
+          userMessage: {
+            ...document,
+            parts: [
+              ...document.parts,
+              {
+                type: "project" as const,
+                projectId: randomUUID(),
+                nameSnapshot: "Missing project",
+              },
+            ],
+          },
+        },
+      }),
+      [404],
+    );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
         .items,
@@ -1804,7 +1797,7 @@ describe("Suggestion custom follow-ups", () => {
       }),
     );
   });
-  it("keeps selection receipts restricted to an enabled member session", async () => {
+  it("keeps selection receipts restricted to a member session", async () => {
     const fixture = await primaryRun();
     const value = input();
     await accept(
@@ -1855,23 +1848,6 @@ describe("Suggestion custom follow-ups", () => {
       }),
       [201],
     );
-    expect(
-      (await accept(client().list({ headers: humanHeaders }), [200])).body
-        .items,
-    ).toHaveLength(1);
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await accept(
-      events.send({
-        headers: humanHeaders,
-        body: { ...body, clientEventId: randomUUID() },
-      }),
-      [201],
-    );
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
         .items,
@@ -1949,11 +1925,7 @@ describe("Suggestion feedback receipts", () => {
       }),
     );
     const peer = createBddApi(context).user({ orgId: fixture.actor.orgId });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...peer, orgId: fixture.actor.orgId },
-      { [FeatureSwitchKey.AgentSuggestion]: true },
-    );
+    createRouteMocks(context).clerk.session(peer.userId, fixture.actor.orgId);
     const foreign = await accept(
       client().list({ headers: humanHeaders }),
       [200],

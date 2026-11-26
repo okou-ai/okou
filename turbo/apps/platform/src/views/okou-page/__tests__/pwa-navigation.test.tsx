@@ -1,12 +1,13 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
 import {
-  chatThreadByIdContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-
+  findFastControl,
+  queryFastControl,
+  createMessageExperienceHelpers,
+} from "./chat-message-experience-test-helpers.ts";
+import userEvent from "@testing-library/user-event";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
 import {
   click,
   queryAllByRoleFast,
@@ -15,704 +16,247 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import { fastButton } from "./chat-list-test-helpers.ts";
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-const CHAT_LIST_PATH = "/";
-
-function mockDisplayMode({
-  standalone,
-  desktop,
-}: {
-  readonly standalone: boolean;
-  readonly desktop: boolean;
-}): void {
+test("pwa-navigation-001 A desktop standalone chat list keeps its navigation rail and message composer", async () => {
+  installChatListStream(context, {
+    caseId: 68,
+    snapshot: [chatListThread(1, "Coastal survey")],
+  });
   context.mocks.browser.matchMedia((query) => {
-    if (query === "(display-mode: standalone)") {
-      return standalone;
-    }
-    return query === "(min-width: 48rem)" && desktop;
+    return (
+      query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
+    );
   });
-}
-
-function linkTo(href: string, container: ParentNode = document): HTMLElement {
-  const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.getAttribute("href") === href;
-  });
-  if (!link) {
-    throw new Error(`Expected link to ${href}`);
-  }
-  return link;
-}
-
-function menuItem(name: string): HTMLElement {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Expected menu item ${name}`);
-  }
-  return item;
-}
-
-test("Keep the desktop navigation in a desktop PWA", async () => {
-  mockDisplayMode({ standalone: true, desktop: true });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 73,
-    threads: [continuityThread(73, 1, "Existing work")],
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-});
-
-test("Switch between the desktop composer and mobile chat list as the browser resizes", async () => {
-  const viewport = context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 48rem)";
-  });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 79,
-    threads: [continuityThread(79, 1, "Responsive planning")],
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-  expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-
-  act(() => {
-    viewport.setMatches(false);
-  });
-
-  await screen.findByText("Responsive planning");
-  expect(
-    screen.getByRole("navigation", { name: "Main navigation" }),
-  ).toBeInTheDocument();
-
-  act(() => {
-    viewport.setMatches((query) => {
-      return query === "(min-width: 48rem)";
-    });
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-  expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-});
-
-test.each([false, true])(
-  "Open workspace search from the compact mobile chat header (standalone: %s)",
-  async (standalone) => {
-    mockDisplayMode({ standalone, desktop: false });
-    const caseId = standalone ? 82 : 81;
-    const workspace = installContinuityWorkspace(context, {
-      caseId,
-      threads: [continuityThread(caseId, 1, "Search planning")],
-    });
-
-    await setupPage({
-      context,
-      path: CHAT_LIST_PATH,
-      ...workspace.pageOptions,
-    });
-
-    await screen.findByText("Search planning");
-    const search = screen.getByLabelText("Search workspace");
-    const header = search.closest("header");
-    if (!header) {
-      throw new Error("Expected workspace search in the chat list header");
-    }
-    expect(
-      queryAllByRoleFast("button", header).map((button) => {
-        return button.getAttribute("aria-label");
-      }),
-    ).toStrictEqual([
-      "Search workspace",
-      "Create Project",
-      "New chat",
-      "Open chat list menu",
-    ]);
-
-    click(search);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Search workspace...",
-    });
-    expect(
-      within(dialog).getByPlaceholderText("Search workspace..."),
-    ).toHaveFocus();
-
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Search workspace..." }),
-      ).not.toBeInTheDocument();
-    });
-    expect(screen.getByText("Search planning")).toBeInTheDocument();
-    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  },
-);
-
-test("Keep Me within mobile widths while the browser resizes", async () => {
-  const viewport = context.mocks.browser.matchMedia(false);
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 80,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: "/me",
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("heading", { name: "Me" });
-
-  act(() => {
-    viewport.setMatches((query) => {
-      return query === "(min-width: 48rem)";
-    });
-  });
-
-  await screen.findByRole("heading", { name: "That page isn't here." });
-
-  act(() => {
-    viewport.setMatches(false);
-  });
-
-  await screen.findByRole("heading", { name: "Me" });
-  expect(
-    screen.getByRole("navigation", { name: "Main navigation" }),
-  ).toBeInTheDocument();
-  expect(window.location.pathname).toBe("/me");
-});
-
-test("Browse and filter mobile browser chats before opening a conversation and returning", async () => {
-  mockDisplayMode({ standalone: false, desktop: false });
-  const inbox = continuityThread(74, 1, "Plan the launch");
-  const archived = {
-    ...continuityThread(74, 2, "Previous launch"),
-    archived: true,
-  };
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 74,
-    threads: [inbox, archived],
-  });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  const navigation = await screen.findByRole("navigation", {
-    name: "Main navigation",
-  });
-  await screen.findByText("Plan the launch");
-  expect(linkTo(CHAT_LIST_PATH, navigation)).toHaveTextContent("Chats");
-  expect(linkTo(CHAT_LIST_PATH, navigation)).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expect(linkTo("/connectors", navigation)).toHaveTextContent("Connectors");
-  expect(linkTo("/artifacts", navigation)).toHaveTextContent("Artifacts");
-  expect(linkTo("/me", navigation)).toHaveTextContent("Me");
-  expect(screen.queryByText("Previous launch")).not.toBeInTheDocument();
-
-  click(fastButton("Open chat list menu"));
-  await waitFor(() => {
-    expect(menuItem("Archived")).toBeInTheDocument();
-  });
-  click(menuItem("Archived"));
-
-  await screen.findByText("Previous launch");
-  expect(screen.queryByText("Plan the launch")).not.toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-
-  click(linkTo(`/chats/${archived.id}`));
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe(`/chats/${archived.id}`);
-  expect(
-    screen.getByRole("navigation", { name: "Main navigation" }),
-  ).toBeInTheDocument();
-
-  click(screen.getByLabelText("Back to chats"));
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  });
-
-  click(screen.getByLabelText("New chat"));
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
-  expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
-
-  click(
-    linkTo("/me", screen.getByRole("navigation", { name: "Main navigation" })),
-  );
-
-  await expect(
-    screen.findByRole("heading", { name: "Me" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/me");
-});
-
-test("Slide conversations in from the mobile chat list and out back to the tabs", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const viewTransition = context.mocks.browser.viewTransition();
-  const thread = continuityThread(83, 1, "Draft the brief");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 83,
-    threads: [thread],
-  });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByText("Draft the brief");
-
-  click(linkTo(`/chats/${thread.id}`));
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
-
-  click(screen.getByLabelText("Back to chats"));
-
-  await screen.findByText("Draft the brief");
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
-
-  click(linkTo(`/chats/${thread.id}`));
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([
-    ["push"],
-    ["pop"],
-    ["push"],
-  ]);
-
-  act(() => {
-    window.history.back();
-  });
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  });
-  await screen.findByText("Draft the brief");
-  expect(viewTransition.startedTypes).toStrictEqual([
-    ["push"],
-    ["pop"],
-    ["push"],
-    ["pop"],
-  ]);
-
-  click(
-    linkTo("/me", screen.getByRole("navigation", { name: "Main navigation" })),
-  );
-
-  await expect(
-    screen.findByRole("heading", { name: "Me" }),
-  ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([
-    ["push"],
-    ["pop"],
-    ["push"],
-    ["pop"],
-  ]);
-});
-
-test("My Okou's chats tab is its chat list at / and composes a new chat there", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const viewTransition = context.mocks.browser.viewTransition();
-  const thread = continuityThread(84, 1, "Draft the brief");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 84,
-    threads: [thread],
-  });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-
   await setupPage({
     context,
     path: "/",
-    ...workspace.pageOptions,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
   });
+  await expect(
+    screen.findByText("Coastal survey"),
+  ).resolves.toBeInTheDocument();
+  const rail = await screen.findByRole("navigation", { name: "Sidebar" });
+  expect(within(rail).getByLabelText("Workflows")).toBeVisible();
+  await expect(screen.findByLabelText("Message")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
+});
 
-  const navigation = await screen.findByRole("navigation", {
-    name: "Main navigation",
+const current = chatListThread(4, "River crossing");
+const earlier = chatListThread(8, "Harbor closure", { archived: true });
+function mobile(standalone: boolean) {
+  installChatListStream(context, { caseId: 69, snapshot: [current, earlier] });
+  context.mocks.browser.matchMedia((query) => {
+    return standalone && query === "(display-mode: standalone)";
   });
-  await screen.findByText("Draft the brief");
-  expect(linkTo("/", navigation)).toHaveAttribute("aria-current", "page");
-
-  click(linkTo(`/chats/${thread.id}`));
-
+  return context.mocks.browser.viewTransition();
+}
+function enterMobile(path = "/") {
+  return setupPage({
+    context,
+    path,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+}
+function tabBar() {
+  return screen.getByRole("navigation", { name: "Main navigation" });
+}
+async function enterThread(thread: typeof current) {
+  click(await screen.findByText(thread.title!));
+  await expect(screen.findByLabelText("Message")).resolves.toBeVisible();
+  expect(location.pathname).toBe(`/chats/${thread.id}`);
+}
+async function backToList() {
+  click(await findFastControl("link", "Back to chats"));
   await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
+    findFastControl("button", "Open chat list menu"),
+  ).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
+}
 
-  click(screen.getByLabelText("Back to chats"));
+test("Returning from a mobile chat shows a For you card delivered while the list was closed", async () => {
+  mobile(false);
+  let unread = false;
+  const firstSummary = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    if (!firstSummary.settled()) {
+      firstSummary.resolve();
+    }
+    return respond(200, { hasUnread: unread });
+  });
+  await enterMobile();
+  await firstSummary.promise;
+  await enterThread(current);
+  unread = true;
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await backToList();
+  const row = await findFastControl("link", /For you/);
+  await expect(within(row).findByText("Unread")).resolves.toBeInTheDocument();
+});
 
-  await screen.findByText("Draft the brief");
-  expect(window.location.pathname).toBe("/");
-  expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
-
-  click(screen.getByLabelText("New chat"));
-
+test("pwa-navigation-003 Search opens from the ordered mobile toolbar and Escape restores the list", async () => {
+  mobile(false);
+  await enterMobile();
+  await expect(screen.findByText(current.title!)).resolves.toBeVisible();
+  const header = screen.getByRole("banner");
+  const labels = [
+    "Search workspace",
+    "Create Project",
+    "New chat",
+    "Open chat list menu",
+  ];
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(labels);
+  click(await findFastControl("button", "Search workspace", header));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByRole("combobox")).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  expect(dialog).not.toBeInTheDocument();
+  expect(screen.getByText(current.title!)).toBeVisible();
+  expect(location.pathname).toBe("/");
+});
+test("pwa-navigation-006 Archived filtering, conversation return, composing and Me use the mobile routes", async () => {
+  mobile(false);
+  await enterMobile();
+  await expect(screen.findByText(current.title!)).resolves.toBeVisible();
+  expect(screen.queryByText(earlier.title!)).toBeNull();
+  const tabs = tabBar();
+  await expect(findFastControl("link", "Chats", tabs)).resolves.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  for (const name of ["Connectors", "Artifacts", "Me"]) {
+    await expect(findFastControl("link", name, tabs)).resolves.toBeVisible();
+  }
+  click(await findFastControl("button", "Open chat list menu"));
+  click(await screen.findByText("Archived", { exact: true }));
+  await expect(screen.findByText(earlier.title!)).resolves.toBeVisible();
+  expect(screen.queryByText(current.title!)).toBeNull();
+  expect(location.pathname).toBe("/");
+  await enterThread(earlier);
+  await backToList();
+  click(await findFastControl("button", "New chat"));
+  await expect(screen.findByLabelText("Message")).resolves.toBeVisible();
+  expect(location.pathname + location.search).toBe("/?compose=1");
+  await expect(findFastControl("link", "Back to chats")).resolves.toBeVisible();
+  click(await findFastControl("link", "Me", tabBar()));
+  await waitFor(() => {
+    return expect(queryFastControl("link", "Me", tabBar())).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+  expect(location.pathname).toBe("/me");
+});
+test("pwa-navigation-007 History and Back both animate the return to Chats while Me switches directly", async () => {
+  const transition = mobile(true);
+  await enterMobile();
+  await enterThread(current);
+  await backToList();
+  expect(transition.startedTypes).toStrictEqual([["push"], ["pop"]]);
+  await enterThread(current);
+  history.back();
   await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/");
-  expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
-  expect(screen.getByLabelText("Back to chats")).toHaveAttribute("href", "/");
-  expect(viewTransition.startedTypes).toStrictEqual([
+    findFastControl("button", "Open chat list menu"),
+  ).resolves.toBeVisible();
+  await expect(screen.findByText(current.title!)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
+  click(await findFastControl("link", "Me", tabBar()));
+  await waitFor(() => {
+    return expect(queryFastControl("link", "Me", tabBar())).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+  expect(location.pathname).toBe("/me");
+  expect(transition.startedTypes).toStrictEqual([
     ["push"],
     ["pop"],
     ["push"],
+    ["pop"],
   ]);
 });
-
-test("Leave the slide to the browser after an edge swipe back", async () => {
-  mockDisplayMode({ standalone: false, desktop: false });
-  const viewTransition = context.mocks.browser.viewTransition();
-  const thread = continuityThread(85, 1, "Plan the offsite");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 85,
-    threads: [thread],
-  });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByText("Plan the offsite");
-
-  click(linkTo(`/chats/${thread.id}`));
-
+test("pwa-navigation-008 The home tab opens a conversation and a fresh compose route with forward transitions", async () => {
+  const transition = mobile(true);
+  await enterMobile();
+  const chats = await findFastControl("link", "Chats", tabBar());
+  expect(chats).toHaveAttribute("aria-current", "page");
+  expect(chats).toHaveAttribute("href", "/");
+  await enterThread(current);
+  await backToList();
+  click(await findFastControl("button", "New chat"));
+  await expect(screen.findByLabelText("Message")).resolves.toBeVisible();
+  const back = await findFastControl("link", "Back to chats");
+  expect(back).toHaveAttribute("href", "/");
+  expect(location.pathname + location.search).toBe("/?compose=1");
+  expect(transition.startedTypes).toStrictEqual([["push"], ["pop"], ["push"]]);
+  click(back);
+  await expect(screen.findByText(current.title!)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/");
+});
+test("pwa-navigation-009 A browser edge swipe restores Chats without a second slide", async () => {
+  const transition = mobile(false);
+  await enterMobile();
+  await enterThread(current);
+  swipeBack();
   await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
-
-  act(() => {
-    swipeBack();
-  });
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  });
-  await screen.findByText("Plan the offsite");
-  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
+    findFastControl("button", "Open chat list menu"),
+  ).resolves.toBeVisible();
+  expect(screen.getByText(current.title!)).toBeVisible();
+  expect(location.pathname).toBe("/");
+  expect(transition.startedTypes).toStrictEqual([["push"]]);
 });
-
-test("Change desktop pages without a slide", async () => {
-  mockDisplayMode({ standalone: true, desktop: true });
-  const viewTransition = context.mocks.browser.viewTransition();
-  const thread = continuityThread(84, 1, "Review the roadmap");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 84,
-    threads: [thread],
-  });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-
-  click(await screen.findByText("Review the roadmap"));
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/chats/${thread.id}`);
-  });
-  expect(viewTransition.startedTypes).toStrictEqual([]);
-});
-
-test("Open profile settings from Me in a regular mobile browser", async () => {
-  mockDisplayMode({ standalone: false, desktop: false });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 75,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: "/me",
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("heading", { name: "Me" });
-  expect(screen.getByText("Chat list user")).toBeInTheDocument();
-  const navigation = screen.getByRole("navigation", {
-    name: "Main navigation",
-  });
-  expect(linkTo("/me", navigation)).toHaveAttribute("aria-current", "page");
-
-  click(fastButton("Settings"));
-
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(within(settings).getByText("Account & security")).toBeInTheDocument();
-  expect(within(settings).getByText("Chat list user")).toBeInTheDocument();
-});
-
-test("Start the first chat from an empty mobile chat list", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 81,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  const emptyMessage = await screen.findByText(
-    "Start a conversation and it'll show up here",
-  );
-
-  click(fastButton("New chat", emptyMessage.parentElement!));
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
-});
-
-test("Step back to Me from the pages it opens", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 79,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: "/me",
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("heading", { name: "Me" });
-
-  click(linkTo("/workflows"));
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/workflows");
-  });
-  const navigation = screen.getByRole("navigation", {
-    name: "Main navigation",
-  });
-  expect(linkTo("/me", navigation)).toHaveAttribute("aria-current", "page");
-
-  click(await screen.findByLabelText("Back"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Me" }),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/me");
-});
-
-test("Show the Chats tab unread indicator across all Chats", async () => {
-  mockDisplayMode({ standalone: false, desktop: false });
-  const thread = continuityThread(80, 1, "Launch planning");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 80,
-    threads: [thread],
-  });
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      threads: { [thread.id]: "unread" },
-      unreadAt: { [thread.id]: "2026-11-21T00:00:00.000Z" },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByText("Launch planning");
-  const navigation = screen.getByRole("navigation", {
-    name: "Main navigation",
-  });
-  await waitFor(() => {
-    expect(
-      within(linkTo(CHAT_LIST_PATH, navigation)).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-  expect(
-    within(linkTo("/me", navigation)).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
-});
-
-test("Keep a PWA home prompt handoff in the prepared chat composer", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 76,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: "/?prompt=Draft%20a%20launch%20plan",
-    ...workspace.pageOptions,
-  });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("Draft a launch plan");
-  });
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(
-    screen.getByRole("navigation", { name: "Main navigation" }),
-  ).toBeInTheDocument();
-});
-
-test("Remove a disconnected subscription from Me without reopening the page", async () => {
-  mockDisplayMode({ standalone: true, desktop: false });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 77,
-    threads: [],
-  });
-  context.mocks.data.org({ role: "member" });
-  context.mocks.data.personalModelProviders([
-    {
-      id: "00000000-0000-4000-a000-000000000377",
-      modelProviderId: "00000000-0000-4000-a000-000000000300",
-      type: "codex-oauth-token",
-      framework: "codex",
-      isActive: true,
-      accountEmail: "pwa-subscription@example.test",
-      workspaceName: "Personal ChatGPT",
-      planType: "pro",
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-      subscriptionResetCredits: 2,
-      subscriptionUsage: {
-        fiveHour: {
-          usedPercent: 18,
-          remainingPercent: 82,
-          resetAt: "2030-01-01T05:00:00.000Z",
-          windowSeconds: 18_000,
-        },
-        weekly: null,
-      },
-      createdAt: "2026-03-01T00:00:00.000Z",
-      updatedAt: "2026-03-20T00:00:00.000Z",
-    },
-  ]);
-
-  await setupPage({
-    context,
-    path: "/me",
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("heading", { name: "ChatGPT" });
-
-  click(fastButton("Settings"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  click(fastButton("Models", settings));
-  const accountIdentity = await within(settings).findByText(
-    "pwa-subscription@example.test",
-  );
-  const row = accountIdentity.closest('[role="row"]');
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected the connected subscription account row");
-  }
-
-  click(within(row).getByLabelText("More options"));
-  await waitFor(() => {
-    expect(menuItem("Disconnect account")).toBeInTheDocument();
-  });
-  click(menuItem("Disconnect account"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Disconnect pwa-subscription@example.test?",
-  });
-  click(fastButton("Disconnect account", confirmation));
-
-  await screen.findByText("Account disconnected");
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", {
-        name: "Disconnect pwa-subscription@example.test?",
+test.each([true, false])(
+  "The mobile Chats tab reflects whether the other member conversation is unread: %s",
+  async (unread) => {
+    mobile(false);
+    const other = chatListThread(17, "Independent report");
+    const server =
+      createMessageExperienceHelpers(context).installMessageExperienceChat();
+    server.setThreadList(
+      [current, other].map((thread) => {
+        return {
+          id: thread.id,
+          title: thread.title,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+        };
       }),
-    ).not.toBeInTheDocument();
-  });
-  click(within(settings).getByLabelText("Close"));
-
-  await waitFor(() => {
+    );
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        threads: {},
+        unreadAt: unread ? { [other.id]: other.updatedAt } : {},
+      });
+    });
+    await enterMobile();
+    await expect(screen.findByText(other.title!)).resolves.toBeVisible();
+    const tabs = tabBar();
+    const chats = within(await findFastControl("link", /Chats/, tabs));
+    if (unread) {
+      await chats.findByLabelText("Unread");
+    }
+    expect(Boolean(chats.queryByLabelText("Unread"))).toBe(unread);
     expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(screen.getByRole("heading", { name: "Me" })).toBeInTheDocument();
-  expect(
-    screen.queryByRole("heading", { name: "ChatGPT" }),
-  ).not.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/me");
+      within(await findFastControl("link", "Me", tabs)).queryByLabelText(
+        "Unread",
+      ),
+    ).toBeNull();
+  },
+);
+test("pwa-navigation-015 A home prompt opens a populated mobile composer alongside the tab bar", async () => {
+  mobile(true);
+  await enterMobile("/?prompt=Draft+a+launch+plan");
+  const input = await screen.findByLabelText("Message");
+  expect(input).toHaveTextContent("Draft a launch plan");
+  expect(location.pathname).toBe("/");
+  expect(tabBar()).toBeVisible();
 });

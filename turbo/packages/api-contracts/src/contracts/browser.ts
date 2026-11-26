@@ -195,6 +195,18 @@ export const browserContract = c.router({
     summary:
       "Create, reuse, or resume the current chat thread's managed browser and extend its idle lease",
   },
+  restart: {
+    method: "POST",
+    path: "/api/browsers/restart",
+    headers: authHeadersSchema,
+    body: object({ instanceId: uuid() }).strict(),
+    responses: {
+      200: object({ ok: literal(true) }),
+      ...commonErrorResponses,
+    },
+    summary:
+      "Stop the current user's shared Browser instance so it can be reopened",
+  },
   lease: {
     method: "POST",
     path: "/api/browsers/lease",

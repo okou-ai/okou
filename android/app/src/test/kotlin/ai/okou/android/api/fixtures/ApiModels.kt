@@ -118,7 +118,7 @@ enum class ChatEventsEventsItemVariant1ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant1ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -180,7 +180,7 @@ data class ChatEventsEventsItemVariant1(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2Kind {
-    @SerialName("project_updated") PROJECT_UPDATED
+    @SerialName("project_updated") PROJECT_UPDATED,
 }
 
 @Serializable
@@ -197,7 +197,7 @@ enum class ChatEventsEventsItemVariant2ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant2ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -311,7 +311,10 @@ object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
 }
 
 @Serializable
-data class ChatEvents(val `events`: List<ChatEventsEventsItem>, val `hasMore`: Boolean)
+data class ChatEvents(
+    val `events`: List<ChatEventsEventsItem>,
+    val `hasMore`: Boolean,
+)
 
 @Serializable
 enum class IndicatorsThreadsValue {
@@ -332,9 +335,14 @@ data class ProjectsProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
-@Serializable data class Projects(val `projects`: List<ProjectsProjectsItem>)
+@Serializable
+data class Projects(
+    val `projects`: List<ProjectsProjectsItem>,
+)
 
 @Serializable
 enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
@@ -350,7 +358,7 @@ enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
 
 @Serializable
 data class ChatArchiveChatThreadsItemModelSettingsValue(
-    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null
+    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -393,7 +401,10 @@ data class ChatArchiveChatThreadsItem(
     val `cloudBrowserEnabled`: Boolean? = null,
 )
 
-@Serializable data class ChatArchive(val `chatThreads`: List<ChatArchiveChatThreadsItem>)
+@Serializable
+data class ChatArchive(
+    val `chatThreads`: List<ChatArchiveChatThreadsItem>,
+)
 
 @Serializable
 enum class IndicatorMapValue {

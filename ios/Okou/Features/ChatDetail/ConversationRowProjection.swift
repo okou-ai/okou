@@ -5,14 +5,22 @@ import SwiftUI
 @MainActor
 struct ConversationRowProjection {
   let conversation: ConversationStore
-  private var history: ChatHistory { conversation.history ?? .empty }
+  /// The conversation's graph value for this render; ChatDetailView resolves it.
+  let transcript: ConversationProjection.Value
+  /// The render window for this render, which ChatDetailView also resolves.
+  let window: ConversationPresentation.Window
+  /// Whether a send is in flight, from the delivery state ChatDetailView resolves.
+  let isSending: Bool
+  /// The model selection's graph value for this render, which ChatDetailView also resolves.
+  let models: ChatModelSelectionStore.Presentation?
+  private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
-    let items = conversation.visibleItems
+    let items = window.items
     if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
-      var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
+      var rows: [ConversationCollectionRow] = window.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
           // The preceding row already reserves the selection background's bottom inset.
@@ -21,9 +29,10 @@ struct ConversationRowProjection {
       return rows
     }
     var result: [ConversationCollectionRow] = []
-    if conversation.hasEarlierMessages {
+    if window.hasEarlierMessages {
       result.append(.earlier)
     }
+    var answerForUsage: ChatMessage?
     for (index, item) in items.enumerated() {
       let continuesGroup =
         index > 0 && items[index - 1].role == item.role && !item.beginsWorkSection
@@ -52,25 +61,31 @@ struct ConversationRowProjection {
           }
           result.append(
             .failure(
-              message, conversation.failureState(failure), topSpacing: topSpacing,
-              providerMessage: providerMessage))
+              message, conversation.failureState(failure, models: models),
+              topSpacing: topSpacing, providerMessage: providerMessage))
           continue
         }
-        let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
+        let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
+        let showsActions = !isWorkHistory && pendingRetry == nil && endsTurn(at: index, in: items)
+        if showsActions, let runID = message.runID,
+          items.dropFirst(index + 1).first == .usage(runID: runID)
+        {
+          answerForUsage = message
+        }
         result.append(
           .message(
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
-            isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory,
-            showsActions: !conversation.sharing.isSelecting && !isWorkHistory
-              && pendingRetry == nil && endsTurn(at: index, in: items))
+            isSending: pendingRetry == true && isSending, isWorkHistory: isWorkHistory,
+            showsActions: showsActions && answerForUsage == nil)
         )
       case .usage(let runID):
-        result.append(.usage(runID: runID))
+        result.append(.usage(runID: runID, actionsFor: answerForUsage))
+        answerForUsage = nil
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
-    for output in conversation.streamedOutputs {
+    for output in transcript.streamed {
       var continues = false
       if case .message(let previous, _, _, _, _, _, _) = result.last {
         continues = previous.role != .user
@@ -85,7 +100,9 @@ struct ConversationRowProjection {
           showsAvatar: !continues, topSpacing: continues ? 8 : 24, pendingRetry: nil,
           isSending: false))
     }
-    if let source = history.recommendedFollowups, conversation.pending.isEmpty {
+    if models?.snapshot.usesFollowupPlaceholder != true,
+      let source = transcript.recommendedFollowups
+    {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
     let showsActivityAvatar =
@@ -149,6 +166,12 @@ struct ConversationRowProjection {
       let runID = message.runID, runID == failure.runID,
       message.text.count <= 400, !message.text.contains("\n")
     else { return false }
+    // Billing cards supply their own explanation. Keep an actual partial answer in the transcript.
+    if failure.failure?.billingReason != nil,
+      ChatFailure.BillingReason(diagnostic: message.text) == nil
+    {
+      return false
+    }
     for item in items {
       if case .work(let section, _) = item, section.anchorMessageID == message.id {
         return section.stepCount == 0

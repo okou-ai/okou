@@ -10,27 +10,26 @@ const SCENE_BASE =
 // okou.app framing resolves only on production hostnames, because
 // resolveHostedSiteDomains excludes okou.app elsewhere.
 export const WELCOME_THREAD_ASSETS = Object.freeze({
-  campaignVisualUrl: `${SCENE_BASE}/campaign-visual.jpg`,
-  slackSceneUrl: `${SCENE_BASE}/slack-scene.png`,
-  telegramSceneUrl: `${SCENE_BASE}/telegram-scene.png`,
+  campaignVisualUrl: "https://app.okou.ai/artifacts/j0cekeay38.jpg",
+  slackSceneUrl: "https://app.okou.ai/artifacts/292ow4w4kp.png",
+  telegramSceneUrl: "https://app.okou.ai/artifacts/6oupi3q8n6.png",
   modelTiersUrl: `${SCENE_BASE}/model-tiers.png`,
   workflowTemplatePickerUrl: `${STEP_BASE}/workflow-template-picker.png`,
   newAgentDialogUrl: `${STEP_BASE}/new-agent.png`,
-  presentationArtifactUrl: "https://sproutpop-launch-deck-p9jk.okou.app",
-  websiteArtifactUrl: "https://coastal-hotel-example.okou.app",
+  presentationArtifactUrl: "https://welcome-sproutpop-20261125.okou.app",
+  websiteArtifactUrl: "https://welcome-coastal-hotel-20261125.okou.app",
   quickStartUrl: "https://4nnp6iwpss.okou.app",
 });
 
 // Versioned My Okou publications. Keep the legacy guide and screenshots above
 // intact for existing messages.
-const MY_OKOU_GUIDE_BASE =
-  "https://my-okou-quickstart-20261112-review.okou.app";
+const MY_OKOU_GUIDE_BASE = "https://okou-get-started.okou.app";
 
 export const MY_OKOU_WELCOME_THREAD_ASSETS = Object.freeze({
   myOkouQuickStartUrl: MY_OKOU_GUIDE_BASE,
-  personalInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-instructions-8ec43cd079ea.png`,
-  workflowInstructionsUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-instructions-5f1222f7d3ea.png`,
-  workflowSharingUrl: `${MY_OKOU_GUIDE_BASE}/assets/my-okou-workflow-settings-5c32a5d6a9c6.png`,
+  personalInstructionsUrl: "https://app.okou.ai/artifacts/j3kr8cnsqu.png",
+  workflowInstructionsUrl: "https://app.okou.ai/artifacts/2d1fokaomd.png",
+  workflowSharingUrl: "https://app.okou.ai/artifacts/jufxlq11r9.png",
 });
 
 const PREVIEW_BASE =
@@ -40,11 +39,11 @@ const PREVIEW_BASE =
 // URLs so persisted welcome messages receive the same static preview.
 const welcomePreviews = [
   {
-    url: `${WELCOME_THREAD_ASSETS.presentationArtifactUrl}/`,
+    url: "https://sproutpop-launch-deck-p9jk.okou.app/",
     image: `${PREVIEW_BASE}/sproutpop-a826bd3d2831.png`,
   },
   {
-    url: `${WELCOME_THREAD_ASSETS.websiteArtifactUrl}/`,
+    url: "https://coastal-hotel-example.okou.app/",
     image: `${PREVIEW_BASE}/coastal-hotel-d2b4e1caa3c1.png`,
   },
   {

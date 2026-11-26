@@ -1,3 +1,4 @@
+import type { SuggestionDirection } from "../../lib/posthog.ts";
 import { uploadResource } from "../../lib/resource-fetch.ts";
 import type { StorageUploadContext } from "../../lib/storage-upload-error.ts";
 import {
@@ -13,14 +14,14 @@ import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import type {
   GenerationTemplateRequest,
   PersistedAttachment,
   UserMessageDocument,
   ImageAnnotation,
-  ComposerDraft,
+  ChatThreadDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/client/uploads";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
@@ -225,18 +226,19 @@ function throwStorageUploadFailure(
   throw error;
 }
 
-const prepareStorageUpload$ = command(
+const prepareUpload$ = command(
   async (
-    _visitor,
-    createClient: ApiClientFactory,
+    { get },
     file: File,
+    privateArtifact: boolean,
     signal: AbortSignal,
   ) => {
-    const client = createClient(uploadsContract);
+    const client = get(apiClient$)(uploadsContract);
     const contentType = inferUploadContentType(file);
     return await accept(
-      client.prepare({
+      (privateArtifact ? client.preparePrivate : client.prepare)({
         body: {
+          ...(privateArtifact ? { requirePrivateArtifact: true } : {}),
           filename: file.name,
           contentType,
           size: file.size,
@@ -260,21 +262,16 @@ const prepareStorageUpload$ = command(
  * a second, subtly different uploader. The file body never travels through the
  * app runtime in either case.
  */
-const uploadFileToStorage$ = command(
+export const uploadFileToStorage$ = command(
   async (
     { get, set },
     file: File,
     uploadedBytes$: State<number> | undefined,
+    privateArtifact: boolean,
     signal: AbortSignal,
   ): Promise<FileInfo> => {
-    const createClient = get(apiClient$);
-    const client = createClient(uploadsContract);
-    const prepared = await set(
-      prepareStorageUpload$,
-      createClient,
-      file,
-      signal,
-    );
+    const client = get(apiClient$)(uploadsContract);
+    const prepared = await set(prepareUpload$, file, privateArtifact, signal);
     signal.throwIfAborted();
 
     if ("multipart" in prepared.body) {
@@ -380,7 +377,10 @@ const uploadFileToStorage$ = command(
       throwStorageUploadFailure(file.name, transfer.reason, signal);
     }
 
-    if (parseArtifactReference(prepared.body.url, location.origin)) {
+    if (
+      privateArtifact ||
+      parseArtifactReference(prepared.body.url, location.origin)
+    ) {
       const completed = await accept(
         client.complete({
           body: { id: prepared.body.id },
@@ -430,6 +430,7 @@ function createUploadAnnotatedCopy(
         uploadFileToStorage$,
         flattened.file,
         undefined,
+        false,
         signal,
       );
       // Replacement, removal and teardown must not install an older derivative.
@@ -616,7 +617,13 @@ function createChatAttachment(file: File): ChatAttachment {
         : null,
     );
     set(uploadedBytes$, 0);
-    const promise = set(uploadFileToStorage$, file, uploadedBytes$, signal);
+    const promise = set(
+      uploadFileToStorage$,
+      file,
+      uploadedBytes$,
+      false,
+      signal,
+    );
     set(internalUpload$, promise);
     const [result] = await Promise.allSettled([promise]);
     if (result.status === "rejected") {
@@ -669,6 +676,7 @@ export interface PendingThreadIdentity {
 }
 
 export interface DraftSignals {
+  suggestionDirection$: Computed<SuggestionDirection | undefined>;
   reserveThreadIdentity$: Command<PendingThreadIdentity, [string]>;
   confirmThreadIdentity$: Command<void, [string]>;
   hasLocalInput$: Computed<boolean>;
@@ -679,7 +687,7 @@ export interface DraftSignals {
   appendInput$: Command<void, [string]>;
   prependComposerDraft$: Command<
     Promise<boolean> | undefined,
-    [ComposerDraft, AbortSignal]
+    [ChatThreadDraft, AbortSignal]
   >;
   reconcileComposerDraft$: Command<Promise<boolean>, [AbortSignal]>;
   composerDraftHandoff$: Computed<{
@@ -725,6 +733,7 @@ export interface DraftSignals {
 }
 
 interface DraftSeed {
+  suggestionDirection?: SuggestionDirection;
   content: string;
   userMessage: UserMessageDocument | null;
   generationTemplate: GenerationTemplateRequest | undefined;
@@ -872,6 +881,7 @@ function reportUnavailableAttachments(filenames: readonly string[]): string {
 function createDraftInputSignals(
   draftDocument: ReturnType<typeof createDraftDocumentSignals>,
 ) {
+  const internalDirection$ = state<SuggestionDirection | undefined>(undefined);
   const internalInput$ = state<string | undefined>(undefined);
   const hasLocalInput$ = computed((get) => {
     return get(internalInput$) !== undefined;
@@ -908,6 +918,9 @@ function createDraftInputSignals(
     set(draftDocument.setRestoredUserMessage$, null);
     set(syncInput$, value);
     set(internalInput$, value);
+    if (!value.trim()) {
+      set(internalDirection$, undefined);
+    }
   });
   const appendInput$ = command(({ get, set }, value: string) => {
     const text = value.trim();
@@ -919,6 +932,14 @@ function createDraftInputSignals(
     set(setInput$, `${base}${separator}${text}`);
   });
   return {
+    suggestionDirection$: computed((get) => {
+      return get(internalDirection$);
+    }),
+    setSuggestionDirection$: command(
+      ({ set }, direction: SuggestionDirection | undefined) => {
+        set(internalDirection$, direction);
+      },
+    ),
     hasLocalInput$,
     input$,
     hasInput$,
@@ -1087,6 +1108,7 @@ function createDraftLifecycleSignals({
       set(internalGenerationTemplate$, value.generationTemplate);
       set(internalAttachments$, value.attachments);
       set(draftInput.setInput$, value.content);
+      set(draftInput.setSuggestionDirection$, value.suggestionDirection);
       set(draftDocument.setRestoredUserMessage$, value.userMessage);
       if (
         value.userMessage &&
@@ -1138,51 +1160,56 @@ function createComposerDraftPrepend(
     readonly needsRemoteMerge: boolean;
   } | null>,
 ) {
-  return command(({ get, set }, value: ComposerDraft, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    if (!value.draftUserMessage) {
-      throw new Error("Missing suggestion composer document");
-    }
-    const hadLocalDraft =
-      get(draftInput.hasLocalInput$) ||
-      get(internalGenerationTemplate$) !== undefined ||
-      get(internalAttachments$).length > 0;
-    const current =
-      set(draftDocument.readEditorDocument$)?.toMessageDocument({
-        selectedTemplate: get(internalGenerationTemplate$),
-      }) ??
-      set(draftDocument.peekRestoredUserMessage$) ??
-      (get(draftInput.input$).trim()
-        ? {
-            version: 1 as const,
-            parts: [{ type: "text" as const, text: get(draftInput.input$) }],
-          }
-        : null);
-    const document = prependMessageDocument(value.draftUserMessage, current);
-    const content = messageDocumentToPrompt(document);
-    if (content === null) {
-      throw new Error("Invalid suggestion composer document");
-    }
-    const prior = get(composerDraftHandoffState$);
-    set(composerDraftHandoffState$, {
-      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
-    });
-    // seed$ installs the draft synchronously. A returned Promise means the
-    // handoff was applied; rejection only describes remaining reconciliation.
-    return set(
-      seed$,
-      {
-        content,
-        userMessage: document,
-        generationTemplate: get(internalGenerationTemplate$),
-        attachments: [
-          ...get(internalAttachments$),
-          ...(value.draftAttachments ?? []).map(createRestoredAttachment),
-        ],
-      },
-      signal,
-    );
-  });
+  return command(
+    ({ get, set }, value: ChatThreadDraft, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (!value.draftUserMessage) {
+        throw new Error("Missing suggestion composer document");
+      }
+      const hadLocalDraft =
+        get(draftInput.hasLocalInput$) ||
+        get(internalGenerationTemplate$) !== undefined ||
+        get(internalAttachments$).length > 0;
+      const current =
+        set(draftDocument.readEditorDocument$)?.toMessageDocument({
+          selectedTemplate: get(internalGenerationTemplate$),
+        }) ??
+        set(draftDocument.peekRestoredUserMessage$) ??
+        (get(draftInput.input$).trim()
+          ? {
+              version: 1 as const,
+              parts: [{ type: "text" as const, text: get(draftInput.input$) }],
+            }
+          : null);
+      const document = prependMessageDocument(value.draftUserMessage, current);
+      const content = messageDocumentToPrompt(document);
+      if (content === null) {
+        throw new Error("Invalid suggestion composer document");
+      }
+      const prior = get(composerDraftHandoffState$);
+      set(composerDraftHandoffState$, {
+        needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
+      });
+      // seed$ installs the draft synchronously. A returned Promise means the
+      // handoff was applied; rejection only describes remaining reconciliation.
+      return set(
+        seed$,
+        {
+          content,
+          userMessage: document,
+          suggestionDirection: value.suggestionPreset
+            ? { ...value.suggestionPreset, direction_type: "preset" }
+            : undefined,
+          generationTemplate: get(internalGenerationTemplate$),
+          attachments: [
+            ...get(internalAttachments$),
+            ...(value.draftAttachments ?? []).map(createRestoredAttachment),
+          ],
+        },
+        signal,
+      );
+    },
+  );
 }
 
 function createComposerDraftReconcile(
@@ -1279,6 +1306,7 @@ function createComposerDraftHandoffSignals({
           await set(
             seed$,
             {
+              suggestionDirection: get(draftInput.suggestionDirection$),
               content: mergedContent,
               userMessage: mergedDocument,
               generationTemplate: get(internalGenerationTemplate$),

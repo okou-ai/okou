@@ -4,12 +4,18 @@ import {
   USER_PREFERENCES_UNINITIALIZED,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_USER_TIMEZONE } from "@okouai/core/timezone";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { userPreferencesRoutes } from "../user-preferences";
+import { featureSwitchesRoutes } from "../feature-switches";
+import { createBddApi } from "./helpers/api-bdd";
+import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -175,4 +181,357 @@ test("for you covers persist per workspace member and can be reset", async () =>
   const reset = await accept(client().get({ headers: headers() }), [200]);
   expect(reset.body.forYouCoverId).toBeNull();
   expect(reset.body.theme).toBe("dark");
+});
+
+const presentationFormatKey = FeatureSwitchKey.PresentationOutputFormat;
+const eligibleUserId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+
+function newPresentationMember() {
+  const member = { userId: eligibleUserId, orgId: `org_${randomUUID()}` };
+  mocks.clerk.session(member.userId, member.orgId);
+  return member;
+}
+
+function featureClient() {
+  return setupApp({ context, routes: featureSwitchesRoutes })(
+    featureSwitchesContract,
+  );
+}
+
+test("presentation preferences stay null until chosen and survive unrelated updates and initialization", async () => {
+  newPresentationMember();
+  const initialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(initialized.body.presentationFormat).toBeNull();
+  const html = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+  expect(html.body.presentationFormat).toBe("html");
+  const pptx = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(pptx.body.presentationFormat).toBe("pptx");
+  const theme = await accept(
+    client().update({ headers: headers(), body: { theme: "dark" } }),
+    [200],
+  );
+  expect(theme.body.presentationFormat).toBe("pptx");
+  const repeated = await accept(
+    client().initialize({ headers: headers(), body: { locale: "ja-JP" } }),
+    [200],
+  );
+  expect(repeated.body.presentationFormat).toBe("pptx");
+  expect(repeated.body.locale).toBe("en-US");
+  const persisted = await accept(client().get({ headers: headers() }), [200]);
+  expect(persisted.body.presentationFormat).toBe("pptx");
+});
+
+test("presentation preferences stay isolated between members and workspaces", async () => {
+  const member = {
+    userId: eligibleUserId,
+    orgId: createUniqueStaffOrgIdFixture(),
+  };
+  mocks.clerk.session(member.userId, member.orgId);
+  await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(`user_${randomUUID()}`, member.orgId);
+  const otherMember = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(otherMember.body.presentationFormat).toBeNull();
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(member.userId, `org_${randomUUID()}`);
+  const otherWorkspace = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(otherWorkspace.body.presentationFormat).toBeNull();
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(member.userId, member.orgId);
+  const saved = await accept(client().get({ headers: headers() }), [200]);
+  expect(saved.body.presentationFormat).toBe("pptx");
+});
+
+test("saving a presentation preference does not initialize timezone, locale, or memory", async () => {
+  newPresentationMember();
+  const saved = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(saved.body.presentationFormat).toBe("pptx");
+  expect(saved.body.timezone).toBeNull();
+  expect(saved.body.locale).toBeNull();
+  expect(saved.body).toHaveProperty("memoryInitialized", false);
+  const uninitialized = await accept(
+    client().get({ headers: headers() }),
+    [409],
+  );
+  expect(uninitialized.body.error.code).toBe(USER_PREFERENCES_UNINITIALIZED);
+  const initialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(initialized.body.presentationFormat).toBe("pptx");
+});
+
+test("opting out hides and ignores presentation preferences without erasing the saved value or legacy updates", async () => {
+  newPresentationMember();
+  await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: false } },
+    }),
+    [200],
+  );
+  const hidden = await accept(client().get({ headers: headers() }), [200]);
+  expect(hidden.body).not.toHaveProperty("presentationFormat");
+  const onlyFormat = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [400],
+  );
+  expect(onlyFormat.body.error.message).toBe(
+    "At least one preference must be provided",
+  );
+  const mixed = await accept(
+    client().update({
+      headers: headers(),
+      body: { theme: "dark", presentationFormat: "html" },
+    }),
+    [200],
+  );
+  expect(mixed.body.theme).toBe("dark");
+  expect(mixed.body).not.toHaveProperty("presentationFormat");
+  const reinitialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(reinitialized.body).not.toHaveProperty("presentationFormat");
+  await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: true } },
+    }),
+    [200],
+  );
+  const restored = await accept(client().get({ headers: headers() }), [200]);
+  expect(restored.body.presentationFormat).toBe("pptx");
+  expect(restored.body.theme).toBe("dark");
+});
+
+test("non-opted-in callers retain legacy preferences without saving a presentation default", async () => {
+  newMember();
+  const initialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
+  const mixed = await accept(
+    client().update({
+      headers: headers(),
+      body: { theme: "dark", presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(mixed.body.theme).toBe("dark");
+  expect(mixed.body).not.toHaveProperty("presentationFormat");
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [400],
+  );
+});
+
+test("ordinary members can opt in and save HTML and PPTX presentation preferences", async () => {
+  mocks.clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
+  const initialSwitches = await accept(
+    featureClient().get({ headers: headers() }),
+    [200],
+  );
+  expect(initialSwitches.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: false,
+  });
+  const initialized = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
+
+  const optedIn = await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: true } },
+    }),
+    [200],
+  );
+  expect(optedIn.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: true,
+  });
+  const enabled = await accept(
+    featureClient().get({ headers: headers() }),
+    [200],
+  );
+  expect(enabled.body.effectiveSwitches).toMatchObject({
+    [presentationFormatKey]: true,
+  });
+  const unchosen = await accept(client().get({ headers: headers() }), [200]);
+  expect(unchosen.body.presentationFormat).toBeNull();
+
+  const html = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+  expect(html.body.presentationFormat).toBe("html");
+  const savedHtml = await accept(client().get({ headers: headers() }), [200]);
+  expect(savedHtml.body.presentationFormat).toBe("html");
+  const pptx = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(pptx.body.presentationFormat).toBe("pptx");
+  const savedPptx = await accept(client().get({ headers: headers() }), [200]);
+  expect(savedPptx.body.presentationFormat).toBe("pptx");
+});
+
+test("cli PATs retain legacy preference access but cannot save the enabled presentation preference", async () => {
+  const identity = newPresentationMember();
+  const actor = createBddApi(context).user(identity);
+  const devices = createAuthDeviceApiActions(context);
+  const device = await devices.startCliDevice();
+  await devices.requestCliApproval(
+    actor,
+    { device_code: device.device_code },
+    [200],
+  );
+  const issued = await devices.requestCliToken(device.device_code, [200]);
+  if (issued.status !== 200) {
+    throw new Error("Expected the approved device to issue a CLI PAT");
+  }
+  const patHeaders = { authorization: `Bearer ${issued.body.access_token}` };
+  const legacy = await accept(
+    client().update({ headers: patHeaders, body: { theme: "dark" } }),
+    [200],
+  );
+  expect(legacy.body.theme).toBe("dark");
+  expect(legacy.body.presentationFormat).toBeNull();
+  const denied = await accept(
+    client().update({
+      headers: patHeaders,
+      body: { presentationFormat: "pptx", theme: "light" },
+    }),
+    [400],
+  );
+  expect(denied.body.error.message).toBe(
+    "Presentation format preferences require a human session",
+  );
+  const afterDenial = await accept(
+    client().update({ headers: patHeaders, body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(afterDenial.body.theme).toBe("dark");
+  expect(afterDenial.body.presentationFormat).toBeNull();
+
+  mocks.clerk.session(identity.userId, identity.orgId);
+  await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: false } },
+    }),
+    [200],
+  );
+  const disabledMixed = await accept(
+    client().update({
+      headers: patHeaders,
+      body: { theme: "light", presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+  expect(disabledMixed.body.theme).toBe("light");
+  expect(disabledMixed.body).not.toHaveProperty("presentationFormat");
+  const disabledFormat = await accept(
+    client().update({
+      headers: patHeaders,
+      body: { presentationFormat: "pptx" },
+    }),
+    [400],
+  );
+  expect(disabledFormat.body.error.message).toBe(
+    "At least one preference must be provided",
+  );
+  await accept(
+    featureClient().update({
+      headers: headers(),
+      body: { switches: { [presentationFormatKey]: true } },
+    }),
+    [200],
+  );
+  const restored = await accept(
+    client().update({ headers: patHeaders, body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(restored.body.theme).toBe("light");
+  expect(restored.body.presentationFormat).toBeNull();
 });

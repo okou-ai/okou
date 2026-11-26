@@ -34,6 +34,8 @@ export const connectors = pgTable(
     defaultEnabledForChats: boolean("default_enabled_for_chats")
       .default(true)
       .notNull(),
+    chatAccessAllowed: boolean("chat_access_allowed"),
+    chatAccessExpiresAt: timestamp("chat_access_expires_at"),
     authMethod: varchar("auth_method", { length: 50 }).notNull(), // "oauth"
     // Builtin Automatic keeps the catalog method ID and records its resolution separately.
     automaticAuthType: varchar("automatic_auth_type", { length: 8 }).$type<
@@ -43,6 +45,7 @@ export const connectors = pgTable(
 
     // External account info (from OAuth)
     externalId: varchar("external_id", { length: 255 }),
+    externalIssuer: text("external_issuer").notNull().default(""),
     externalUsername: varchar("external_username", { length: 255 }),
     externalEmail: varchar("external_email", { length: 255 }),
     oauthScopes: text("oauth_scopes"), // Custom grants; legacy built-in fact and requested mirror for new built-in writes
@@ -60,6 +63,29 @@ export const connectors = pgTable(
   (table) => {
     return [
       index("idx_connectors_org").on(table.orgId),
+      uniqueIndex("idx_connectors_builtin_external_identity")
+        .on(
+          table.orgId,
+          table.userId,
+          table.connectorSlug,
+          table.externalId,
+          table.externalIssuer,
+          sql`(CASE WHEN ${table.connectorSlug} = 'aws' THEN substring(${table.externalUsername} from '[(]([^()]+)[)]$') WHEN ${table.connectorSlug} IN ('notion', 'slack', 'hubspot') AND ${table.externalIssuer} = '' THEN NULL ELSE '' END)`,
+        )
+        .where(
+          sql`${table.connectorSlug} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,
+        ),
+      uniqueIndex("idx_connectors_custom_external_identity")
+        .on(
+          table.orgId,
+          table.userId,
+          table.customConnectorId,
+          table.externalId,
+          table.externalIssuer,
+        )
+        .where(
+          sql`${table.customConnectorId} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,
+        ),
       index("idx_connectors_stripe_oauth_external_id")
         .on(table.externalId)
         .where(
@@ -101,6 +127,10 @@ export const connectors = pgTable(
       check(
         "chk_connectors_default_enabled",
         sql`NOT ${table.isDefault} OR ${table.defaultEnabledForChats}`,
+      ),
+      check(
+        "chk_connectors_chat_access_expiry",
+        sql`${table.chatAccessExpiresAt} IS NULL OR ${table.chatAccessAllowed} IS TRUE`,
       ),
       index("idx_connectors_org_user_slug")
         .on(

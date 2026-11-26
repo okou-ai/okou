@@ -36,13 +36,11 @@
     <string name="connector_rename">Rename</string>
     <string name="connector_rename_title">Rename account</string>
     <string name="connector_account_name">Account name</string>
-    <string name="connector_rename_hint">Leading and trailing spaces are removed. The character limit is %1$d.</string>
     <string name="connector_rename_required">Enter an account name.</string>
     <string name="connector_rename_too_long">The account name exceeds the character limit of %1$d.</string>
     <string name="connector_disconnect">Disconnect account</string>
     <string name="connector_disconnect_title">Disconnect this account?</string>
     <string name="connector_disconnect_copy">Chats and automations using this account may need to choose another connection. Other accounts remain available.</string>
-    <string name="connector_load_when_online">Content will load when you’re back online.</string>
     <string name="connector_loading">Loading connectors…</string>
     <string name="connector_loading_accounts">Loading accounts…</string>
     <string name="connector_loading_permissions">Loading permissions…</string>
@@ -52,7 +50,6 @@
     <string name="connector_accounts_failed">Could not load accounts.</string>
     <string name="connector_permissions_failed">Could not load permissions.</string>
     <string name="connector_impact_failed">Could not check where this account is used.</string>
-    <string name="connector_offline">Offline</string>
     <string name="connector_network_failed">Could not reach Okou. Check your connection and try again.</string>
     <string name="connector_account_unavailable">This account is no longer available.</string>
     <string name="connector_unavailable">Authorization is unavailable for this account.</string>
@@ -75,6 +72,9 @@
     <string name="connector_change_failed">Could not complete this action. Check the account and try again.</string>
     <string name="connector_device_code">Enter this code on the provider’s page</string>
     <string name="connector_external_code">Authorization code</string>
+    <string name="connector_checking_code">Checking…</string>
+    <string name="connector_external_code_too_long">Maximum code length is %1$d.</string>
+    <string name="connector_external_code_failed">Code verification failed.</string>
     <string name="connector_external_instructions">Complete authorization on the provider’s page, then enter its code here.</string>
     <string name="connector_submit_code">Confirm code</string>
     <string name="connector_working">Checking account…</string>
@@ -106,4 +106,30 @@
         <item quantity="one">%d chat has explicitly selected this account.</item>
         <item quantity="other">%d chats have explicitly selected this account.</item>
     </plurals>
+    <string name="chat_options_title">Chat options</string>
+    <string name="chat_options_settings">Conversation settings</string>
+    <string name="chat_options_model">Model</string>
+    <string name="chat_connector_scope">Applies to this chat. Accounts initially follow the workspace defaults.</string>
+    <string name="connector_access_scope">Applies across your chats.</string>
+    <string name="connector_access_label">Access for %1$s, %2$s</string>
+    <string name="connector_access_allow">Allow</string>
+    <string name="connector_access_deny">Deny</string>
+    <string name="connector_access_always">Always</string>
+    <string name="connector_access_expired">Expired</string>
+    <string name="connector_access_under_hour">&lt;1h</string>
+    <string name="connector_access_hours">%dh</string>
+    <string name="connector_access_days">%dd</string>
+    <string name="connector_access_allow_always">Allow always</string>
+    <string name="connector_access_allow_hour">Allow for 1h</string>
+    <string name="connector_access_allow_day">Allow for 24h</string>
+    <string name="connector_access_allow_week">Allow for 7d</string>
+    <string name="chat_connector_empty">There are no connected accounts in this workspace.</string>
+    <string name="chat_connector_manage">Manage connectors</string>
+    <string name="chat_connector_restore_defaults">Restore workspace defaults</string>
+    <string name="chat_connector_saving">Saving connector choice…</string>
+    <string name="chat_connector_save_failed">Could not save the connector choice.</string>
+    <string name="chat_connector_first_send_failed">Could not apply the connector choices. Review them in Chat options, then retry this message.</string>
+    <string name="connector_device_denied">The provider denied authorization.</string>
+    <string name="connector_device_expired">The device code expired. Start authorization again.</string>
+    <string name="connector_device_failed">Could not complete device authorization.</string>
 </resources>

@@ -32,14 +32,8 @@ export function memberConnectorContextColumns(
   member: ConnectorMember,
   at: Date,
 ) {
-  const { builtin, custom, permissions } = memberConnectorSelectionQueries(
-    member,
-    at,
-  );
+  const { custom, permissions } = memberConnectorSelectionQueries(member, at);
   return {
-    builtin: contextJsonRows(builtin).mapWith(
-      zodDriverValueDecoder(zUnknown()),
-    ),
     custom: contextJsonRows(custom).mapWith(zodDriverValueDecoder(zUnknown())),
     permissions: contextJsonRows(permissions).mapWith(
       zodDriverValueDecoder(zUnknown()),
@@ -50,15 +44,15 @@ export function memberConnectorContextColumns(
 export function createExecutionConnectorContext(
   raw$: Computed<
     Promise<{
-      readonly builtin: unknown;
+      readonly accounts: readonly { readonly connectorSlug: string | null }[];
       readonly custom: unknown;
       readonly permissions: unknown;
     }>
   >,
+  orgId: string,
 ) {
   const connectorSelection$ = computed(async (get) => {
     const row = await get(raw$);
-    const builtin = array(connectorSlugRow).parse(row.builtin);
     const custom = array(
       object({
         connector: contextProjectionSchema(connectorColumns).and(
@@ -70,7 +64,12 @@ export function createExecutionConnectorContext(
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),
       }),
     ).parse(row.custom);
-    return executionConnectorSelectionFromRows(builtin, custom);
+    return executionConnectorSelectionFromRows(
+      row.accounts,
+      custom.map(({ connector, oauthConfig }) => {
+        return { connector: { ...connector, orgId }, oauthConfig };
+      }),
+    );
   });
   const permissionGrants$ = computed(async (get) => {
     return array(permissionGrantRow).parse((await get(raw$)).permissions);

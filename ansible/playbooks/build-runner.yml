@@ -1,7 +1,7 @@
 # Build Okou Runner (Rust)
 #
 # This playbook prepares a new version of the Rust-based Okou runner on
-# production metal instances **without starting the service**. It copies the
+# production metal instances **without starting the service**. It downloads the
 # binary, downloads dependencies, builds the default rootfs/snapshot, and
 # writes the per-version config file. The systemd service is installed by
 # the companion `promote-runner.yml` in the promote phase — this lets the
@@ -16,6 +16,9 @@
 #     -e "official_runner_secret=xxx" \
 #     -e "api_url=https://api.okou.ai" \
 #     -e "runner_version=0.3.0" \
+#     -e "runner_target=x86_64-unknown-linux-musl" \
+#     -e "runner_asset_url=https://github.com/.../runner-v0.3.0-x86_64-linux" \
+#     -e "runner_asset_checksum=sha256:..." \
 #     -e "r2_account_id=xxx" \
 #     -e "r2_access_key_id=xxx" \
 #     -e "r2_secret_access_key=xxx" \
@@ -23,7 +26,9 @@
 #
 # Required Variables:
 #   - runner_version: Semantic version of the runner being built, without leading v
-#   - runner_target: Rust target triple for the copied runner binary
+#   - runner_target: Rust target triple for the release asset
+#   - runner_asset_url: Public URL of the release asset for the version and target
+#   - runner_asset_checksum: Published SHA-256 digest in sha256:<hex> format
 #   - official_runner_secret: Runner authentication secret (baked into config)
 #   - api_url: Okou API URL (baked into config)
 #   - r2_account_id / r2_access_key_id / r2_secret_access_key / r2_bucket:
@@ -58,11 +63,9 @@
         state: directory
         mode: "0755"
 
-    - name: Copy runner binary (guest binaries are embedded)
-      copy:
-        src: "{{ playbook_dir }}/../../crates/target/{{ runner_target }}/release/runner"
-        dest: "{{ bin_dir }}/"
-        mode: "0755"
+    - name: Stage runner binary from GitHub Release
+      include_tasks: ../tasks/stage-runner-release-asset.yml
+      when: not ansible_check_mode
 
     # ========================================
     # Phase 2: Setup + Build

@@ -28,6 +28,8 @@ export interface ApplyPendingMigrationsOptions {
    * value. Migration tests use it to seed data in the preceding schema.
    */
   readonly beforeMillis?: number;
+  /** Production still serves the outgoing API during the pre-promotion pass. */
+  readonly beforeApiPromotion?: boolean;
   /** Disposable smoke clones only: a diagnostic replay can commit its batch. */
   readonly diagnoseBatchTimeouts?: boolean;
 }
@@ -241,7 +243,12 @@ export async function applyPendingMigrations(
           await transaction`SET LOCAL statement_timeout = '10s'`;
 
           for (const [index, statement] of statements.entries()) {
-            if (statement.trim().length === 0) {
+            // Post-promotion DDL is replayed by the release after outgoing readers drain.
+            if (
+              statement.trim().length === 0 ||
+              (options.beforeApiPromotion &&
+                statement.includes("-- okou:after-api-promotion"))
+            ) {
               continue;
             }
             progress = {

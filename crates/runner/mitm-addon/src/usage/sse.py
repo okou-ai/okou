@@ -28,6 +28,13 @@ _MAX_CONTROL_LINE_BYTES = 4096
 _MAX_STEP_BYTES = 4096
 
 
+def resolve_event_name(event_name: str | None, data_type: object) -> str | None:
+    """Prefer an explicit SSE name, then a string type from the payload."""
+    if event_name is None and isinstance(data_type, str):
+        return data_type
+    return event_name
+
+
 class SseUsageEventHandler(Protocol):
     """Provider-owned sink for target SSE event data."""
 
@@ -50,9 +57,6 @@ class SseUsageEventHandler(Protocol):
 
     def on_data(self, chunk: bytes) -> None:
         """Called with bytes from a captured data field."""
-
-    def on_data_separator(self) -> None:
-        """Called between multiple captured data fields in one event."""
 
     def on_event_end(self, event_name: str | None) -> None:
         """Called when a captured event is finalized.
@@ -304,7 +308,7 @@ class SseUsageScanner:
             self._captured_data_lines = 0
             self._handler.on_event_start(self._event_name)
         elif self._captured_data_lines > 0:
-            self._handler.on_data_separator()
+            self._handler.on_data(b"\n")
 
         self._captured_data_lines += 1
         self._state = "data"

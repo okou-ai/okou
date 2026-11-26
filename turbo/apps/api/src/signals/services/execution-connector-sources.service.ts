@@ -19,32 +19,26 @@ export interface ConnectorSourcesRequest {
   readonly userId: string;
   readonly sources: readonly ConnectorSourceIdentity[];
 }
-/** Selection and firewall preparation need identity and presence, never values. */
-export interface ConnectorCredentialReference {
-  readonly id: string;
-  readonly name: string;
-}
 /** Saved connection facts needed to judge credential validity at execution. */
 export interface ConnectorSourceConnection {
   readonly authMethod: string;
   readonly storageVersion: number;
   readonly needsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
-  readonly updatedAt: Date;
 }
 /** Custom definition and OAuth binding captured by the bootstrap loader. */
 export interface CustomConnectorSourceBinding {
   readonly definitionAuthMode: CustomConnectorAuthMode;
   readonly definitionStorageVersion: number;
   readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
-  readonly automaticOAuthBindingId: string | null;
+  readonly hasAutomaticOAuthBinding: boolean;
 }
 export interface ConnectorSourceSnapshot {
   readonly source: ConnectorSourceIdentity;
   readonly connection: ConnectorSourceConnection;
   readonly customBinding: CustomConnectorSourceBinding | null;
   readonly variables: Readonly<Record<string, string>>;
-  readonly credentials: readonly ConnectorCredentialReference[];
+  readonly credentialNames: readonly string[];
 }
 export type ConnectorSourceResult =
   | { readonly kind: "available"; readonly snapshot: ConnectorSourceSnapshot }
@@ -59,7 +53,7 @@ export interface ConnectorSourceRow extends ConnectorSourceConnection {
   readonly definitionAuthMode: CustomConnectorAuthMode | null;
   readonly definitionStorageVersion: number | null;
   readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
-  readonly automaticOAuthBindingId: string | null;
+  readonly hasAutomaticOAuthBinding: boolean;
 }
 
 export interface ConnectorSourceValues {
@@ -68,9 +62,10 @@ export interface ConnectorSourceValues {
     readonly name: string;
     readonly value: string;
   }[];
-  readonly credentials: readonly (ConnectorCredentialReference & {
+  readonly credentials: readonly {
     readonly sourceId: string | null;
-  })[];
+    readonly name: string;
+  }[];
 }
 
 function sourceMatches(
@@ -101,7 +96,6 @@ function sourceSnapshot(
       storageVersion: row.storageVersion,
       needsReconnect: row.needsReconnect,
       tokenExpiresAt: row.tokenExpiresAt,
-      updatedAt: row.updatedAt,
     },
     customBinding:
       source.kind === "custom" &&
@@ -111,7 +105,7 @@ function sourceSnapshot(
             definitionAuthMode: row.definitionAuthMode,
             definitionStorageVersion: row.definitionStorageVersion,
             definitionMcpTransport: row.definitionMcpTransport,
-            automaticOAuthBindingId: row.automaticOAuthBindingId,
+            hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
           }
         : null,
     variables: Object.fromEntries(
@@ -123,12 +117,12 @@ function sourceSnapshot(
           return [value.name, value.value];
         }),
     ),
-    credentials: values.credentials
+    credentialNames: values.credentials
       .filter((value) => {
         return value.sourceId === source.sourceId;
       })
-      .map(({ id, name }) => {
-        return { id, name };
+      .map(({ name }) => {
+        return name;
       }),
   };
 }

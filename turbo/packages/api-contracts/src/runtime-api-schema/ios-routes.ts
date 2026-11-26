@@ -1,14 +1,12 @@
 import { array } from "zod";
 import {
   onboardingStatusContract,
-  onboardingNativeAvailabilityContract,
   onboardingDraftContract,
   onboardingSourcesContract,
   onboardingCompleteContract,
   onboardingRecommendationContract,
 } from "../contracts/onboarding";
-import { skillImportSessionsContract } from "../contracts/skill-import";
-import { paidToolsContract } from "../contracts/paid-tools";
+import { feedContract } from "../contracts/feed";
 import { composerDraftContract } from "../contracts/composer-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
@@ -94,6 +92,7 @@ import { voiceIoQuotaContract } from "../contracts/voice-io-quota";
 import { voiceIoTranscribeContract } from "../contracts/voice-io-transcribe";
 import { voiceIoPolishSegmentsContract } from "../contracts/voice-io-polish";
 import {
+  workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "../contracts/workflows";
@@ -126,10 +125,6 @@ export const iosClientContracts: readonly {
   };
 }[] = [
   {
-    id: "ios.onboardingNativeAvailabilityContract.get",
-    route: onboardingNativeAvailabilityContract.get,
-  },
-  {
     id: "ios.onboardingStatusContract.getStatus",
     route: onboardingStatusContract.getStatus,
   },
@@ -154,16 +149,6 @@ export const iosClientContracts: readonly {
     id: "ios.onboardingRecommendationContract.get",
     route: onboardingRecommendationContract.get,
   },
-  {
-    id: "ios.skillImportSessionsContract.create",
-    route: skillImportSessionsContract.create,
-  },
-  {
-    id: "ios.skillImportSessionsContract.listSkills",
-    route: skillImportSessionsContract.listSkills,
-  },
-  { id: "ios.paidToolsContract.get", route: paidToolsContract.get },
-  { id: "ios.paidToolsContract.update", route: paidToolsContract.update },
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
   { id: "ios.composerDraftContract.get", route: composerDraftContract.get },
@@ -175,6 +160,20 @@ export const iosClientContracts: readonly {
   {
     id: "ios.artifactReferencesContract.resolve",
     route: artifactReferencesContract.resolve,
+  },
+  { id: "ios.feedContract.summary", route: feedContract.summary },
+  { id: "ios.feedContract.list", route: feedContract.list },
+  { id: "ios.feedContract.markRead", route: feedContract.markRead },
+  { id: "ios.feedContract.consume", route: feedContract.consume },
+  { id: "ios.feedContract.feedback", route: feedContract.feedback },
+  { id: "ios.feedContract.dismiss", route: feedContract.dismiss },
+  {
+    id: "ios.workflowAutomationsContract.get",
+    route: workflowAutomationsContract.get,
+  },
+  {
+    id: "ios.workflowAutomationsContract.enable",
+    route: workflowAutomationsContract.enable,
   },
   { id: "ios.billingStatusContract.get", route: billingStatusContract.get },
   {
@@ -200,6 +199,18 @@ export const iosClientContracts: readonly {
   {
     id: "ios.chatConnectorAccessContract.accountDefaults",
     route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.accountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.updateAccountPolicy",
+    route: chatConnectorAccessContract.updateAccountPolicy,
+  },
+  {
+    id: "ios.chatConnectorAccessContract.overviewTarget",
+    route: chatConnectorAccessContract.overviewTarget,
   },
   {
     id: "ios.chatConnectorAccessContract.updateAccountDefault",
@@ -278,6 +289,14 @@ export const iosClientContracts: readonly {
     route: chatThreadConnectorSelectionContract.clear,
   },
   { id: "ios.chatThreadDraftContract.get", route: chatThreadDraftContract.get },
+  {
+    id: "ios.chatThreadDraftContract.readComposer",
+    route: chatThreadDraftContract.readComposer,
+  },
+  {
+    id: "ios.chatThreadDraftContract.saveComposer",
+    route: chatThreadDraftContract.saveComposer,
+  },
   {
     id: "ios.chatThreadEventsContract.catchUp",
     route: chatThreadEventsContract.catchUp,
@@ -378,6 +397,22 @@ export const iosClientContracts: readonly {
   {
     id: "ios.connectorAccountsContract.connections",
     route: connectorAccountsContract.connections,
+  },
+  {
+    id: "ios.connectorAccountsContract.inspect",
+    route: connectorAccountsContract.inspect,
+  },
+  {
+    id: "ios.connectorAccountsContract.rename",
+    route: connectorAccountsContract.rename,
+  },
+  {
+    id: "ios.connectorAccountsContract.deletionImpact",
+    route: connectorAccountsContract.deletionImpact,
+  },
+  {
+    id: "ios.connectorAccountsContract.delete",
+    route: connectorAccountsContract.delete,
   },
   {
     id: "ios.connectorAccountsContract.oauthCompletion",
@@ -513,6 +548,10 @@ export const iosClientContracts: readonly {
     route: runConnectorAccountsContract.approve,
   },
   {
+    id: "ios.runConnectorAccountsContract.approveMember",
+    route: runConnectorAccountsContract.approveMember,
+  },
+  {
     id: "ios.thirdPartySubscriptionsMainContract.list",
     route: thirdPartySubscriptionsMainContract.list,
   },
@@ -526,6 +565,10 @@ export const iosClientContracts: readonly {
     route: uploadsContract.completeMultipart,
   },
   { id: "ios.uploadsContract.prepare", route: uploadsContract.prepare },
+  {
+    id: "ios.uploadsContract.preparePrivate",
+    route: uploadsContract.preparePrivate,
+  },
   {
     id: "ios.userModelPreferenceContract.get",
     route: userModelPreferenceContract.get,

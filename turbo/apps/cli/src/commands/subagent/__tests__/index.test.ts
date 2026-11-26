@@ -21,6 +21,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 import {
@@ -135,17 +136,38 @@ function completion(
   );
 }
 
-async function waitForFile(
+function waitForFile(
   path: string,
-  accept: (text: string | undefined) => boolean,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const watcher = watch(dirname(path), () => {
-      void check().catch(reject);
-    });
-    watcher.on("error", reject);
-    const check = async () => {
-      try {
+  accept: (text: string) => boolean,
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let reading = false;
+    let needsRead = false;
+    const watcher = watch(dirname(path), requestCheck);
+    onTestFinished(close);
+    watcher.on("error", fail);
+
+    function close() {
+      needsRead = false;
+      watcher.close();
+    }
+
+    function fail(error: unknown) {
+      close();
+      reject(error);
+    }
+
+    function requestCheck() {
+      // Keep one pending check when a change arrives during the current read.
+      needsRead = true;
+      if (reading) return;
+      reading = true;
+      check().catch(fail);
+    }
+
+    async function check() {
+      while (needsRead) {
+        needsRead = false;
         const text = await readFile(path, "utf8").catch((error: unknown) => {
           if (
             error instanceof Error &&
@@ -155,16 +177,16 @@ async function waitForFile(
             return undefined;
           throw error;
         });
-        if (accept(text)) {
-          watcher.close();
-          resolve();
+        if (text !== undefined && accept(text)) {
+          close();
+          resolve(text);
+          return;
         }
-      } catch (error) {
-        watcher.close();
-        reject(error);
       }
-    };
-    void check().catch(reject);
+      reading = false;
+    }
+
+    requestCheck();
   });
 }
 
@@ -411,13 +433,13 @@ describe("okou subagent", () => {
     const first = await nextRequest();
     await run("steer", "-p", started.id, "first follow-up");
     await waitForFile(started.stdout, (text) => {
-      return Boolean(text?.includes("first follow-up"));
+      return text.includes("first follow-up");
     });
     const followup = join(root, "followup.md");
     await writeFile(followup, "second follow-up");
     await run("steer", "-p", started.id, "-f", followup);
     await waitForFile(started.stdout, (text) => {
-      return Boolean(text?.includes("second follow-up"));
+      return text.includes("second follow-up");
     });
     const artifact = join(root, "deliverable.txt");
     completion(first.response, "", {
@@ -451,7 +473,7 @@ describe("okou subagent", () => {
       JSON.parse((await run("start", "unresponsive task"))[0] ?? ""),
     );
     await waitForFile(item.stdout, (text) => {
-      return Boolean(text?.includes("toolPid"));
+      return text.includes("toolPid");
     });
     const toolPid = object({ toolPid: number() }).parse(
       JSON.parse((await readFile(item.stdout, "utf8")).trim()),
@@ -579,7 +601,7 @@ describe("okou subagent", () => {
     // before they can be inspected through the command's advertised path.
     await run("steer", "-p", item.id, "wait for the log inspection");
     await waitForFile(item.stdout, (text) => {
-      return Boolean(text?.includes("wait for the log inspection"));
+      return text.includes("wait for the log inspection");
     });
     request.response.writeHead(200, {
       "content-type": "text/event-stream",
@@ -600,10 +622,9 @@ describe("okou subagent", () => {
       request.response.write(chunk(delta));
     }
     request.response.write(chunk("stream-inspection-boundary"));
-    await waitForFile(item.stdout, (text) => {
-      return Boolean(text?.includes("stream-inspection-boundary"));
+    const streaming = await waitForFile(item.stdout, (text) => {
+      return text.endsWith("\n") && text.includes("stream-inspection-boundary");
     });
-    const streaming = await readFile(item.stdout, "utf8");
     // Native stringify would repeat two growing snapshots on each of 1000
     // deltas, producing hundreds of MiB rather than this sub-MiB wire log.
     expect(Buffer.byteLength(streaming)).toBeLessThan(1024 * 1024);

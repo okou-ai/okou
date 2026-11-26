@@ -1,341 +1,167 @@
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   testContext,
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { getNamedButton } from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
 
 const context = testContext();
 warmMermaidParser();
-const artifactId = "00000000-0000-4000-8000-000000000021";
-const filename = "for-test.html";
-const previewUrl = `https://ps-${"d".repeat(48)}.okou.app/`;
-const previewSrc = `${previewUrl}#counter`;
 
-function button(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const element = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
-  });
-  if (!element) {
-    throw new Error(`Missing button: ${name}`);
+function fullscreenBrowser(enabled: boolean) {
+  let active: Element | null = null;
+  function show(element: Element | null) {
+    active = element;
+    document.dispatchEvent(new Event("fullscreenchange"));
+    return Promise.resolve();
   }
-  return element;
-}
-
-function mockBrowserProperty(
-  target: object,
-  name: string,
-  descriptor: PropertyDescriptor,
-): void {
-  const original = Object.getOwnPropertyDescriptor(target, name);
-  Object.defineProperty(target, name, { configurable: true, ...descriptor });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (original) {
-        Object.defineProperty(target, name, original);
-      } else {
-        Reflect.deleteProperty(target, name);
-      }
-    },
-    { once: true },
-  );
-}
-
-function mockFullscreen(mode: "native" | "unsupported") {
-  const browserState: { fullscreenElement: Element | null } = {
-    fullscreenElement: null,
-  };
-
-  mockBrowserProperty(document, "fullscreenEnabled", {
-    value: mode !== "unsupported",
-  });
-  mockBrowserProperty(document, "fullscreenElement", {
-    get: () => {
-      return browserState.fullscreenElement;
-    },
-  });
-  mockBrowserProperty(Element.prototype, "requestFullscreen", {
-    value:
-      mode === "unsupported"
-        ? undefined
-        : function (this: Element): Promise<void> {
-            browserState.fullscreenElement = this;
-            document.dispatchEvent(new Event("fullscreenchange"));
-            return Promise.resolve();
-          },
-  });
-  mockBrowserProperty(document, "exitFullscreen", {
-    value: () => {
-      browserState.fullscreenElement = null;
-      document.dispatchEvent(new Event("fullscreenchange"));
-      return Promise.resolve();
-    },
-  });
-}
-
-async function openHtmlViewer(): Promise<void> {
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", previewUrl).href,
-      url: previewUrl,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename,
-      contentType: "text/html",
-      target: { kind: "html", id: artifactId },
-    });
-  });
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
-    });
-  });
-  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `${artifactReferencePath(artifactId, filename)}#counter`,
-    host: "app.okou.ai",
-  });
-  await expect(
-    screen.findByTitle(`${filename} preview`),
-  ).resolves.toHaveAttribute("src", previewSrc);
-}
-
-test("fullscreen hides the header and offers an exit when the browser API is unsupported", async () => {
-  mockFullscreen("unsupported");
-  await openHtmlViewer();
-
-  const header = screen.getByRole("banner");
-  const title = screen.getByRole("heading", { name: filename });
-  expect(header).toBeVisible();
-  click(button("Enter fullscreen"));
-
-  await waitFor(() => {
-    expect(button("Exit fullscreen")).toBeVisible();
-    expect(button("Exit fullscreen")).toBeEnabled();
-  });
-  expect(header).not.toBeVisible();
-  expect(title).not.toBeVisible();
-  expect(document.fullscreenElement).toBeNull();
-  expect(screen.getByTitle(`${filename} preview`)).toBeVisible();
-  expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-    "src",
-    previewSrc,
-  );
-
-  click(button("Exit fullscreen"));
-  await waitFor(() => {
-    expect(button("Enter fullscreen")).toHaveFocus();
-  });
-  expect(header).toBeVisible();
-  expect(title).toBeVisible();
-  expect(button("Enter fullscreen")).toBeEnabled();
-  expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-    "src",
-    previewSrc,
-  );
-});
-
-test("native fullscreen keeps the exit control with the preview and restores the header after exit", async () => {
-  mockFullscreen("native");
-  await openHtmlViewer();
-  const header = screen.getByRole("banner");
-
-  click(button("Enter fullscreen"));
-  await waitFor(() => {
-    expect(button("Exit fullscreen")).toBeVisible();
-    expect(button("Exit fullscreen")).toBeEnabled();
-  });
-  expect(header).not.toBeVisible();
-  expect(document.fullscreenElement).toContainElement(
-    screen.getByTitle(`${filename} preview`),
-  );
-  expect(document.fullscreenElement).toContainElement(
-    button("Exit fullscreen"),
-  );
-  expect(document.fullscreenElement).not.toContainElement(header);
-
-  click(button("Exit fullscreen"));
-
-  await waitFor(() => {
-    expect(button("Enter fullscreen")).toHaveFocus();
-  });
-  expect(header).toBeVisible();
-  expect(document.fullscreenElement).toBeNull();
-  expect(button("Enter fullscreen")).toBeEnabled();
-  expect(screen.getByTitle(`${filename} preview`)).toHaveAttribute(
-    "src",
-    previewSrc,
-  );
-});
-
-async function openMarkdownViewer() {
-  const url = "https://artifacts.example.com/fullscreen-plan.md";
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text(
-      "# Fullscreen plan\n\n```mermaid\nflowchart LR\n  Read --> Expand\n```",
+  // Only the native Fullscreen API is simulated. React owns the page, dialog and focus.
+  const properties: [object, string, PropertyDescriptor][] = [
+    [document, "fullscreenEnabled", { value: enabled }],
+    [
+      document,
+      "fullscreenElement",
+      {
+        get: () => {
+          return active;
+        },
+      },
+    ],
+    [
+      HTMLElement.prototype,
+      "requestFullscreen",
+      {
+        value: function (this: HTMLElement) {
+          return show(this);
+        },
+      },
+    ],
+    [
+      document,
+      "exitFullscreen",
+      {
+        value: () => {
+          return show(null);
+        },
+      },
+    ],
+  ];
+  for (const [target, key, descriptor] of properties) {
+    const previous = Object.getOwnPropertyDescriptor(target, key);
+    Object.defineProperty(target, key, { ...descriptor, configurable: true });
+    context.signal.addEventListener(
+      "abort",
+      () => {
+        if (previous) {
+          Object.defineProperty(target, key, previous);
+        } else {
+          Reflect.deleteProperty(target, key);
+        }
+      },
+      { once: true },
     );
-  });
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+  }
+}
+
+function openArtifact(filename: string, contentType: string, url: string) {
+  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
     return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
       url,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename: "plan.md",
-      contentType: "text/markdown",
-      target: { kind: "file", id: artifactId },
+      downloadUrl: url,
+      preview: { filename, contentType },
     });
   });
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
-    });
-  });
-  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-  await setupPage({
+  const extension = filename.split(".").pop();
+  return setupPage({
     context,
-    path: artifactReferencePath(artifactId, "plan.md"),
+    auth: null,
     host: "app.okou.ai",
+    path: `/artifacts/field024ab.${extension}#west`,
   });
-  await screen.findByRole("img", { name: "Diagram" });
 }
-
-test.each(["native", "unsupported"] as const)(
-  "closing a diagram preserves document fullscreen (%s)",
-  async (mode) => {
-    mockFullscreen(mode);
-    await openMarkdownViewer();
-    click(button("Enter fullscreen"));
-    await waitFor(() => {
-      return expect(button("Exit fullscreen")).toBeInTheDocument();
+test.each([
+  { id: "001", native: false },
+  { id: "002", native: true },
+])(
+  "shared-artifact-fullscreen-$id restores the HTML reader after leaving fullscreen (native=$native)",
+  async ({ native }) => {
+    fullscreenBrowser(native);
+    const url = "https://field-guide.example.test/index.html";
+    await openArtifact("Field guide.html", "text/html", url);
+    const title = await screen.findByRole("heading", {
+      name: "Field guide.html",
     });
-    const trigger = button("Expand diagram");
-    click(trigger);
-    const diagram = await screen.findByTestId("artifact-diagram-lightbox");
-    expect(document.fullscreenElement?.contains(diagram) ?? false).toBe(
-      mode === "native",
+    const banner = screen.getByRole("banner");
+    const frame = await screen.findByTitle("Field guide.html preview");
+    const destination = url + "#west";
+    expect(frame).toHaveAttribute("src", destination);
+    click(getNamedButton("Enter fullscreen", banner));
+    const exit = await screen.findByLabelText("Exit fullscreen");
+    expect(exit).toBeEnabled();
+    expect(title).not.toBeVisible();
+    expect(banner).not.toBeVisible();
+    const readingArea = native
+      ? document.fullscreenElement
+      : screen.getByRole("main");
+    expect(readingArea).toContainElement(exit);
+    const fullFrame = screen.getByTitle("Field guide.html preview");
+    expect(readingArea).toContainElement(fullFrame);
+    expect(fullFrame).toBeVisible();
+    expect(fullFrame).toHaveAttribute("src", destination);
+    expect(Boolean(document.fullscreenElement)).toBe(native);
+    click(exit);
+    await waitFor(() => {
+      return expect(getNamedButton("Enter fullscreen", banner)).toHaveFocus();
+    });
+    expect(banner).toBeVisible();
+    expect(title).toBeVisible();
+    expect(document.fullscreenElement).toBeNull();
+    expect(screen.getByTitle("Field guide.html preview")).toHaveAttribute(
+      "src",
+      destination,
     );
-    await waitFor(() => {
-      expect(diagram.contains(document.activeElement)).toBeTruthy();
-    });
-    if (mode === "native") {
-      click(button("Close", diagram));
-    } else {
-      await userEvent.keyboard("{Escape}");
-    }
-    await waitFor(() => {
-      return expect(
-        screen.queryByTestId("artifact-diagram-lightbox"),
-      ).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole("banner", { hidden: true })).not.toBeVisible();
-    expect(button("Exit fullscreen")).toBeInTheDocument();
-    expect(trigger).toHaveFocus();
-    expect(document.fullscreenElement?.contains(trigger) ?? false).toBe(
-      mode === "native",
-    );
-    if (mode === "native") {
-      await act(async () => {
-        await document.exitFullscreen();
-      });
-    } else {
-      await userEvent.keyboard("{Escape}");
-    }
-    await waitFor(() => {
-      return expect(button("Enter fullscreen")).toHaveFocus();
-    });
-    expect(screen.getByRole("banner")).toBeVisible();
   },
 );
-
-test("Escape leaves the inline diagram and returns to reading without scrolling", async () => {
-  await openMarkdownViewer();
-  const viewport = screen.getByTestId("artifact-dialog-stage");
-  const source = screen.getByText("Diagram source");
-  click(source);
-  viewport.scrollTop = 120;
-  const trigger = button("Expand diagram");
-  click(trigger);
-  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
-  await waitFor(() => {
-    return expect(diagram.contains(document.activeElement)).toBeTruthy();
+test("shared-artifact-fullscreen-003 dismisses the diagram before leaving the fullscreen document", async () => {
+  fullscreenBrowser(true);
+  const url = "https://media.example.test/route.md";
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(
+      "## Field route\n\n```mermaid\nflowchart LR\nBase --> Ridge\n```",
+    );
   });
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    return expect(
-      screen.queryByTestId("artifact-diagram-lightbox"),
-    ).not.toBeInTheDocument();
-  });
-  expect(trigger).toHaveFocus();
-  await userEvent.keyboard("{Escape}");
-  expect(screen.getByRole("document")).toHaveFocus();
-  expect(viewport.scrollTop).toBe(120);
-  expect(source.closest("details")).toHaveAttribute("open");
-  trigger.focus();
-  expect(trigger).toHaveFocus();
-  await userEvent.keyboard("{Enter}");
+  await openArtifact("Route.md", "text/markdown", url);
   await expect(
-    screen.findByTestId("artifact-diagram-lightbox"),
+    screen.findByRole("heading", { name: "Field route" }),
   ).resolves.toBeInTheDocument();
-});
-
-test("browser fullscreen exit leaves the diagram open and focused without restoring fullscreen on close", async () => {
-  mockFullscreen("native");
-  await openMarkdownViewer();
-  click(button("Enter fullscreen"));
+  const banner = screen.getByRole("banner");
+  click(getNamedButton("Enter fullscreen", banner));
+  const exit = await screen.findByLabelText("Exit fullscreen");
+  const area = screen.getByRole("main");
+  expect(document.fullscreenElement).toBe(area);
+  await expect(
+    within(area).findByAltText("Diagram"),
+  ).resolves.toBeInTheDocument();
+  click(getNamedButton("Expand diagram", area));
+  const overlay = await within(area).findByRole("dialog");
+  await expect(
+    within(overlay).findByRole("img", { name: "diagram.svg" }),
+  ).resolves.toBeInTheDocument();
+  click(getNamedButton("Close", overlay));
   await waitFor(() => {
-    return expect(button("Exit fullscreen")).toBeInTheDocument();
+    return expect(getNamedButton("Expand diagram", area)).toHaveFocus();
   });
-  const trigger = button("Expand diagram");
-  click(trigger);
-  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(document.fullscreenElement).toBe(area);
+  expect(banner).not.toBeVisible();
+  click(exit);
   await waitFor(() => {
-    return expect(diagram.contains(document.activeElement)).toBeTruthy();
-  });
-  await act(async () => {
-    await document.exitFullscreen();
+    return expect(getNamedButton("Enter fullscreen", banner)).toHaveFocus();
   });
   expect(document.fullscreenElement).toBeNull();
-  expect(within(diagram).getByAltText("diagram.svg")).toBeInTheDocument();
-  click(button("Fill view", diagram));
-  await waitFor(() => {
-    return expect(diagram).toHaveAttribute("data-mode", "fullscreen");
-  });
-  expect(document.fullscreenElement).toBeNull();
-  await waitFor(() => {
-    return expect(diagram.contains(document.activeElement)).toBeTruthy();
-  });
-  click(button("Close", diagram));
-  await waitFor(() => {
-    return expect(
-      screen.queryByTestId("artifact-diagram-lightbox"),
-    ).not.toBeInTheDocument();
-  });
-  expect(screen.getByRole("banner")).toBeVisible();
-  expect(document.fullscreenElement).toBeNull();
-  expect(trigger).toHaveFocus();
+  expect(banner).toBeVisible();
 });

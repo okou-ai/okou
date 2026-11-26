@@ -1,4 +1,12 @@
-import { command, computed, state, type Computed, type State } from "ccstate";
+import { createHostedSiteDomainSignals } from "./hosted-site-domains.ts";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/client/host";
 import { hostedSiteUrlSlugSchema } from "@okouai/api-contracts/validators/host";
@@ -10,31 +18,37 @@ import { accept } from "../lib/accept.ts";
 import { resolveEditableHostedSiteDomain } from "../lib/platform-host.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
-import { pageSignal$ } from "./page-signal.ts";
+import { isHostedSiteUrl } from "./chat-page/parse-body-blocks.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
-import {
-  debounceCommand,
-  onRef,
-  resetSignal,
-  throttleCommand,
-} from "./utils.ts";
+import { debounceCommand, resetSignal, throttleCommand } from "./utils.ts";
 import { createHostedSiteBannerSignals } from "./hosted-site-banner.ts";
 import { passArtifactPaywall$ } from "./okou-page/artifact-paywall.ts";
+import { createSharePeopleSignals } from "./share-people.ts";
 
 type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
-function createSiteVisibilitySignals(
-  sourceUrl: string,
-  site$: Computed<Promise<SiteUrl | null>>,
+/**
+ * Records the choice before the throttled save runs, so a click queued behind
+ * an in-flight save is what the control shows.
+ */
+function recordPendingChoice<T>(
+  pending$: State<Visibility | null>,
+  change$: Command<Promise<T>, [Visibility, AbortSignal]>,
 ) {
+  return command(({ set }, choice: Visibility, signal: AbortSignal) => {
+    set(pending$, choice);
+    return set(change$, choice, signal);
+  });
+}
+
+function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
     const site = await get(site$);
@@ -63,7 +77,7 @@ function createSiteVisibilitySignals(
       if (!details || details.visibility === visibility) {
         return false;
       }
-      const updated = await accept(
+      await accept(
         get(apiClient$)(hostContract).updateSiteVisibility({
           params: { siteId: details.siteId },
           body: { visibility, expectedRevision: details.revision },
@@ -76,15 +90,16 @@ function createSiteVisibilitySignals(
       set(reload$, (value) => {
         return value + 1;
       });
-      set(recordHostedSiteVisibilityChange$, {
-        url: sourceUrl,
-        revision: updated.body.revision,
-      });
       await get(details$);
       signal.throwIfAborted();
       return true;
     },
   );
+  // The last submitted choice, recorded by the session before throttling.
+  // Views read it only while the save is in flight, so the control keeps the
+  // new choice instead of clearing, and a failed save falls back to the
+  // server value.
+  const pending$ = state<Visibility | null>(null);
   const change$ = command(
     async ({ set }, visibility: Visibility, signal: AbortSignal) => {
       const updated = await set(persist$, visibility, signal);
@@ -100,6 +115,7 @@ function createSiteVisibilitySignals(
   );
   return {
     visibility$: details$,
+    pendingVisibility$: pending$,
     changeVisibility$: change$,
   };
 }
@@ -261,18 +277,21 @@ function createSiteUrlSignals(sourceUrl: string) {
   const copyUrl$ = computed(async (get) => {
     const details = await get(details$);
     return details?.isActive
-      ? details.url
+      ? (details.effectiveUrl ?? details.url)
       : currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
   return { saved$, details$, copyUrl$ };
 }
 
-function createHostedSiteShareSession(sourceUrl: string) {
-  const signal$ = state<AbortSignal | null>(null);
-  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
-  const open$ = state(false);
-  const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl, details$);
+function createSiteSharingSettings(
+  details$: Computed<Promise<SiteUrl | null>>,
+) {
+  const visibility = createSiteVisibilitySignals(details$);
+  const peopleTarget$ = computed(async (get) => {
+    const site = await get(visibility.visibility$);
+    return site ? { kind: "site" as const, id: site.siteId } : null;
+  });
+  const people = createSharePeopleSignals(peopleTarget$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([
@@ -287,19 +306,49 @@ function createHostedSiteShareSession(sourceUrl: string) {
         ))
     );
   });
+  return { visibility, people, banner, hasSettings$ };
+}
+
+function createHostedSiteShareSession(sourceUrl: string) {
+  const signal$ = state<AbortSignal | null>(null);
+  const {
+    saved$,
+    details$,
+    copyUrl$: platformCopyUrl$,
+  } = createSiteUrlSignals(sourceUrl);
+  const open$ = state(false);
+  const editor = createSiteUrlEditorSignals(details$, saved$);
+  const domains = createHostedSiteDomainSignals(details$);
+  const copyUrl$ = computed(async (get) => {
+    return get(domains.effectiveUrl$) ?? (await get(platformCopyUrl$));
+  });
+  const edit$ = command(async ({ get, set }, signal: AbortSignal) => {
+    await set(editor.edit$, signal);
+    if (get(editor.editing$)) {
+      await set(domains.begin$, signal);
+    }
+  });
+  const cancel$ = command(({ set }) => {
+    set(domains.back$);
+    set(editor.cancel$);
+  });
+  const { visibility, people, banner, hasSettings$ } =
+    createSiteSharingSettings(details$);
   const resetOpenSignal$ = resetSignal();
   const linkCopy = createShareLinkCopy();
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
     if (!open) {
+      set(people.clear$);
       set(resetOpenSignal$);
-      set(editor.cancel$);
+      set(cancel$);
       set(editor.returnFocus$, false);
       set(linkCopy.clear$);
     }
   });
   const show$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetOpenSignal$, parentSignal);
+    set(people.open$, signal);
     set(open$, true);
     const hasSettings = await get(hasSettings$);
     signal.throwIfAborted();
@@ -315,17 +364,52 @@ function createHostedSiteShareSession(sourceUrl: string) {
     signal.throwIfAborted();
     await set(linkCopy.copy$, url, signal);
   });
-  const changeVisibility$ = throttleCommand(
+  const throttledVisibility$ = throttleCommand(
     command(({ set }, choice: Visibility, signal: AbortSignal) => {
       set(linkCopy.clear$);
       return set(visibility.changeVisibility$, choice, signal);
     }),
     0,
   );
+  const changeVisibility$ = recordPendingChoice(
+    visibility.pendingVisibility$,
+    throttledVisibility$,
+  );
   const save$ = throttleCommand(
-    command(({ set }, signal: AbortSignal) => {
+    command(async ({ get, set }, signal: AbortSignal) => {
       set(linkCopy.clear$);
-      return set(editor.save$, signal);
+      const configuration = await get(domains.settings$);
+      signal.throwIfAborted();
+      if (!configuration) {
+        return set(editor.save$, signal);
+      }
+      const details = await get(details$);
+      signal.throwIfAborted();
+      const draft = get(editor.draft$);
+      if (!details || draft === null) {
+        return;
+      }
+      const result = await set(domains.persist$, draft, signal);
+      signal.throwIfAborted();
+      if (!result) {
+        return;
+      }
+      const url = result.defaultUrl;
+      if (url !== details.url) {
+        set(recordHostedSiteUrlChange$, details.url, url);
+      }
+      set(saved$, {
+        ...details,
+        url,
+        publicSlug: new URL(url).hostname.split(".")[0]!,
+        effectiveUrl: result.effectiveUrl,
+      });
+      set(cancel$);
+      toast.success(
+        i18n.t(($) => {
+          return $.artifacts.siteUrl.updated;
+        }),
+      );
     }),
     0,
   );
@@ -336,12 +420,17 @@ function createHostedSiteShareSession(sourceUrl: string) {
     copyUrl$,
     hasSettings$,
     ...visibility,
+    people,
     ...banner,
     changeVisibility$,
     open$,
     ...editor,
+    domains,
+    edit$,
+    cancel$,
     save$,
     inputId: `hosted-site-url-${crypto.randomUUID()}`,
+    peopleInputId: `hosted-site-people-${crypto.randomUUID()}`,
     setOpen$,
     show$,
     copy$,
@@ -359,35 +448,34 @@ function createHostedSiteShareScope() {
     const source = get(source$);
     return source ? createHostedSiteShareSession(source.url) : null;
   });
-  const resetMount$ = resetSignal();
-  const mountRef$ = onRef(
-    command(
-      ({ get, set }, element: HTMLSpanElement, mountSignal: AbortSignal) => {
-        const url = element.dataset.shareUrl;
-        if (!url) {
-          return;
-        }
-        const signal = set(resetMount$, mountSignal, get(pageSignal$));
-        signal.throwIfAborted();
-        const source = { url };
-        set(source$, source);
-        const session = get(session$)!;
-        set(session.signal$, signal);
-        signal.addEventListener(
-          "abort",
-          () => {
-            if (get(source$) === source) {
-              set(source$, null);
-            }
-          },
-          { once: true },
-        );
-      },
-    ),
+  const resetSession$ = resetSignal();
+  const select$ = command(
+    ({ get, set }, url: string, parentSignal: AbortSignal) => {
+      parentSignal.throwIfAborted();
+      const signal = set(resetSession$, parentSignal);
+      if (!isHostedSiteUrl(url)) {
+        set(source$, null);
+        return;
+      }
+      const source = { url };
+      set(source$, source);
+      const session = get(session$)!;
+      set(session.signal$, signal);
+      set(session.domains.initialize$, signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(source$) === source) {
+            set(source$, null);
+          }
+        },
+        { once: true },
+      );
+    },
   );
   return {
     session$,
-    mountRef$,
+    select$,
   };
 }
 

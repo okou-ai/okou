@@ -29,8 +29,14 @@ public enum APIClientError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .http(401, _, _, _): "Your session expired. Sign in again."
-    case .http(426, _, _, _): "Update Okou in TestFlight to continue."
-    case .http(402, let message, _, _): "\(message) Manage your plan on the Okou website."
+    case .http(426, _, _, _): "Update Okou to continue."
+    case .http(402, _, "INSUFFICIENT_CREDITS", _):
+      String(localized: "Out of credits", table: "RunFailures")
+    case .http(402, _, "AUDIO_INPUT_QUOTA_EXCEEDED", _):
+      String(localized: "Your voice input limit has been reached.")
+    case .http(402, _, "PRO_REQUIRED", _), .http(402, _, "TEAM_REQUIRED", _):
+      String(localized: "This action is unavailable on your current plan.")
+    case .http(402, _, _, _): String(localized: "Limit reached")
     case .http(403, let message, _, _):
       "\(message) Check your workspace access on the Okou website."
     case .http(429, let message, _, _): "\(message) Wait a moment, then refresh."
@@ -45,6 +51,12 @@ public enum APIClientError: LocalizedError, Sendable {
   }
 }
 
+public enum ClientDistribution: String, Sendable, CaseIterable {
+  case appStore = "app-store"
+  case testFlight = "testflight"
+  case unknown
+}
+
 public struct APIResponse: Sendable {
   public let data: Data
   public let response: HTTPURLResponse
@@ -55,6 +67,7 @@ public struct APIResponse: Sendable {
 public struct APIClient: Sendable {
   public let baseURL: URL
   public let member: WorkspaceMemberID?
+  private let distribution: @Sendable () async -> ClientDistribution
   private let clientVersion: String
   private let clientSessionId = UUID().uuidString.lowercased()
   private let bearerToken: @Sendable () async throws -> String
@@ -65,11 +78,13 @@ public struct APIClient: Sendable {
     clientVersion: String,
     session: URLSession = .shared,
     member: WorkspaceMemberID? = nil,
+    distribution: @escaping @Sendable () async -> ClientDistribution = { .unknown },
     bearerToken: @escaping @Sendable () async throws -> String
   ) {
     self.baseURL = baseURL
     self.member = member
     self.clientVersion = clientVersion
+    self.distribution = distribution
     self.session = session
     self.bearerToken = bearerToken
   }
@@ -146,54 +161,10 @@ public struct APIClient: Sendable {
     request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
     request.setValue(clientSessionId, forHTTPHeaderField: "X-Client-Session-Id")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    let channel = await distribution()
+    try Task.checkCancellation()
+    request.setValue(channel.rawValue, forHTTPHeaderField: "X-Client-Distribution")
     return try await execute(request)
-  }
-
-  /// Clerk's organization-selection session cannot authorize ordinary API routes yet.
-  /// Only the global, non-personal rollout bit is public; creation still uses Clerk's SDK.
-  public func nativeOnboardingAvailability() async throws -> Bool {
-    struct Response: Decodable { let nativeOnboardingEnabled: Bool }
-    var request = URLRequest(url: baseURL.appending(path: "api/onboarding/native-availability"))
-    request.cachePolicy = .reloadIgnoringLocalCacheData
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue("iOS", forHTTPHeaderField: "X-Client-Type")
-    request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
-    request.setValue(clientSessionId, forHTTPHeaderField: "X-Client-Session-Id")
-    request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-Id")
-    let response = try await execute(request)
-    try Task.checkCancellation()
-    return try Self.decoder().decode(Response.self, from: response.data).nativeOnboardingEnabled
-  }
-
-  /// Public Router discovery is stateless and never receives the member's API identity.
-  public static func publicToolCatalogPage(
-    at url: URL, cursor: String?, session: URLSession = .shared
-  ) async throws -> Data {
-    guard isStorageURL(url) else { throw APIClientError.invalidURL }
-    var params: [String: Any] = [
-      "_meta": [
-        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-        "io.modelcontextprotocol/clientCapabilities": [String: String]()
-      ]
-    ]
-    if let cursor { params["cursor"] = cursor }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.httpShouldHandleCookies = false
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    request.setValue("2026-07-28", forHTTPHeaderField: "MCP-Protocol-Version")
-    request.setValue("tools/list", forHTTPHeaderField: "Mcp-Method")
-    request.httpBody = try JSONSerialization.data(withJSONObject: [
-      "jsonrpc": "2.0", "id": UUID().uuidString, "method": "tools/list", "params": params
-    ])
-    let (data, response) = try await session.data(for: request)
-    try Task.checkCancellation()
-    guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode)
-    else {
-      throw APIClientError.invalidResponse
-    }
-    return data
   }
 
   /// Snapshot URLs are signed separately. Never forward the user's bearer token or client headers.

@@ -1,12 +1,28 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// Current-failure reads and explicit recovery retain their own lifetime and command identity.
-@MainActor @Observable
+@MainActor
 final class ConversationFailureRecovery {
+  /// What the failure card shows besides the failure: whether an explicit recovery is
+  /// running, and the read context of the current failure.
+  struct Recovery: Equatable {
+    var isRecovering = false
+    var context: FailureRecoveryResources?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.isRecovering == rhs.isRecovering && lhs.context === rhs.context
+    }
+  }
+
   private typealias PendingMessage = ConversationStore.PendingMessage
+  /// The recovery state, kept in the workspace session's Store and read by views through
+  /// CCStateSwiftUI.
+  let recovery: Computed<Recovery>
+  private let store: CCState.Store
+  private let state = CCState.State(Recovery())
   private weak var conversation: ConversationStore?
   private let commands: ChatCommands
   private let lifecycleTasks: LifecycleTasks
@@ -16,15 +32,13 @@ final class ConversationFailureRecovery {
   private let didRequestNewChat: @MainActor () -> Void
   private let didSettle: @MainActor () -> Void
   private let report: @MainActor (Error) -> Void
-  private(set) var isRecoveringFailure = false
-  private(set) var failureContext: FailureRecoveryResources?
   private var failureReadsEnabled = true
   private var failureRecoveryTask: Task<Void, Never>?
   private var closed = false
 
   init(
-    conversation: ConversationStore, commands: ChatCommands, lifecycleTasks: LifecycleTasks,
-    detailOwner: @escaping @MainActor () -> UUID?,
+    conversation: ConversationStore, commands: ChatCommands, graph: CCState.Store,
+    lifecycleTasks: LifecycleTasks, detailOwner: @escaping @MainActor () -> UUID?,
     refresh: @escaping @MainActor () async -> Void,
     continueMessage: @escaping @MainActor (ConversationStore.PendingMessage) async -> Void,
     didRequestNewChat: @escaping @MainActor () -> Void,
@@ -40,11 +54,33 @@ final class ConversationFailureRecovery {
     self.didRequestNewChat = didRequestNewChat
     self.didSettle = didSettle
     report = didFail
+    store = graph
+    let state = state
+    recovery = Computed { get in try get(state) }
+  }
+
+  var isRecoveringFailure: Bool { current.isRecovering }
+  var failureContext: FailureRecoveryResources? { current.context }
+  /// The synchronous value of `recovery`, for a render whose graph read has not resolved.
+  var currentRecovery: Recovery { current }
+  private var current: Recovery {
+    do { return try store.get(state) } catch {
+      preconditionFailure("Cannot read the failure recovery graph: \(error)")
+    }
+  }
+
+  // The recovery state is a synchronous in-process value; replacing it cannot fail.
+  private func update(_ mutation: (inout Recovery) -> Void) {
+    var next = current
+    mutation(&next)
+    do { try store.set(state, next) } catch {
+      preconditionFailure("Cannot update the failure recovery graph: \(error)")
+    }
   }
 
   func failureState(
-    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
-    accounts: [PersonalSubscription]? = nil,
+    _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     guard let conversation = conversation else {
@@ -57,7 +93,7 @@ final class ConversationFailureRecovery {
         && conversation.pending.isEmpty
         && conversation.history?.latestFailureID == failure.id
         && (context == nil || failureContext === context),
-      selection: conversation.modelSelection, accounts: accounts,
+      selection: conversation.modelSelection, models: models, accounts: accounts,
       busy: isRecoveringFailure || conversation.isSending,
       accountsError: accountsError.map(ChatRequestFailure.message(for:)))
     if state.isCurrent {
@@ -129,13 +165,13 @@ final class ConversationFailureRecovery {
       conversation.modelSelection?.canSendConfirmedSelection != false,
       conversation.modelSelection?.isMutating != true
     else { return }
-    isRecoveringFailure = true
+    update { $0.isRecovering = true }
     conversation.modelSelection?.isSending = true
     let owner = detailOwner()
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        isRecoveringFailure = false
+        update { $0.isRecovering = false }
         conversation.modelSelection?.isSending = false
         failureRecoveryTask = nil
         didSettle()
@@ -183,15 +219,14 @@ final class ConversationFailureRecovery {
       !closed && !conversation.needsUpgrade && failureReadsEnabled && conversation.pending.isEmpty
       ? conversation.history?.latestFailureID : nil
     guard id != failureContext?.failureID else { return }
-    failureContext?.close()
-    failureContext = nil
+    retireContext()
     guard let id, let failure = conversation.messages.first(where: { $0.id == id })?.failure else {
       return
     }
     let context = FailureRecoveryResources(
       failure: failure, subscriptions: conversation.modelSelection?.models.subscriptions.resources,
-      commands: commands, didFail: { [weak self] in self?.report($0) })
-    failureContext = context
+      graph: store, commands: commands, didFail: { [weak self] in self?.report($0) })
+    update { $0.context = context }
     do { try context.start() } catch is CancellationError {} catch { report(error) }
   }
 
@@ -199,7 +234,7 @@ final class ConversationFailureRecovery {
 
   func retireContext() {
     failureContext?.close()
-    failureContext = nil
+    update { $0.context = nil }
   }
 
   func deactivate() {
@@ -218,13 +253,14 @@ final class ConversationFailureRecovery {
 extension ConversationStore {
   var isRecoveringFailure: Bool { failureRecoveryActions.isRecoveringFailure }
   var failureContext: FailureRecoveryResources? { failureRecoveryActions.failureContext }
+  /// Views pass the model selection's graph value they resolved for this render.
   func failureState(
-    _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
-    accounts: [PersonalSubscription]? = nil,
+    _ failure: ChatFailure, models: ChatModelSelectionStore.Presentation? = nil,
+    context: FailureRecoveryResources? = nil, accounts: [PersonalSubscription]? = nil,
     accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     failureRecoveryActions.failureState(
-      failure, context: context, accounts: accounts, accountsError: accountsError,
+      failure, models: models, context: context, accounts: accounts, accountsError: accountsError,
       billing: billing, billingError: billingError)
   }
   func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {

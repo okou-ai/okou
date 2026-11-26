@@ -8,25 +8,25 @@ export interface ProjectReferenceRow {
 }
 
 export const pickedThreadColumns = Object.freeze({
-  id: chatThreads.id,
-  userId: chatThreads.userId,
-  projectId: chatThreads.projectId,
-  computerUseHostId: chatThreads.computerUseHostId,
+  // Drizzle uses the first column to detect an absent left-joined Chat.
   cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+  projectId: chatThreads.projectId,
   framework: chatThreads.framework,
   frameworkSessionId: chatThreads.frameworkSessionId,
   frameworkSessionRunId: chatThreads.frameworkSessionRunId,
-  title: chatThreads.title,
-  renamedAt: chatThreads.renamedAt,
 });
 
 export type PickedChatThread = Readonly<
-  Pick<typeof chatThreads.$inferSelect, keyof typeof pickedThreadColumns>
+  Pick<
+    typeof chatThreads.$inferSelect,
+    keyof typeof pickedThreadColumns | "id" | "userId"
+  > & { titled: boolean }
 >;
 
 /** Preparation facts only: neither a connector grant nor commit-time authority. */
 export interface ChatRunPreparationFacts {
   readonly isOfficialWorkflowThread: boolean;
+  readonly hasCompletedPredecessorHistory: boolean;
   readonly captureNetworkBodies: boolean;
   readonly computerUseHostGrant: {
     readonly hostId: string;
@@ -37,7 +37,7 @@ export interface ChatRunPreparationFacts {
     readonly grantId: string;
   } | null;
   readonly currentProject: ProjectReferenceRow | null;
-  readonly projectReferences?: readonly ProjectReferenceRow[];
+  readonly projectReferences: readonly ProjectReferenceRow[];
 }
 
 /** Canonical facts of the input published by a Chat send. */

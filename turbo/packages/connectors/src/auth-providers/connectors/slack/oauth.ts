@@ -10,6 +10,7 @@ const SLACK_AUTHORIZATION_URL = "https://slack.com/oauth/v2/authorize";
 
 interface SlackTokenResult {
   accessToken: string;
+  identityNamespace?: string;
   scopes: string[];
   userId: string;
 }
@@ -71,6 +72,8 @@ export async function exchangeSlackCode(
   const data = object({
     ok: boolean(),
     error: string().optional(),
+    team: object({ id: string() }).nullable().optional(),
+    enterprise: object({ id: string() }).nullable().optional(),
     authed_user: object({
       id: string().optional(),
       access_token: string().optional(),
@@ -97,6 +100,11 @@ export async function exchangeSlackCode(
       ",",
     ),
     userId: data.authed_user.id,
+    identityNamespace: data.team?.id
+      ? `slack:team:${data.team.id}`
+      : data.enterprise?.id
+        ? `slack:enterprise:${data.enterprise.id}`
+        : undefined,
   };
 }
 

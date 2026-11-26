@@ -54,7 +54,8 @@ final class ManagedConnectorActionTests: XCTestCase {
       }
     }
     let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client), didContinue: {}, didFail: { _ in })
+      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+      didContinue: {}, didFail: { _ in })
     defer { store.close() }
     let action: ChatConnectorAction
     if initiallyConnected {
@@ -68,7 +69,9 @@ final class ManagedConnectorActionTests: XCTestCase {
           threadID: FixtureData.threadID))
     }
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil || store.activationError != nil }
+    try await waitForBusinessResult(watching: store) {
+      store.active != nil || store.activationError != nil
+    }
     let flow = try XCTUnwrap(store.active)
     store.submit()
     try await waitForBusinessResult { !flow.busy }

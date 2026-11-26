@@ -122,6 +122,7 @@ fn effective_cli_framework_matches_guest_agent_fallback_semantics() {
         ("claude-code", EffectiveCliFramework::ClaudeCode),
         ("codex", EffectiveCliFramework::Codex),
         ("pi", EffectiveCliFramework::Pi),
+        ("antigravity", EffectiveCliFramework::Antigravity),
     ] {
         assert_eq!(normalized_cli_agent_type(value), value);
         assert_eq!(effective_cli_framework(value), framework);
@@ -524,6 +525,17 @@ fn build_env_json_claude_code_gets_only_claude_framework_env() {
 }
 
 #[test]
+fn antigravity_run_payload_carries_disallowed_tools() {
+    let mut ctx = minimal_context();
+    ctx.cli_agent_type = "antigravity".into();
+    ctx.disallowed_tools = Some(vec!["CronCreate".into(), "AskUserQuestion".into()]);
+
+    let payload = build_run_payload_for_run(&ctx).unwrap();
+
+    assert_eq!(payload.disallowed_tools, "CronCreate,AskUserQuestion");
+}
+
+#[test]
 fn build_env_json_codex_gets_only_codex_framework_env() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
@@ -696,6 +708,31 @@ fn build_env_json_codex_keeps_shared_runner_env() {
             .unwrap(),
         "019e9154-c304-70f0-adde-36efb1be1701"
     );
+}
+
+#[test]
+fn antigravity_only_accepts_chat_history_for_continuation() {
+    use super::super::env::validate_resume_session_id;
+    use guest_contracts::env::NativeContinuation;
+
+    let mut context = minimal_context();
+    context.cli_agent_type = "antigravity".into();
+    assert!(validate_resume_session_id(&context).is_ok());
+    context.local_resume_session_id = Some("previous-conversation".into());
+    assert!(validate_resume_session_id(&context).is_err());
+    context.local_resume_session_id = None;
+    context.native_continuation = Some(NativeContinuation {
+        session_id: Some("previous-conversation".into()),
+        generation_run_id: Some("old-run".into()),
+        recovery_prompt: None,
+    });
+    assert!(validate_resume_session_id(&context).is_err());
+    context
+        .native_continuation
+        .as_mut()
+        .unwrap()
+        .recovery_prompt = Some("previous chat context".into());
+    assert!(validate_resume_session_id(&context).is_ok());
 }
 
 #[test]

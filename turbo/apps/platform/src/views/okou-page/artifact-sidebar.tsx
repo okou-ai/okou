@@ -1,6 +1,10 @@
+import { ApiError } from "../../lib/api-error.ts";
+import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import type { ZipArtifactPreviewScope } from "../../signals/zip-artifact-preview.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
@@ -14,7 +18,6 @@ import {
   ArrowLeft,
   Maximize2,
   Minimize2,
-  Ellipsis,
   ExternalLink,
   Loader2,
   X,
@@ -24,6 +27,7 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
+  useResolved,
   useSet,
 } from "ccstate-react";
 import {
@@ -33,12 +37,9 @@ import {
 import {
   Button,
   buttonVariants,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   FullscreenPanel,
   cn,
+  useMediaQuery,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
@@ -47,6 +48,7 @@ import {
   type ChatArtifactPreviewItem,
 } from "../../signals/chat-page/chat-artifact-preview.ts";
 import {
+  ArtifactZipBody,
   CsvPreviewTable,
   parseCsvPreviewRows,
   TextPreviewLoader,
@@ -54,7 +56,11 @@ import {
 } from "./attachment-chips.tsx";
 import { publicAttachmentUrl } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
-import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
+import {
+  ArtifactMarkdownDocument,
+  type ArtifactMarkdownSelection,
+} from "../components/artifact-markdown-document.tsx";
+import { THREAD_SIDEBAR_SPLIT_MEDIA_QUERY } from "../../signals/chat-page/chat-layout.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import { JsonPreview } from "../components/json-preview.tsx";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
@@ -78,6 +84,7 @@ import {
   type ArtifactTitleLink,
 } from "./artifact-display.ts";
 import { ArtifactTitle } from "./artifact-title.tsx";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
 import type { EventImageNavigationDirection } from "../../signals/chat-page/event-image-navigation.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
@@ -98,11 +105,11 @@ type ArtifactSidebarFullscreenState = {
 
 type ArtifactSidebarProps = {
   readonly artifactRef: ArtifactRef;
+  readonly readOwner$: NonNullable<ArtifactDownloadSyncTarget["readOwner$"]>;
   readonly fullscreenState: ArtifactSidebarFullscreenState;
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
   readonly onBack?: () => void;
   readonly onClose: () => void;
-  readonly onNavigateImage: (item: ImageArtifactNavigationItem) => void;
   readonly text$?: TextPreviewComputed;
   readonly thread: ChatPanelSignals;
 };
@@ -112,11 +119,13 @@ type ArtifactSidebarContentProps = {
   artifactId?: string;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
+  readOwner$?: ArtifactDownloadSyncTarget["readOwner$"];
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   item?: ChatArtifactPreviewItem;
   markdownTree$?: MarkdownPreviewTreeComputed;
+  markdownSelection?: ArtifactMarkdownSelection;
   onBack?: () => void;
   onClose: () => void;
   /** The surface deleting the artifact; it decides what follows. */
@@ -128,15 +137,30 @@ type ArtifactSidebarContentProps = {
 
 export function ArtifactSidebar({
   artifactRef,
+  readOwner$,
   fullscreenState,
   markdownTree$: providedMarkdownTree$,
   onBack,
   onClose,
-  onNavigateImage,
   text$: providedText$,
   thread,
 }: ArtifactSidebarProps) {
   const loadable = useLastLoadable(thread.artifacts$);
+  const setArtifactSourceRef = useSet(thread.feedback.setArtifactSourceRef$);
+  const openAttachment = useSet(thread.sidebar.openAttachment$);
+  const imageRole = useGet(thread.imageNavigation.sidebar.role$);
+  const pageSignal = useGet(pageSignal$);
+  const onNavigateImage = (item: ImageArtifactNavigationItem) => {
+    openAttachment(
+      {
+        url: item.url,
+        filename: item.filename,
+        ...(item.preview ? { preview: item.preview } : {}),
+        ...(imageRole === "user" ? { shareAvailable: false } : {}),
+      },
+      pageSignal,
+    );
+  };
   const imageNavigation = thread.imageNavigation.sidebar;
   const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
   const hasNextImage = useGet(imageNavigation.hasNext$);
@@ -175,6 +199,7 @@ export function ArtifactSidebar({
           !item && (loadable.state === "loading" || crossChatArtifact.loading)
         }
         artifactRef={artifactRef}
+        readOwner$={readOwner$}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
         imageNavigation={{
@@ -183,6 +208,22 @@ export function ArtifactSidebar({
         }}
         item={item}
         markdownTree$={markdownTree$}
+        markdownSelection={
+          item
+            ? {
+                threadId: thread.threadId,
+                source: {
+                  type: "artifact",
+                  fileId: item.file.id,
+                  filenameSnapshot: item.file.filename,
+                  ...(item.file.artifactId
+                    ? { artifactId: item.file.artifactId }
+                    : {}),
+                },
+                ref: setArtifactSourceRef,
+              }
+            : undefined
+        }
         onBack={onBack}
         onClose={onClose}
         deletionOrigin={{ kind: "thread-sidebar", threadId: thread.threadId }}
@@ -209,16 +250,29 @@ function artifactSidebarSyncTargetForItem({
     : undefined;
 }
 
+function useMarkdownArtifactSelection(
+  selection: ArtifactMarkdownSelection | undefined,
+  fullscreen: boolean,
+): ArtifactMarkdownSelection | undefined {
+  const splitView = useMediaQuery(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY);
+  const enabled =
+    useResolved(featureSwitches$)?.[FeatureSwitchKey.MarkdownArtifactQuote] ===
+    true;
+  return enabled && splitView && !fullscreen ? selection : undefined;
+}
+
 export function ArtifactSidebarContent({
   actionsPending = false,
   artifactId,
   artifactKind,
   artifactRef,
+  readOwner$,
   fullscreenState,
   imageCanvasSignals,
   imageNavigation,
   item,
   markdownTree$,
+  markdownSelection,
   onBack,
   onClose,
   deletionOrigin,
@@ -226,8 +280,9 @@ export function ArtifactSidebarContent({
   text$,
   threadId,
 }: ArtifactSidebarContentProps) {
-  useTranslation();
+  const { t } = useTranslation();
   const fullscreen = fullscreenState.active;
+  const selection = useMarkdownArtifactSelection(markdownSelection, fullscreen);
   const toggleFullscreen = fullscreenState.toggle;
   const resource = useLastLoadable(
     artifactRef.kind === "image"
@@ -237,40 +292,58 @@ export function ArtifactSidebarContent({
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   const share = useLoadable(artifactRef.shareUrl$);
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
     ...resolvedDisplay,
     artifactKind: artifactKind ?? resolvedDisplay.artifactKind,
   };
-  const syncTarget =
+  const resolvedSyncTarget =
     providedSyncTarget ??
     artifactSidebarSyncTargetForItem({
       item,
       threadId,
     });
+  const syncTarget =
+    resolvedSyncTarget && readOwner$
+      ? { ...resolvedSyncTarget, readOwner$ }
+      : resolvedSyncTarget;
   const recoveryTarget =
     display.kind === "html" ? hostedSiteRecoveryTarget(display.url) : null;
-  const recovery =
-    resource.state === "hasError" && recoveryTarget ? (
-      <HostedSiteAccessCard
-        target={recoveryTarget}
-        reason={hostedSiteRecoveryReason(resource.error)}
-      />
-    ) : null;
+  let recovery: ReactNode = null;
+  if (resource.state === "hasError") {
+    if (recoveryTarget) {
+      recovery = (
+        <HostedSiteAccessCard
+          target={recoveryTarget}
+          reason={hostedSiteRecoveryReason(resource.error)}
+        />
+      );
+    } else if (
+      resource.error instanceof ApiError &&
+      [401, 403, 404].includes(resource.error.status)
+    ) {
+      recovery = <ArtifactAccessCard />;
+    } else {
+      recovery = (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.artifacts.preview.genericUnavailable;
+          })}
+        </p>
+      );
+    }
+  }
 
   return (
     <ArtifactSidebarResolvedContent
       actionsPending={actionsPending}
+      zipPreview={artifactRef.zipPreview}
       artifactId={artifactId ?? syncTarget?.artifactId}
       managementAction={
         <ArtifactDeleteButton
           artifactId={artifactId ?? syncTarget?.artifactId}
           origin={deletionOrigin}
-          menu={groupedActions}
+          menu
         />
       }
       recovery={recovery}
@@ -283,6 +356,7 @@ export function ArtifactSidebarContent({
       imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       markdownTree$={markdownTree$}
+      markdownSelection={selection}
       onBack={onBack}
       syncTarget={syncTarget}
       text$={text$}
@@ -305,10 +379,12 @@ type ArtifactSidebarResolvedContentProps = {
   readonly imageCanvasSignals: ZoomableImageCanvasSignals;
   readonly imageNavigation?: ArtifactImageNavigationActions;
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
+  readonly markdownSelection?: ArtifactMarkdownSelection;
   readonly onBack?: () => void;
   readonly syncTarget?: ArtifactDownloadSyncTarget;
   readonly text$?: TextPreviewComputed;
   readonly toggleFullscreen: () => void;
+  readonly zipPreview?: ZipArtifactPreviewScope | undefined;
 };
 
 function ArtifactSidebarResolvedContent({
@@ -325,11 +401,16 @@ function ArtifactSidebarResolvedContent({
   imageCanvasSignals,
   imageNavigation,
   markdownTree$,
+  markdownSelection,
   onBack,
   syncTarget,
   text$,
   toggleFullscreen,
+  zipPreview,
 }: ArtifactSidebarResolvedContentProps) {
+  const zipEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ZipArtifactPreview] ??
+    false;
   return (
     <FullscreenPanel
       fullscreen={fullscreen}
@@ -368,21 +449,34 @@ function ArtifactSidebarResolvedContent({
         onClose={closePreview}
       />
       <div className="min-h-0 flex-1 overflow-hidden bg-background">
-        {recovery ?? (
-          <ArtifactBody
-            resourceUrl={resourceUrl}
-            shareUrl={shareUrl}
-            url={display.url}
-            kind={display.kind}
-            filename={display.filename}
-            artifactKind={display.artifactKind}
-            imageNavigation={imageNavigation}
-            imageCanvasSignals={imageCanvasSignals}
-            fullscreen={fullscreen}
-            markdownTree$={markdownTree$}
-            text$={text$}
-          />
-        )}
+        {(display.kind === "image" ? null : recovery) ??
+          (zipEnabled &&
+          zipPreview &&
+          display.kind === "file" &&
+          isZipArtifact(display.filename, display.contentType) ? (
+            <ArtifactZipBody
+              url={resourceUrl}
+              scope={zipPreview}
+              fullscreen={fullscreen}
+              fallback={<ArtifactGenericBody filename={display.filename} />}
+            />
+          ) : (
+            <ArtifactBody
+              recovery={recovery}
+              resourceUrl={resourceUrl}
+              shareUrl={shareUrl}
+              url={display.url}
+              kind={display.kind}
+              filename={display.filename}
+              artifactKind={display.artifactKind}
+              imageNavigation={imageNavigation}
+              imageCanvasSignals={imageCanvasSignals}
+              fullscreen={fullscreen}
+              markdownTree$={markdownTree$}
+              markdownSelection={markdownSelection}
+              text$={text$}
+            />
+          ))}
       </div>
     </FullscreenPanel>
   );
@@ -523,7 +617,6 @@ function ArtifactSidebarHeader({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const compactActions = onBack !== undefined;
 
   return (
     <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4 py-2">
@@ -559,7 +652,6 @@ function ArtifactSidebarHeader({
         sharePending={sharePending}
         managementAction={managementAction}
         shareUrl={shareUrl}
-        compactActions={compactActions}
         artifactKind={artifactKind}
         contentType={contentType}
         fullscreen={fullscreen}
@@ -583,7 +675,6 @@ function ArtifactSidebarActions({
   shareUrl,
   artifactKind,
   contentType,
-  compactActions,
   fullscreen,
   kind,
   onClose,
@@ -600,7 +691,6 @@ function ArtifactSidebarActions({
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   contentType?: string | undefined;
-  compactActions: boolean;
   fullscreen: boolean;
   kind?: ArtifactKindForBody;
   onClose: () => void;
@@ -610,15 +700,10 @@ function ArtifactSidebarActions({
   filename: string;
   url: string;
 }) {
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   return (
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactPreviewActionGroup
         key={url}
-        enabled={groupedActions}
         artifactId={artifactId}
         metadataPending={actionsPending}
         shareAvailable={shareAvailable}
@@ -635,23 +720,18 @@ function ArtifactSidebarActions({
             contentType={contentType}
             kind={kind}
             shareAvailable={shareAvailable}
-            showSeparator={!groupedActions}
             syncTarget={syncTarget}
             filename={filename}
             url={url}
           />
         )}
-        {groupedActions && <ArtifactActionSeparator />}
+        <ArtifactActionSeparator />
         <ArtifactFullscreenAction
           fullscreen={fullscreen}
           onToggleFullscreen={onToggleFullscreen}
         />
       </ArtifactPreviewActionGroup>
-      {compactActions && !groupedActions ? (
-        <ArtifactMoreActions onClose={onClose} />
-      ) : (
-        <ArtifactCloseAction onClose={onClose} />
-      )}
+      <ArtifactCloseAction onClose={onClose} />
     </div>
   );
 }
@@ -663,7 +743,6 @@ function ArtifactSidebarPreviewActions({
   contentType,
   kind,
   shareAvailable,
-  showSeparator,
   syncTarget,
   filename,
   url,
@@ -674,7 +753,6 @@ function ArtifactSidebarPreviewActions({
   contentType?: string | undefined;
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
-  showSeparator: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   filename: string;
   url: string;
@@ -706,7 +784,6 @@ function ArtifactSidebarPreviewActions({
         url={url}
       />
       {managementAction}
-      {showSeparator && <ArtifactActionSeparator />}
     </>
   );
 }
@@ -768,42 +845,6 @@ function ArtifactFullscreenAction({
   );
 }
 
-function ArtifactMoreActions({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <DropdownMenu>
-      <ArtifactActionTooltip
-        label={t(($) => {
-          return $.artifacts.actions.more;
-        })}
-      >
-        <DropdownMenuTrigger
-          render={
-            <Button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.actions.more;
-              })}
-              variant="quiet"
-              size="icon-sm"
-              highlightWhenOpen
-            />
-          }
-        >
-          <Ellipsis size={16} />
-        </DropdownMenuTrigger>
-      </ArtifactActionTooltip>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onClose}>
-          {t(($) => {
-            return $.artifacts.actions.closePreviewMenu;
-          })}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   return (
@@ -825,6 +866,7 @@ function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
 }
 
 function ArtifactBody({
+  recovery,
   resourceUrl,
   shareUrl,
   url,
@@ -835,8 +877,10 @@ function ArtifactBody({
   imageNavigation,
   fullscreen,
   markdownTree$,
+  markdownSelection,
   text$,
 }: {
+  recovery: ReactNode;
   resourceUrl: string | null;
   shareUrl: string | null | undefined;
   url: string;
@@ -847,12 +891,16 @@ function ArtifactBody({
   imageNavigation?: ArtifactImageNavigationActions;
   fullscreen: boolean;
   markdownTree$?: MarkdownPreviewTreeComputed;
+  markdownSelection?: ArtifactMarkdownSelection;
   text$?: TextPreviewComputed;
 }) {
   const { t } = useTranslation();
   if (kind === "markdown") {
     return markdownTree$ ? (
-      <ArtifactMarkdownBody tree$={markdownTree$} />
+      <ArtifactMarkdownBody
+        tree$={markdownTree$}
+        selection={markdownSelection}
+      />
     ) : (
       <ArtifactBodyError
         message={t(($) => {
@@ -886,6 +934,7 @@ function ArtifactBody({
   if (kind === "image") {
     return (
       <ArtifactImageBody
+        recovery={recovery}
         resourceUrl={resourceUrl}
         fullscreen={fullscreen}
         imageCanvasSignals={imageCanvasSignals}
@@ -926,8 +975,15 @@ function ArtifactBody({
 }
 
 function ArtifactSpinner() {
+  const { t } = useTranslation();
   return (
-    <div className="flex h-full items-center justify-center text-muted-foreground">
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.artifacts.catalog.loading;
+      })}
+      className="flex h-full items-center justify-center text-muted-foreground"
+    >
       <Loader2 size={20} className="animate-spin" />
     </div>
   );
@@ -1002,8 +1058,10 @@ function ArtifactStageCard({
 
 function ArtifactMarkdownBody({
   tree$,
+  selection,
 }: {
   tree$: MarkdownPreviewTreeComputed;
+  selection?: ArtifactMarkdownSelection;
 }) {
   const { t } = useTranslation();
   const loadable = useLoadable(tree$);
@@ -1039,7 +1097,7 @@ function ArtifactMarkdownBody({
   return (
     <ArtifactStageShell>
       <ArtifactStageCard>
-        <ArtifactMarkdownDocument tree={loadable.data} />
+        <ArtifactMarkdownDocument tree={loadable.data} selection={selection} />
       </ArtifactStageCard>
     </ArtifactStageShell>
   );
@@ -1199,6 +1257,7 @@ function ArtifactCsvBody({ text$ }: { text$: TextPreviewComputed }) {
 }
 
 function ArtifactImageBody({
+  recovery,
   resourceUrl,
   fullscreen,
   imageCanvasSignals,
@@ -1206,6 +1265,7 @@ function ArtifactImageBody({
   url,
   filename,
 }: {
+  recovery: ReactNode;
   resourceUrl: string | null;
   fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
@@ -1219,31 +1279,32 @@ function ArtifactImageBody({
         <ArtifactImageNavigationRegion
           signals={imageCanvasSignals}
           filename={filename}
-          navigation={resourceUrl === null ? undefined : imageNavigation}
+          navigation={imageNavigation}
           testIdPrefix="artifact-sidebar"
         >
-          {resourceUrl === null ? (
-            <ArtifactSpinner />
-          ) : (
-            <ZoomableArtifactImageCanvas
-              key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
-              src={resourceUrl}
-              alt={filename}
-              signals={imageCanvasSignals}
-              imageTestId="artifact-sidebar-body-image"
-              contentClassName="p-6"
-              pendingContent={<ArtifactSpinner />}
-            >
-              {(controls) => {
-                return (
-                  <ArtifactImageZoomControls
-                    controls={controls}
-                    testIdPrefix="artifact-sidebar"
-                  />
-                );
-              }}
-            </ZoomableArtifactImageCanvas>
-          )}
+          {recovery ??
+            (resourceUrl === null ? (
+              <ArtifactSpinner />
+            ) : (
+              <ZoomableArtifactImageCanvas
+                key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
+                src={resourceUrl}
+                alt={filename}
+                signals={imageCanvasSignals}
+                imageTestId="artifact-sidebar-body-image"
+                contentClassName="p-6"
+                pendingContent={<ArtifactSpinner />}
+              >
+                {(controls) => {
+                  return (
+                    <ArtifactImageZoomControls
+                      controls={controls}
+                      testIdPrefix="artifact-sidebar"
+                    />
+                  );
+                }}
+              </ZoomableArtifactImageCanvas>
+            ))}
         </ArtifactImageNavigationRegion>
       </ArtifactStageCard>
     </ArtifactStageShell>

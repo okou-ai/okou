@@ -43,6 +43,15 @@ def regular(
 PREFIX = "NATIVE_TERMINAL_RECEIPT "
 NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
 NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2
+HISTORY_PAYLOAD_BYTES = 64 * 1024
+GUARDED_IDLE_REUSE_KEY_PREFIX = "thread:native-guarded-"
+
+
+def history_payload(run_id):
+    """Reconstruct the fixture's home payload from an already validated run ID."""
+    seed = run_id.encode()
+    repeats = (HISTORY_PAYLOAD_BYTES + len(seed) - 1) // len(seed)
+    return (seed * repeats)[:HISTORY_PAYLOAD_BYTES]
 SCOPES = (
     "Batch(Exact)", "Batch(All)", "CallerOwned", "SpeculativeGuestFailure",
     "FinalizingParked", "FinalizingRunning",
@@ -161,6 +170,17 @@ def collect_witnesses(log_path, groups, *, case_matches, invalid_message):
             cases[event["case"]].append(event)
 
 
+def collect_case_witnesses(log_path, prefix, cases, *, invalid_message):
+    """Collect one witness prefix into buckets for every expected case."""
+    witnesses = {case: [] for case in cases}
+    collect_witnesses(
+        log_path, {prefix: witnesses},
+        case_matches=lambda value: value in cases,
+        invalid_message=invalid_message,
+    )
+    return witnesses
+
+
 def validate_phase_clock(value, begin, end, message):
     """Return a positive monotonic timestamp strictly inside its phase bounds."""
     if not positive_integer(value) or not begin < value < end:
@@ -171,6 +191,11 @@ def validate_phase_clock(value, begin, end, message):
 def witness_identity(event):
     """Return the recorded sandbox and backing generation in witness order."""
     return event["sandbox_id"], event["backing_generation"]
+
+
+def original_resource_ids(case_results):
+    """Seed an independent replay set with both IDs from every verified case."""
+    return {value for case in case_results.values() for value in witness_identity(case)}
 
 
 def witness_identity_changed(events, identity):
@@ -189,6 +214,19 @@ def validate_witness_clock_order(events, message):
     for field in ("monotonic_ns", "unix_ns"):
         if any(a[field] >= b[field] for a, b in zip(events, events[1:])):
             raise ValueError(message)
+
+
+def validate_terminal_witness_clock_order(
+        terminal, witnesses, *, tail_start_index, tail_end_index, message):
+    """Check pre-exit, required-tail, and post-tail witnesses against terminal receipts."""
+    validate_witness_clock_order(
+        [
+            terminal[1], *witnesses[:tail_start_index],
+            terminal[2], terminal[3], *witnesses[tail_start_index:tail_end_index],
+            terminal[4], *witnesses[tail_end_index:], terminal[5],
+        ],
+        message,
+    )
 
 
 def validate_residency(sample):
@@ -406,7 +444,7 @@ def _validate_receipts(directory, cases, phases, collector):
         if any(complete.get(k) is not True for k in (
                 "original_home_restored", "private_runtime_removed",
                 "required_cleanup_joined", "full_lease_released_after_cleanup")) \
-                or complete.get("home_payload_bytes") != 65536:
+                or complete.get("home_payload_bytes") != HISTORY_PAYLOAD_BYTES:
             raise ValueError("native original data/cleanup/lease proof is incomplete")
         results[case] = {
             "sandbox_id": identity[0], "backing_generation": identity[1],

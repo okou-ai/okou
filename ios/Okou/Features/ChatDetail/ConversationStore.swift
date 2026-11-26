@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -8,7 +9,7 @@ import Observation
 final class ConversationStore {
   var failureRecoveryActions: ConversationFailureRecovery { failureRecovery }
   @ObservationIgnored private lazy var failureRecovery = ConversationFailureRecovery(
-    conversation: self, commands: commands, lifecycleTasks: lifecycleTasks,
+    conversation: self, commands: commands, graph: graph, lifecycleTasks: lifecycleTasks,
     detailOwner: { [weak self] in self?.detailOwner },
     refresh: { [weak self] in
       guard let self else { return }
@@ -35,7 +36,7 @@ final class ConversationStore {
     confirmHistory: { [weak self] in self?.history = $0 },
     replacePending: { [weak self] in self?.pending = $0 },
     reconcileProjection: { [weak self] in self?.reconcileProjection() },
-    clearStopIssue: { [weak self] in self?.stopIssue = nil },
+    clearStopIssue: { [weak self] in self?.updateDelivery { $0.stopIssue = nil } },
     cancelRecoverySend: { [weak self] in self?.sendTask?.cancel() },
     report: { [weak self] in self?.report($0) })
 
@@ -43,13 +44,9 @@ final class ConversationStore {
 
   let modelSelection: ChatModelSelectionStore?
   let workflowSource: ComposerWorkflowSource?
-  var thread: ChatThread {
-    didSet {
-      if ChatModelSelection(thread: oldValue) != ChatModelSelection(thread: thread) {
-        modelSelection?.apply(thread: thread, replacing: oldValue)
-      }
-    }
-  }
+  /// The chat's last confirmed metadata, kept in the workspace session's Store. The chat list
+  /// confirms it through `WorkspaceStore`; `thread` reads and confirms it.
+  @ObservationIgnored private let threadState: CCState.State<ChatThread>
   var draft: String {
     get { composer.text }
     set { composer.text = newValue }
@@ -59,7 +56,7 @@ final class ConversationStore {
   private let draftStorage: ChatDraftStorage?
   private let draftTarget: ChatDraftTarget
   @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
-    service: commands.connectorActions, commands: commands, thread: thread,
+    service: commands.connectorActions, graph: graph, commands: commands, thread: thread,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await modelSelection?.connectors.refresh()
@@ -67,13 +64,21 @@ final class ConversationStore {
       await refresh()
     }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
-    commands: commands, didFail: didFail)
+    commands: commands, graph: graph, didFail: didFail)
   @ObservationIgnored lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
-    didFail: didFail)
+    graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
-  @ObservationIgnored private let projection = ConversationProjection()
+  // Its values live in the workspace session's Store; views read `transcript`.
+  @ObservationIgnored private let projection: ConversationProjection
+  /// What the transcript renders. ChatDetailView reads it through CCStateSwiftUI; the
+  /// synchronous accessors below serve owner logic and actions, not view bodies.
+  var transcript: Computed<ConversationProjection.Value> { projection.value }
+  /// The synchronous value of `transcript`, for a render whose graph read has not resolved.
+  var currentTranscript: ConversationProjection.Value { projection.currentValue }
+  /// The workspace session's Store, which keeps this conversation's graph values.
+  var graph: CCState.Store { projection.store }
   private(set) var history: ChatHistory? {
     get { projection.history }
     set {
@@ -106,19 +111,18 @@ final class ConversationStore {
 
   var isLoading: Bool { reading.isLoading }
 
-  private(set) var isSending = false
-  private(set) var deliveryFailures: [String: DeliveryFailure] = [:]
-  private(set) var stopIssue: String?
+  /// The delivery state, kept in the workspace session's Store. ChatDetailView reads it
+  /// through CCStateSwiftUI; the accessors in the extension below serve owner logic,
+  /// actions and tests.
+  @ObservationIgnored let delivery: Computed<Delivery>
+  @ObservationIgnored private let deliveryState = CCState.State(Delivery())
 
   private let didRequestNewChat: @MainActor () -> Void
-  private(set) var isStopping = false { didSet { reconcileActivitySummary() } }
-  private(set) var error: String?
   var readSyncError: String? { reading.readSyncError }
 
   var historySyncError: String? { reading.historySyncError }
 
   var syncError: String? { historySyncError ?? readSyncError }
-  private(set) var needsUpgrade = false
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   let measurements: ConversationMeasurementCache
@@ -164,13 +168,13 @@ final class ConversationStore {
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
-    thread: thread, commands: commands, sync: sync, didFail: didFail,
+    thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
     })
   @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
-    commands: commands, sync: sync, didFail: didFail,
+    commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
@@ -187,7 +191,7 @@ final class ConversationStore {
   private var closed = false
 
   init(
-    thread: ChatThread, sync: ChatSync, commands: ChatCommands,
+    thread: ChatThread, sync: ChatSync, commands: ChatCommands, graph: CCState.Store,
     webURL: URL, messageMarkdown: MessageMarkdownCache,
     isVisible: @escaping @MainActor () -> Bool,
     didMarkRead: @escaping @MainActor (Date?) -> Void,
@@ -200,6 +204,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    voiceCapture: (any VoiceAudioCapture)? = nil,
     didSaveDraft: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
@@ -210,17 +215,21 @@ final class ConversationStore {
   ) {
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.lifecycleTasks = lifecycleTasks
+    projection = ConversationProjection(store: graph)
+    let deliveryState = deliveryState
+    delivery = Computed { get in try get(deliveryState) }
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     readResources = ConversationReadResources(
-      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail,
+      sync: sync, threadID: thread.id, graph: graph, sleep: readRetrySleep, didFail: didFail,
       lifecycleTasks: lifecycleTasks)
-    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
+    self.runUsage = ConversationRunUsageStore(
+      sync: sync, threadID: thread.id, graph: graph, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
-      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep,
-      lifecycleTasks: lifecycleTasks)
-    self.thread = thread
+      sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
+      sleep: activitySleep, lifecycleTasks: lifecycleTasks)
+    threadState = CCState.State(thread)
     measurements = ConversationMeasurementCache(
       namespace: measurementScope.map {
         [$0.apiBaseURL.absoluteString, $0.userID, $0.workspaceID, thread.id]
@@ -228,9 +237,9 @@ final class ConversationStore {
     self.draftStorage = draftStorage
     draftTarget = .thread(thread.id)
     composer = ComposerDraftStore(
-      target: draftTarget, commands: commands,
+      target: draftTarget, commands: commands, graph: graph,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
-      didSave: didSaveDraft,
+      didSave: didSaveDraft, voiceCapture: voiceCapture,
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     self.sync = sync
     self.commands = commands
@@ -243,7 +252,7 @@ final class ConversationStore {
     self.didSettle = didSettle
     do {
       var restored =
-        try draftStorage?.load(draftTarget.key + "/pending", as: [PendingMessage].self) ?? []
+        try draftStorage?.load(draftTarget.pendingKey, as: [PendingMessage].self) ?? []
       for index in restored.indices { restored[index].needsRetry = true }
       projection.replacePending(restored)
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
@@ -347,12 +356,12 @@ final class ConversationStore {
 
   private func submit(_ message: PendingMessage) async {
     guard sendTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    isSending = true
+    updateDelivery { $0.isSending = true }
     modelSelection?.isSending = true
     let task = Task { [weak self] in
       guard let self else { return false }
       defer {
-        isSending = false
+        updateDelivery { $0.isSending = false }
         modelSelection?.isSending = false
         sendTask = nil
         didSettle()
@@ -374,8 +383,10 @@ final class ConversationStore {
         if let index = pending.firstIndex(where: { $0.id == message.id }) {
           pending[index].needsRetry = false
         }
-        deliveryFailures[message.id] = nil
-        error = nil
+        updateDelivery {
+          $0.failures[message.id] = nil
+          $0.error = nil
+        }
         return true
       } catch {
         guard !closed else { return false }
@@ -383,14 +394,16 @@ final class ConversationStore {
           pending[index].needsRetry = true
         }
         let status = (error as? APIClientError)?.statusCode
+        let failure: DeliveryFailure
         if !submitted
           || status.map({ (400..<500).contains($0) && ![408, 409].contains($0) }) == true
         {
-          deliveryFailures[message.id] = .notSent(
+          failure = .notSent(
             String(localized: "Message not sent. ") + ChatRequestFailure.message(for: error))
         } else {
-          deliveryFailures[message.id] = .unconfirmed
+          failure = .unconfirmed
         }
+        updateDelivery { $0.failures[message.id] = failure }
         report(error)
         return false
       }
@@ -406,12 +419,14 @@ final class ConversationStore {
 
   func stop() async {
     guard stopTask == nil, !closed, !needsUpgrade, !Task.isCancelled else { return }
-    isStopping = true
-    stopIssue = nil
+    updateDelivery {
+      $0.isStopping = true
+      $0.stopIssue = nil
+    }
     let task = Task { [weak self] in
       guard let self else { return }
       defer {
-        isStopping = false
+        updateDelivery { $0.isStopping = false }
         stopTask = nil
         didSettle()
       }
@@ -423,7 +438,7 @@ final class ConversationStore {
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled else { return }
-        stopIssue = String(localized: "Stopping has not been confirmed.")
+        updateDelivery { $0.stopIssue = String(localized: "Stopping has not been confirmed.") }
         report(error)
         await refresh()
       }
@@ -437,7 +452,8 @@ final class ConversationStore {
     reading.setDetailVisible(visible, owner: owner)
   }
 
-  func reconcileVisibility() {
+  func reconcileVisibility(suspendHiddenVoice: Bool = true) {
+    if suspendHiddenVoice, !isVisible() { composer.voice?.suspend() }
     reading.reconcileVisibility()
   }
 
@@ -450,7 +466,7 @@ final class ConversationStore {
       || history?.messages.contains(where: { $0.id.lowercased() == eventID }) == true
   }
 
-  func close() {
+  func close(discardingDraft: Bool = false) {
     quickShare?.task.cancel()
     sharing.close()
     closed = true
@@ -460,13 +476,14 @@ final class ConversationStore {
     modelSelection?.close()
     cancelRefresh()
     readResources.close()
+    if discardingDraft { projection.replacePending([]) }
     projection.close()
     sendTask?.cancel()
     stopTask?.cancel()
     reading.close()
     failureRecovery.close()
     measurements.clear()
-    composer.close()
+    composer.close(discardingDraft: discardingDraft)
     attachmentViewer.close()
     artifacts.close()
     connectorActions.close()
@@ -523,24 +540,102 @@ final class ConversationStore {
   /// Hand a derived projection to the native window after confirmed business changes.
   private func reconcileProjection() {
     let pendingIDs = Set(pending.map(\.id))
-    deliveryFailures = deliveryFailures.filter { pendingIDs.contains($0.key) }
+    updateDelivery { $0.failures = $0.failures.filter { pendingIDs.contains($0.key) } }
     failureRecovery.requestFailureAccounts()
     reading.reconcileWindow()
   }
 
   private func persistPending() {
-    do { try draftStorage?.save(pending, key: draftTarget.key + "/pending") } catch { show(error) }
+    guard !closed else { return }
+    do { try draftStorage?.save(pending, key: draftTarget.pendingKey) } catch { show(error) }
   }
 
   private func show(_ failure: Error) {
     guard !closed else { return }
-    error = failure.localizedDescription
+    let message = failure.localizedDescription
+    updateDelivery { $0.error = message }
     report(failure)
   }
 
   private func report(_ failure: Error) {
     guard !closed else { return }
-    needsUpgrade = (failure as? APIClientError)?.statusCode == 426
+    let needsUpgrade = (failure as? APIClientError)?.statusCode == 426
+    updateDelivery { $0.needsUpgrade = needsUpgrade }
     didFail(failure)
   }
+}
+
+extension ConversationStore {
+  /// Delivery state that views read: a send or Stop in flight, a Stop that was not
+  /// confirmed, the last failure, an upgrade requirement, and each pending message's failure.
+  struct Delivery: Equatable {
+    var isSending = false
+    var isStopping = false
+    var stopIssue: String?
+    var error: String?
+    var needsUpgrade = false
+    var failures: [String: DeliveryFailure] = [:]
+  }
+
+  var currentDelivery: Delivery {
+    do { return try graph.get(deliveryState) } catch {
+      preconditionFailure("Cannot read the conversation delivery graph: \(error)")
+    }
+  }
+  var isSending: Bool { currentDelivery.isSending }
+  var isStopping: Bool { currentDelivery.isStopping }
+  var stopIssue: String? { currentDelivery.stopIssue }
+  var error: String? { currentDelivery.error }
+  var needsUpgrade: Bool { currentDelivery.needsUpgrade }
+  var deliveryFailures: [String: DeliveryFailure] { currentDelivery.failures }
+
+  /// Replaces the delivery state. Stop changes the activity label's demand, so a change of
+  /// `isStopping` reconciles it, as the former property observer did.
+  fileprivate func updateDelivery(_ mutation: (inout Delivery) -> Void) {
+    let previous = currentDelivery
+    var next = previous
+    mutation(&next)
+    guard next != previous else { return }
+    do { try graph.set(deliveryState, next) } catch {
+      preconditionFailure("Cannot update the conversation delivery graph: \(error)")
+    }
+    if next.isStopping != previous.isStopping { reconcileActivitySummary() }
+  }
+}
+
+extension ConversationStore {
+  var thread: ChatThread {
+    get {
+      // A synchronous local business value, not a network or persistence boundary.
+      do { return try graph.get(threadState) } catch {
+        preconditionFailure("Cannot read the confirmed chat: \(error)")
+      }
+    }
+    set {
+      let previous = thread
+      guard newValue != previous else { return }
+      do { try graph.set(threadState, newValue) } catch {
+        preconditionFailure("Cannot confirm the chat: \(error)")
+      }
+      if ChatModelSelection(thread: previous) != ChatModelSelection(thread: newValue) {
+        modelSelection?.apply(thread: newValue, replacing: previous)
+      }
+    }
+  }
+
+  /// The render window, kept in the workspace session's Store. ChatDetailView reads it,
+  /// `navigation` and `loadsEarlier` through CCStateSwiftUI; the synchronous accessors in the
+  /// class serve owner logic, the scroll coordinator's actions and tests.
+  var window: Computed<ConversationPresentation.Window> { reading.window }
+  /// The remembered reading row and the latest explicit reveal.
+  var navigation: Computed<ConversationPresentation.Navigation> { reading.navigation }
+  /// Whether earlier groups are being prepared for the render window.
+  var loadsEarlier: Computed<Bool> { reading.loadsEarlier }
+  /// The synchronous values of `window` and `navigation`, for a render whose graph read has
+  /// not resolved.
+  var currentWindow: ConversationPresentation.Window { reading.currentWindow }
+  var currentNavigation: ConversationPresentation.Navigation { reading.currentNavigation }
+  /// History and read-mark synchronization, kept in the workspace session's Store.
+  var syncStatus: Computed<ConversationPresentation.SyncStatus> { reading.syncStatus }
+  var currentSyncStatus: ConversationPresentation.SyncStatus { reading.currentSyncStatus }
 }

@@ -21,6 +21,7 @@ import {
 const DEFAULT_WORKFLOWS: WorkflowDetailResponse[] = [];
 
 let mockWorkflows: WorkflowDetailResponse[] = [...DEFAULT_WORKFLOWS];
+let mockRecentWorkflowIds: string[] | null = null;
 
 function notFound(workflowId: string) {
   return {
@@ -97,9 +98,25 @@ function publicWorkflowAutomation(
 
 export function resetMockWorkflows(): void {
   mockWorkflows = [...DEFAULT_WORKFLOWS];
+  mockRecentWorkflowIds = null;
 }
 
 export const apiWorkflowsHandlers = [
+  mockApi(workflowsCollectionContract.recent, ({ respond }) => {
+    return respond(200, { workflowIds: mockRecentWorkflowIds });
+  }),
+
+  mockApi(workflowsCollectionContract.importRecent, ({ body, respond }) => {
+    mockRecentWorkflowIds ??= [...new Set(body.workflowIds)];
+    return respond(200, { workflowIds: mockRecentWorkflowIds });
+  }),
+
+  mockApi(workflowsCollectionContract.recordRecentUse, ({ body, respond }) => {
+    mockRecentWorkflowIds = [
+      ...new Set([...body.workflowIds, ...(mockRecentWorkflowIds ?? [])]),
+    ];
+    return respond(200, { workflowIds: mockRecentWorkflowIds });
+  }),
   mockApi(workflowsCollectionContract.list, ({ respond }) => {
     return respond(200, mockWorkflows.map(summary));
   }),

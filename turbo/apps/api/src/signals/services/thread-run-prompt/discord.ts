@@ -12,7 +12,7 @@ import type { PickedThreadInputEvent } from "./types";
 
 export function createDiscordThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  context$: ReturnType<typeof createDiscordThreadContext>,
+  context$: ReturnType<typeof createDiscordThreadContext>["context$"],
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {

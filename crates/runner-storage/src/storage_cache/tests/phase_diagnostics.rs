@@ -1,3 +1,8 @@
+use std::net::SocketAddr;
+
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
+use tokio::sync::mpsc;
+
 use super::*;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -13,18 +18,18 @@ fn slow_headers_skip_fast_responses_failures_and_body_time() {
     let phases = FreshArchivePhaseRecords::default();
     let mut telemetry = new_telemetry();
     let records = [
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 99, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 100, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 101, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 150, false),
-        (STORAGE_CACHE_FRESH_DELIVERY_BODY, 250, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 99, true, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 150, false, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_BODY, 250, true, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 100, true, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 101, true, true),
     ];
-    phases
-        .records
-        .lock()
-        .unwrap()
-        .extend(
-            records.map(|(action, elapsed_ms, success)| FreshArchivePhaseRecord {
+    for (action, elapsed_ms, success, has_slow_response) in records {
+        phases
+            .records
+            .lock()
+            .unwrap()
+            .push(FreshArchivePhaseRecord {
                 operation: SandboxOpRecord::new(
                     action,
                     Duration::from_millis(elapsed_ms),
@@ -34,10 +39,12 @@ fn slow_headers_skip_fast_responses_failures_and_body_time() {
                 completed_at: Utc::now(),
                 archive_size_mismatch: None,
                 archive_connection_attempt: None,
-            }),
-        );
+            });
+        assert_eq!(phases.has_slow_header_response(), has_slow_response);
+    }
 
     assert_eq!(phases.record_to(&mut telemetry), 2);
+    assert!(!phases.has_slow_header_response());
     assert_eq!(phases.record_to(&mut telemetry), 0);
     assert_eq!(phase_ops(&telemetry).len(), 5);
 }
@@ -148,6 +155,93 @@ impl GatedResponse {
     }
 }
 
+struct GatedArchiveResolver {
+    resolutions: mpsc::Sender<oneshot::Sender<()>>,
+}
+
+impl Resolve for GatedArchiveResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        assert_eq!(name.as_str(), "archive.test");
+        let (release, gate) = oneshot::channel();
+        self.resolutions.try_send(release).unwrap();
+        Box::pin(async move {
+            gate.await?;
+            // Reqwest takes the port from the request URL.
+            let address = SocketAddr::from(([127, 0, 0, 1], 0));
+            Ok(Box::new(std::iter::once(address)) as Addrs)
+        })
+    }
+}
+
+#[tokio::test]
+async fn stalled_first_archive_connection_retries_with_the_original_budget() {
+    let body = tarball_bytes();
+    let mut server =
+        RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response("200 OK", &body))])
+            .await;
+    let mut url = reqwest::Url::parse(&server.url()).unwrap();
+    url.set_host(Some("archive.test")).unwrap();
+    url.set_path("/archive.tar.gz");
+    let (resolutions, mut resolving) = mpsc::channel(OBJECT_DOWNLOAD_MAX_ATTEMPTS);
+    let http = archive_client_builder()
+        .no_proxy()
+        .connector_layer(ConnectionAttemptLayer)
+        .dns_resolver(Arc::new(GatedArchiveResolver { resolutions }))
+        .build()
+        .unwrap();
+    let phases = FreshArchivePhaseRecords::default();
+    let fetch_phases = phases.clone();
+    let size = body.len() as u64;
+    let fetch = join_raw_http_task(
+        tokio::spawn(async move {
+            fetch_fresh_archive(
+                &http,
+                url.as_str(),
+                Some(size),
+                ArchiveHandle::storage(0),
+                &fetch_phases,
+            )
+            .await
+        }),
+        "fresh archive fetch",
+    );
+    let mut first_resolution = tokio::time::timeout(Duration::from_secs(5), resolving.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    raw_http_test_support::clock::advance_timer_phase(FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT).await;
+    tokio::time::timeout(Duration::from_secs(2), first_resolution.closed())
+        .await
+        .expect("the first connector must time out before the first header deadline");
+
+    let retry_resolution = tokio::time::timeout(Duration::from_secs(5), resolving.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    raw_http_test_support::clock::advance_timer_phase(
+        FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT + Duration::from_secs(1),
+    )
+    .await;
+    retry_resolution.send(()).unwrap();
+
+    let (download, _) = fetch.await.unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(download.as_ref(), body);
+    let request = server.next_request("retry GET").await;
+    assert!(request.starts_with("GET /archive.tar.gz HTTP/1.1\r\n"));
+    assert!(server.assert_finished_with_requests().await.is_empty());
+
+    let mut telemetry = new_telemetry();
+    phases.record_to(&mut telemetry);
+    assert_eq!(
+        phase_ops(&telemetry),
+        vec![
+            (PHASES[0].into(), false, Some("timeout".into())),
+            (PHASES[0].into(), true, None),
+            (PHASES[1].into(), true, None),
+        ]
+    );
+}
+
 #[tokio::test]
 async fn a_valid_first_response_held_past_the_header_deadline_costs_one_extra_get() {
     let temp = tempfile::tempdir().unwrap();
@@ -245,6 +339,11 @@ async fn phase_records_follow_http_and_apply_boundaries_once() {
     delivery.phase_records.record_to(&mut telemetry);
     assert!(phase_ops(&telemetry).is_empty());
 
+    // The connection is established. Its first response still has time to arrive.
+    raw_http_test_support::clock::advance_timer_phase(
+        FRESH_DELIVERY_FIRST_CONNECT_TIMEOUT + Duration::from_secs(1),
+    )
+    .await;
     server.headers.send(()).unwrap();
     observe_phase(&delivery, &mut telemetry, PHASES[0]).await;
     assert_eq!(phase_ops(&telemetry), vec![(PHASES[0].into(), true, None)]);

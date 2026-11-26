@@ -3,6 +3,20 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "POST",
+    path: "/api/runners/runs/:runId/computer-use/commands/:commandId/check",
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "computer_use",
+      "commands",
+      "by_command_id",
+      "check",
+    ],
+    rustConstName: "CHECK",
+  },
+  {
     method: "PUT",
     path: "/api/runners/runs/:runId/startup",
     rustModulePath: ["runners", "runs", "by_run_id", "startup"],
@@ -45,6 +59,12 @@ const expectedBindings = [
     path: "/api/runners/runs/:runId/ssh/pin",
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "pin"],
     rustConstName: "PIN",
+  },
+  {
+    method: "POST",
+    path: "/api/runners/runs/:runId/ssh/check",
+    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "check"],
+    rustConstName: "CHECK",
   },
   {
     method: "GET",
@@ -142,6 +162,12 @@ const expectedBindings = [
     path: "/api/webhooks/run/storages/commit",
     rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
+  },
+  {
+    method: "GET",
+    path: "/api/webhooks/run/storages/memory-archive",
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustConstName: "READ",
   },
 ] as const;
 

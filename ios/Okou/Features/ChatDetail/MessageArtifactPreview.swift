@@ -93,23 +93,23 @@ private struct ArtifactPreviewContent: View {
       }
       .task(id: value.data?.artifact.id) { await prepareImageCovers() }
     } actions: {
-      if artifact.kind == .image {
-        Button {
-          if let content = value.data {
+      if artifact.kind == .image, let content = value.data {
+        if content.image(-1) != nil {
+          Button {
             viewer.navigateImage(-1, content: content, previewID: preview.id)
+          } label: {
+            OkouToolbarIcon("chevron-left")
           }
-        } label: {
-          OkouToolbarIcon("chevron-left")
+          .accessibilityLabel("Previous image")
         }
-        .disabled(value.data?.image(-1) == nil).accessibilityLabel("Previous image")
-        Button {
-          if let content = value.data {
+        if content.image(1) != nil {
+          Button {
             viewer.navigateImage(1, content: content, previewID: preview.id)
+          } label: {
+            OkouToolbarIcon("chevron-right")
           }
-        } label: {
-          OkouToolbarIcon("chevron-right")
+          .accessibilityLabel("Next image")
         }
-        .disabled(value.data?.image(1) == nil).accessibilityLabel("Next image")
       }
       if let text = value.data?.text {
         Button {
@@ -119,7 +119,10 @@ private struct ArtifactPreviewContent: View {
         }
         .accessibilityLabel("Copy content")
       }
-      if let file = (download.data ?? nil) ?? value.data?.file {
+      if let url = preview.artifact.source.websiteShareURL {
+        ShareLink(item: url) { OkouToolbarIcon("share") }
+          .accessibilityLabel("Share website link")
+      } else if let file = (download.data ?? nil) ?? value.data?.file {
         Button {
           viewer.share(file, previewID: preview.id)
         } label: {
@@ -140,8 +143,7 @@ private struct ArtifactPreviewContent: View {
   }
 
   @ViewBuilder private var content: some View {
-    switch value {
-    case .hasError(let error):
+    if let error = value.error {
       OkouEmptyState(
         "Unable to open result", icon: "file-warning",
         description: Text(MessageArtifactStore.message(for: error))
@@ -155,68 +157,66 @@ private struct ArtifactPreviewContent: View {
             .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
       }
-    case .hasData(let content):
-      resolvedContent(content)
-    case .loading:
-      if artifact.kind == .video {
-        MessageMediaPlayer(url: nil, autoplays: true, retry: viewer.retry)
-      } else {
-        fileContent(nil)
+    } else if (value.data?.artifact.kind ?? artifact.kind) == .video {
+      MessageMediaPlayer(url: value.data?.contentURL, autoplays: true, retry: viewer.retry)
+    } else if let content = value.data, let url = content.contentURL {
+      pageContent(content, url: url)
+    } else if artifact.kind == .html, value.state == .loading {
+      pageLoading
+    } else if let text = value.data?.text {
+      ArtifactTextView(
+        content: text, kind: artifact.kind, markdown: markdown, baseURL: viewer.webURL)
+    } else {
+      fileContent(value.data?.file)
+    }
+  }
+
+  private func pageContent(_ content: MessageArtifactPreviewRead.Content, url: URL) -> some View {
+    VStack(spacing: 0) {
+      if let webError {
+        OkouLoadErrorRow(message: webError, actionTitle: "Retry") {
+          self.webError = nil
+          viewer.retry()
+        }
+        .padding(.horizontal, OkouSpace.lg)
+      }
+      ZStack {
+        ArtifactWebView(
+          url: url,
+          didFail: { message, status in
+            guard viewer.preview?.id == preview.id else { return }
+            if !viewer.renewHTMLSignature(
+              status: status, content: content, previewID: preview.id
+            ) {
+              webError = message
+            }
+          },
+          loadingChanged: { value in
+            guard viewer.preview?.id == preview.id else { return }
+            webLoading = value
+          }
+        )
+        .id(preview.id)
+        if webLoading {
+          pageLoading
+        }
       }
     }
   }
 
-  @ViewBuilder private func resolvedContent(_ content: MessageArtifactPreviewRead.Content)
-    -> some View
-  {
-    if content.artifact.kind == .video {
-      MessageMediaPlayer(url: content.contentURL, autoplays: true, retry: viewer.retry)
-    } else if let url = content.contentURL {
-      VStack(spacing: 0) {
-        if let webError {
-          OkouLoadErrorRow(message: webError, actionTitle: "Retry") {
-            self.webError = nil
-            viewer.retry()
-          }
-          .padding(.horizontal, OkouSpace.lg)
-        }
-        ZStack {
-          ArtifactWebView(
-            url: url,
-            didFail: { message, status in
-              guard viewer.preview?.id == preview.id else { return }
-              if !viewer.renewHTMLSignature(
-                status: status, content: content, previewID: preview.id
-              ) {
-                webError = message
-              }
-            },
-            loadingChanged: { value in
-              guard viewer.preview?.id == preview.id else { return }
-              webLoading = value
-            }
-          )
-          .id(preview.id)
-          if webLoading {
-            OkouLoadingRow("Loading page…")
-              .fixedSize()
-              .padding(.horizontal, OkouSpace.lg)
-              .modifier(OkouFloatingPanelStyle(radius: OkouRadius.control))
-          }
-        }
-      }
-    } else if let text = content.text {
-      ArtifactTextView(
-        content: text, kind: artifact.kind, markdown: markdown, baseURL: viewer.webURL)
-    } else {
-      fileContent(content.file)
-    }
+  private var pageLoading: some View {
+    OkouLoadingRow("Loading page…")
+      .fixedSize()
+      .padding(.horizontal, OkouSpace.lg)
+      .modifier(OkouFloatingPanelStyle(radius: OkouRadius.control))
   }
 
   private func fileContent(_ file: ChatAttachmentFile?) -> some View {
     MessageFilePreview(
       kind: artifact.kind, symbol: artifact.symbol, file: file,
-      thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
+      thumbnail: artifact.kind == .image || artifact.isSlides
+        ? preview.thumbnail.flatMap(UIImage.init(data:)) : nil,
+      error: nil,
       canRetry: true, retry: viewer.retry,
       imageNavigation: imageNavigation)
   }

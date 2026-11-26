@@ -52,8 +52,6 @@ const CONDITIONAL_CAPABILITIES = [
   ["phone-use:read", FeatureSwitchKey.PhoneUse],
   ["phone-use:write", FeatureSwitchKey.PhoneUse],
   ["computer-use:shell:write", FeatureSwitchKey.DesktopShell],
-  ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
-  ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["lark:read", FeatureSwitchKey.LarkOfficialBot],
@@ -94,8 +92,8 @@ const sandboxTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("sandbox"),
 });
 
-// Only the host firewall resolver accepts this scope. Guest identities must
-// never authorize retrieval of reusable upstream credentials on their own.
+// The firewall resolver and post-Run Memory archive lookup require this
+// host-only scope before checking the Run's authority.
 const firewallTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("firewall"),
 });
@@ -215,6 +213,7 @@ function isAgentCapabilityEnabled(
 function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
+  featureEnabled: FeatureEnabled,
 ): boolean {
   if (
     capability === "instructions:read" ||
@@ -237,10 +236,16 @@ function isCapabilityAvailableToAgent(
     capability === "computer-use:write" ||
     capability === "computer-use:shell:write"
   ) {
-    return options?.computerUseHostId !== undefined;
+    return (
+      options?.computerUseHostId !== undefined ||
+      featureEnabled(FeatureSwitchKey.RemoteDevices)
+    );
   }
   if (capability === "phone-use:write") {
-    return Boolean(options?.phoneUseDeviceId && options.phoneUseGrantId);
+    return (
+      Boolean(options?.phoneUseDeviceId && options.phoneUseGrantId) ||
+      featureEnabled(FeatureSwitchKey.RemoteDevices)
+    );
   }
   if (capability === "browser:read" || capability === "browser:write") {
     return options?.cloudBrowserEnabled === true;
@@ -470,7 +475,7 @@ function buildOkouTokenClaims(
   const nowSeconds = Math.floor(now() / 1000);
   const capabilities: Capability[] = [];
   for (const capability of CAPABILITIES) {
-    if (!isCapabilityAvailableToAgent(capability, options)) {
+    if (!isCapabilityAvailableToAgent(capability, options, featureEnabled)) {
       continue;
     }
     if (isAgentCapabilityEnabled(capability, featureEnabled)) {
@@ -482,8 +487,6 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    // Older API rollback targets still require this signed claim.
-    ...(options?.personalExecution === true ? { singleAgent: true } : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

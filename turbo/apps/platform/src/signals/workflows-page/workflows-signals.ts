@@ -59,13 +59,18 @@ import {
   reloadWorkflowData$,
   workflowReloadVersion$,
 } from "./workflow-reload.ts";
-import { onRef, settle } from "../utils.ts";
-import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
+import { detach, onRef, Reason } from "../utils.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import {
+  prepareRecentWorkflowIds$,
+  recordRecentWorkflowUse$,
+} from "../okou-page/recent-workflows.ts";
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
-export type WorkflowFilter =
-  "all" | "automated" | "without" | "private" | "public";
+export type WorkflowFilter = "all" | "private" | "public";
+export type LegacyWorkflowFilter = WorkflowFilter | "automated" | "without";
+export type WorkflowAutomationFilter = "all" | "automated" | "without";
 export type WorkflowSortMode = "next-run" | "alphabetical" | "created";
 
 type GmailTextField = "from" | "subject" | "body" | "to" | "cc";
@@ -292,7 +297,9 @@ export const setWorkflowDemoteConfirmOpen$ = command(
 );
 
 const FILTER_PARAM = "filter";
+const AUTOMATION_FILTER_PARAM = "automation";
 const SORT_MODE_PARAM = "sort";
+const SEARCH_PARAM = "q";
 
 function readSearchParam<T extends string>(
   params: URLSearchParams,
@@ -306,7 +313,7 @@ function readSearchParam<T extends string>(
     : fallback;
 }
 
-export const workflowFilter$ = computed((get): WorkflowFilter => {
+export const legacyWorkflowFilter$ = computed((get): LegacyWorkflowFilter => {
   return readSearchParam(
     get(searchParams$),
     FILTER_PARAM,
@@ -315,13 +322,65 @@ export const workflowFilter$ = computed((get): WorkflowFilter => {
   );
 });
 
-export const workflowSortMode$ = computed((get): WorkflowSortMode => {
+export const legacyWorkflowSortMode$ = computed((get): WorkflowSortMode => {
   return readSearchParam(
     get(searchParams$),
     SORT_MODE_PARAM,
     ["next-run", "alphabetical", "created"],
     "next-run",
   );
+});
+
+export const legacySetWorkflowFilter$ = command(
+  ({ get, set }, value: LegacyWorkflowFilter) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), FILTER_PARAM, value, "all"),
+    );
+  },
+);
+
+export const legacySetWorkflowSortMode$ = command(
+  ({ get, set }, value: WorkflowSortMode) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "next-run"),
+    );
+  },
+);
+
+export const workflowFilter$ = computed((get): WorkflowFilter => {
+  return readSearchParam(
+    get(searchParams$),
+    FILTER_PARAM,
+    ["all", "private", "public"],
+    "all",
+  );
+});
+
+export const workflowAutomationFilter$ = computed(
+  (get): WorkflowAutomationFilter => {
+    const params = get(searchParams$);
+    return readSearchParam(
+      params,
+      AUTOMATION_FILTER_PARAM,
+      ["all", "automated", "without"],
+      readSearchParam(params, FILTER_PARAM, ["automated", "without"], "all"),
+    );
+  },
+);
+
+export const workflowSortMode$ = computed((get): WorkflowSortMode => {
+  return readSearchParam(
+    get(searchParams$),
+    SORT_MODE_PARAM,
+    ["next-run", "alphabetical", "created"],
+    "created",
+  );
+});
+
+export const workflowSearchQuery$ = computed((get) => {
+  return get(searchParams$).get(SEARCH_PARAM) ?? "";
 });
 
 function nextSearchParams(
@@ -341,18 +400,55 @@ function nextSearchParams(
 
 export const setWorkflowFilter$ = command(
   ({ get, set }, value: WorkflowFilter) => {
+    const params = nextSearchParams(
+      get(searchParams$),
+      AUTOMATION_FILTER_PARAM,
+      get(workflowAutomationFilter$),
+      "all",
+    );
     set(
       replaceSearchParams$,
-      nextSearchParams(get(searchParams$), FILTER_PARAM, value, "all"),
+      nextSearchParams(params, FILTER_PARAM, value, "all"),
     );
   },
 );
+
+export const setWorkflowAutomationFilter$ = command(
+  ({ get, set }, value: WorkflowAutomationFilter) => {
+    const params = nextSearchParams(
+      get(searchParams$),
+      FILTER_PARAM,
+      get(workflowFilter$),
+      "all",
+    );
+    set(
+      replaceSearchParams$,
+      nextSearchParams(params, AUTOMATION_FILTER_PARAM, value, "all"),
+    );
+  },
+);
+
+export const clearWorkflowFilters$ = command(({ get, set }) => {
+  const params = new URLSearchParams(get(searchParams$));
+  params.delete(FILTER_PARAM);
+  params.delete(AUTOMATION_FILTER_PARAM);
+  set(replaceSearchParams$, params);
+});
 
 export const setWorkflowSortMode$ = command(
   ({ get, set }, value: WorkflowSortMode) => {
     set(
       replaceSearchParams$,
-      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "next-run"),
+      nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "created"),
+    );
+  },
+);
+
+export const setWorkflowSearchQuery$ = command(
+  ({ get, set }, value: string) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), SEARCH_PARAM, value, ""),
     );
   },
 );
@@ -1546,6 +1642,11 @@ export const runWorkflowAutomationNow$ = command(
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
     const workflowId = get(currentWorkflowId$);
+    const workflowUse = workflowId
+      ? set(prepareRecentWorkflowIds$, [workflowId], signal)
+      : null;
+    signal.throwIfAborted();
+    const recencySignal = get(rootSignal$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1555,11 +1656,12 @@ export const runWorkflowAutomationNow$ = command(
       [201],
     );
     signal.throwIfAborted();
-    if (workflowId) {
-      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-      await settle(() => {
-        set(recordRecentWorkflowUse$, [workflowId], signal);
-      }, signal);
+    if (workflowUse) {
+      detach(
+        set(recordRecentWorkflowUse$, workflowUse, recencySignal),
+        Reason.Daemon,
+        "accepted automation workflow recency",
+      );
     }
     return result.body;
   },

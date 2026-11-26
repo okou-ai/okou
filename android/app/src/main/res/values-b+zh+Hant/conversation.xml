@@ -1,19 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">佇列（%1$d）</string>
+    <string name="conversation_queue_empty">目前沒有排隊項目</string>
+    <string name="conversation_queue_message">訊息</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">訊息 · %d 個附件</item>
+    </plurals>
+    <string name="conversation_run_queued">排隊中</string>
     <string name="conversation_welcome">今天想推進什麼？</string>
     <string name="conversation_welcome_detail">把想做的事告訴 Okou。</string>
     <string name="conversation_jump_latest">回到最新</string>
     <string name="conversation_new_reply">有新回覆</string>
     <string name="conversation_view_progress">查看進度</string>
     <string name="conversation_processing">處理中</string>
-    <string name="conversation_history_offline">連線後載入聊天記錄。</string>
-    <string name="conversation_offline_send">草稿已保留，請連線後再傳送。</string>
-    <string name="conversation_work">工作過程</string>
+    <string name="conversation_reply_summary">回覆摘要</string>
+    <string name="conversation_turn_continued">已由下一輪接續</string>
+    <string name="conversation_replying">正在回覆</string>
+    <string name="conversation_turn_done">已完成</string>
+    <string name="conversation_replies_expanded">已展開</string>
+    <string name="conversation_replies_collapsed">已收合</string>
+    <string name="conversation_work_elapsed">已工作 %1$s</string>
+    <string name="conversation_work_total">共工作 %1$s</string>
+    <string name="conversation_work_seconds">%1$d 秒</string>
+    <string name="conversation_work_minutes">%1$d 分鐘</string>
+    <string name="conversation_work_hours">%1$d 小時</string>
+    <string name="conversation_work_minutes_seconds">%1$d 分鐘 %2$d 秒</string>
+    <string name="conversation_work_hours_minutes">%1$d 小時 %2$d 分鐘</string>
+    <string name="conversation_followup_continue">繼續</string>
+    <string name="conversation_feedback_pair">%1$s · %2$s</string>
+    <plurals name="conversation_reply_steps">
+        <item quantity="other">%d 個步驟</item>
+    </plurals>
+    <string-array name="conversation_completion_phrases">
+        <item>已收尾</item>
+        <item>全部搞定</item>
+        <item>交付完成</item>
+        <item>已完工，隨時待命</item>
+        <item>順利收官</item>
+        <item>任務完成</item>
+        <item>收工</item>
+        <item>大功告成</item>
+    </string-array>
     <string name="conversation_reply_actions">回覆操作</string>
     <string name="conversation_copy_reply">複製回覆</string>
     <string name="conversation_reply_copied">已複製回覆</string>
-    <string name="conversation_revoke">撤回</string>
-    <string name="conversation_stop">停止</string>
+    <string name="conversation_revoke">撤回排隊訊息</string>
+    <string name="conversation_queue">佇列</string>
+    <string name="conversation_queue_automation">工作流程自動化</string>
+    <string name="conversation_skip_automation">略過此次自動化</string>
+    <string name="conversation_withdraw_failed">未能撤回訊息</string>
+    <string name="conversation_skip_failed">未能略過自動化</string>
     <string name="conversation_find">尋找訊息</string>
     <string name="conversation_find_turns">按輪次瀏覽</string>
     <string name="conversation_find_empty">暫無可搜尋的訊息</string>
@@ -26,4 +62,6 @@
     <string name="conversation_find_attachment">附件</string>
     <string name="conversation_link_unavailable">這個對話連結暫時無法使用</string>
     <string name="conversation_link_no_browser">沒有可開啟此連結的瀏覽器</string>
+    <string name="chat_model_check_required">無法核對已儲存的模型。</string>
+    <string name="chat_model_save_rejected">無法儲存此聊天的模型。</string>
 </resources>

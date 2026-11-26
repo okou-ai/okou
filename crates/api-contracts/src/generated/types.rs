@@ -570,6 +570,52 @@ pub mod runners {
 
     /// Private Runner SSH authority DTOs.
     pub mod ssh {
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Check a retained SSH connection before an operation.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckRequest {
+            /// Exact SSH connection UUID.
+            pub connection_id: String,
+            /// Host-owned process identity.
+            pub runner_identity: CheckRequestRunnerIdentity,
+            /// Currently retained configuration generation.
+            pub expected_generation: i64,
+            /// Creation timestamp of the exact retained channel.
+            pub expected_created_at: String,
+        }
+
+        /// Result of the exact current authority check.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum CheckResponseOutcome {
+            /// The retained identity still has access.
+            #[serde(rename = "valid")]
+            Valid,
+            /// The retained identity is no longer authorized.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+            /// The authorized configuration has changed.
+            #[serde(rename = "configuration_changed")]
+            ConfigurationChanged,
+        }
+
+        /// Current authority for one retained SSH identity.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckResponse {
+            /// Whether the operation may proceed.
+            pub outcome: CheckResponseOutcome,
+        }
+
         /// Best-effort SSH authority eviction, never an authorization grant.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -3755,6 +3801,36 @@ pub mod webhooks {
                     /// Optional negotiated Memory conflict recovery inputs.
                     #[serde(default, skip_serializing_if = "Option::is_none")]
                     pub memory_merge: Option<ResponseMemoryMerge>,
+                }
+            }
+        }
+    }
+
+    /// Run-scoped webhook DTOs.
+    pub mod run {
+        /// Run-scoped storage webhook DTOs.
+        pub mod storages {
+            /// Host-only responses for warming committed Memory archives.
+            pub mod memory_archive {
+                /// The authorized, immutable member Memory archive.
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                pub struct ResponseArchive {
+                    /// Content-addressed version used as the cache key.
+                    pub version_id: String,
+                    /// Committed compressed byte count.
+                    pub archive_size: u64,
+                    /// Scoped, presigned GET URL for the committed archive.
+                    pub archive_url: String,
+                }
+
+                /// Optional archive eligible for post-Run cache warming.
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                pub struct Response {
+                    /// Authorized source, when the Run published the current head.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub archive: Option<ResponseArchive>,
                 }
             }
         }

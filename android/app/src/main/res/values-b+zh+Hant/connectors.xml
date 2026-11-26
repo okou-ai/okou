@@ -36,13 +36,11 @@
     <string name="connector_rename">重新命名</string>
     <string name="connector_rename_title">重新命名帳號</string>
     <string name="connector_account_name">帳號名稱</string>
-    <string name="connector_rename_hint">首尾空格會自動移除，最長 %1$d 個字元。</string>
     <string name="connector_rename_required">請輸入帳號名稱。</string>
     <string name="connector_rename_too_long">帳號名稱不得超過 %1$d 個字元。</string>
     <string name="connector_disconnect">中斷帳號連接</string>
     <string name="connector_disconnect_title">要中斷此帳號的連接嗎？</string>
     <string name="connector_disconnect_copy">使用此帳號的聊天和自動化可能需要重新選擇連接。其他帳號仍可使用。</string>
-    <string name="connector_load_when_online">連線後載入…</string>
     <string name="connector_loading">正在載入連接器…</string>
     <string name="connector_loading_accounts">正在載入帳號…</string>
     <string name="connector_loading_permissions">正在載入權限…</string>
@@ -52,7 +50,6 @@
     <string name="connector_accounts_failed">暫時無法載入帳號。</string>
     <string name="connector_permissions_failed">暫時無法載入權限。</string>
     <string name="connector_impact_failed">暫時無法檢查此帳號的使用情況。</string>
-    <string name="connector_offline">離線</string>
     <string name="connector_network_failed">暫時無法連線至 Okou。請檢查網路後再試。</string>
     <string name="connector_account_unavailable">此帳號已無法使用。</string>
     <string name="connector_unavailable">此帳號暫時無法授權。</string>
@@ -75,6 +72,9 @@
     <string name="connector_change_failed">操作未完成。請核對帳號後再試一次。</string>
     <string name="connector_device_code">請在服務提供者的頁面輸入此代碼</string>
     <string name="connector_external_code">授權碼</string>
+    <string name="connector_checking_code">正在核對…</string>
+    <string name="connector_external_code_too_long">授權碼最多 %1$d 個字元。</string>
+    <string name="connector_external_code_failed">授權碼核對失敗。</string>
     <string name="connector_external_instructions">請在服務提供者的頁面完成授權，再於此輸入授權碼。</string>
     <string name="connector_submit_code">確認授權碼</string>
     <string name="connector_working">正在核對帳號…</string>
@@ -102,4 +102,30 @@
     <plurals name="connector_impact_count">
         <item quantity="other">%d 個聊天已明確選擇此帳號。</item>
     </plurals>
+    <string name="chat_options_title">聊天選項</string>
+    <string name="chat_options_settings">對話設定</string>
+    <string name="chat_options_model">模型</string>
+    <string name="chat_connector_scope">用於目前對話。初始採用工作區預設啟用的帳號。</string>
+    <string name="chat_connector_empty">此工作區還沒有已連線的帳號。</string>
+    <string name="chat_connector_manage">管理連接器</string>
+    <string name="chat_connector_restore_defaults">恢復工作區預設</string>
+    <string name="chat_connector_saving">正在儲存連接器選擇…</string>
+    <string name="chat_connector_save_failed">暫時無法儲存連接器選擇。</string>
+    <string name="chat_connector_first_send_failed">無法套用連接器選擇。請在「聊天選項」中檢查後重試這則訊息。</string>
+    <string name="connector_device_denied">服務提供者已拒絕授權。</string>
+    <string name="connector_device_expired">裝置碼已過期，請重新發起授權。</string>
+    <string name="connector_device_failed">暫時無法完成裝置授權。</string>
+    <string name="connector_access_scope">適用於你的所有聊天。</string>
+    <string name="connector_access_label">%1$s 的存取權限, %2$s</string>
+    <string name="connector_access_allow">允許</string>
+    <string name="connector_access_deny">拒絕</string>
+    <string name="connector_access_always">始終</string>
+    <string name="connector_access_expired">已過期</string>
+    <string name="connector_access_under_hour">&lt; 1 小時</string>
+    <string name="connector_access_hours">%d 小時</string>
+    <string name="connector_access_days">%d 天</string>
+    <string name="connector_access_allow_always">始終允許</string>
+    <string name="connector_access_allow_hour">允許 1 小時</string>
+    <string name="connector_access_allow_day">允許 24 小時</string>
+    <string name="connector_access_allow_week">允許 7 天</string>
 </resources>

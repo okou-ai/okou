@@ -3,12 +3,15 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -25,6 +28,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1143,6 +1147,61 @@ async function selectGmailAccount(
 }
 
 describe("POST /api/mail/drafts/link", () => {
+  it("rejects a Gmail draft ID with extra text before reading the draft", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    let draftReads = 0;
+    server.use(
+      http.get(`${GMAIL_API_BASE}/drafts/:draftId`, () => {
+        draftReads += 1;
+        return new HttpResponse(null, { status: 400 });
+      }),
+    );
+
+    const response = await accept(
+      client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: fixture.thread.id,
+          gmailDraftId: `Draft ${GMAIL_DRAFT_ID}`,
+        },
+      }),
+      [400],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      code: "BAD_REQUEST",
+      message:
+        "Invalid Gmail draft ID. Pass only the top-level id returned by Gmail when creating the draft.",
+    });
+    expect(draftReads).toBe(0);
+  });
+
+  it("returns a generic server error when Gmail rejects the draft read", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    let draftReads = 0;
+    server.use(
+      http.get(`${GMAIL_API_BASE}/drafts/${GMAIL_DRAFT_ID}`, () => {
+        draftReads += 1;
+        return new HttpResponse(null, { status: 400 });
+      }),
+    );
+
+    const app = createApp({ signal: context.signal, routes: mailRoutes });
+    const response = await app.request(mailContract.linkDraft.path, {
+      method: mailContract.linkDraft.method,
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({
+        threadId: fixture.thread.id,
+        gmailDraftId: GMAIL_DRAFT_ID,
+      }),
+    });
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Internal server error",
+    });
+    expect(draftReads).toBe(1);
+  });
+
   it("converges simultaneous same-chat links and preserves replay and cross-chat conflict", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const fixture = await createPublicGmailMailCardFixture();
@@ -1337,6 +1396,48 @@ describe("POST /api/mail/drafts/link", () => {
     );
     await linkDraft(fixture);
     expect(gmail.draftReadCount).toBe(1);
+  });
+
+  it("follows member account eligibility when the Chat owner links a Gmail draft", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    await connectors.updateFeatureSwitches(fixture.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const request = {
+      headers: authHeaders(),
+      params: { connectionId: fixture.gmail.id },
+      body: { target: { kind: "builtin", connectorSlug: "gmail" } as const },
+    };
+    await accept(
+      access.updateAccountPolicy({
+        ...request,
+        body: { ...request.body, policy: "deny" },
+      }),
+      [200],
+    );
+    mockGmailDraftApi();
+    const rejected = await accept(
+      client().linkDraft({
+        headers: request.headers,
+        body: { threadId: fixture.thread.id, gmailDraftId: GMAIL_DRAFT_ID },
+      }),
+      [409],
+    );
+    expect(rejected.body.error.message).toBe(
+      "Connect and allow Gmail in this Chat first",
+    );
+
+    await accept(
+      access.updateAccountPolicy({
+        ...request,
+        body: { ...request.body, policy: "allow-always" },
+      }),
+      [200],
+    );
+    await linkDraft(fixture);
   });
 
   it("uses a healthy Gmail connection with its provider-granted scope", async () => {

@@ -1,0 +1,70 @@
+import CCStateSwiftUI
+import ChatData
+import SwiftUI
+
+struct ComposerConnectorTools: View {
+  let store: ComposerConnectorStore
+  let resources: ComposerConnectorResources
+  @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
+  @State private var showsDesktopSetup = false
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+
+  init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
+    self.store = store
+    self.resources = resources
+    _remote = LoadableValue(task: resources.remote, keepLast: true)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+  }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
+
+  var body: some View {
+    Section {
+      switch remote {
+      case .loading: OkouLoadingRow("Loading remote access…")
+      case .hasError(let error):
+        ConnectorLoadError(
+          error: ComposerConnectorResources.message(for: error, in: .remote)
+        ) { await store.refresh() }
+      case .hasData(let value):
+        Toggle(
+          isOn: Binding(
+            get: { store.computerAccess(in: snapshot).cloudBrowserEnabled },
+            set: { enabled in
+              Task {
+                await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: enabled))
+              }
+            })
+        ) { OkouRowLabel("Cloud browser", okouSymbol: "globe") }
+        .tint(OkouColor.primary400)
+        .disabled(store.isSaving || store.uncertain || !value.overview.cloudBrowserAvailable)
+      }
+      NavigationLink {
+        ComposerRemoteControls(store: store, resources: resources)
+      } label: {
+        OkouRowLabel("Remote access", okouSymbol: "monitor")
+      }
+      Button("Connect my computer", okouSymbol: "plus") { showsDesktopSetup = true }
+    }
+    .sheet(isPresented: $showsDesktopSetup) { ComposerDesktopSetup(store: store) }
+  }
+}
+
+struct ComposerDesktopSetup: View {
+  let store: ComposerConnectorStore
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Text("Install Okou Desktop on your Mac, connect your account, then reopen Connectors.")
+        ShareLink("Share Desktop download link", item: store.service.desktopDownloadURL)
+        Link("Download for Mac", destination: store.service.desktopDownloadURL)
+      }
+      .okouGroupedBackground().navigationTitle("Connect my computer")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
+    }.presentationDetents([.medium]).okouSheetBackground()
+  }
+}

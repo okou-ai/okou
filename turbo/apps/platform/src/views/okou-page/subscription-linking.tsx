@@ -1,4 +1,3 @@
-import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   Button,
   DropdownMenu,
@@ -22,12 +21,14 @@ import { useTranslation } from "react-i18next";
 import {
   connectSubscriptionLinkingProvider$,
   SUBSCRIPTION_PROVIDERS,
+  type LinkableSubscriptionProvider,
   subscriptionLinkingUnlinked$,
   trackSubscriptionLinkingOpened$,
   type SubscriptionLinkingSource,
 } from "../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { AntigravitySignInDialog } from "./components/settings/antigravity-device-auth-dialog.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
@@ -42,7 +43,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
   const connect = useSet(connectSubscriptionLinkingProvider$);
   const pageSignal = useGet(pageSignal$);
   return {
-    title: (type: PersonalSubscriptionProviderType) => {
+    title: (type: LinkableSubscriptionProvider) => {
       return type === "codex-oauth-token"
         ? t(($) => {
             return $.settings.models.personal.codexTitle;
@@ -52,7 +53,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
           });
     },
     /** The plans that include the subscription, so members know before signing in. */
-    plans: (type: PersonalSubscriptionProviderType) => {
+    plans: (type: LinkableSubscriptionProvider) => {
       return type === "codex-oauth-token"
         ? t(($) => {
             return $.settings.models.personal.codexPlans;
@@ -61,7 +62,7 @@ export function useConnectProvider(source: SubscriptionLinkingSource) {
             return $.settings.models.personal.claudePlans;
           });
     },
-    connect: (type: PersonalSubscriptionProviderType) => {
+    connect: (type: LinkableSubscriptionProvider) => {
       detach(connect(source, type, pageSignal), Reason.DomCallback);
     },
   };
@@ -309,6 +310,7 @@ export function PersonalSubscriptionDialogs() {
     <>
       <PersonalClaudeCodeDeviceAuthDialog />
       <PersonalCodexDeviceAuthDialog />
+      <AntigravitySignInDialog />
     </>
   );
 }

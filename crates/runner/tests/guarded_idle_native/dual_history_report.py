@@ -83,7 +83,7 @@ def validate(directory):
         if not isinstance(key, str) or not re.fullmatch("[0-9a-f]{64}", key) or key in keys:
             raise ValueError("dual history has no distinct physical cache key")
         keys.add(key)
-        reuse = "thread:native-guarded-"+run
+        reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX+run
         if core[0]["evidence"]["same_reuse_key"] != reuse:
             raise ValueError("dual history escaped the actual captured reuse key")
         original_bytes = history(original.get("history_hex"), thread)
@@ -120,7 +120,7 @@ def validate(directory):
             restore_backing = identity(value.get("restoration_backing_generation"))
             if raw_bytes(value.get("history_hex")) != data or raw_bytes(value.get("restored_history_hex")) != data:
                 raise ValueError("complete original and restored native history bytes differ")
-            expected = (origin.encode()*2048)[:65536]
+            expected = report.history_payload(origin)
             if raw_bytes(value.get("home_hex")) != expected or raw_bytes(value.get("workspace_hex")) != expected:
                 raise ValueError("complete original home/workspace bytes differ")
             exact(value, {"source_run_id":generation,"original_run_id":origin,"source_sandbox_id":sandbox,

@@ -60,33 +60,32 @@ import {
 const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
 const CLAUDE_CODE_TYPE = "claude-code-oauth-token";
+const ANTIGRAVITY_TYPE = "antigravity";
 const CODEX_ACCOUNT_ID_SECRET = "CHATGPT_ACCOUNT_ID";
 const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
-  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE;
+  typeof CODEX_TYPE | typeof CLAUDE_CODE_TYPE | typeof ANTIGRAVITY_TYPE;
 
-/** Connected Claude/Codex member accounts read together for one queued model route. */
+/** Connected member subscription accounts read together for one queued model route. */
 export interface MemberModelAccountSnapshot {
   readonly orgId: string;
   readonly userId: string;
   readonly accounts: readonly Pick<
     typeof modelProviderAccounts.$inferSelect,
-    | "id"
-    | "modelProviderId"
-    | "orgId"
-    | "userId"
-    | "type"
-    | "isActive"
-    | "disconnectedAt"
+    "id" | "modelProviderId" | "orgId" | "userId" | "type" | "isActive"
   >[];
 }
 
 export function isPersonalSubscriptionProviderType(
   type: string,
 ): type is PersonalSubscriptionProviderType {
-  return type === CODEX_TYPE || type === CLAUDE_CODE_TYPE;
+  return (
+    type === CODEX_TYPE ||
+    type === CLAUDE_CODE_TYPE ||
+    type === ANTIGRAVITY_TYPE
+  );
 }
 
 export type PersonalProviderAccountMutation =

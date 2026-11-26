@@ -5,11 +5,23 @@ import { sshCredentials } from "./ssh-credential";
 import { cloudflareAccessConfigs } from "./cloudflare-access-config";
 import { tailscaleConfigs } from "./tailscale-config";
 
+import { remoteDevices } from "./remote-device";
+
 export const sshConnections = pgTable(
   "ssh_connections",
   sshConnectionColumns(),
   (table) => {
     return [
+      foreignKey({
+        name: "ssh_connections_remote_device_owner_fk",
+        columns: [table.remoteDeviceId, table.orgId, table.userId],
+        foreignColumns: [
+          remoteDevices.id,
+          remoteDevices.orgId,
+          remoteDevices.userId,
+        ],
+      }).onDelete("restrict"),
+      index("idx_ssh_connections_remote_device").on(table.remoteDeviceId),
       unique("uq_ssh_connections_owner_id").on(
         table.id,
         table.orgId,

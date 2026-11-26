@@ -255,7 +255,7 @@ public enum ChatError: LocalizedError, Sendable {
     case .composerUnavailable:
       "The workspace draft is still loading. Try again in a moment."
     case .invalidContract(let detail):
-      "Chat data could not be read. Refresh or update the TestFlight app. \(detail)"
+      "Chat data could not be read. Refresh or update Okou. \(detail)"
     case .settingsChanged:
       "Chat settings changed while preparing your message. Refresh and try again."
     case .operationInProgress:

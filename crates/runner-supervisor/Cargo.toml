@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.27.18"
+version = "0.29.2"
 edition.workspace = true
 description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
@@ -14,8 +14,11 @@ http-body-util = { version = "0.1", default-features = false }
 hyper = { workspace = true, features = ["server", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 async-trait.workspace = true
+base64 = { workspace = true, features = ["alloc"] }
+getrandom = { workspace = true, features = ["std"] }
 guest-contracts.workspace = true
 hex = { workspace = true, features = ["std"] }
+flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 chrono = { workspace = true, features = ["now"] }
 runner-executor.workspace = true
@@ -23,6 +26,8 @@ runner-host.workspace = true
 runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
+runner-remote.workspace = true
+hmac.workspace = true
 runner-storage.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
@@ -31,9 +36,10 @@ serde_json = { workspace = true, features = ["std", "raw_value"] }
 sha2 = { workspace = true, features = ["alloc", "oid"] }
 subtle.workspace = true
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
-futures-util = { workspace = true, features = ["async-await", "std"] }
+futures-util = { workspace = true, features = ["async-await", "sink", "std"] }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
 tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true, features = ["std"] }
 
@@ -43,7 +49,6 @@ rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
 tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 cli-test-support = { workspace = true, features = ["test-support"] }
 raw-http-test-support = { workspace = true, features = ["test-support"] }
-flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 libc = { workspace = true, features = ["std"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 httpmock = { workspace = true, features = ["cookies"] }

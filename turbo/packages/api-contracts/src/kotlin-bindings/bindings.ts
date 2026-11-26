@@ -1,12 +1,14 @@
-import type { ZodType } from "zod";
+import { string, type ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
+import { emailSubscriptionContract } from "../contracts/email-subscription";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
+  chatSearchContract,
   chatThreadSnapshotArchiveSchema,
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -15,6 +17,7 @@ import {
   chatThreadMuteContract,
   chatThreadArchiveContract,
   chatThreadRenameContract,
+  chatThreadModelSelectionContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadPinOrderContract,
@@ -26,20 +29,29 @@ import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
-import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import {
+  imageModelPreferenceSchema,
+  userModelPreferenceContract,
+} from "../contracts/user-model-preference";
+import { paidToolsContract } from "../contracts/paid-tools";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { feedContract } from "../contracts/feed";
+import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
+import { proactiveSuggestionsContract } from "../contracts/proactive-suggestions";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "../contracts/billing";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
+import { chatRelationsContract } from "../contracts/chat-relations";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
@@ -47,6 +59,7 @@ import { personalModelProviderAccountsByIdContract } from "../contracts/personal
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
 import {
   workflowAutomationsContract,
+  workflowRunHistoryEntrySchema,
   workflowScheduleAutomationSummarySchema,
   workflowSummarySchema,
   workflowsCollectionContract,
@@ -97,6 +110,11 @@ const chatReadBindings = [
     route: chatThreadsContract.indicators,
   },
   {
+    name: "chatDraftIndex",
+    response: "ChatDraftIndex",
+    route: chatThreadsContract.drafts,
+  },
+  {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
     route: projectsContract.snapshot,
@@ -109,6 +127,16 @@ const chatReadBindings = [
 ] satisfies readonly KotlinRouteBinding[];
 
 const historyReadBindings = [
+  {
+    name: "relatedCreatedChats",
+    response: "RelatedCreatedChats",
+    route: chatRelationsContract.children,
+  },
+  {
+    name: "relatedCommunicatingChats",
+    response: "RelatedCommunicatingChats",
+    route: chatRelationsContract.communications,
+  },
   {
     name: "historyCatchUp",
     request: "HistoryCatchUpRequest",
@@ -159,9 +187,31 @@ const connectorBindings = [
     route: chatConnectorAccessContract.overview,
   },
   {
+    name: "chatConnectorAccess",
+    response: "ChatConnectorAccess",
+    route: chatConnectorAccessContract.getThread,
+  },
+  {
+    name: "chatConnectorOverride",
+    response: "ChatConnectorAccess",
+    request: "ChatConnectorOverrideRequest",
+    route: chatConnectorAccessContract.setThreadOverride,
+  },
+  {
     name: "connectorAccountDefaults",
     response: "ConnectorAccountDefaults",
     route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    name: "connectorAccountPolicies",
+    response: "ConnectorAccountPolicies",
+    route: chatConnectorAccessContract.accountPolicies,
+  },
+  {
+    name: "connectorAccountPolicyUpdate",
+    response: "ConnectorAccountPolicy",
+    request: "ConnectorAccountPolicyRequest",
+    route: chatConnectorAccessContract.updateAccountPolicy,
   },
   {
     name: "connectorAccountDefaultUpdate",
@@ -307,6 +357,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowsDetailContract.get,
   },
   {
+    name: "workflowRunHistory",
+    response: "WorkflowRunHistory",
+    route: workflowsDetailContract.runHistory,
+  },
+  {
     name: "updateWorkflow",
     request: "UpdateWorkflowRequest",
     response: "WorkflowDetail",
@@ -340,13 +395,18 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowAutomationsContract.disable,
   },
   {
+    name: "searchChatMessages",
+    response: "ChatMessageSearchResponse",
+    route: chatSearchContract.search,
+  },
+  {
     name: "workspaceDraft",
     response: "ComposerDraft",
     route: composerDraftContract.get,
   },
   {
     name: "threadDraft",
-    response: "ComposerDraft",
+    response: "ThreadDraft",
     route: chatThreadDraftContract.get,
   },
   {
@@ -383,9 +443,64 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userModelPreferenceContract.update,
   },
   {
+    name: "updateImageModelPreference",
+    request: "UpdateImageModelPreference",
+    response: "DefaultModelPreference",
+    route: userModelPreferenceContract.updateImageModel,
+  },
+  {
+    name: "paidToolPreferences",
+    response: "PaidToolPreferences",
+    route: paidToolsContract.get,
+  },
+  {
+    name: "updatePaidTool",
+    request: "UpdatePaidTool",
+    response: "PaidToolUpdate",
+    route: paidToolsContract.update,
+  },
+  {
+    name: "emailSubscription",
+    response: "EmailSubscription",
+    route: emailSubscriptionContract.get,
+  },
+  {
+    name: "updateEmailSubscription",
+    request: "UpdateEmailSubscriptionRequest",
+    response: "EmailSubscriptionUpdate",
+    route: emailSubscriptionContract.update,
+  },
+  {
     name: "featureSwitches",
     response: "FeatureSwitches",
     route: featureSwitchesContract.get,
+  },
+  {
+    name: "morningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.get,
+  },
+  {
+    name: "updateMorningBriefPreference",
+    request: "SetMorningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.update,
+  },
+  {
+    name: "proactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.get,
+  },
+  {
+    name: "updateProactiveSuggestionsWithFeed",
+    request: "SetProactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.updateWithFeed,
+  },
+  {
+    name: "suggestionFeedSources",
+    response: "SuggestionFeedSources",
+    route: feedContract.sources,
   },
   {
     name: "recoverySubscriptions",
@@ -431,6 +546,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "SendRequest",
     response: "AcceptedInput",
     route: chatEventsContract.send,
+  },
+  {
+    name: "summarizeRunActivity",
+    request: "RunActivityRequest",
+    response: "RunActivitySummary",
+    route: chatThreadActivitySummaryContract.summarize,
   },
   {
     name: "inputStatus",
@@ -511,9 +632,26 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "setThreadModel",
+    request: "SetThreadModelRequest",
+    response: "Unit",
+    route: chatThreadModelSelectionContract.update,
+  },
+  {
+    name: "createProject",
+    request: "CreateProjectRequest",
+    response: "ProjectRecord",
+    route: projectsContract.create,
+  },
+  {
+    name: "projectDetail",
+    response: "ProjectRecord",
+    route: projectsContract.get,
+  },
+  {
     name: "renameProject",
     request: "RenameProjectRequest",
-    response: "RenamedProject",
+    response: "ProjectRecord",
     route: projectsContract.update,
   },
   {
@@ -660,6 +798,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "output",
   },
   {
+    name: "WorkflowRunHistoryEntry",
+    schema: workflowRunHistoryEntrySchema,
+    direction: "output",
+    reusableOutput: true,
+  },
+  {
+    name: "WorkflowRunHistory",
+    schema: workflowsDetailContract.runHistory.responses[200],
+    direction: "output",
+  },
+  {
     name: "UpdateWorkflowRequest",
     schema: workflowsDetailContract.update.body,
     direction: "input",
@@ -680,12 +829,22 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "ChatMessageSearchResponse",
+    schema: chatSearchContract.search.responses[200],
+    direction: "output",
+  },
+  {
+    name: "CreateProjectRequest",
+    schema: projectsContract.create.body,
+    direction: "input",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
   },
   {
-    name: "RenamedProject",
+    name: "ProjectRecord",
     schema: projectsContract.update.responses[200],
     direction: "output",
   },
@@ -710,6 +869,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "SetThreadModelRequest",
+    schema: chatThreadModelSelectionContract.update.body,
+    direction: "input",
+  },
+  {
     name: "ReorderPinnedThreadRequest",
     schema: chatThreadPinOrderContract.reorder.body,
     direction: "input",
@@ -717,6 +881,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ComposerDraft",
     schema: composerDraftContract.get.responses[200],
+    direction: "output",
+    representation: "raw-object",
+  },
+  {
+    name: "ThreadDraft",
+    schema: chatThreadDraftContract.get.responses[200],
     direction: "output",
     representation: "raw-object",
   },
@@ -743,11 +913,10 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "DefaultModelPreference",
     schema: userModelPreferenceContract.get.responses[200],
-    readSchema: userModelPreferenceContract.get.responses[200].pick({
-      selectedModel: true,
-      serviceTier: true,
-      modelSettings: true,
-    }),
+    readSchema: userModelPreferenceContract.get.responses[200]
+      .pick({ selectedModel: true, serviceTier: true, modelSettings: true })
+      // Image catalog changes must remain decodable by the chat-model picker.
+      .extend({ selectedImageModel: string().nullish() }),
     direction: "output",
   },
   {
@@ -756,11 +925,72 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "UpdateImageModelPreference",
+    schema: imageModelPreferenceSchema,
+    direction: "input",
+  },
+  {
+    name: "PaidToolPreferences",
+    schema: paidToolsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdatePaidTool",
+    schema: paidToolsContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "PaidToolUpdate",
+    schema: paidToolsContract.update.responses[200],
+    direction: "output",
+  },
+  {
+    name: "EmailSubscription",
+    schema: emailSubscriptionContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateEmailSubscriptionRequest",
+    schema: emailSubscriptionContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "EmailSubscriptionUpdate",
+    schema: emailSubscriptionContract.update.responses[200],
+    direction: "output",
+  },
+  {
     name: "FeatureSwitches",
     schema: featureSwitchesContract.get.responses[200],
     readSchema: featureSwitchesContract.get.responses[200].pick({
       effectiveSwitches: true,
     }),
+    direction: "output",
+  },
+  {
+    name: "MorningBriefPreference",
+    schema: morningBriefPreferenceContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetMorningBriefPreference",
+    schema: morningBriefPreferenceContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "ProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.updateWithFeed.body,
+    direction: "input",
+  },
+  {
+    name: "SuggestionFeedSources",
+    schema: feedContract.sources.responses[200],
+    readSchema: feedContract.sources.responses[200].pick({ suggestions: true }),
     direction: "output",
   },
   {
@@ -855,6 +1085,16 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "AcceptedInput",
     schema: chatEventsContract.send.responses[201],
+    direction: "output",
+  },
+  {
+    name: "RunActivityRequest",
+    schema: chatThreadActivitySummaryContract.summarize.body,
+    direction: "input",
+  },
+  {
+    name: "RunActivitySummary",
+    schema: chatThreadActivitySummaryContract.summarize.responses[200],
     direction: "output",
   },
   {

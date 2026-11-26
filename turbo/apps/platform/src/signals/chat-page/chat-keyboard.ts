@@ -26,6 +26,7 @@ import {
   type GlobalShortcutBindings,
 } from "../../lib/setup-global-shortcut.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
+import { projectActionShortcutId } from "../../lib/list-shortcut-owner.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 
 type ChatThreadPane = "main" | "side";
@@ -430,13 +431,20 @@ function createChatPageShortcutBindings({
   toggleThreadPin,
   toggleThreadArchive,
 }: ChatPageShortcutActions): GlobalShortcutBindings {
+  const canRenameOrArchiveThread = (event: KeyboardEvent) => {
+    return (
+      canToggleThreadState(event) &&
+      projectActionShortcutId(event.target) === null
+    );
+  };
   return {
     "shift+f2": {
       allowInEditableTarget: true,
       run: openEmojiMenu,
     },
-    [GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding]: {
+    [GLOBAL_KEYBOARD_SHORTCUTS.rename.binding]: {
       allowInEditableTarget: true,
+      shouldHandle: canRenameOrArchiveThread,
       run: renameThread,
     },
     "mod+shift+arrowup": {
@@ -452,9 +460,9 @@ function createChatPageShortcutBindings({
       shouldHandle: canToggleThreadState,
       run: toggleThreadPin,
     },
-    [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding]: {
+    [GLOBAL_KEYBOARD_SHORTCUTS.toggleArchive.binding]: {
       allowInEditableTarget: true,
-      shouldHandle: canToggleThreadState,
+      shouldHandle: canRenameOrArchiveThread,
       run: toggleThreadArchive,
     },
     [COMPOSER_VOICE_INPUT_SHORTCUT]: {

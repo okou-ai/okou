@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.32.51](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.50...guest-storage-apply-v0.32.51) (2026-11-25)
+
+## [0.32.50](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.49...guest-storage-apply-v0.32.50) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** read ahead dense artifacts in wide local batches ([#50582](https://github.com/okou-ai/okou/issues/50582)) ([ba2b4ad](https://github.com/okou-ai/okou/commit/ba2b4ad71c6cb4c7269c95fbaff06f035eda234a))
+
+## [0.32.49](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.48...guest-storage-apply-v0.32.49) (2026-11-24)
+
+
+### Performance Improvements
+
+* **runner:** compact decoded storage apply manifests ([#50508](https://github.com/okou-ai/okou/issues/50508)) ([65487f7](https://github.com/okou-ai/okou/commit/65487f765b77fdb941a715f238660dc3add05f81))
+
+## [0.32.48](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.47...guest-storage-apply-v0.32.48) (2026-11-24)
+
+## [0.32.47](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.46...guest-storage-apply-v0.32.47) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** overlap artifact inflation with a small companion ([#50455](https://github.com/okou-ai/okou/issues/50455)) ([590f4e5](https://github.com/okou-ai/okou/commit/590f4e5d93fa0373909c00c87696fc832c167b23))
+
+## [0.32.46](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.45...guest-storage-apply-v0.32.46) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** read ahead for highly compressed artifacts ([#50429](https://github.com/okou-ai/okou/issues/50429)) ([81d7680](https://github.com/okou-ai/okou/commit/81d76808921cce43aeee21e52924c335a69def79))
+
+## [0.32.45](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.44...guest-storage-apply-v0.32.45) (2026-11-24)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** overlap staged artifact inflation and extraction ([#50385](https://github.com/okou-ai/okou/issues/50385)) ([47b1c3b](https://github.com/okou-ai/okou/commit/47b1c3b8c059da366e58f422583f3b03a54c4503))
+
+## [0.32.44](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.43...guest-storage-apply-v0.32.44) (2026-11-23)
+
+
+### Performance Improvements
+
+* **guest-storage-apply:** start ready local artifacts in the first wave ([#50266](https://github.com/okou-ai/okou/issues/50266)) ([20c48d8](https://github.com/okou-ai/okou/commit/20c48d80e7470b80e406553e7e93686f79785ffa))
+
+## [0.32.43](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.42...guest-storage-apply-v0.32.43) (2026-11-23)
+
 ## [0.32.42](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.41...guest-storage-apply-v0.32.42) (2026-11-22)
 
 ## [0.32.41](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.40...guest-storage-apply-v0.32.41) (2026-11-22)

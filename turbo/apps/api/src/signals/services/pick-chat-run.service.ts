@@ -31,9 +31,11 @@ import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRunDispatch$,
   dispatchPreparedRun$,
-  type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
-import { publishDirectRunCache$ } from "./direct-run-preparation.service";
+import {
+  prepareExecutionBundleUrls$,
+  publishDirectRunCache$,
+} from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -43,7 +45,7 @@ import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
-import { joinAllInOrder, settle } from "../utils";
+import { joinAllInOrder, settle, settleIncludingAbort } from "../utils";
 
 export interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -288,6 +290,26 @@ async function leaseQueuedThread(
   return { row, cursor };
 }
 
+async function awaitPendingAdmission(
+  admitted: ReturnType<
+    ReturnType<typeof createThreadClaimRunObjects>["admitRun$"]["write"]
+  > | null,
+) {
+  if (!admitted) {
+    return null;
+  }
+  waitUntil(settle(admitted.resources.memory));
+  const pending = await settleIncludingAbort(admitted.pending);
+  // Dispatch joins successful preparation. An abandoned read has no consumer.
+  if (admitted.early && (!pending.ok || !pending.value)) {
+    waitUntil(admitted.early);
+  }
+  if (!pending.ok) {
+    throw pending.error;
+  }
+  return pending.value;
+}
+
 function createPickObjects() {
   // Append only actual conditional-write receipts, not a latest-input slot.
   const claimReceipts$ = state<readonly LeasedThreadClaim[]>([]);
@@ -443,6 +465,26 @@ function createPickObjects() {
     },
   );
 
+  const deliverPickedRun$ = command(
+    (
+      { set },
+      preparation: Awaited<
+        ReturnType<(typeof prepareDirectRunDispatch$)["write"]>
+      >,
+      signal: AbortSignal,
+    ) => {
+      if (preparation.kind === "failed") {
+        return preparation.result;
+      }
+      // Signed URLs are already in the payload. Persisting reusable URLs can
+      // proceed independently of ownership and delivery.
+      waitUntil(
+        set(publishDirectRunCache$, preparation.cachePublication, signal),
+      );
+      return set(dispatchPreparedRun$, preparation.delivery, signal);
+    },
+  );
+
   /** The Thread child exclusively owns creation, rejection and startup. */
   const pickClaim$ = command(
     async (
@@ -491,14 +533,27 @@ function createPickObjects() {
       waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const preparation = set(claimed.prepareRunAdmission$, signal);
-      const bundleCache = settle(get(claimed.executionBundleCache$));
-      // The pick owns the in-flight cache read even when admission loses.
-      waitUntil(bundleCache);
-      const prepared = await preparation;
+      const bundleUrls = set(
+        prepareExecutionBundleUrls$,
+        get(claimed.executionBundleCache$),
+        signal,
+      );
+      // The pick owns preparation even if admission loses.
+      waitUntil(settle(bundleUrls));
+      waitUntil(settle(preparation.resources.memoryArchive));
+      waitUntil(settle(preparation.resources.networkPolicyInputs));
+      const prepared = await preparation.context;
       signal.throwIfAborted();
-      const pending = prepared
-        ? await set(claimed.admitRun$, prepared, signal)
+      const admitted = prepared
+        ? set(
+            claimed.admitRun$,
+            prepared,
+            preparation.resources,
+            bundleUrls,
+            signal,
+          )
         : null;
+      const pending = await awaitPendingAdmission(admitted);
       signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
@@ -513,7 +568,7 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (!pending) {
+      if (!admitted || !pending) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
@@ -537,31 +592,19 @@ function createPickObjects() {
           set(
             prepareDirectRunDispatch$,
             pending.admittedLaunch,
-            bundleCache,
+            { bundleUrls, resources: admitted.resources },
+            admitted.early,
             signal,
           ),
         ],
         signal,
       );
-      let dispatched: DirectRunDispatchResult;
-      if (dispatchPreparation.kind === "failed") {
-        dispatched = dispatchPreparation.result;
-      } else {
-        // Signed URLs are already in the payload; optional reuse publication
-        // must not hold up ownership, intake or the pick's terminal effects.
-        waitUntil(
-          set(
-            publishDirectRunCache$,
-            dispatchPreparation.cachePublication,
-            signal,
-          ),
-        );
-        dispatched = await set(
-          dispatchPreparedRun$,
-          dispatchPreparation.delivery,
-          signal,
-        );
-      }
+      const dispatched = await set(
+        deliverPickedRun$,
+        dispatchPreparation,
+        signal,
+      );
+      signal.throwIfAborted();
       if (dispatched.terminal !== null) {
         set(
           scheduleReleasedSlotPicks$,

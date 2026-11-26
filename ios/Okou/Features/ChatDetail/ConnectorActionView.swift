@@ -91,6 +91,19 @@ private struct ConnectorActionCardContent: View {
   let store: ConnectorActionStore
   let state: State
   @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
+  /// The authorization attempt and confirmed notices, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedPresentation: ConnectorActionStore.Presentation?
+
+  init(action: ChatConnectorAction, store: ConnectorActionStore, state: State) {
+    self.action = action
+    self.store = store
+    self.state = state
+    _resolvedPresentation = ResolvedValue(store.presentationValue)
+  }
+
+  private var presentation: ConnectorActionStore.Presentation {
+    resolvedPresentation ?? store.presentation
+  }
 
   var body: some View {
     Group {
@@ -115,7 +128,7 @@ private struct ConnectorActionCardContent: View {
           case .ready(let status):
             HStack {
               Button(button(status)) { store.activate(action) }
-                .disabled(complete(status) || store.active != nil)
+                .disabled(complete(status) || presentation.active != nil)
               if complete(status) {
                 OkouIcon("circle-check").foregroundStyle(OkouStatusColor.success)
               }
@@ -154,7 +167,7 @@ private struct ConnectorActionCardContent: View {
       ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
         Text(status.account?.label ?? String(localized: "Connect an account"))
           .lineLimit(1, reservesSpace: true).textSelection(.enabled)
-        (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
+        (presentation.notices[action.id].map { Text($0) } ?? Text(reason(status)))
           .lineLimit(2, reservesSpace: true)
       }
     }
@@ -169,7 +182,7 @@ private struct ConnectorActionCardContent: View {
   private func button(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     if complete(status) { return "Connected" }
     switch action.kind {
-    case .select: return "Use this account"
+    case .select: return action.isMemberApproval ? "Allow for 1h" : "Use this account"
     case .reconnect: return "Reconnect"
     default:
       return status.account == nil ? "Connect" : "Reconnect"
@@ -177,7 +190,10 @@ private struct ConnectorActionCardContent: View {
   }
   private func reason(_ status: ChatConnectorStatus) -> LocalizedStringKey {
     switch action.kind {
-    case .select: return "Confirm this account for the chat and continue."
+    case .select:
+      return action.isMemberApproval
+        ? "Allow across your chats. Select this account here."
+        : "Confirm this account for the chat and continue."
     case .reconnect: return "Reconnect this exact account to continue."
     default:
       if status.connected { return "Account connected." }
@@ -214,24 +230,28 @@ struct ConnectorAuthorizationSheet: View {
             }
           }
         } footer: {
-          Text("Connect this account to make it available in your account settings.")
-            .okouSectionNote()
+          if let account = flow.status.account, flow.methodID != account.authMethod {
+            Text("Connecting with this method replaces this account’s current authorization.")
+              .okouSectionNote()
+          } else if flow.action.isMemberApproval {
+            Text("Allow across your chats. Select this account here.")
+              .okouSectionNote()
+          } else {
+            Text("Connect this account to make it available in your account settings.")
+              .okouSectionNote()
+          }
         }
         if flow.needsConnection {
-          if flow.status.builtin != nil {
+          if flow.status.builtin != nil, showsMethodDetails {
             Section {
-              Picker("Method", selection: $flow.methodID) {
-                ForEach(
-                  flow.status.builtin?.authMethods.filter { method in
-                    method.grantKind != "managed"
-                      && (flow.status.account == nil
-                        || method.id == flow.status.account?.authMethod)
-                  } ?? []
-                ) { method in
-                  Text(method.label).tag(method.id)
+              if flow.availableMethods.count > 1 {
+                Picker("Method", selection: $flow.methodID) {
+                  ForEach(flow.availableMethods) { method in
+                    Text(method.label).tag(method.id)
+                  }
                 }
+                .okouValuePicker().disabled(flow.busy || flow.waiting)
               }
-              .okouValuePicker().disabled(flow.busy || flow.waiting)
               if let description = flow.method?.description {
                 Text(description).font(.okou(.footnote))
               }
@@ -258,11 +278,11 @@ struct ConnectorAuthorizationSheet: View {
                 .font(.okou(.footnote))
               }
             } header: {
-              Text("Connection method").okouSectionHeader()
+              Text(methodSectionTitle).okouSectionHeader()
             }
-          } else if flow.status.custom?.usesBrowserAuthorization != true {
+          } else if let custom = flow.status.custom, !custom.usesBrowserAuthorization {
             Section {
-              ForEach(flow.status.custom?.fields ?? []) { field in
+              ForEach(custom.fields) { field in
                 credential(field.label, key: field.key, secret: field.kind == "secret")
                   .disabled(flow.busy || flow.waiting)
                 if let description = field.description { Text(description).font(.okou(.footnote)) }
@@ -313,7 +333,7 @@ struct ConnectorAuthorizationSheet: View {
       }
       .okouGroupedBackground()
       .listSectionSpacing(OkouSpace.lg)
-      .navigationTitle("Connect service")
+      .navigationTitle(flow.action.isMemberApproval ? Text("Account") : Text("Connect service"))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         OkouCloseToolbarItem { store.cancel() }
@@ -322,13 +342,15 @@ struct ConnectorAuthorizationSheet: View {
         flow.values = [:]
         flow.options = [:]
       }
-      .sheet(
-        isPresented: Binding(
-          get: { flow.browserURL != nil }, set: { if !$0 { store.browserDismissed() } })
-      ) {
-        if let url = flow.browserURL { ConnectorSafariView(url: url) { store.browserDismissed() } }
-      }
     }
+  }
+  private var showsMethodDetails: Bool {
+    flow.availableMethods.count > 1 || flow.method?.description != nil
+      || flow.method?.manualFields.isEmpty == false || flow.method?.startOptions.isEmpty == false
+      || flow.status.builtin?.connectNotice != nil
+  }
+  private var methodSectionTitle: LocalizedStringKey {
+    flow.availableMethods.count > 1 ? "Connection method" : "Connection details"
   }
   private var confirmationTitle: LocalizedStringKey {
     if flow.busy {
@@ -336,7 +358,10 @@ struct ConnectorAuthorizationSheet: View {
       return flow.isExternalCode ? "Submitting code…" : "Connecting…"
     }
     if flow.operatedID != nil { return "Retry continuation" }
-    return flow.isExternalCode ? "Submit code" : "Confirm and continue"
+    if flow.action.isMemberApproval { return "Allow for 1h" }
+    if flow.isExternalCode { return "Submit code" }
+    if flow.needsConnection { return flow.status.account == nil ? "Connect" : "Reconnect" }
+    return "Confirm and continue"
   }
 
   @ViewBuilder private func credential(_ label: String, key: String, secret: Bool) -> some View {

@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validators/connector-accounts";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, SlidersHorizontal, Users } from "lucide-react";
@@ -25,6 +31,7 @@ import { connectorAccountTargetKey } from "../../signals/okou-page/connector-acc
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
+import { AccountPolicyControl } from "./components/settings/connector-account-policy-control.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
@@ -34,11 +41,13 @@ function ChatAccountChoiceRow({
   access,
   busy,
   onChange,
+  policyControl,
 }: {
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
-  readonly onChange: (enabled: boolean) => Promise<void>;
+  readonly onChange?: (enabled: boolean) => Promise<void>;
+  readonly policyControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -62,22 +71,26 @@ function ChatAccountChoiceRow({
           )}
         </span>
       </div>
-      <Switch
-        size="compact"
-        aria-label={t(
-          ($) => {
-            return $.connectorChatAccess.accountAccess;
-          },
-          { account: name },
-        )}
-        checked={access.enabled}
-        readOnly={busy}
-        aria-busy={busy || undefined}
-        className="aria-readonly:opacity-50"
-        onCheckedChange={(enabled) => {
-          detach(onChange(enabled), Reason.DomCallback);
-        }}
-      />
+      {onChange ? (
+        <Switch
+          size="compact"
+          aria-label={t(
+            ($) => {
+              return $.connectorChatAccess.accountAccess;
+            },
+            { account: name },
+          )}
+          checked={access.enabled}
+          readOnly={busy}
+          aria-busy={busy || undefined}
+          className="aria-readonly:opacity-50"
+          onCheckedChange={(enabled) => {
+            detach(onChange(enabled), Reason.DomCallback);
+          }}
+        />
+      ) : (
+        policyControl
+      )}
     </div>
   );
 }
@@ -91,6 +104,8 @@ function ChatAccountChoices({
 }) {
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
+  const policySettings = useGet(accounts.policySettings$);
+  const policies = useLastLoadable(accounts.policies$);
   const list = useLoadable(accounts.list.accounts$);
   const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
@@ -145,9 +160,26 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
-              onChange={(enabled) => {
-                return override(account.id, enabled, signal);
-              }}
+              policyControl={
+                entry.memberAccess &&
+                policySettings &&
+                policies.state === "hasData" ? (
+                  <AccountPolicyControl
+                    account={account}
+                    policy={policies.data?.find((policy) => {
+                      return policy.connectionId === account.id;
+                    })}
+                    updatePolicy$={policySettings.updatePolicy$}
+                  />
+                ) : undefined
+              }
+              onChange={
+                entry.memberAccess
+                  ? undefined
+                  : (enabled) => {
+                      return override(account.id, enabled, signal);
+                    }
+              }
             />
           ) : null;
         })}
@@ -165,6 +197,13 @@ function ChatAccountChoices({
         <p className="px-3 py-2 text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.accounts.accountsUnavailable;
+          })}
+        </p>
+      )}
+      {policies.state === "hasError" && (
+        <p role="alert" className="px-3 py-2 text-sm text-destructive">
+          {t(($) => {
+            return $.connectorChatAccess.memberPolicyLoadFailed;
           })}
         </p>
       )}
@@ -194,15 +233,10 @@ function ConnectorOverviewRow({
 }) {
   const { t } = useTranslation();
   const target = useGet(signals.connector.chatAccess.target$);
+  const anchor = useGet(signals.connector.chatAccess.anchor$);
   const openTarget = useSet(signals.connector.chatAccess.openTarget$);
   const closeTarget = useSet(signals.connector.chatAccess.closeTarget$);
-  const restoreFocus = useSet(
-    signals.connector.chatAccess.navigation.restoreFocus$,
-  );
-  const permissions = useGet(signals.connector.chatAccess.permissions$);
-  const accountManagerOpen = useGet(
-    signals.connector.chatAccess.accountManager.managerOpen$,
-  );
+  const openRowRef = useSet(signals.connector.chatAccess.openRowRef$);
   const signal = useGet(pageSignal$);
   const open =
     target !== null &&
@@ -211,16 +245,16 @@ function ConnectorOverviewRow({
   return (
     <Popover
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
         if (nextOpen) {
-          openTarget(entry, signal);
+          openTarget(entry, details.trigger?.getBoundingClientRect(), signal);
         } else if (open) {
           closeTarget();
         }
       }}
     >
       <PopoverTrigger
-        data-connector-target={connectorAccountTargetKey(entry.target)}
+        ref={open ? openRowRef : undefined}
         className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover data-popup-open:bg-gray-50"
       >
         {entry.target.kind === "builtin" ? (
@@ -246,15 +280,11 @@ function ConnectorOverviewRow({
         <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
+        anchor={anchor}
         side="right"
         align="start"
         sideOffset={8}
         collisionAvoidance={{ fallbackAxisSide: "end" }}
-        finalFocus={() => {
-          return permissions !== null || accountManagerOpen
-            ? false
-            : restoreFocus(entry.target);
-        }}
         aria-label={entry.label}
         className="flex max-h-[min(25rem,var(--available-height))] w-88 max-w-[var(--available-width)] flex-col overflow-hidden p-0"
       >
@@ -387,11 +417,13 @@ function ChatConnectorAccountPanel({
     <>
       <div className="shrink-0 border-b border-border/50 px-3 py-3">
         <p className="truncate text-sm font-medium">{entry.label}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.connectorChatAccess.accountsInChat;
-          })}
-        </p>
+        {!entry.memberAccess && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(($) => {
+              return $.connectorChatAccess.accountsInChat;
+            })}
+          </p>
+        )}
       </div>
       <div
         role="group"
@@ -425,7 +457,6 @@ export function ChatConnectorMenu({
   const failed =
     overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
-  const setViewport = useSet(accounts.navigation.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
@@ -456,7 +487,6 @@ export function ChatConnectorMenu({
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
       contentKey={`overview:${ui.popoverSearch}`}
-      contentRef={setViewport}
     >
       <ChatConnectorOverviewRetry signals={signals} failed={failed} />
       <ChatConnectorOverviewList signals={signals} entries={filtered} />

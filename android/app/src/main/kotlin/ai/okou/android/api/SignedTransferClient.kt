@@ -57,7 +57,7 @@ class SignedTransferClient(
                         !name.equals("proxy-authorization", true) &&
                         !name.equals("cookie", true) &&
                         !name.equals("host", true) &&
-                        !name.startsWith("x-client-", true)
+                        !name.startsWith("x-client-", true),
                 ) {
                     "API credentials and client headers do not belong on signed transfers"
                 }
@@ -75,7 +75,9 @@ class SignedTransferClient(
             http.newCall(request).awaitBytes(maximumBytes)
         } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
-            error.httpRejection()?.let { throw ApiFailure.Http(it.status, null, null, null) }
+            error.httpRejection()?.let {
+                throw ApiFailure.Http(it.status, null, null, retryAfter(it.retryAfter))
+            }
             throw error
         }
     }

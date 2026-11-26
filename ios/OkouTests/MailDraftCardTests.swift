@@ -16,7 +16,8 @@ final class MailDraftCardTests: XCTestCase {
       title: "Mail review",
       createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
     return ConversationStore(
-      thread: thread, sync: sync, commands: commands, webURL: fixture.http.baseURL,
+      thread: thread, sync: sync, commands: commands, graph: makeTestWorkspaceGraph(),
+      webURL: fixture.http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.http.baseURL),
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})
   }

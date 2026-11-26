@@ -58,6 +58,7 @@ import {
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
   GmailAuthorizationError,
+  gmailDraftReadError,
   gmailResponseRequiresReconnect,
   handleGmailSendError,
   type GmailDraftRejection,
@@ -963,7 +964,7 @@ async function gmailGetDraftResource(
     readonly accessToken: string;
     readonly gmailDraftId: string;
   },
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<zInfer<typeof gmailDraftResourceSchema> | null> {
   const acceptedResponse = await settle(
     accept(
@@ -994,6 +995,9 @@ async function gmailGetDraftResource(
     return null;
   }
   if (!response.ok) {
+    if (response.status === 400) {
+      throw await gmailDraftReadError(response, signal);
+    }
     throw new Error(`Failed to read Gmail draft (HTTP ${response.status})`);
   }
   return gmailDraftResourceSchema.parse(await response.json());
@@ -2171,6 +2175,7 @@ const resolveMailLinkConnection$ = command(
             userId: args.userId,
           },
           connectorSlug,
+          args.runId === undefined,
         ).as("mail_chat_accounts"),
       );
     signal.throwIfAborted();

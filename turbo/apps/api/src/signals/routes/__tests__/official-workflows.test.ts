@@ -1,4 +1,6 @@
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
 import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
@@ -21,7 +23,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { feedRoutes } from "../feed";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -200,23 +202,9 @@ describe("My Okou proactive settings", () => {
       routes: [...proactiveSuggestionsRoutes, ...feedRoutes],
     });
     const { actor } = await prepareBriefMember();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const owner = { ...actor, orgId: actor.orgId };
     const headers = authHeaders(actor);
     const hourly = app(proactiveSuggestionsContract);
     const feed = app(feedContract);
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-    });
-    await accept(
-      hourly.updateWithFeed({ headers, body: { enabled: false } }),
-      [403],
-    );
-    await updateFeatureSwitchesForUser(context, owner, {
-      [FeatureSwitchKey.AgentSuggestion]: true,
-    });
     expect(
       (await accept(hourly.get({ headers }), [200])).body.enabled,
     ).toBeFalsy();
@@ -259,14 +247,6 @@ describe("Daily profile learning through Suggestions", () => {
     });
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.AgentSuggestion]: true },
-    );
     const client = app(proactiveSuggestionsContract);
     const pending = await accept(
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
@@ -296,7 +276,156 @@ describe("Daily profile learning through Suggestions", () => {
 });
 
 describe("Proactive Suggestions preference", () => {
-  it("keeps the shared Suggestions choice while the catalog is unavailable", async () => {
+  it("recovers an interrupted opt-in and stops checking membership once both schedules are installed", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...proactiveSuggestionsRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+      ],
+    });
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    const headers = authHeaders(actor);
+    const preference = app(proactiveSuggestionsContract);
+    const membership =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membership.mockRejectedValueOnce(
+      new Error("Membership service temporarily unavailable"),
+    );
+    const pending = await accept(
+      preference.update({ headers, body: { enabled: true } }),
+      [200],
+    );
+    expect(pending.body).toMatchObject({ enabled: true, status: "error" });
+
+    const shard =
+      createHash("sha256")
+        .update(`${actor.orgId}/${actor.userId}`)
+        .digest()
+        .readUInt32BE() % 60;
+    // Both ticks are in the owner's shard. The new hourly schedule is not due until the next hour.
+    const tickTime = Date.UTC(2030, 0, 2, 12, shard, 5);
+    async function tick(at: number) {
+      mockNow(at);
+      await accept(
+        app(cronExecuteWorkflowAutomationsContract).execute({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+    await tick(tickTime);
+    const repaired = await accept(preference.get({ headers }), [200]);
+    expect(repaired.body).toMatchObject({ enabled: true, status: "enabled" });
+    const list = await accept(
+      workflowCollectionClient().list({ headers, query: {} }),
+      [200],
+    );
+    const schedules = list.body.filter((w) => {
+      return (
+        w.official?.definitionName === "agent-suggestions" ||
+        w.official?.definitionName === "proactive-learning"
+      );
+    });
+    expect(schedules).toHaveLength(2);
+    async function installations() {
+      return await Promise.all(
+        schedules.map(async ({ id }) => {
+          const detail = await accept(
+            workflowClient().get({ headers, params: { workflowId: id } }),
+            [200],
+          );
+          return { id, updatedAt: detail.body.updatedAt };
+        }),
+      );
+    }
+    const before = await installations();
+    membership.mockClear();
+    await tick(tickTime + 10_000);
+    expect(membership).not.toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: actor.orgId }),
+    );
+    await expect(installations()).resolves.toStrictEqual(before);
+  });
+
+  it("clears the departed member's opt-in and preserves both paused schedules", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    const pref = setupApp({ context, routes: proactiveSuggestionsRoutes })(
+      proactiveSuggestionsContract,
+    );
+    const headers = authHeaders(actor);
+    const enabled = await accept(
+      pref.update({ headers, body: { enabled: true } }),
+      [200],
+    );
+    expect(enabled.body.status).toBe("enabled");
+    const listed = await accept(
+      workflowCollectionClient().list({ headers, query: {} }),
+      [200],
+    );
+    const workflows = listed.body.filter((workflow) => {
+      return (
+        workflow.official?.definitionName === "agent-suggestions" ||
+        workflow.official?.definitionName === "proactive-learning"
+      );
+    });
+    expect(workflows).toHaveLength(2);
+    const originals = await Promise.all(
+      workflows.map(async (workflow) => {
+        const response = await accept(
+          automationClient().list({
+            headers,
+            params: { workflowId: workflow.id },
+          }),
+          [200],
+        );
+        const [automation] = response.body;
+        if (!automation?.enabled) {
+          throw new Error("Expected the owner's enabled schedule");
+        }
+        return { workflowId: workflow.id, id: automation.id };
+      }),
+    );
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organizationMembership.deleted",
+      data: {
+        id: `membership-${actor.userId}-${actor.orgId}`,
+        organization_id: actor.orgId,
+        user_id: actor.userId,
+      },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    const preference = await accept(
+      pref.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({ enabled: false, status: "paused" });
+    for (const original of originals) {
+      const response = await accept(
+        automationClient().list({
+          headers,
+          params: { workflowId: original.workflowId },
+        }),
+        [200],
+      );
+      expect(response.body).toMatchObject([
+        {
+          id: original.id,
+          enabled: false,
+          nextRunAt: null,
+          official: { intendedEnabled: false },
+        },
+      ]);
+    }
+  });
+
+  it("keeps the Suggestions choice while the member has no timezone", async () => {
     const app = setupApp({
       context,
       routes: proactiveSuggestionsRoutes,
@@ -304,24 +433,6 @@ describe("Proactive Suggestions preference", () => {
     const { actor } = await prepareBriefMember();
     await bdd.completeOnboarding(actor);
     const client = app(proactiveSuggestionsContract);
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: false,
-      },
-    );
-    await accept(client.get({ headers: authHeaders(actor) }), [403]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
     const initial = await accept(
       client.get({ headers: authHeaders(actor) }),
       [200],
@@ -331,7 +442,11 @@ describe("Proactive Suggestions preference", () => {
       client.update({ headers: authHeaders(actor), body: { enabled: true } }),
       [200],
     );
-    expect(pending.body).toMatchObject({ enabled: true, status: "preparing" });
+    expect(pending.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-timezone",
+    });
     const morning = await accept(
       morningBriefPreferenceClient().get({ headers: authHeaders(actor) }),
       [200],
@@ -347,30 +462,56 @@ describe("Proactive Suggestions preference", () => {
       [200],
     );
     expect(cancelled.body).toMatchObject({ enabled: false, status: "paused" });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: false,
-      },
-    );
-    await accept(client.get({ headers: authHeaders(actor) }), [403]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.AgentSuggestion]: true,
-      },
-    );
-    const restored = await accept(
-      client.get({ headers: authHeaders(actor) }),
-      [200],
-    );
-    expect(restored.body.enabled).toBeFalsy();
   });
 });
 
 describe("Morning Brief preference", () => {
+  it("shares one schedule across simultaneous first opt-ins and later toggles", async () => {
+    const { actor } = await prepareBriefMember();
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    const headers = authHeaders(actor);
+    const preferences = morningBriefPreferenceClient();
+    const setEnabled = (enabled: boolean) => {
+      return accept(preferences.update({ headers, body: { enabled } }), [200]);
+    };
+    await Promise.all([setEnabled(true), setEnabled(true)]);
+    const installed = await listMorningBriefInstallations(actor);
+    expect(installed).toHaveLength(1);
+    const [workflow] = installed;
+    if (!workflow) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    const listSchedules = () => {
+      return accept(
+        automationClient().list({
+          headers,
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+    };
+    const first = await listSchedules();
+    expect(first.body).toHaveLength(1);
+    const [schedule] = first.body;
+    if (!schedule) {
+      throw new Error("Expected the Morning Brief schedule");
+    }
+    expect(schedule).toMatchObject({
+      kind: "schedule",
+      enabled: true,
+      chatThreadId: null,
+      schedule: { type: "cron", timezone: "Asia/Shanghai" },
+    });
+    await setEnabled(false);
+    expect((await listSchedules()).body).toMatchObject([
+      { id: schedule.id, enabled: false },
+    ]);
+    await setEnabled(true);
+    expect((await listSchedules()).body).toMatchObject([
+      { id: schedule.id, enabled: true, chatThreadId: null },
+    ]);
+  });
+
   it("preserves enable intent while timezone is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
     const timezoneHeaders = authHeaders(missingTimezone.actor);

@@ -14,6 +14,7 @@ import {
   memoryArchive,
 } from "./helpers/public-runner-memory";
 
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { usageMembersRoutes } from "../usage-members";
@@ -59,6 +60,7 @@ import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "../../../scripts/dev-seed-managed-model-key";
 import { API_DATABASE_SEED_FILES } from "../../../test-fixtures/database-seeds";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import {
@@ -981,16 +983,38 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain(
           "including its page-rendering and publish steps",
         );
-        expect(appendSystemPrompt).toContain("No format has default priority");
         expect(appendSystemPrompt).not.toContain(
           "prefer Markdown as the primary deliverable",
         );
       });
 
-      it("enables Markdown-first output guidance for staff runs", async () => {
+      it("guides ordinary runs to choose document formats by content", async () => {
         const api = createRunsApi(context);
-        const { actor, runnerGroup } = await entitledRunActor({
-          orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        const { actor, runnerGroup } = await entitledRunActor();
+        const run = await api.createThreadRun(actor, {
+          prompt: "write a project update",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const execution = await api.executionInput(run.runId);
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
+        expect(appendSystemPrompt).toContain(
+          "Honor the user's explicitly requested delivery format.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "use Markdown for text-focused documents and reports, and HTML for visual or interactive deliverables.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Keep Markdown as the source of truth and let the user export DOCX or PDF",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
+      });
+
+      it("honors Markdown-first output opt-outs in run guidance", async () => {
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const { actor, runnerGroup } = await entitledRunActor();
+        await connectors.updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.MarkdownFirstOutput]: false,
         });
         const run = await api.createThreadRun(actor, {
           prompt: "write a project update",
@@ -999,10 +1023,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
         const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain(
-          "for text-focused documents and reports, prefer Markdown",
+          "choose a suitable format based on the user's preferences and how they will use the result",
         );
-        expect(appendSystemPrompt).toContain(
-          "Keep Markdown as the source of truth and let the user export DOCX or PDF",
+        expect(appendSystemPrompt).not.toContain(
+          "For Markdown deliverables, use portable Markdown",
         );
         await api.requestCancelRun(actor, run.runId, [200]);
       });
@@ -8226,6 +8250,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain(
           "Each chat has its own window and tabs; website login state is shared across chats.",
         );
+        expect(appendSystemPrompt).toContain(
+          "Keep as few tabs open as the task needs. Reuse a suitable tab and avoid opening duplicates. Close tabs you opened as soon as you no longer need them.",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Use `okou browser restart` only after confirming the remote Browser instance remains unresponsive",
+        );
+        expect(appendSystemPrompt).toContain(
+          "Restart interrupts every chat currently using this user's shared Browser profile in the workspace",
+        );
         expect(appendSystemPrompt).not.toContain(
           "Okou Browser is currently off for this chat thread",
         );
@@ -8745,50 +8778,189 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
-      it.each([false, true])(
-        "defaults presentation delivery to HTML and gates explicitly requested PPTX conversion (%s)",
-        async (enabled) => {
+      it.each([
+        {
+          label: "new HTML over a PPTX default",
+          outputFormatEnabled: true,
+          conversionEnabled: true,
+          savedFormat: "pptx",
+          request:
+            "Make a deck about our quarterly plan. Deliver HTML this time.",
+          workflow:
+            "For a new deck with resolved PPTX output, author an editable native PPTX",
+        },
+        {
+          label: "new PPTX without conversion capability",
+          outputFormatEnabled: true,
+          conversionEnabled: false,
+          savedFormat: "html",
+          request:
+            "Make a deck about our quarterly plan. Deliver PPTX this time.",
+          workflow: "For PPTX delivery from an HTML-only template",
+        },
+        {
+          label: "legacy native package",
+          outputFormatEnabled: false,
+          conversionEnabled: true,
+          savedFormat: "pptx",
+          request:
+            "Make a deck about our quarterly plan. Deliver HTML this time.",
+          workflow:
+            "Author an editable native PPTX directly with the selected package",
+        },
+        {
+          label: "legacy HTML package",
+          outputFormatEnabled: false,
+          conversionEnabled: true,
+          savedFormat: "html",
+          request:
+            "Make a deck about our quarterly plan. Deliver PPTX this time.",
+          workflow:
+            "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions",
+        },
+        {
+          label: "existing HTML conversion with a native template attached",
+          outputFormatEnabled: true,
+          conversionEnabled: true,
+          savedFormat: "pptx",
+          request:
+            'Convert this existing HTML deck to PPTX without regenerating it: <html><body><section class="slide"><h1>Original slide</h1></section></body></html>',
+          workflow:
+            "For a new deck with resolved PPTX output, author an editable native PPTX",
+        },
+      ] as const)(
+        "$label: startup and active-input guidance",
+        async ({
+          outputFormatEnabled,
+          conversionEnabled,
+          savedFormat,
+          request,
+          workflow,
+        }) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
           const webhooks = createWebhookCallbackApi(context);
-          const { actor, runnerGroup } = await entitledRunActor();
+          const { actor, runnerGroup } = await entitledRunActor({
+            orgId: createUniqueStaffOrgIdFixture(),
+          });
 
           await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.PresentationConvert]: enabled,
+            [FeatureSwitchKey.PresentationOutputFormat]: outputFormatEnabled,
+            [FeatureSwitchKey.PresentationConvert]: conversionEnabled,
           });
-          const run = await api.createThreadRun(actor, {
-            prompt: "make me a deck about our quarterly plan",
+          const preference = `# Presentation Output Preference\n- Output format: ${savedFormat.toUpperCase()} format`;
+          const userMessage: UserMessageInputDocument = {
+            version: 1,
+            parts: [
+              { type: "additional_info", text: preference },
+              { type: "text", text: request },
+              {
+                type: "template",
+                titleSnapshot: "Schoolhouse",
+                template: {
+                  type: "presentation",
+                  selection: {
+                    templateId: "template:html-ppt-schoolhouse",
+                    outputFormat: savedFormat,
+                  },
+                },
+              },
+            ],
+          };
+          const chatFiles = createChatFilesBddApi(context);
+          const run = await chatFiles.sendAndLaunch(actor, {
+            prompt: request,
+            userMessage,
           });
-          expect(run.status).toBe("running");
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
+          expect(execution.prompt).toContain(request);
+          expect(execution.prompt).toContain(preference);
           const prompt = execution.appendSystemPrompt ?? "";
+          const toolsPrompt =
+            prompt.split(/^# Agent Tools$/mu)[1]?.split(/^# /mu)[0] ?? "";
+          const startupTemplatePrompt =
+            prompt.split(/^# Inline Templates$/mu)[1]?.split(/^# /mu)[0] ?? "";
+          const eventId = randomUUID();
+          await chatFiles.requestSendEvent(
+            actor,
+            {
+              threadId: run.threadId,
+              clientEventId: eventId,
+              prompt: request,
+              userMessage,
+            },
+            [201],
+          );
+          const activeInput = await api.nextSteerableInput(
+            execution.sandboxToken,
+            run.runId,
+          );
+          expect(activeInput.input?.eventId).toBe(eventId);
+          const activePrompt = activeInput.input?.prompt ?? "";
+          const templatePrompts = [startupTemplatePrompt, activePrompt];
+          for (const templatePrompt of templatePrompts) {
+            expect(templatePrompt).toContain(
+              `Output format: ${savedFormat.toUpperCase()}`,
+            );
+            expect(templatePrompt).toContain(
+              savedFormat === "pptx"
+                ? "okou resource pull template:pptx-schoolhouse-runbook"
+                : "okou resource pull template:html-ppt-schoolhouse-runbook",
+            );
+            expect(templatePrompt).toContain(
+              'okou generate presentation --format <html|pptx> --template template:html-ppt-schoolhouse --prompt "<user request>"',
+            );
+            expect(templatePrompt).toContain(
+              outputFormatEnabled
+                ? "The replacement packet supersedes all remaining instructions here."
+                : "The message wins over the selected format preference.",
+            );
+            expect(templatePrompt).toContain(workflow);
+          }
+          const policyMarker = "- Presentation output:";
+          expect(toolsPrompt.includes(policyMarker)).toBe(outputFormatEnabled);
+          expect(
+            [prompt, activePrompt]
+              .join("\n")
+              .split(/^- Presentation output:/mu),
+          ).toHaveLength(outputFormatEnabled ? 2 : 1);
+          if (!outputFormatEnabled) {
+            expect(toolsPrompt).toContain(
+              "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
+            );
+            expect(toolsPrompt).toContain(
+              "Do not infer a conversion request from remembered preferences or intended use.",
+            );
+          }
           const token = execution.platformEnvironment.OKOU_TOKEN;
           if (!token) {
             throw new Error("Expected a minted Run token");
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
-          expect(prompt).toContain("Presentation delivery:");
-          expect(prompt).toContain("first author and check the deck as HTML");
-          expect(prompt).toContain(
-            "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
-          );
-          expect(prompt).toContain(
-            "Deliver one format unless the user requests multiple formats",
-          );
-          if (enabled) {
+          if (conversionEnabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
+            expect(toolsPrompt).toContain(
+              outputFormatEnabled
+                ? "For an existing HTML deck, convert that file without regenerating it"
+                : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
             );
-            expect(prompt).toContain(
-              "Only when the user explicitly requests PowerPoint/PPTX",
+            expect(toolsPrompt).toContain(
+              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
             expect(prompt).not.toContain("okou presentation convert");
+            expect(activeInput.input?.prompt).not.toContain(
+              "okou presentation convert",
+            );
           }
+          await api.declareSteeredInput(
+            execution.sandboxToken,
+            run.runId,
+            eventId,
+          );
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(
             { runId: run.runId, exitCode: 1 },
@@ -8798,44 +8970,32 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         },
       );
 
-      it.each([false, true])(
-        "selects batch or individual permission approval guidance for the run (%s)",
-        async (enabled) => {
-          const api = createRunsApi(context);
-          const connectors = createConnectorBddApi(context);
-          const webhooks = createWebhookCallbackApi(context);
-          const { actor, runnerGroup } = await entitledRunActor();
-          await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.BatchConnectorPermissions]: enabled,
-          });
-          const run = await api.createThreadRun(actor, {
-            prompt: "prepare the connector permissions needed for this task",
-          });
-          await api.heartbeatRunner(runnerGroup);
-          const execution = await api.executionInput(run.runId);
-          const prompt = execution.appendSystemPrompt ?? "";
-          if (enabled) {
-            expect(prompt).toContain(
-              "okou connector permission-request --batch-file <path>",
-            );
-            expect(prompt).toContain(
-              "A single batch approval may carry one `--callback-prompt <prompt>`",
-            );
-            expect(prompt).toContain(
-              "Do not use callbacks when additional connector connections",
-            );
-          } else {
-            expect(prompt).toContain("one command per permission");
-            expect(prompt).toContain("using only ordinary non-callback links");
-          }
-          await api.requestCancelRun(actor, run.runId, [200]);
-          await webhooks.requestAgentComplete(
-            { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${execution.sandboxToken}` },
-            [200],
-          );
-        },
-      );
+      it("includes batch permission approval guidance for the run", async () => {
+        const api = createRunsApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        const { actor, runnerGroup } = await entitledRunActor();
+        const run = await api.createThreadRun(actor, {
+          prompt: "prepare the connector permissions needed for this task",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const execution = await api.executionInput(run.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
+        expect(prompt).toContain(
+          "okou connector permission-request --batch-file <path>",
+        );
+        expect(prompt).toContain(
+          "A single batch approval may carry one `--callback-prompt <prompt>`",
+        );
+        expect(prompt).toContain(
+          "Do not use callbacks when additional connector connections",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await webhooks.requestAgentComplete(
+          { runId: run.runId, exitCode: 1 },
+          { authorization: `Bearer ${execution.sandboxToken}` },
+          [200],
+        );
+      });
 
       it("mounts the caller's private workflow over same-slug visible workflows", async () => {
         const bdd = createBddApi(context);

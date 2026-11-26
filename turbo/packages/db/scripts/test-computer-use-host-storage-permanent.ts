@@ -7,6 +7,7 @@ import { Client } from "pg";
 import { schema } from "../src/index";
 import { computerUseHosts } from "../src/runtime/computer-use-host";
 import { computerUseHosts as physicalHosts } from "../src/schema/computer-use-host";
+import { remoteDevices } from "../src/schema/remote-device";
 
 /** Current host storage contract on replayed and freshly generated schemas. */
 export async function validatePermanentComputerUseHostStorage(
@@ -44,17 +45,38 @@ export async function validatePermanentComputerUseHostStorage(
       ).rows[0]?.name,
       null,
     );
+    const [device] = await db
+      .insert(remoteDevices)
+      .values({ orgId, userId: values.userId, displayName: values.displayName })
+      .returning();
+    assert.ok(device);
+    assert.equal(device.accessAllowed, false);
+    assert.equal(device.accessExpiresAt, null);
     const [created] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .returning();
     assert.ok(created);
     assert.equal(created.connectionGeneration, 0);
     assert.equal(created.status, "online");
+    const [destination] = await db
+      .insert(remoteDevices)
+      .values({
+        orgId,
+        userId: values.userId,
+        displayName: "Destination",
+        accessAllowed: true,
+      })
+      .returning({ id: remoteDevices.id });
+    assert.ok(destination);
+    await db
+      .update(computerUseHosts)
+      .set({ remoteDeviceId: destination.id })
+      .where(eq(computerUseHosts.id, created.id));
 
     const [reconnected] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .onConflictDoUpdate({
         target: [
           computerUseHosts.orgId,
@@ -74,7 +96,18 @@ export async function validatePermanentComputerUseHostStorage(
     assert.equal(reconnected?.id, created.id);
     assert.equal(reconnected?.connectionGeneration, 1);
     assert.equal(reconnected?.sessionId, "sess_reconnected");
+    assert.equal(reconnected?.remoteDeviceId, destination.id);
     assert.deepEqual(reconnected?.createdAt, created.createdAt);
+    assert.equal(
+      (
+        await db
+          .select()
+          .from(remoteDevices)
+          .where(eq(remoteDevices.orgId, orgId))
+      ).length,
+      2,
+      "A move must preserve both device records",
+    );
     assert.deepEqual(
       await db.query.computerUseHosts.findFirst({
         where: eq(computerUseHosts.id, created.id),
@@ -90,9 +123,19 @@ export async function validatePermanentComputerUseHostStorage(
       "Both exported mappings must generate legal current SQL",
     );
 
+    const otherUserId = "another-owner";
+    const [otherDevice] = await db
+      .insert(remoteDevices)
+      .values({ orgId, userId: otherUserId, displayName: values.displayName })
+      .returning({ id: remoteDevices.id });
+    assert.ok(otherDevice);
     const [otherOwner] = await db
       .insert(computerUseHosts)
-      .values({ ...values, userId: "another-owner" })
+      .values({
+        ...values,
+        userId: otherUserId,
+        remoteDeviceId: otherDevice.id,
+      })
       .returning();
     assert.ok(otherOwner);
     assert.notEqual(
@@ -109,7 +152,7 @@ export async function validatePermanentComputerUseHostStorage(
     assert.equal(revoked?.connectionGeneration, 1);
     const [replacement] = await db
       .insert(computerUseHosts)
-      .values(values)
+      .values({ ...values, remoteDeviceId: device.id })
       .returning();
     assert.ok(replacement);
     assert.notEqual(
@@ -132,6 +175,7 @@ export async function validatePermanentComputerUseHostStorage(
       await db
         .delete(computerUseHosts)
         .where(eq(computerUseHosts.orgId, orgId));
+      await db.delete(remoteDevices).where(eq(remoteDevices.orgId, orgId));
     } finally {
       await client.end();
     }

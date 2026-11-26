@@ -2,8 +2,13 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.connectors.ChatConnectorOverride
+import kotlin.time.TimeMark
 import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+
+internal const val CONNECTOR_DRAFT_JOURNAL_FORMAT = 4
 
 /** A pending operation is a frozen request, independent of the next editable draft. */
 @Serializable
@@ -13,7 +18,13 @@ data class PendingText(
     val create: CreateThreadRequest?,
     val send: SendRequestVariant1,
     val stage: TextStage,
+    @Transient val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
+    @Transient val started: TimeMark? = null,
+    @Transient val draftModel: DraftModelSelection? = null,
 )
+
+internal val PendingText.awaitingConnectorSetup: Boolean
+    get() = stage == TextStage.Created && connectorOverrides.isNotEmpty()
 
 @Serializable
 enum class TextStage {
@@ -35,8 +46,17 @@ enum class TextDisposition {
     Revoked,
 }
 
+internal val TextDisposition.hasLeftQueue: Boolean
+    get() = this != TextDisposition.Accepted && this != TextDisposition.Queued
+
 @Serializable
 data class TextReceipt(val threadId: String, val eventId: String, val disposition: TextDisposition)
+
+enum class PendingDelivery {
+    Sending,
+    Checking,
+    Unconfirmed,
+}
 
 /** Local presentation of a frozen input while its history row is unavailable. */
 data class ComposerMessagePreview(
@@ -44,7 +64,8 @@ data class ComposerMessagePreview(
     val threadId: String,
     val text: String,
     val disposition: TextDisposition? = null,
-    val sending: Boolean = false,
+    val pendingDelivery: PendingDelivery? = null,
+    val sequence: Long? = null,
 )
 
 @Serializable
@@ -62,7 +83,39 @@ data class ComposerJournal(
     val entries: Map<String, ComposerEntry> = emptyMap(),
     val drafts: Map<String, EditableComposerDraft> = emptyMap(),
     val retainedDrafts: Map<String, String> = emptyMap(),
+    val newChatConnectorOverrides: List<ChatConnectorOverride> = emptyList(),
+    val retainedDraftConnectorOverrides: Map<String, List<ChatConnectorOverride>> = emptyMap(),
+    val newChatModel: DraftModelSelection? = null,
+    // A recorded null restores server-default inheritance for a rejected new chat.
+    val retainedDraftModels: Map<String, DraftModelSelection?> = emptyMap(),
 )
+
+internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
+    copy(
+        entries =
+            entries
+                .mapValues { (_, entry) ->
+                    if (
+                        entry.pending != null &&
+                            entry.pending.eventId != entry.recovery?.send?.clientEventId
+                    )
+                        entry.copy(pending = null)
+                    else entry
+                }
+                .filterValues { it != ComposerEntry() },
+    )
+
+internal fun ComposerJournal.restoreDraftsWithoutReplaying(): ComposerJournal {
+    val recovered =
+        entries
+            .mapNotNull { (_, entry) ->
+                val pending = entry.pending ?: return@mapNotNull null
+                if (pending.eventId == entry.recovery?.send?.clientEventId) return@mapNotNull null
+                pending.eventId to pending.send.prompt
+            }
+            .toMap()
+    return withoutOrdinaryPending().copy(retainedDrafts = retainedDrafts + recovered)
+}
 
 internal fun ComposerJournal.acceptedNewChats(): List<ProvisionalChat> =
     entries.entries.toList().asReversed().mapNotNull { (key, entry) ->
@@ -92,12 +145,19 @@ enum class ComposerContext {
     NetworkFailed,
 }
 
+enum class RecoveryOperationPhase {
+    Preparing,
+    CheckingReset,
+}
+
 data class ComposerState(
     val journal: ComposerJournal? = null,
     val persistence: ComposerPersistence = ComposerPersistence.Loading,
     val context: ComposerContext = ComposerContext.Idle,
     val busy: Set<String> = emptySet(),
     val checking: Set<String> = emptySet(),
+    val recovering: Map<RecoverySelection, RecoveryOperationPhase> = emptyMap(),
+    val recoveryFailures: Map<String, RecoverySelection> = emptyMap(),
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
     val synchronization: Map<String, ComposerSync> = emptyMap(),
@@ -109,19 +169,50 @@ data class ComposerState(
     }
 
     fun entry(target: ComposerTarget): ComposerEntry {
+        val journal = journal
         val entry = journal?.entries?.get(target.key) ?: ComposerEntry()
-        return if (journal?.format == 3)
+        return if (journal != null && journal.format >= 3)
             entry.copy(text = journal.drafts[draftKey(target)]?.text.orEmpty())
         else entry
     }
 
+    internal fun connectorOverrides(target: ComposerTarget): List<ChatConnectorOverride> {
+        if (target.threadId != null) return emptyList()
+        val journal = journal ?: return emptyList()
+        return journal.entries[target.key]?.pending?.connectorOverrides
+            ?: journal.newChatConnectorOverrides
+    }
+
+    internal fun canEditDraftConnectors(target: ComposerTarget): Boolean {
+        if (target.threadId != null || journal == null || target.key in busy) return false
+        val entry = entry(target)
+        return entry.createdThreadId == null &&
+            (entry.pending == null || entry.pending.stage == TextStage.Created)
+    }
+
+    internal fun connectorSetupFailed(key: String): Boolean =
+        key in failed && journal?.entries?.get(key)?.pending?.awaitingConnectorSetup == true
+
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
+
+    internal fun canEditDraftModel(target: ComposerTarget) =
+        journal != null &&
+            target.threadId == null &&
+            draftKey(target) == "new:" &&
+            entry(target).pending == null
 
     internal fun messagesFor(threadId: String): List<ComposerMessagePreview> = buildList {
         receiptMessages.values.filterTo(this) { it.threadId == threadId }
         journal?.entries?.forEach { (key, entry) ->
             val pending = entry.pending?.takeIf { it.threadId == threadId } ?: return@forEach
-            add(pending.preview(sending = key in busy && key !in checking))
+            val delivery =
+                when {
+                    pending.started != null && !connectorSetupFailed(key) -> PendingDelivery.Sending
+                    key in checking -> PendingDelivery.Checking
+                    key in busy -> PendingDelivery.Sending
+                    else -> PendingDelivery.Unconfirmed
+                }
+            add(pending.preview(pendingDelivery = delivery))
         }
     }
 
@@ -150,5 +241,8 @@ data class ComposerState(
             !entry(target).text.isBlankWebDraft()
 }
 
-internal fun PendingText.preview(disposition: TextDisposition? = null, sending: Boolean = false) =
-    ComposerMessagePreview(eventId, threadId, send.prompt, disposition, sending)
+internal fun PendingText.preview(
+    disposition: TextDisposition? = null,
+    pendingDelivery: PendingDelivery? = null,
+    sequence: Long? = null,
+) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery, sequence)

@@ -41,24 +41,24 @@ test_home="$tmp/home"
 mkdir -p "$test_home"
 
 prepare_fake_runners() {
-  local hostname
+  local directory=$1 hostname
   for hostname in runner-promotion-a runner-promotion-b; do
-    local bin_dir="$tmp/$hostname/bin/$runner_release"
+    local bin_dir="$directory/$hostname/bin/$runner_release"
     mkdir -p "$bin_dir"
     cp "$tmp/fake-runner" "$bin_dir/runner"
   done
 }
 
 verify_configs() {
-  local hostname
+  local directory=$1 hostname
   for hostname in runner-promotion-a runner-promotion-b; do
-    local config="$tmp/$hostname/runners/$runner_release/runner.yaml"
+    local config="$directory/$hostname/runners/$runner_release/runner.yaml"
     assert_line_count "$config" 1 "hostname: \"$hostname\""
   done
 }
 
 run_config_tasks() {
-  local playbook=$1
+  local playbook=$1 directory=$2
   HOME="$test_home" \
     ANSIBLE_CONFIG="$ansible_config" \
     ANSIBLE_NOCOLOR=1 \
@@ -66,7 +66,7 @@ run_config_tasks() {
       -i "$inventory" \
       --forks 2 \
       --tags runner-config-attribution \
-      -e "data_dir=$tmp/{{ inventory_hostname }}" \
+      -e "data_dir=$directory/{{ inventory_hostname }}" \
       -e "runner_version=999.0.0" \
       -e "default_rootfs_hash=rootfs" \
       -e "default_snapshot_hash=snapshot" \
@@ -119,25 +119,14 @@ printf 'hostname: "%s"\n' "$hostname" >"$runner_dir/runner.yaml"
 EOF
 chmod +x "$tmp/fake-runner"
 
-prepare_fake_runners
-
 for playbook in "$build_playbook" "$rollback_playbook"; do
-  HOME="$test_home" \
-    ANSIBLE_CONFIG="$ansible_config" \
-    ANSIBLE_NOCOLOR=1 \
-    ansible-playbook -i "$inventory" --syntax-check "$playbook" >/dev/null
-
-  if ! run_config_tasks "$playbook"; then
+  directory="$tmp/${playbook##*/}"
+  prepare_fake_runners "$directory"
+  if ! run_config_tasks "$playbook" "$directory"; then
     sed -n '1,200p' "$tmp/ansible-output" >&2
     exit 1
   fi
-  verify_configs
-
-  if ! run_config_tasks "$playbook"; then
-    sed -n '1,200p' "$tmp/ansible-output" >&2
-    exit 1
-  fi
-  verify_configs
+  verify_configs "$directory"
 done
 
 echo "runner-attribution-ansible-test: ok"

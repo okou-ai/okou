@@ -1,359 +1,163 @@
 import {
   billingStatusContract,
-  billingUsagePackCatalogContract,
-  billingUsagePackManagementContract,
   billingUsagePackMigrationContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { screen, waitFor, within } from "@testing-library/react";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { expect, test } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { search } from "../../../signals/location.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  billingPlanCapabilities,
-  defaultBillingStatus,
-} from "../../../mocks/handlers/api-billing.ts";
-
+  action,
+  billing,
+  findAction,
+  openWorkspace,
+  packages,
+  setBilling,
+} from "./workspace-billing-fixtures.ts";
 const context = testContext();
-
-function usagePackCatalogResponse() {
-  return {
-    supportsFreeMembers: true as const,
-    usagePacks: [
-      {
-        usagePackUsd: 20 as const,
-        priceUsd: 20,
-        purchasedCredits: 20_000,
-        bonusCredits: 2000,
-        totalCredits: 22_000,
-      },
+const plans = "/?settings=billing&billingView=plans";
+const free = billing("limited-free-1");
+test("billing-plans-entry-001 Closing the sidebar upgrade returns to chat without opening Settings", async () => {
+  setBilling(context, () => {
+    return free;
+  });
+  packages(context);
+  const threadId = context.resourceId;
+  const prompt = "Review my team's billing.";
+  mockChatLifecycle(context, {
+    threadId,
+    historyEvents: [
+      { role: "user", content: prompt, createdAt: "2026-03-10T12:00:00Z" },
     ],
-  };
-}
-
-/** A new workspace with no active plan, so the app offers the Pro upgrade. */
-function prepareUpgradeFlow({
-  desktop = true,
-}: { readonly desktop?: boolean } = {}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, {
-      ...defaultBillingStatus(),
-      tier: "limited-free-1",
-      ...billingPlanCapabilities("limited-free-1"),
-      onboardingPaymentPending: false,
-      concurrencyLimit: 2,
-    });
   });
-  context.mocks.browser.matchMedia((query) => {
-    return desktop && query === "(min-width: 48rem)";
-  });
-  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse());
-  });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "NOT_FOUND",
-        message: "No usage-pack subscription",
-      },
-    });
-  });
-}
-
-async function clickUpgradeCard(): Promise<void> {
-  const upgradeCard = (await screen.findByText("Get Pro")).closest("button");
-  if (!upgradeCard) {
-    throw new Error("Upgrade card is not mounted");
-  }
-  click(upgradeCard);
-}
-
-async function dismissPlansDialog(): Promise<void> {
-  const plansDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  click(within(plansDialog).getByLabelText("Close"));
-}
-
-test("Dismissing the sidebar upgrade flow returns to the chat screen", async () => {
-  prepareUpgradeFlow();
-
-  await setupPage({ context, path: `/` });
-
-  await clickUpgradeCard();
-  await screen.findByText("Start with Pro");
-  await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-  await dismissPlansDialog();
-
+  await openWorkspace(context, "/chats/" + threadId);
+  await expect(screen.findByText(prompt)).resolves.toBeInTheDocument();
+  click(await screen.findByText("Get Pro"));
+  const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
+  click(await action("Close", chooser));
   await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
+    return expect(chooser).not.toBeInTheDocument();
   });
   expect(
     screen.queryByRole("dialog", { name: "Settings" }),
   ).not.toBeInTheDocument();
-  expect(search()).not.toContain("settings=billing");
+  expect(
+    new URL(window.location.href).searchParams.has("settings"),
+  ).toBeFalsy();
 });
-
-test("An admin on mobile navigation opens the plans from Me", async () => {
-  prepareUpgradeFlow({ desktop: false });
-
-  await setupPage({
-    context,
-    path: "/me",
+test("billing-plans-entry-002 A mobile admin opens the chooser from Me", async () => {
+  setBilling(context, () => {
+    return free;
   });
-
-  await screen.findByRole("heading", { name: "Me" });
-  await clickUpgradeCard();
-
+  packages(context);
+  context.mocks.browser.matchMedia(false);
+  await openWorkspace(context, "/me");
+  await expect(
+    screen.findByRole("heading", { name: "Me" }),
+  ).resolves.toBeInTheDocument();
+  click(await screen.findByText("Get Pro"));
   await expect(
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeInTheDocument();
 });
-
-test("Delayed eligibility and catalog loading lead to plan selection and configuration", async () => {
-  prepareUpgradeFlow();
-  const migrationReady = context.mocks.deferred<void>();
-  const catalogReady = context.mocks.deferred<void>();
-  context.mocks.api(
-    billingUsagePackCatalogContract.get,
-    async ({ respond }) => {
-      await catalogReady.promise;
-      return respond(200, usagePackCatalogResponse());
-    },
-  );
+test("billing-plans-entry-003 Plan selection precedes catalog availability and survives a round trip from packages", async () => {
+  const eligibility = createDeferredPromise<void>(context.signal);
+  const catalog = createDeferredPromise<void>(context.signal);
+  setBilling(context, () => {
+    return free;
+  });
+  packages(context, catalog.promise);
   context.mocks.api(
     billingUsagePackMigrationContract.get,
     async ({ respond }) => {
-      await migrationReady.promise;
+      await eligibility.promise;
       return respond(404, {
-        error: { code: "NOT_FOUND", message: "No legacy subscription" },
+        error: { code: "NOT_FOUND", message: "No migration" },
       });
     },
   );
-
-  await setupPage({ context, path: `/` });
-  await clickUpgradeCard();
-  const modal = await screen.findByRole("dialog", { name: "Billing" });
-  expect(within(modal).getByRole("status")).toBeInTheDocument();
-  expect(within(modal).queryByText("Start with Pro")).not.toBeInTheDocument();
-
-  migrationReady.resolve();
-  const plansModal = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  expect(within(plansModal).getByText("Step 1 of 2")).toBeInTheDocument();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(
-    within(plansModal).queryByText("Start with Pro"),
-  ).not.toBeInTheDocument();
-  catalogReady.resolve();
-  const start = await within(plansModal).findByText("Start with Pro");
-  click(start);
-  const configurationModal = await screen.findByRole("dialog", {
-    name: "Configure member packages",
-  });
-  expect(
-    within(configurationModal).getByText("Step 2 of 2"),
-  ).toBeInTheDocument();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-
-  click(within(configurationModal).getByLabelText("Back"));
-  const returnedPlans = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  await within(returnedPlans).findByText("Start with Pro");
-  expect(within(returnedPlans).getByText("Step 1 of 2")).toBeInTheDocument();
-  await dismissPlansDialog();
+  await openWorkspace(context, "/");
+  click(await screen.findByText("Get Pro"));
+  const pending = await screen.findByRole("dialog", { name: "Billing" });
+  expect(within(pending).getByRole("status")).toBeInTheDocument();
+  eligibility.resolve();
+  const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
+  expect(findAction("Start with Pro", chooser)).toBeUndefined();
+  catalog.resolve();
+  click(await action("Start with Pro", chooser));
+  await expect(screen.findByText("Step 2 of 2")).resolves.toBeInTheDocument();
+  click(await action("Back"));
+  await expect(screen.findByText("Step 1 of 2")).resolves.toBeInTheDocument();
+  await expect(action("Start with Pro")).resolves.toBeEnabled();
+  click(await action("Close", chooser));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
-
-test("A failed eligibility request does not become a normal plan checkout", async () => {
-  prepareUpgradeFlow();
-  const migrationReady = context.mocks.deferred<void>();
-  context.mocks.api(
-    billingUsagePackMigrationContract.get,
-    async ({ respond }) => {
-      await migrationReady.promise;
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Eligibility unavailable",
-        },
-      });
-    },
-  );
-
-  await setupPage({ context, path: `/` });
-  await clickUpgradeCard();
-  await screen.findByRole("dialog", { name: "Billing" });
-  migrationReady.resolve();
-  await screen.findByText("Could not load billing status.");
-  const unavailable = screen.getByRole("dialog", { name: "Billing" });
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(
-    within(unavailable).queryByText("Start with Pro"),
-  ).not.toBeInTheDocument();
-  click(within(unavailable).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  expect(search()).not.toContain("settings=billing");
-});
-
-test("Closing pending eligibility does not reopen the modal when the response arrives", async () => {
-  prepareUpgradeFlow();
-  const migrationReady = context.mocks.deferred<void>();
-  context.mocks.api(
-    billingUsagePackMigrationContract.get,
-    async ({ respond }) => {
-      await migrationReady.promise;
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "No legacy subscription" },
-      });
-    },
-  );
-
-  await setupPage({ context, path: `/` });
-  await clickUpgradeCard();
-  const modal = await screen.findByRole("dialog", { name: "Billing" });
-  click(within(modal).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(modal).not.toBeInTheDocument();
-  });
-  migrationReady.resolve();
-  await clickUpgradeCard();
-  const reopened = await screen.findByRole("dialog", { name: "Choose a plan" });
-  await within(reopened).findByText("Start with Pro");
-  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-  expect(within(reopened).getByText("Step 1 of 2")).toBeInTheDocument();
-});
-
-test.each(["applying", "scheduled"] as const)(
-  "Loading a %s migration shows progress without allowing a new checkout",
-  async (status) => {
-    prepareUpgradeFlow();
-    const migrationReady = context.mocks.deferred<void>();
-    context.mocks.api(
-      billingUsagePackMigrationContract.get,
-      async ({ respond }) => {
-        await migrationReady.promise;
-        return respond(200, {
-          tier: "pro",
-          targetTier: "pro",
-          status,
-          migrationId: "3ea4b7cf-d71e-45dc-8273-8bc8b9712490",
-          effectiveAt: "2026-11-01T00:00:00.000Z",
-          hostedInvoiceUrl: null,
-        });
-      },
-    );
-
-    await setupPage({ context, path: `/` });
-    await clickUpgradeCard();
-    await screen.findByRole("dialog", { name: "Billing" });
-    migrationReady.resolve();
-    const progress = await screen.findByRole("dialog", {
-      name: "Convert legacy plan",
-    });
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(
-      within(progress).queryByText("Start with Pro"),
-    ).not.toBeInTheDocument();
-    click(within(progress).getByLabelText("Back"));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(search()).not.toContain("settings=billing");
-  },
-);
-
-test("A progress-only migration opened inside Settings returns to the billing tab", async () => {
-  prepareUpgradeFlow();
-  context.mocks.api(billingUsagePackMigrationContract.get, ({ respond }) => {
-    return respond(200, {
-      tier: "pro",
-      targetTier: "pro",
-      status: "scheduled",
-      migrationId: "3ea4b7cf-d71e-45dc-8273-8bc8b9712490",
-      effectiveAt: "2026-11-01T00:00:00.000Z",
-      hostedInvoiceUrl: null,
-    });
-  });
-
-  await setupPage({ context, path: "/?settings=billing" });
-  const compare = await screen.findByText("Compare all plans");
-  click(compare);
-  const progress = await screen.findByRole("dialog", {
-    name: "Convert legacy plan",
-  });
-  expect(
-    within(progress).queryByText("Start with Pro"),
-  ).not.toBeInTheDocument();
-  click(within(progress).getByLabelText("Close"));
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(settings).getByRole("heading", { name: "Billing" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("dialog", { name: "Convert legacy plan" }),
-  ).not.toBeInTheDocument();
-  expect(search()).toContain("settings=billing");
-});
-
-test("A billing refresh preserves configuration and keyboard focus", async () => {
-  prepareUpgradeFlow();
-  const refreshReady = context.mocks.deferred<void>();
-  const refreshStarted = context.mocks.deferred<void>();
-  let refreshing = false;
+test("billing-plans-entry-005 Closing during eligibility leaves chat available for a fresh upgrade", async () => {
+  const eligibility = createDeferredPromise<void>(context.signal);
+  packages(context);
   context.mocks.api(billingStatusContract.get, async ({ respond }) => {
-    if (refreshing) {
-      refreshStarted.resolve();
-      await refreshReady.promise;
-    }
-    return respond(200, {
-      ...defaultBillingStatus(),
-      tier: "limited-free-1",
-      ...billingPlanCapabilities("limited-free-1"),
-      onboardingPaymentPending: false,
-      concurrencyLimit: 2,
-    });
+    await eligibility.promise;
+    return respond(200, free);
   });
-
-  await setupPage({ context, path: `/` });
-  await clickUpgradeCard();
-  const modal = await screen.findByRole("dialog", { name: "Choose a plan" });
-  const start = await within(modal).findByText("Start with Pro");
-  click(start);
-  const configuration = await screen.findByRole("dialog", {
+  await openWorkspace(context, plans);
+  const pending = await screen.findByRole("dialog", { name: "Billing" });
+  expect(within(pending).getByRole("status")).toBeInTheDocument();
+  click(await action("Close", pending));
+  await waitFor(() => {
+    return expect(pending).not.toBeInTheDocument();
+  });
+  eligibility.resolve();
+  const upgrade = await screen.findByText("Get Pro");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  click(upgrade);
+  const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
+  await expect(action("Start with Pro", chooser)).resolves.toBeEnabled();
+  expect(within(chooser).getByText("Step 1 of 2")).toBeInTheDocument();
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+});
+test("billing-plans-entry-009 Focus stays on Close while the workspace's plan eligibility refreshes", async () => {
+  const refresh = createDeferredPromise<void>(context.signal);
+  const started = createDeferredPromise<void>(context.signal);
+  let refreshing = false;
+  packages(context);
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    if (!refreshing) {
+      return respond(200, free);
+    }
+    if (!started.settled()) {
+      started.resolve();
+    }
+    await refresh.promise;
+    return respond(
+      200,
+      billing("pro", {
+        hasSubscription: false,
+        subscriptionStatus: "atom_grant",
+      }),
+    );
+  });
+  await openWorkspace(context, plans);
+  click(await action("Start with Pro"));
+  const config = await screen.findByRole("dialog", {
     name: "Configure member packages",
   });
-  const close = within(configuration).getByLabelText("Close");
+  await expect(action("Upgrade to Pro", config)).resolves.toBeEnabled();
+  const close = await action("Close", config);
   close.focus();
   expect(close).toHaveFocus();
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-
   refreshing = true;
-  context.mocks.ably.trigger("billing:changed");
-  await refreshStarted.promise;
-  expect(
-    screen.getByRole("dialog", { name: "Configure member packages" }),
-  ).toBeInTheDocument();
-  expect(within(configuration).getByText("Step 2 of 2")).toBeInTheDocument();
+  context.mocks.ably.trigger("billing:changed", {});
+  await started.promise;
+  expect(config).toHaveTextContent("Step 2 of 2");
   expect(close).toHaveFocus();
-  refreshReady.resolve();
-  const refreshed = await screen.findByRole("dialog", {
-    name: "Configure member packages",
-  });
-  expect(within(refreshed).getByText("Step 2 of 2")).toBeInTheDocument();
-  expect(within(refreshed).getByLabelText("Close")).toHaveFocus();
+  refresh.resolve();
+  await expect(
+    action("Configure member packages", config),
+  ).resolves.toBeEnabled();
+  expect(config).toHaveTextContent("Step 2 of 2");
+  expect(close).toHaveFocus();
 });

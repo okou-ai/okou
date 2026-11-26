@@ -15,6 +15,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 
 import { db$ } from "../external/db";
 import { connectorAccessAccountOwner } from "./connector-access-owner";
+import { connectorAccountAllowedSql } from "./member-connector-account-access";
 
 interface OverviewOwner {
   readonly orgId: string;
@@ -39,6 +40,7 @@ function overviewAccountRows(owner$: Computed<OverviewOwner>) {
         isDefault: connectors.isDefault,
         defaultEnabled: connectors.defaultEnabledForChats,
         overrideEnabled: chatThreadConnectorAccessOverrides.enabled,
+        enabled: connectorAccountAllowedSql(owner),
         selectedId: chatThreadConnectorSelections.connectorId,
       })
       .from(connectors)
@@ -132,7 +134,6 @@ export function chatConnectorOverview(
         group.accounts.push({
           ...row,
           authMethod: connectorAuthMethodIdSchema.parse(row.authMethod),
-          enabled: row.overrideEnabled ?? row.defaultEnabled,
         });
         if (selectedId !== null) {
           group.selectedId = selectedId;

@@ -46,9 +46,13 @@ class NativeComposerDraftTest {
         val journal = ComposerJournalStore(app, directory)
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
+        val requested = CountDownLatch(1)
         val path = "/api/chat-drafts/composer"
         fixture.drafts[path] = plainDraftDocument("Saved on Web")
-        fixture.beforeDraftRead = { held.await() }
+        fixture.beforeDraftRead = {
+            requested.countDown()
+            held.await()
+        }
         app.chatService = fixture.service
         app.composerService = fixture.service
         app.journalStore = journal
@@ -67,47 +71,42 @@ class NativeComposerDraftTest {
                             override fun apply(device: UiDevice) = condition()
                         },
                         10_000,
-                    )
+                    ),
                 )
-            fun editor() =
-                checkNotNull(
-                    device.wait(
-                        Until.findObject(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
-                        ),
-                        10_000,
-                    )
-                )
+            val editText = By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
+            fun editor() = checkNotNull(device.wait(Until.findObject(editText), 10_000))
             checkNotNull(device.wait(Until.findObject(chatListRegion(app)), 10_000))
             device
                 .findObject(
                     UiSelector()
                         .packageName(app.packageName)
-                        .text(app.getString(R.string.composer_new))
+                        .text(app.getString(R.string.composer_new)),
                 )
                 .click()
-            checkNotNull(
-                device.wait(
-                    Until.findObject(
-                        By.pkg(app.packageName).text(app.getString(R.string.composer_sync_loading))
-                    ),
-                    10_000,
-                )
-            )
+            await { requested.count == 0L }
             scenario.onActivity {
                 val ready =
                     checkNotNull(
-                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                     )
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 listJob = ready.chats.viewModelScope.coroutineContext[Job]
             }
-            editor().text = "Native edit while Web draft is loading"
+            val draft = "Native edit\nWhile loading"
+            val emptyEditor = editor()
+            val emptyHeight = emptyEditor.visibleBounds.height()
+            emptyEditor.text = draft
+            await {
+                val edited = device.findObject(editText)
+                edited?.text == draft && edited.visibleBounds.height() > emptyHeight
+            }
+            val heldEditor = editor().visibleBounds
             held.countDown()
-            await { fixture.drafts[path]?.plainText() == "Native edit while Web draft is loading" }
-            assertEquals("Native edit while Web draft is loading", editor().text)
+            await { fixture.drafts[path]?.plainText() == draft }
+            assertEquals(draft, editor().text)
+            assertEquals(heldEditor, editor().visibleBounds)
             scenario.recreate()
-            assertEquals("Native edit while Web draft is loading", editor().text)
+            assertEquals(draft, editor().text)
             fixture.drafts[path] = plainDraftDocument("Updated on Web")
             scenario.moveToState(Lifecycle.State.CREATED)
             scenario.moveToState(Lifecycle.State.RESUMED)
@@ -118,7 +117,7 @@ class NativeComposerDraftTest {
             editor().text = ""
             await { fixture.drafts[path]?.plainText() == "" }
             assertTrue(
-                fixture.requests.any { it.method == "PATCH" && it.requestUrl?.encodedPath == path }
+                fixture.requests.any { it.method == "PATCH" && it.requestUrl?.encodedPath == path },
             )
         } catch (error: Throwable) {
             failures += error

@@ -11,6 +11,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -41,6 +44,7 @@ class ComposerJournalRecoveryTest {
 
     private class Fixture(val root: File, private val dispatcher: CoroutineDispatcher) {
         val api = ComposerApiFixture()
+        val releaseSend = CountDownLatch(1)
         private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         var store = ComposerJournalStore(context, root, dispatcher)
             private set
@@ -67,6 +71,7 @@ class ComposerJournalRecoveryTest {
         }
 
         suspend fun close() {
+            releaseSend.countDown()
             owners.forEach { it.clear() }
             try {
                 store.close()
@@ -99,10 +104,14 @@ class ComposerJournalRecoveryTest {
         val model = fixture.model()
         model.open(target)
         model.uiState.first { it.persistence == ComposerPersistence.Durable }
-        fixture.api.disconnectSend = true
+        val sent = CompletableDeferred<Unit>()
+        fixture.api.beforeSendReturn = {
+            sent.complete(Unit)
+            check(fixture.releaseSend.await(15, TimeUnit.SECONDS))
+        }
         model.edit(target, "Original input 你好 👋")
         model.send(target)
-        model.uiState.first { target.key in it.failed }
+        sent.await()
         model.edit(target, "Newer draft **kept**")
         model.uiState.first { it.persistence == ComposerPersistence.Durable }
         assertEquals(1, fixture.posts())
@@ -115,7 +124,7 @@ class ComposerJournalRecoveryTest {
         val key = "agent:$CHAT_PERSONAL"
         val file = fixture.root.resolve("${fixture.api.identity.workspaceStorageKey()}.json")
         file.writeText(
-            """{"format":3,"drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}"""
+            """{"format":3,"drafts":{"$key":{"text":"Offline edit","dirty":true}},"retainedDrafts":{"$key":"Earlier edit"}}""",
         )
         val workspace = ComposerTarget()
         val path = "/api/chat-drafts/composer"
@@ -156,7 +165,7 @@ class ComposerJournalRecoveryTest {
         val path = "/api/chat-threads/$CHAT_PERSONAL/draft"
         val rich =
             Json.parseToJsonElement(
-                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web draft "},{"type":"chat_thread","threadId":"$CHAT_PERSONAL","titleSnapshot":"Saved conversation"}]},"draftAttachments":null}"""
+                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web draft "},{"type":"chat_thread","threadId":"$CHAT_PERSONAL","titleSnapshot":"Saved conversation"}]},"draftAttachments":null}""",
                 )
                 .jsonObject
         fixture.api.drafts[path] = rich
@@ -198,7 +207,7 @@ class ComposerJournalRecoveryTest {
         )
         assertEquals(0, fixture.posts())
         fixture.api.draftReadStatus = 200
-        restored.retrySync(target)
+        restored.open(target)
         restored.uiState.first {
             it.sync(target) == ComposerSync.Saved && it.persistence == ComposerPersistence.Durable
         }
@@ -212,7 +221,7 @@ class ComposerJournalRecoveryTest {
     @Test
     fun unversionedFilesStayUnavailableAndUntouchedInsteadOfRestoringEmptyIntent() =
         check { fixture ->
-            val original = pending(fixture).uiState.value.entry(target)
+            val original = pending(fixture).uiState.value.entry(target).copy(pending = null)
             val wire = Json.parseToJsonElement(fixture.file().readText()).jsonObject
             for (broken in listOf("{}", JsonObject(wire - "format").toString())) {
                 fixture.reopen()
@@ -246,44 +255,36 @@ class ComposerJournalRecoveryTest {
         }
 
     @Test
-    fun validPendingJournalReopensAcrossSessionsAndOnlyExplicitRecoveryReusesTheRequest() =
-        check { fixture ->
-            val original = pending(fixture).uiState.value.entry(target)
-            val originalRequest = fixture.api.inputs.values.single()
-            fixture.reopen()
-            val model = fixture.model(fixture.api.identity.copy(sessionId = "renewed"))
-            model.open(target)
-            model.uiState.first { it.persistence == ComposerPersistence.Durable }
-            assertEquals(original, model.uiState.value.entry(target))
-            assertEquals(1, fixture.posts())
-            for (other in
-                listOf(
-                    fixture.api.identity.copy(userId = "other-user"),
-                    fixture.api.identity.copy(workspaceId = "other-workspace"),
-                    fixture.api.identity.copy(apiOrigin = "https://other.example/"),
-                )) {
-                val separate = fixture.model(other)
-                separate.open(target)
-                val state = separate.uiState.first { it.persistence == ComposerPersistence.Durable }
-                assertTrue(checkNotNull(state.journal).entries.isEmpty())
-                assertFalse(state.canSend(target))
-            }
-            fixture.api.disconnectSend = false
-            model.retry(target)
-            model.uiState.first {
-                it.entry(target).receipt != null && it.persistence == ComposerPersistence.Durable
-            }
-            assertEquals(2, fixture.posts())
-            assertEquals(originalRequest, fixture.api.inputs.values.single())
-            val requests = fixture.api.requests.filter { it.method == "POST" }
-            assertEquals(requests[0].body.clone().readUtf8(), requests[1].body.clone().readUtf8())
-            assertEquals(original.text, model.uiState.value.entry(target).text)
-            assertNull(model.uiState.value.entry(target).pending)
-            assertEquals(
-                original.pending!!.eventId,
-                model.uiState.value.entry(target).receipt!!.eventId,
-            )
+    fun reopeningExposesTheNewerDraftAndNeverReplaysThePreviousProcessSend() = check { fixture ->
+        val original = pending(fixture).uiState.value.entry(target).copy(pending = null)
+        assertNull(fixture.store.load(fixture.api.identity).journal.entries[target.key]?.pending)
+        fixture.reopen()
+        val model = fixture.model(fixture.api.identity.copy(sessionId = "renewed"))
+        model.open(target)
+        model.uiState.first { it.persistence == ComposerPersistence.Durable }
+        assertEquals(original, model.uiState.value.entry(target))
+        assertEquals(1, fixture.posts())
+        for (other in
+            listOf(
+                fixture.api.identity.copy(userId = "other-user"),
+                fixture.api.identity.copy(workspaceId = "other-workspace"),
+                fixture.api.identity.copy(apiOrigin = "https://other.example/"),
+            )) {
+            val separate = fixture.model(other)
+            separate.open(target)
+            val state = separate.uiState.first { it.persistence == ComposerPersistence.Durable }
+            assertTrue(checkNotNull(state.journal).entries.isEmpty())
+            assertFalse(state.canSend(target))
         }
+        fixture.releaseSend.countDown()
+        model.observe(target)
+        model.retry(target)
+        runCurrent()
+        assertEquals(1, fixture.posts())
+        assertEquals("Newer draft **kept**", model.uiState.value.entry(target).text)
+        assertNull(model.uiState.value.entry(target).pending)
+        assertNull(model.uiState.value.entry(target).receipt)
+    }
 
     @Test
     fun missingFileAndWriterProducedEmptyJournalBothAllowNormalUse() = check { fixture ->

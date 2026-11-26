@@ -1,5 +1,4 @@
 import {
-  array,
   boolean,
   number,
   object,
@@ -33,12 +32,4 @@ export const officialWorkflowParameterBindingSchema = object({
 }).strict();
 export type OfficialWorkflowParameterBinding = zInfer<
   typeof officialWorkflowParameterBindingSchema
->;
-
-export const officialWorkflowBlueprintBindingsSchema = object({
-  blueprintKey: officialWorkflowBlueprintKeySchema,
-  bindings: array(officialWorkflowParameterBindingSchema),
-}).strict();
-export type OfficialWorkflowBlueprintBindings = zInfer<
-  typeof officialWorkflowBlueprintBindingsSchema
 >;

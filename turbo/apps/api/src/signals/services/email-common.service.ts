@@ -1,5 +1,7 @@
+import artifactInvitationTemplate from "../../lib/artifact-invitation-template.json";
 import { renderEmailMarkdown } from "../../lib/email-markdown";
 import crypto from "node:crypto";
+import { escapeUTF8 as escapeHtml } from "entities";
 import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
 
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
@@ -66,6 +68,7 @@ import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$ } from "../external/db";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
+import hostedSiteInvitationTemplate from "../../lib/hosted-site-invitation-template.json";
 
 interface EmailOutboxDrainContext {
   readonly currentTimeMs: number;
@@ -120,6 +123,22 @@ const emailAttachmentSchema = object({
 }).strict();
 
 export const emailTemplateSchema = discriminatedUnion("template", [
+  object({
+    template: literal("artifact-invitation"),
+    props: object({
+      inviterName: string(),
+      email: string(),
+      artifactUrl: zUrl(),
+    }).strict(),
+  }).strict(),
+  object({
+    template: literal("hosted-site-invitation"),
+    props: object({
+      inviterName: string(),
+      email: string(),
+      siteUrl: zUrl(),
+    }).strict(),
+  }).strict(),
   object({
     template: literal("email-channel"),
     props: object({
@@ -188,7 +207,7 @@ type OutboxRow = output<typeof outboxRowSchema>;
 // The exact provider request replayed by every attempt of one outbox row. It is
 // stored verbatim, so an added optional field must stay optional here for rows
 // committed by an older deployment.
-const providerRequestSchema = object({
+const providerEnvelopeSchema = object({
   from: string(),
   to: emailAddressesSchema,
   cc: emailAddressesSchema.optional(),
@@ -196,10 +215,21 @@ const providerRequestSchema = object({
   replyTo: string().optional(),
   headers: record(string(), string()).optional(),
   tags: array(object({ name: string(), value: string() })).optional(),
-  html: string(),
-  text: string().optional(),
   attachments: array(emailAttachmentSchema).optional(),
-}).strict();
+});
+const providerRequestSchema = union([
+  providerEnvelopeSchema
+    .extend({ html: string(), text: string().optional() })
+    .strict(),
+  providerEnvelopeSchema
+    .extend({
+      template: object({
+        id: string(),
+        variables: record(string(), string()),
+      }).strict(),
+    })
+    .strict(),
+]);
 type ProviderRequest = output<typeof providerRequestSchema>;
 
 function outboxRowSelection() {
@@ -312,7 +342,10 @@ interface RenderedEmailTemplate {
 }
 
 function renderTemplate(
-  template: EmailTemplate,
+  template: Exclude<
+    EmailTemplate,
+    { readonly template: "hosted-site-invitation" | "artifact-invitation" }
+  >,
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
@@ -352,6 +385,12 @@ function fromAddressForTemplate(template: EmailTemplate): string {
   // Resolve the sender at delivery so legacy or malformed outbox snapshots
   // cannot bypass the user-facing email brand policy.
   switch (template.template) {
+    case "artifact-invitation": {
+      return artifactInvitationTemplate.from;
+    }
+    case "hosted-site-invitation": {
+      return hostedSiteInvitationTemplate.from;
+    }
     case "credit-low-balance": {
       return buildTeamFromAddress();
     }
@@ -373,8 +412,7 @@ function providerIdempotencyKey(outboxId: string): string {
 
 function buildProviderRequest(row: OutboxRow): ProviderRequest {
   const headers = row.headers ?? undefined;
-  const rendered = renderTemplate(row.template, headers);
-  return {
+  const envelope = {
     from: fromAddressForTemplate(row.template),
     to: row.to_addresses,
     ...(row.cc_addresses === null ? {} : { cc: row.cc_addresses }),
@@ -384,12 +422,42 @@ function buildProviderRequest(row: OutboxRow): ProviderRequest {
     ...(row.template.template === "email-channel"
       ? { tags: [{ name: "okou_email_message", value: row.id }] }
       : {}),
-    html: rendered.html,
-    ...(rendered.text === undefined ? {} : { text: rendered.text }),
     ...(row.template.template === "email-channel" &&
     row.template.props.attachments
       ? { attachments: row.template.props.attachments }
       : {}),
+  };
+  if (row.template.template === "artifact-invitation") {
+    return {
+      ...envelope,
+      template: {
+        id: artifactInvitationTemplate.alias,
+        variables: {
+          INVITER_NAME: escapeHtml(row.template.props.inviterName),
+          RECIPIENT_EMAIL: escapeHtml(row.template.props.email),
+          ARTIFACT_URL: row.template.props.artifactUrl,
+        },
+      },
+    };
+  }
+  if (row.template.template === "hosted-site-invitation") {
+    return {
+      ...envelope,
+      template: {
+        id: hostedSiteInvitationTemplate.alias,
+        variables: {
+          INVITER_NAME: escapeHtml(row.template.props.inviterName),
+          RECIPIENT_EMAIL: escapeHtml(row.template.props.email),
+          SITE_URL: row.template.props.siteUrl,
+        },
+      },
+    };
+  }
+  const rendered = renderTemplate(row.template, headers);
+  return {
+    ...envelope,
+    html: rendered.html,
+    ...(rendered.text === undefined ? {} : { text: rendered.text }),
   };
 }
 
@@ -414,14 +482,23 @@ async function sendProviderRequest(
   idempotencyKey: string,
 ): Promise<ProviderSendOutcome> {
   const resend = getResendClient();
+  const content =
+    "template" in request
+      ? {
+          template: request.template,
+          ...(request.tags ? { tags: request.tags } : {}),
+        }
+      : {
+          html: request.html,
+          ...(request.tags ? { tags: request.tags } : {}),
+          ...(request.text === undefined ? {} : { text: request.text }),
+        };
   const { data, error } = await resend.emails.send(
     {
       from: request.from,
       to: typeof request.to === "string" ? request.to : [...request.to],
       subject: request.subject,
-      html: request.html,
-      ...(request.tags ? { tags: request.tags } : {}),
-      ...(request.text === undefined ? {} : { text: request.text }),
+      ...content,
       ...(request.attachments ? { attachments: request.attachments } : {}),
       ...(request.cc === undefined
         ? {}

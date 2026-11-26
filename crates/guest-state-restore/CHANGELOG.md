@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.44](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.43...guest-state-restore-v0.4.44) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-state-restore:** share entropy length validation ([#50888](https://github.com/okou-ai/okou/issues/50888)) ([3acc628](https://github.com/okou-ai/okou/commit/3acc628d7fa2dcd86bb45d5bb60f99b414ebf997))
+
+## [0.4.43](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.42...guest-state-restore-v0.4.43) (2026-11-25)
+
+## [0.4.42](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.41...guest-state-restore-v0.4.42) (2026-11-24)
+
+## [0.4.41](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.40...guest-state-restore-v0.4.41) (2026-11-24)
+
+## [0.4.40](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.39...guest-state-restore-v0.4.40) (2026-11-24)
+
+## [0.4.39](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.38...guest-state-restore-v0.4.39) (2026-11-23)
+
 ## [0.4.38](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.37...guest-state-restore-v0.4.38) (2026-11-22)
 
 ## [0.4.37](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.36...guest-state-restore-v0.4.37) (2026-11-22)

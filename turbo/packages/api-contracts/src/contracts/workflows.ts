@@ -23,6 +23,7 @@ import {
 } from "./official-workflow-bindings";
 
 import { workflowImportSourceSchema } from "./workflow-import-source";
+import { runStatusSchema } from "./runs";
 
 export { GMAIL_LABEL_NOT_FOUND_ERROR_CODE } from "../validators/workflows";
 
@@ -685,12 +686,7 @@ const workflowAutomationSummaryBaseSchema = object({
   official: object({
     blueprintKey: officialWorkflowBlueprintKeySchema,
     appliedFingerprint: string().regex(/^[0-9a-f]{64}$/),
-    reconciliationStatus: zEnum([
-      "current",
-      "reconciling",
-      "needs_reconfiguration",
-      "failed",
-    ]),
+    reconciliationStatus: zEnum(["current", "needs_reconfiguration", "failed"]),
     intendedEnabled: boolean(),
     parameterBindings: array(officialWorkflowParameterBindingSchema),
   })
@@ -1346,7 +1342,7 @@ export const workflowSummarySchema = object({
   canPublish: boolean(),
   official: object({
     definitionName: workflowNameSchema,
-    installationState: zEnum(["installing", "installed"]),
+    installationState: literal("installed"),
     definitionLifecycle: zEnum(["active", "retired", "unavailable"]),
     readOnly: literal(true),
   })
@@ -1441,6 +1437,23 @@ export const workflowChatThreadResponseSchema = object({
 
 const workflowIdParams = object({ workflowId: uuid() });
 
+export const workflowRunHistoryEntrySchema = object({
+  id: uuid(),
+  createdAt: iso.datetime(),
+  status: runStatusSchema,
+  trigger: zEnum(["schedule", "event", "manual"]).nullable(),
+  eventType: automationEventTypeSchema.nullable(),
+  chatThreadId: uuid().nullable(),
+});
+export type WorkflowRunHistoryEntry = zInfer<
+  typeof workflowRunHistoryEntrySchema
+>;
+
+const workflowRunHistoryPageSchema = object({
+  runs: array(workflowRunHistoryEntrySchema),
+  nextCursor: string().nullable(),
+});
+
 export const workflowsCollectionContract = c.router({
   list: {
     method: "GET",
@@ -1469,6 +1482,45 @@ export const workflowsCollectionContract = c.router({
     },
     summary:
       "List the slash-command workflows the composer offers for the workspace member",
+  },
+  recent: {
+    method: "GET",
+    path: "/api/workflows/recent",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ workflowIds: array(uuid()).nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Read the workspace member's recently used workflows",
+  },
+  recordRecentUse: {
+    method: "POST",
+    path: "/api/workflows/recent/use",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()) }),
+    responses: {
+      200: object({ workflowIds: array(uuid()) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Move recently used workflows to the front of the member's history",
+  },
+  importRecent: {
+    method: "POST",
+    path: "/api/workflows/recent/import",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()) }),
+    responses: {
+      200: object({ workflowIds: array(uuid()) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Import legacy workflow history only before the member's first sync",
   },
   create: {
     method: "POST",
@@ -1522,6 +1574,22 @@ export const workflowsDetailContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow with its instruction and files",
+  },
+  runHistory: {
+    method: "GET",
+    path: "/api/workflows/:workflowId/run-history",
+    headers: authHeadersSchema,
+    pathParams: workflowIdParams,
+    query: object({ cursor: string().min(1).max(256).optional() }),
+    responses: {
+      200: workflowRunHistoryPageSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "List the caller's retained automation runs for a visible workflow",
   },
   update: {
     method: "PATCH",

@@ -1,7 +1,7 @@
 import { getSecretNameForType } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  AUTO_RUN_KEY_VENDOR,
   AUTO_RUN_PROVIDER,
+  isAutoRunKeyVendor,
 } from "@okouai/core/auto-run-model";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
@@ -34,17 +34,12 @@ function providerProjection() {
     provider: {
       id: modelProviders.id,
       type: modelProviders.type,
-      userId: modelProviders.userId,
-      orgId: modelProviders.orgId,
     },
   };
 }
 
 type ProviderRow = {
-  readonly provider: Pick<
-    typeof modelProviders.$inferSelect,
-    "id" | "type" | "userId" | "orgId"
-  >;
+  readonly provider: Pick<typeof modelProviders.$inferSelect, "id" | "type">;
 };
 
 function providerFacts(rows: readonly ProviderRow[]) {
@@ -82,13 +77,9 @@ const sourceSecretSchema = object({
 
 const accountSourceColumns = Object.freeze({
   id: modelProviderAccounts.id,
-  modelProviderId: modelProviderAccounts.modelProviderId,
-  orgId: modelProviderAccounts.orgId,
-  userId: modelProviderAccounts.userId,
   type: modelProviderAccounts.type,
   authMethod: modelProviderAccounts.authMethod,
   isActive: modelProviderAccounts.isActive,
-  disconnectedAt: modelProviderAccounts.disconnectedAt,
   needsReconnect: modelProviderAccounts.needsReconnect,
   externalAccountId: modelProviderAccounts.externalAccountId,
   // Older Claude accounts bind Runs by email/workspace instead of upstream ID.
@@ -148,7 +139,15 @@ export function memberModelSourcesFromRows(
           ? [
               [
                 JSON.stringify([row.account.id, row.secret?.name]),
-                { account: row.account, secret: row.secret },
+                {
+                  account: {
+                    ...row.account,
+                    orgId,
+                    userId,
+                    modelProviderId: row.provider.id,
+                  },
+                  secret: row.secret,
+                },
               ] as const,
             ]
           : [];
@@ -210,7 +209,7 @@ export function managedSourceFromSnapshot(
   if (!key) {
     return null;
   }
-  if (key.vendor !== AUTO_RUN_KEY_VENDOR) {
+  if (!isAutoRunKeyVendor(key.vendor)) {
     throw new Error("Managed model key vendor is unsupported");
   }
   const name = getSecretNameForType(AUTO_RUN_PROVIDER);

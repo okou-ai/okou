@@ -58,6 +58,37 @@ Keep formatter/lint evidence separate from behavior checks. Do not weaken a
 valid assertion, hide diagnostics or manufacture new production abstractions
 just to preserve tests for an obsolete API.
 
+## Test Runtime And CI Sharding
+
+Keep new or substantially changed JVM cases within **5 seconds** each and
+Debug device cases within **20 seconds** each on their regular CI runners. Use
+the JUnit `testcase` duration for this budget. For a repeatable overrun, reduce
+fixture cost, use controlled completion or virtual time where the test owns the
+clock, or move independent assertions to the smallest production boundary that
+covers them. When a required end-to-end behavior needs more time, document the
+measured duration and the reason in the PR. Keep waits bounded and preserve
+fixture cleanup on failure.
+
+JVM CI assigns each top-level test class and its nested classes to one shard.
+Each group can have at most **20 JUnit cases**, counting each parameterized
+invocation. Split larger groups along behavior or fixture boundaries. Put
+independent expensive journeys in separate top-level classes, and keep cheap
+state and error matrices at the state-owner boundary. Add the JUnit `testsuite`
+durations for the top-level class and its nested classes. Review groups over
+**30 seconds** for a split even when they meet the case limit.
+
+Each JVM shard checks case counts in its JUnit XML and fails if any group exceeds
+the limit.
+
+Debug device CI assigns individual cases to shards. Give each case its own setup and
+cleanup, and keep all steps needed to prove one end-to-end outcome together.
+Split independent outcomes that can run without sharing test order or state.
+
+For a timing change, compare JUnit reports on equivalent CI runs. Check the
+slowest case or class, confirm the same coverage, and compare the slowest shard's
+job time with build and device setup time in view. See the
+[Android CI report locations](../../android/README.md#debug-device-integration-tests).
+
 ## Saved-State Boundaries
 
 Exercise the actual Activity save path. Debug saves use the shared

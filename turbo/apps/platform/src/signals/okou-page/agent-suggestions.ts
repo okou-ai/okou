@@ -1,3 +1,8 @@
+import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  captureSuggestionCard,
+  type SuggestionDirection,
+} from "../../lib/posthog.ts";
 import { command, computed, state } from "ccstate";
 import type {
   Suggestion,
@@ -18,8 +23,9 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { sendNewThreadWithoutNavigation$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import {
-  agentSuggestionEntries$,
   type AgentSuggestionEntry,
+  type SuggestionDirectionSession,
+  suggestionDirectionSession$,
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
@@ -100,70 +106,18 @@ function showSuggestionSent(): void {
   );
 }
 
-interface SuggestionThreadTarget {
-  readonly kind: "thread";
-  readonly id: string;
-}
-
-/**
- * A custom direction continues the chat the card names, or starts a new chat
- * when the card names none or that chat is no longer available.
- */
-type SuggestionDirectionTarget =
-  { readonly kind: "new" } | SuggestionThreadTarget;
-
-interface SuggestionDirectionSession {
-  readonly entry: AgentSuggestionEntry;
-  readonly target: SuggestionDirectionTarget;
-  /** Closes the composer and settles the card once a send is accepted. */
-  readonly finish: (threadId: string, submission: ComposerSubmission) => void;
-}
-
-const internalDirectionSession$ = state<SuggestionDirectionSession | null>(
-  null,
-);
 const resolveDirectionThreadMeta$ = createThreadMetaLookup();
 const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
-
-/**
- * One unsaved composer for the card's target, so neither the workspace
- * draft nor the target thread's saved draft is read or replaced.
- */
-const directionGraph$ = computed((get) => {
-  const session = get(internalDirectionSession$);
-  if (!session) {
-    return null;
-  }
-  const { target } = session;
-  if (target.kind === "new") {
-    return {
-      kind: target.kind,
-      composer: createInPlaceChatComposerSignals((threadId, submission) => {
-        session.finish(threadId, submission);
-      }, session.entry.item.content.title),
-    };
-  }
-  return {
-    kind: target.kind,
-    ...createInPlaceThreadComposerSignals(target.id, (submission) => {
-      session.finish(target.id, submission);
-    }),
-  };
-});
-
-export const suggestionDirectionItemId$ = computed((get) => {
-  return get(internalDirectionSession$)?.entry.item.id ?? null;
-});
 
 export const suggestionDirectionComposer$ = computed((get) => {
   return get(internalDirectionComposer$);
 });
 
-const closeSuggestionDirection$ = command(({ set }) => {
+const closeSuggestionDirection$ = command(({ get, set }) => {
   set(resetDirection$);
   set(internalDirectionComposer$, null);
-  set(internalDirectionSession$, null);
+  set(get(suggestionDirectionSession$), null);
 });
 
 /**
@@ -178,11 +132,12 @@ const finishSuggestionDirection$ = command(
     sent: {
       readonly threadId: string;
       readonly submission: ComposerSubmission;
+      readonly newThread: boolean;
     },
     pageSignal: AbortSignal,
   ): void => {
     const { threadId, submission } = sent;
-    if (get(internalDirectionSession$) === session) {
+    if (get(get(suggestionDirectionSession$)) === session) {
       set(closeSuggestionDirection$);
     }
     const document = submission.editorDocument.toMessageDocument();
@@ -194,7 +149,7 @@ const finishSuggestionDirection$ = command(
     ) {
       return;
     }
-    if (session.target.kind === "new") {
+    if (sent.newThread) {
       showSuggestionSent();
     } else {
       toast.success(
@@ -214,18 +169,43 @@ const finishSuggestionDirection$ = command(
 
 /** Installs the card's background before the target's composer mounts. */
 const prepareDirectionComposer$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<ComposerSignals> => {
-    const session = get(internalDirectionSession$);
-    const graph = get(directionGraph$);
-    if (!session || !graph) {
-      throw new Error("Suggestion direction is unavailable");
-    }
-    if (graph.kind === "new") {
-      set(graph.composer.setup$, signal);
-    } else {
-      await set(graph.setup$, signal);
-    }
+  async (
+    { set },
+    session: SuggestionDirectionSession,
+    pageSignal: AbortSignal,
+    signal: AbortSignal,
+  ): Promise<ComposerSignals> => {
     const item = session.entry.item;
+    const { threadId } = item.content.customOption;
+    // Resolve the selected card's target even when the local chat list has not
+    // loaded it. A missing thread gets a new conversation.
+    const thread =
+      threadId === null
+        ? null
+        : (await set(resolveDirectionThreadMeta$, threadId, signal)).meta;
+    signal.throwIfAborted();
+    const finish = (sentThreadId: string, submission: ComposerSubmission) => {
+      set(
+        finishSuggestionDirection$,
+        session,
+        { threadId: sentThreadId, submission, newThread: thread === null },
+        pageSignal,
+      );
+    };
+    let composer: ComposerSignals;
+    if (threadId !== null && thread) {
+      const graph = createInPlaceThreadComposerSignals(
+        threadId,
+        (submission) => {
+          finish(threadId, submission);
+        },
+      );
+      composer = graph.composer;
+      await set(graph.setup$, signal);
+    } else {
+      composer = createInPlaceChatComposerSignals(finish, item.content.title);
+      set(composer.setup$, signal);
+    }
     const files = item.content.customOption.draft.draftAttachments ?? [];
     const contextVersion = await suggestionDraftVersion(
       item.content.customOption.draft,
@@ -243,17 +223,21 @@ const prepareDirectionComposer$ = command(
       throw new Error("Invalid suggestion background");
     }
     await set(
-      graph.composer.draft.seed$,
+      composer.draft.seed$,
       {
         content,
         userMessage: document,
+        suggestionDirection: {
+          ...session.impression,
+          direction_type: "custom",
+        },
         generationTemplate: undefined,
         attachments: files.map(createRestoredAttachment),
       },
       signal,
     );
     signal.throwIfAborted();
-    return graph.composer;
+    return composer;
   },
 );
 
@@ -268,51 +252,37 @@ export const openSuggestionDirection$ = command(
     entry: AgentSuggestionEntry,
     pageSignal: AbortSignal,
   ): Promise<void> => {
+    const impression = set(entry.show$);
+    captureSuggestionCard({
+      eventName: "suggestion_card_action_clicked",
+      properties: { ...impression, action: "open_custom" },
+    });
     const signal = set(resetDirection$, pageSignal);
     set(internalDirectionComposer$, null);
-    signal.throwIfAborted();
-    const { threadId } = entry.item.content.customOption;
-    // Only the thread source can say the named chat is gone; a chat the local
-    // list has not loaded yet still receives the direction.
-    const thread =
-      threadId === null
-        ? null
-        : (await set(resolveDirectionThreadMeta$, threadId, signal)).meta;
     signal.throwIfAborted();
     if (get(entry.hidden$)) {
       return;
     }
-    const session: SuggestionDirectionSession = {
-      entry,
-      target:
-        threadId !== null && thread
-          ? {
-              kind: "thread",
-              id: threadId,
-            }
-          : { kind: "new" },
-      finish: (sentThreadId, submission) => {
-        set(
-          finishSuggestionDirection$,
-          session,
-          { threadId: sentThreadId, submission },
-          pageSignal,
-        );
-      },
-    };
-    set(internalDirectionSession$, session);
+    // A list can arrive while the selected card's target is being resolved.
+    const session: SuggestionDirectionSession = { entry, impression };
+    set(get(suggestionDirectionSession$), session);
     // Leaving the page or opening another card's editor ends this session.
     signal.addEventListener(
       "abort",
       () => {
-        if (get(internalDirectionSession$) === session) {
-          set(internalDirectionSession$, null);
+        if (get(get(suggestionDirectionSession$)) === session) {
+          set(get(suggestionDirectionSession$), null);
           set(internalDirectionComposer$, null);
         }
       },
       { once: true },
     );
-    const prepared = set(prepareDirectionComposer$, signal);
+    const prepared = set(
+      prepareDirectionComposer$,
+      session,
+      pageSignal,
+      signal,
+    );
     set(internalDirectionComposer$, prepared);
     await prepared;
   },
@@ -327,6 +297,7 @@ const sendAgentSuggestionOption$ = command(
     { set },
     entry: AgentSuggestionEntry,
     option: SuggestionOption,
+    direction: SuggestionDirection,
     signal: AbortSignal,
   ): Promise<void> => {
     const userMessage = option.draft.draftUserMessage;
@@ -342,6 +313,7 @@ const sendAgentSuggestionOption$ = command(
       draft.seed$,
       {
         content: prompt,
+        suggestionDirection: direction,
         userMessage,
         generationTemplate: undefined,
         attachments: (option.draft.draftAttachments ?? []).map(
@@ -384,13 +356,18 @@ const openAgentSuggestionThread$ = command(
   async (
     { get, set },
     option: SuggestionOption,
+    preset: SuggestionPreset,
     threadId: string,
     signal: AbortSignal,
   ) => {
     const draft = set(ensureDraft$, threadId);
     // Installing the draft is synchronous; attachment reconciliation and
     // persistence must not delay navigation.
-    const installed = set(draft.prependComposerDraft$, option.draft, signal);
+    const installed = set(
+      draft.prependComposerDraft$,
+      { ...option.draft, suggestionPreset: preset },
+      signal,
+    );
     await Promise.all([
       installed,
       set(
@@ -414,24 +391,25 @@ const openAgentSuggestionThread$ = command(
 export const startAgentSuggestion$ = command(
   async (
     { get, set },
-    suggestionId: string,
-    optionId: string,
+    entry: AgentSuggestionEntry,
+    option: SuggestionOption,
+    position: number,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    const entries = await get(agentSuggestionEntries$);
     pageSignal.throwIfAborted();
-    const entry = entries.find((candidate) => {
-      return candidate.item.id === suggestionId;
-    });
-    if (!entry || get(entry.hidden$)) {
+    if (get(entry.hidden$)) {
       return;
     }
-    const option = entry.item.content.options.find((candidate) => {
-      return candidate.id === optionId;
+    const preset = {
+      ...set(entry.show$),
+      option_id: option.id,
+      option_position: position,
+    };
+    captureSuggestionCard({
+      eventName: "suggestion_card_action_clicked",
+      properties: { ...preset, action: "select_option" },
     });
-    if (!option) {
-      throw new Error("Suggestion option is unavailable");
-    }
+    const direction = { ...preset, direction_type: "preset" as const };
     set(closeSuggestionDirection$);
     // The send and the recorded choice outlive the home visit.
     const signal = get(rootSignal$);
@@ -444,7 +422,13 @@ export const startAgentSuggestion$ = command(
         { type: "sent", threadId: null },
         pageSignal,
       );
-      const sending = set(sendAgentSuggestionOption$, entry, option, signal);
+      const sending = set(
+        sendAgentSuggestionOption$,
+        entry,
+        option,
+        direction,
+        signal,
+      );
       set(entry.sending$, sending);
       await sending;
       return;
@@ -453,8 +437,8 @@ export const startAgentSuggestion$ = command(
     // The loaded card owns this visit's choice and draft. Recording the choice
     // cannot replace it with a later server version or hold the card in place.
     await Promise.all([
-      set(entry.enqueue$, { type: "consume", optionId }, signal),
-      set(openAgentSuggestionThread$, option, option.threadId, signal),
+      set(entry.enqueue$, { type: "consume", optionId: option.id }, signal),
+      set(openAgentSuggestionThread$, option, preset, option.threadId, signal),
     ]);
   },
 );

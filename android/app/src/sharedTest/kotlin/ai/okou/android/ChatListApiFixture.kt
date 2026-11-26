@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -39,7 +40,7 @@ fun chatEventWire(
 }
 
 internal fun ChatListApiFixture.rowEventTail(
-    beforeReadback: (Long) -> Unit = {}
+    beforeReadback: (Long) -> Unit = {},
 ): MutableList<Pair<Long, String>> {
     val initialEvents = events
     val tail = CopyOnWriteArrayList<Pair<Long, String>>()
@@ -79,8 +80,9 @@ fun historyEventWire(
     payload: String = "{\"content\":\"**Native history** reply\"}",
     run: String? = HISTORY_RUN,
     revoke: String? = null,
+    createdAt: String = CHAT_DATE,
 ): String =
-    """{"id":"$id","chatThreadId":"$thread","runId":${run?.let { "\"$it\"" } ?: "null"},"revokesEventId":${revoke?.let { "\"$it\"" } ?: "null"},"contextType":"web","contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":$seq,"createdAt":"$CHAT_DATE","eventType":"$type","payload":$payload}"""
+    """{"id":"$id","chatThreadId":"$thread","runId":${run?.let { "\"$it\"" } ?: "null"},"revokesEventId":${revoke?.let { "\"$it\"" } ?: "null"},"contextType":"web","contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":$seq,"createdAt":"$createdAt","eventType":"$type","payload":$payload}"""
 
 /** Only the external HTTP boundary is substituted; native owners/codec/cache/transport are real. */
 class ChatListApiFixture : Closeable {
@@ -90,29 +92,44 @@ class ChatListApiFixture : Closeable {
     @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     @Volatile var historyThreadIds = setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+    @Volatile
+    var searchMessages: (RecordedRequest) -> MockResponse = { jsonResponse("""{"results":[]}""") }
+    @Volatile
+    var searchArtifacts: (RecordedRequest) -> MockResponse = {
+        jsonResponse("""{"artifacts":[],"nextCursor":null}""")
+    }
+    @Volatile var searchWorkflows: () -> MockResponse = { jsonResponse("[]") }
 
     @Volatile var historyReply = "**Native history** reply"
 
-    private fun defaultHistory(thread: String, after: Long): List<String> =
-        listOf(
-                historyEventWire(
-                    "input",
-                    17,
-                    thread,
-                    "input.prompt",
-                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
-                ),
-                historyEventWire(
-                    "output",
-                    23,
-                    thread,
-                    payload = """{"content":${JsonPrimitive(historyReply)}}""",
-                ),
-                historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
-            )
-            .filter {
-                Json.parseToJsonElement(it).jsonObject.getValue("seqId").jsonPrimitive.long > after
-            }
+    private val historyByThread = ConcurrentHashMap<String, List<JsonObject>>()
+
+    internal fun setHistoryEvents(thread: String, rows: List<String>) {
+        historyByThread[thread] = rows.map { Json.parseToJsonElement(it).jsonObject }
+    }
+
+    private fun historyEvents(thread: String): List<JsonObject> =
+        historyByThread[thread]
+            ?: listOf(
+                    historyEventWire(
+                        "input",
+                        17,
+                        thread,
+                        "input.prompt",
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
+                    ),
+                    historyEventWire(
+                        "output",
+                        23,
+                        thread,
+                        payload = """{"content":${JsonPrimitive(historyReply)}}""",
+                    ),
+                    historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
+                )
+                .map { Json.parseToJsonElement(it).jsonObject }
+
+    private fun historyAfter(rows: List<JsonObject>, sequence: Long) =
+        JsonArray(rows.filter { it.getValue("seqId").jsonPrimitive.long > sequence })
 
     @Volatile
     var historyCatchUp: (RecordedRequest) -> MockResponse = { request ->
@@ -120,21 +137,16 @@ class ChatListApiFixture : Closeable {
             Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate { tuple ->
                 val items = tuple.jsonArray
                 val id = items[0].jsonPrimitive.content
-                id to
-                    JsonArray(
-                        defaultHistory(id, items[1].jsonPrimitive.long).map {
-                            Json.parseToJsonElement(it)
-                        }
-                    )
+                id to historyAfter(historyEvents(id), items[1].jsonPrimitive.long)
             }
         jsonResponse(
             JsonObject(
                     mapOf(
                         "events" to JsonObject(events),
                         "notFoundThreads" to JsonArray(emptyList()),
-                    )
+                    ),
                 )
-                .toString()
+                .toString(),
         )
     }
     val readRequests = java.util.concurrent.atomic.AtomicInteger()
@@ -145,20 +157,28 @@ class ChatListApiFixture : Closeable {
         jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":false}""")
     }
     @Volatile
+    var runActivity: (RecordedRequest) -> MockResponse = { request ->
+        val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+        jsonResponse("""{"runId":${body.getValue("runId")},"status":"unavailable","messages":[]}""")
+    }
+    @Volatile
     var historySnapshot: () -> MockResponse = {
         jsonResponse(
-                """{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"Not archived"}}"""
+                """{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"Not archived"}}""",
             )
             .setResponseCode(404)
     }
     @Volatile var historyArchive: () -> MockResponse = { MockResponse().setBody("") }
     @Volatile
     var historyRows: (RecordedRequest) -> MockResponse = { request ->
-        val thread = checkNotNull(request.requestUrl).pathSegments[2]
-        val rows =
-            defaultHistory(thread, request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0)
+        val url = checkNotNull(request.requestUrl)
+        val history = historyEvents(url.pathSegments[2])
+        val rows = historyAfter(history, url.queryParameter("sinceSeqId")?.toLong() ?: 0)
+        val last = history.lastOrNull()
+        val lastEventId = last?.getValue("id") ?: JsonNull
+        val lastSequence = last?.getValue("seqId") ?: JsonPrimitive(0)
         jsonResponse(
-            """{"rows":[${rows.joinToString(",")}],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+            """{"rows":$rows,"cursor":{"lastEventId":$lastEventId,"lastSeqId":$lastSequence},"hasMore":false}""",
         )
     }
     @Volatile
@@ -171,19 +191,19 @@ class ChatListApiFixture : Closeable {
             jsonResponse("""{"events":[],"hasMore":false}""")
         else
             jsonResponse(
-                """{"events":[${chatEventWire()},${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, thread = CHAT_IN_PROJECT, extra = ",\"projectId\":\"$CHAT_PROJECT\"", title = "Project chat")}],"hasMore":false}"""
+                """{"events":[${chatEventWire()},${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, thread = CHAT_IN_PROJECT, extra = ",\"projectId\":\"$CHAT_PROJECT\"", title = "Project chat")}],"hasMore":false}""",
             )
     }
     @Volatile
     var indicators: () -> MockResponse = {
         jsonResponse(
-            """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+            """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
         )
     }
     @Volatile
     var projects: () -> MockResponse = {
         jsonResponse(
-            """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
+            """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}""",
         )
     }
     @Volatile var archive: () -> MockResponse = { jsonResponse("""{"chatThreads":[]}""") }
@@ -193,7 +213,13 @@ class ChatListApiFixture : Closeable {
     }
     val identity: WorkspaceIdentity
     val service: CanonicalWorkspaceSession
+    @Volatile var draftIndex: () -> MockResponse = { jsonResponse("""{"draftThreadIds":[]}""") }
+
     private val composerDrafts = ConcurrentHashMap<String, JsonObject>()
+
+    fun setThreadDraft(threadId: String, text: String) {
+        composerDrafts["chat-threads:$threadId"] = plainDraftDocument(text)
+    }
 
     init {
         server.dispatcher =
@@ -216,7 +242,7 @@ class ChatListApiFixture : Closeable {
                         val key = "${segments[1]}:${segments[2]}"
                         if (request.method == "GET" && draftPath)
                             return jsonResponse(
-                                (composerDrafts[key] ?: plainDraftDocument("")).toString()
+                                (composerDrafts[key] ?: plainDraftDocument("")).toString(),
                             )
                         if (
                             request.method == "PATCH" &&
@@ -238,6 +264,11 @@ class ChatListApiFixture : Closeable {
                         return when (segments.getOrNull(3)) {
                             "event-snapshot" -> historySnapshot()
                             "event-rows" -> historyRows(request)
+                            "activity-summary" -> runActivity(request)
+                            "relations" ->
+                                if (segments.getOrNull(4) in setOf("children", "communications")) {
+                                    jsonResponse("""{"items":[]}""")
+                                } else MockResponse().setResponseCode(404)
                             "mark-read" -> {
                                 readRequests.incrementAndGet()
                                 historyMarkRead()
@@ -247,9 +278,17 @@ class ChatListApiFixture : Closeable {
                         }
                     }
                     return when (request.requestUrl?.encodedPath) {
+                        "/api/chat/search" -> searchMessages(request)
+                        "/api/workflows" -> searchWorkflows()
+                        "/api/artifacts/catalog" -> searchArtifacts(request)
                         "/api/chat/events/catch-up" -> historyCatchUp(request)
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
+                        "/api/chat-thread-drafts" -> draftIndex()
+                        "/api/onboarding/status" ->
+                            jsonResponse(
+                                """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
+                            )
                         "/api/indicators" -> indicators()
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)

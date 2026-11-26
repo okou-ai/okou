@@ -26,10 +26,9 @@ export function resetMockProactiveSuggestions(): void {
   preference = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
-  // The For you row follows the feed and unread summary whenever Suggestions are on.
   mockApi(feedContract.list, ({ respond }) => respond(200, { items: [] })),
   mockApi(feedContract.summary, ({ respond }) =>
-    respond(200, { hasUnread: false }),
+    respond(200, { hasUnread: false, firstItem: null }),
   ),
   mockApi(feedContract.sources, ({ respond }) => respond(200, sources)),
   mockApi(feedContract.updateSources, ({ body, respond }) => {

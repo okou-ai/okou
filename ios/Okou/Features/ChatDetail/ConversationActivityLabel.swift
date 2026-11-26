@@ -3,12 +3,14 @@ import ChatDomain
 import SwiftUI
 
 /// Observed inside the existing footer host: rotating text never revises measured transcript rows.
+/// Transcript cells host SwiftUI outside the workspace root, so the label provides the session
+/// Store that keeps the summary's demand.
 struct ConversationActivityLabel: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
 
   var body: some View {
-    StoreProvider(summary.stateStore) {
+    StoreProvider(summary.store) {
       ConversationActivityContent(summary: summary, state: state)
         .id(ObjectIdentifier(summary))
     }
@@ -19,19 +21,23 @@ private struct ConversationActivityContent: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
   @LoadableValue private var summaryValue: Loadable<ConversationActivitySummaryValue?>
+  @LoadableValue private var selection: Loadable<ConversationActivitySummary.Selection>
 
   init(summary: ConversationActivitySummary, state: ChatExecutionState) {
     self.summary = summary
     self.state = state
     _summaryValue = LoadableValue(task: summary.value, keepLast: true)
+    _selection = LoadableValue(summary.selection)
   }
 
   @ScaledMetric(relativeTo: .subheadline) private var lineHeight = 24
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
   private var executionText: String {
-    guard state == .running, case .hasData(let batch) = summaryValue else { return state.label }
-    return summary.text(in: batch) ?? state.label
+    guard state == .running, case .hasData(let batch) = summaryValue,
+      let current = selection.data
+    else { return state.label }
+    return ConversationActivitySummary.text(in: batch, selection: current) ?? state.label
   }
 
   var body: some View {

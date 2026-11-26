@@ -74,16 +74,6 @@ export function memberConnectorSelectionQueries(
     eq(connectors.orgId, owner.orgId),
     eq(connectors.userId, owner.userId),
   );
-  const builtin = builder
-    .selectDistinct({
-      payload: contextJsonProjection({
-        connectorSlug: connectors.connectorSlug,
-      })
-        .mapWith(zodDriverValueDecoder(zUnknown()))
-        .as("payload"),
-    })
-    .from(connectors)
-    .where(and(ownedAccount, isNotNull(connectors.connectorSlug)));
   const { networkBinding, ...definitionColumns } =
     customConnectorExecutionDefinitionSelection();
   const connectorColumns = {
@@ -140,5 +130,5 @@ export function memberConnectorSelectionQueries(
       asc(connectorPermissionGrants.customConnectorId),
       asc(connectorPermissionGrants.permission),
     );
-  return { builtin, custom, permissions };
+  return { custom, permissions };
 }

@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsSection
@@ -8,6 +9,7 @@ import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.RecoveryBillingCreditBreakdownItemCategory
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.SettingsDestination
 import android.icu.util.Calendar
 import android.widget.Toast
@@ -28,14 +30,20 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -54,13 +62,73 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
+import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
+
+@Composable
+internal fun WorkspaceSettingsProgress(
+    destination: SettingsDestination,
+    model: WorkspaceSettingsModel,
+) {
+    val label =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> R.string.settings_refreshing_model_accounts
+            SettingsDestination.CreditBalance -> R.string.settings_refreshing_credit_balance
+            else -> return
+        }
+    val state by model.uiState.collectAsStateWithLifecycle()
+    val refreshing =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> state.accounts.refreshing
+            else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
+        }
+    if (refreshing) {
+        ContentReadProgress(label)
+    }
+}
+
+@Composable
+internal fun WorkspaceSettingsFeedback(
+    model: WorkspaceSettingsModel,
+    snackbar: SnackbarHostState,
+    destination: SettingsDestination,
+    inOverlay: Boolean,
+) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val switchFailed by
+        rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
+    val creditRefreshFailed by
+        rememberUpdatedState(stringResource(R.string.settings_credit_unavailable))
+    val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
+    val emailUnconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
+    val toolFailed by
+        rememberUpdatedState(stringResource(R.string.settings_preferences_save_rolled_back))
+    val toolUnconfirmed by rememberUpdatedState(stringResource(R.string.settings_tool_save_failed))
+    LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.notices.collectLatest { notice ->
+                val message =
+                    when (notice) {
+                        SettingsNotice.ModelAccountSwitchFailed -> switchFailed
+                        SettingsNotice.CreditBalanceRefreshFailed -> creditRefreshFailed
+                        SettingsNotice.EmailSubscriptionFailed -> emailFailed
+                        SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
+                        SettingsNotice.ToolSaveFailed -> toolFailed
+                        SettingsNotice.ToolSaveUnconfirmed -> toolUnconfirmed
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            }
+        }
+    }
+}
 
 @Composable
 internal fun WorkspaceSettingsDataPage(
@@ -77,8 +145,7 @@ internal fun WorkspaceSettingsDataPage(
     }
     when (destination) {
         SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
-        SettingsDestination.CreditBalance ->
-            CreditBalance(workspace, state, model.showWorkspaceCredits)
+        SettingsDestination.CreditBalance -> CreditBalance(workspace, state)
         else -> Unit
     }
 }
@@ -87,7 +154,8 @@ internal fun WorkspaceSettingsDataPage(
 internal fun SettingsWebAction(label: String, section: String) {
     TextButton(
         onClick = settingsWebClick(section),
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(label, fontWeight = FontWeight.SemiBold)
     }
@@ -112,12 +180,24 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-private fun SettingsDetailStatus(text: String) {
+internal fun SettingsDetailStatus(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Text(
         text,
-        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = color,
         style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
+private fun SettingsReadError(@StringRes label: Int) {
+    SettingsDetailStatus(
+        stringResource(label),
+        Modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp, bottom = 12.dp),
     )
 }
 
@@ -130,18 +210,25 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 }
 
 @Composable
-private fun SettingsPlaceholder() {
-    SettingsGroup {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (width in listOf(144.dp, 94.dp)) {
-                Box(
-                    Modifier.width(width)
-                        .height(16.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp),
-                        )
-                )
+internal fun SettingsPlaceholder(loadingLabel: String? = null) {
+    val visible = rememberContentReadSkeleton()
+    val semantics =
+        if (visible && loadingLabel != null)
+            Modifier.semantics { contentDescription = loadingLabel }
+        else Modifier
+    Box(Modifier.alpha(if (visible) 1f else 0f).then(semantics)) {
+        SettingsGroup {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (width in listOf(144.dp, 94.dp)) {
+                    Box(
+                        Modifier.width(width)
+                            .height(14.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(8.dp),
+                            ),
+                    )
+                }
             }
         }
     }
@@ -156,9 +243,6 @@ private fun ModelAccounts(
     val accounts = state.accounts.value
     val status =
         when {
-            state.offline && accounts?.isEmpty() == true ->
-                R.string.settings_accounts_offline_connect
-            state.offline -> R.string.settings_accounts_offline
             state.accounts.unavailable && accounts != null ->
                 R.string.settings_accounts_update_failed
             else -> null
@@ -168,8 +252,8 @@ private fun ModelAccounts(
         else R.string.settings_accounts_scope
     SettingsPageIntro(workspace, scope, status)
     when {
-        accounts == null && (state.accounts.unavailable || state.offline) ->
-            SettingsDetailStatus(stringResource(R.string.settings_accounts_unavailable))
+        accounts == null && state.accounts.unavailable ->
+            SettingsReadError(R.string.settings_accounts_unavailable)
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
                 SettingsSection(provider.name) { SettingsPlaceholder() }
@@ -206,22 +290,17 @@ private fun ModelAccounts(
                         group.forEachIndexed { index, account ->
                             key(account.id) {
                                 if (index > 0) HorizontalDivider()
+                                val switch = state.switching[provider]
                                 ModelAccountRow(
                                     account,
                                     provider,
                                     index + 1,
-                                    state.switching[provider] == account.id,
-                                    state.offline,
-                                    provider in state.switching,
+                                    switch?.takeIf { it.accountId == account.id }?.phase,
+                                    switch != null,
                                     activateAccount,
                                 )
                             }
                         }
-                    }
-                    if (provider in state.switchFailures) {
-                        SettingsDetailStatus(
-                            stringResource(R.string.settings_account_switch_failed)
-                        )
                     }
                 }
             }
@@ -235,8 +314,7 @@ private fun ModelAccountRow(
     account: RecoverySubscriptionsSubscriptionsItem,
     provider: ModelAccountProvider,
     index: Int,
-    switching: Boolean,
-    offline: Boolean,
+    switchPhase: AccountSwitchPhase?,
     groupSwitching: Boolean,
     activateAccount: (String) -> Unit,
 ) {
@@ -248,7 +326,9 @@ private fun ModelAccountRow(
         when {
             account.isActive == true -> stringResource(R.string.settings_account_current)
             account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
-            switching -> stringResource(R.string.settings_account_switching)
+            switchPhase == AccountSwitchPhase.Unconfirmed ->
+                stringResource(R.string.settings_account_switch_unconfirmed)
+            switchPhase != null -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
         }
     val isActive = account.isActive == true
@@ -259,7 +339,7 @@ private fun ModelAccountRow(
         Modifier.fillMaxWidth()
             .semantics { if (groupSwitching) disabled() }
             .clickable(
-                enabled = !offline && !account.needsReconnect,
+                enabled = !account.needsReconnect,
                 role = Role.Button,
                 onClick = { if (!groupSwitching) activateAccount(account.id) },
             )
@@ -318,7 +398,7 @@ private fun ModelAccountRow(
                         else -> formatBalance(credits.balance)
                     }
                 SettingsDetailStatus(
-                    stringResource(R.string.settings_provider_credit_balance, provider.name, value)
+                    stringResource(R.string.settings_provider_credit_balance, provider.name, value),
                 )
             }
         }
@@ -369,7 +449,7 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
                 modifier =
                     Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
                 color = colors.primary,
-                trackColor = colors.outlineVariant,
+                trackColor = colors.secondaryContainer,
                 gapSize = 0.dp,
                 drawStopIndicator = {},
             )
@@ -415,19 +495,10 @@ private fun resetLabel(value: Instant, locale: Locale): String {
 private fun CreditBalance(
     workspace: String,
     state: WorkspaceSettingsState,
-    showWorkspaceCredits: Boolean,
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
-    val status =
-        when {
-            state.offline && (member != null || shared != null) -> R.string.settings_credit_offline
-            state.usagePack.unavailable && member != null ||
-                state.workspaceCredits.unavailable && shared != null ->
-                R.string.settings_credit_update_failed
-            else -> null
-        }
-    SettingsPageIntro(workspace, R.string.settings_credit_scope, status)
+    SettingsDetailStatus(stringResource(R.string.settings_credit_scope, workspace))
     SettingsSection(stringResource(R.string.settings_credit_member)) {
         if (member != null) {
             CreditCard(
@@ -437,9 +508,9 @@ private fun CreditBalance(
                     stringResource(R.string.settings_credit_bonus) to member.bonusCredits,
                 ),
             )
-        } else CreditReadState(state.offline || state.usagePack.unavailable)
+        } else CreditReadState(state.usagePack)
     }
-    if (showWorkspaceCredits) {
+    if (state.showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
             if (shared != null) {
                 val byCategory =
@@ -463,20 +534,16 @@ private fun CreditBalance(
                         stringResource(label) to credits
                     },
                 )
-            } else CreditReadState(state.offline || state.workspaceCredits.unavailable)
+            } else CreditReadState(state.workspaceCredits)
         }
     }
     SettingsWebAction(stringResource(R.string.settings_credit_web), "usage")
 }
 
 @Composable
-private fun CreditReadState(unavailable: Boolean) {
-    if (unavailable) {
-        SettingsGroup {
-            Box(Modifier.padding(16.dp)) {
-                SettingsDetailStatus(stringResource(R.string.settings_credit_unavailable))
-            }
-        }
+private fun CreditReadState(state: SettingsRead<*>) {
+    if (state.initialFailure) {
+        SettingsReadError(R.string.settings_credit_unavailable)
     } else SettingsPlaceholder()
 }
 

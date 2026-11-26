@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">बिल्ट-इन टूल</string>
+    <string name="settings_tool_scope">%1$s में टूल इस्तेमाल करने पर क्रेडिट खर्च होते हैं।</string>
+    <string name="settings_common_tools">आम टूल</string>
+    <string name="settings_data_tools">डेटा टूल</string>
+    <string name="settings_tool_web_search">वेब खोज</string>
+    <string name="settings_tool_image_generation">इमेज बनाना</string>
+    <string name="settings_tool_image_model">इमेज बनाने का मॉडल</string>
+    <string name="settings_tools_unavailable">टूल फ़िलहाल उपलब्ध नहीं हैं।</string>
+    <string name="settings_tool_save_failed">बदलाव की पुष्टि नहीं हो पाई।</string>
+    <string name="settings_tool_image_save_failed">चित्र बनाने वाला मॉडल सेव नहीं हो सका</string>
+    <string name="settings_preferences_save_rolled_back">सेटिंग सेव नहीं हो सकीं। पिछले मान बहाल कर दिए गए हैं।</string>
+    <string name="settings_appearance_sync_failed">दिखावट सिंक नहीं हो सकी। इसे इस डिवाइस पर लागू कर दिया गया है।</string>
+    <string name="settings_email_updates">ईमेल अपडेट</string>
+    <string name="settings_email_scope">सभी कार्यस्थलों की संक्षिप्त रिपोर्ट, रिमाइंडर और अपडेट पाएं।</string>
+    <string name="settings_email_receive">ईमेल पाएं</string>
+    <string name="settings_email_unavailable">ईमेल उपलब्ध नहीं है</string>
+    <string name="settings_email_check_address">खाते का ईमेल जांचें</string>
+    <string name="settings_email_load_failed">ईमेल सेटिंग कुछ समय के लिए उपलब्ध नहीं हैं।</string>
+    <string name="settings_email_refresh_failed">सिंक नहीं हो सका। पिछली सेव की गई सदस्यता दिखाई जा रही है।</string>
+    <string name="settings_email_refreshing">ईमेल सदस्यता सिंक हो रही है</string>
+    <string name="settings_email_saving">ईमेल सदस्यता अपडेट हो रही है…</string>
+    <string name="settings_email_save_failed">ईमेल सदस्यता अपडेट नहीं हो सकी।</string>
+    <string name="settings_email_save_unconfirmed">ईमेल सदस्यता में बदलाव की पुष्टि अभी नहीं हुई है।</string>
     <string name="settings_models">मॉडल</string>
     <string name="settings_tools">टूल</string>
     <string name="settings_my_okou">मेरा Okou</string>
@@ -14,8 +37,6 @@
     <string name="settings_accounts_scope">वे सदस्यता खाते चुनें जिनका आप “%1$s” में इस्तेमाल करते हैं।</string>
     <string name="settings_accounts_scope_empty">“%1$s” में मॉडल खाते</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_offline">ऑफ़लाइन हैं। खाता बदलने के लिए कनेक्ट करें।</string>
-    <string name="settings_accounts_offline_connect">ऑफ़लाइन हैं। मॉडल खाता जोड़ने के लिए कनेक्ट करें।</string>
     <string name="settings_accounts_unavailable">फ़िलहाल मॉडल खाते नहीं दिखाए जा सकते।</string>
     <string name="settings_accounts_update_failed">मॉडल खाते रीफ़्रेश नहीं हो सके। पिछली जानकारी दिखाई जा रही है।</string>
     <string name="settings_accounts_empty">कोई मॉडल खाता नहीं जुड़ा है</string>
@@ -29,7 +50,8 @@
     <string name="settings_account_select">चुनें</string>
     <string name="settings_account_reconnect">दोबारा कनेक्ट करना होगा</string>
     <string name="settings_account_switching">बदला जा रहा है…</string>
-    <string name="settings_account_switch_failed">खाता बदला नहीं जा सका।</string>
+    <string name="settings_account_switch_unconfirmed">खाता बदलने की पुष्टि बाकी है</string>
+    <string name="settings_account_switch_failed">मॉडल खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>
     <string name="settings_day_quota">%1$d दिन का कोटा</string>
@@ -43,8 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">क्रेडिट बैलेंस</string>
     <string name="settings_credit_scope">“%1$s” में Okou क्रेडिट</string>
-    <string name="settings_credit_offline">ऑफ़लाइन हैं। पिछला बैलेंस दिखाया जा रहा है।</string>
-    <string name="settings_credit_update_failed">रीफ़्रेश नहीं हो सका। पिछला बैलेंस दिखाया जा रहा है।</string>
     <string name="settings_credit_unavailable">फ़िलहाल बैलेंस नहीं दिखाया जा सकता।</string>
     <string name="settings_credit_member">व्यक्तिगत उपयोग पैक</string>
     <string name="settings_credit_workspace">वर्कस्पेस बैलेंस</string>
@@ -59,8 +79,7 @@
     <string name="settings_auto_model_detail">Okou उपलब्ध मॉडल चुनता है</string>
     <string name="settings_model_plan_restricted">दूसरा प्लान चाहिए</string>
     <string name="settings_model_fast">तेज़ मोड</string>
-    <string name="settings_model_fast_usage">लगभग %1$s गुना सदस्यता कोटा</string>
-    <string name="settings_model_load_when_online">फिर से ऑनलाइन होने पर सामग्री लोड होगी।</string>
+    <string name="settings_model_fast_usage">चालू होने पर, ChatGPT सदस्यता की खपत मानक मोड की तुलना में %1$s गुना होती है</string>
     <string name="settings_model_save_rolled_back">डिफ़ॉल्ट मॉडल सेव नहीं हो सका। पिछली सेटिंग बहाल कर दी गई है।</string>
     <string name="settings_model_save_unconfirmed">डिफ़ॉल्ट मॉडल सेव होने की पुष्टि अभी नहीं हुई है।</string>
     <string name="settings_model_effort">तर्क का स्तर</string>
@@ -70,4 +89,28 @@
     <string name="settings_model_effort_extra">बहुत उच्च</string>
     <string name="settings_model_effort_max">अधिकतम</string>
     <string name="settings_model_effort_ultra">अल्ट्रा</string>
+    <string name="settings_refreshing_model_accounts">मॉडल खाते रीफ़्रेश हो रहे हैं</string>
+    <string name="settings_refreshing_credit_balance">क्रेडिट बैलेंस रीफ़्रेश हो रहा है</string>
+    <string name="settings_proactive_services">सक्रिय सेवाएँ</string>
+    <string name="settings_proactive_scope">ये सेटिंग “%1$s” पर लागू होती हैं।</string>
+    <string name="settings_proactive_loading">सक्रिय सेवाएँ लोड हो रही हैं</string>
+    <string name="settings_proactive_needs_timezone">डिलीवरी शेड्यूल करने के लिए समय क्षेत्र चुनें।</string>
+    <string name="settings_proactive_read_failed">यह सेटिंग अभी लोड नहीं हो सकी।</string>
+    <string name="settings_proactive_refresh_failed">सिंक नहीं हुआ। पिछली पुष्टि की गई सेटिंग दिखाई जा रही है।</string>
+    <string name="settings_proactive_preparing">शेड्यूल तैयार हो रहा है…</string>
+    <string name="settings_proactive_schedule_failed">आपकी पसंद सेव हो गई है। शेड्यूल की जाँच करें।</string>
+    <string name="settings_proactive_save_unconfirmed">सेव होने की पुष्टि अभी नहीं हुई है।</string>
+    <string name="settings_morning_brief">सुबह का सारांश</string>
+    <string name="settings_morning_brief_detail">चुने गए समय क्षेत्र में सुबह 7:00 बजे से पहले मिलता है</string>
+    <string name="settings_morning_brief_save_failed">सुबह के सारांश की सेटिंग सेव नहीं हुई। पिछली सेटिंग बहाल कर दी गई है।</string>
+    <string name="settings_suggestions">सुझाव</string>
+    <string name="settings_suggestions_detail">जुड़ी सामग्री जाँचें, प्रोफ़ाइल अपडेट करें और सुझाव दें</string>
+    <string name="settings_suggestions_partial">आंशिक रूप से चालू</string>
+    <string name="settings_suggestions_hourly_only">फ़िलहाल केवल सामग्री की जाँच और प्रोफ़ाइल का अपडेट होता है।</string>
+    <string name="settings_suggestions_cards_only">फ़िलहाल केवल सुझाव कार्ड मिलते हैं।</string>
+    <string name="settings_suggestions_enable_both">दोनों चालू करें</string>
+    <string name="settings_suggestions_disable_both">दोनों बंद करें</string>
+    <string name="settings_suggestions_save_failed">सुझाव की सेटिंग सेव नहीं हुई। पिछली सेटिंग बहाल कर दी गई है।</string>
+    <string name="settings_timezone_save_rejected">समय क्षेत्र सेव नहीं हो सका। पिछला समय क्षेत्र बहाल कर दिया गया है।</string>
+    <string name="settings_timezone_schedule_update_failed">समय क्षेत्र सेव हो गया। सुबह के सारांश का समय अपडेट नहीं हो सका।</string>
 </resources>

@@ -1,15 +1,30 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.R
-import ai.okou.android.WorkspaceSearchField
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.WorkspaceFilterRow
+import ai.okou.android.WorkspaceSearchInput
+import ai.okou.android.WorkspaceToolDirectoryRow
+import ai.okou.android.chat.ChatListTextAction
+import ai.okou.android.hasPendingSearchText
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.retainSearchResultsWhileComposing
+import ai.okou.android.searchClearAction
+import ai.okou.android.workspaceSearchFocusOutline
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.icu.util.Calendar
+import android.icu.util.GregorianCalendar
+import android.icu.util.TimeZone as IcuTimeZone
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,16 +42,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.maxLengthReject
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,51 +57,53 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleStartEffect
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
+import java.util.TimeZone
+
+private data class ArtifactCatalogListState(
+    val page: ArtifactPage?,
+    val failure: ArtifactCatalogFailure?,
+    val reading: ArtifactCatalogRead?,
+)
 
 @Composable
 internal fun ArtifactCatalogList(
     model: ArtifactCatalogModel,
     state: ArtifactCatalogState,
     input: TextFieldState,
-    filter: ArtifactFilter,
+    query: ArtifactQuery,
     onFilter: (ArtifactFilter) -> Unit,
     position: LazyListState,
     selectedId: String?,
@@ -99,8 +113,22 @@ internal fun ArtifactCatalogList(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val query = ArtifactQuery(filter, input.text.toString().trim())
-    val page = state.page.takeIf { state.query == query }
+    val filter = query.filter
+    val current = state.takeIf { it.query == query }
+    val listState = ArtifactCatalogListState(current?.page, current?.failedRead, current?.reading)
+    val (page, failure, reading) =
+        when (state.failedRead) {
+            ArtifactCatalogFailure.Denied,
+            ArtifactCatalogFailure.Missing,
+            ArtifactCatalogFailure.ChatUnavailable -> listState
+            else ->
+                key(input, query) {
+                    retainSearchResultsWhileComposing(
+                        listState,
+                        hasPendingSearchText(input.text, input.composition, query.keyword),
+                    )
+                }
+        }
     val localDates = rememberArtifactDates()
     val groups =
         remember(page, query, localDates.today, localDates.yesterday) {
@@ -113,21 +141,18 @@ internal fun ArtifactCatalogList(
                 .orEmpty()
         }
     val searchFocus = remember { FocusRequester() }
+    val clearQuery = searchClearAction(searchFocus) { input.clearText() }
+    val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
     val noticePadding = Modifier.padding(16.dp)
 
-    LaunchedEffect(model, page, state.problem, state.reading, state.offline) {
-        if (
-            page?.nextCursor != null &&
-                state.problem == null &&
-                state.reading == null &&
-                !state.offline
-        ) {
+    LaunchedEffect(model, page, failure, reading) {
+        if (page?.nextCursor != null && failure == null && reading == null) {
             snapshotFlow {
-                    val layout = position.layoutInfo
-                    val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    last >= 0 && last >= layout.totalItemsCount - 5
-                }
+                val layout = position.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                last >= 0 && last >= layout.totalItemsCount - 5
+            }
                 .collect { if (it) model.loadNext() }
         }
     }
@@ -142,14 +167,35 @@ internal fun ArtifactCatalogList(
                 .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ArtifactSearch(input, searchFocus)
-            ArtifactFilters(filter, onFilter)
+            WorkspaceSearchInput(
+                state = input,
+                label = stringResource(R.string.artifact_search),
+                onClear = clearQuery,
+                modifier =
+                    Modifier.fillMaxWidth().focusRequester(searchFocus).testTag("artifact_query"),
+                inputTransformation = InputTransformation.maxLengthReject(256),
+            )
+            WorkspaceFilterRow(
+                ArtifactFilter.entries,
+                filter,
+                Role.RadioButton,
+                label = { stringResource(it.label()) },
+                modifier = Modifier.fillMaxWidth(),
+                optionModifier = {
+                    if (it == ArtifactFilter.All) Modifier.focusRequester(allFilterFocus)
+                    else Modifier
+                },
+                onSelect = onFilter,
+            )
         }
-        if (state.offline && page?.items?.isNotEmpty() == true) {
-            ArtifactListNotice(R.string.artifact_offline_cached, noticePadding)
+        if (page == null && failure != null) {
+            ArtifactInitialReadFailure(
+                failure,
+                Modifier.widthIn(max = 730.dp).weight(1f),
+            )
+            return@Column
         }
-        val showSkeleton =
-            rememberChatWaitIndicator(page == null && !state.offline && state.problem == null)
+        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
         val restoreAfterLayout =
             if (restoreRow != null && page != null) {
                 Modifier.onGloballyPositioned {
@@ -169,47 +215,31 @@ internal fun ArtifactCatalogList(
             state = position,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
         ) {
-            if (page == null) {
-                when {
-                    state.offline ->
-                        item {
-                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
-                        }
-                    state.problem != null ->
-                        item { ArtifactListNotice(state.problem.label(), noticePadding) }
-                    showSkeleton -> items(4) { ArtifactRowSkeleton() }
-                }
-            } else if (page.items.isEmpty()) {
+            if (showSkeleton) items(4) { ArtifactRowSkeleton() }
+            if (page?.items?.isEmpty() == true) {
                 item {
-                    when {
-                        state.offline ->
-                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
-                        query.keyword.isNotBlank() ->
-                            ArtifactEmpty(
-                                R.string.artifact_no_matches,
-                                R.string.chat_search_clear,
-                            ) {
-                                input.clearText()
-                            }
-                        filter != ArtifactFilter.All ->
-                            ArtifactEmpty(
-                                R.string.artifact_empty_type,
-                                R.string.artifact_show_all,
-                            ) {
-                                onFilter(ArtifactFilter.All)
-                            }
-                        else -> ArtifactListNotice(R.string.artifact_empty, noticePadding)
-                    }
+                    ArtifactEmpty(
+                        hasKeyword = query.keyword.isNotBlank(),
+                        filtered = filter != ArtifactFilter.All,
+                        onClear = clearQuery,
+                        onShowAll = {
+                            onFilter(ArtifactFilter.All)
+                            allFilterFocus.requestFocus()
+                        },
+                    )
                 }
             }
-            groups.forEach { (day, rows) ->
+            groups.entries.forEachIndexed { index, (day, rows) ->
                 if (day != ArtifactDay.Search) {
                     item(key = day.name) {
                         Text(
                             stringResource(day.label),
-                            Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp).semantics {
-                                heading()
-                            },
+                            Modifier.padding(
+                                    start = 12.dp,
+                                    top = if (index == 0) 8.dp else 16.dp,
+                                    bottom = 4.dp,
+                                )
+                                .semantics { heading() },
                             style = artifactSmallText(),
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -225,7 +255,6 @@ internal fun ArtifactCatalogList(
                                 showDay = day == ArtifactDay.Search,
                             ),
                         selected = item.id == selectedId,
-                        offline = state.offline,
                         thumbnail = model::thumbnail,
                         modifier =
                             if (item.id == restoreRow) Modifier.focusRequester(rowFocus)
@@ -235,12 +264,12 @@ internal fun ArtifactCatalogList(
                     }
                 }
             }
-            if (page?.items?.isNotEmpty() == true && !state.offline) {
-                state.problem?.let { problem ->
-                    item { ArtifactListNotice(problem.label(), noticePadding) }
+            if (failure != null) {
+                item(key = "catalog-read-failure") {
+                    ArtifactReadNotice(failure.label(), noticePadding)
                 }
-                if (state.reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
+            if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
         }
     }
 }
@@ -258,7 +287,10 @@ internal fun ArtifactToolbar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+        ) {
             Icon(painterResource(R.drawable.ic_arrow_back), stringResource(back))
         }
         Text(
@@ -271,96 +303,7 @@ internal fun ArtifactToolbar(
             overflow = TextOverflow.Ellipsis,
         )
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-}
-
-@Composable
-private fun ArtifactSearch(input: TextFieldState, focus: FocusRequester) {
-    val colors = MaterialTheme.colorScheme
-    val keyboard = LocalSoftwareKeyboardController.current
-    val label = stringResource(R.string.artifact_search)
-    val textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface)
-    var focused by remember { mutableStateOf(false) }
-    BasicTextField(
-        state = input,
-        inputTransformation = InputTransformation.maxLengthReject(256),
-        modifier =
-            Modifier.fillMaxWidth()
-                .focusRequester(focus)
-                .onFocusChanged { focused = it.isFocused }
-                .testTag("artifact_query")
-                .semantics { contentDescription = label },
-        textStyle = textStyle,
-        lineLimits = TextFieldLineLimits.SingleLine,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        onKeyboardAction = { keyboard?.hide() },
-        cursorBrush = SolidColor(colors.onSurface),
-        decorator = { field ->
-            WorkspaceSearchField(
-                Modifier.fillMaxWidth(),
-                focused = focused,
-                hasTrailingAction = input.text.isNotEmpty(),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                    if (input.text.isEmpty()) {
-                        Text(
-                            label,
-                            style = textStyle,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    field()
-                }
-                if (input.text.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            input.clearText()
-                            focus.requestFocus()
-                        }
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            stringResource(R.string.chat_search_clear),
-                            modifier = Modifier.size(20.dp),
-                            tint = colors.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        },
-    )
-}
-
-@Composable
-private fun ArtifactFilters(selected: ArtifactFilter, onFilter: (ArtifactFilter) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        for (filter in ArtifactFilter.entries) {
-            val current = filter == selected
-            Box(
-                Modifier.heightIn(min = 48.dp)
-                    .widthIn(min = 48.dp)
-                    .clip(shape)
-                    .background(if (current) colors.secondaryContainer else colors.background)
-                    .selectable(selected = current, role = Role.RadioButton) { onFilter(filter) }
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(filter.label()),
-                    style = artifactSmallText(),
-                    color = if (current) colors.onSecondaryContainer else colors.onSurface,
-                )
-            }
-        }
-    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -368,45 +311,21 @@ private fun ArtifactRow(
     item: ArtifactItem,
     date: String,
     selected: Boolean,
-    offline: Boolean,
-    thumbnail: suspend (String, Boolean) -> android.graphics.Bitmap?,
+    thumbnail: suspend (String) -> android.graphics.Bitmap?,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
-    val meta = if (selected) foreground else colors.onSurfaceVariant
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .selectable(selected = selected, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .testTag("artifact_row"),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ArtifactThumbnail(item, offline, thumbnail)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = foreground,
-            )
-            Text(
-                stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
-                style = artifactSmallText(),
-                color = meta,
-            )
-        }
-        Icon(
-            painterResource(R.drawable.ic_chevron_right),
-            contentDescription = null,
-            modifier = Modifier.align(Alignment.CenterVertically).size(18.dp),
-            tint = foreground,
+    WorkspaceToolDirectoryRow(
+        title = item.title,
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.testTag("artifact_row"),
+        leading = { ArtifactThumbnail(item, thumbnail) },
+    ) { supportingColor ->
+        Text(
+            stringResource(R.string.artifact_metadata, stringResource(item.kind.label()), date),
+            style = artifactSmallText(),
+            color = supportingColor,
         )
     }
 }
@@ -414,34 +333,22 @@ private fun ArtifactRow(
 @Composable
 private fun ArtifactThumbnail(
     item: ArtifactItem,
-    offline: Boolean,
-    thumbnail: suspend (String, Boolean) -> android.graphics.Bitmap?,
+    thumbnail: suspend (String) -> android.graphics.Bitmap?,
 ) {
     val bitmap by
-        produceState<android.graphics.Bitmap?>(null, item.thumbnail, offline) {
-            value = item.thumbnail?.let { thumbnail(it, offline) }
+        produceState<android.graphics.Bitmap?>(null, item.thumbnail) {
+            value = item.thumbnail?.let { thumbnail(it) }
         }
-    val colors = MaterialTheme.colorScheme
-    Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        val image = bitmap
-        if (image != null) {
-            Image(
-                image.asImageBitmap(),
-                null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-            )
-        } else {
-            Icon(
-                painterResource(item.kind.icon()),
-                null,
-                Modifier.size(20.dp),
-                tint = colors.onSurface,
-            )
-        }
+    val image = bitmap
+    if (image != null) {
+        Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+    } else {
+        Icon(
+            painterResource(item.kind.icon()),
+            null,
+            Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 
@@ -451,7 +358,8 @@ internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.
     Row(
         Modifier.fillMaxWidth()
             .height(height)
-            .padding(horizontal = horizontalPadding, vertical = 8.dp),
+            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+            .testTag("artifact_row_skeleton"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.size(40.dp).background(fill, RoundedCornerShape(12.dp)))
@@ -463,25 +371,92 @@ internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.
 }
 
 @Composable
-private fun ArtifactEmpty(@StringRes label: Int, @StringRes action: Int, onClick: () -> Unit) {
+private fun ArtifactEmpty(
+    hasKeyword: Boolean,
+    filtered: Boolean,
+    onClear: () -> Unit,
+    onShowAll: () -> Unit,
+) {
+    val label =
+        when {
+            hasKeyword -> R.string.artifact_no_matches
+            filtered -> R.string.artifact_empty_type
+            else -> R.string.artifact_empty
+        }
+    val actionModifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
     Column(
-        Modifier.fillMaxWidth().padding(top = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxWidth().padding(vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ArtifactListNotice(label)
-        ArtifactAction(action, onClick = onClick)
+        Text(
+            stringResource(label),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        when {
+            hasKeyword ->
+                ChatListTextAction(
+                    R.string.artifact_clear_keyword,
+                    actionModifier,
+                    onClick = onClear,
+                )
+            filtered ->
+                ChatListTextAction(R.string.artifact_show_all, actionModifier, onClick = onShowAll)
+        }
     }
 }
 
 @Composable
-private fun ArtifactListNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
+internal fun ArtifactInitialReadFailure(
+    failure: ArtifactCatalogFailure,
+    modifier: Modifier = Modifier,
+) {
+    val area = modifier.fillMaxWidth().testTag("artifact_read_error_area")
+    if (failure == ArtifactCatalogFailure.Initial) {
+        BoxWithConstraints(area) {
+            ContentReadFailure(
+                R.string.chat_list_first_load_failed,
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(horizontal = 16.dp)
+                    .testTag("artifact_read_failure"),
+            )
+        }
+    } else {
+        Box(area) {
+            ArtifactReadNotice(
+                failure.label(),
+                Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp),
+            )
+        }
+    }
+}
+
+@StringRes
+internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
+    when (this) {
+        ArtifactCatalogFailure.Initial ->
+            if (chatResources) R.string.chat_resources_load_failed
+            else R.string.artifact_catalog_load_failed
+        ArtifactCatalogFailure.Refresh -> R.string.artifact_catalog_refresh_failed
+        ArtifactCatalogFailure.More -> R.string.artifact_catalog_page_failed
+        ArtifactCatalogFailure.Denied -> R.string.artifact_catalog_access_denied
+        ArtifactCatalogFailure.Missing -> R.string.artifact_catalog_missing
+        ArtifactCatalogFailure.ChatUnavailable -> R.string.history_missing
+    }
+
+@Composable
+internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
     Text(
         stringResource(label),
-        Modifier.fillMaxWidth().then(modifier).semantics { liveRegion = LiveRegionMode.Polite },
-        style = MaterialTheme.typography.bodyMedium,
+        modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
     )
 }
 
@@ -501,15 +476,37 @@ internal enum class ArtifactDay(@param:StringRes val label: Int) {
 }
 
 internal class ArtifactDates(
-    val today: Long,
-    val yesterday: Long,
+    nowMillis: Long,
+    zone: TimeZone,
     private val formatTime: java.text.DateFormat,
     private val formatDate: java.text.DateFormat,
     private val formatMonthDay: java.text.DateFormat,
-    private val startOfYear: Long,
     private val todayLabel: String,
     private val yesterdayLabel: String,
 ) {
+    val today: Long
+    val yesterday: Long
+    private val startOfYear: Long
+
+    init {
+        val calendar =
+            GregorianCalendar(IcuTimeZone.getTimeZone(zone.id)).apply {
+                timeInMillis = nowMillis
+                // A local date begins at its first valid instant, even when midnight repeats or is
+                // skipped.
+                repeatedWallTimeOption = Calendar.WALLTIME_FIRST
+                skippedWallTimeOption = Calendar.WALLTIME_NEXT_VALID
+            }
+        val localDay = calendar.get(Calendar.JULIAN_DAY)
+        val firstDayOfYear = localDay - (calendar.get(Calendar.DAY_OF_YEAR) - 1)
+        today = calendar.startOfDayMillis(localDay)
+        yesterday = calendar.startOfDayMillis(localDay - 1)
+        startOfYear = calendar.startOfDayMillis(firstDayOfYear)
+        formatTime.timeZone = zone
+        formatDate.timeZone = zone
+        formatMonthDay.timeZone = zone
+    }
+
     fun group(time: Long): ArtifactDay =
         when {
             time >= today -> ArtifactDay.Today
@@ -534,32 +531,49 @@ internal class ArtifactDates(
 internal fun rememberArtifactDates(): ArtifactDates {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
-    val calendar =
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-    val today = calendar.timeInMillis
-    val startOfYear =
-        (calendar.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
-    calendar.add(Calendar.DATE, -1)
-    val yesterday = calendar.timeInMillis
+    var calendarRevision by remember { mutableIntStateOf(0) }
+    LifecycleStartEffect(context) {
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    calendarRevision++
+                }
+            }
+        val filter =
+            IntentFilter(Intent.ACTION_DATE_CHANGED).apply {
+                addAction(Intent.ACTION_TIME_CHANGED)
+                addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        calendarRevision++
+        onStopOrDispose { context.unregisterReceiver(receiver) }
+    }
     val todayLabel = stringResource(R.string.artifact_today)
     val yesterdayLabel = stringResource(R.string.artifact_yesterday)
-    return remember(context, locale, today, yesterday, todayLabel, yesterdayLabel) {
+    return remember(context, locale, calendarRevision, todayLabel, yesterdayLabel) {
         ArtifactDates(
-            today,
-            yesterday,
-            DateFormat.getTimeFormat(context),
-            DateFormat.getMediumDateFormat(context),
-            SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
-            startOfYear,
-            todayLabel,
-            yesterdayLabel,
+            nowMillis = System.currentTimeMillis(),
+            zone = TimeZone.getDefault(),
+            formatTime = DateFormat.getTimeFormat(context),
+            formatDate = DateFormat.getMediumDateFormat(context),
+            formatMonthDay =
+                SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "MMMd"), locale),
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
         )
     }
+}
+
+private fun Calendar.startOfDayMillis(localDay: Int): Long {
+    clear()
+    set(Calendar.JULIAN_DAY, localDay)
+    set(Calendar.MILLISECONDS_IN_DAY, 0)
+    return timeInMillis
 }
 
 private fun ArtifactFilter.label(): Int =
@@ -592,13 +606,4 @@ internal fun ArtifactKind.icon(): Int =
         ArtifactKind.Video,
         ArtifactKind.Avatar -> R.drawable.ic_videocam
         ArtifactKind.SharedConversation -> R.drawable.ic_chat
-    }
-
-internal fun ArtifactProblem.label(): Int =
-    when (this) {
-        ArtifactProblem.Denied -> R.string.artifact_access_denied
-        ArtifactProblem.Missing -> R.string.artifact_missing
-        ArtifactProblem.Temporary,
-        ArtifactProblem.Unavailable -> R.string.artifact_unavailable
-        ArtifactProblem.Unsupported -> R.string.artifact_preview_unsupported
     }

@@ -460,10 +460,20 @@ struct DescendantIdentity {
 }
 
 #[cfg(target_os = "linux")]
+fn process_session_id(pid: libc::pid_t) -> Result<libc::pid_t, nix::errno::Errno> {
+    nix::unistd::getsid(Some(nix::unistd::Pid::from_raw(pid))).map(nix::unistd::Pid::as_raw)
+}
+
+#[cfg(target_os = "linux")]
 async fn assert_descendant_exited(identity: &DescendantIdentity) {
     // Clean up the controlled descendant even when a regression fails.
     // Bind it before checking its generation, then signal only via the pidfd.
-    let pidfd = open_pidfd(libc::pid_t::try_from(identity.pid).unwrap()).unwrap();
+    let pid = Pid::from_raw(libc::pid_t::try_from(identity.pid).unwrap())
+        .expect("descendant PID must be positive");
+    let pidfd = match rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty()) {
+        Err(rustix::io::Errno::SRCH) => None,
+        result => Some(result.expect("open test descendant pidfd")),
+    };
     let remained_live = match read_process_stat_checked(identity.pid).await {
         ProcessStatRead::Found(stat) => {
             stat.starttime == identity.starttime && process_stat_is_live(&stat)
@@ -474,7 +484,7 @@ async fn assert_descendant_exited(identity: &DescendantIdentity) {
     };
     if remained_live {
         let pidfd = pidfd.expect("live descendant must have a pidfd");
-        signal_pidfd(&pidfd, rustix::process::Signal::KILL)
+        rustix::process::pidfd_send_signal(&pidfd, rustix::process::Signal::KILL)
             .expect("clean up leaked test descendant");
         // SAFETY: AsyncFd owns the pidfd and keeps its descriptor unchanged until drop.
         let exit = unsafe { tokio::io::unix::AsyncFd::register(pidfd) }.unwrap();

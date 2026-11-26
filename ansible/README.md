@@ -13,10 +13,15 @@ renewal acceptance are operator checks, not a systemd-ready assertion.
 The dedicated `okou-runner-caddy` account/group owns private persistent
 certificate state in `/var/lib/okou-runner-caddy`; keep it across provisioning.
 Configuration is in `/etc/okou-runner-caddy`, and checksum-pinned binaries are
-versioned under `/usr/local/lib/okou-runner-caddy`. Changed/repaired deployments
-are activated with a readiness-bound apply fingerprint. Healthy unchanged
-provisioning preserves the running Caddy process; an ingress restart interrupts
-existing streams and clients must reconnect.
+versioned under `/usr/local/lib/okou-runner-caddy`. The production Runner release
+applies provisioning when the Ansible tree changes. A Caddyfile-only update
+validates the file and signals the running Caddy with `SIGUSR1`. The applied
+fingerprint advances only after the same process and systemd invocation confirm
+the reload in the journal. A failed or unconfirmed reload fails provisioning.
+Provisioning restores the last confirmed Caddyfile on disk after a confirmed
+rejection or when it refuses a combined process and configuration update.
+Deploy process changes, such as a binary or systemd unit update, separately from
+Caddyfile changes on an active host.
 
 Static `/runners/<runnerId>/...` routes select only the matching Unix socket at
 `/var/lib/vm0-runner/ingress/<runnerId>.sock`, preserving the whole URI. Multiple
@@ -25,11 +30,17 @@ Runner creates and validates its namespace/socket; provisioning rejects unsafe
 existing ancestors, owners, modes, ACLs or symlinks instead of changing private
 live state. Missing sockets return 502 until their Runner starts.
 
-Runner control uses `/runners/<runnerId>/control/...`; future sandbox access
-reserves only `/runners/<runnerId>/sandbox/runs/<runId>/`. Paths below that
-prefix, destination resolution and sandbox authorization remain future design.
-Paths are unversioned. HTTP and classic WebSocket upgrades share TLS, routing
-and the Unix upstream. No sandbox handler is implemented in this slice.
+Runner control uses `/runners/<runnerId>/control/...`. Run WebSockets use the
+exact path `/runners/<runnerId>/sandbox/runs/<runId>`. Paths are unversioned. HTTPS and
+HTTP/1.1 WebSocket upgrades share TLS, routing and the Unix upstream.
+
+The first hot reload from a configuration without `stream_close_delay` can
+disconnect WebSockets that the old configuration accepted. Later hot reloads
+leave existing WebSockets on their original upstream until the Run or client
+closes the stream. New connections use the updated routing. For the first
+production rollout, verify the applied fingerprint and that each host retains
+its Caddy PID and systemd invocation. On a subsequent rollout, verify that an
+established Run WebSocket still exchanges frames after the new config applies.
 
 An official non-local Runner binds its listener and requests its own
 `https://<hostname>/runners/<runnerId>/control/health` before publishing the first
@@ -51,24 +62,23 @@ state reports false. Older or nonofficial heartbeats clear it to false, and
 freshness uses the existing heartbeat timestamp. Service activity does not prove
 public reachability, a working listener or support for direct dispatch.
 
-Deploy the additive schema/API heartbeat reader before Runner writers. This PR
-does not activate a direct sender or change current Claim/Ably/poll execution.
-Later PRs replace job acquisition with API-owned full direct delivery, failing
-the Run when no Runner is available. Service loss never revokes existing Run
-ownership or accepted-work cleanup.
-
 Runner control uses the existing official Runner service credential in
-`Authorization: Bearer <token>`, compared in constant time. Health and future
-Run dispatch share this service identity; there are no per-interface credentials
-or health-specific HMACs. API owns user permission checks and Run assignment;
-Runner owns local admission and execution deduplication. Browser/Guest sandbox
-access needs its own authorization design and never receives this service
-credential. The API's general signing/KMS keys remain API-owned.
+`Authorization: Bearer <token>`, compared in constant time. Health, dispatch and
+Run WebSocket ticket issuance share this service identity. The API checks the
+user's permission and uses the Run's recorded Runner UUID, generation and
+hostname to request a ticket. The Runner keeps only the ticket digest in memory.
 
-Only authenticated `GET /runners/<runnerId>/control/health` is implemented now.
-Reserved routes and WebSocket application operations remain rejected until
-their own handlers are implemented; native fixture backends establish proxy
-transport support only.
+Clients call `POST /api/runs/<runId>/wss/bootstrap` with user authentication. The
+API returns `wssUrl`, `ticket` and `expiresAt`. Connect to `wssUrl` and send
+`{"ticket":"<ticket>"}` as the first text message. The Runner ignores additional
+fields in that message. It consumes the 30-second, one-use ticket for the Run in
+the URL and replies `{"type":"auth.ok"}`.
+The admission deadline is five seconds. Established channels support WebSocket
+Ping/Pong and close when the local Run ends or is cancelled. Reconnecting
+requires a new bootstrap.
+Each Run supports up to eight authenticated connections. A Runner process
+allows up to 16 simultaneous handshakes. If a Run's connection quota is full,
+the server closes the upgraded connection before acknowledging authentication.
 
 `playbooks/provision-runner.yml` is the shared host-dependency entry point used
 by Runner build/release/preview provisioning. Its cache covers the complete

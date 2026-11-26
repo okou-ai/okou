@@ -237,17 +237,15 @@ final class WorkspaceLifecycle {
       didRefreshReadState: { notifications.requestNotificationStateRefresh() })
     store = workspaceStore
     onboarding = OnboardingStore(
-      client: data.client, webURL: configuration.webURL,
+      client: data.client, webURL: configuration.webURL, graph: workspaceStore.graph,
       didFail: { [weak workspaceStore] in workspaceStore?.reportWorkspaceFailure($0) },
       signOut: { try await authentication.signOut() },
-      didComplete: { [weak workspaceStore] prompt in
+      didComplete: { [weak workspaceStore] threadID in
         guard let workspaceStore, !workspaceStore.isClosed else { throw CancellationError() }
-        if let prompt {
-          await workspaceStore.prepareWorkspaceComposer()
-          try Task.checkCancellation()
-          workspaceStore.startNewChat()
-          workspaceStore.newChatDraft = prompt
-          NewChatRequests.shared.request()
+        if let threadID {
+          guard await workspaceStore.openChatLink(.thread(id: threadID, runID: nil)) else {
+            throw ChatError.composerUnavailable
+          }
         }
       })
   }

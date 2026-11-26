@@ -6,10 +6,18 @@ import SwiftUI
 /// the design system's `ChatFeedbackSurface`.
 struct ChatFeedbackBanner: View {
   let store: WorkspaceStore
+  /// The selected chat's owner, kept in the workspace session's Store.
+  @ResolvedValue private var selected: ConversationStore??
+
+  init(store: WorkspaceStore) {
+    self.store = store
+    _selected = ResolvedValue(store.selectedConversationValue, equals: { $0 === $1 })
+  }
 
   var body: some View {
     StoreProvider(store.list.stateStore) {
-      ChatFeedbackBannerContent(store: store)
+      // Passing the selected chat re-binds its sync status when the selection changes.
+      ChatFeedbackBannerContent(store: store, selected: selected ?? store.selectedConversation)
         .id(ObjectIdentifier(store))
     }
   }
@@ -17,19 +25,28 @@ struct ChatFeedbackBanner: View {
 
 private struct ChatFeedbackBannerContent: View {
   let store: WorkspaceStore
+  let selected: ConversationStore?
   @LoadableValue private var listRead: Loadable<Void>
+  /// The selected chat's synchronization, kept in the workspace session's Store.
+  @ResolvedValue private var selectedSync: ConversationPresentation.SyncStatus?
 
-  init(store: WorkspaceStore) {
+  init(store: WorkspaceStore, selected: ConversationStore?) {
     self.store = store
+    self.selected = selected
     _listRead = LoadableValue(task: store.list.listValue)
+    _selectedSync = ResolvedValue(selected?.syncStatus ?? ConversationPresentation.idleSync)
   }
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  private var workspaceSynchronization: ChatSynchronizationState? {
+    store.synchronizationState(selected: selected.map { selectedSync ?? $0.currentSyncStatus })
+  }
+
   private var synchronizationState: ChatSynchronizationState? {
     if listRead.state == .loading { return .updating }
     if listRead.error != nil { return .updateFailed }
-    return store.synchronizationState
+    return workspaceSynchronization
   }
 
   var body: some View {
@@ -43,7 +60,7 @@ private struct ChatFeedbackBannerContent: View {
         ChatSyncStatusView(
           state: synchronizationState
         ) {
-          if listRead.error != nil || store.synchronizationState?.isFailure == true {
+          if listRead.error != nil || workspaceSynchronization?.isFailure == true {
             await store.retrySynchronization()
           }
         }

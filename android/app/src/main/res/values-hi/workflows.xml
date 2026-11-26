@@ -10,13 +10,13 @@
     <string name="workflow_chat_finished">चैट रन पूरा हुआ</string>
     <string name="workflow_clear_search">खोज साफ़ करें</string>
     <string name="workflow_connect_provider">इस नियम को चालू करने के लिए %1$s कनेक्ट करें।</string>
-    <string name="workflow_connection_unavailable">कनेक्शन नहीं खोल सके।</string>
     <string name="workflow_create_uncertain">बनाने की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले संपादक बंद करके नियम देखें।</string>
     <string name="workflow_creation_prompt">एक निजी वर्कफ़्लो बनाने में मेरी मदद करें। workflow-setup स्किल का उपयोग करें। पूछें कि मैं कौन-सा काम दोहराना चाहता हूँ और सहेजने से पहले पुष्टि के लिए निर्देश दिखाएँ। मेरे कहने पर ही ऑटोमेशन बनाएँ।</string>
     <string name="workflow_daily">हर दिन</string>
     <string name="workflow_daily_schedule">हर दिन %1$s बजे</string>
     <string name="workflow_discard">छोड़ें</string>
     <string name="workflow_discard_title">बिना सहेजे बदलाव छोड़ दें?</string>
+    <string name="workflow_discard_detail">इस डिवाइस पर “%1$s” में किए गए बिना सहेजे बदलाव छोड़ दिए जाएँगे।</string>
     <string name="workflow_draft_unavailable">नया चैट ड्राफ़्ट नहीं खुल सका। आपका मौजूदा ड्राफ़्ट सुरक्षित है।</string>
     <string name="workflow_edit">संपादित करें</string>
     <string name="workflow_edit_automation">ऑटोमेशन संपादित करें</string>
@@ -44,6 +44,7 @@
     <string name="workflow_instructions_heading">वर्कफ़्लो के निर्देश</string>
     <string name="workflow_keep_editing">संपादन जारी रखें</string>
     <string name="workflow_load_failed">वर्कफ़्लो लोड नहीं हो सके</string>
+    <string name="workflow_rules_load_failed">ट्रिगर के नियम लोड नहीं हो सके।</string>
     <string name="workflow_mail_from_contains">भेजने वाले में %1$s है</string>
     <string name="workflow_mail_labeled">Gmail लेबल लगा</string>
     <string name="workflow_mail_received">Gmail संदेश मिला</string>
@@ -66,9 +67,6 @@
     <string name="workflow_notion_child">Notion उपपेज बना</string>
     <string name="workflow_notion_item">Notion डेटाबेस आइटम बना</string>
     <string name="workflow_notion_updated">Notion पेज अपडेट हुआ</string>
-    <string name="workflow_offline">वर्कफ़्लो लोड करने के लिए ऑनलाइन जाएँ</string>
-    <string name="workflow_offline_cache">ऑफ़लाइन · पिछला लोड किया गया डेटा</string>
-    <string name="workflow_offline_changes">सहेजने के लिए ऑनलाइन जाएँ। आपके बदलाव सुरक्षित हैं।</string>
     <string name="workflow_pause">रोकें</string>
     <string name="workflow_paused">ऑटोमेशन रुके हुए हैं</string>
     <string name="workflow_private">सिर्फ़ मैं</string>
@@ -90,7 +88,7 @@
     <string name="workflow_shared_usable">वर्कस्पेस में शेयर किया गया · इस्तेमाल की अनुमति</string>
     <string name="workflow_show_all">सभी दिखाएँ</string>
     <string name="workflow_status_connection">%1$s · कनेक्शन चाहिए</string>
-    <string name="workflow_time">समय (HH:mm)</string>
+    <string name="workflow_time">समय</string>
     <string name="workflow_timezone">समय क्षेत्र</string>
     <string name="workflow_transcript">Google Meet ट्रांसक्रिप्ट तैयार है</string>
     <string name="workflow_trigger">ट्रिगर</string>
@@ -106,8 +104,27 @@
         <item quantity="one">%d ऑटोमेशन चालू</item>
         <item quantity="other">%d ऑटोमेशन चालू</item>
     </plurals>
-    <string name="workflow_draft_network_failed">नया चैट ड्राफ़्ट नहीं खुल सका। आपका मौजूदा ड्राफ़्ट सुरक्षित है। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="workflow_rule_change_failed">यह नियम बदला नहीं जा सका।</string>
     <string name="workflow_rule_network_failed">यह नियम बदला नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="workflow_write_conflict">सहेजते समय यह वर्कफ़्लो बदल गया। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="workflow_history_earlier">पिछले रन दिखाएँ</string>
+    <string name="workflow_history_event">इवेंट</string>
+    <string name="workflow_history_failed">रन का इतिहास लोड नहीं हो सका</string>
+    <string name="workflow_history_loading">रन का इतिहास लोड हो रहा है…</string>
+    <string name="workflow_history_open_chat">संबंधित चैट खोलें</string>
+    <string name="workflow_history_unavailable">रन का इतिहास उपलब्ध नहीं है</string>
+    <string name="workflow_run_pending">लंबित</string>
+    <string name="workflow_run_running">चल रहा है</string>
+    <string name="workflow_run_timeout">समय सीमा समाप्त</string>
+    <string name="workflow_history_trigger_unavailable">ट्रिगर उपलब्ध नहीं है</string>
+    <string name="workflow_history_scheduled">शेड्यूल किया गया ट्रिगर</string>
+    <string name="workflow_history_manual">मैन्युअल रन</string>
+    <string name="workflow_catalog_refresh_failed">वर्कफ़्लो निर्देशिका रीफ़्रेश नहीं हो सकी। लोड किए गए वर्कफ़्लो दिख रहे हैं।</string>
+    <string name="workflow_history_earlier_failed">पिछले रन लोड नहीं हो सके।</string>
+    <string name="workflow_rule_checking">नतीजे की जाँच हो रही है…</string>
+    <string name="workflow_rule_unconfirmed">नतीजे की अभी पुष्टि नहीं हुई है।</string>
+    <string name="workflow_event">इवेंट</string>
+    <string name="workflow_event_source">इवेंट का स्रोत</string>
+    <string name="workflow_source_gmail">Gmail · ईमेल मिला</string>
+    <string name="workflow_source_calendar">Google Calendar · इवेंट बनाया गया</string>
 </resources>

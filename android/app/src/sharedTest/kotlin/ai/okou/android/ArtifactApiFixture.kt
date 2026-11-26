@@ -25,6 +25,8 @@ internal class ArtifactApiFixture(
     private val chinese: Boolean = false,
     private val summaryDownloadAllowed: Boolean = false,
     private val imageBody: ByteArray? = null,
+    includeVideo: Boolean = false,
+    private val imageDownloadAllowed: Boolean? = null,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -67,7 +69,15 @@ internal class ArtifactApiFixture(
             title("Launch avatar", "发布头像示例"),
             date(-5),
         )
-    val allItems = listOf(checklist, summary, site, slides, image)
+    val video =
+        Item(
+            "10000000-1000-4000-8000-000000000006",
+            "video",
+            title("Release walkthrough", "发布演示视频"),
+            date(-6),
+        )
+    val allItems =
+        listOfNotNull(checklist, summary, site, slides, image, video.takeIf { includeVideo })
     val checklistBody =
         title(
             "1. Check the release notes\n2. Approve the website copy\n3. Confirm the launch owner",
@@ -81,6 +91,10 @@ internal class ArtifactApiFixture(
     var beforeCatalog: (RecordedRequest) -> Unit = {}
     var beforeDownload: () -> Unit = {}
     @Volatile var beforeSitePreview: () -> Unit = {}
+    @Volatile
+    var imageResponse: () -> MockResponse = {
+        MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
+    }
     var pageSize = 40
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
@@ -100,7 +114,7 @@ internal class ArtifactApiFixture(
         api.events = { request ->
             if (request.requestUrl?.queryParameter("sinceSeqId") == null) {
                 jsonResponse(
-                    """{"events":[${chatEventWire(title = sourceTitle)}],"hasMore":false}"""
+                    """{"events":[${chatEventWire(title = sourceTitle)}],"hasMore":false}""",
                 )
             } else chatEvents(request)
         }
@@ -127,6 +141,10 @@ internal class ArtifactApiFixture(
                     assertNull(request.getHeader("Authorization"))
                     MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
                 }
+                "/artifact-bytes/image-preview" -> {
+                    assertNull(request.getHeader("Authorization"))
+                    imageResponse()
+                }
                 "/artifact-bytes/checklist",
                 "/artifact-bytes/summary" -> {
                     assertNull(request.getHeader("Authorization"))
@@ -143,16 +161,19 @@ internal class ArtifactApiFixture(
                             requestedReferences.add(path)
                             reference(summary, "summary", summaryDownloadAllowed)
                         }
+                        path == "/api/artifact-references/thumbnail1.png" &&
+                            imageDownloadAllowed != null ->
+                            reference(image, "image-preview", imageDownloadAllowed)
                         path == "/api/artifact-references/checklist1.md/download" -> {
                             requestedDownloads.add(path)
                             beforeDownload()
                             if (downloadGranted)
                                 jsonResponse(
-                                    """{"kind":"file","filename":"checklist.md","contentType":"text/markdown","url":"${api.server.url("/artifact-bytes/checklist")}"}"""
+                                    """{"kind":"file","filename":"checklist.md","contentType":"text/markdown","url":"${api.server.url("/artifact-bytes/checklist")}"}""",
                                 )
                             else
                                 jsonResponse(
-                                        """{"error":{"code":"PAYMENT_REQUIRED","message":"Unavailable"}}"""
+                                        """{"error":{"code":"PAYMENT_REQUIRED","message":"Unavailable"}}""",
                                     )
                                     .setResponseCode(402)
                         }
@@ -201,25 +222,24 @@ internal class ArtifactApiFixture(
         catalogScopes.add(threadId to url.queryParameter("cursor"))
         val offset = url.queryParameter("cursor")?.toInt() ?: 0
         catalogQueries.add(kind to keyword)
-        val items =
-            allItems.filter {
-                (threadId == null || threadId == CHAT_PERSONAL && it != image) &&
-                    (kind == null || it.kind == kind) &&
-                    (keyword == null || it.title.contains(keyword, ignoreCase = true))
-            }
+        val items = allItems.filter {
+            (threadId == null || threadId == CHAT_PERSONAL && it != image) &&
+                (kind == null || it.kind == kind) &&
+                (keyword == null || it.title.contains(keyword, ignoreCase = true))
+        }
         val selected = items.drop(offset).take(pageSize)
         return jsonResponse(
             buildJsonObject {
-                    put("artifacts", JsonArray(selected.map(::wire)))
-                    put(
-                        "nextCursor",
-                        (offset + selected.size)
-                            .takeIf { it < items.size }
-                            ?.toString()
-                            ?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull,
-                    )
-                }
-                .toString()
+                put("artifacts", JsonArray(selected.map(::wire)))
+                put(
+                    "nextCursor",
+                    (offset + selected.size)
+                        .takeIf { it < items.size }
+                        ?.toString()
+                        ?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull,
+                )
+            }
+                .toString(),
         )
     }
 
@@ -240,44 +260,60 @@ internal class ArtifactApiFixture(
     private fun detail(item: Item) =
         jsonResponse(
             buildJsonObject {
-                    wire(item).forEach { (name, value) -> put(name, value) }
-                    if (item == summary || item == site) put("sourceChatThreadId", CHAT_PERSONAL)
-                    when (item) {
-                        site,
-                        slides ->
-                            put(
-                                "site",
-                                Json.parseToJsonElement(
-                                    """{"id":"${item.id}","slug":"fixture","publicSlug":"fixture","url":"https://fixture.okou.app/","deploymentVersion":1,"entrypoint":"index.html","spaFallback":false}"""
-                                ),
-                            )
-                        else -> {
-                            val path =
-                                when (item) {
-                                    checklist -> "/artifacts/checklist1.md"
-                                    summary -> "/artifacts/artifacts2.md"
-                                    else -> api.server.url("/artifact-bytes/image").toString()
-                                }
-                            val filename = if (item == image) "avatar.png" else "launch.md"
-                            val type = if (item == image) "image/png" else "text/markdown"
-                            put(
-                                "file",
-                                Json.parseToJsonElement(
-                                    """{"id":"${item.id}","filename":"$filename","contentType":"$type","size":40,"url":"$path","previewImageUrl":null}"""
-                                ),
-                            )
-                            if (item == image) {
-                                put("model", kotlinx.serialization.json.JsonNull)
-                                put("provider", kotlinx.serialization.json.JsonNull)
+                wire(item).forEach { (name, value) -> put(name, value) }
+                if (item == summary || item == site) put("sourceChatThreadId", CHAT_PERSONAL)
+                when (item) {
+                    site,
+                    slides ->
+                        put(
+                            "site",
+                            Json.parseToJsonElement(
+                                """{"id":"${item.id}","slug":"fixture","publicSlug":"fixture","url":"https://fixture.okou.app/","deploymentVersion":1,"entrypoint":"index.html","spaFallback":false}""",
+                            ),
+                        )
+                    else -> {
+                        val path =
+                            when (item) {
+                                checklist -> "/artifacts/checklist1.md"
+                                summary -> "/artifacts/artifacts2.md"
+                                image ->
+                                    if (imageDownloadAllowed != null) "/artifacts/thumbnail1.png"
+                                    else api.server.url("/artifact-bytes/image").toString()
+                                video -> api.server.url("/artifact-bytes/video").toString()
+                                else -> api.server.url("/artifact-bytes/image").toString()
                             }
+                        val (filename, type) =
+                            when (item) {
+                                image -> "avatar.png" to "image/png"
+                                video -> "walkthrough.mp4" to "video/mp4"
+                                else -> "launch.md" to "text/markdown"
+                            }
+                        put(
+                            "file",
+                            Json.parseToJsonElement(
+                                """{"id":"${item.id}","filename":"$filename","contentType":"$type","size":40,"url":"$path","previewImageUrl":null}""",
+                            ),
+                        )
+                        if (item == image || item == video) {
+                            put("model", kotlinx.serialization.json.JsonNull)
+                        }
+                        if (item == image) {
+                            put("provider", kotlinx.serialization.json.JsonNull)
+                        }
+                        if (item == video) {
+                            put("durationSeconds", 1)
                         }
                     }
                 }
-                .toString()
+            }
+                .toString(),
         )
 
-    private fun reference(item: Item, path: String, downloadAllowed: Boolean) =
-        jsonResponse(
-            """{"url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$path.md","contentType":"text/markdown","target":{"kind":"file","id":"${item.id}"}}"""
+    private fun reference(item: Item, path: String, downloadAllowed: Boolean): MockResponse {
+        val filename = if (item == image) "avatar.png" else "$path.md"
+        val type = if (item == image) "image/png" else "text/markdown"
+        return jsonResponse(
+            """{"url":"${api.server.url("/artifact-bytes/$path")}","expiresAt":"${date(1)}","downloadUrl":"${api.server.url("/artifact-bytes/$path")}","downloadAllowed":$downloadAllowed,"filename":"$filename","contentType":"$type","target":{"kind":"file","id":"${item.id}"}}""",
         )
+    }
 }

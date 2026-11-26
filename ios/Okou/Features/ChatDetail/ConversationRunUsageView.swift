@@ -1,3 +1,4 @@
+import CCState
 import CCStateSwiftUI
 import ChatData
 import SwiftUI
@@ -23,17 +24,37 @@ struct ConversationRunUsageView: View {
   let showDetails: () -> Void
 
   var body: some View {
-    StoreProvider(usage.stateStore) {
-      if let resource = usage.resources[runID] {
-        RunUsageValue(resource: resource) { state in
-          ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
+    StoreProvider(usage.store) {
+      RunUsageResource(runID: runID, usage: usage) { resource in
+        if let resource {
+          RunUsageValue(resource: resource) { state in
+            ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
+          }
+          .id(ObjectIdentifier(resource))
+        } else {
+          ConversationRunUsageLabel(runID: runID, state: .loading, showDetails: showDetails)
         }
-        .id(ObjectIdentifier(resource))
-      } else {
-        ConversationRunUsageLabel(runID: runID, state: .loading, showDetails: showDetails)
       }
     }
   }
+}
+
+/// Finds a Run's usage read in the conversation's table, which lives in the session graph.
+private struct RunUsageResource<Content: View>: View {
+  let runID: String
+  @LoadableValue private var resources: Loadable<[String: ConversationRunUsageResource]>
+  let content: (ConversationRunUsageResource?) -> Content
+
+  init(
+    runID: String, usage: ConversationRunUsageStore,
+    @ViewBuilder content: @escaping (ConversationRunUsageResource?) -> Content
+  ) {
+    self.runID = runID
+    _resources = LoadableValue(usage.resources)
+    self.content = content
+  }
+
+  var body: some View { content(resources.data?[runID]) }
 }
 
 private struct RunUsageValue<Content: View>: View {
@@ -59,11 +80,12 @@ private struct ConversationRunUsageLabel: View {
   var body: some View {
     Group {
       if case .loading = state {
-        Color.clear.frame(height: 44).accessibilityHidden(true)
+        Color.clear.frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .accessibilityHidden(true)
       } else {
         Button(action: showDetails) {
-          HStack(spacing: 5) {
-            OkouIcon("layout-grid", size: OkouIconSize.inline).accessibilityHidden(true)
+          HStack(spacing: OkouSpace.xs) {
+            OkouIcon("coins", size: OkouIconSize.inline)
             if case .available(let usage) = state {
               Text(CreditUsageDisplay.credits(usage.totalCredits)).monospacedDigit()
             } else {
@@ -71,8 +93,11 @@ private struct ConversationRunUsageLabel: View {
             }
           }
           .font(.okou(.caption))
-          .foregroundStyle(OkouColor.mutedForeground)
-          .frame(minWidth: 44, minHeight: OkouControl.minimumTarget, alignment: .leading)
+          .foregroundStyle(OkouColor.mutedForeground.opacity(0.7))
+          .frame(
+            minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget,
+            alignment: .leading
+          )
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -92,12 +117,23 @@ private struct ConversationRunUsageLabel: View {
 struct ConversationRunUsageDetails: View {
   let usage: ConversationRunUsageStore
   let runID: String
-  let catalog: ModelCatalog?
+  /// The workspace's shared model catalog read, or nil without model metadata.
+  let catalog: Computed<Task<ModelCatalog, Error>>?
   let retry: () -> Void
 
   var body: some View {
-    StoreProvider(usage.stateStore) {
-      if let resource = usage.resources[runID] {
+    StoreProvider(usage.store) {
+      if let catalog {
+        RunUsageCatalog(catalog: catalog, content: details)
+      } else {
+        details(nil)
+      }
+    }
+  }
+
+  private func details(_ catalog: ModelCatalog?) -> some View {
+    RunUsageResource(runID: runID, usage: usage) { resource in
+      if let resource {
         RunUsageValue(resource: resource) { state in
           ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
         }
@@ -107,6 +143,22 @@ struct ConversationRunUsageDetails: View {
       }
     }
   }
+}
+
+/// Model names come from the shared catalog read; usage stays readable while it loads or fails.
+private struct RunUsageCatalog<Content: View>: View {
+  @ResolvedValue private var catalog: ModelCatalog?
+  let content: (ModelCatalog?) -> Content
+
+  init(
+    catalog: Computed<Task<ModelCatalog, Error>>,
+    @ViewBuilder content: @escaping (ModelCatalog?) -> Content
+  ) {
+    _catalog = ResolvedValue(task: catalog, keepLast: true)
+    self.content = content
+  }
+
+  var body: some View { content(catalog) }
 }
 
 private struct ConversationRunUsageDetailsContent: View {

@@ -5,7 +5,7 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { command } from "ccstate";
 import { isNull, sql } from "drizzle-orm";
-import { int, object, string, uuid } from "zod";
+import { boolean, object, string, uuid } from "zod";
 
 import { parseRawRows, pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -19,7 +19,7 @@ const initializedMemorySchema = object({
   versionId: string(),
   s3Key: string(),
   archiveSize: pgInt8ToSafeIntegerSchema,
-  fileCount: int(),
+  isEmpty: boolean(),
 });
 
 /** Establish the member's Memory and empty revision in one statement. */
@@ -59,7 +59,11 @@ export const initializeMemberMemory$ = command(
         },
         setWhere: isNull(memberMemories.headVersionId),
       })
-      .returning()
+      .returning({
+        id: memberMemories.id,
+        headVersionId: memberMemories.headVersionId,
+        objectPrefix: memberMemories.objectPrefix,
+      })
       .getSQL();
     const statement = sql`WITH initialized AS (${initialized})
       INSERT INTO ${memoryVersions}
@@ -71,7 +75,7 @@ export const initializeMemberMemory$ = command(
       ON CONFLICT (id) DO UPDATE SET id=excluded.id
       RETURNING memory_id AS "storageId", id AS "versionId",
         object_prefix AS "s3Key", archive_size AS "archiveSize",
-        file_count AS "fileCount"`;
+        (file_count = 0) AS "isEmpty"`;
     signal.throwIfAborted();
     const [head] = parseRawRows(
       initializedMemorySchema,

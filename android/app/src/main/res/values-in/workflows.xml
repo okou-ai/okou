@@ -10,13 +10,13 @@
     <string name="workflow_chat_finished">Eksekusi chat selesai</string>
     <string name="workflow_clear_search">Hapus pencarian</string>
     <string name="workflow_connect_provider">Hubungkan %1$s untuk mengaktifkan aturan ini.</string>
-    <string name="workflow_connection_unavailable">Koneksi tidak dapat dibuka.</string>
     <string name="workflow_create_uncertain">Pembuatan tidak dapat dikonfirmasi. Tutup editor dan periksa aturan sebelum mencoba lagi.</string>
     <string name="workflow_creation_prompt">Bantu saya membuat alur kerja privat. Gunakan keterampilan workflow-setup. Tanyakan tugas apa yang ingin saya ulangi dan tunjukkan petunjuknya untuk dikonfirmasi sebelum menyimpan. Buat otomatisasi hanya jika saya memintanya.</string>
     <string name="workflow_daily">Setiap hari</string>
     <string name="workflow_daily_schedule">Setiap hari pukul %1$s</string>
     <string name="workflow_discard">Buang</string>
     <string name="workflow_discard_title">Buang perubahan yang belum disimpan?</string>
+    <string name="workflow_discard_detail">Perubahan pada “%1$s” yang belum disimpan di perangkat ini akan dibuang.</string>
     <string name="workflow_draft_unavailable">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan.</string>
     <string name="workflow_edit">Edit</string>
     <string name="workflow_edit_automation">Edit otomatisasi</string>
@@ -44,6 +44,7 @@
     <string name="workflow_instructions_heading">Petunjuk alur kerja</string>
     <string name="workflow_keep_editing">Lanjutkan pengeditan</string>
     <string name="workflow_load_failed">Alur kerja tidak dapat dimuat</string>
+    <string name="workflow_rules_load_failed">Aturan pemicu tidak dapat dimuat.</string>
     <string name="workflow_mail_from_contains">Pengirim berisi %1$s</string>
     <string name="workflow_mail_labeled">Label Gmail diterapkan</string>
     <string name="workflow_mail_received">Pesan Gmail diterima</string>
@@ -66,9 +67,6 @@
     <string name="workflow_notion_child">Subhalaman Notion dibuat</string>
     <string name="workflow_notion_item">Item basis data Notion dibuat</string>
     <string name="workflow_notion_updated">Halaman Notion diperbarui</string>
-    <string name="workflow_offline">Hubungkan ke internet untuk memuat alur kerja</string>
-    <string name="workflow_offline_cache">Offline · Menampilkan data terakhir</string>
-    <string name="workflow_offline_changes">Hubungkan ke internet untuk menyimpan. Perubahan Anda tetap ada.</string>
     <string name="workflow_pause">Jeda</string>
     <string name="workflow_paused">Otomatisasi dijeda</string>
     <string name="workflow_private">Hanya saya</string>
@@ -90,7 +88,7 @@
     <string name="workflow_shared_usable">Dibagikan di ruang kerja · Dapat digunakan</string>
     <string name="workflow_show_all">Tampilkan semua</string>
     <string name="workflow_status_connection">%1$s · Perlu koneksi</string>
-    <string name="workflow_time">Waktu (HH:mm)</string>
+    <string name="workflow_time">Waktu</string>
     <string name="workflow_timezone">Zona waktu</string>
     <string name="workflow_transcript">Transkrip Google Meet siap</string>
     <string name="workflow_trigger">Pemicu</string>
@@ -105,8 +103,27 @@
     <plurals name="workflow_enabled_count">
         <item quantity="other">%d otomatisasi aktif</item>
     </plurals>
-    <string name="workflow_draft_network_failed">Draf chat baru tidak dapat dibuka. Draf Anda yang sudah ada tetap tersimpan. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_rule_change_failed">Aturan ini tidak dapat diubah.</string>
     <string name="workflow_rule_network_failed">Aturan ini tidak dapat diubah. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_write_conflict">Alur kerja ini berubah saat disimpan. Perubahan Anda tetap ada.</string>
+    <string name="workflow_history_earlier">Tampilkan eksekusi sebelumnya</string>
+    <string name="workflow_history_event">Peristiwa</string>
+    <string name="workflow_history_failed">Riwayat eksekusi tidak dapat dimuat</string>
+    <string name="workflow_history_loading">Memuat riwayat eksekusi…</string>
+    <string name="workflow_history_open_chat">Buka chat terkait</string>
+    <string name="workflow_history_unavailable">Riwayat eksekusi tidak tersedia</string>
+    <string name="workflow_run_pending">Tertunda</string>
+    <string name="workflow_run_running">Sedang berjalan</string>
+    <string name="workflow_run_timeout">Waktu habis</string>
+    <string name="workflow_history_trigger_unavailable">Pemicu tidak tersedia</string>
+    <string name="workflow_history_scheduled">Pemicu terjadwal</string>
+    <string name="workflow_history_manual">Eksekusi manual</string>
+    <string name="workflow_catalog_refresh_failed">Direktori alur kerja tidak dapat diperbarui. Menampilkan alur kerja yang sudah dimuat.</string>
+    <string name="workflow_history_earlier_failed">Eksekusi sebelumnya tidak dapat dimuat.</string>
+    <string name="workflow_rule_checking">Memeriksa hasil…</string>
+    <string name="workflow_rule_unconfirmed">Hasilnya belum dikonfirmasi.</string>
+    <string name="workflow_event">Peristiwa</string>
+    <string name="workflow_event_source">Sumber peristiwa</string>
+    <string name="workflow_source_gmail">Gmail · Email diterima</string>
+    <string name="workflow_source_calendar">Google Calendar · Acara dibuat</string>
 </resources>

@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { channel } from "node:diagnostics_channel";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import { runnerDispatchResponseSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
@@ -17,8 +19,11 @@ import type { DirectRunTarget } from "../services/direct-run-ownership.service";
 import { recordSandboxOperation } from "./sandbox-op-log";
 import {
   currentRunnerDispatchTransport,
+  runnerDispatchHeaderTimings,
   runnerDispatchPath,
+  type RunnerDispatchEncoding,
   type RunnerDispatchTiming,
+  type RunnerDispatchTransport,
   type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
 
@@ -26,10 +31,35 @@ type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
 
 const dispatchTimingHeader = "x-okou-runner-dispatch-timing";
+const gzipMinBodyBytes = 160 * 1024;
+const gzipAsync = promisify(gzip);
+
+export function runnerDispatchEncoding(
+  bodyBytes: number,
+): RunnerDispatchEncoding {
+  return bodyBytes >= gzipMinBodyBytes ? "gzip" : "identity";
+}
+
+export async function gzipRunnerDispatchBody(body: string, bodyBytes: number) {
+  const startedAt = monotonicNow();
+  const compressed = await settleIncludingAbort(() => {
+    return gzipAsync(body, { level: 1 });
+  });
+  return {
+    bytes:
+      compressed.ok && compressed.value.byteLength < bodyBytes
+        ? Uint8Array.from(compressed.value)
+        : undefined,
+    elapsedMs: monotonicNow() - startedAt,
+  };
+}
 const runnerElapsedMs = number().nonnegative().optional();
 const runnerDispatchTimingSchema = object({
   runnerVersion: runnerVersionSchema,
   bodyReadMs: runnerElapsedMs,
+  bodyFirstFrameMs: runnerElapsedMs,
+  bodyFirstToLastFrameMs: runnerElapsedMs,
+  bodyGzipDecodeMs: runnerElapsedMs,
   envelopeParseMs: runnerElapsedMs,
   contextDecodeMs: runnerElapsedMs,
   acceptanceMs: runnerElapsedMs,
@@ -82,7 +112,7 @@ const dispatchTransport = singleton(() => {
       : undefined;
     if (active && ++active.sendCount === 1) {
       active.connection = connection;
-      active.sendHeadersMs = monotonicNow() - active.startedAt;
+      active.sentHeadersAt = monotonicNow();
     }
   });
 
@@ -117,7 +147,10 @@ function definitelyNotConnected(error: unknown): boolean {
   return error.cause instanceof Error && definitelyNotConnected(error.cause);
 }
 
-function dispatchRequestOptions(serviceToken: string) {
+function dispatchRequestOptions(
+  serviceToken: string,
+  encoding: RunnerDispatchEncoding,
+) {
   return {
     method: "POST",
     redirect: "error" as const,
@@ -125,6 +158,7 @@ function dispatchRequestOptions(serviceToken: string) {
     headers: {
       authorization: `Bearer ${serviceToken}`,
       "content-type": "application/json",
+      ...(encoding === "gzip" ? { "content-encoding": "gzip" } : {}),
     },
   };
 }
@@ -133,6 +167,7 @@ export function reserveRunnerDispatch(
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,
+  encoding: RunnerDispatchEncoding = "identity",
 ): void {
   const transport = currentRunnerDispatchTransport();
   if (!transport) {
@@ -145,40 +180,94 @@ export function reserveRunnerDispatch(
     runId,
     origin + path,
     (body, connectionSignal) => {
-      const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
+      const timing = {
+        origin,
+        path,
+        sendCount: 0,
+        preconnectStartedAt: monotonicNow(),
+      };
       const options: RequestInit = {
-        ...dispatchRequestOptions(serviceToken),
+        ...dispatchRequestOptions(serviceToken, encoding),
         body,
         duplex: "half",
         signal: connectionSignal,
       };
       return {
         response: dispatchTransport().run(timing, () => {
-          return fetch(origin + path, options);
+          return transport.request(origin + path, options);
         }),
         timing,
       };
     },
     signal,
+    encoding,
+  );
+}
+
+export interface RunnerDispatchPreparationTiming {
+  readonly candidateStartedAt: number;
+  readonly candidateReadyAt: number;
+  readonly contextStartedAt: number;
+  readonly contextReadyAt: number;
+  readonly ownerWriteMs: number;
+  readonly early: boolean;
+  readonly candidateRefreshed: boolean;
+}
+
+function dispatchPreparationDimensions(
+  timing: RunnerDispatchPreparationTiming | undefined,
+  startedAt: number,
+) {
+  if (!timing) {
+    return {};
+  }
+  return {
+    first_candidate_lead_ms: startedAt - timing.candidateReadyAt,
+    first_candidate_read_ms:
+      timing.candidateReadyAt - timing.candidateStartedAt,
+    execution_context_lead_ms: startedAt - timing.contextReadyAt,
+    execution_context_prepare_ms:
+      timing.contextReadyAt - timing.contextStartedAt,
+    first_owner_write_ms: timing.ownerWriteMs,
+    early_runner_preparation: timing.early,
+    early_runner_candidate_refreshed: timing.candidateRefreshed,
+  };
+}
+
+interface RunnerDispatchPost {
+  readonly target: DirectRunTarget;
+  readonly runId: string;
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  readonly bodyBytes: number;
+  readonly gzipEncodeMs: number | undefined;
+  readonly serviceToken: string;
+  readonly timeoutMs: number;
+  readonly firstRankedTarget: boolean;
+  readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
+}
+
+function dispatchPoolDimensions(
+  transport: RunnerDispatchTransport | undefined,
+  origin: string,
+) {
+  const stats = transport?.poolStats?.(origin);
+  return (
+    stats && {
+      api_dispatch_pool: "retained_http1",
+      api_dispatch_pool_connected: stats.connected,
+      api_dispatch_pool_pending: stats.pending,
+    }
   );
 }
 
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
-  args: {
-    readonly target: DirectRunTarget;
-    readonly runId: string;
-    readonly body: string;
-    readonly bodyBytes: number;
-    readonly serviceToken: string;
-    readonly timeoutMs: number;
-    readonly firstRankedTarget: boolean;
-    readonly firstCandidateReadyAt: number | undefined;
-  },
+  args: RunnerDispatchPost,
   signal: AbortSignal,
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
+  const encoding = typeof body === "string" ? "identity" : "gzip";
   let response: Response | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
@@ -189,24 +278,20 @@ export async function postRunnerDispatch(
   const transport: DispatchTransportObservation = {
     origin,
     path,
-    startedAt,
     sendCount: 0,
   };
+  const requestTransport = currentRunnerDispatchTransport();
   return await (async () => {
     const deadline = AbortSignal.any([
       signal,
       AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
     ]);
     const url = origin + path;
-    reserved = currentRunnerDispatchTransport()?.take(
-      url,
-      body,
-      startedAt,
-      deadline,
-    );
+    reserved = requestTransport?.take(url, body, deadline, encoding);
     const dispatch = () => {
-      return fetch(url, {
-        ...dispatchRequestOptions(serviceToken),
+      const request = requestTransport?.request ?? fetch;
+      return request(url, {
+        ...dispatchRequestOptions(serviceToken, encoding),
         body,
         signal: deadline,
       });
@@ -258,25 +343,29 @@ export async function postRunnerDispatch(
           api_commit_sha:
             normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
           body_bytes: bodyBytes,
+          body_wire_bytes:
+            typeof body === "string" ? bodyBytes : body.byteLength,
+          body_encoding: encoding,
+          api_body_gzip_encode_ms: args.gzipEncodeMs,
           first_ranked_target: args.firstRankedTarget,
-          first_candidate_lead_ms:
-            args.firstCandidateReadyAt === undefined
-              ? undefined
-              : startedAt - args.firstCandidateReadyAt,
+          ...dispatchPreparationDimensions(args.preparationTiming, startedAt),
           api_socket_use:
             timing.sendCount === 1
               ? (timing.connection ?? "unknown")
               : "unknown",
-          api_send_headers_ms:
-            timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
+          ...runnerDispatchHeaderTimings(timing, startedAt),
           api_preconnect_used:
             reserved === undefined ? undefined : timing.sendCount === 1,
+          ...dispatchPoolDimensions(requestTransport, origin),
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
             observation ?? (signal.aborted ? "aborted" : "error"),
           runner_version: timings?.runnerVersion,
           runner_body_read_ms: timings?.bodyReadMs,
+          runner_body_first_frame_ms: timings?.bodyFirstFrameMs,
+          runner_body_first_to_last_frame_ms: timings?.bodyFirstToLastFrameMs,
+          runner_body_gzip_decode_ms: timings?.bodyGzipDecodeMs,
           runner_envelope_parse_ms: timings?.envelopeParseMs,
           runner_context_decode_ms: timings?.contextDecodeMs,
           runner_acceptance_ms:

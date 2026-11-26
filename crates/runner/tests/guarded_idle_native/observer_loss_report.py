@@ -19,10 +19,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_observer_loss_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid observer-loss witness",
     )
     runners = set()
@@ -31,7 +29,7 @@ def validate(directory):
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or unordered observer-loss phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         clocks = [terminal[3]["monotonic_ns"], *(e["monotonic_ns"] for e in events), terminal[-1]["monotonic_ns"]]
         if (any(a >= b for a, b in zip(clocks, clocks[1:]))
                 or report.witness_identity_changed(events, identity)):
@@ -51,12 +49,10 @@ def validate(directory):
                      "observer_joined_ns": observed, "tracker_shutdown_pending": True,
                      "accounting_shutdown_pending": True, "coverage": lost["coverage"]},
               "observer outcome or shutdown custody is incomplete")
-        held, status_held, heartbeat_pending = [pool.get(k) for k in (
-            "pool_held_ns", "status_held_ns", "heartbeat_pending_ns")]
-        if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
-                or not events[1]["monotonic_ns"] < held <= status_held < heartbeat_pending < events[2]["monotonic_ns"]):
-            raise ValueError("observer-loss pool/status contention is absent")
-        foreground.observer(pool.get("observer"), heartbeat_pending, events[2]["monotonic_ns"])
+        held, status_held, heartbeat_pending = foreground.held_pool_observer(
+            pool, events[1]["monotonic_ns"], events[2]["monotonic_ns"],
+            "observer-loss pool/status contention is absent",
+        )
         coverage(pool.get("coverage"), policy, True)
         exact(pool, {"pool_held_ns": held, "status_held_ns": status_held,
                      "heartbeat_pending_ns": heartbeat_pending, "heartbeat_polled_pending": True,
@@ -80,9 +76,10 @@ def validate(directory):
                 or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("final status was not Pending after complete required IO")
         second = foreground.heartbeat(status.get("heartbeat"), 2, status_polled, events[4]["monotonic_ns"], (0, 0))
-        if first != second or first in runners:
-            raise ValueError("observer-loss heartbeat changed or replayed its runner generation")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "observer-loss heartbeat changed or replayed its runner generation",
+        )
         accounting(status.get("accounting"), True)
         exact(status, {"io_released_ns": io_released, "status_held_ns": status_held,
                        "status_wait_polled_ns": status_polled, "status_waits_before": before,

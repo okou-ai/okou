@@ -7,7 +7,7 @@ enum class InstructionsPhase {
     Loading,
     Ready,
     Saving,
-    Conflict,
+    Checking,
     Uncertain,
     Failed,
     Unavailable,
@@ -16,13 +16,16 @@ enum class InstructionsPhase {
 enum class InstructionsRequest {
     None,
     Reading,
+    Refreshing,
     Preparing,
     Sending,
+    CheckingSave,
 }
 
 enum class InstructionsRead {
     Idle,
     Ready,
+    RefreshFailed,
     Failed,
     Unavailable,
 }
@@ -33,12 +36,6 @@ enum class InstructionsPersistence {
     Failed,
 }
 
-enum class InstructionsRejection {
-    None,
-    Invalid,
-    Conflict,
-}
-
 /** Request progress is independent of durable intent and knowledge of a remote write. */
 data class PersonalInstructionsState(
     val request: InstructionsRequest = InstructionsRequest.None,
@@ -46,8 +43,8 @@ data class PersonalInstructionsState(
     val saved: PersonalInstructions? = null,
     val draft: InstructionsDraft? = null,
     val persistence: InstructionsPersistence = InstructionsPersistence.Durable,
-    val rejection: InstructionsRejection = InstructionsRejection.None,
-    val recoveryVersion: String? = null,
+    val saveRejected: Boolean = false,
+    val saveConfirmed: Boolean = false,
 ) {
     val content: String
         get() = draft?.content ?: saved?.content.orEmpty()
@@ -61,47 +58,36 @@ data class PersonalInstructionsState(
     val localFailure: Boolean
         get() = persistence == InstructionsPersistence.Failed
 
-    val saveRejected: Boolean
-        get() = rejection == InstructionsRejection.Invalid
-
-    val conflicting: Boolean
-        get() =
-            rejection == InstructionsRejection.Conflict ||
-                draft != null && saved != null && draft.base.version != saved.version
-
     val phase: InstructionsPhase
         get() =
             when {
                 request == InstructionsRequest.Reading -> InstructionsPhase.Loading
-                busy -> InstructionsPhase.Saving
+                request == InstructionsRequest.Preparing ||
+                    request == InstructionsRequest.Sending -> InstructionsPhase.Saving
+                request == InstructionsRequest.CheckingSave -> InstructionsPhase.Checking
                 read == InstructionsRead.Unavailable -> InstructionsPhase.Unavailable
                 draft?.attempted == true -> InstructionsPhase.Uncertain
                 read == InstructionsRead.Failed -> InstructionsPhase.Failed
                 read == InstructionsRead.Idle -> InstructionsPhase.Idle
-                conflicting -> InstructionsPhase.Conflict
                 else -> InstructionsPhase.Ready
             }
 
     val canEdit: Boolean
         get() =
-            !busy &&
-                read !in setOf(InstructionsRead.Idle, InstructionsRead.Unavailable) &&
+            (request == InstructionsRequest.None || request == InstructionsRequest.Refreshing) &&
+                read != InstructionsRead.Unavailable &&
                 (saved != null || draft != null) &&
                 draft?.attempted != true
 
     val canSave: Boolean
         get() =
-            !busy &&
-                read == InstructionsRead.Ready &&
-                !conflicting &&
+            canEdit &&
+                (read == InstructionsRead.Ready || read == InstructionsRead.RefreshFailed) &&
                 draft != null &&
-                !draft.attempted &&
-                !content.contains('\u0000')
+                saved != null &&
+                draft.content != saved.content &&
+                !draft.content.contains('\u0000')
 
-    val canRetrySave: Boolean
-        get() =
-            !busy &&
-                read != InstructionsRead.Unavailable &&
-                draft?.attempted == true &&
-                recoveryVersion == draft.base.version
+    val saveInProgress: Boolean
+        get() = phase == InstructionsPhase.Saving || phase == InstructionsPhase.Checking
 }

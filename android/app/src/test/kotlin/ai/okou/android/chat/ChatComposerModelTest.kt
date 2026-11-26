@@ -8,16 +8,28 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.CreateThreadRequestReasoningEffort
 import ai.okou.android.api.generated.CreatedThread
 import ai.okou.android.api.generated.CreatedThreadServiceTier
+import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValue
+import ai.okou.android.api.generated.DefaultModelPreferenceModelSettingsValueEffort
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.settings.DefaultModelChoice
+import ai.okou.android.settings.DefaultModelOptions
+import ai.okou.android.settings.DefaultModelRecord
+import ai.okou.android.settings.DefaultModelState
+import ai.okou.android.settings.ModelEffort
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
+import java.net.ConnectException
+import kotlin.time.Duration.Companion.days
+import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -40,14 +52,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = TestOkouApplication::class)
-class ChatComposerModelTest {
+internal abstract class ChatComposerModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
-    private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
-    private val existing = ComposerTarget(threadId = CHAT_PERSONAL)
+    protected val identity =
+        WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
+    protected val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
-    private class Service : ChatComposerService {
+    protected class Service : ChatComposerService {
         val requests = mutableListOf<SendRequestVariant1>()
         val creates = mutableListOf<CreateThreadRequest>()
         val accepted = mutableMapOf<String, SendRequestVariant1>()
@@ -108,11 +119,14 @@ class ChatComposerModelTest {
         fun gate() = CompletableDeferred<Unit>().also { gates += it }
     }
 
-    private fun check(
+    protected fun check(
         blockedDisk: Boolean = false,
+        sendClock: TestTimeSource = TestTimeSource(),
         action:
             suspend TestScope.(
-                Service, ComposerJournalStore, (Boolean, WorkspaceIdentity) -> ChatComposerModel,
+                Service,
+                ComposerJournalStore,
+                (Boolean, WorkspaceIdentity) -> ChatComposerModel,
             ) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -123,6 +137,7 @@ class ChatComposerModelTest {
                 ApplicationProvider.getApplicationContext(),
                 if (blockedDisk) temporary.newFile() else temporary.newFolder(),
                 dispatcher,
+                sendClock,
             )
         val owners = mutableListOf<ViewModelStore>()
         fun model(replace: Boolean, scope: WorkspaceIdentity): ChatComposerModel {
@@ -145,7 +160,12 @@ class ChatComposerModelTest {
             Dispatchers.resetMain()
         }
     }
+}
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
     @Test
     fun heldHydrationKeepsEditsAndDebouncesTheCanonicalFullValue() =
         check { service, store, create ->
@@ -178,21 +198,6 @@ class ChatComposerModelTest {
             assertEquals("Latest input restarts the debounce", service.drafts[remote]!!.plainText())
             assertFalse(store.load(identity).journal.drafts[remote.key]!!.dirty)
         }
-
-    @Test
-    fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
-        val model = create(false, identity)
-        model.open(existing)
-        runCurrent()
-        val whitespace = " \t\n\u00a0\ufeff"
-        model.edit(existing, whitespace)
-        assertFalse(model.uiState.value.canSend(existing))
-        model.send(existing)
-        advanceUntilIdle()
-        assertTrue(service.requests.isEmpty())
-        assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
-        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText())
-    }
 
     @Test
     fun newerEditsAndClearWaitForOlderPatchWithoutLosingTheirIntent() =
@@ -274,21 +279,60 @@ class ChatComposerModelTest {
         assertTrue(store.load(identity).journal.drafts[existing.key]!!.dirty)
         service.draftRead = {
             kotlinx.serialization.json.Json.parseToJsonElement(
-                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}"""
+                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}""",
                 )
                 .let { it as kotlinx.serialization.json.JsonObject }
         }
-        model.retrySync(existing)
+        model.open(existing)
         runCurrent()
         assertEquals(ComposerSync.Unsupported, model.uiState.value.sync(existing))
         assertTrue(service.saves.isEmpty())
         assertEquals("Durable local candidate", model.uiState.value.entry(existing).text)
         service.draftRead = { plainDraftDocument("") }
-        model.retrySync(existing)
+        model.open(existing)
         advanceUntilIdle()
         assertEquals(ComposerSync.Saved, model.uiState.value.sync(existing))
         assertEquals("Durable local candidate", service.saves.single().second)
     }
+
+    @Test
+    fun draftReadRetriesInPlaceAndANewerEditSupersedesTheFailedWrite() =
+        check { service, _, create ->
+            val model = create(false, identity)
+            var reads = 0
+            service.draftRead = {
+                reads++
+                if (reads < 3) throw ApiFailure.Http(503, null, null, null)
+                plainDraftDocument("Saved draft")
+            }
+            model.open(existing)
+            runCurrent()
+            assertEquals(1, reads)
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(1, reads)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, reads)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(3, reads)
+            assertEquals("Saved draft", model.uiState.value.entry(existing).text)
+
+            service.draftWrite = { target, text ->
+                if (text == "First edit") throw ApiFailure.Network(ConnectException())
+                service.drafts[target] = plainDraftDocument(text)
+            }
+            model.edit(existing, "First edit")
+            runCurrent()
+            advanceTimeBy(500)
+            runCurrent()
+            assertEquals(listOf("First edit"), service.saves.map { it.second })
+            model.edit(existing, "Newer edit")
+            advanceUntilIdle()
+            assertEquals(listOf("First edit", "Newer edit"), service.saves.map { it.second })
+            assertEquals(ComposerSync.Saved, model.uiState.value.sync(existing))
+        }
 
     @Test
     fun myOkouAndProjectsShareOneWorkspaceDraftButKeepCreateContext() =
@@ -321,7 +365,7 @@ class ChatComposerModelTest {
                         mapOf(
                             a.key to ComposerEntry(text = "A"),
                             b.key to ComposerEntry(text = "B"),
-                        )
+                        ),
                 ),
             )
             .await()
@@ -372,7 +416,7 @@ class ChatComposerModelTest {
         }
 
     @Test
-    fun failedPatchRetainsDirtyIntentAndExplicitRetrySavesLatestText() =
+    fun failedPatchRetainsDirtyIntentAndReopeningSavesLatestText() =
         check { service, store, create ->
             val model = create(false, identity)
             model.open(existing)
@@ -385,7 +429,7 @@ class ChatComposerModelTest {
             service.draftWrite = { target, text ->
                 service.drafts[target] = plainDraftDocument(text)
             }
-            model.retrySync(existing)
+            model.open(existing)
             advanceUntilIdle()
             assertEquals(
                 "Retry this exact editable input",
@@ -419,6 +463,170 @@ class ChatComposerModelTest {
         }
 
     @Test
+    fun realDiskReopenKeepsTargetsAndAccountsSeparateAndCorruptionDoesNotResetInput() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val root = temporary.newFolder()
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        var store = ComposerJournalStore(context, root, dispatcher)
+        val journal =
+            ComposerJournal(
+                entries =
+                    mapOf(
+                        existing.key to ComposerEntry("saved existing"),
+                        "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
+                    ),
+            )
+        store.persist(identity, journal)
+        runCurrent()
+        store.close()
+        store = ComposerJournalStore(context, root, dispatcher)
+        assertEquals(journal, store.load(identity.copy(sessionId = "another")).journal)
+        for (other in
+            listOf(
+                identity.copy(userId = "user-b"),
+                identity.copy(workspaceId = "org-b"),
+                identity.copy(apiOrigin = "https://other.example/"),
+            )) assertTrue(store.load(other).journal.entries.isEmpty())
+        store.close()
+        val file = checkNotNull(root.listFiles()).single { it.extension == "json" }
+        file.writeText("broken input evidence")
+        store = ComposerJournalStore(context, root, dispatcher)
+        try {
+            store.load(identity)
+            fail("Corrupt intent cannot be reset")
+        } catch (_: Exception) {}
+        assertEquals("broken input evidence", file.readText())
+        store.close()
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun aReplacedModelCannotOverrideTheCurrentModelsSavedEffort() = check { service, _, create ->
+        val target = ComposerTarget()
+        val choice =
+            DefaultModelChoice(
+                id = "current-model",
+                label = "Current model",
+                canSelect = true,
+                efforts = listOf(ModelEffort.LOW, ModelEffort.MEDIUM, ModelEffort.HIGH),
+                defaultEffort = ModelEffort.MEDIUM,
+                fastMultiplier = null,
+            )
+        val options =
+            DefaultModelOptions(
+                listOf(choice),
+                mapOf("current-model" to "current-model", "retired-model" to "current-model"),
+            )
+        val confirmed =
+            DefaultModelPreference(
+                selectedModel = "current-model",
+                serviceTier = null,
+                modelSettings =
+                    mapOf(
+                        "current-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.LOW,
+                            ),
+                        "retired-model" to
+                            DefaultModelPreferenceModelSettingsValue(
+                                DefaultModelPreferenceModelSettingsValueEffort.HIGH,
+                            ),
+                    ),
+            )
+        val defaults = DefaultModelState(record = DefaultModelRecord(confirmed), options = options)
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use the current model's effort")
+        model.editDraftModel(target, defaults.draftDefaults())
+        model.send(target, options)
+        runCurrent()
+        assertEquals(
+            CreateThreadRequestReasoningEffort.LOW,
+            service.creates.single().reasoningEffort,
+        )
+    }
+
+    @Test
+    fun explicitAutoSurvivesRejectedCreationAndDraftRestore() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use Auto for this draft")
+        val selection =
+            DraftModelSelection(null, mapOf("gpt-test" to CreateThreadRequestReasoningEffort.HIGH))
+        model.editDraftModel(target, selection)
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        val request = service.creates.single()
+        assertEquals(CanonicalOptional.Present(null), request.model)
+        assertEquals(CanonicalOptional.Present(null), request.serviceTier)
+        assertNull(request.reasoningEffort)
+        assertTrue(service.requests.isEmpty())
+
+        val rejected = store.load(identity).journal
+        assertNull(rejected.newChatModel)
+        model.restoreDraft(target, rejected.retainedDrafts.keys.single())
+        runCurrent()
+        assertEquals(selection, store.load(identity).journal.newChatModel)
+        assertEquals("Use Auto for this draft", model.uiState.value.entry(target).text)
+    }
+
+    @Test
+    fun restoredRejectedDraftKeepsInheritingTheDefault() = check { service, store, create ->
+        val target = ComposerTarget()
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        model.edit(target, "Use my personal default")
+        val createThread = service.create
+        service.create = { throw ApiFailure.Http(422, null, null, null) }
+        model.send(target)
+        runCurrent()
+        assertEquals(CanonicalOptional.Absent, service.creates.single().model)
+        val journal = store.load(identity).journal
+        val rejected = journal.retainedDrafts.keys.single()
+        assertTrue(rejected in journal.retainedDraftModels)
+        assertNull(journal.retainedDraftModels[rejected])
+
+        model.editDraftModel(target, DraftModelSelection("gpt-test", fast = true))
+        model.restoreDraft(target, rejected)
+        service.create = createThread
+        model.send(target)
+        runCurrent()
+
+        val restored = service.creates.last()
+        assertEquals(CanonicalOptional.Absent, restored.model)
+        assertEquals(CanonicalOptional.Absent, restored.serviceTier)
+        assertNull(restored.reasoningEffort)
+        assertEquals("Use my personal default", service.requests.single().prompt)
+    }
+
+    @Test
+    fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        val whitespace = " \t\n\u00a0\ufeff"
+        model.edit(existing, whitespace)
+        assertFalse(model.uiState.value.canSend(existing))
+        model.send(existing)
+        advanceUntilIdle()
+        assertTrue(service.requests.isEmpty())
+        assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
+        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText())
+    }
+
+    @Test
     fun olderProjectSendCannotConsumeAnotherNewChatEditorsInput() = check { service, _, create ->
         val model = create(false, identity)
         val project = ComposerTarget(projectId = CHAT_PROJECT)
@@ -448,7 +656,7 @@ class ChatComposerModelTest {
     }
 
     @Test
-    fun newProjectSubmissionIsDurableBeforeDispatchAndMovesNewerEditsAtomically() =
+    fun newProjectSubmissionStaysInMemoryAndMovesNewerEditsAtomically() =
         check { service, store, create ->
             val target = ComposerTarget(projectId = CHAT_PROJECT)
             val first = create(false, identity)
@@ -460,7 +668,7 @@ class ChatComposerModelTest {
             service.create = { request ->
                 val disk = store.load(identity)
                 assertTrue(disk.durable)
-                assertEquals(request, disk.journal.entries[target.key]!!.pending!!.create)
+                assertNull(disk.journal.entries[target.key]?.pending)
                 CreatedThread(
                     checkNotNull(request.clientThreadId),
                     request.projectId,
@@ -473,7 +681,7 @@ class ChatComposerModelTest {
             service.write = { request ->
                 val disk = store.load(identity)
                 assertTrue(disk.durable)
-                assertEquals(request, disk.journal.entries[target.key]!!.pending!!.send)
+                assertNull(disk.journal.entries[target.key]?.pending)
                 gate.await()
                 AcceptedInput(checkNotNull(request.threadId))
             }
@@ -503,144 +711,191 @@ class ChatComposerModelTest {
         }
 
     @Test
-    fun unavailableReadNeverReplaysAndExplicitRecoveryKeepsTheExactFrozenRequest() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "immutable submission")
-            service.write = { request ->
-                service.accepted[checkNotNull(request.clientEventId)] = request
-                throw ApiFailure.Network(IOException("response disconnected after acceptance"))
-            }
-            model.send(existing)
-            runCurrent()
-            val frozen = service.requests.single()
-            model.edit(existing, "next draft")
-            model = create(true, identity.copy(sessionId = "renewed"))
-            model.open(existing)
-            runCurrent()
-            service.read = { thread, event -> InputObservation(thread, event, null) }
-            model.observe(existing)
-            runCurrent()
-            assertEquals(1, service.requests.size)
-            assertEquals(frozen, model.uiState.value.entry(existing).pending!!.send)
-            val restored = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
-            assertEquals(frozen.clientEventId, restored.eventId)
-            assertEquals("immutable submission", restored.text)
-            assertNull(restored.disposition)
-            assertFalse(restored.sending)
-            assertTrue(existing.key in model.uiState.value.unobserved)
-            service.write = { request ->
-                assertEquals(frozen, request)
-                assertEquals(frozen, service.accepted[request.clientEventId])
-                AcceptedInput(checkNotNull(request.threadId))
-            }
-            model.retry(existing)
-            runCurrent()
-            assertEquals(2, service.requests.size)
-            assertEquals(1, service.accepted.size)
-            assertEquals("next draft", model.uiState.value.entry(existing).text)
+    fun lostAcceptanceIsReadBackBeforeAnyRetry() = check { service, store, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "immutable submission")
+        service.write = { throw ApiFailure.Network(IOException("lost response")) }
+        model.send(existing)
+        runCurrent()
+        val frozen = service.requests.single()
+        assertNull(store.load(identity).journal.entries[existing.key]?.pending)
+        model.edit(existing, "next draft")
+        service.read = { thread, event ->
+            assertEquals(frozen.clientEventId, event)
+            InputObservation(thread, event, TextDisposition.Queued)
         }
+        advanceTimeBy(2_999)
+        runCurrent()
+        assertEquals(
+            PendingDelivery.Sending,
+            model.uiState.value
+                .messagesFor(checkNotNull(existing.threadId))
+                .single()
+                .pendingDelivery,
+        )
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(1, service.requests.size)
+        assertEquals(
+            TextDisposition.Queued,
+            model.uiState.value.entry(existing).receipt!!.disposition,
+        )
+        assertEquals("next draft", model.uiState.value.entry(existing).text)
+    }
 
     @Test
-    fun authoritativeRejectionSettlesOnlyOriginalInputAndPreservesTheNextDraft() =
-        check { service, _, create ->
+    fun unavailableStatusRetriesFrozenRequestsAtTheDesignIntervals() = check { service, _, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "retry original")
+        service.write = { throw ApiFailure.Network(IOException("lost response")) }
+        service.read = { thread, event -> InputObservation(thread, event, null) }
+        model.send(existing)
+        runCurrent()
+        val frozen = service.requests.single()
+        for ((index, seconds) in listOf(3L, 3L, 6L, 12L, 24L, 48L, 48L).withIndex()) {
+            advanceTimeBy(seconds * 1_000 - 1)
+            runCurrent()
+            assertEquals(index + 1, service.requests.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(index + 2, service.requests.size)
+            assertEquals(frozen, service.requests.last())
+        }
+    }
+
+    @Test
+    fun expiredDeduplicationWindowOnlyChecksTheOriginalInput() {
+        val clock = TestTimeSource()
+        check(sendClock = clock) { service, _, create ->
             val model = create(false, identity)
             model.open(existing)
             runCurrent()
-            model.edit(existing, "submitted")
-            service.write = { throw ApiFailure.Network(IOException("lost")) }
+            model.edit(existing, "retained request")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            var reads = 0
+            service.read = { thread, event ->
+                reads++
+                InputObservation(thread, event, null)
+            }
             model.send(existing)
             runCurrent()
-            model.edit(existing, "later edit")
-            service.read = { thread, event ->
-                InputObservation(thread, event, TextDisposition.Rejected)
-            }
-            model.observe(existing)
+            clock += 30.days
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(2, reads)
+            assertEquals(1, service.requests.size)
+        }
+    }
+
+    @Test
+    fun definitiveRejectionClearsPendingAndPreservesANewerDraft() = check { service, _, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "submitted")
+        val response = service.gate()
+        service.write = {
+            response.await()
+            throw ApiFailure.Http(422, null, null, null)
+        }
+        model.send(existing)
+        runCurrent()
+        model.edit(existing, "later edit")
+        response.complete(Unit)
+        runCurrent()
+        assertNull(model.uiState.value.entry(existing).pending)
+        assertEquals("later edit", model.uiState.value.entry(existing).text)
+        val rejected = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
+        assertEquals("submitted", rejected.text)
+        assertEquals(TextDisposition.Rejected, rejected.disposition)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, service.requests.size)
+    }
+
+    @Test
+    fun processRestartLoadsTheDraftWithoutReplayingThePendingSend() =
+        check { service, store, create ->
+            var model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "in-flight")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            model.send(existing)
+            runCurrent()
+            model.edit(existing, "newer draft")
+            runCurrent()
+            assertNull(store.load(identity).journal.entries[existing.key]?.pending)
+            model = create(true, identity)
+            model.open(existing)
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(1, service.requests.size)
+            assertNull(model.uiState.value.entry(existing).pending)
+            assertEquals("newer draft", model.uiState.value.entry(existing).text)
+        }
+
+    @Test
+    fun previouslyPersistedSendRestoresAsDraftTextWithoutDispatch() =
+        check { service, store, create ->
+            var model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "legacy pending text")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            model.send(existing)
+            runCurrent()
+            val pending = checkNotNull(model.uiState.value.entry(existing).pending)
+            store.persist(
+                identity,
+                ComposerJournal(
+                    format = 3,
+                    entries =
+                        mapOf(
+                            existing.key to ComposerEntry(pending = pending.copy(started = null)),
+                        ),
+                ),
+            )
+            runCurrent()
+            model = create(true, identity)
+            model.open(existing)
             runCurrent()
             assertNull(model.uiState.value.entry(existing).pending)
             assertEquals(
-                TextDisposition.Rejected,
-                model.uiState.value.entry(existing).receipt!!.disposition,
+                pending.send.prompt,
+                model.uiState.value.journal?.retainedDrafts?.get(pending.eventId),
             )
-            assertEquals("later edit", model.uiState.value.entry(existing).text)
-            val rejected = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
-            assertEquals("submitted", rejected.text)
-            assertEquals(TextDisposition.Rejected, rejected.disposition)
-            assertEquals(1, service.requests.size)
-        }
-
-    @Test
-    fun retirementBeforeDispatchDoesNotWriteRemotelyOrLoseTheFrozenInput() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
+            model.restoreDraft(existing, pending.eventId)
             runCurrent()
-            model.edit(existing, "kept before dispatch")
-            model.send(existing)
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            assertTrue(service.requests.isEmpty())
-            assertEquals(
-                "kept before dispatch",
-                model.uiState.value.entry(existing).pending!!.send.prompt,
-            )
-            model.retry(existing)
+            assertEquals(pending.send.prompt, model.uiState.value.entry(existing).text)
+            advanceTimeBy(60_000)
             runCurrent()
             assertEquals(1, service.requests.size)
         }
 
     @Test
-    fun uncancellableOldResponseCannotSettleAReplacementEditorsNewInput() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            val gate = service.gate()
-            service.write = { request ->
-                withContext(NonCancellable) {
-                    gate.await()
-                    AcceptedInput(checkNotNull(request.threadId))
-                }
-            }
-            model.edit(existing, "old message")
-            model.send(existing)
-            runCurrent()
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "replacement draft")
-            gate.complete(Unit)
-            runCurrent()
-            assertEquals("replacement draft", model.uiState.value.entry(existing).text)
-            assertNotNull(model.uiState.value.entry(existing).pending)
-            assertNull(model.uiState.value.entry(existing).receipt)
-        }
-
-    @Test
-    fun failedDiskNeverAuthorizesDispatchAndReplacementRetainsBothInputs() =
-        check(blockedDisk = true) { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "frozen on failed storage")
-            model.send(existing)
-            model.edit(existing, "newer unsaved draft")
-            runCurrent()
-            assertTrue(service.requests.isEmpty())
-            assertEquals(ComposerPersistence.Failed, model.uiState.value.persistence)
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            assertEquals("newer unsaved draft", model.uiState.value.entry(existing).text)
-            assertEquals(
-                "frozen on failed storage",
-                model.uiState.value.entry(existing).pending!!.send.prompt,
-            )
-            assertFalse(model.uiState.value.canSend(existing))
-        }
+    fun lostCreateResponseReusesTheOriginalThreadAndEventIds() = check { service, _, create ->
+        val target = ComposerTarget(projectId = CHAT_PROJECT)
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        val successfulCreate = service.create
+        service.create = { throw ApiFailure.Network(IOException("lost create response")) }
+        model.edit(target, "first prompt")
+        model.send(target)
+        runCurrent()
+        val creation = service.creates.single()
+        service.create = successfulCreate
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(listOf(creation, creation), service.creates)
+        assertEquals(creation.clientThreadId, service.requests.single().threadId)
+    }
 
     @Test
     fun anOlderReceiptsHeldReadCannotBlockOrOverwriteTheNextSend() = check { service, _, create ->
@@ -723,41 +978,4 @@ class ChatComposerModelTest {
             assertNull(model.uiState.value.entry(b).createdThreadId)
             assertEquals(aId, model.uiState.value.entry(a).createdThreadId)
         }
-
-    @Test
-    fun realDiskReopenKeepsTargetsAndAccountsSeparateAndCorruptionDoesNotResetInput() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val root = temporary.newFolder()
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        var store = ComposerJournalStore(context, root, dispatcher)
-        val journal =
-            ComposerJournal(
-                entries =
-                    mapOf(
-                        existing.key to ComposerEntry("saved existing"),
-                        "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
-                    )
-            )
-        store.persist(identity, journal)
-        runCurrent()
-        store.close()
-        store = ComposerJournalStore(context, root, dispatcher)
-        assertEquals(journal, store.load(identity.copy(sessionId = "another")).journal)
-        for (other in
-            listOf(
-                identity.copy(userId = "user-b"),
-                identity.copy(workspaceId = "org-b"),
-                identity.copy(apiOrigin = "https://other.example/"),
-            )) assertTrue(store.load(other).journal.entries.isEmpty())
-        store.close()
-        val file = checkNotNull(root.listFiles()).single { it.extension == "json" }
-        file.writeText("broken input evidence")
-        store = ComposerJournalStore(context, root, dispatcher)
-        try {
-            store.load(identity)
-            fail("Corrupt intent cannot be reset")
-        } catch (_: Exception) {}
-        assertEquals("broken input evidence", file.readText())
-        store.close()
-    }
 }

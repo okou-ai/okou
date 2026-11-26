@@ -24,7 +24,10 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
-import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
+import {
+  artifactCatalogSidebar,
+  artifactLibraryEnabled$,
+} from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import {
   artifactCatalog$,
   loadMoreArtifactCatalog$,
@@ -37,6 +40,7 @@ import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifa
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
+import { ArtifactLibraryPage } from "./artifact-library-page.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "../okou-page/artifact-thumbnail.tsx";
 import { emptyArtifactImg } from "../okou-page/platform-assets.ts";
@@ -689,9 +693,22 @@ export function ArtifactCatalogPage({
 }: {
   readonly scrollToArtifactId: string | null;
 }) {
+  const libraryEnabled = useLastResolved(artifactLibraryEnabled$);
+  return libraryEnabled ? (
+    <ArtifactLibraryPage scrollTargetId={scrollToArtifactId} />
+  ) : (
+    <LegacyArtifactCatalogPage scrollToArtifactId={scrollToArtifactId} />
+  );
+}
+
+function LegacyArtifactCatalogPage({
+  scrollToArtifactId,
+}: {
+  readonly scrollToArtifactId: string | null;
+}) {
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
-  const sidebarOpen = useLastResolved(artifactCatalogSidebar.open$) ?? false;
+  const sidebarOpen = useGet(artifactCatalogSidebar.open$);
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);

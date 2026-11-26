@@ -1,0 +1,11 @@
+# Okou Domain Connect
+
+The API queries the current domain's discovery record and the provider's **exact** `okou.ai/hosted-site` template before offering automatic configuration. Unknown endpoints, missing templates, unavailable providers, unsupported apex address configurations, or missing/unpublished signing keys leave manual setup available.
+
+Submit `okou.ai.hosted-site.json` to the [Domain Connect template repository](https://github.com/Domain-Connect/Templates), then onboard that exact template with each provider. Cloudflare additionally requires [manual template onboarding](https://developers.cloudflare.com/dns/reference/domain-connect/); request DNS-only proxying for the CNAME. Vercel's [onboarding and signing requirements](https://vercel.com/docs/domains/domain-connect) apply separately. A successful example-template query is not evidence that Okou is onboarded.
+
+Store a base64-encoded PKCS8 DER RSA private key as `HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64` in the API deployment's Doppler config. Set `HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST` to its public key's label. Publish the SPKI public key at `<label>._domainconnect.okou.ai` as TXT fragments `p=1,a=RS256,d=<base64>` (increment `p` for subsequent fragments). The API checks that published key against its private key before returning an apply URL. Never commit the private key.
+
+The signed template configures the initial routing CNAME and ownership TXT only. Extra certificate TXT records stay visible for manual setup and independent verification. The provider's consent screen owns DNS changes. Requests sort parameters by name, sign the exact encoded query without `key`/`sig`, append `key`, and place `sig` last. Production redirects only navigate to Okou's Artifacts page; neither a success redirect, error redirect nor `state` verifies or enables a hostname. Users return to the original panel, click Verify, then Save. A provider cancellation leaves the existing website address unchanged.
+
+Provider discovery uses a fixed public HTTPS allowlist, no redirects, no cookies or authorization headers. Discovery stops at delegated zones instead of inheriting a parent's provider. Add a provider only after checking its documented discovery endpoint and public API/consent origins. Unknown providers retain manual copying. Nameserver-based dashboard hints never imply template support.

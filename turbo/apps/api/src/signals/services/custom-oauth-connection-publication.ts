@@ -144,7 +144,10 @@ function customOAuthTokenInsert(tokens: CustomOAuthPublication["tokens"]) {
     sql`, `,
   )})
     SELECT token_values.* FROM (${values}) AS token_values
-    WHERE ${accountPresent} AND (SELECT ${count()} FROM custom_oauth_removed_2) >= 0 RETURNING id)`;
+    WHERE ${accountPresent} AND (SELECT ${count()} FROM custom_oauth_removed_2) >= 0
+      ON CONFLICT (connector_id, name) WHERE connector_id IS NOT NULL
+        DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value, updated_at = clock_timestamp()
+      RETURNING id)`;
 }
 
 function customOAuthBindingClauses(args: CustomOAuthPublication): SQL[] {
@@ -176,7 +179,18 @@ function customOAuthBindingClauses(args: CustomOAuthPublication): SQL[] {
         }),
         sql`, `,
       )} FROM token_connection
-      WHERE (SELECT ${count()} FROM custom_oauth_removed_binding) >= 0 RETURNING connector_account_id)`);
+      WHERE (SELECT ${count()} FROM custom_oauth_removed_binding) >= 0
+      ON CONFLICT (connector_account_id) DO UPDATE SET ${sql.join(
+        fields
+          .filter(({ column }) => {
+            return column.name !== "connector_account_id";
+          })
+          .map(({ column }) => {
+            return sql`${sql.identifier(column.name)} = EXCLUDED.${sql.identifier(column.name)}`;
+          }),
+        sql`, `,
+      )}, updated_at = clock_timestamp()
+      RETURNING connector_account_id)`);
   }
   return clauses;
 }

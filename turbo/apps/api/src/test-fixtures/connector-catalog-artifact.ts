@@ -1275,6 +1275,20 @@ const connectors = [
     ]),
   }),
   connector({
+    connectorSlug: "google-docs",
+    label: "Google Docs",
+    authMethods: [
+      standardOauthMethod({
+        connectorSlug: "google-docs",
+        prefix: "GOOGLE_DOCS",
+        tokenEnvironmentNames: ["GOOGLE_DOCS_TOKEN"],
+      }),
+    ],
+    firewall: generatedFirewall([
+      bearerApi("https://docs.googleapis.com", "GOOGLE_DOCS_TOKEN"),
+    ]),
+  }),
+  connector({
     connectorSlug: "google-drive",
     label: "Google Drive",
     authMethods: [
@@ -1520,6 +1534,19 @@ const connectors = [
         prefix: "LINEAR",
         tokenEnvironmentNames: ["LINEAR_TOKEN"],
         scopes: ["read", "write"],
+      }),
+    ],
+  }),
+  connector({
+    connectorSlug: "linkedin",
+    label: "LinkedIn",
+    authMethods: [
+      providerMethod({
+        connectorSlug: "linkedin",
+        authMethodId: "oauth",
+        values: { accessToken: secret("LINKEDIN_ACCESS_TOKEN") },
+        envBindings: { LINKEDIN_TOKEN: secret("LINKEDIN_ACCESS_TOKEN") },
+        scopes: ["openid", "profile", "w_member_social"],
       }),
     ],
   }),

@@ -1,3 +1,7 @@
+import {
+  connectorHttpsReturnState,
+  connectorHttpsCallbackUrl,
+} from "./connector-native-return";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
@@ -640,6 +644,7 @@ interface AutomaticOAuthClientPresentation {
 }
 
 interface StartCustomConnectorOAuth2Args {
+  readonly nativeCallback?: "ios-https";
   readonly orgId: string;
   readonly userId: string;
   readonly connectorId: string;
@@ -688,7 +693,10 @@ function prepareCustomOAuthStart(
   },
   args: StartCustomConnectorOAuth2Args,
 ): Extract<PreparedOAuthStart, { readonly authMode: "oauth" }> {
-  const state = generateConnectorOAuthState();
+  const state = connectorHttpsReturnState({
+    state: generateConnectorOAuthState(),
+    nativeCallback: args.nativeCallback,
+  });
   const codeVerifier =
     connector.oauthConfig.pkceMethod === "S256" ? createPkceVerifier() : null;
   return {
@@ -848,7 +856,10 @@ const prepareAutomaticOAuthStart$ = command(
         response: connectorConnectionMutationFailure(preflight),
       };
     }
-    const state = generateConnectorOAuthState();
+    const state = connectorHttpsReturnState({
+      state: generateConnectorOAuthState(),
+      nativeCallback: args.nativeCallback,
+    });
     const automatic = await settle(
       set(
         prepareCustomConnectorAutomaticOAuthAuthorization$,
@@ -1304,6 +1315,10 @@ export const startCustomConnectorOAuth2$ = command(
       authorizationUrl: prepared.authorizationUrl,
       connectionId: mutationStart.connectionId ?? undefined,
       oauthAttemptId: mutationStart.oauthAttemptId,
+      nativeCallbackUrl: connectorHttpsCallbackUrl(
+        prepared.state,
+        mutationStart.oauthAttemptId,
+      ),
     };
   },
 );
@@ -1838,6 +1853,7 @@ export function customConnectorOAuth2CredentialContractFromRows(
 function customOAuthConnectionTarget(
   connectorId: string,
   token: CustomConnectorOAuthTokenResult,
+  issuer?: string,
 ) {
   return {
     kind: "custom" as const,
@@ -1846,11 +1862,12 @@ function customOAuthConnectionTarget(
     identity: token.userInfo
       ? {
           kind: "external" as const,
+          issuer,
           externalId: token.userInfo.id,
           externalUsername: token.userInfo.username,
           externalEmail: token.userInfo.email,
         }
-      : { kind: "local" as const },
+      : { kind: "local" as const, issuer },
   };
 }
 
@@ -1897,7 +1914,12 @@ function customOAuth2CredentialContractRef(
 function customOAuthConnectionMutationValues(
   args: Pick<
     StoreCustomConnectorOAuth2ConnectionArgs,
-    "orgId" | "userId" | "connectorId" | "account"
+    | "orgId"
+    | "userId"
+    | "connectorId"
+    | "account"
+    | "token"
+    | "automaticOAuthBinding"
   >,
   contract: ReturnType<typeof customConnectorOAuth2CredentialContractFromRows>,
 ): ConnectorConnectionMutationArgs {
@@ -1906,6 +1928,9 @@ function customOAuthConnectionMutationValues(
     userId: args.userId,
     target: { kind: "custom", customConnectorId: args.connectorId },
     mutation: args.account,
+    matchExternalIssuer: args.automaticOAuthBinding?.issuer,
+    matchExternalId:
+      args.account.intent === "add" ? args.token.userInfo?.id : undefined,
     allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
       contract.providerAdapter,
     ),
@@ -2776,7 +2801,11 @@ function customOAuthWriteArgs(
     authMethod: "oauth",
     storageVersion: args.storageVersion,
     tokenExpiresAt: args.token.expiresAt,
-    target: customOAuthConnectionTarget(args.connectorId, args.token),
+    target: customOAuthConnectionTarget(
+      args.connectorId,
+      args.token,
+      args.automaticOAuthBinding?.issuer,
+    ),
     resolution: resolution.mutation,
     insertConnectionId: args.insertConnectionId,
   };

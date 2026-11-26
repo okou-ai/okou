@@ -4,11 +4,13 @@ import SwiftUI
 
 struct OnboardingSourcesContent: View {
   let store: OnboardingStore
+  @ResolvedValue private var connected: ComposerConnectorStore.Snapshot?
   @LoadableValue private var sources: Loadable<[OnboardingSource]>
 
   init(store: OnboardingStore) {
     self.store = store
     _sources = LoadableValue(task: store.resources.sources)
+    _connected = ResolvedValue(store.connectors.snapshotValue)
   }
 
   var body: some View {
@@ -21,7 +23,7 @@ struct OnboardingSourcesContent: View {
         }
       case .hasData(let sources):
         ForEach(sources) { source in
-          let connected = store.connectors.connectors.contains {
+          let connected = (self.connected ?? store.connectors.snapshot).connectors.contains {
             $0.target.connectorSlug == source.slug
           }
           Button {
@@ -46,9 +48,6 @@ struct OnboardingSourcesContent: View {
           }
           .accessibilityIdentifier("onboarding-connect-\(source.slug)")
         }
-      }
-      if let error = store.connectors.authorization.activationError {
-        Text(error).foregroundStyle(OkouColor.destructive)
       }
     }
     .task { await store.connectors.refresh() }

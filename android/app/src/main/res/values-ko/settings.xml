@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_built_in_tools">기본 제공 도구</string>
+    <string name="settings_tool_scope">%1$s에서 도구를 사용하면 크레딧이 소모됩니다.</string>
+    <string name="settings_common_tools">일반 도구</string>
+    <string name="settings_data_tools">데이터 도구</string>
+    <string name="settings_tool_web_search">웹 검색</string>
+    <string name="settings_tool_image_generation">이미지 생성</string>
+    <string name="settings_tool_image_model">이미지 생성 모델</string>
+    <string name="settings_tools_unavailable">일시적으로 도구를 사용할 수 없습니다.</string>
+    <string name="settings_tool_save_failed">변경을 확인할 수 없습니다.</string>
+    <string name="settings_tool_image_save_failed">이미지 생성 모델을 저장하지 못했습니다</string>
+    <string name="settings_preferences_save_rolled_back">설정을 저장하지 못해 이전 값으로 복원했어요.</string>
+    <string name="settings_appearance_sync_failed">디자인 설정을 동기화하지 못해 이 기기에 적용했어요.</string>
+    <string name="settings_email_updates">이메일 업데이트</string>
+    <string name="settings_email_scope">모든 워크스페이스의 브리핑, 알림 및 업데이트를 받습니다.</string>
+    <string name="settings_email_receive">이메일 받기</string>
+    <string name="settings_email_unavailable">이메일을 사용할 수 없음</string>
+    <string name="settings_email_check_address">계정 이메일 확인</string>
+    <string name="settings_email_load_failed">지금은 이메일 설정을 불러올 수 없습니다.</string>
+    <string name="settings_email_refresh_failed">동기화하지 못했습니다. 마지막으로 저장된 구독 상태를 표시합니다.</string>
+    <string name="settings_email_refreshing">이메일 구독 동기화 중</string>
+    <string name="settings_email_saving">이메일 구독을 업데이트하는 중…</string>
+    <string name="settings_email_save_failed">이메일 구독을 업데이트하지 못했습니다.</string>
+    <string name="settings_email_save_unconfirmed">이메일 구독 변경 결과가 아직 확인되지 않았습니다.</string>
     <string name="settings_models">모델</string>
     <string name="settings_tools">도구</string>
     <string name="settings_my_okou">내 Okou</string>
@@ -14,8 +37,6 @@
     <string name="settings_accounts_scope">‘%1$s’에서 사용할 구독 계정을 선택하세요.</string>
     <string name="settings_accounts_scope_empty">‘%1$s’의 모델 계정</string>
     <string name="settings_workspace_status">‘%1$s’ · %2$s</string>
-    <string name="settings_accounts_offline">오프라인입니다. 계정을 전환하려면 연결하세요.</string>
-    <string name="settings_accounts_offline_connect">오프라인입니다. 온라인 상태에서 모델 계정을 연결할 수 있습니다.</string>
     <string name="settings_accounts_unavailable">현재 모델 계정을 볼 수 없습니다.</string>
     <string name="settings_accounts_update_failed">모델 계정을 새로고침하지 못했습니다. 마지막으로 확인된 정보를 표시합니다.</string>
     <string name="settings_accounts_empty">연결된 모델 계정 없음</string>
@@ -29,7 +50,8 @@
     <string name="settings_account_select">선택</string>
     <string name="settings_account_reconnect">다시 연결해야 함</string>
     <string name="settings_account_switching">전환 중…</string>
-    <string name="settings_account_switch_failed">계정을 전환하지 못했습니다.</string>
+    <string name="settings_account_switch_unconfirmed">전환 결과 미확인</string>
+    <string name="settings_account_switch_failed">모델 계정을 전환하지 못했습니다.</string>
     <string name="settings_quota">할당량</string>
     <string name="settings_hour_quota">%1$d시간 할당량</string>
     <string name="settings_day_quota">%1$d일 할당량</string>
@@ -43,8 +65,6 @@
     <string name="settings_credits_less_than">%1$s 미만</string>
     <string name="settings_credit_balance">크레딧 잔액</string>
     <string name="settings_credit_scope">‘%1$s’의 Okou 크레딧</string>
-    <string name="settings_credit_offline">오프라인입니다. 마지막으로 확인된 잔액을 표시합니다.</string>
-    <string name="settings_credit_update_failed">새로고침하지 못했습니다. 마지막으로 확인된 잔액을 표시합니다.</string>
     <string name="settings_credit_unavailable">현재 잔액을 볼 수 없습니다.</string>
     <string name="settings_credit_member">개인 사용량 팩</string>
     <string name="settings_credit_workspace">워크스페이스 잔액</string>
@@ -59,8 +79,7 @@
     <string name="settings_auto_model_detail">Okou가 사용 가능한 모델을 선택</string>
     <string name="settings_model_plan_restricted">다른 요금제 필요</string>
     <string name="settings_model_fast">빠른 모드</string>
-    <string name="settings_model_fast_usage">구독 한도의 약 %1$s배 사용</string>
-    <string name="settings_model_load_when_online">다시 온라인 상태가 되면 콘텐츠를 불러옵니다.</string>
+    <string name="settings_model_fast_usage">켜면 ChatGPT 구독 사용량이 표준 모드의 %1$s배가 됩니다</string>
     <string name="settings_model_save_rolled_back">기본 모델을 저장하지 못해 이전 설정으로 되돌렸습니다.</string>
     <string name="settings_model_save_unconfirmed">기본 모델의 저장 결과가 아직 확인되지 않았습니다.</string>
     <string name="settings_model_effort">추론 강도</string>
@@ -70,4 +89,28 @@
     <string name="settings_model_effort_extra">매우 높음</string>
     <string name="settings_model_effort_max">최대</string>
     <string name="settings_model_effort_ultra">울트라</string>
+    <string name="settings_refreshing_model_accounts">모델 계정 새로고침 중</string>
+    <string name="settings_refreshing_credit_balance">크레딧 잔액 새로고침 중</string>
+    <string name="settings_proactive_services">선제적 서비스</string>
+    <string name="settings_proactive_scope">이 설정은 ‘%1$s’에 적용됩니다.</string>
+    <string name="settings_proactive_loading">선제적 서비스를 불러오는 중</string>
+    <string name="settings_proactive_needs_timezone">전송 일정을 예약하려면 시간대를 선택하세요.</string>
+    <string name="settings_proactive_read_failed">지금 이 설정을 불러올 수 없습니다.</string>
+    <string name="settings_proactive_refresh_failed">동기화하지 못했습니다. 마지막으로 확인한 설정을 표시합니다.</string>
+    <string name="settings_proactive_preparing">일정을 준비하는 중…</string>
+    <string name="settings_proactive_schedule_failed">선택한 설정을 저장했습니다. 일정을 확인하세요.</string>
+    <string name="settings_proactive_save_unconfirmed">저장 결과를 아직 확인할 수 없습니다.</string>
+    <string name="settings_morning_brief">아침 브리핑</string>
+    <string name="settings_morning_brief_detail">선택한 시간대 기준 오전 7시 전에 전달됩니다</string>
+    <string name="settings_morning_brief_save_failed">아침 브리핑을 저장하지 못했습니다. 이전 설정을 복원했습니다.</string>
+    <string name="settings_suggestions">제안</string>
+    <string name="settings_suggestions_detail">연결된 콘텐츠를 확인하고 프로필을 업데이트한 뒤 제안을 제공합니다</string>
+    <string name="settings_suggestions_partial">일부 켜짐</string>
+    <string name="settings_suggestions_hourly_only">현재 콘텐츠 확인과 프로필 업데이트만 수행합니다.</string>
+    <string name="settings_suggestions_cards_only">현재 제안 카드만 전달합니다.</string>
+    <string name="settings_suggestions_enable_both">둘 다 켜기</string>
+    <string name="settings_suggestions_disable_both">둘 다 끄기</string>
+    <string name="settings_suggestions_save_failed">제안 설정을 저장하지 못했습니다. 이전 설정을 복원했습니다.</string>
+    <string name="settings_timezone_save_rejected">시간대를 저장하지 못했습니다. 이전 시간대로 복원했습니다.</string>
+    <string name="settings_timezone_schedule_update_failed">시간대를 저장했습니다. 아침 브리핑 시간을 업데이트하지 못했습니다.</string>
 </resources>

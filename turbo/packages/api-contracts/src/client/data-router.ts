@@ -3,7 +3,7 @@
 
 import type {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
-  dataRouterRequestContract as OriginalDataRouterRequestContract,
+  runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import type { ClientDescriptor } from "./types";
 
@@ -21,12 +21,12 @@ export const dataRouterHistoryContract: ClientDescriptor<
   },
 };
 
-export const dataRouterRequestContract: ClientDescriptor<
-  typeof OriginalDataRouterRequestContract
+export const runDataRouterRequestContract: ClientDescriptor<
+  typeof OriginalRunDataRouterRequestContract
 > = {
   register: {
     method: "POST",
-    path: "/api/webhooks/agent/data-request",
+    path: "/api/webhooks/run/data-request",
     statuses: {
       200: true,
       400: true,

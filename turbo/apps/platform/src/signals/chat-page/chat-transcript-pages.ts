@@ -1,6 +1,6 @@
 import type { ChatThreadRowSignals } from "./chat-thread-rows.ts";
-import { command, computed, state, type Computed } from "ccstate";
-import { onRef } from "../utils.ts";
+import { command, computed, state, type Command, type Computed } from "ccstate";
+import { onRef, waitForAnimationFrame } from "../utils.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import { isRenderableAssistantEvent } from "./chat-event-display.ts";
 import type { ThreadScrollPosition } from "./chat-thread-scroll.ts";
@@ -288,6 +288,24 @@ export function createTranscriptWindow(
   const range$ = computed((get) => {
     return pageRange(get(index$), get(position$), get(coverage$));
   });
+  const hasLaterReply$ = computed((get) => {
+    const range = get(range$);
+    if (!range) {
+      return false;
+    }
+    const groups = get(groups$);
+    for (let index = groups.length - 1; index >= range.end; index--) {
+      const group = groups[index]!;
+      if (
+        group.role === "assistant" &&
+        (group.events.length === 0 ||
+          group.events.some(isRenderableAssistantEvent))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
   const measurements = createPageMeasurements();
   const fillViewport$ = command(({ get, set }) => {
     const viewport = get(measurements.container$)?.closest<HTMLElement>(
@@ -311,12 +329,59 @@ export function createTranscriptWindow(
     set(coverage$, { ...coverage, [side]: coverage[side] + 1 });
     return true;
   });
-  return { index$, range$, fillViewport$, measurements };
+  return { index$, range$, hasLaterReply$, fillViewport$, measurements };
+}
+
+// The browser normally absorbs changes in the height above a reader. On
+// engines without scroll anchoring, preserve only the page's layout shift.
+// Document coordinates let any intervening wheel or touch motion stand.
+function anchorInPageWindow(
+  container: HTMLElement | null,
+  position: ThreadScrollPosition | null,
+) {
+  if (
+    !position ||
+    !container ||
+    globalThis.CSS?.supports?.("overflow-anchor", "auto")
+  ) {
+    return null;
+  }
+  const viewport = container.closest<HTMLElement>("[data-scroll-container]");
+  const anchor = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      "[data-chat-scroll-anchor-event-id]",
+    ),
+  ).find((node) => {
+    return node.dataset.chatScrollAnchorEventId === position.targetEventId;
+  });
+  if (!viewport || !anchor || !viewport.clientHeight) {
+    return null;
+  }
+  const viewportOffset = () => {
+    return (
+      anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+    );
+  };
+  const offset = viewportOffset();
+  const top = viewport.scrollTop;
+  return (sameTask: boolean) => {
+    if (!viewport.contains(anchor) || !viewport.clientHeight) {
+      return;
+    }
+    // During publication even a temporary reduction of scrollHeight can
+    // clamp scrollTop. Across frames, preserve intervening reader movement.
+    const delta =
+      viewportOffset() - offset + (sameTask ? 0 : viewport.scrollTop - top);
+    if (Math.abs(delta) >= 1) {
+      viewport.scrollTop += delta;
+    }
+  };
 }
 
 export function createTranscriptPages(
   window: ReturnType<typeof createTranscriptWindow>,
   visibleRows$: Computed<readonly ChatThreadRowSignals[]>,
+  syncVisibleRows$: Command<void, []>,
   position$: Computed<ThreadScrollPosition | null>,
 ) {
   const { index$, range$, fillViewport$, measurements } = window;
@@ -380,9 +445,51 @@ export function createTranscriptPages(
     mounted$,
     measurements.sizes$,
   );
+  const publishRows$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const previous = get(mounted$);
+    const next = get(range$);
+    const container = get(measurements.container$);
+    const position = get(position$);
+    const restore =
+      previous && next && previous.first !== next.first
+        ? anchorInPageWindow(container, position)
+        : null;
+    set(syncVisibleRows$);
+    if (!restore || !container) {
+      return;
+    }
+    const first = get(layout$)?.pages[0]?.key;
+    if (!first || first === previous?.index.pages[previous.first]?.key) {
+      return;
+    }
+    // Let subscribers publish the prepared rows before the browser starts
+    // another input task. A deferred render can still land on a later frame.
+    await Promise.resolve();
+    signal.throwIfAborted();
+    for (let frame = 0; frame <= 2; frame++) {
+      if (
+        get(position$)?.targetEventId !== position?.targetEventId ||
+        get(measurements.container$) !== container
+      ) {
+        return;
+      }
+      if (
+        container.querySelector<HTMLElement>("[data-transcript-page]")?.dataset
+          .transcriptPage === first
+      ) {
+        restore(frame === 0);
+        return;
+      }
+      if (frame < 2) {
+        await waitForAnimationFrame(signal);
+        signal.throwIfAborted();
+      }
+    }
+  });
   return {
     range$,
     rangePrepared$,
+    publishRows$,
     awaitingAnchor$,
     tailMounted$,
     fillViewport$,

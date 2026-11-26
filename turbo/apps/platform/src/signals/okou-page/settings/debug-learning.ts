@@ -14,10 +14,7 @@ import { settingsActionSignal$ } from "./settings-dialog.ts";
 
 export const debugLearningEnabled$ = computed(async (get) => {
   const features = await get(featureSwitches$);
-  return (
-    features[FeatureSwitchKey.OkouDebug] &&
-    features[FeatureSwitchKey.AgentSuggestion]
-  );
+  return features[FeatureSwitchKey.OkouDebug];
 });
 
 const discovery$ = state<Promise<WorkflowAutomationSummary | null> | undefined>(
@@ -41,7 +38,6 @@ const discoverDebugLearning$ = command(async ({ get }, signal: AbortSignal) => {
       return (
         entry.workflow.official?.definitionName ===
           PROACTIVE_LEARNING_DEFINITION_NAME &&
-        entry.workflow.official.installationState === "installed" &&
         entry.workflow.official.definitionLifecycle === "active" &&
         entry.automation.official?.blueprintKey ===
           PROACTIVE_LEARNING_BLUEPRINT_KEY

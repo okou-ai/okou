@@ -20,6 +20,7 @@
 //! lifecycle. Each path retains ownership of its process, event delivery,
 //! heartbeat races, and child reaping until completion.
 
+mod antigravity;
 mod bounded_event_delivery;
 mod child_env;
 mod child_exit_notifier;
@@ -44,12 +45,12 @@ mod line_reader;
 mod message_event_delivery;
 mod pi_preparation_timing;
 mod pi_rpc;
-mod pi_session_output;
 mod pi_startup;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
+mod session_output;
 mod startup_timing;
 mod termination;
 #[cfg(feature = "test-support")]
@@ -330,6 +331,8 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_model_config: Cow<'a, str>,
     #[cfg(debug_assertions)]
     test_pi_cli_path: Option<&'a str>,
+    #[cfg(feature = "test-support")]
+    test_antigravity_cli_path: Option<&'a str>,
     user_env: &'a HashMap<String, String>,
 }
 
@@ -427,6 +430,8 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
             #[cfg(debug_assertions)]
             test_pi_cli_path: config.test_pi_cli_path.as_deref(),
+            #[cfg(feature = "test-support")]
+            test_antigravity_cli_path: config.test_antigravity_cli_path.as_deref(),
             user_env: &config.user_env,
         })
     }
@@ -599,6 +604,12 @@ fn disallowed_tools_with_builtin_web_search_disabled(
         return Cow::Borrowed(WEB_SEARCH_TOOL_NAME);
     }
     Cow::Owned(format!("{disallowed_tools},{WEB_SEARCH_TOOL_NAME}"))
+}
+
+enum CliStdoutRecord {
+    Raw(String),
+    // Ignored provider records never enter the transcript.
+    Projected(Option<serde_json::Value>),
 }
 
 enum ParsedEventAction {
@@ -976,6 +987,14 @@ pub async fn execute_cli_with_controls_for_config_started_at(
                 "native continuation provenance is incomplete".into(),
             ));
         }
+        if runtime.framework == env::Framework::Antigravity
+            && native.session_id.is_some()
+            && native.recovery_prompt.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(AgentError::Execution(
+                "Antigravity continuation requires chat recovery context".into(),
+            ));
+        }
         let requested = native.session_id.clone();
         let framework = runtime.framework;
         let pi_session_id = runtime.pi_session_id.to_string();
@@ -1054,7 +1073,12 @@ async fn execute_cli_inner(
         write_claude_append_system_prompt_file(runtime)?;
     }
 
-    let cmd = if matches!(runtime.framework, env::Framework::Pi) {
+    let antigravity = matches!(runtime.framework, env::Framework::Antigravity)
+        .then(|| antigravity::Launch::prepare(runtime))
+        .transpose()?;
+    let cmd = if let Some(launch) = &antigravity {
+        launch.argv.clone()
+    } else if matches!(runtime.framework, env::Framework::Pi) {
         build_pi_command_for_runtime(runtime)?
     } else {
         command::build_claude_command_for_runtime(runtime, replay_user_messages)
@@ -1095,6 +1119,7 @@ async fn execute_cli_inner(
         env::Framework::Pi => {
             child_env_values.extend(pi_child_env_values(runtime));
         }
+        env::Framework::Antigravity => antigravity::configure_env(&mut child_env_values),
         env::Framework::Codex => {}
     }
     // Suppress Claude CLI features that are unnecessary or harmful in a
@@ -1172,6 +1197,7 @@ async fn execute_cli_inner(
         .ok_or_else(|| AgentError::Execution("no stderr".into()))?;
 
     let pi_execution = matches!(runtime.framework, env::Framework::Pi);
+    let agy_execution = antigravity.is_some();
 
     // Stderr collector. Pi additionally carries session-preparation timings on
     // stderr; those are recorded as they arrive so their timestamps match the
@@ -1184,8 +1210,23 @@ async fn execute_cli_inner(
     let startup_segments = pi_startup.map(PiStartupTiming::segment_observer);
     // Keep both pipe workers owned if the execution future is abandoned.
     let mut stderr_handle = AbortOnDropHandle::new(tokio::spawn(async move {
-        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer, startup_segments)
+        if agy_execution {
+            // A login challenge can include an OAuth URL. The structured
+            // terminal record carries the safe authentication outcome.
+            let _ = tokio::io::copy(
+                &mut tokio::io::BufReader::new(stderr),
+                &mut tokio::io::sink(),
+            )
+            .await;
+            Vec::new()
+        } else {
+            diagnostics::collect_stderr_result_tail_observed(
+                stderr,
+                stderr_observer,
+                startup_segments,
+            )
             .await
+        }
     }));
 
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
@@ -1194,17 +1235,29 @@ async fn execute_cli_inner(
     let pi_rpc_cancellation = CancellationToken::new();
     let pi_session_output = pi_execution
         .then(|| {
-            pi_session_output::start(
+            session_output::start(
                 http.clone(),
                 runtime.run_id.as_ref(),
                 runtime.pi_session_id.as_ref(),
-                pi_session_output::FirstSessionOutputTiming {
+                session_output::FirstSessionOutputTiming {
                     pi_startup_succeeded_at: pi_startup.map(PiStartupTiming::success_boundary),
                     api_start_time: runtime.api_start_time.to_string(),
                 },
             )
         })
         .flatten();
+    let mut agy_projection = antigravity.as_ref().map(|launch| {
+        let output = session_output::start(
+            http.clone(),
+            runtime.run_id.as_ref(),
+            user_env_value(runtime.user_env, "OKOU_CHAT_THREAD_ID"),
+            session_output::FirstSessionOutputTiming {
+                api_start_time: runtime.api_start_time.to_string(),
+                ..Default::default()
+            },
+        );
+        antigravity::Projection::new(&launch.model, output, masker)
+    });
     let mut pi_rpc_projection = pi_execution.then(|| {
         let projection =
             pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
@@ -1231,6 +1284,8 @@ async fn execute_cli_inner(
                     pi_rpc_cancellation,
                 )
                 .await
+            } else if agy_execution {
+                antigravity::write_prompt(cli_stdin, &prompt).await
             } else {
                 drop(pi_rpc_response_rx);
                 write_claude_stream_json_to_stdin(cli_stdin, &run_id, &prompt, active_input).await
@@ -1461,20 +1516,38 @@ async fn execute_cli_inner(
                         .map_err(line_reader::BoundedLineError::Io)?;
                     stdout_discarding_record = false;
                 }
-                line_reader::read_bounded_utf8_line(
+                if let Some(event) = agy_projection.as_mut().and_then(antigravity::Projection::take_pending) {
+                    return Ok(Some(CliStdoutRecord::Projected(Some(event))));
+                }
+                let line = line_reader::read_bounded_utf8_line(
                     &mut reader,
                     &mut stdout_partial_line,
                     ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
-                ).await
+                ).await?;
+                match (agy_projection.as_mut(), line) {
+                    (Some(projection), Some(line)) => projection.project_line(&line)
+                        .map(|event| Some(CliStdoutRecord::Projected(event)))
+                        .map_err(line_reader::BoundedLineError::Io),
+                    (_, line) => Ok(line.map(CliStdoutRecord::Raw)),
+                }
             }, if !stdout_closed => {
                 match line_result {
-                    Ok(Some(line)) => {
-                        let stripped = line.trim();
-                        if stripped.is_empty() {
-                            continue;
-                        }
+                    Ok(Some(record)) => {
+                        let (line, event) = match record {
+                            CliStdoutRecord::Raw(line) => {
+                                if line.trim().is_empty() { continue; }
+                                let event = serde_json::from_str(line.trim()).ok();
+                                (line, event)
+                            }
+                            CliStdoutRecord::Projected(Some(event)) => {
+                                let mut transcript = event.clone();
+                                masker.mask_value(&mut transcript);
+                                (transcript.to_string(), Some(event))
+                            }
+                            CliStdoutRecord::Projected(None) => continue,
+                        };
 
-                        if let Ok(mut event) = serde_json::from_str::<serde_json::Value>(stripped) {
+                        if let Some(mut event) = event {
                             if let Some(startup_boundary) = pi_rpc_startup_boundary.as_mut() {
                                 match startup_boundary.admit() {
                                     pi_rpc::PiRpcRecordAdmission::Start => {
@@ -1495,17 +1568,13 @@ async fn execute_cli_inner(
                                                 pi_rpc_startup_tx.take();
                                                 startup_boundary.discard_remaining();
                                                 active_input_controller.close_terminal();
-                                                if cli_status.is_some() {
+                                                if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                                    error,
+                                                    cli_status.is_some(),
+                                                    termination_deadline.as_mut(),
+                                                ) {
                                                     break Err(error);
                                                 }
-                                                let error_log = error.to_string();
-                                                termination_runtime.begin_control_failure(
-                                                    error,
-                                                    ControlFailure::StdoutIngestionFailed {
-                                                        error: error_log,
-                                                    },
-                                                    termination_deadline.as_mut(),
-                                                );
                                                 continue;
                                             }
                                         }
@@ -1518,17 +1587,13 @@ async fn execute_cli_inner(
                                                     .to_string(),
                                             );
                                             active_input_controller.close_terminal();
-                                            if cli_status.is_some() {
+                                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                                error,
+                                                cli_status.is_some(),
+                                                termination_deadline.as_mut(),
+                                            ) {
                                                 break Err(error);
                                             }
-                                            let error_log = error.to_string();
-                                            termination_runtime.begin_control_failure(
-                                                error,
-                                                ControlFailure::StdoutIngestionFailed {
-                                                    error: error_log,
-                                                },
-                                                termination_deadline.as_mut(),
-                                            );
                                             continue;
                                         }
                                     }
@@ -1548,17 +1613,13 @@ async fn execute_cli_inner(
                                     Err(error) => {
                                         agent_log.write_raw_line(line.as_bytes()).await;
                                         active_input_controller.close_terminal();
-                                        if cli_status.is_some() {
+                                        if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                            error,
+                                            cli_status.is_some(),
+                                            termination_deadline.as_mut(),
+                                        ) {
                                             break Err(error);
                                         }
-                                        let error_log = error.to_string();
-                                        termination_runtime.begin_control_failure(
-                                            error,
-                                            ControlFailure::StdoutIngestionFailed {
-                                                error: error_log,
-                                            },
-                                            termination_deadline.as_mut(),
-                                        );
                                         continue;
                                     }
                                 }
@@ -1596,17 +1657,13 @@ async fn execute_cli_inner(
                                         .to_string(),
                                 );
                                 active_input_controller.close_terminal();
-                                if cli_status.is_some() {
+                                if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                    error,
+                                    cli_status.is_some(),
+                                    termination_deadline.as_mut(),
+                                ) {
                                     break Err(error);
                                 }
-                                let error_log = error.to_string();
-                                termination_runtime.begin_control_failure(
-                                    error,
-                                    ControlFailure::StdoutIngestionFailed {
-                                        error: error_log,
-                                    },
-                                    termination_deadline.as_mut(),
-                                );
                                 continue;
                             };
 
@@ -1661,6 +1718,9 @@ async fn execute_cli_inner(
                                         env::Framework::ClaudeCode => {
                                             (FailureDetailSource::ClaudeResult, "Claude")
                                         }
+                                        env::Framework::Antigravity => {
+                                            (FailureDetailSource::AntigravityResult, "Antigravity")
+                                        }
                                         env::Framework::Pi => {
                                             (FailureDetailSource::PiResult, "Pi")
                                         }
@@ -1671,7 +1731,7 @@ async fn execute_cli_inner(
                                     let candidate = CliFailureDiagnostic {
                                         message: diagnostic.message,
                                         source,
-                                        failure_reason: (source == FailureDetailSource::PiResult)
+                                        failure_reason: matches!(source, FailureDetailSource::PiResult | FailureDetailSource::AntigravityResult)
                                             .then(|| event.get("failureReason"))
                                             .flatten()
                                             .and_then(|reason| serde_json::from_value(reason.clone()).ok()),
@@ -1750,17 +1810,13 @@ async fn execute_cli_inner(
                             pi_rpc_startup_tx.take();
                             let error = pi_rpc::PiRpcStartupBoundary::malformed_record_error();
                             active_input_controller.close_terminal();
-                            if cli_status.is_some() {
+                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                error,
+                                cli_status.is_some(),
+                                termination_deadline.as_mut(),
+                            ) {
                                 break Err(error);
                             }
-                            let error_log = error.to_string();
-                            termination_runtime.begin_control_failure(
-                                error,
-                                ControlFailure::StdoutIngestionFailed {
-                                    error: error_log,
-                                },
-                                termination_deadline.as_mut(),
-                            );
                         } else {
                             agent_log.write_raw_line(line.as_bytes()).await;
                         }
@@ -1777,17 +1833,13 @@ async fn execute_cli_inner(
                             }
                             pi_rpc_startup_tx.take();
                             let error = pi_rpc::PiRpcStartupBoundary::missing_error();
-                            if cli_status.is_some() {
+                            if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                                error,
+                                cli_status.is_some(),
+                                termination_deadline.as_mut(),
+                            ) {
                                 break Err(error);
                             }
-                            let error_log = error.to_string();
-                            termination_runtime.begin_control_failure(
-                                error,
-                                ControlFailure::StdoutIngestionFailed {
-                                    error: error_log,
-                                },
-                                termination_deadline.as_mut(),
-                            );
                             continue;
                         }
                         if cli_status.is_some() {
@@ -1853,30 +1905,23 @@ async fn execute_cli_inner(
                             }
                         };
 
-                        if cli_status.is_some() {
-                            break Err(error);
+                        if cli_status.is_none() {
+                            try_observe_cli_exit(
+                                &mut child,
+                                &mut cli_status,
+                                &mut cli_exit_at,
+                                &active_input_controller,
+                                &mut termination_runtime,
+                                stdout_closed,
+                                drain_deadline.as_mut(),
+                            )?;
                         }
-                        match try_observe_cli_exit(
-                            &mut child,
-                            &mut cli_status,
-                            &mut cli_exit_at,
-                            &active_input_controller,
-                            &mut termination_runtime,
-                            stdout_closed,
-                            drain_deadline.as_mut(),
-                        )? {
-                            CliExitObservation::NoNewExit => {
-                                let error_log = error.to_string();
-                                termination_runtime.begin_control_failure(
-                                    error,
-                                    ControlFailure::StdoutIngestionFailed {
-                                        error: error_log,
-                                    },
-                                    termination_deadline.as_mut(),
-                                );
-                            }
-                            CliExitObservation::ExitedDrainingStdout
-                            | CliExitObservation::ExitedAndStdoutClosed => break Err(error),
+                        if let Err(error) = termination_runtime.handle_stdout_ingestion_failure(
+                            error,
+                            cli_status.is_some(),
+                            termination_deadline.as_mut(),
+                        ) {
+                            break Err(error);
                         }
                     }
                 }
@@ -2094,7 +2139,7 @@ async fn execute_cli_inner(
     let last_read_event_at = event_pipeline
         .as_ref()
         .and_then(|pipeline| pipeline.ingestor.last_read_event_at());
-    let failure_diagnostic = event_pipeline
+    let mut failure_diagnostic = event_pipeline
         .as_ref()
         .and_then(|pipeline| pipeline.ingestor.failure_diagnostic());
 
@@ -2129,9 +2174,22 @@ async fn execute_cli_inner(
         );
     }
     let (mut exit_code, cli_observed_exit) = cli_exit_summary_from_status(&status);
-    if pi_execution && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
+    if (pi_execution || agy_execution)
+        && jsonl_result.is_some_and(|result| result.status == JsonlResultStatus::Error)
     {
         exit_code = 1;
+    }
+
+    if agy_execution && jsonl_result.is_none() && !has_control_error {
+        if exit_code == 0 {
+            exit_code = 1;
+        }
+        failure_diagnostic = Some(CliFailureDiagnostic {
+            message: "Antigravity exited without a terminal result".into(),
+            source: FailureDetailSource::FallbackExitCode,
+            failure_reason: None,
+            codex_failure: None,
+        });
     }
 
     // Apply the same drain deadline to stderr — orphaned child processes

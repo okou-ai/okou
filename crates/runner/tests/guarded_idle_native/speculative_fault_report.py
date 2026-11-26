@@ -78,26 +78,24 @@ def validate(directory):
     directory = pathlib.Path(directory)
     result, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy = supplied_policy(collector, result, "native_speculative_fault_policy_json")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid speculative fault witness",
     )
-    identities = {events[1][key] for events in terminals.values() for key in ("sandbox_id", "backing_generation")}
+    identities = report.original_resource_ids(result["cases"])
     paths, runners = set(), set()
     for case, events in witnesses.items():
         terminal = terminals[case]
         report.validate_witness_phases(
             events, PHASES, "missing duplicate or reordered speculative fault phases",
         )
-        identity = report.witness_identity(terminal[1])
+        identity = report.witness_identity(result["cases"][case])
         if report.witness_identity_changed(events, identity):
             raise ValueError("speculative fault changed original physical owner")
-        ordered = [terminal[1], *events[:3], terminal[2], terminal[3], *events[3:6],
-                   terminal[4], *events[6:], terminal[5]]
-        report.validate_witness_clock_order(
-            ordered, "speculative fault phase clocks lost ordering")
+        report.validate_terminal_witness_clock_order(
+            terminal, events, tail_start_index=3, tail_end_index=6,
+            message="speculative fault phase clocks lost ordering",
+        )
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         baseline = status_evidence.validate_initial_status_receipt(
@@ -105,19 +103,17 @@ def validate(directory):
             path_error="invalid or replayed speculative private status path",
             receipt_error="speculative fault changed original inputs",
         )
-        history, operation = later.history_operation(
-            waiting, identities, "speculative callback replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            waiting, identities, baseline, identity[0],
+            replay_error="speculative callback replayed run or resource identity",
+            binding_error="speculative callback lost original history/reuse binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": identity[0]}],
-              "speculative callback lost original history/reuse binding")
         started = batch.clock(waiting.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         rpc = batch.clock(waiting.get("rpc_completed_ns"), started, events[1]["monotonic_ns"])
-        raw = history.encode()
-        digest = hashlib.sha256((raw * (65536//len(raw)+1))[:65536]).hexdigest()
+        digest = hashlib.sha256(report.history_payload(history)).hexdigest()
         exact(waiting, {"mode": mode, "history_run_id": history, "operation_run_id": operation,
             "reuse_key": reuse, "prepare_started_ns": started, "rpc_completed_ns": rpc,
-            "payload_sha256": digest, "payload_bytes": 65536, "production_restore_completed": True,
+            "payload_sha256": digest, "payload_bytes": report.HISTORY_PAYLOAD_BYTES, "production_restore_completed": True,
             "private_marker_verified": True, "ordinary_home_verified": True, "callback_polled_pending": True,
             "callback_release_withheld": True, "pool_empty": True, "original_full_lease_active": True,
             "original_exit_polled_pending": True, "allocated": [2,4096,1]},

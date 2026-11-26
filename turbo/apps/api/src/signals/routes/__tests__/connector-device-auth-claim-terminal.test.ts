@@ -58,13 +58,18 @@ function accountIdentities(
     });
 }
 
-async function createAccountPair(actor: ApiTestUser) {
+async function createAccountPair(
+  actor: ApiTestUser,
+  oauthProvider: ReturnType<typeof mockTestOAuthDeviceConnectorProvider>,
+) {
+  oauthProvider.setSubject("test-oauth-device-default");
   const first = await connectors.startDeviceAuth(
     actor,
     "test-oauth-device",
     "oauth",
   );
   const defaultAccount = await completeSession(actor, first);
+  oauthProvider.setSubject("test-oauth-device-user");
   const second = await connectors.startDeviceAuth(
     actor,
     "test-oauth-device",
@@ -137,12 +142,14 @@ describe("Builtin device-auth terminal claim outcomes", () => {
       await owned.run(async () => {
         const actor = owned.actor;
         owned.ownsFeatureSwitches();
-        mockTestOAuthDeviceConnectorProvider();
+        const oauthProvider = mockTestOAuthDeviceConnectorProvider();
         await connectors.updateFeatureSwitches(actor, {
           [FeatureSwitchKey.TestOauthConnector]: true,
         });
-        const { defaultAccount, siblingAccount } =
-          await createAccountPair(actor);
+        const { defaultAccount, siblingAccount } = await createAccountPair(
+          actor,
+          oauthProvider,
+        );
         const expected = [
           { id: defaultAccount.connectionId, isDefault: true },
           { id: siblingAccount.connectionId, isDefault: false },
@@ -214,11 +221,14 @@ describe("Builtin device-auth terminal claim outcomes", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider();
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider();
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
-      const { defaultAccount, siblingAccount } = await createAccountPair(actor);
+      const { defaultAccount, siblingAccount } = await createAccountPair(
+        actor,
+        oauthProvider,
+      );
       const expected = [
         { id: defaultAccount.connectionId, isDefault: true },
         { id: siblingAccount.connectionId, isDefault: false },
@@ -293,11 +303,14 @@ describe("Builtin device-auth terminal claim outcomes", () => {
     await owned.run(async () => {
       const actor = owned.actor;
       owned.ownsFeatureSwitches();
-      mockTestOAuthDeviceConnectorProvider();
+      const oauthProvider = mockTestOAuthDeviceConnectorProvider();
       await connectors.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.TestOauthConnector]: true,
       });
-      const { defaultAccount, siblingAccount } = await createAccountPair(actor);
+      const { defaultAccount, siblingAccount } = await createAccountPair(
+        actor,
+        oauthProvider,
+      );
       const reconnect = await connectors.startDeviceAuth(
         actor,
         "test-oauth-device",

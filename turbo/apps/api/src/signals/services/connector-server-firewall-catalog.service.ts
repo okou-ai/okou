@@ -14,7 +14,6 @@ import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallBaseHostPolicy,
   type Firewall,
-  type FirewallPolicies,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-types";
 
@@ -133,8 +132,9 @@ type ConnectorServerFirewallSource = Pick<
 interface AcceptedConnectorServerFirewallEntry {
   readonly connector: ConnectorServerFirewallSource;
   readonly runtimeMethods: () => readonly ConnectorAuthMethodRuntimeConfig[];
-  readonly permissionIndexes:
-    Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> | undefined;
+  readonly catalogDerivations:
+    Map<ConnectorSlug, ConnectorFirewallDerivations> | undefined;
+  readonly shareExecutionMetadata: boolean;
   firewall: AcceptedServerFirewall | undefined;
   routing: ConnectorCatalogFirewallRouting | undefined;
   permissionIndex: ConnectorServerFirewallPermissionIndex | undefined;
@@ -143,32 +143,36 @@ interface AcceptedConnectorServerFirewallEntry {
   routingMetadata: ConnectorServerFirewallRoutingMetadata | undefined;
 }
 
-const permissionIndexCache = singleton(
+interface ConnectorFirewallDerivations {
+  permissionIndex?: ConnectorServerFirewallPermissionIndex;
+  executionMetadata?: ConnectorServerFirewallExecutionMetadata;
+}
+
+const catalogFirewallDerivationCache = singleton(
   (): {
     key: string | undefined;
-    indexes: Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex>;
+    derivations: Map<ConnectorSlug, ConnectorFirewallDerivations>;
   } => {
-    return { key: undefined, indexes: new Map() };
+    return { key: undefined, derivations: new Map() };
   },
 );
 
-function permissionIndexesForCatalog(
+function firewallDerivationsForCatalog(
   identity: ExternalCatalogIdentity,
-): Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> {
+): Map<ConnectorSlug, ConnectorFirewallDerivations> {
   const key = JSON.stringify([
     identity.sourceId,
     identity.schemaVersion,
     identity.catalogDigest,
     identity.capabilityDigest,
   ]);
-  const cache = permissionIndexCache();
+  const cache = catalogFirewallDerivationCache();
   if (cache.key !== key) {
     cache.key = key;
-    // Keep one generation. In-flight selections retain their captured map and
-    // cannot publish an old index into a later generation.
-    cache.indexes = new Map();
+    // In-flight selections retain their captured generation.
+    cache.derivations = new Map();
   }
-  return cache.indexes;
+  return cache.derivations;
 }
 
 export interface FirewallRoutingRouteMetadata {
@@ -455,6 +459,7 @@ function acceptedRoutingMetadata(args: {
 function acceptedEntries(args: {
   readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly catalogIdentity: ExternalCatalogIdentity | undefined;
+  readonly shareExecutionMetadata: boolean | undefined;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -463,8 +468,8 @@ function acceptedEntries(args: {
     ConnectorSlug,
     AcceptedConnectorServerFirewallEntry
   >();
-  const permissionIndexes = args.catalogIdentity
-    ? permissionIndexesForCatalog(args.catalogIdentity)
+  const derivations = args.catalogIdentity
+    ? firewallDerivationsForCatalog(args.catalogIdentity)
     : undefined;
   for (const connector of args.connectors) {
     if (connector.firewall.kind === "none") {
@@ -477,7 +482,8 @@ function acceptedEntries(args: {
     }
     entries.set(connector.slug, {
       connector,
-      permissionIndexes,
+      catalogDerivations: derivations,
+      shareExecutionMetadata: args.shareExecutionMetadata ?? false,
       runtimeMethods: () => {
         return args.runtimeMethodsForSlug(connector.slug);
       },
@@ -530,18 +536,37 @@ function acceptedEntryRouting(
   return routing;
 }
 
+function sharedFirewallDerivations(
+  entry: AcceptedConnectorServerFirewallEntry,
+): ConnectorFirewallDerivations | undefined {
+  const catalog = entry.catalogDerivations;
+  if (catalog === undefined) {
+    return undefined;
+  }
+  const slug = entry.connector.slug;
+  const cached = catalog.get(slug);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const derivations: ConnectorFirewallDerivations = {};
+  catalog.set(slug, derivations);
+  return derivations;
+}
+
 function acceptedEntryPermissionIndex(
   entry: AcceptedConnectorServerFirewallEntry,
 ): ConnectorServerFirewallPermissionIndex {
-  const cached =
-    entry.permissionIndex ?? entry.permissionIndexes?.get(entry.connector.slug);
-  if (cached !== undefined) {
-    entry.permissionIndex = cached;
-    return cached;
+  if (entry.permissionIndex !== undefined) {
+    return entry.permissionIndex;
   }
-  const permissionIndex = acceptedPermissionIndex(acceptedEntryFirewall(entry));
+  const shared = sharedFirewallDerivations(entry);
+  const permissionIndex =
+    shared?.permissionIndex ??
+    acceptedPermissionIndex(acceptedEntryFirewall(entry));
   entry.permissionIndex = permissionIndex;
-  entry.permissionIndexes?.set(entry.connector.slug, permissionIndex);
+  if (shared) {
+    shared.permissionIndex = permissionIndex;
+  }
   return permissionIndex;
 }
 
@@ -551,12 +576,20 @@ function acceptedEntryExecutionMetadata(
   if (entry.executionMetadata !== undefined) {
     return entry.executionMetadata;
   }
-  const executionMetadata = acceptedExecutionMetadata({
-    firewall: acceptedEntryFirewall(entry),
-    routing: acceptedEntryRouting(entry),
-    methods: entry.runtimeMethods(),
-  });
+  const shared = entry.shareExecutionMetadata
+    ? sharedFirewallDerivations(entry)
+    : undefined;
+  const executionMetadata =
+    shared?.executionMetadata ??
+    acceptedExecutionMetadata({
+      firewall: acceptedEntryFirewall(entry),
+      routing: acceptedEntryRouting(entry),
+      methods: entry.runtimeMethods(),
+    });
   entry.executionMetadata = executionMetadata;
+  if (shared) {
+    shared.executionMetadata = executionMetadata;
+  }
   return executionMetadata;
 }
 
@@ -633,6 +666,8 @@ export function createAcceptedConnectorServerFirewallCatalog(args: {
 export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args: {
   readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly catalogIdentity?: ExternalCatalogIdentity;
+  /** Requires every capability-compatible executable method for each entry. */
+  readonly shareExecutionMetadata?: boolean;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -640,6 +675,7 @@ export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args:
   const entries = acceptedEntries({
     connectors: args.connectors,
     catalogIdentity: args.catalogIdentity,
+    shareExecutionMetadata: args.shareExecutionMetadata,
     runtimeMethodsForSlug: args.runtimeMethodsForSlug,
   });
   const connectorSlugs = [...entries.keys()].sort(compareStrings);
@@ -734,34 +770,4 @@ export function selectConnectorServerFirewalls(args: {
         : Promise.resolve(null);
     },
   };
-}
-
-export async function expandConnectorServerFirewallPolicies(args: {
-  readonly catalog: ConnectorServerFirewallMetadataCatalog;
-  readonly stored: FirewallPolicies | null;
-  readonly connectorSlugs: readonly string[];
-}): Promise<FirewallPolicies | null> {
-  const indexes = await Promise.all(
-    args.connectorSlugs.map((connectorSlug) => {
-      return args.catalog.loadPermissionIndex(connectorSlug);
-    }),
-  );
-  let resolved: FirewallPolicies | null = null;
-  for (const index of indexes) {
-    if (!index) {
-      continue;
-    }
-    resolved ??= { ...args.stored };
-    const existing = resolved[index.connectorSlug];
-    resolved[index.connectorSlug] = {
-      policies: {
-        ...index.defaultPermissionPolicies,
-        ...existing?.policies,
-      },
-      ...(existing?.unknownPolicy !== undefined
-        ? { unknownPolicy: existing.unknownPolicy }
-        : { unknownPolicy: index.defaultPolicy.unknownPolicy }),
-    };
-  }
-  return resolved ?? args.stored;
 }

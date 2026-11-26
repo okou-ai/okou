@@ -1,26 +1,14 @@
 import ChatData
 import SwiftUI
 
-private enum ConnectorAccountChoice: String {
-  case inherited, on, off
-  init(_ value: Bool?) {
-    self = value.map { $0 ? .on : .off } ?? .inherited
-  }
-  var enabled: Bool? {
-    switch self {
-    case .inherited: nil
-    case .on: true
-    case .off: false
-    }
-  }
-}
-
 struct ComposerChatConnectorAccounts: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorAccountResources
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
   let search: String
+  /// From the snapshot the account page resolves.
+  let canConfigurePermissions: Bool
   let openPermissions: () -> Void
   let openManagement: () -> Void
 
@@ -38,17 +26,17 @@ struct ComposerChatConnectorAccounts: View {
       if page.nextCursor != nil {
         Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
       }
-      Button("Add account") { store.connect(target: resources.connector.target) }
-        .foregroundStyle(OkouColor.foreground).disabled(busy)
     } header: {
-      Text("This chat").okouSectionHeader()
+      if page.policies == nil {
+        Text("This chat").okouSectionHeader()
+      }
     } footer: {
-      Text("Choose which accounts this chat can use.").okouSectionNote()
+      if page.policies == nil {
+        Text("Only affects this chat.").okouSectionNote()
+      }
     }
     Section {
-      if let slug = resources.connector.target.connectorSlug,
-        store.canConfigurePermissions(slug: slug)
-      {
+      if canConfigurePermissions {
         Button(action: openPermissions) {
           destinationLabel("Permissions", icon: "sliders-horizontal")
         }
@@ -75,6 +63,12 @@ struct ComposerChatConnectorAccounts: View {
     HStack(spacing: OkouSpace.md) {
       VStack(alignment: .leading, spacing: OkouSpace.three) {
         Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
+        if let identity = account.externalEmail ?? account.externalUsername,
+          identity != account.label
+        {
+          Text(identity).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+            .lineLimit(1)
+        }
         if !account.ready {
           Text("Reconnect required").font(.okou(.caption))
             .foregroundStyle(OkouColor.mutedForeground)
@@ -82,63 +76,63 @@ struct ComposerChatConnectorAccounts: View {
       }
       .frame(minHeight: OkouControl.minimumTarget, alignment: .leading)
       Spacer(minLength: 0)
-      Picker(
-        "Access for \(account.label)",
-        selection: Binding(
-          get: { ConnectorAccountChoice(access.overrideEnabled) },
-          set: { choice in
-            Task { await resources.apply(.access(account.id, choice.enabled)) }
-          })
-      ) {
-        Text(access.defaultEnabled ? "Default (On)" : "Default (Off)")
-          .tag(ConnectorAccountChoice.inherited)
-        Text("On").tag(ConnectorAccountChoice.on)
-        Text("Off").tag(ConnectorAccountChoice.off)
+      if let policies = page.policies {
+        if let policy = policies.first(where: { $0.connectionId == account.id }) {
+          ConnectorAccountPolicyMenu(account: account, policy: policy, resources: resources)
+            .disabled(busy)
+        }
+      } else {
+        Toggle(
+          "Use \(account.label) in this chat",
+          isOn: Binding(
+            get: { access.enabled },
+            set: { enabled in Task { await resources.apply(.access(account.id, enabled)) } })
+        ).labelsHidden().disabled(busy).tint(OkouColor.primary400)
       }
-      .pickerStyle(.menu).labelsHidden().fixedSize(horizontal: true, vertical: false).disabled(busy)
-    }
-    if !account.ready {
-      Button("Reconnect this account") {
-        store.connect(target: resources.connector.target, accountID: account.id)
-      }.font(.okou(.footnote)).disabled(busy)
     }
   }
 }
 
-struct ComposerConnectorDefaults: View {
-  let store: ComposerConnectorStore
+struct ConnectorAccountPolicyMenu: View {
+  let account: ChatConnectorAccount
+  let policy: ChatConnectorAccountPolicy
   let resources: ComposerConnectorAccountResources
-  let page: ComposerConnectorAccountResources.Page
-  let busy: Bool
+
+  private var status: LocalizedStringKey { policy.enabled ? "Allow" : "Deny" }
+
+  private func update(_ choice: ChatConnectorAccountPolicyChoice) {
+    Task { await resources.apply(.policy(account.id, choice)) }
+  }
+
+  private var duration: LocalizedStringKey? {
+    guard let expiresAt = policy.expiresAt else { return policy.enabled ? "Always" : nil }
+    guard policy.enabled else { return "Expired" }
+    let hours = expiresAt.timeIntervalSinceNow / 3_600
+    let roundedHours = Int(hours.rounded())
+    if roundedHours < 1 { return "<1h" }
+    if roundedHours > 24 { return "\(Int((hours / 24).rounded()))d" }
+    return "\(roundedHours)h"
+  }
 
   var body: some View {
-    Section {
-      ForEach(page.accounts) { account in
-        if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
-          HStack(spacing: OkouSpace.md) {
-            Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
-              .frame(minHeight: OkouControl.minimumTarget, alignment: .leading)
-            Spacer(minLength: 0)
-            Toggle(
-              "Enable \(account.label) by default",
-              isOn: Binding(
-                get: { choice.defaultEnabled },
-                set: { enabled in
-                  Task { await resources.apply(.defaultEnabled(account.id, enabled)) }
-                })
-            ).labelsHidden().disabled(busy).tint(OkouColor.primary400)
-          }
+    Menu {
+      Button("Allow always") { update(.allowAlways) }
+      Button("Allow for 1h") { update(.allowHour) }
+      Button("Allow for 24h") { update(.allowDay) }
+      Button("Allow for 7d") { update(.allowWeek) }
+      Divider()
+      Button("Deny") { update(.deny) }
+    } label: {
+      HStack(spacing: OkouSpace.xs) {
+        Text(status)
+        if let duration {
+          Text(duration).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
+        OkouIcon("chevron-down", size: OkouIconSize.inline).accessibilityHidden(true)
       }
-      if page.nextCursor != nil {
-        Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
-      }
-      Button("Add account") { store.connect(target: resources.connector.target) }
-        .foregroundStyle(OkouColor.foreground).disabled(busy)
-    } header: {
-      Text("Saved accounts").okouSectionHeader()
-    } footer: {
-      Text("Enabled accounts are available to chats by default.").okouSectionNote()
+      .frame(minHeight: OkouControl.minimumTarget)
     }
+    .accessibilityLabel("Access for \(account.label)")
+    .accessibilityValue(duration.map { Text("\(Text(status)) \(Text($0))") } ?? Text(status))
   }
 }

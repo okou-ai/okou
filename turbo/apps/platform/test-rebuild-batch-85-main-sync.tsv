@@ -1,0 +1,57 @@
+历史稳定 ID	冻结归属	同步处置	开批执行行	原始 GWT	完整原始 BDD	上游对应变化	源提交	现行附近回归（各自独立归属）
+hosted-site-sharing-025	turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	hosted-site-sharing-025 The dialog preview follows audience changes and copies the permanent site address	"## hosted-site-sharing-025
+
+Original test `owners change website visibility in the preview (sidebar: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.test.tsx#L875).
+
+- **Given** The site is private and its preview uses a temporary address in the dialog layout.
+- **When** The owner changes visibility through Anyone at Default Org, Anyone with the link, and Only me, then copies the link.
+- **Then** The preview uses the stable site address only for Anyone with the link and the temporary address for the other audiences. Copy remains available and writes the stable address."	https://github.com/okou-ai/okou/blob/b9aa48260b1081a0f66db9d4b9e9b7f982f57da4/turbo/apps/platform/src/views/artifacts-page/__tests__/hosted-site-sharing.bdd.md#hosted-site-sharing-025	上游取消 lightbox/侧栏的双表面参数，侧栏保留所有受众切换和复制检查。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	hosted-site-sharing-026
+artifact-catalog-filters-003	turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	artifact-catalog-filters-003 finds the shared conversation as a safe list link with sidebar=false	"## artifact-catalog-filters-003
+
+Original test `A shared conversation links directly to its shared thread with sidebar preview false`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.test.tsx#L120).
+
+- **Given** The artifact catalog initially shows a presentation and has a shared conversation available after its catalog request completes. Sidebar preview is disabled.
+- **When** The user selects Shared chats and waits for the results.
+- **Then** The shared conversation is a link to its shared-thread destination that opens in a new tab with safe link attributes, within a list item in a list."	https://github.com/okou-ai/okou/blob/4aa5bbcd35175c9dd30845a5aa46e917fbb730ab/turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-filters.bdd.md#artifact-catalog-filters-003	无侧栏开关的关闭态，原参数化两行合为单一已发布入口。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	artifact-catalog-filters-004
+artifact-image-viewer-003	turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	artifact-image-viewer-003 applies continuous lightbox zoom for buttons and modified wheel gestures	"## artifact-image-viewer-003
+
+Original test `Image gestures use the approved continuous zoom in the lightbox`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.test.tsx#L299).
+
+- **Given** An image is open in the lightbox at 100% zoom.
+- **When** The user uses zoom buttons and wheel gestures with Ctrl or Meta, including one 20-pixel total movement as 20 one-pixel events, and tests zero movement and gestures without a modifier.
+- **Then** Zoom buttons change 100% to 112% and back. A one-pixel gesture changes zoom to 101%, and 20 one-pixel gestures reach 120%; equivalent 20-pixel movement reaches the same 120%. A 16-pixel movement or one line-mode unit reaches 115%. Zero movement and unmodified wheel movement do not zoom; Meta-modified movement does. Zoom is bounded at 10% and at the upper limit, disables the corresponding zoom button at each bound, and reset returns to 100%."	https://github.com/okou-ai/okou/blob/a305aeb06e584463badeb5813a7a162a1511d408/turbo/apps/platform/src/views/okou-page/__tests__/artifact-image-viewer.bdd.md#artifact-image-viewer-003	上游从 zoom 手势注册中删除 lightbox 档，保留 sidebar/fullscreen。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	The sidebar applies continuous zoom
+chat-hosted-site-url-001	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	chat-hosted-site-url-001 shows the owner's current banner and public audience in Share	"## chat-hosted-site-url-001
+
+Original test `owners see visibility and banner settings from chat deployment links (sidebar=false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx#L242).
+
+- **Given** I am the owner of a hosted site opened from a chat deployment link, with the artifact sidebar disabled.
+- **When** I open the site's Share settings.
+- **Then** The Show Okou banner switch is enabled and on, and Anyone with the link is the enabled visibility setting."	https://github.com/okou-ai/okou/blob/4aa5bbcd35175c9dd30845a5aa46e917fbb730ab/turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.bdd.md#chat-hosted-site-url-001	权限弹层的 lightbox 表面被删除，已发布侧栏仍有 owner 权限与 banner。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	chat-hosted-site-url-002
+chat-hosted-site-url-003	turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	chat-hosted-site-url-003 follows both saved addresses through the preview and Resources	"## chat-hosted-site-url-003
+
+Original test `consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.test.tsx#L260).
+
+- **Given** A hosted site titled Quarterly launch report is open from a chat deployment link, with the artifact sidebar disabled.
+- **When** I rename it first to renamed-site and then to final-site, copying its link after each rename and later copying it from Resources.
+- **Then** The title stays Quarterly launch report. The title link and Share copy address change to each saved address in order, and the Resources copy address is https://final-site.okou.app."	https://github.com/okou-ai/okou/blob/4aa5bbcd35175c9dd30845a5aa46e917fbb730ab/turbo/apps/platform/src/views/okou-page/__tests__/chat-hosted-site-url.bdd.md#chat-hosted-site-url-003	连续更改站点地址的 lightbox 参数分支被移除，侧栏及 Resources 仍验证两个地址。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	chat-hosted-site-url-004
+chat-private-artifact-previews-008	turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	chat-private-artifact-previews-008 split view opens the same original as the private image dialog	"## chat-private-artifact-previews-008
+
+Original test `promoting a thread image to split view keeps the same original credential`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.test.tsx#L227).
+
+- **Given** A private image in a chat is open in the preview.
+- **When** The user opens it in split view.
+- **Then** The split view uses the same resolved original URL, while the thread image remains a thumbnail."	https://github.com/okou-ai/okou/blob/f3b41d461bd544deaf34016cc4baa1725d7a3848/turbo/apps/platform/src/views/okou-page/__tests__/chat-private-artifact-previews.bdd.md#chat-private-artifact-previews-008	上游删除把已打开图像从 dialog 提升到 split view 的独立注册。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	chat-private-artifact-previews-004
+chat-run-artifact-carryover-002	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	chat-run-artifact-carryover-002 the labeled evidence image opens above its related list	"## chat-run-artifact-carryover-002
+
+Original test `A carried image keeps its label and opens a lightbox over the dialog`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx#L206).
+
+- **Given** A completed run’s history contains a linked image labeled “Supporting evidence,” while its final result has no artifact.
+- **When** The user opens related artifacts and selects the image.
+- **Then** The image keeps the label “Supporting evidence” and opens in a lightbox over the still-visible related-artifacts dialog."	https://github.com/okou-ai/okou/blob/b9aa48260b1081a0f66db9d4b9e9b7f982f57da4/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.bdd.md#chat-run-artifact-carryover-002	上游删除 carried image 在 related-list dialog 上叠加 lightbox 的原注册。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	chat-run-artifact-carryover-001
+chat-run-artifact-carryover-004	turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx	上游移除独立注册或关闭态参数，本批首验 0	chat-run-artifact-carryover-004 a carried archive downloads above the list while an unavailable sidebar is open	"## chat-run-artifact-carryover-004
+
+Original test `Open a carried generic file over an existing artifact sidebar`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.test.tsx#L334).
+
+- **Given** A carried ZIP file has no inline preview, and an existing artifact sidebar is showing an unavailable-artifact message.
+- **When** The user opens the carried file from related artifacts and selects Download.
+- **Then** A preview lightbox opens over the still-visible related-artifacts dialog and says no inline preview is available. Download initiates a browser download named “archive.zip.”"	https://github.com/okou-ai/okou/blob/b9aa48260b1081a0f66db9d4b9e9b7f982f57da4/turbo/apps/platform/src/views/okou-page/__tests__/chat-run-artifact-carryover.bdd.md#chat-run-artifact-carryover-004	上游删除在打开的旧 sidebar 上方叠加 carried generic file 的原注册。	https://github.com/okou-ai/okou/commit/9baa161da7ec69bd714c4d1922cd8cb372eee746	chat-run-artifact-carryover-009

@@ -59,7 +59,7 @@ class AssistantRecoveryModelTest {
         val context = ApplicationProvider.getApplicationContext<TestOkouApplication>()
         val cache = ChatCacheStore(context, temporary.newFolder(), dispatcher)
         val journal = ComposerJournalStore(context, directory, dispatcher)
-        val controlsStore = RunControlJournalStore(context, temporary.newFolder(), dispatcher)
+        val controlOwners = RunControlOwners()
         val owners = ViewModelStore()
         val auth = AtomicBoolean(true)
         val retired = CompletableDeferred<Unit>()
@@ -105,7 +105,7 @@ class AssistantRecoveryModelTest {
                                 initializer {
                                     RunControlsModel(
                                         api.service,
-                                        controlsStore,
+                                        controlOwners,
                                         api.identity,
                                         history,
                                         { auth.get() },
@@ -140,7 +140,7 @@ class AssistantRecoveryModelTest {
                     owners.put("composer", composer)
                     val thread =
                         Json.decodeFromString<ChatArchive>(
-                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
+                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}""",
                             )
                             .chatThreads
                             .single()
@@ -148,7 +148,6 @@ class AssistantRecoveryModelTest {
                     history.uiState.first {
                         it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
                     }
-                    controls.uiState.first { it.persistence == RunControlPersistence.Durable }
                     recovery.uiState.first {
                         it.phase in setOf(ChatReadPhase.Ready, ChatReadPhase.Failed)
                     }
@@ -167,7 +166,7 @@ class AssistantRecoveryModelTest {
                             retired,
                             controls,
                             list,
-                        )
+                        ),
                     )
                 } finally {
                     owners.clear()
@@ -179,7 +178,6 @@ class AssistantRecoveryModelTest {
             }
         } finally {
             journal.close()
-            controlsStore.close()
             cache.close()
             Dispatchers.resetMain()
         }
@@ -250,7 +248,7 @@ class AssistantRecoveryModelTest {
                         reads.incrementAndGet() == 2
                 ) {
                     jsonResponse(
-                            """{"error":{"code":"UNAVAILABLE","message":"Final preflight failed"}}"""
+                            """{"error":{"code":"UNAVAILABLE","message":"Final preflight failed"}}""",
                         )
                         .setResponseCode(503)
                 } else previous(request)
@@ -322,6 +320,11 @@ class AssistantRecoveryModelTest {
             f.idle()
             val frozen = f.composer.uiState.value.entry(target).recovery!!
             assertNull(frozen.outcome)
+            assertEquals(
+                frozen.selection,
+                f.composer.uiState.value.recoveryFailures[target.key],
+            )
+            assertFalse(target.key in f.composer.uiState.value.failed)
             assertTrue(f.remote.inputs.isEmpty())
             assertEquals(
                 frozen,
@@ -336,7 +339,14 @@ class AssistantRecoveryModelTest {
             f.idle()
             assertEquals(1, f.remote.resets.size)
             f.remote.reset = { jsonResponse("""{"outcome":"alreadyRedeemed"}""") }
-            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.composer.checkRecoveryReset(target, RecoveryApiFixture.FAILURE, "stale-key")
+            f.idle()
+            assertEquals(1, f.remote.resets.size)
+            f.composer.checkRecoveryReset(
+                target,
+                RecoveryApiFixture.FAILURE,
+                checkNotNull(frozen.reset).idempotencyKey,
+            )
             f.idle()
             assertEquals(2, f.remote.resets.size)
             assertEquals(f.remote.resets[0], f.remote.resets[1])
@@ -348,6 +358,25 @@ class AssistantRecoveryModelTest {
                 ResetSubscriptionResultOutcome.ALREADYREDEEMED,
                 f.composer.uiState.value.entry(target).recovery!!.outcome,
             )
+        }
+    }
+
+    @Test
+    fun resetConfirmationCannotSpendFromAnAccountThatReplacedTheDisplayedOne() = runTest {
+        withRecovery { f ->
+            val displayedAccount = checkNotNull(f.recovery.uiState.value.data?.resetAccount).id
+            f.remote.account = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            f.recovery.refresh()
+            f.recovery.uiState.first { it.phase == ChatReadPhase.Ready }
+
+            f.composer.confirmRecoveryReset(target, RecoveryApiFixture.FAILURE, displayedAccount)
+            f.idle()
+            assertTrue(f.remote.resets.isEmpty())
+            assertTrue(f.remote.inputs.isEmpty())
+            f.composer.confirmRecoveryReset(target, RecoveryApiFixture.FAILURE, f.remote.account)
+            f.idle()
+            assertEquals(f.remote.account, f.remote.resets.single().first)
+            assertEquals(1, f.remote.inputs.size)
         }
     }
 
@@ -500,7 +529,7 @@ class AssistantRecoveryModelTest {
                 if (path.getOrNull(3) == "inputs") {
                     val id = path[4]
                     jsonResponse(
-                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":3,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}"""
+                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":3,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}""",
                     )
                 } else previous(request)
             }
@@ -576,11 +605,11 @@ class AssistantRecoveryModelTest {
                     .persist(
                         api.identity,
                         ComposerJournal(
-                            entries = mapOf(target.key to ComposerEntry(text = "Old draft"))
+                            entries = mapOf(target.key to ComposerEntry(text = "Old draft")),
                         ),
                     )
                     .await()
-            }
+            },
         ) { f ->
             assertEquals(3, f.journal.load(f.api.identity).journal.format)
             f.composer.recover(target, RecoveryApiFixture.FAILURE)
@@ -600,14 +629,30 @@ class AssistantRecoveryModelTest {
     @Test
     fun billingAndSettingsFailuresNeverBlindlyContinueOrReset() = runTest {
         for (reason in listOf("insufficient_credits", "invalid_credentials")) {
+            val billingAttempts = AtomicInteger()
             withRecovery(
-                before = { _, remote, _ ->
+                before = { api, remote, _ ->
                     remote.set(RecoveryApiFixture.input(), RecoveryApiFixture.failure(reason))
-                }
+                    val canonical = api.commandResponse
+                    api.commandResponse = { request ->
+                        if (
+                            request.requestUrl?.encodedPath == "/api/billing/status" &&
+                                billingAttempts.incrementAndGet() <= 2
+                        ) {
+                            jsonResponse(
+                                    """{"error":{"code":"UNAVAILABLE","message":"Unavailable"}}""",
+                                )
+                                .setResponseCode(503)
+                        } else canonical(request)
+                    }
+                },
             ) { f ->
                 val data = f.recovery.uiState.value.data!!
                 assertFalse(data.classification.canContinue)
-                if (reason == "insufficient_credits") assertEquals(0.0, data.billing!!.credits, 0.0)
+                if (reason == "insufficient_credits") {
+                    assertEquals(3, billingAttempts.get())
+                    assertEquals(0.0, data.billing!!.credits, 0.0)
+                } else assertEquals(0, billingAttempts.get())
                 f.composer.recover(target, RecoveryApiFixture.FAILURE)
                 f.idle()
                 f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
@@ -628,7 +673,7 @@ class AssistantRecoveryModelTest {
                     RecoveryApiFixture.input(2),
                     RecoveryApiFixture.failure(seq = 3),
                 )
-            }
+            },
         ) { f ->
             val previous = f.api.commandResponse
             val hold = AtomicBoolean(true)
@@ -826,7 +871,7 @@ class AssistantRecoveryModelTest {
                     CHAT_PERSONAL,
                     rows,
                     HistoryCursor(rows.last().id, rows.last().seqId),
-                )
+                ),
             )
         }
         val input = RecoveryApiFixture.input()
@@ -869,7 +914,7 @@ class AssistantRecoveryModelTest {
                 input,
                 failure,
                 historyEventWire("answer", 3, payload = """{"content":"Later answer"}"""),
-            )
+            ),
         )
     }
 
@@ -886,11 +931,11 @@ class AssistantRecoveryModelTest {
             )) {
             assertFalse(
                 classifyFailure(AssistantFailure.Run("id", reason), RecoveryFramework.Codex)
-                    .canContinue
+                    .canContinue,
             )
         }
         assertTrue(
-            classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue
+            classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue,
         )
         val model =
             classifyFailure(

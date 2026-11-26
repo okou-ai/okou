@@ -41,8 +41,11 @@ export function mockBrowserCdp(
   cdpUrl: string,
   options: {
     readonly autoOpen?: boolean;
+    readonly onConnecting?: (url: string, socket: { open(): void }) => void;
     readonly streaming?: boolean;
+    readonly announceNewTargets?: boolean;
     readonly targets?: readonly BrowserTarget[];
+    readonly editors?: ReadonlyMap<string, HTMLTextAreaElement>;
     readonly unavailableTargets?: readonly string[];
     readonly crashedTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
@@ -50,12 +53,13 @@ export function mockBrowserCdp(
     readonly nativeBase64?: boolean;
     readonly endpointAliases?: readonly string[];
     readonly enforceFrameWindow?: boolean;
+    readonly onVersionProbe?: (connectionId: number) => void;
   } = {},
 ) {
   context.mocks.browser.nativeTextInsertion();
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
   const connectionEndpoints = new Map<number, string>();
-  context.mocks.browser.canvasRendering();
+  const canvas = context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64(options.nativeBase64 ?? true);
   const bitmap =
     options.streaming === false
@@ -79,7 +83,7 @@ export function mockBrowserCdp(
   });
   let created = 0;
   let corruptPageAttachment = false;
-  let updateBeforeTabRead = false;
+  let updateBeforeTabRead: ((targetId: string) => void) | undefined;
   let sessionSequence = 0;
   let nativeSequence = 0;
   let nativeEpoch = "fixture-worker";
@@ -87,7 +91,7 @@ export function mockBrowserCdp(
   const nativeIds = new Map<string, number>();
   let nextNativeId = 1;
   const requests: BrowserRequest[] = [];
-  const input: { method: string; params: unknown; sessionId?: string }[] = [];
+  const input: Pick<BrowserRequest, "method" | "params" | "sessionId">[] = [];
   const detached: string[] = [];
   const retiredSessions = new Set<string>();
   const sessionTargets = new Map<string, string>();
@@ -101,6 +105,7 @@ export function mockBrowserCdp(
   let frameAcksHeld = false;
   const crashedTargets = new Set(options.crashedTargets);
   const captures: unknown[] = [];
+  const heldCloses = new Map<string, (complete: () => void) => void>();
   const heldReplies = new Map<string, (response: ProtocolReply) => void>();
   const heldFrames = new Map<string, (sessionId: string) => void>();
   const nextResponses = new Map<
@@ -160,7 +165,12 @@ export function mockBrowserCdp(
     }
   }
 
-  function frame(data: string, sessionId?: string) {
+  function frame(
+    data: string,
+    sessionId?: string,
+    rasterWidth?: number,
+    frameNumber = 1,
+  ) {
     sessionId ??= [...capturing].reverse().find((id) => {
       return sessionTargets.get(id) === "example-page";
     });
@@ -171,23 +181,26 @@ export function mockBrowserCdp(
       return candidate.targetId === sessionTargets.get(sessionId);
     });
     if (target && crashedTargets.has(target.targetId)) {
-      return;
+      return false;
     }
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
-      return;
+      return false;
     }
     const window = frameWindows.get(sessionId);
     if (options.enforceFrameWindow && window) {
       if (window.outstanding >= window.limit) {
-        return;
+        return false;
       }
       window.outstanding++;
+    }
+    if (rasterWidth !== undefined) {
+      bitmap?.resize(rasterWidth, viewport.height);
     }
     event(
       "Page.screencastFrame",
       {
         data,
-        sessionId: 1,
+        sessionId: frameNumber,
         metadata: {
           timestamp: 2,
           offsetTop: 0,
@@ -200,6 +213,7 @@ export function mockBrowserCdp(
       },
       sessionId,
     );
+    return true;
   }
 
   function addTarget(url: string, windowId?: number) {
@@ -210,7 +224,11 @@ export function mockBrowserCdp(
       windowId,
     };
     targets.push(target);
-    event("Target.targetCreated", { targetInfo: { ...target, type: "page" } });
+    if (options.announceNewTargets !== false) {
+      event("Target.targetCreated", {
+        targetInfo: { ...target, type: "page" },
+      });
+    }
     nativeEvent("tab-created", target);
     return target;
   }
@@ -266,12 +284,15 @@ export function mockBrowserCdp(
       url: string().optional(),
     }).parse(JSON.parse(raw));
     if (request.method === "getTab" && updateBeforeTabRead) {
-      updateBeforeTabRead = false;
+      const updated = updateBeforeTabRead;
+      updateBeforeTabRead = undefined;
       const target = targets.find((target) => {
         return nativeTab(target).id === request.tabId;
       });
       if (target) {
+        target.title = "Preparing new tab";
         nativeEvent("tab-updated", target);
+        updated(target.targetId);
       }
     }
     const startedSequence = nativeSequence;
@@ -556,20 +577,20 @@ export function mockBrowserCdp(
     return {};
   }
 
-  function navigate(request: BrowserRequest, url: string) {
-    const target = targetForSession(request.sessionId);
+  function navigate(sessionId: string | undefined, url: string) {
+    const target = targetForSession(sessionId);
     target.url = url;
     delete target.pendingUrl;
     target.title = url === "about:blank" ? url : new URL(url).hostname;
     event(
       "Page.frameNavigated",
       { frame: { id: "example-frame", loaderId: "navigated-loader", url } },
-      request.sessionId,
+      sessionId,
     );
     event("Target.targetInfoChanged", {
       targetInfo: { ...target, type: "page" },
     });
-    event("Page.loadEventFired", { timestamp: 2 }, request.sessionId);
+    event("Page.loadEventFired", { timestamp: 2 }, sessionId);
     return { frameId: "example-frame" };
   }
 
@@ -578,7 +599,7 @@ export function mockBrowserCdp(
       case "Page.reload": {
         const target = targetForSession(request.sessionId);
         if (crashedTargets.delete(target.targetId)) {
-          navigate(request, target.url);
+          navigate(request.sessionId, target.url);
         }
         return {};
       }
@@ -587,7 +608,7 @@ export function mockBrowserCdp(
       }
       case "Page.navigate": {
         const { url } = object({ url: string() }).parse(request.params);
-        return navigate(request, url);
+        return navigate(request.sessionId, url);
       }
       case "Page.startScreencast": {
         captures.push(request.params);
@@ -726,6 +747,20 @@ export function mockBrowserCdp(
         return { result: pageResult(request) };
       }
       case "Input": {
+        if (request.method === "Input.insertText" && options.editors) {
+          const editor = options.editors.get(
+            targetForSession(request.sessionId).targetId,
+          );
+          if (editor) {
+            const { text } = object({ text: string() }).parse(request.params);
+            editor.setRangeText(
+              text,
+              editor.selectionStart,
+              editor.selectionEnd,
+              "end",
+            );
+          }
+        }
         if (
           [
             "Input.insertText",
@@ -745,30 +780,19 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
-  const socketOptions = { autoOpen: options.autoOpen };
-  const socket = context.mocks.browser.webSocket((data, url, peer) => {
-    if (!endpoints.has(url)) {
-      throw new Error("Unexpected viewer endpoint");
-    }
-    connectionEndpoints.set(peer.id, url);
-    const request = {
-      ...requestSchema.parse(JSON.parse(data)),
-      connectionId: peer.id,
-    };
-    requests.push(request);
-    if (request.id === undefined) {
-      return null;
-    }
-    // Native effects and notifications precede a held protocol receipt.
-    const response = JSON.stringify({
-      id: request.id,
-      ...respond(request, peer),
-    });
+  function heldReplyKey(request: BrowserRequest) {
     let receiptKey = request.method;
     if (request.method === "Runtime.evaluate") {
       const { expression } = object({ expression: string() }).parse(
         request.params,
       );
+      if (
+        expression.includes("doc.activeElement") &&
+        expression.includes("offsetX:") &&
+        heldReplies.has("editing-context")
+      ) {
+        return "editing-context";
+      }
       if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
         const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
         const { method } = object({ method: string() }).parse(JSON.parse(raw));
@@ -782,6 +806,55 @@ export function mockBrowserCdp(
     ) {
       receiptKey = `membership:${request.params?.targetId}`;
     }
+    const addressedTarget =
+      request.params?.targetId ??
+      (request.sessionId ? sessionTargets.get(request.sessionId) : undefined);
+    const targeted = addressedTarget && `${receiptKey}:${addressedTarget}`;
+    if (targeted && heldReplies.has(targeted)) {
+      receiptKey = targeted;
+    }
+    return receiptKey;
+  }
+
+  const socketOptions = {
+    autoOpen: options.autoOpen,
+    onConnecting: options.onConnecting,
+  };
+  const socket = context.mocks.browser.webSocket((data, url, peer) => {
+    if (!endpoints.has(url)) {
+      throw new Error("Unexpected viewer endpoint");
+    }
+    connectionEndpoints.set(peer.id, url);
+    const request = {
+      ...requestSchema.parse(JSON.parse(data)),
+      connectionId: peer.id,
+    };
+    requests.push(request);
+    if (request.method === "Browser.getVersion") {
+      options.onVersionProbe?.(peer.id);
+    }
+    if (request.id === undefined) {
+      return null;
+    }
+    if (request.method === "Target.closeTarget" && request.params?.targetId) {
+      const targetId = request.params.targetId;
+      const hold = heldCloses.get(targetId);
+      if (hold) {
+        heldCloses.delete(targetId);
+        hold(() =>
+          peer.receive(
+            JSON.stringify({ id: request.id, ...respond(request, peer) }),
+          ),
+        );
+        return null;
+      }
+    }
+    // Native effects and notifications precede a held protocol receipt.
+    const response = JSON.stringify({
+      id: request.id,
+      ...respond(request, peer),
+    });
+    const receiptKey = heldReplyKey(request);
     const held = heldReplies.get(receiptKey);
     if (
       held &&
@@ -805,18 +878,21 @@ export function mockBrowserCdp(
     });
     return {
       received: requested.promise,
-      release(data = "AAAA") {
+      release(data = "AAAA", frameNumber = 1, rasterWidth?: number) {
         if (!receivedSession) {
           throw new Error("No screencast request received for the held frame");
         }
         heldFrames.delete(key);
-        frame(data, receivedSession);
+        frame(data, receivedSession, rasterWidth, frameNumber);
+        return receivedSession;
       },
     };
   }
 
   return {
     event,
+    navigate,
+    canvas,
     crash(
       targetId: string,
       notification: "session" | "target" | "both" | "none" = "both",
@@ -845,6 +921,12 @@ export function mockBrowserCdp(
     },
     targets,
     input,
+    inputForTarget(targetId: string) {
+      return input.filter(
+        ({ sessionId }) =>
+          sessionId !== undefined && sessionTargets.get(sessionId) === targetId,
+      );
+    },
     detached,
     captures,
     viewport,
@@ -890,6 +972,12 @@ export function mockBrowserCdp(
             return url === endpoint;
           }).length;
     },
+    requestsAt(endpoint: string) {
+      return requests.filter(
+        ({ connectionId }) =>
+          connectionEndpoints.get(connectionId) === endpoint,
+      );
+    },
     activeConnections: socket.activeConnections,
     setAutoOpen(autoOpen: boolean) {
       socketOptions.autoOpen = autoOpen;
@@ -921,7 +1009,7 @@ export function mockBrowserCdp(
     },
     redirectNextNavigation(url: string) {
       nextResponses.set("Page.navigate", (request) => {
-        return { result: navigate(request, url) };
+        return { result: navigate(request.sessionId, url) };
       });
     },
     holdFrames,
@@ -930,6 +1018,14 @@ export function mockBrowserCdp(
     },
     requests,
     nativeEvent,
+    closeWindow(windowId: number) {
+      const closing = targets.filter(
+        (page) => (page.windowId ?? 0) === windowId,
+      );
+      for (const page of closing) {
+        removeTarget(targets.indexOf(page));
+      }
+    },
     resetWorker() {
       nativeEpoch = "replacement-worker";
       nativeEvent("tab-updated");
@@ -963,7 +1059,9 @@ export function mockBrowserCdp(
       corruptPageAttachment = true;
     },
     updateBeforeNextTabRead() {
-      updateBeforeTabRead = true;
+      const updated = context.mocks.deferred<string>();
+      updateBeforeTabRead = updated.resolve;
+      return updated.promise;
     },
     holdNextNative(method: string) {
       const response = context.mocks.deferred<ProtocolReply>();
@@ -972,9 +1070,20 @@ export function mockBrowserCdp(
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release() {
+        async release(onRead?: () => void) {
           const reply = await response.promise;
-          reply.peer.receive(reply.message);
+          reply.peer.receive(reply.message, onRead);
+        },
+      };
+    },
+    holdClose(targetId: string) {
+      const arrival = context.mocks.deferred<() => void>();
+      heldCloses.set(targetId, arrival.resolve);
+      return {
+        received: arrival.promise,
+        async release() {
+          const complete = await arrival.promise;
+          complete();
         },
       };
     },
@@ -1005,25 +1114,48 @@ export function mockBrowserCdp(
         async releaseFailure(
           message = "Target no longer exists",
           code = -32_000,
+          onRead?: () => void,
         ) {
           const reply = await response.promise;
           const { id } = object({ id: number() }).parse(
             JSON.parse(reply.message),
           );
-          reply.peer.receive(JSON.stringify({ id, error: { code, message } }));
+          reply.peer.receive(
+            JSON.stringify({ id, error: { code, message } }),
+            onRead,
+          );
         },
       };
     },
-    holdNext(method: string) {
+    holdNext(method: string, targetId?: string) {
       const response = context.mocks.deferred<ProtocolReply>();
-      heldReplies.set(method, response.resolve);
+      heldReplies.set(
+        targetId === undefined ? method : `${method}:${targetId}`,
+        response.resolve,
+      );
       return {
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release() {
+        async reject(message: string) {
           const reply = await response.promise;
-          reply.peer.receive(reply.message);
+          const { id } = object({ id: number() }).parse(
+            JSON.parse(reply.message),
+          );
+          reply.peer.receive(
+            JSON.stringify({ id, error: { code: -32_000, message } }),
+          );
+        },
+        async release(result?: unknown, onRead?: () => void) {
+          const reply = await response.promise;
+          if (result === undefined) {
+            reply.peer.receive(reply.message, onRead);
+          } else {
+            const { id } = object({ id: number() }).parse(
+              JSON.parse(reply.message),
+            );
+            reply.peer.receive(JSON.stringify({ id, result }), onRead);
+          }
         },
       };
     },

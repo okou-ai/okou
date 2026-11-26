@@ -60,7 +60,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   >;
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
-  readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
+  readonly discordContext$: ReturnType<
+    typeof createDiscordThreadContext
+  >["context$"];
   readonly automationSnapshot$: ReturnType<
     typeof createThreadAutomationSnapshot
   >;
@@ -111,7 +113,7 @@ export function createThreadContext(
     integrations.automationTarget$,
     dispatchTiming$,
   );
-  const discordContext$ = createDiscordThreadContext(
+  const discord = createDiscordThreadContext(
     pickedEvent$,
     orgId,
     dispatchTiming$,
@@ -126,6 +128,7 @@ export function createThreadContext(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
+    sourceSettings.featureSwitches$,
     bootstrap,
   );
   const runIds$ = createRunIds();
@@ -149,13 +152,12 @@ export function createThreadContext(
     templateSources$: templates.sources$,
     modelRoute$: model.modelRoute$,
     threadContinuation$,
-    discordContext$,
+    discordResources$: discord.resources$,
     emailMailboxConnections$,
     executionPackageSources$: integrations.executionPackageSources$,
   };
   const resources = createThreadInputResources(
     pickedEvent$,
-    bootstrap,
     integrations,
     inputSources,
   );
@@ -172,7 +174,7 @@ export function createThreadContext(
     emailMailboxConnections$,
     agentPhoneContext$: integrations.agentPhoneContext$,
     wechatContext$: integrations.wechatContext$,
-    discordContext$,
+    discordContext$: discord.context$,
     automationSnapshot$: integrations.automationSnapshot$,
     automationPayload$: integrations.automationPayload$,
     automationTarget$: integrations.automationTarget$,
@@ -232,7 +234,6 @@ function createThreadModelContext(
 
 function createThreadInputResources(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  owner: { readonly userId: string; readonly orgId: string },
   integrations: ReturnType<typeof createThreadIntegrationContexts>,
   context: Pick<
     ThreadContext,
@@ -240,12 +241,11 @@ function createThreadInputResources(
     | "templateSources$"
     | "modelRoute$"
     | "threadContinuation$"
-    | "discordContext$"
     | "emailMailboxConnections$"
     | "executionPackageSources$"
-  >,
+  > & { readonly discordResources$: Computed<Promise<void>> },
 ) {
-  const projectContext$ = createThreadProjectContext(pickedEvent$, owner);
+  const projectContext$ = createThreadProjectContext(pickedEvent$);
   const incompleteContext$ = createIncompletePrompt(pickedEvent$);
   const emailResources$ = computed(async (get) => {
     await Promise.allSettled([
@@ -268,7 +268,7 @@ function createThreadInputResources(
     email: emailResources$,
     agentphone: integrations.agentPhoneContext$,
     wechat: integrations.wechatContext$,
-    discord: context.discordContext$,
+    discord: context.discordResources$,
   };
   const inputResources$ = computed(async (get) => {
     const event = await get(pickedEvent$);

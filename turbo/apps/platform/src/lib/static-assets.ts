@@ -1,3 +1,7 @@
+import pdfUnicodeRegularFontUrl from "@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf?url";
+import pdfUnicodeBoldFontUrl from "@expo-google-fonts/noto-sans/700Bold/NotoSans_700Bold.ttf?url";
+import pdfUnicodeItalicFontUrl from "@expo-google-fonts/noto-sans/400Regular_Italic/NotoSans_400Regular_Italic.ttf?url";
+import pdfUnicodeBoldItalicFontUrl from "@expo-google-fonts/noto-sans/700Bold_Italic/NotoSans_700Bold_Italic.ttf?url";
 import pdfRegularFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Regular.otf?url";
 import pdfBoldFontUrl from "@fontpkg/noto-sans-cjk-sc/NotoSansCJKsc-Bold.otf?url";
 import pdfItalicFontUrl from "@fontpkg/sarasa-gothic-sc/sarasa-gothic-sc-italic.ttf?url";
@@ -27,6 +31,10 @@ export const platformMessagePdfFontUrls = Object.freeze({
   emoji: platformStaticAssetUrl(
     "message-pdf/fonts/noto-emoji-emoji-400-normal-61c7949ebb9d.woff",
   ),
+  unicodeRegular: pdfUnicodeRegularFontUrl,
+  unicodeBold: pdfUnicodeBoldFontUrl,
+  unicodeItalic: pdfUnicodeItalicFontUrl,
+  unicodeBoldItalic: pdfUnicodeBoldItalicFontUrl,
 });
 
 export const platformPreviewMessagePdfFontUrls = Object.freeze({
@@ -35,7 +43,18 @@ export const platformPreviewMessagePdfFontUrls = Object.freeze({
   italic: pdfItalicFontUrl,
   boldItalic: pdfBoldItalicFontUrl,
   emoji: pdfEmojiFontUrl,
+  unicodeRegular: pdfUnicodeRegularFontUrl,
+  unicodeBold: pdfUnicodeBoldFontUrl,
+  unicodeItalic: pdfUnicodeItalicFontUrl,
+  unicodeBoldItalic: pdfUnicodeBoldItalicFontUrl,
 });
+
+export const okouMessageAvatarStill = platformStaticAssetUrl(
+  "views/okou-page/assets/okou-avatar/still-6067a2799779.webp",
+);
+export const okouMessageAvatarAnimated = platformStaticAssetUrl(
+  "views/okou-page/assets/okou-avatar/idle-50ae6937b88f.svg",
+);
 
 export const platformOkouWordmarkDarkImg =
   "https://static.okou.io/public/okou-logo-wordmark-dark-8ac16c9eb76d.svg";

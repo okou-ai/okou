@@ -900,7 +900,15 @@ function createScrollContentOnRef(
   return onRef(
     command(({ set }, content: HTMLElement, signal: AbortSignal) => {
       L.debug("content bound", { threadId });
-      const restoreLayout = onDomEventFn(() => {
+      const restoreLayout = onDomEventFn((event: Event) => {
+        // Avatar images have fixed dimensions. Replaying the
+        // last reading position here can undo a newer compositor scroll.
+        if (
+          event.target instanceof Element &&
+          event.target.closest("[data-okou-avatar]")
+        ) {
+          return;
+        }
         return set(navigation.restoreScrollPosition$, signal);
       });
       // These events do not bubble; capture them from the actual resource or

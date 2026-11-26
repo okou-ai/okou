@@ -102,6 +102,16 @@ const expectedBindings = [
     direction: "response",
   },
   {
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckRequest",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["runners", "ssh"],
+    rustTypeName: "CheckResponse",
+    direction: "response",
+  },
+  {
     rustModulePath: ["runners", "runs"],
     rustTypeName: "CodexRuntimeConfig",
     direction: "response",
@@ -183,6 +193,11 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["webhooks", "agent", "storages", "commit"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
     rustTypeName: "Response",
     direction: "response",
   },

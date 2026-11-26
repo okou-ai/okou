@@ -45,11 +45,39 @@ internal interface CanonicalApi {
         @Query("threadId") `queryThreadId`: String? = null,
     ): Response<ConnectorOverview>
 
+    @GET("/api/chat-threads/{threadId}/connector-access")
+    suspend fun `chatConnectorAccessWire`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ChatConnectorAccess>
+
+    @PUT("/api/chat-threads/{threadId}/connector-access/{connectionId}")
+    suspend fun `chatConnectorOverride`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ChatConnectorOverrideRequest,
+    ): Response<ChatConnectorAccess>
+
     @GET("/api/connector-account-access/defaults")
     suspend fun `connectorAccountDefaultsWire`(
         @Header("Authorization") token: String,
         @QueryMap parameters: Map<String, String>,
     ): Response<ConnectorAccountDefaults>
+
+    @GET("/api/connector-account-access/policies")
+    suspend fun `connectorAccountPoliciesWire`(
+        @Header("Authorization") token: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ConnectorAccountPolicies>
+
+    @PUT("/api/connector-account-access/{connectionId}/policy")
+    suspend fun `connectorAccountPolicyUpdate`(
+        @Header("Authorization") token: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ConnectorAccountPolicyRequest,
+    ): Response<ConnectorAccountPolicy>
 
     @PUT("/api/connector-account-access/{connectionId}/default-enabled")
     suspend fun `connectorAccountDefaultUpdate`(
@@ -205,7 +233,7 @@ internal interface CanonicalApi {
 
     @GET("/api/connectors/connected")
     suspend fun `connectedConnectors`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<ConnectedConnectors>
 
     @GET("/api/workflows")
@@ -220,6 +248,13 @@ internal interface CanonicalApi {
         @Path("workflowId") `pathWorkflowId`: String,
     ): Response<WorkflowDetail>
 
+    @GET("/api/workflows/{workflowId}/run-history")
+    suspend fun `workflowRunHistory`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+        @Query("cursor") `queryCursor`: String? = null,
+    ): Response<WorkflowRunHistory>
+
     @PATCH("/api/workflows/{workflowId}")
     suspend fun `updateWorkflow`(
         @Header("Authorization") token: String,
@@ -229,7 +264,7 @@ internal interface CanonicalApi {
 
     @GET("/api/workflow-automations")
     suspend fun `workspaceWorkflowAutomations`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<WorkspaceWorkflowAutomations>
 
     @POST("/api/workflows/{workflowId}/automations")
@@ -258,6 +293,12 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
     ): Response<WorkflowAutomation>
 
+    @GET("/api/chat/search")
+    suspend fun `searchChatMessages`(
+        @Header("Authorization") token: String,
+        @Query("keyword") `queryKeyword`: String,
+    ): Response<ChatMessageSearchResponse>
+
     @GET("/api/chat-drafts/composer")
     suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
@@ -265,7 +306,7 @@ internal interface CanonicalApi {
     suspend fun `threadDraft`(
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+    ): Response<ThreadDraft>
 
     @PATCH("/api/chat-drafts/composer")
     suspend fun `saveWorkspaceDraft`(
@@ -288,7 +329,7 @@ internal interface CanonicalApi {
 
     @GET("/api/user-model-preference")
     suspend fun `defaultModelPreference`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<DefaultModelPreference>
 
     @PUT("/api/user-model-preference")
@@ -297,12 +338,68 @@ internal interface CanonicalApi {
         @Body body: UpdateDefaultModelPreference,
     ): Response<DefaultModelPreference>
 
+    @PATCH("/api/user-model-preference")
+    suspend fun `updateImageModelPreference`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateImageModelPreference,
+    ): Response<DefaultModelPreference>
+
+    @GET("/api/paid-tools")
+    suspend fun `paidToolPreferences`(
+        @Header("Authorization") token: String,
+    ): Response<PaidToolPreferences>
+
+    @PATCH("/api/paid-tools/{toolId}")
+    suspend fun `updatePaidTool`(
+        @Header("Authorization") token: String,
+        @Path("toolId") `pathToolId`: String,
+        @Body body: UpdatePaidTool,
+    ): Response<PaidToolUpdate>
+
+    @GET("/api/preferences/email-subscription")
+    suspend fun `emailSubscription`(
+        @Header("Authorization") token: String,
+    ): Response<EmailSubscription>
+
+    @PUT("/api/preferences/email-subscription")
+    suspend fun `updateEmailSubscription`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateEmailSubscriptionRequest,
+    ): Response<EmailSubscriptionUpdate>
+
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 
+    @GET("/api/preferences/morning-brief")
+    suspend fun `morningBriefPreference`(
+        @Header("Authorization") token: String,
+    ): Response<MorningBriefPreference>
+
+    @PUT("/api/preferences/morning-brief")
+    suspend fun `updateMorningBriefPreference`(
+        @Header("Authorization") token: String,
+        @Body body: SetMorningBriefPreference,
+    ): Response<MorningBriefPreference>
+
+    @GET("/api/preferences/proactive-suggestions")
+    suspend fun `proactiveSuggestionsPreference`(
+        @Header("Authorization") token: String,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @PUT("/api/preferences/proactive-suggestions/with-feed")
+    suspend fun `updateProactiveSuggestionsWithFeed`(
+        @Header("Authorization") token: String,
+        @Body body: SetProactiveSuggestionsPreference,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @GET("/api/feed/sources")
+    suspend fun `suggestionFeedSources`(
+        @Header("Authorization") token: String,
+    ): Response<SuggestionFeedSources>
+
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<RecoverySubscriptions>
 
     @GET("/api/billing/status")
@@ -310,7 +407,7 @@ internal interface CanonicalApi {
 
     @GET("/api/billing/usage-pack-credits")
     suspend fun `usagePackCredits`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<UsagePackCredits>
 
     @POST("/api/me/model-provider-accounts/{id}/activate")
@@ -341,6 +438,13 @@ internal interface CanonicalApi {
         @Body body: SendRequest,
     ): Response<AcceptedInput>
 
+    @POST("/api/chat-threads/{id}/activity-summary")
+    suspend fun `summarizeRunActivity`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: RunActivityRequest,
+    ): Response<RunActivitySummary>
+
     @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
     suspend fun `inputStatus`(
         @Header("Authorization") token: String,
@@ -350,12 +454,12 @@ internal interface CanonicalApi {
 
     @GET("/api/onboarding/status")
     suspend fun `onboardingStatus`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<OnboardingStatus>
 
     @GET("/api/instructions")
     suspend fun `personalInstructions`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<PersonalInstructions>
 
     @PUT("/api/instructions")
@@ -403,6 +507,9 @@ internal interface CanonicalApi {
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
+    @GET("/api/chat-thread-drafts")
+    suspend fun `chatDraftIndex`(@Header("Authorization") token: String): Response<ChatDraftIndex>
+
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
 
@@ -411,6 +518,18 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
+
+    @GET("/api/chat-threads/{id}/relations/children")
+    suspend fun `relatedCreatedChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCreatedChats>
+
+    @GET("/api/chat-threads/{id}/relations/communications")
+    suspend fun `relatedCommunicatingChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCommunicatingChats>
 
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(
@@ -484,12 +603,31 @@ internal interface CanonicalApi {
         @Body body: RenameThreadRequest,
     ): Response<Unit>
 
+    @POST("/api/chat-threads/{id}/model-selection")
+    suspend fun `setThreadModel`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: SetThreadModelRequest,
+    ): Response<Unit>
+
+    @POST("/api/projects")
+    suspend fun `createProject`(
+        @Header("Authorization") token: String,
+        @Body body: CreateProjectRequest,
+    ): Response<ProjectRecord>
+
+    @GET("/api/projects/{id}")
+    suspend fun `projectDetail`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ProjectRecord>
+
     @PATCH("/api/projects/{id}")
     suspend fun `renameProject`(
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
         @Body body: RenameProjectRequest,
-    ): Response<RenamedProject>
+    ): Response<ProjectRecord>
 
     @PUT("/api/chat-threads/{id}/project")
     suspend fun `moveThreadToProject`(
@@ -535,6 +673,48 @@ internal interface CanonicalApi {
     ): Response<Unit>
 }
 
+internal suspend fun CanonicalApi.`chatConnectorAccess`(
+    token: String,
+    `pathThreadId`: String,
+    query: ChatConnectorAccessQuery,
+): Response<ChatConnectorAccess> =
+    `chatConnectorAccessWire`(token, `pathThreadId`, query.toQueryParameters())
+
+internal fun ChatConnectorAccessQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ChatConnectorAccessQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1,
+    ) {
+        "Invalid ChatConnectorAccessQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
 internal suspend fun CanonicalApi.`connectorAccountDefaults`(
     token: String,
     query: ConnectorAccountDefaultsQuery,
@@ -565,14 +745,56 @@ internal fun ConnectorAccountDefaultsQuery.toQueryParameters(): Map<String, Stri
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountDefaultsQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`connectorAccountPolicies`(
+    token: String,
+    query: ConnectorAccountPoliciesQuery,
+): Response<ConnectorAccountPolicies> =
+    `connectorAccountPoliciesWire`(token, query.toQueryParameters())
+
+internal fun ConnectorAccountPoliciesQuery.toQueryParameters(): Map<String, String> {
+    val value =
+        Json.encodeToJsonElement(ConnectorAccountPoliciesQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1,
+    ) {
+        "Invalid ConnectorAccountPoliciesQuery"
     }
     return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
@@ -639,7 +861,7 @@ internal fun ConnectorAccountsQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     } &&
@@ -662,7 +884,7 @@ internal fun ConnectorAccountsQuery.toQueryParameters(): Map<String, String> {
                                 field.content.length <= 255)
                         })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountsQuery"
     }
@@ -699,12 +921,12 @@ internal fun ConnectorAccountQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountQuery"
     }
@@ -742,12 +964,12 @@ internal fun ConnectorAccountImpactQuery.toQueryParameters(): Map<String, String
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountImpactQuery"
     }
@@ -785,12 +1007,12 @@ internal fun ConnectorOauthCompletionQuery.toQueryParameters(): Map<String, Stri
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorOauthCompletionQuery"
     }
@@ -807,7 +1029,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
     require(
         listOf(
                 (value.keys.all {
-                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword")
+                    it in setOf("limit", "cursor", "kind", "chatThreadId", "keyword", "direction")
                 } &&
                     (!value.containsKey("limit") ||
                         value["limit"].let { field ->
@@ -841,7 +1063,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 Regex(
-                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                     )
                                     .containsMatchIn(field.content))
                         }) &&
@@ -851,9 +1073,15 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                 field.isString &&
                                 field.content.length >= 1 &&
                                 field.content.length <= 256)
-                        }))
+                        }) &&
+                    (!value.containsKey("direction") ||
+                        value["direction"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content in setOf("asc", "desc"))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ArtifactCatalogQuery"
     }
@@ -883,12 +1111,12 @@ internal fun ArtifactDetailQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 Regex(
-                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                     )
                                     .containsMatchIn(field.content))
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ArtifactDetailQuery"
     }
@@ -913,9 +1141,9 @@ internal fun ResolveArtifactReferenceQuery.toQueryParameters(): Map<String, Stri
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 field.content in setOf("file", "html", "artifact"))
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ResolveArtifactReferenceQuery"
     }
@@ -937,9 +1165,9 @@ internal fun WorkflowsQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 field.content == "workspace")
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid WorkflowsQuery"
     }
@@ -984,7 +1212,7 @@ internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     } &&
@@ -995,7 +1223,7 @@ internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
                                 true)
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid HistoryRowsQuery"
     }

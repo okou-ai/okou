@@ -19,18 +19,19 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { resetSignal } from "../utils.ts";
+import { memberConnectorAccountAccess$ } from "../external/feature-switch.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
 import { createChatConnectorOverviewSignals } from "./chat-connector-overview.ts";
-import { createChatConnectorMenuNavigationSignals } from "./chat-connector-menu-navigation.ts";
 import {
   createConnectorPermissionsSignals,
   type ConnectorPermissionsTarget,
 } from "./settings/connector-permissions.ts";
 import { createChatConnectorAccountManagerSignals } from "./chat-connector-account-manager.ts";
+import { createConnectorAccountAccessSettingsSignals } from "./settings/connector-accounts.ts";
 import { pageSignal$ } from "../page-signal.ts";
 
 interface PendingChatConnectorOverride {
@@ -52,6 +53,7 @@ export interface ChatConnectorMenuTarget {
 
 export interface ChatConnectorOverview extends ChatConnectorMenuTarget {
   readonly access: ChatConnectorAccess;
+  readonly memberAccess: boolean;
   readonly current:
     | (ChatConnectorOverviewEntry["accounts"][number] & { readonly id: string })
     | null;
@@ -93,35 +95,38 @@ function createChatConnectorReads({
     async (get): Promise<readonly ChatConnectorOverview[]> => {
       const pending = get(pending$);
       const entries = await get(entries$);
+      const memberAccess = await get(memberConnectorAccountAccess$);
       return entries.map((entry) => {
         const key = connectorAccountTargetKey(entry.target);
-        const accounts = entry.accounts.map((account) => {
-          const overrideEnabled = threadId
-            ? account.overrideEnabled
-            : (pending.overrides.find((candidate) => {
-                return (
-                  candidate.connectionId === account.connectionId &&
-                  connectorAccountTargetKey(candidate.target) === key
-                );
-              })?.enabled ?? null);
-          return {
-            ...account,
-            overrideEnabled,
-            enabled: overrideEnabled ?? account.defaultEnabled,
-          };
-        });
+        const accounts = memberAccess
+          ? entry.accounts
+          : entry.accounts.map((account) => {
+              const overrideEnabled = threadId
+                ? account.overrideEnabled
+                : (pending.overrides.find((candidate) => {
+                    return (
+                      candidate.connectionId === account.connectionId &&
+                      connectorAccountTargetKey(candidate.target) === key
+                    );
+                  })?.enabled ?? null);
+              return {
+                ...account,
+                overrideEnabled,
+                enabled: overrideEnabled ?? account.defaultEnabled,
+              };
+            });
         const allowed = accounts.filter((account) => {
           return account.enabled;
         });
-        const selection = pending.selections.find((candidate) => {
-          return connectorAccountTargetKey(candidate.target) === key;
-        });
+        const selectedConnectionId =
+          threadId || memberAccess
+            ? entry.currentConnectionId
+            : pending.selections.find((candidate) => {
+                return connectorAccountTargetKey(candidate.target) === key;
+              })?.connectionId;
         const current =
           allowed.find((account) => {
-            return (
-              account.connectionId ===
-              (threadId ? entry.currentConnectionId : selection?.connectionId)
-            );
+            return account.connectionId === selectedConnectionId;
           }) ??
           allowed.find((account) => {
             return account.isDefault;
@@ -136,6 +141,7 @@ function createChatConnectorReads({
         return {
           ...entry,
           access,
+          memberAccess,
           current: current ? { ...current, id: current.connectionId } : null,
         };
       });
@@ -269,6 +275,82 @@ function createChatConnectorMutations({
   return { setOverride$ };
 }
 
+function createAccountPanelSignals(
+  list: ReturnType<typeof createConnectorAccountListSignals>,
+) {
+  const target$ = state<ChatConnectorMenuTarget | null>(null);
+  const policySettings$ = computed((get) => {
+    const target = get(target$);
+    return target
+      ? createConnectorAccountAccessSettingsSignals(target.target)
+      : null;
+  });
+  const closeTarget$ = command(({ get, set }) => {
+    const settings = get(policySettings$);
+    if (settings) {
+      set(settings.close$);
+    }
+    set(target$, null);
+    set(list.clearTarget$);
+  });
+  // A connector removed by an overview refresh releases its account list.
+  const openRowRef$ = onRef<HTMLButtonElement>(
+    command(({ get, set }, _row, signal: AbortSignal) => {
+      const target = get(target$);
+      signal.addEventListener("abort", () => {
+        if (target && get(target$) === target) {
+          set(closeTarget$);
+        }
+      });
+    }),
+  );
+  const anchor$ = state<{ getBoundingClientRect(): DOMRect } | undefined>(
+    undefined,
+  );
+  const openTarget$ = command(
+    (
+      { get, set },
+      target: ChatConnectorMenuTarget,
+      rect: DOMRect | undefined,
+      signal: AbortSignal,
+    ) => {
+      const previous = get(policySettings$);
+      if (previous) {
+        set(previous.close$);
+      }
+      // Pin the panel to its opening position while the connector list scrolls.
+      set(
+        anchor$,
+        rect
+          ? {
+              getBoundingClientRect() {
+                return rect;
+              },
+            }
+          : undefined,
+      );
+      set(target$, target);
+      const settings = get(policySettings$);
+      if (settings) {
+        set(settings.open$, signal);
+      }
+      set(list.setTarget$, target.target, signal);
+    },
+  );
+  return {
+    target$,
+    anchor$,
+    openTarget$,
+    closeTarget$,
+    openRowRef$,
+    policySettings$,
+    policies$: computed(async (get) => {
+      const settings = get(policySettings$);
+      return settings ? await get(settings.policies$) : null;
+    }),
+  };
+}
+
 /** One composer's Chat preferences; opening the menu owns its account reads. */
 export function createChatConnectorAccessSignals(threadId?: string) {
   const pending$ = state<PendingChatConnectorAccess>({
@@ -279,10 +361,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     null,
   );
   const resetOwner$ = resetSignal();
-  const target$ = state<ChatConnectorMenuTarget | null>(null);
-  const menuTarget$ = computed((get) => {
-    return get(target$);
-  });
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
@@ -307,6 +385,15 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(setPermissions$, null);
   });
   const list = createConnectorAccountListSignals();
+  const {
+    target$,
+    anchor$,
+    openTarget$,
+    closeTarget$,
+    openRowRef$,
+    policySettings$,
+    policies$,
+  } = createAccountPanelSignals(list);
   const cache = createChatConnectorOverviewSignals(threadId);
   const { overview$, active$ } = createChatConnectorReads({
     entries$: cache.entries$,
@@ -318,22 +405,11 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(requests$, accountAccessRequests(set(resetOwner$, parentSignal)));
     set(cache.open$, parentSignal);
   });
-  const closeTarget$ = command(({ set }) => {
-    set(target$, null);
-    set(list.clearTarget$);
-  });
-  const navigation = createChatConnectorMenuNavigationSignals(closeTarget$);
   const close$ = command(({ set }) => {
     set(resetOwner$);
     set(requests$, null);
     set(closeTarget$);
   });
-  const openTarget$ = command(
-    ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(target$, target);
-      set(list.setTarget$, target.target, signal);
-    },
-  );
   const { setOverride$ } = createChatConnectorMutations({
     pending$,
     target$,
@@ -378,8 +454,15 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     targetRevision: cache.targetRevision,
     retry$: cache.retry$,
     current$,
-    navigation,
-    target$: menuTarget$,
+    openRowRef$,
+    policySettings$,
+    policies$,
+    anchor$: computed((get) => {
+      return get(anchor$);
+    }),
+    target$: computed((get) => {
+      return get(target$);
+    }),
     permissions$: computed((get) => {
       return get(permissions$);
     }),

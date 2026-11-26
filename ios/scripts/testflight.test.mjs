@@ -303,3 +303,41 @@ test("automatic internal group waits for Apple's assignment without writing", as
   );
   assert.ok(requests.every((r) => r.method === "GET"));
 });
+
+test("App Review failures report structured fields without exposing Apple account data", async (t) => {
+  const { client } = await apple(t, () => ({
+    status: 409,
+    body: {
+      errors: [
+        {
+          code: "STATE_ERROR",
+          detail: "private reviewer information",
+          meta: {
+            associatedErrors: {
+              version: [
+                {
+                  code: "ENTITY_ERROR.ATTRIBUTE.REQUIRED",
+                  source: { pointer: "/data/attributes/reviewNotes" },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  }));
+  await assert.rejects(
+    client.request("/v1/reviewSubmissions/draft", {
+      method: "PATCH",
+      body: { data: {} },
+    }),
+    (error) => {
+      assert.match(
+        error.message,
+        /HTTP 409.*STATE_ERROR.*ENTITY_ERROR.ATTRIBUTE.REQUIRED at \/data\/attributes\/reviewNotes/u,
+      );
+      assert.doesNotMatch(error.message, /private reviewer/u);
+      return true;
+    },
+  );
+});

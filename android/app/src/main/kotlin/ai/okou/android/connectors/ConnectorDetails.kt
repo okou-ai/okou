@@ -1,20 +1,25 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.OkouActionButton
+import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.chat.rememberChatWaitIndicator
-import ai.okou.android.currentWindowSizeDp
-import androidx.compose.foundation.BorderStroke
+import ai.okou.android.chat.ContentReadFeedback
+import ai.okou.android.isShortSettingsPanelWindow
+import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.settingsPanelContentPadding
+import ai.okou.android.updates.updateFocusOutline
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,16 +34,16 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +54,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -74,23 +80,39 @@ internal fun ConnectorDetails(
     state: ConnectorUiState,
     preview: ConnectorEntry?,
     wide: Boolean,
+    initialAccountId: String? = null,
+    onCloseInitialAccount: () -> Unit = {},
 ) {
     val detail = state.detail.data
     val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
+    if (entry == null && state.detail.failure != null) {
+        Box(
+            Modifier.fillMaxSize().testTag("connector-detail"),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            ConnectorReadError(
+                R.string.connector_load_failed,
+                Modifier.widthIn(max = 666.dp),
+            )
+        }
+        return
+    }
     val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
     val hasAccountContent =
         state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
+    var resolvingInitialAccount by
+        remember(initialAccountId) { mutableStateOf(initialAccountId != null) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val accountFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
     val permissionsFocus = remember { FocusRequester() }
     val renameFocus = remember { FocusRequester() }
-    val reauthorizeFocus = remember { FocusRequester() }
+    val primaryAccountFocus = remember { FocusRequester() }
     val disconnectFocus = remember { FocusRequester() }
     val account = accounts.find { it.id == accountId }
     val disconnectImpact = state.impact?.takeIf { it.accountId == accountId }
@@ -99,19 +121,37 @@ internal fun ConnectorDetails(
     val canModify = state.canChangeAccounts
     val color = MaterialTheme.colorScheme
 
+    LaunchedEffect(initialAccountId, state.accounts.isConfirmed) {
+        if (resolvingInitialAccount && state.accounts.isConfirmed) {
+            resolvingInitialAccount = false
+            if (accounts.any { it.id == initialAccountId }) {
+                accountId = initialAccountId
+                panel = ConnectorPanel.Account
+            }
+        }
+    }
+
     fun dismissPanel() {
         if (busy) return
         val previous = panel
         if (previous == ConnectorPanel.Permissions) model.hidePermissions()
         if (disconnectImpact != null) model.clearImpact()
         model.dismissAction()
+        if (
+            previous == ConnectorPanel.Account &&
+                initialAccountId != null &&
+                account?.id == initialAccountId
+        ) {
+            onCloseInitialAccount()
+            return
+        }
         when (previous) {
             ConnectorPanel.Rename,
             ConnectorPanel.Authorize -> {
                 panel = if (account != null) ConnectorPanel.Account else null
                 if (account != null) {
                     restoreActionFocus =
-                        if (previous == ConnectorPanel.Rename) renameFocus else reauthorizeFocus
+                        if (previous == ConnectorPanel.Rename) renameFocus else primaryAccountFocus
                 }
             }
             else -> panel = null
@@ -125,18 +165,17 @@ internal fun ConnectorDetails(
     }
 
     val confirmingDisconnect = disconnectImpact != null
-    LaunchedEffect(panel, confirmingDisconnect, restoreActionFocus, canModify) {
-        if (
-            panel == ConnectorPanel.Account && account != null && !confirmingDisconnect && canModify
-        ) {
-            val target = restoreActionFocus ?: return@LaunchedEffect
-            restoreActionFocus = null
-            if (target !== reauthorizeFocus || account.status.needsAttention) target.requestFocus()
-        }
-    }
 
-    LaunchedEffect(action?.authorization) {
-        if (panel == null && action?.authorization != null && !action.reconciling) {
+    val authorization = action?.authorization
+    LaunchedEffect(authorization) {
+        if (
+            panel == null &&
+                action != null &&
+                authorization != null &&
+                (!action.reconciling ||
+                    authorization is ConnectorAuthorization.Receipt &&
+                        authorization.externalCodeSessionId != null)
+        ) {
             accountId = action.target.connectionId
             panel = ConnectorPanel.Authorize
         }
@@ -163,8 +202,13 @@ internal fun ConnectorDetails(
             }
             ConnectorResult.Authorized -> {
                 if (panel == ConnectorPanel.Authorize) {
-                    panel = if (account != null) ConnectorPanel.Account else null
-                    if (panel == null && showsAddAccount) addFocus.requestFocus()
+                    if (account != null) {
+                        panel = ConnectorPanel.Account
+                        restoreActionFocus = primaryAccountFocus
+                    } else {
+                        panel = null
+                        if (showsAddAccount) addFocus.requestFocus()
+                    }
                 }
                 model.dismissAction()
             }
@@ -181,11 +225,11 @@ internal fun ConnectorDetails(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(top = if (wide) 28.dp else 20.dp, bottom = 24.dp)
-                .testTag("connector-detail")
+                .testTag("connector-detail"),
         ) {
             if (entry != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ConnectorIcon(entry, large = true)
+                    ConnectorIcon(entry.icon)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             entry.name,
@@ -207,7 +251,6 @@ internal fun ConnectorDetails(
                         }
                     }
                 }
-                if (entry.description.isNotBlank()) Spacer(Modifier.height(12.dp))
                 ConnectorSectionDivider()
                 Text(
                     stringResource(R.string.connector_accounts),
@@ -234,22 +277,20 @@ internal fun ConnectorDetails(
                 }
 
                 if (detailUnavailable) {
-                    ConnectorStatusBanner(R.string.connector_load_failed)
+                    ContentReadFeedback(R.string.connector_load_failed)
                 } else if (!hasAccountContent) {
                     when {
-                        state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
-                        state.offline -> ConnectorLoadWhenOnline()
                         state.accounts.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                            ContentReadFeedback(
+                                R.string.connector_accounts_failed,
+                                Modifier.fillMaxWidth(),
+                            )
                         else ->
                             ConnectorSkeleton(
                                 stringResource(R.string.connector_loading_accounts),
                                 rows = 1,
                             )
                     }
-                } else if (state.offline && detail == null) {
-                    ConnectorLoadWhenOnline()
                 }
                 if (detail != null && hasAccountContent) {
                     Spacer(Modifier.height(8.dp))
@@ -266,7 +307,7 @@ internal fun ConnectorDetails(
                             },
                             modifier =
                                 (if (wide) Modifier else Modifier.fillMaxWidth()).focusRequester(
-                                    addFocus
+                                    addFocus,
                                 ),
                             enabled = canModify,
                             treatment =
@@ -292,27 +333,20 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (!state.offline && !detailUnavailable) {
+                if (!detailUnavailable) {
                     when {
                         detail == null && state.detail.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_load_failed)
+                            ContentReadFeedback(R.string.connector_load_failed)
                         hasAccountContent &&
                             state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
-                        state.detail.failure == ConnectorReadFailure.Sustained ||
-                            hasAccountContent &&
-                                state.accounts.failure == ConnectorReadFailure.Sustained ->
-                            ConnectorStatusBanner(R.string.connector_refresh_failed)
+                            ContentReadFeedback(R.string.connector_accounts_failed)
+                        state.detail.failure != null ||
+                            hasAccountContent && state.accounts.failure != null ->
+                            ContentReadFeedback(R.string.connector_refresh_failed)
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (detailUnavailable) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
-            } else if (state.offline) {
-                ConnectorLoadWhenOnline()
-            } else if (state.detail.failure != null) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
-            } else if (rememberChatWaitIndicator(waiting = true)) {
+            } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
                 Column(
                     Modifier.fillMaxWidth().semantics { contentDescription = label },
@@ -326,22 +360,14 @@ internal fun ConnectorDetails(
     }
 
     if (panel != null && entry != null) {
-        val unavailableMessage =
-            when {
-                panel == ConnectorPanel.Authorize && detailUnavailable ->
-                    R.string.connector_load_failed
-                panel != ConnectorPanel.Permissions && accountId != null && account == null ->
-                    R.string.connector_account_unavailable
-                else -> null
-            }
-        if (unavailableMessage != null) {
+        if (panel != ConnectorPanel.Permissions && accountId != null && account == null) {
             ConnectorSheet(
                 entry.name,
                 ::dismissPanel,
                 dismissible = !busy,
                 actions = { ConnectorCloseAction(::dismissPanel, enabled = !busy) },
             ) {
-                ConnectorStatusBanner(unavailableMessage)
+                ConnectorStatusBanner(R.string.connector_account_unavailable)
                 ConnectorActionFeedback(action)
             }
         } else {
@@ -350,19 +376,24 @@ internal fun ConnectorDetails(
                     ConnectorPermissionSheet(
                         entry.name,
                         state.permissions,
-                        state.offline,
                         ::dismissPanel,
                     )
                 ConnectorPanel.Account ->
                     if (account != null) {
-                        ConnectorSheet(account.label(), ::dismissPanel, dismissible = !busy) {
+                        ConnectorSheet(
+                            account.label(),
+                            ::dismissPanel,
+                            dismissible = !busy,
+                            back = if (account.id == initialAccountId) ::dismissPanel else null,
+                        ) {
                             ConnectorAccountActions(
                                 account,
                                 canModify,
                                 action?.takeIf { it.target.connectionId == account.id },
                                 onDefault = { model.setDefaultEnabled(account.id, it) },
+                                onPolicy = { model.setMemberPolicy(account.id, it) },
                                 renameFocus = renameFocus,
-                                reauthorizeFocus = reauthorizeFocus,
+                                primaryAccountFocus = primaryAccountFocus,
                                 disconnectFocus = disconnectFocus,
                                 rename = {
                                     model.dismissAction()
@@ -377,6 +408,20 @@ internal fun ConnectorDetails(
                                     model.prepareDisconnect(account.id)
                                 },
                             )
+                            LaunchedEffect(restoreActionFocus, confirmingDisconnect, canModify) {
+                                val target = restoreActionFocus ?: return@LaunchedEffect
+                                if (confirmingDisconnect || !canModify) return@LaunchedEffect
+                                restoreActionFocus = null
+                                if (
+                                    target === primaryAccountFocus &&
+                                        !account.status.needsAttention &&
+                                        account.defaultSwitchChecked == null
+                                ) {
+                                    renameFocus.requestFocus()
+                                } else {
+                                    target.requestFocus()
+                                }
+                            }
                         }
                     }
                 ConnectorPanel.Rename ->
@@ -390,17 +435,16 @@ internal fun ConnectorDetails(
                         )
                     }
                 ConnectorPanel.Authorize ->
-                    if (detail != null) {
-                        ConnectorAuthorizationSheet(
-                            model,
-                            detail,
-                            account,
-                            addingAccount = accounts.isNotEmpty(),
-                            canModify,
-                            action,
-                            ::dismissPanel,
-                        )
-                    }
+                    ConnectorAuthorizationSheet(
+                        model = model,
+                        service = entry.name,
+                        detail = state.detail,
+                        account = account,
+                        addingAccount = accounts.isNotEmpty(),
+                        canModify = canModify,
+                        action = action,
+                        cancel = ::dismissPanel,
+                    )
                 null -> Unit
             }
         }
@@ -430,11 +474,13 @@ private fun ConnectorAccountRow(
     modifier: Modifier,
     open: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(8.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .updateFocusOutline(shape, MaterialTheme.colorScheme.onSurface, keyboardOnly = true)
+            .clip(shape)
             .clickable(onClick = open, role = Role.Button)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .testTag("connector-account-${account.id}"),
@@ -477,7 +523,7 @@ private fun ConnectorAccountStatusText(account: ConnectorSavedAccount) {
 @Composable
 private fun ConnectorSectionDivider() {
     Spacer(Modifier.height(16.dp))
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     Spacer(Modifier.height(16.dp))
 }
 
@@ -487,12 +533,13 @@ internal fun ConnectorSheet(
     dismiss: () -> Unit,
     dismissible: Boolean = true,
     expandInShortWindow: Boolean = false,
+    back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height.dp
-    val fullScreen = expandInShortWindow && windowHeight < 480.dp
-    val scroll = rememberScrollState()
+    val shortWindow = isShortSettingsPanelWindow()
+    val fullScreen = expandInShortWindow && shortWindow
+    val scroll = key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
             MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
@@ -500,16 +547,16 @@ internal fun ConnectorSheet(
     SettingsModal(dismiss, dismissible, fullScreen) { centered ->
         val frame =
             if (fullScreen) Modifier.fillMaxSize()
-            else Modifier.fillMaxWidth().heightIn(max = windowHeight * 0.80f)
+            else
+                Modifier.fillMaxWidth()
+                    .animateContentSize(
+                        alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
+                    )
         BoxWithConstraints(
             frame
                 .testTag("connector-sheet")
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
+                .padding(settingsPanelContentPadding(compactHeight = shortWindow))
+                .padding(top = if (centered) 16.dp else 0.dp),
         ) {
             val minimumControlsHeight =
                 with(LocalDensity.current) {
@@ -526,11 +573,22 @@ internal fun ConnectorSheet(
                 },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style = titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (back != null) {
+                        IconButton(back, enabled = dismissible, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                stringResource(R.string.back),
+                            )
+                        }
+                    }
+                    Text(
+                        title,
+                        Modifier.semantics { heading() },
+                        style =
+                            titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
+                    )
+                }
                 Column(
                     if (scrollAll) Modifier.fillMaxWidth()
                     else
@@ -550,7 +608,6 @@ internal fun ConnectorSheet(
 private fun ConnectorPermissionSheet(
     service: String,
     permissions: ConnectorRead<List<ConnectorPermission>>,
-    offline: Boolean,
     close: () -> Unit,
 ) {
     ConnectorSheet(
@@ -562,11 +619,11 @@ private fun ConnectorPermissionSheet(
         when {
             permissions.data == null ->
                 when {
-                    permissions.failure == ConnectorReadFailure.Unavailable ->
-                        ConnectorStatusBanner(R.string.connector_permissions_failed)
-                    offline -> ConnectorLoadWhenOnline()
                     permissions.failure != null ->
-                        ConnectorStatusBanner(R.string.connector_permissions_failed)
+                        ContentReadFeedback(
+                            R.string.connector_permissions_failed,
+                            Modifier.fillMaxWidth(),
+                        )
                     else ->
                         ConnectorSkeleton(
                             stringResource(R.string.connector_loading_permissions),
@@ -600,11 +657,8 @@ private fun ConnectorPermissionSheet(
                     }
                 }
         }
-        if (permissions.data != null) {
-            if (offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (permissions.failure == ConnectorReadFailure.Sustained)
-                ConnectorStatusBanner(R.string.connector_refresh_failed)
-        }
+        if (permissions.data != null && permissions.failure == ConnectorReadFailure.Sustained)
+            ContentReadFeedback(R.string.connector_refresh_failed)
     }
 }
 
@@ -614,8 +668,9 @@ private fun ConnectorAccountActions(
     canModify: Boolean,
     action: ConnectorAction?,
     onDefault: (Boolean) -> Unit,
+    onPolicy: (ai.okou.android.api.generated.ConnectorAccountPolicyRequestPolicy) -> Unit,
     renameFocus: FocusRequester,
-    reauthorizeFocus: FocusRequester,
+    primaryAccountFocus: FocusRequester,
     disconnectFocus: FocusRequester,
     rename: () -> Unit,
     reauthorize: () -> Unit,
@@ -629,23 +684,35 @@ private fun ConnectorAccountActions(
     ) {
         Text(account.identity, color = color.onSurfaceVariant, style = connectorSmallType())
     }
-    val defaultEnabled =
-        account.defaultEnabled.takeIf { account.status == ConnectorAccountStatus.Connected }
+    val defaultEnabled = account.defaultSwitchChecked
     if (defaultEnabled == null) ConnectorAccountStatusText(account)
     Column(Modifier.fillMaxWidth()) {
+        account.policy?.let { policy ->
+            Text(
+                stringResource(R.string.connector_access_scope),
+                color = color.onSurfaceVariant,
+                style = connectorSmallType(),
+            )
+            ConnectorAccountPolicyMenu(account, policy, canModify, onPolicy)
+        }
         if (account.status.needsAttention) {
             ConnectorAccountAction(
                 stringResource(
                     if (account.status == ConnectorAccountStatus.UpdatePermissions)
                         R.string.connector_update_permissions
-                    else R.string.connector_reauthorize
+                    else R.string.connector_reauthorize,
                 ),
                 enabled = canModify,
-                modifier = Modifier.focusRequester(reauthorizeFocus),
+                modifier = Modifier.focusRequester(primaryAccountFocus),
                 onClick = reauthorize,
             )
         } else if (defaultEnabled != null) {
-            ConnectorDefaultSwitch(defaultEnabled, canModify, onDefault)
+            ConnectorDefaultSwitch(
+                defaultEnabled,
+                canModify,
+                onDefault,
+                Modifier.focusRequester(primaryAccountFocus),
+            )
         }
         ConnectorAccountAction(
             stringResource(R.string.connector_rename),
@@ -664,6 +731,9 @@ private fun ConnectorAccountActions(
     ConnectorActionFeedback(action)
 }
 
+private val ConnectorSavedAccount.defaultSwitchChecked: Boolean?
+    get() = defaultEnabled.takeIf { status == ConnectorAccountStatus.Connected }
+
 @Composable
 internal fun ConnectorCloseAction(close: () -> Unit, enabled: Boolean = true) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
@@ -681,14 +751,21 @@ private fun ConnectorDefaultSwitch(
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val color = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val interactions = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .updateFocusOutline(shape, color.onSurface, keyboardOnly = true)
             .toggleable(
                 checked,
+                interactionSource = interactions,
+                indication = null,
                 enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
@@ -703,7 +780,7 @@ private fun ConnectorDefaultSwitch(
             color = color.onSurface.copy(alpha = if (enabled) 1f else 0.38f),
             style = connectorBodyType(),
         )
-        OkouSwitch(checked, enabled)
+        OkouSwitch(checked, enabled, interactions)
     }
 }
 
@@ -717,11 +794,13 @@ private fun ConnectorAccountAction(
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(if (chevron) 8.dp else 12.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = if (chevron) 52.dp else 56.dp)
-            .clip(RoundedCornerShape(if (chevron) 8.dp else 12.dp))
+            .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true)
+            .clip(shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = if (chevron) 12.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -777,7 +856,11 @@ private fun ConnectorDisconnectDialog(
                 count != null && count > 0 -> {
                     val displayed = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     Text(
-                        pluralStringResource(R.plurals.connector_impact_count, displayed, displayed)
+                        pluralStringResource(
+                            R.plurals.connector_impact_count,
+                            displayed,
+                            displayed,
+                        ),
                     )
                 }
                 count == null && impact.failure == ConnectorReadFailure.Network ->
@@ -795,24 +878,31 @@ private fun ConnectorDisconnectDialog(
 internal fun ConnectorActionFeedback(action: ConnectorAction?) {
     if (action?.busy == true)
         ConnectorProgress(
-            if (action.reconciling || action.authorization is ConnectorAuthorization.Browser)
+            if (
+                action.reconciling ||
+                    action.authorization is ConnectorAuthorization.Browser ||
+                    action.authorization is ConnectorAuthorization.DeviceVerification
+            )
                 R.string.connector_working
-            else R.string.connector_submitting
+            else R.string.connector_submitting,
         )
     else if (action?.problem != null)
-        ConnectorStatusBanner(
-            when (action.problem) {
-                ConnectorProblem.Failed -> R.string.connector_change_failed
-                ConnectorProblem.Network -> R.string.connector_network_failed
-                ConnectorProblem.BrowserUnavailable -> R.string.connector_browser_unavailable
-                ConnectorProblem.AuthorizationIncomplete -> R.string.connector_incomplete
-                ConnectorProblem.AuthorizationUnconfirmed ->
-                    R.string.connector_authorization_unconfirmed
-                ConnectorProblem.VerificationPending -> R.string.connector_verify_pending
-                ConnectorProblem.VerificationNetwork -> R.string.connector_verify_network
-            }
-        )
+        ConnectorStatusBanner(connectorActionProblemMessage(action.problem))
 }
+
+internal fun connectorActionProblemMessage(problem: ConnectorProblem) =
+    when (problem) {
+        ConnectorProblem.Failed -> R.string.connector_change_failed
+        ConnectorProblem.Network -> R.string.connector_network_failed
+        ConnectorProblem.BrowserUnavailable -> R.string.connector_browser_unavailable
+        ConnectorProblem.AuthorizationIncomplete -> R.string.connector_incomplete
+        ConnectorProblem.DeviceAuthorizationDenied -> R.string.connector_device_denied
+        ConnectorProblem.DeviceCodeExpired -> R.string.connector_device_expired
+        ConnectorProblem.DeviceAuthorizationFailed -> R.string.connector_device_failed
+        ConnectorProblem.AuthorizationUnconfirmed -> R.string.connector_authorization_unconfirmed
+        ConnectorProblem.VerificationPending -> R.string.connector_verify_pending
+        ConnectorProblem.VerificationNetwork -> R.string.connector_verify_network
+    }
 
 @Composable
 internal fun ConnectorProgress(label: Int) {
@@ -838,11 +928,7 @@ internal fun ConnectorProgress(label: Int) {
 internal fun ConnectorSavedAccount.label() =
     displayName ?: identity ?: stringResource(R.string.connector_account)
 
-internal enum class ConnectorButtonTreatment {
-    Primary,
-    Outline,
-    Text,
-}
+internal typealias ConnectorButtonTreatment = OkouActionTreatment
 
 @Composable
 internal fun ConnectorButton(
@@ -851,51 +937,4 @@ internal fun ConnectorButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     treatment: ConnectorButtonTreatment = ConnectorButtonTreatment.Primary,
-) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    val size = modifier.heightIn(min = 48.dp)
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    val text: @Composable () -> Unit = {
-        Text(label, style = connectorSmallType().copy(fontWeight = FontWeight(550)))
-    }
-    when (treatment) {
-        ConnectorButtonTreatment.Text ->
-            TextButton(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-                contentPadding = padding,
-                content = { text() },
-            )
-        ConnectorButtonTreatment.Outline ->
-            OutlinedButton(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-                border = BorderStroke(1.dp, colors.outline),
-                contentPadding = padding,
-                content = { text() },
-            )
-        ConnectorButtonTreatment.Primary ->
-            Button(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = colors.inverseSurface,
-                        contentColor = colors.inverseOnSurface,
-                        disabledContainerColor = colors.surfaceVariant,
-                        disabledContentColor = colors.onSurfaceVariant,
-                    ),
-                contentPadding = padding,
-                content = { text() },
-            )
-    }
-}
+) = OkouActionButton(label, onClick, modifier, enabled, treatment)

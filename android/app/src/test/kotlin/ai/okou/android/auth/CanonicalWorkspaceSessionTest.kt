@@ -35,7 +35,7 @@ class CanonicalWorkspaceSessionTest {
         server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
         owner().use {
             it.updatePreferences(
-                UpdatePreferencesRequest(locale = UpdatePreferencesRequestLocale.ZH_HANT)
+                UpdatePreferencesRequest(locale = UpdatePreferencesRequestLocale.ZH_HANT),
             )
         }
         val request = server.takeRequest()
@@ -72,7 +72,7 @@ class CanonicalWorkspaceSessionTest {
                         TEST_PREFERENCES.replace(
                             "\"memoryInitialized\":true",
                             "\"memoryInitialized\":false",
-                        )
+                        ),
                     ),
             )) {
             server.enqueue(response)
@@ -94,7 +94,7 @@ class CanonicalWorkspaceSessionTest {
         server.enqueue(MockResponse().setBody("""{"id":"org-b","name":"Other"}"""))
         owner().use {
             assertTrue(
-                runCatching { it.organization() }.exceptionOrNull() is ApiFailure.Unauthenticated
+                runCatching { it.organization() }.exceptionOrNull() is ApiFailure.Unauthenticated,
             )
         }
         assertEquals("/api/org", server.takeRequest().path)
@@ -109,7 +109,7 @@ class CanonicalWorkspaceSessionTest {
             assertEquals("org-a", session.organization().id)
             session.close()
             assertTrue(
-                runCatching { session.organization() }.exceptionOrNull() is IllegalStateException
+                runCatching { session.organization() }.exceptionOrNull() is IllegalStateException,
             )
             assertEquals(1, server.requestCount)
         }

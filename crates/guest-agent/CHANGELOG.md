@@ -1,5 +1,87 @@
 # Changelog
 
+## [0.113.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.3...guest-agent-v0.113.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** finish antigravity runs and forward their disallowed tools ([#50962](https://github.com/okou-ai/okou/issues/50962)) ([ab3428a](https://github.com/okou-ai/okou/commit/ab3428a58305077c974be77fa604f962424d66b4))
+
+## [0.113.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.2...guest-agent-v0.113.3) (2026-11-26)
+
+## [0.113.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.1...guest-agent-v0.113.2) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-agent:** share stdout ingestion failure handling ([#50840](https://github.com/okou-ai/okou/issues/50840)) ([9ff2b76](https://github.com/okou-ai/okou/commit/9ff2b76a11c555c10f025c766ecd5836e4906aa0))
+
+## [0.113.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.113.0...guest-agent-v0.113.1) (2026-11-25)
+
+
+### Refactoring
+
+* **guest-agent:** reuse the codex app-server event sink ([#50779](https://github.com/okou-ai/okou/issues/50779)) ([e12b940](https://github.com/okou-ai/okou/commit/e12b9404969dcb4272bedc69199ac237041f9d0d))
+
+## [0.113.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.2...guest-agent-v0.113.0) (2026-11-25)
+
+
+### Features
+
+* **runner:** inject personal antigravity oauth credential into the agy sandbox ([#50751](https://github.com/okou-ai/okou/issues/50751)) ([381b7c7](https://github.com/okou-ai/okou/commit/381b7c73486f63133b7ff0385b25f1aeea11e009))
+
+## [0.112.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.1...guest-agent-v0.112.2) (2026-11-24)
+
+
+### Refactoring
+
+* **guest-agent:** centralize codex app-server result projection ([#50671](https://github.com/okou-ai/okou/issues/50671)) ([80106e0](https://github.com/okou-ai/okou/commit/80106e091014d1ea5f8607be50edae2f62053037))
+
+## [0.112.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.112.0...guest-agent-v0.112.1) (2026-11-24)
+
+## [0.112.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.2...guest-agent-v0.112.0) (2026-11-24)
+
+
+### Features
+
+* bind internal antigravity sign-in to member profiles ([#50523](https://github.com/okou-ai/okou/issues/50523)) ([ab93ff8](https://github.com/okou-ai/okou/commit/ab93ff8c008746117d5d90211f58425c1f6a0ae8))
+
+## [0.111.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.1...guest-agent-v0.111.2) (2026-11-24)
+
+## [0.111.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.111.0...guest-agent-v0.111.1) (2026-11-24)
+
+## [0.111.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.31...guest-agent-v0.111.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
+## [0.110.31](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.30...guest-agent-v0.110.31) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** classify fable quota and pi output-policy failures ([#50383](https://github.com/okou-ai/okou/issues/50383)) ([93b2780](https://github.com/okou-ai/okou/commit/93b278038e138029d106e1bb760520e896f4b891))
+
+## [0.110.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.29...guest-agent-v0.110.30) (2026-11-24)
+
+## [0.110.29](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.28...guest-agent-v0.110.29) (2026-11-23)
+
+## [0.110.28](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.27...guest-agent-v0.110.28) (2026-11-23)
+
+
+### Refactoring
+
+* **guest-agent:** share codex reasoning text traversal ([#50163](https://github.com/okou-ai/okou/issues/50163)) ([f5c5ac6](https://github.com/okou-ai/okou/commit/f5c5ac634155895e15fb803f6951da7e512a3380))
+
+## [0.110.27](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.26...guest-agent-v0.110.27) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
 ## [0.110.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.25...guest-agent-v0.110.26) (2026-11-23)
 
 

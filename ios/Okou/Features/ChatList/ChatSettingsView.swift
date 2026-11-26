@@ -1,5 +1,4 @@
 import CCStateSwiftUI
-import ChatData
 import SwiftUI
 import UIKit
 
@@ -39,11 +38,17 @@ struct ChatSettingsView: View {
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
-  @Environment(\.composerPreferences) private var preferences
   @State private var signingOut = false
   @State private var confirmsSignOut = false
+  @State private var connectors: ComposerConnectorStore?
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
+  #if STAGING
+    private static let accountSecurityURL = URL(
+      string: "https://informed-calf-6.accounts.dev/user/security")!
+  #else
+    private static let accountSecurityURL = URL(string: "https://accounts.okou.ai/user/security")!
+  #endif
   private static let supportEmail = "contact@okou.ai"
 
   var body: some View {
@@ -97,41 +102,17 @@ struct ChatSettingsView: View {
               settingsLabel("Language", icon: "languages")
             }
           }
-          Picker(
-            selection: Binding(
-              get: { preferences?.returnKey ?? .newline },
-              set: { preferences?.setReturnKey($0) })
-          ) {
-            ForEach(ComposerReturnKeyPreference.allCases, id: \.self) { option in
-              Text(option.title).tag(option)
-            }
-          } label: {
-            settingsLabel("Return key", icon: "pencil")
-          }
-          .okouValuePicker()
-          .accessibilityIdentifier("return-key-preference")
-          .disabled(preferences == nil)
         } header: {
           Text("Preferences").okouSectionHeader()
         } footer: {
-          VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            Text(
-              "Notifications tell you when a chat finishes. Choose connectors under + in the message composer."
-            )
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            if preferences?.returnKey == .send {
-              Text("When set to Send, touch and hold the message field to insert a new line.")
-                .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            }
-            if let error = preferences?.error {
-              Text(error).font(.okou(.footnote)).foregroundStyle(OkouColor.destructive)
-            }
-          }
+          Text(
+            "Notifications tell you when a chat finishes. Choose connectors under + in the message composer."
+          )
           .okouSectionNote()
         }
         StoreProvider(store.settingsResources.store) {
+          SettingsConnectorsSection(workspace: store, open: openConnectors)
           SettingsModelsSection(models: store.modelStore)
-          SettingsBillingSection(workspace: store)
         }
         Section {
           Link(destination: URL(string: "mailto:\(Self.supportEmail)")!) {
@@ -192,6 +173,16 @@ struct ChatSettingsView: View {
           .signOutConfirmation(isPresented: $confirmsSignOut, signOut: signOut)
         } header: {
           Text("Account").okouSectionHeader()
+        } footer: {
+          Link(destination: Self.accountSecurityURL) {
+            Text("Delete account")
+              .underline()
+              .okouSectionNote()
+              .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .padding(.top, OkouSpace.sm)
         }
       }
       .okouGroupedBackground()
@@ -200,13 +191,46 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
-      .task { await store.loadSettingsBilling() }
+      .navigationDestination(
+        isPresented: Binding(
+          get: { connectors != nil },
+          set: {
+            if !$0 {
+              connectors?.close()
+              connectors = nil
+            }
+          })
+      ) {
+        if let connectors { SettingsConnectorsView(store: connectors) }
+      }
       .onChange(of: scenePhase) { _, current in
         if current == .active {
-          Task { await store.refreshSettingsBilling() }
+          store.prepareSettings()
         }
       }
     }
+    .background {
+      if let connectors {
+        // Keep authorization mounted while connector and account pages are pushed.
+        Color.clear.connectorAuthorizationPresentation(store: connectors)
+      }
+    }
+    .onDisappear {
+      connectors?.close()
+      connectors = nil
+    }
+  }
+
+  private func openConnectors() {
+    let models = store.modelStore
+    connectors = ComposerConnectorStore(
+      service: models.connectorAccess, authorizationService: models.connectorAuthorization,
+      webURL: store.webURL, graph: models.stateStore, includesRemote: false,
+      management: ComposerConnectorStore.managementEnabled,
+      memberAccessEnabled: { [weak models] in
+        models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
+      },
+      didFail: { [weak models] in models?.report($0) })
   }
 
   private var profile: some View {
@@ -279,14 +303,18 @@ struct ChatSettingsView: View {
 private struct SettingsModelsSection: View {
   let models: ChatModelStore
   @ResolvedValue private var canLinkSubscriptions: Bool?
+  /// The last confirmed switches answer until the current read resolves.
+  @ResolvedValue private var snapshot: ChatModelStore.Snapshot?
 
   init(models: ChatModelStore) {
     self.models = models
     _canLinkSubscriptions = ResolvedValue(task: models.subscriptionLinkingEnabled, keepLast: true)
+    _snapshot = ResolvedValue(models.snapshotValue)
   }
 
   var body: some View {
-    if canLinkSubscriptions == true {
+    let lastKnown = (snapshot ?? models.snapshot).switches?.canLinkSubscriptions
+    if (canLinkSubscriptions ?? lastKnown) == true {
       Section {
         NavigationLink {
           PersonalSubscriptionsView(store: models.subscriptions)

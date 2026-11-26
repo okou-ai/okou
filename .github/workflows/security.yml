@@ -334,7 +334,6 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-tcp-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
-            .github/scripts/tests/ios-published-version-test.sh \
             .github/scripts/tests/android-published-version-test.sh \
             .github/scripts/tests/android-release-workflow-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \
@@ -399,6 +398,7 @@ jobs:
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/prepare-runner-image.sh .github/scripts/tests/prepare-runner-image-test.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/prune-runner-idle.sh .github/scripts/runner/reconcile-runner-binary-groups.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
+          shellcheck -x -P .github/scripts/runner .github/scripts/tests/runner-release-staging-ansible-test.sh
           shellcheck -x -P crates/runner/tests/behavior/exec crates/runner/tests/behavior/exec/*.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
@@ -496,6 +496,9 @@ jobs:
             "$GITLEAKS_SHA256" \
             "$archive"
           tar -xzf "$archive" -C /usr/local/bin gitleaks
+
+      - name: Verify Gitleaks detects a generated secret fixture
+        run: python3 .github/scripts/checks/check-gitleaks-config.py
 
       - name: Run Gitleaks
         run: |

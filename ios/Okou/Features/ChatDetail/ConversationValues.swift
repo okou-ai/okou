@@ -3,7 +3,7 @@ import ChatDomain
 import Foundation
 
 extension ConversationStore {
-  struct PendingMessage: Codable, Identifiable {
+  struct PendingMessage: Codable, Equatable, Identifiable {
     let id: String
     let text: String
     let createdAt: Date
@@ -15,18 +15,19 @@ extension ConversationStore {
     var needsRetry = false
 
     var message: ChatMessage {
-      ChatMessage(
+      let userMessage: ChatUserMessage? = document.flatMap { draft in
+        guard let data = try? JSONEncoder().encode(draft) else { return nil }
+        return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
+      }
+      return ChatMessage(
         id: id, role: .user,
         text: text,
         attachments: attachments.map {
           ChatMessageAttachment(
             id: $0.id, filename: $0.filename, contentType: $0.contentType, size: $0.size)
-        }, createdAt: createdAt,
+        } + (userMessage?.parts.flatMap(\.voiceAttachments) ?? []), createdAt: createdAt,
         runID: nil, isQueued: false, isError: false,
-        userMessage: document.flatMap { draft in
-          guard let data = try? JSONEncoder().encode(draft) else { return nil }
-          return try? JSONDecoder().decode(ChatUserMessage.self, from: data)
-        })
+        userMessage: userMessage)
     }
   }
 
@@ -43,7 +44,7 @@ extension ConversationStore {
     let position: ConversationReadingPosition
   }
 
-  enum DeliveryFailure {
+  enum DeliveryFailure: Equatable {
     case notSent(String)
     case unconfirmed
   }

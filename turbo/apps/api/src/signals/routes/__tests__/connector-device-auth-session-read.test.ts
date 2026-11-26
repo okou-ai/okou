@@ -170,10 +170,10 @@ describe("Builtin device-auth owned-session reads", () => {
     const oauthCompleted = await completeSession(actor, oauth);
     expect(apiCompleted.account.authMethod).toBe("api");
     expect(oauthCompleted.account.authMethod).toBe("oauth");
-    expect(apiCompleted.connectionId).not.toBe(oauthCompleted.connectionId);
+    expect(apiCompleted.connectionId).toBe(oauthCompleted.connectionId);
     await expect(completeSession(actor, api)).resolves.toMatchObject({
       connectionId: apiCompleted.connectionId,
-      account: { id: apiCompleted.connectionId, authMethod: "api" },
+      account: { id: apiCompleted.connectionId, authMethod: "oauth" },
     });
     await expect(completeSession(actor, oauth)).resolves.toMatchObject({
       connectionId: oauthCompleted.connectionId,
@@ -189,9 +189,7 @@ describe("Builtin device-auth owned-session reads", () => {
           return account.id;
         })
         .sort(),
-    ).toStrictEqual(
-      [apiCompleted.connectionId, oauthCompleted.connectionId].sort(),
-    );
+    ).toStrictEqual([oauthCompleted.connectionId]);
     await expectMissingSession(
       actor,
       "test-oauth-device",

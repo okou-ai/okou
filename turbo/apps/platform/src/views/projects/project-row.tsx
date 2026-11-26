@@ -6,6 +6,8 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowUp,
   ArrowDown,
   ChevronDown,
@@ -35,7 +37,10 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import { projects$ } from "../../signals/projects/projects.ts";
+import {
+  projects$,
+  setProjectArchived$,
+} from "../../signals/projects/projects.ts";
 import {
   projectReorderEnabled$,
   stepProject$,
@@ -176,6 +181,12 @@ function ProjectMenu({
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
+  const archiveEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ProjectArchive] ===
+    true;
+  const setArchived = useSet(setProjectArchived$);
+  const { rename, toggleArchive } = GLOBAL_KEYBOARD_SHORTCUTS;
+  const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
   return (
@@ -225,6 +236,7 @@ function ProjectMenu({
         <ProjectMoveMenuItems project={project} />
         <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
+          aria-keyshortcuts={rename.ariaKeyShortcuts}
           onClick={() => {
             return editor({ projectId: project.id }, project.name);
           }}
@@ -233,7 +245,33 @@ function ProjectMenu({
           {t(($) => {
             return $.projects.rename;
           })}
+          <ChatThreadMenuShortcut shortcut={rename.binding} />
         </DropdownMenuItem>
+        {archiveEnabled && (
+          <DropdownMenuItem
+            aria-keyshortcuts={toggleArchive.ariaKeyShortcuts}
+            onClick={() => {
+              detach(
+                setArchived(project.id, !project.archived, signal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {project.archived ? (
+              <ArchiveRestore size={16} />
+            ) : (
+              <Archive size={16} />
+            )}
+            {project.archived
+              ? t(($) => {
+                  return $.projects.restoreProject;
+                })
+              : t(($) => {
+                  return $.projects.archiveProject;
+                })}
+            <ChatThreadMenuShortcut shortcut={toggleArchive.binding} />
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"

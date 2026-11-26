@@ -221,7 +221,8 @@ final class ChatModelCommandTests: XCTestCase {
     let sync = ChatSync(client: fixture.client)
     let conversation = ConversationStore(
       thread: thread(), sync: sync,
-      commands: ChatCommands(client: fixture.client, sync: sync), webURL: fixture.baseURL,
+      commands: ChatCommands(client: fixture.client, sync: sync), graph: makeTestWorkspaceGraph(),
+      webURL: fixture.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL), isVisible: { false },
       didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection)
@@ -305,7 +306,8 @@ final class ChatModelCommandTests: XCTestCase {
           return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Uncertain send\"}}")
         }
         return ChatHTTPResponse(body: "{\"threadId\":\"\(ModelHTTPFixtures.threadID)\"}")
-      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/draft":
+      case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/composer-draft":
+        if request.httpMethod == "PATCH" { return ChatHTTPResponse(status: 204, body: "") }
         return ChatHTTPResponse(body: "{}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/connector-selections":
         return ChatHTTPResponse(body: "{\"selections\":[]}")
@@ -318,7 +320,6 @@ final class ChatModelCommandTests: XCTestCase {
         return ChatHTTPResponse(
           body: "{\"rows\":[],\"cursor\":{\"lastEventId\":null,\"lastSeqId\":0},\"hasMore\":false}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)":
-        if request.httpMethod == "PATCH" { return ChatHTTPResponse(status: 204, body: "") }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat-threads/\(ModelHTTPFixtures.threadID)/metadata":
         let metadata =
@@ -344,6 +345,7 @@ final class ChatModelCommandTests: XCTestCase {
       let sync = ChatSync(client: fixture.client)
       return ConversationStore(
         thread: thread(), sync: sync, commands: ChatCommands(client: fixture.client, sync: sync),
+        graph: makeTestWorkspaceGraph(),
         webURL: fixture.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: fixture.baseURL),
         isVisible: { false }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
         modelSelection: selection, draftRepository: ChatDraftRepository(client: fixture.client),
@@ -601,14 +603,22 @@ final class ChatModelPreferenceTests: XCTestCase {
     let resource = ChatModelStore(
       client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
     let selection = ChatModelSelectionStore(models: resource)
+    let existing = ChatModelSelectionStore(models: resource, thread: thread())
     defer {
+      existing.close()
       resource.close()
       selection.close()
     }
-    await selection.open()
-    XCTAssertEqual(selection.selection.model, "codex-model")
-    XCTAssertFalse(selection.canSend)
-    XCTAssertTrue(resource.configuration?.efforts(for: selection.selection).isEmpty == true)
+    for picker in [selection, existing] {
+      await picker.open()
+      let configuration = try XCTUnwrap(resource.configuration)
+      let row = try XCTUnwrap(configuration.row(for: picker.selection))
+      XCTAssertEqual(row.selectedModel, "codex-model")
+      XCTAssertEqual(row.memberEffective.availability, "plan_restricted")
+      XCTAssertFalse(row.isConfigurable)
+      XCTAssertFalse(picker.canSend)
+      XCTAssertTrue(configuration.efforts(for: picker.selection).isEmpty)
+    }
     await selection.choose(model: nil)
     XCTAssertNil(selection.selection.model)
     XCTAssertTrue(selection.canSend)

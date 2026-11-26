@@ -1,10 +1,12 @@
 package ai.okou.android.artifacts
 
+import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
+import ai.okou.android.api.retryAfter
 import ai.okou.android.chat.ConfirmedChat
-import ai.okou.android.chat.HistoryMarkdown
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.rememberArtifactWebScroll
+import ai.okou.android.workspaceSearchFocusOutline
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.RenderProcessGoneDetail
@@ -23,6 +25,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -39,7 +42,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +74,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,7 +87,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import okhttp3.HttpUrl
 
-private const val HostedPreviewAspectRatio = 16f / 9f
+private const val PreviewAspectRatio = 16f / 9f
+private val AudioPreviewHeight = 96.dp
 
 /** One preview layout for catalog entries and future chat/search entry points. */
 @Composable
@@ -92,7 +96,6 @@ internal fun ArtifactPreview(
     preview: ArtifactPreviewState?,
     position: ScrollState,
     wide: Boolean,
-    offline: Boolean,
     source: ConfirmedChat?,
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
@@ -135,7 +138,10 @@ internal fun ArtifactPreview(
                     Text(
                         item.title,
                         Modifier.semantics { heading() }.testTag("artifact_preview_title"),
-                        style = MaterialTheme.typography.titleLarge,
+                        style =
+                            MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold,
+                            ),
                         color = colors.onSurface,
                     )
                     val kind = stringResource(item.kind.label())
@@ -158,20 +164,23 @@ internal fun ArtifactPreview(
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant,
                     )
-                    if (source != null) {
-                        val title =
-                            source.title?.takeIf { it.isNotBlank() }
-                                ?: stringResource(R.string.chat_untitled)
-                        Text(
-                            stringResource(R.string.artifact_source_name, title),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                        )
-                    }
+                    source
+                        ?.title
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { title ->
+                            Text(
+                                stringResource(R.string.artifact_source_name, title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
                 }
             }
             val save = preview?.access?.save
-            if (source != null || save != null) {
+            val browserUrl = preview?.info?.browserUrl
+            val reserveBrowserAction =
+                browserUrl != null || preview?.info?.resource is ArtifactResource.Site
+            if (source != null || save != null || reserveBrowserAction) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -189,15 +198,32 @@ internal fun ArtifactPreview(
                         ArtifactAction(
                             R.string.artifact_save,
                             icon = R.drawable.ic_download,
-                            enabled = !offline && saveEnabled,
+                            enabled = saveEnabled,
                         ) {
                             onSave(save)
                         }
                     }
+                    if (reserveBrowserAction) {
+                        // Keep the preview in place while access is being checked.
+                        KeepSpaceWhenHidden(visible = browserUrl != null) {
+                            ArtifactAction(
+                                R.string.artifact_open_website,
+                                icon = R.drawable.ic_open_in_new,
+                                enabled = browserUrl != null,
+                            ) {
+                                val destination = browserUrl ?: return@ArtifactAction
+                                browserUnavailable =
+                                    try {
+                                        browser.openUri(destination.toString())
+                                        false
+                                    } catch (_: IllegalArgumentException) {
+                                        true
+                                    }
+                            }
+                        }
+                    }
                 }
             }
-            val browserUrl = preview?.info?.browserUrl
-            val open = browserUrl?.takeUnless { offline }
             val feedback =
                 when (saveResult) {
                     ArtifactSaveResult.Saving -> R.string.artifact_saving
@@ -207,32 +233,13 @@ internal fun ArtifactPreview(
                     null -> R.string.artifact_browser_unavailable.takeIf { browserUnavailable }
                 }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PreviewContent(preview, offline)
-                if (!offline && preview?.hasReadableContent == true) {
-                    preview.problem?.let { PreviewFeedback(it.label()) }
+                PreviewContent(preview)
+                if (preview?.hasReadableContent == true) {
+                    preview.problem?.let { PreviewFeedback(it.previewLabel()) }
                 }
                 if (feedback != null) {
-                    KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
+                    KeepSpaceWhenHidden(visible = saveResult != null || browserUrl != null) {
                         PreviewFeedback(feedback)
-                    }
-                }
-            }
-            // Keep the action's space while inline sites wait for preview authorization.
-            if (browserUrl != null || preview?.info?.resource is ArtifactResource.Site) {
-                KeepSpaceWhenHidden(visible = open != null) {
-                    ArtifactAction(
-                        R.string.artifact_open_website,
-                        icon = R.drawable.ic_open_in_new,
-                        enabled = open != null,
-                    ) {
-                        val destination = open ?: return@ArtifactAction
-                        browserUnavailable =
-                            try {
-                                browser.openUri(destination.toString())
-                                false
-                            } catch (_: IllegalArgumentException) {
-                                true
-                            }
                     }
                 }
             }
@@ -250,7 +257,7 @@ private fun PreviewFeedback(@StringRes label: Int) {
     )
 }
 
-/** Keep the scroll range stable when browser controls disappear on disconnect. */
+/** Keep the scroll range stable while access to browser controls is being checked. */
 @Composable
 private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Unit) {
     if (visible) {
@@ -267,21 +274,20 @@ private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Uni
 }
 
 @Composable
-internal fun ArtifactAction(
+private fun ArtifactAction(
     @StringRes label: Int,
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+        modifier =
+            modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).workspaceSearchFocusOutline(shape),
         enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, colors.outline),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
+        shape = shape,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) {
         FlowRow(
@@ -289,42 +295,49 @@ internal fun ArtifactAction(
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) Icon(painterResource(icon), null, Modifier.size(18.dp))
-            Text(stringResource(label), style = artifactSmallText())
+            Text(
+                stringResource(label),
+                style = artifactSmallText().copy(fontWeight = FontWeight(550)),
+            )
         }
     }
 }
 
 @Composable
-private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
+private fun PreviewContent(preview: ArtifactPreviewState?) {
     val content = preview?.content
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
-    val waiting = content == null && problem == null && !offline
-    val showLoading = rememberChatWaitIndicator(waiting)
-    if (!hosted && waiting && !showLoading) return
+    val imageStatus = preview?.isImage == true && content !is ArtifactContent.Image
+    val waiting = content == null && problem == null
+    val showLoading =
+        key(preview?.id.takeIf { imageStatus }) {
+            val delay = if (imageStatus) ContentReadFeedbackDelayMillis else 100L
+            rememberContentReadFeedbackAfter(delay.takeIf { waiting })
+        }
+    if (!hosted && !imageStatus && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
+    val documentSurface = content is ArtifactContent.Text || content is ArtifactContent.Image
     Surface(
         Modifier.fillMaxWidth()
-            .then(if (hosted) Modifier.aspectRatio(HostedPreviewAspectRatio) else Modifier)
+            .then(if (hosted) Modifier.aspectRatio(PreviewAspectRatio) else Modifier)
             .testTag("artifact_preview_surface"),
         shape = RoundedCornerShape(16.dp),
-        color = if (hosted) colors.surfaceVariant else colors.surface,
-        border = BorderStroke(1.dp, colors.outline),
+        color = if (!hosted && documentSurface) colors.surface else colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
         if (hosted) {
-            HostedPreviewContent(content, problem, offline, showLoading)
+            HostedPreviewContent(content, problem, showLoading)
         } else {
             when (content) {
                 is ArtifactContent.Text ->
                     SelectionContainer(Modifier.padding(16.dp)) {
                         ProvideTextStyle(
                             MaterialTheme.typography.bodyLarge.copy(
-                                lineHeight = if (content.markdown) 28.sp else 24.sp
-                            )
+                                lineHeight = if (content.markdown) 28.sp else 24.sp,
+                            ),
                         ) {
-                            if (content.markdown)
-                                HistoryMarkdown(content.source, compactLists = true)
-                            else Text(content.source)
+                            Text(content.rendered)
                         }
                     }
                 is ArtifactContent.Image ->
@@ -340,25 +353,43 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                             contentScale = ContentScale.Fit,
                         )
                     }
-                is ArtifactContent.Media ->
-                    if (offline)
-                        PreviewStatus(R.string.artifact_online_preview, ratio = content.video)
-                    else key(content.url) { MediaArtifactPreview(content) }
+                is ArtifactContent.Media -> key(content.url) { MediaArtifactPreview(content) }
                 else ->
                     when {
-                        offline -> PreviewStatus(R.string.artifact_online_preview)
-                        problem != null -> PreviewStatus(problem.label())
+                        imageStatus -> ImagePreviewStatus(content, problem, showLoading)
+                        problem != null -> PreviewStatus(problem.previewLabel())
                         content == ArtifactContent.Unsupported ->
                             PreviewStatus(R.string.artifact_preview_unsupported)
-                        else ->
-                            Box(
-                                Modifier.fillMaxWidth().heightIn(min = 96.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                PreviewLoading()
-                            }
+                        else -> PreviewStatusFrame(ratio = true) { PreviewLoading() }
                     }
             }
+        }
+    }
+}
+
+@Composable
+private fun ImagePreviewStatus(
+    content: ArtifactContent?,
+    problem: ArtifactProblem?,
+    showLoading: Boolean,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.fillMaxWidth()
+                .heightIn(min = maxOf(112.dp, maxWidth / PreviewAspectRatio))
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val label =
+                when {
+                    problem == ArtifactProblem.Denied || problem == ArtifactProblem.Missing ->
+                        R.string.artifact_image_unavailable
+                    problem != null || content == ArtifactContent.Unsupported ->
+                        R.string.artifact_preview_unavailable
+                    showLoading -> R.string.artifact_preview_loading
+                    else -> null
+                }
+            if (label != null) PreviewStatusText(label)
         }
     }
 }
@@ -367,7 +398,6 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
 private fun HostedPreviewContent(
     content: ArtifactContent?,
     problem: ArtifactProblem?,
-    offline: Boolean,
     showLoading: Boolean,
 ) {
     var siteScroll by rememberArtifactWebScroll()
@@ -375,12 +405,15 @@ private fun HostedPreviewContent(
         val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
             when {
-                offline -> PreviewStatusText(R.string.artifact_online_preview)
+                problem != null -> PreviewStatusText(problem.previewLabel())
                 content is ArtifactContent.Website ->
                     key(content.url) {
-                        HostedArtifactPreview(content, siteScroll) { siteScroll = it }
+                        HostedArtifactPreview(
+                            content,
+                            siteScroll,
+                            onScroll = { siteScroll = it },
+                        )
                     }
-                problem != null -> PreviewStatusText(problem.label())
                 content == ArtifactContent.Unsupported ->
                     PreviewStatusText(R.string.artifact_preview_unsupported)
                 showLoading -> PreviewLoading()
@@ -395,17 +428,20 @@ private fun PreviewLoading() {
 }
 
 @Composable
-private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = false) {
-    Box(
-        Modifier.fillMaxWidth()
-            .then(
-                if (ratio) Modifier.aspectRatio(16f / 9f, matchHeightConstraintsFirst = false)
-                else Modifier.heightIn(min = 96.dp)
-            )
-            .padding(16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        PreviewStatusText(label)
+private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = true) {
+    PreviewStatusFrame(ratio) { PreviewStatusText(label) }
+}
+
+@Composable
+private fun PreviewStatusFrame(ratio: Boolean, content: @Composable BoxScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val height = if (ratio) maxWidth / PreviewAspectRatio else AudioPreviewHeight
+        val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
+        Box(
+            Modifier.fillMaxWidth().heightIn(min = height).padding(inset),
+            contentAlignment = Alignment.Center,
+            content = content,
+        )
     }
 }
 
@@ -420,6 +456,16 @@ private fun PreviewStatusText(@StringRes label: Int) {
     )
 }
 
+@StringRes
+private fun ArtifactProblem.previewLabel(): Int =
+    when (this) {
+        ArtifactProblem.Denied -> R.string.artifact_access_denied
+        ArtifactProblem.Missing -> R.string.artifact_preview_source_unavailable
+        ArtifactProblem.Unsupported -> R.string.artifact_preview_unsupported
+        ArtifactProblem.Temporary,
+        ArtifactProblem.Unavailable -> R.string.artifact_preview_unavailable
+    }
+
 @Composable
 private fun HostedArtifactPreview(
     content: ArtifactContent.Website,
@@ -428,7 +474,9 @@ private fun HostedArtifactPreview(
 ) {
     var usedRetries by remember { mutableIntStateOf(0) }
     key(usedRetries) {
-        var failure by remember { mutableStateOf<HostedLoadFailure?>(null) }
+        val attempt = remember { HostedDocumentAttempt() }
+        val failure = attempt.failure
+        val remainingRetries = content.remainingRetries - usedRetries
         when {
             failure == null ->
                 AndroidView(
@@ -438,34 +486,52 @@ private fun HostedArtifactPreview(
                         isolatedPreview(
                             it,
                             content.url,
-                            onFailure = { if (failure == null) failure = it },
+                            onFailure = attempt::recordFailure,
                             onLoaded = { view ->
                                 view.scrollTo(0, initialScroll)
                                 view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
                             },
                         )
                     },
-                    onRelease = { it.destroy() },
+                    onRelease = {
+                        attempt.release()
+                        it.destroy()
+                    },
                     update = {},
                 )
-            failure == HostedLoadFailure.Temporary && usedRetries < content.remainingRetries -> {
+            failure.problem == ArtifactProblem.Temporary && remainingRetries > 0 -> {
                 val lifecycle = LocalLifecycleOwner.current.lifecycle
                 LaunchedEffect(lifecycle) {
                     lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                        delay(ArtifactRetryDelayMillis)
+                        delay(artifactRetryDelayMillis(remainingRetries, failure.retryAfterSeconds))
                         usedRetries++
                     }
                 }
                 PreviewLoading()
             }
-            else -> PreviewStatusText(R.string.artifact_unavailable)
+            else -> PreviewStatusText(failure.problem.previewLabel())
         }
     }
 }
 
-private enum class HostedLoadFailure {
-    Temporary,
-    Terminal,
+private data class HostedDocumentFailure(
+    val problem: ArtifactProblem,
+    val retryAfterSeconds: Long? = null,
+)
+
+private class HostedDocumentAttempt {
+    var failure by mutableStateOf<HostedDocumentFailure?>(null)
+        private set
+
+    private var released = false
+
+    fun recordFailure(failure: HostedDocumentFailure) {
+        if (!released && this.failure == null) this.failure = failure
+    }
+
+    fun release() {
+        released = true
+    }
 }
 
 // Hosted content runs on its server-authorized HTTPS origin. It receives no app token,
@@ -474,7 +540,7 @@ private enum class HostedLoadFailure {
 private fun isolatedPreview(
     context: Context,
     url: HttpUrl,
-    onFailure: (HostedLoadFailure) -> Unit,
+    onFailure: (HostedDocumentFailure) -> Unit,
     onLoaded: (WebView) -> Unit,
 ): WebView =
     WebView(context).apply {
@@ -511,7 +577,10 @@ private fun isolatedPreview(
                             ERROR_TIMEOUT -> true
                             else -> false
                         }
-                    reportFailure(request, temporary)
+                    reportFailure(
+                        request,
+                        if (temporary) ArtifactProblem.Temporary else ArtifactProblem.Unavailable,
+                    )
                 }
 
                 override fun onReceivedHttpError(
@@ -519,14 +588,23 @@ private fun isolatedPreview(
                     request: WebResourceRequest,
                     response: WebResourceResponse,
                 ) {
-                    reportFailure(request, isTemporaryArtifactHttpStatus(response.statusCode))
+                    val retryAfterHeader =
+                        response.responseHeaders
+                            ?.entries
+                            ?.firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }
+                            ?.value
+                    reportFailure(
+                        request,
+                        artifactHttpProblem(response.statusCode),
+                        retryAfterHeader,
+                    )
                 }
 
                 override fun onRenderProcessGone(
                     view: WebView,
                     detail: RenderProcessGoneDetail,
                 ): Boolean {
-                    onFailure(HostedLoadFailure.Terminal)
+                    onFailure(HostedDocumentFailure(ArtifactProblem.Unavailable))
                     return true
                 }
 
@@ -539,18 +617,23 @@ private fun isolatedPreview(
                     onLoaded(view)
                 }
 
-                private fun reportFailure(request: WebResourceRequest, temporary: Boolean) {
+                private fun reportFailure(
+                    request: WebResourceRequest,
+                    problem: ArtifactProblem,
+                    retryAfterHeader: String? = null,
+                ) {
                     if (!request.isForMainFrame) return
                     // Only the app's original GET is safe to replay, before the hosted page is
                     // shown.
                     val retry =
-                        temporary &&
-                            openingDocument &&
+                        openingDocument &&
                             request.method == "GET" &&
                             request.url.toString().substringBefore('#') == initialAddress
                     openingDocument = false
                     onFailure(
-                        if (retry) HostedLoadFailure.Temporary else HostedLoadFailure.Terminal
+                        if (!retry && problem == ArtifactProblem.Temporary)
+                            HostedDocumentFailure(ArtifactProblem.Unavailable)
+                        else HostedDocumentFailure(problem, retryAfter(retryAfterHeader)),
                     )
                 }
             }
@@ -559,29 +642,39 @@ private fun isolatedPreview(
 
 @Composable
 private fun MediaArtifactPreview(content: ArtifactContent.Media) {
+    var playRequested by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    var player by remember { mutableStateOf<VideoView?>(null) }
-    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player?.pause() }
     if (failed) {
-        PreviewStatus(R.string.artifact_unavailable, ratio = content.video)
+        PreviewStatus(R.string.artifact_preview_unavailable, ratio = content.video)
+    } else if (!playRequested) {
+        PreviewStatusFrame(ratio = content.video) {
+            ArtifactAction(R.string.artifact_play, icon = R.drawable.ic_play_arrow) {
+                playRequested = true
+            }
+        }
     } else {
-        val playLabel = stringResource(R.string.artifact_play_media)
+        var player by remember { mutableStateOf<VideoView?>(null) }
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { player?.pause() }
+        val playbackLabel = stringResource(R.string.artifact_play_media)
         AndroidView(
             modifier =
                 Modifier.fillMaxWidth()
                     .then(
-                        if (content.video) Modifier.aspectRatio(16f / 9f)
-                        else Modifier.height(96.dp)
+                        if (content.video) Modifier.aspectRatio(PreviewAspectRatio)
+                        else Modifier.height(AudioPreviewHeight),
                     ),
             factory = { context ->
                 VideoView(context).apply {
-                    contentDescription = playLabel
+                    contentDescription = playbackLabel
                     setMediaController(MediaController(context))
                     setOnErrorListener { _, _, _ ->
                         failed = true
                         true
                     }
                     setVideoURI(content.url.toString().toUri())
+                    // The Play action may have scheduled this frame before the activity paused.
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) start()
                     player = this
                 }
             },

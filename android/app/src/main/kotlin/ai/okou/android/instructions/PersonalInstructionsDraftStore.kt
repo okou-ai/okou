@@ -4,6 +4,7 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
+import android.os.SystemClock
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
@@ -41,12 +42,20 @@ enum class InstructionsCommit {
 @Serializable
 private data class InstructionsDocument(val format: Int, val draft: InstructionsDraft?)
 
-/** User intent, not a rebuildable cache. Accepted local writes outlive a retired editor. */
+private const val CONFIRMED_LIFETIME_MILLIS = 10 * 60_000L
+
+/**
+ * Retains workspace editors and confirmed snapshots, and commits save intent across editor
+ * lifetimes.
+ */
 class PersonalInstructionsDraftStore(
     context: Context,
     private val directory: File = context.noBackupFilesDir.resolve("personal-instructions"),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val nowMillis: () -> Long = SystemClock::elapsedRealtime,
 ) {
+    private data class Confirmed(val value: PersonalInstructions, val atMillis: Long)
+
     private class Write(val value: InstructionsDraft?) {
         val done = CompletableDeferred<InstructionsCommit>()
     }
@@ -57,10 +66,30 @@ class PersonalInstructionsDraftStore(
     private val guard = Any()
     private val latest = mutableMapOf<String, Write>()
     private val editors = mutableMapOf<String, PersonalInstructionsOwner>()
+    private val confirmed = mutableMapOf<String, Confirmed>()
     private var closed = false
     private val json = Json {
         encodeDefaults = true
         explicitNulls = true
+    }
+
+    // Like the editor registry, the confirmed snapshots are accessed on Main.
+    internal fun freshConfirmed(identity: WorkspaceIdentity): PersonalInstructions? {
+        val key = identity.workspaceStorageKey()
+        val snapshot = confirmed[key] ?: return null
+        if (nowMillis() - snapshot.atMillis < CONFIRMED_LIFETIME_MILLIS) return snapshot.value
+        confirmed.remove(key)
+        return null
+    }
+
+    internal fun rememberConfirmed(identity: WorkspaceIdentity, value: PersonalInstructions) {
+        val now = nowMillis()
+        confirmed.values.removeAll { now - it.atMillis >= CONFIRMED_LIFETIME_MILLIS }
+        confirmed[identity.workspaceStorageKey()] = Confirmed(value, now)
+    }
+
+    internal fun forgetConfirmed(identity: WorkspaceIdentity) {
+        confirmed.remove(identity.workspaceStorageKey())
     }
 
     // Presentation controllers attach on Main. Only attached identities retain a shared editor.
@@ -91,14 +120,13 @@ class PersonalInstructionsDraftStore(
             latest[key] = write
             scope.launch {
                 try {
-                    val committed =
-                        io.withLock {
-                            // Skip obsolete queued edits, but finish the write already in progress.
-                            if (synchronized(guard) { latest[key] === write }) {
-                                withContext(dispatcher) { write(key, value) }
-                                InstructionsCommit.Committed
-                            } else InstructionsCommit.Superseded
-                        }
+                    val committed = io.withLock {
+                        // Skip obsolete queued edits, but finish the write already in progress.
+                        if (synchronized(guard) { latest[key] === write }) {
+                            withContext(dispatcher) { write(key, value) }
+                            InstructionsCommit.Committed
+                        } else InstructionsCommit.Superseded
+                    }
                     synchronized(guard) { if (latest[key] === write) latest.remove(key) }
                     write.done.complete(committed)
                 } catch (cancelled: CancellationException) {

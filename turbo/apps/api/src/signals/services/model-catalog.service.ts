@@ -15,10 +15,17 @@ import { db$ } from "../external/db";
 /** `usage_pricing.kind` of model token usage (the addon's `MODEL_USAGE_KIND`). */
 const MODEL_USAGE_PRICING_KIND = "model";
 
+export function isAntigravityModel(model: string): boolean {
+  return (
+    model === "gemini-4-neon" ||
+    model === "gemini-4-carbon" ||
+    model === "gemini-4-hydrogen"
+  );
+}
+
 type CatalogModel = Readonly<{
   model: string;
   displayName: string;
-  sortOrder: number;
   replacedBy: string | null;
   /** Restricted (free) plans may run the model on Built-in routes. */
   builtInOnRestrictedPlans: boolean;
@@ -52,15 +59,15 @@ export type CatalogRoute = Readonly<{
   longContextMinTotalInputTokens: number | null;
 }>;
 
-export type ModelCatalog = Readonly<{
-  models: readonly CatalogModel[];
+export type ModelCatalog<Model extends CatalogModel = CatalogModel> = Readonly<{
+  models: readonly Model[];
   routes: readonly CatalogRoute[];
-  systemDefault: CatalogModel;
+  systemDefault: Model;
   /** The system default's model ID; it always has a runnable Built-in route. */
   systemDefaultModel: string;
   /** Operator-owned Auto preset; catalog metadata never selects vendors. */
   autoUpstreamModel: string;
-  byModel: ReadonlyMap<string, CatalogModel>;
+  byModel: ReadonlyMap<string, Model>;
 }>;
 
 /** Project an org's preset without mutating the shared global catalog. */
@@ -138,10 +145,10 @@ function followReplacementChain(
   return chain;
 }
 
-export function validateModelCatalog(
-  models: readonly CatalogModel[],
+export function validateModelCatalog<Model extends CatalogModel>(
+  models: readonly Model[],
   routes: readonly CatalogRoute[],
-): ModelCatalog {
+): ModelCatalog<Model> {
   const systemDefault = models.find((model) => {
     return model.model === AUTO_SELECTED_MODEL;
   });
@@ -434,8 +441,12 @@ export function catalogDisplayName(
  * the two reads are small. Correctness (a changed default is visible to the
  * next request) wins over caching until a measured need appears.
  */
-export function createModelCatalog(): Computed<Promise<ModelCatalog>> {
-  return computed(async (get): Promise<ModelCatalog> => {
+type OrderedModelCatalog = ModelCatalog<
+  CatalogModel & { readonly sortOrder: number }
+>;
+
+export function createModelCatalog(): Computed<Promise<OrderedModelCatalog>> {
+  return computed(async (get): Promise<OrderedModelCatalog> => {
     const db = get(db$);
     const [models, routes] = await Promise.all([
       db
@@ -483,7 +494,7 @@ export const modelCatalog$ = createModelCatalog();
 
 /** Fresh reads for long-lived worker stores; capture and pass the returned snapshot. */
 export const loadModelCatalog$ = command(
-  async ({ get }, signal?: AbortSignal): Promise<ModelCatalog> => {
+  async ({ get }, signal?: AbortSignal): Promise<OrderedModelCatalog> => {
     const db = get(db$);
     const [models, routes] = await Promise.all([
       db

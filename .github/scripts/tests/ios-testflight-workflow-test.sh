@@ -10,11 +10,22 @@ import json, subprocess, sys
 workflow = json.loads(subprocess.check_output(['yq', '-o=json', '.', sys.argv[1]], text=True))
 job = workflow['jobs']['publish-ios-testflight']
 condition = job['if'].removeprefix('${{').removesuffix('}}').strip()
-for value, expected in [('true', True), ('false', False), ('', False)]:
-    expression = condition.replace('needs.release-please.outputs.ios_release_created', repr(value))
-    assert eval(expression, {'__builtins__': {}}, {}) is expected
+for value in ['true', 'false', '']:
+    for app_required in ['true', 'false']:
+        for app_result in ['success', 'skipped', 'failure', 'cancelled']:
+            for cancelled in [False, True]:
+                expression = (condition
+                    .replace('needs.release-please.outputs.ios_release_created', repr(value))
+                    .replace('needs.release-please.outputs.app_deploy_required', repr(app_required))
+                    .replace('needs.promote-app-worker-production.result', repr(app_result))
+                    .replace('always()', 'True')
+                    .replace('!cancelled()', repr(not cancelled))
+                    .replace('&&', 'and').replace('||', 'or'))
+                expected = (not cancelled and value == 'true' and
+                    (app_required != 'true' or app_result == 'success'))
+                assert eval(expression, {'__builtins__': {}}, {}) is expected
 assert job['environment'] == 'production'
-assert job['needs'] == 'release-please'
+assert set(job['needs']) == {'release-please', 'promote-app-worker-production'}
 assert job['permissions'] == {'contents': 'read', 'actions': 'read'}
 steps = job['steps']
 assert next(step for step in steps if 'uses' in step and step['uses'].startswith('actions/checkout'))['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
@@ -182,23 +193,35 @@ assert packages['if'] == "!cancelled() && steps.checkout.outcome == 'success'"
 assert publish_products['with']['name'] == 'ios-ci-products-${{ github.sha }}-${{ github.run_attempt }}'
 assert 'ci-test.sh run' in simulator['run'] and 'run-ci-tests.sh' in simulator['run']
 assert 'GH_TOKEN' not in simulator.get('env', {})
-assert prepare['env']['PR_HEAD_SHA'] == next(step for step in producer if step.get('id') == 'producer-sources')['env']['PR_HEAD_SHA'] == '${{ github.event.pull_request.head.sha }}'
+source_wait = next(step for step in producer if step.get('id') == 'producer-sources')
+assert prepare['env']['RUN_HEAD_SHA'] == source_wait['env']['RUN_HEAD_SHA'] == '${{ github.event.pull_request.head.sha || github.sha }}'
 detect_job = ios['jobs']['detect']
 assert detect_job['outputs']['attempt'] == '${{ steps.changes.outputs.attempt }}'
 changes = next(step for step in detect_job['steps'] if step.get('id') == 'changes')
 assert 'echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"' in changes['run']
-assert test_job['env']['IOS_PARALLEL_PR_TESTS'] == package_job['env']['IOS_PARALLEL_PR_TESTS']
-selector = test_job['env']['IOS_PARALLEL_PR_TESTS'].removeprefix('${{').removesuffix('}}').strip()
-for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
+classifier = next(step for step in detect_job['steps'] if step.get('id') == 'release-only')
+assert classifier['env']['MERGE_GROUP_BASE_SHA'] == '${{ github.event.merge_group.base_sha }}'
+assert detect_job['outputs']['release-only'] == '${{ steps.release-only.outputs.release_only }}'
+assert test_job['env']['IOS_PARALLEL_APP_TESTS'] == package_job['env']['IOS_PARALLEL_APP_TESTS']
+selector = test_job['env']['IOS_PARALLEL_APP_TESTS'].removeprefix('${{').removesuffix('}}').strip()
+policy = detect_job['outputs']['parallel-tests'].removeprefix('${{').removesuffix('}}').strip()
+for event, release_only, eligible in [
+    ('pull_request', '', True), ('merge_group', 'false', True), ('merge_group', 'true', False),
+    ('merge_group', '', False), ('push', '', False), ('workflow_dispatch', '', False),
+]:
+    classification = (policy.replace('github.event_name', repr(event))
+                      .replace('steps.release-only.outputs.release_only', repr(release_only)).replace('||', 'or'))
+    assert eval(classification, {'__builtins__': {}}, {}) is eligible
     for attempt, detect_attempt in [('1', '1'), ('2', '2'), ('2', '1'), ('3', '2'), ('2', '')]:
         for decision in ['true', 'false', '']:
-            parallel = event == 'pull_request' and attempt == detect_attempt
+            parallel = eligible and attempt == detect_attempt
             run_tests = event != 'merge_group' or decision == 'true'
             def enabled(expression):
                 expression = (expression.replace('github.event_name', repr(event))
                     .replace('github.run_attempt', repr(attempt))
                     .replace('needs.detect.outputs.attempt', repr(detect_attempt))
-                    .replace('env.IOS_PARALLEL_PR_TESTS', repr('true' if parallel else 'false'))
+                    .replace('needs.detect.outputs.parallel-tests', repr(str(eligible).lower()))
+                    .replace('env.IOS_PARALLEL_APP_TESTS', repr(str(parallel).lower()))
                     .replace('steps.evidence.outputs.run_tests', repr(decision))
                     .replace('&&', 'and').replace('||', 'or'))
                 return eval(expression, {'__builtins__': {}}, {})
@@ -220,7 +243,7 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_PARALLEL_PR_TESTS'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == {key: value for key, value in package_job['env'].items() if key != 'IOS_PARALLEL_PR_TESTS'}
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_PARALLEL_APP_TESTS'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == {key: value for key, value in package_job['env'].items() if key != 'IOS_PARALLEL_APP_TESTS'}
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()
@@ -252,7 +275,7 @@ assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']
 aws = next(step for step in native if 'aws --version' in step.get('run', ''))
-assert "steps.release-only.outputs.release_only == 'true'" in aws['if']
+assert "needs.detect.outputs.release-only == 'true'" in aws['if']
 PY
 # Fail before touching the keychain when release identity is wrong.
 work=$(mktemp -d)

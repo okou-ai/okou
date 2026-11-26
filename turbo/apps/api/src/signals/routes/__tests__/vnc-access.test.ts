@@ -776,14 +776,17 @@ describe("live chat VNC Run inventory", () => {
     ).toBe(404);
   });
 
-  it("rechecks membership for already issued tokens", async () => {
+  it("lists an active Run's hosts when the Clerk membership lookup is unavailable", async () => {
     const f = await executionApi.fixture();
-    const stale = executionApi.agentHeaders(f);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [], totalCount: 0 },
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+      new Error("Clerk membership lookup is unavailable"),
     );
-    const response = await accept(inventory().list({ headers: stale }), [404]);
-    expect(response.body.error.code).toBe("VNC_UNAVAILABLE");
+    const response = await accept(
+      inventory().list({ headers: executionApi.agentHeaders(f) }),
+      [200],
+    );
+    expect(response.body.hosts).toMatchObject([{ id: f.connectionId }]);
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   it.each(["completed", "cancelled", "failed"] as const)(

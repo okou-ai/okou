@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   Package,
   Route,
-  MessageCircle,
   PanelLeftClose,
   Plug,
   Search,
@@ -22,7 +21,6 @@ import {
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
 import { assistantName$ } from "../../signals/branding.ts";
-import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import {
   openThreeColumnSearchDialog$,
   setThreeColumnSearchOpen$,
@@ -313,22 +311,14 @@ function OkouRailIcon({ className }: { className?: string }) {
 function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
 
-  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const assistantName = useGet(assistantName$);
   const showInbox = useSet(showChatThreadInbox$);
-  const { t } = useTranslation();
   return (
     <LabeledRailLink
       id="chat"
       navPath={ROUTES.home}
-      label={
-        okouEntry
-          ? assistantName
-          : t(($) => {
-              return $.appShell.sidebar.chat;
-            })
-      }
-      icon={okouEntry ? OkouRailIcon : (MessageCircle as NavIcon)}
+      label={assistantName}
+      icon={OkouRailIcon}
       isActive={
         activeId === "home" || activeId === "chat" || activeId === "project"
       }
@@ -462,20 +452,6 @@ export function ThreeColumnSearchDialogContainer() {
         navigate("/chats/:threadId", {
           pathParams: { threadId },
         });
-      }}
-      onSelectWorkflow={(workflowId) => {
-        navigate("/workflows/:workflowId", {
-          pathParams: { workflowId },
-        });
-      }}
-      onSelectArtifact={(artifact) => {
-        const searchParams = new URLSearchParams({
-          artifact: artifact.id,
-        });
-        if (artifact.kind !== "presentation") {
-          searchParams.set("tab", artifact.kind);
-        }
-        navigate("/artifacts", { searchParams });
       }}
     />
   );

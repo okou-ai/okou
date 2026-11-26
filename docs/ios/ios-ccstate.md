@@ -1,7 +1,8 @@
 # iOS ccstate
 
-Use CCState for explicit reactive inputs, derivation, shared asynchronous reads,
-and semantic graph actions. Apply [iOS development](ios-development.md) for
+CCState is the primary state system for native business and domain state, as
+in the web Platform: explicit reactive inputs, derivation, shared asynchronous
+reads, and semantic graph actions. Apply [iOS development](ios-development.md) for
 package boundaries and state-owner selection, and [iOS testing](ios-testing.md)
 for verification. This guide owns Swift usage; the
 [TypeScript ccstate references](../../.claude/skills/ccstate/SKILL.md) and
@@ -75,11 +76,16 @@ process-wide helpers. Async commands may use their scoped context across
 suspension as supported by the library, with owner/cancellation checks before
 publishing.
 
-Share one Store and resource graph where callers share a resource lifetime,
-such as a workspace's model/navigation reads. Independent drafts may own
-independent graphs. Neither a Store per render nor one process-wide Store for
-every account is the default. Different signal definitions in the same Store
-do not automatically deduplicate equal HTTP requests.
+Each authenticated workspace session owns one Store, `WorkspaceResources.store`,
+and the workspace root provides it to every view. The session's workspace,
+conversation, draft, and resource graphs keep their values in that Store. Each
+owner still constructs its own private signal definitions, and the Store drops a
+definition's record when the definition is deallocated. Do not create another
+Store for workspace-scoped state; separate Stores that predate this rule are
+consolidated by their owning issue. Neither a Store per render nor one
+process-wide Store for every account is the default. Different signal
+definitions in the same Store do not automatically deduplicate equal HTTP
+requests.
 
 ## Resource Reads
 
@@ -171,9 +177,15 @@ known authentication, permission, or compatibility failure.
 ## SwiftUI Consumers
 
 Provide the existing Store through `StoreProvider`; it injects that instance
-and does not create another cache. Initialize runtime wrappers' backing
-storage in the consumer's initializer and keep observation close to the view
-that needs the value.
+and does not create another cache. The workspace root provides the session
+Store, so views below it read session graphs without another provider. A nested
+provider replaces the session Store for its whole subtree. Add one only for a
+Store outside the session, and scope it to the views that read that Store.
+SwiftUI content hosted by UIKit, such as transcript cells built with
+`UIHostingConfiguration`, does not inherit the root's environment. Such content
+provides the session Store again around the views that read it.
+Initialize runtime wrappers' backing storage in the consumer's initializer and
+keep observation close to the view that needs the value.
 
 | Need                                                 | Wrapper                                                      |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
@@ -283,8 +295,11 @@ disappearing must not cancel another consumer's shared read.
 
 Register teardown with acquisition. Retain the original request Task where the
 resource owner needs to cancel it. Keep subscriptions, native observers, SDK
-callbacks, streams, and temporary files under that same owner. A manual
-`store.watch` needs explicit `Subscription.cancel()` and an initial read:
+callbacks, streams, and temporary files under that same owner. Application code
+does not add manual `store.watch` listeners, and `okou_application_subscription`
+rejects them in production sources; see
+[Native Adapters and Review](#native-adapters-and-review). A test waiter that
+watches a signal needs explicit `Subscription.cancel()` and an initial read:
 `watch` establishes dependencies but does not initially invoke its listener.
 
 After any suspension that can outlive a request or identity, check native
@@ -310,11 +325,29 @@ state with the native control/coordinator. Publish semantic document changes
 through the owning draft action; reject callbacks from retired editors without
 resetting the active editor to repair state.
 
-An Observation bridge may publish graph invalidation to existing native
-consumers without storing a second document or loading/error state. It must
-own/cancel its subscription and preserve the graph's identity. Use direct
-CCStateSwiftUI consumers for suitable SwiftUI resource views; do not add a
-parallel bespoke observer just for the same data.
+Do not publish graph state through Observation. A `store.watch` listener that
+forwards invalidation into `withMutation`, or that copies a graph result into an
+`@Observable` property, is publish/subscribe between two state systems. The
+code that changes the graph cannot see who reacts, and callers cannot await the
+reaction. SwiftUI reads graph values through CCStateSwiftUI, actions read them
+through their owner's synchronous accessors, and follow-up work continues in the
+command that made the change. The adapter's own subscriptions and test waiting
+support are the only listeners. When an owner triggers every reload of a read, it
+confirms the new read in that method instead of watching for invalidation.
+
+The same copy can hide without `store.watch`. Each of these publishes a graph
+result through Observation and is not allowed:
+
+- a callback that a computed's Task invokes, such as `didLoad...`, which assigns
+  into an `@Observable` property;
+- a computed's Task that writes an `@Observable` property as a side effect;
+- an owner method that awaits a read, such as `try await store.get(read).value`,
+  and assigns the result to an observed property that views render;
+- a SwiftUI `onChange` that copies a resolved value into an observable owner
+  for another view to render.
+
+A confirmed value that actions need synchronously is graph `State`, written
+where the read publishes it, and views resolve it like any other signal.
 
 Review the complete path: trigger, graph/Store identity, dependency Task,
 publication, invalidation, and teardown. Confirm which state is a resource

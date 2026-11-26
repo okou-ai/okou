@@ -11,6 +11,10 @@ import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-threa
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  connectorAccountAllowedSql,
+  legacyChatConnectorAccountAllowedSql,
+} from "./member-connector-account-access";
 
 export type ChatConnectorExecutionOwner = {
   readonly orgId: string;
@@ -20,10 +24,11 @@ export type ChatConnectorExecutionOwner = {
   | { readonly kind: "chat"; readonly chatThreadId: string }
 );
 
-/** Account metadata, access, and selection for an owned Chat. */
+/** Chat choices use live eligibility. Run callers can opt into the same rules. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,
+  readLiveEligibility = owner.kind === "chat",
 ) {
   return new QueryBuilder()
     .select({
@@ -37,8 +42,10 @@ export function chatConnectorExecutionReadPlan(
       customConnectorId: connectors.customConnectorId,
       displayName: connectors.displayName,
       isDefault: connectors.isDefault,
-      defaultEnabled: connectors.defaultEnabledForChats,
-      overrideEnabled: chatThreadConnectorAccessOverrides.enabled,
+      enabled: (readLiveEligibility
+        ? connectorAccountAllowedSql(owner)
+        : legacyChatConnectorAccountAllowedSql()
+      ).as("enabled"),
       selectedConnectionId: chatThreadConnectorSelections.connectorId,
     })
     .from(chatThreads)
@@ -108,8 +115,7 @@ export function chatConnectorExecutionFromRows(
     readonly customConnectorId: string | null;
     readonly displayName: string | null;
     readonly isDefault: boolean;
-    readonly defaultEnabled: boolean;
-    readonly overrideEnabled: boolean | null;
+    readonly enabled: boolean;
     readonly selectedConnectionId: string | null;
   }[],
 ) {
@@ -128,7 +134,6 @@ export function chatConnectorExecutionFromRows(
     return {
       ...row,
       target,
-      enabled: row.overrideEnabled ?? row.defaultEnabled,
     };
   });
   const current = new Map<string, (typeof accounts)[number]>();

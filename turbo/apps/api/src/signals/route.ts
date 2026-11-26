@@ -1,3 +1,4 @@
+import { artifactSharingRoutes } from "./routes/artifact-sharing";
 import { larkOfficialReadRoutes } from "./routes/lark-official-read";
 import { larkOfficialEventsRoutes } from "./routes/lark-official-events";
 import { larkOfficialRoutes } from "./routes/lark-official";
@@ -31,7 +32,7 @@ import { billingInvoicesRoutes } from "./routes/billing-invoices";
 import { billingPortalRoutes } from "./routes/billing-portal";
 import { billingRedeemRoutes } from "./routes/billing-redeem";
 import { billingRedeemCodeRoutes } from "./routes/billing-redeem-code";
-import { billingSurveyRoutes } from "./routes/billing-survey";
+import { billingFeedbackRoutes } from "./routes/billing-feedback";
 import { billingRestoreRoutes } from "./routes/billing-restore";
 import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
@@ -46,6 +47,8 @@ import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
 import { projectChatRoutes } from "./routes/project-chat";
 import { projectRoutes } from "./routes/projects";
 import { chatThreadRoutes } from "./routes/chat-threads";
+import { antigravityDeviceAuthRoutes } from "./routes/antigravity-device-auth";
+import { antigravityPersonalSubscriptionRoutes } from "./routes/antigravity-personal-subscription";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
@@ -59,6 +62,7 @@ import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authoriz
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
 import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
+import { remoteDevicesRoutes } from "./routes/remote-devices";
 import { connectorPermissionsRoutes } from "./routes/connector-permissions";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
@@ -81,7 +85,6 @@ import { cronCleanupSuggestionsRoutes } from "./routes/cron-cleanup-suggestions"
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
-import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
 import { cronReconcileImageGenerationsRoutes } from "./routes/cron-reconcile-image-generations";
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
@@ -195,6 +198,7 @@ import { runModelsRoutes } from "./routes/run-models";
 import { runPhaseTimingRoutes } from "./routes/run-phase-timing";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
+import { runnerAppStateRoutes } from "./routes/runner-app-state";
 import { runnerVncRoutes } from "./routes/runner-vnc";
 import { runnersRoutes } from "./routes/runners";
 import { runsRoutes } from "./routes/runs";
@@ -234,6 +238,7 @@ import { webFileUrlRoutes } from "./routes/web-file-url";
 import { dataRouterHistoryRoutes } from "./routes/data-router-history";
 import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-request";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
+import { webhooksRunMemoryArchiveRoutes } from "./routes/webhooks-run-memory-archive";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
@@ -284,6 +289,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeConnectRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
   ...webhooksAgentCompleteRoutes,
+  ...webhooksRunMemoryArchiveRoutes,
   ...webhooksAgentDataRequestRoutes,
   ...dataRouterHistoryRoutes,
   ...webhooksAgentEventsRoutes,
@@ -303,7 +309,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronCleanupSandboxesRoutes,
   ...cronCleanupXResourceReadsRoutes,
   ...cronConnectorCatalogRoutes,
-  ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronCleanupSuggestionsRoutes,
   ...cronDrainEmailOutboxRoutes,
@@ -335,7 +340,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingInvoicesRoutes,
   ...billingPortalRoutes,
   ...billingRedeemCodeRoutes,
-  ...billingSurveyRoutes,
+  ...billingFeedbackRoutes,
   ...billingRedeemRoutes,
   ...billingRestoreRoutes,
   ...billingStatusRoutes,
@@ -348,6 +353,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
   ...chatThreadPdfFilenameRoutes,
+  ...antigravityDeviceAuthRoutes,
+  ...antigravityPersonalSubscriptionRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
   ...desktopShellAuthorizationRoutes,
@@ -367,6 +374,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...connectorAccountRoutes,
   ...chatConnectorAccessRoutes,
   ...runConnectorAccountRoutes,
+  ...remoteDevicesRoutes,
   ...connectorPermissionsRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
@@ -377,6 +385,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...featureGuidesRoutes,
   ...hostRoutes,
   ...artifactShareRoutes,
+  ...artifactSharingRoutes,
   ...artifactReferenceRoutes,
   ...artifactOgRoutes,
   ...artifactDownloadRoutes,
@@ -391,6 +400,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...vncConnectionsRoutes,
   ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
+  ...runnerAppStateRoutes,
   ...runnerVncRoutes,
   ...cloudflareAccessRoutes,
   ...tailscaleRoutes,

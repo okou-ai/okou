@@ -1,5 +1,8 @@
 title = "Gitleaks Configuration"
 
+[extend]
+  useDefault = true
+
 [allowlist]
   description = "Allowlist for known false positives"
   paths = [

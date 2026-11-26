@@ -17,7 +17,7 @@ final class PermissionActionTests: XCTestCase {
       title: "Permissions", createdAt: .now, updatedAt: .now, sortAt: .now, pinnedAt: nil,
       pinOrder: nil)
     return ConversationStore(
-      thread: thread, sync: sync, commands: commands,
+      thread: thread, sync: sync, commands: commands, graph: makeTestWorkspaceGraph(),
       webURL: fixture.http.baseURL,
       messageMarkdown: MessageMarkdownCache(baseURL: fixture.http.baseURL),
       isVisible: { true }, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {})

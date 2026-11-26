@@ -40,11 +40,11 @@ internal fun rememberRunningWaveFrame(
             // Android starts its scale observer on first access, before snapshotFlow can read it.
             motion?.scaleFactor
             snapshotFlow {
-                    val active = keys.value
-                    motion?.scaleFactor != 0f &&
-                        active.isNotEmpty() &&
-                        listState.layoutInfo.visibleItemsInfo.any { it.key in active }
-                }
+                val active = keys.value
+                motion?.scaleFactor != 0f &&
+                    active.isNotEmpty() &&
+                    listState.layoutInfo.visibleItemsInfo.any { it.key in active }
+            }
                 .collectLatest { animate ->
                     if (animate) {
                         try {
@@ -68,7 +68,7 @@ internal fun DrawScope.drawRunningWave(color: Color, frameNanos: Long, row: Int)
     val stroke = Stroke(1.dp.toPx())
     if (frameNanos == STATIC_RUNNING_FRAME) {
         drawCircle(color, radius = 3.dp.toPx())
-        drawCircle(color, radius = 6.dp.toPx(), alpha = 0.75f, style = stroke)
+        drawCircle(color, radius = 6.dp.toPx() - stroke.width / 2f, alpha = 0.75f, style = stroke)
         return
     }
     val phase = runningWavePhase(frameNanos, row)

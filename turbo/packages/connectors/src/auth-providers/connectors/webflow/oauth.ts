@@ -99,7 +99,7 @@ async function fetchWebflowUserInfo(accessToken: string): Promise<{
   );
 
   if (!response.ok) {
-    return { id: "unknown", username: null, email: null };
+    return { id: "", username: null, email: null };
   }
 
   const data = object({
@@ -113,7 +113,7 @@ async function fetchWebflowUserInfo(accessToken: string): Promise<{
     [data.firstName, data.lastName].filter(Boolean).join(" ") || null;
 
   return {
-    id: data.id ?? "unknown",
+    id: data.id ?? "",
     username: fullName,
     email: data.email ?? null,
   };

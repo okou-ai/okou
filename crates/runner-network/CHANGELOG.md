@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.47](https://github.com/okou-ai/okou/compare/runner-network-v0.6.46...runner-network-v0.6.47) (2026-11-26)
+
+
+### Refactoring
+
+* **runner-network:** share fixture monitor drain handling ([#51007](https://github.com/okou-ai/okou/issues/51007)) ([1f7e4cc](https://github.com/okou-ai/okou/commit/1f7e4cc9ce486e14c234ca7465acec9fc9790a2a))
+
+## [0.6.46](https://github.com/okou-ai/okou/compare/runner-network-v0.6.45...runner-network-v0.6.46) (2026-11-25)
+
+## [0.6.45](https://github.com/okou-ai/okou/compare/runner-network-v0.6.44...runner-network-v0.6.45) (2026-11-24)
+
+## [0.6.44](https://github.com/okou-ai/okou/compare/runner-network-v0.6.43...runner-network-v0.6.44) (2026-11-24)
+
+## [0.6.43](https://github.com/okou-ai/okou/compare/runner-network-v0.6.42...runner-network-v0.6.43) (2026-11-24)
+
+## [0.6.42](https://github.com/okou-ai/okou/compare/runner-network-v0.6.41...runner-network-v0.6.42) (2026-11-24)
+
+## [0.6.41](https://github.com/okou-ai/okou/compare/runner-network-v0.6.40...runner-network-v0.6.41) (2026-11-23)
+
 ## [0.6.40](https://github.com/okou-ai/okou/compare/runner-network-v0.6.39...runner-network-v0.6.40) (2026-11-22)
 
 

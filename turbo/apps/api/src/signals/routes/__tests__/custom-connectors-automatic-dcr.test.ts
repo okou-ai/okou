@@ -78,6 +78,51 @@ async function connect(
 }
 
 describe("Custom Automatic OAuth DCR retirement", () => {
+  it.each([false, true])(
+    "reuses a custom Automatic OAuth subject on Add account (overlap=%s)",
+    async (overlap) => {
+      const provider = configureProvider({
+        registration: "dcr",
+        identity: {
+          subject: "custom-same-subject",
+          tokenEmail: "custom@example.test",
+        },
+      });
+      const actor = createBddApi(context).user({ orgRole: "org:admin" });
+      const connector = await createConnector(actor, provider.endpoint);
+      const first = await connect(actor, connector.id, provider.issuer);
+      const authorizations = await Promise.all([
+        connectors.startCustomConnectorOAuth2(actor, connector.id, {
+          intent: "add",
+        }),
+        connectors.startCustomConnectorOAuth2(actor, connector.id, {
+          intent: "add",
+        }),
+      ]);
+      if (overlap) {
+        await Promise.all(
+          authorizations.map(async (authorization) => {
+            await completeAuthorization(authorization, provider.issuer);
+          }),
+        );
+      } else {
+        for (const authorization of authorizations) {
+          await completeAuthorization(authorization, provider.issuer);
+        }
+      }
+      const saved = await connectors.listCustomConnectorAccounts(
+        actor,
+        connector.id,
+      );
+      expect(saved).toHaveLength(1);
+      expect(saved[0]).toMatchObject({
+        id: first.id,
+        externalId: "custom-same-subject",
+        connectionStatus: "connected",
+      });
+      await connectors.deleteCustomConnector(actor, connector.id);
+    },
+  );
   it("replaces expired registrations with no linked accounts across repeated authorizations", async () => {
     const startedAt = now();
     mockNow(startedAt);

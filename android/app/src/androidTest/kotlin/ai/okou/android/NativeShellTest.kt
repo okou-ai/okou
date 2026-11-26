@@ -43,7 +43,7 @@ class NativeShellTest {
             var systemDark = false
             requireNotNull(scenario).onActivity { systemDark = isNight(it) }
             val manual = if (systemDark) R.string.appearance_light else R.string.appearance_dark
-            click(R.string.settings)
+            device.openChatListSettings(app)
             openAppearance()
             awaitSelectable(R.string.appearance_system)
             selectAppearance(manual)
@@ -51,7 +51,7 @@ class NativeShellTest {
             closeActivity()
             launch()
             awaitBars(light = systemDark)
-            click(R.string.settings)
+            device.openChatListSettings(app)
             openAppearance()
             awaitSelected(manual)
             selectAppearance(R.string.appearance_system)
@@ -66,7 +66,7 @@ class NativeShellTest {
             launch()
             awaitActivity("Android initial light configuration applies") { !isNight(it) }
             awaitBars(light = true)
-            click(R.string.settings)
+            device.openChatListSettings(app)
             openAppearance()
             awaitSelected(R.string.appearance_system)
             dismissAppearance()
@@ -113,7 +113,7 @@ class NativeShellTest {
                 }
             }
             launch()
-            click(R.string.settings)
+            device.openChatListSettings(app)
             button(R.string.updates_title).click()
             text(R.string.updates_check)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
@@ -135,7 +135,7 @@ class NativeShellTest {
             device.awaitChatList(app)
             closeActivity()
             launch()
-            click(R.string.settings)
+            device.openChatListSettings(app)
             openPicker(R.string.palette_blue_horizon, R.string.palette_default)
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
             await("Restored palette label is Traditional Chinese") {
@@ -189,16 +189,11 @@ class NativeShellTest {
                     override fun apply(device: UiDevice) = findCurrent(target)
                 },
                 WAIT,
-            )
+            ),
         ) {
             "Native preference control not reachable: $value"
         }
     }
-
-    private fun click(id: Int) =
-        if (id == R.string.settings)
-            checkNotNull(device.wait(Until.findObject(By.desc(app.getString(id))), WAIT)).click()
-        else text(id).click()
 
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =

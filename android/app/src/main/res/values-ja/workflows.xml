@@ -10,13 +10,13 @@
     <string name="workflow_chat_finished">チャットの実行が終了</string>
     <string name="workflow_clear_search">検索をクリア</string>
     <string name="workflow_connect_provider">このルールを有効にするには %1$s を接続してください。</string>
-    <string name="workflow_connection_unavailable">接続一覧を開けませんでした。</string>
     <string name="workflow_create_uncertain">作成を確認できませんでした。エディタを閉じてルールを確認してから、やり直してください。</string>
     <string name="workflow_creation_prompt">非公開のワークフローを作るのを手伝ってください。workflow-setup スキルを使い、繰り返したいタスクを尋ねてください。保存前に手順を提示して確認を求めてください。自動化は私が依頼した場合にだけ作成してください。</string>
     <string name="workflow_daily">毎日</string>
     <string name="workflow_daily_schedule">毎日 %1$s</string>
     <string name="workflow_discard">破棄</string>
     <string name="workflow_discard_title">未保存の変更を破棄しますか？</string>
+    <string name="workflow_discard_detail">この端末で「%1$s」に加えた未保存の変更は破棄されます。</string>
     <string name="workflow_draft_unavailable">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。</string>
     <string name="workflow_edit">編集</string>
     <string name="workflow_edit_automation">自動化を編集</string>
@@ -44,6 +44,7 @@
     <string name="workflow_instructions_heading">ワークフローの手順</string>
     <string name="workflow_keep_editing">編集を続ける</string>
     <string name="workflow_load_failed">ワークフローを読み込めませんでした</string>
+    <string name="workflow_rules_load_failed">トリガールールを読み込めませんでした。</string>
     <string name="workflow_mail_from_contains">送信者に %1$s を含む</string>
     <string name="workflow_mail_labeled">Gmail のラベルを適用</string>
     <string name="workflow_mail_received">Gmail のメールを受信</string>
@@ -66,9 +67,6 @@
     <string name="workflow_notion_child">Notion の子ページを作成</string>
     <string name="workflow_notion_item">Notion のデータベースに項目を作成</string>
     <string name="workflow_notion_updated">Notion のページを更新</string>
-    <string name="workflow_offline">ワークフローを読み込むには接続してください</string>
-    <string name="workflow_offline_cache">オフライン · 最後に読み込んだデータを表示</string>
-    <string name="workflow_offline_changes">保存するには接続してください。変更は保持されています。</string>
     <string name="workflow_pause">一時停止</string>
     <string name="workflow_paused">自動化は一時停止中</string>
     <string name="workflow_private">自分のみ</string>
@@ -90,7 +88,7 @@
     <string name="workflow_shared_usable">ワークスペースで共有 · 使用可</string>
     <string name="workflow_show_all">すべて表示</string>
     <string name="workflow_status_connection">%1$s · 接続が必要</string>
-    <string name="workflow_time">時刻（HH:mm）</string>
+    <string name="workflow_time">時刻</string>
     <string name="workflow_timezone">タイムゾーン</string>
     <string name="workflow_transcript">Google Meet の文字起こしが完了</string>
     <string name="workflow_trigger">トリガー</string>
@@ -103,10 +101,29 @@
     <string name="workflow_weekdays">平日</string>
     <string name="workflow_write_failed">変更を保存できませんでした。</string>
     <plurals name="workflow_enabled_count">
-        <item quantity="other">%d 件の自動化が有効</item>
+        <item quantity="other">%d件の自動化が有効</item>
     </plurals>
-    <string name="workflow_draft_network_failed">新しいチャットの下書きを開けませんでした。既存の下書きは保持されています。接続を確認して、もう一度お試しください。</string>
     <string name="workflow_rule_change_failed">このルールを変更できませんでした。</string>
     <string name="workflow_rule_network_failed">このルールを変更できませんでした。接続を確認して、もう一度お試しください。</string>
     <string name="workflow_write_conflict">保存中にこのワークフローが更新されました。編集内容は保持されています。</string>
+    <string name="workflow_history_earlier">以前の実行を表示</string>
+    <string name="workflow_history_event">イベント</string>
+    <string name="workflow_history_failed">実行履歴を読み込めませんでした</string>
+    <string name="workflow_history_loading">実行履歴を読み込み中…</string>
+    <string name="workflow_history_open_chat">関連するチャットを開く</string>
+    <string name="workflow_history_unavailable">実行履歴を利用できません</string>
+    <string name="workflow_run_pending">保留中</string>
+    <string name="workflow_run_running">実行中</string>
+    <string name="workflow_run_timeout">タイムアウト</string>
+    <string name="workflow_history_trigger_unavailable">トリガーを確認できません</string>
+    <string name="workflow_history_scheduled">スケジュール実行</string>
+    <string name="workflow_history_manual">手動実行</string>
+    <string name="workflow_catalog_refresh_failed">ワークフロー一覧を更新できませんでした。読み込み済みのワークフローを表示しています。</string>
+    <string name="workflow_history_earlier_failed">以前の実行を読み込めませんでした。</string>
+    <string name="workflow_rule_checking">結果を確認しています…</string>
+    <string name="workflow_rule_unconfirmed">結果はまだ確認できていません。</string>
+    <string name="workflow_event">イベント</string>
+    <string name="workflow_event_source">イベントのソース</string>
+    <string name="workflow_source_gmail">Gmail · メール受信</string>
+    <string name="workflow_source_calendar">Google Calendar · 予定作成</string>
 </resources>

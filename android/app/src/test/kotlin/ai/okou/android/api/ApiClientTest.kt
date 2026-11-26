@@ -39,7 +39,7 @@ class ApiClientTest {
     }
 
     private fun client(
-        tokens: WorkspaceTokenProvider = WorkspaceTokenProvider { "workspace-token" }
+        tokens: WorkspaceTokenProvider = WorkspaceTokenProvider { "workspace-token" },
     ) = ApiClient(server.url("/"), tokens, version = "0.1.0")
 
     @Test
@@ -110,8 +110,8 @@ class ApiClientTest {
             val value =
                 api.initializePreferences(
                     InitializePreferencesRequest(
-                        locale = InitializePreferencesRequestLocale.ZH_HANT
-                    )
+                        locale = InitializePreferencesRequestLocale.ZH_HANT,
+                    ),
                 )
             assertNull(value.timezone)
             assertTrue(value.memoryInitialized)
@@ -152,7 +152,7 @@ class ApiClientTest {
                     MockResponse()
                         .setResponseCode(status)
                         .setHeader("Retry-After", "0")
-                        .setBody(error)
+                        .setBody(error),
                 )
                 val result = failure<ApiFailure.Http> { api.organization() }
                 assertEquals(status, result.status)
@@ -169,6 +169,53 @@ class ApiClientTest {
     }
 
     @Test
+    fun rejectedReadsUseOneReplacementAndWritesAreNotReplayed() = runTest {
+        val renewals = mutableListOf<String>()
+        val provider =
+            object : WorkspaceTokenProvider {
+                override suspend fun token() = "initial"
+
+                override suspend fun renew(rejectedToken: String): String {
+                    renewals += rejectedToken
+                    return "replacement"
+                }
+            }
+        client(provider).use { api ->
+            server.enqueue(MockResponse().setResponseCode(401))
+            server.enqueue(MockResponse().setBody("""{"results":[]}"""))
+            assertTrue(api.searchChatMessages("fixture").results.isEmpty())
+            val first = server.takeRequest()
+            val replay = server.takeRequest()
+            assertEquals("Bearer initial", first.getHeader("Authorization"))
+            assertEquals("Bearer replacement", replay.getHeader("Authorization"))
+            assertEquals("/api/chat/search", replay.requestUrl?.encodedPath)
+            assertEquals(first.path, replay.path)
+            assertNotEquals(
+                first.getHeader("X-Client-Request-Id"),
+                replay.getHeader("X-Client-Request-Id"),
+            )
+
+            server.enqueue(MockResponse().setResponseCode(401))
+            server.enqueue(MockResponse().setResponseCode(401))
+            assertEquals(401, failure<ApiFailure.Http> { api.organization() }.status)
+            assertEquals(4, server.requestCount)
+
+            server.enqueue(MockResponse().setResponseCode(401))
+            val write =
+                failure<ApiFailure.Http> {
+                    api.initializePreferences(
+                        InitializePreferencesRequest(
+                            locale = InitializePreferencesRequestLocale.EN_US,
+                        ),
+                    )
+                }
+            assertEquals(401, write.status)
+            assertEquals(5, server.requestCount)
+            assertEquals(listOf("initial", "initial"), renewals)
+        }
+    }
+
+    @Test
     fun aRetryAfterZeroWriteIsNotReplayed() = runTest {
         server.dispatcher =
             object : Dispatcher() {
@@ -178,7 +225,7 @@ class ApiClientTest {
         client().use { api ->
             failure<ApiFailure.Http> {
                 api.initializePreferences(
-                    InitializePreferencesRequest(locale = InitializePreferencesRequestLocale.EN_US)
+                    InitializePreferencesRequest(locale = InitializePreferencesRequestLocale.EN_US),
                 )
             }
             assertEquals(1, server.requestCount)
@@ -213,9 +260,9 @@ class ApiClientTest {
         val entered = CompletableDeferred<Unit>()
         val token = CompletableDeferred<String>()
         client {
-                entered.complete(Unit)
-                token.await()
-            }
+            entered.complete(Unit)
+            token.await()
+        }
             .use { api ->
                 val request = async { api.organization() }
                 entered.await()
@@ -290,7 +337,7 @@ class ApiClientTest {
             server.enqueue(
                 MockResponse()
                     .setResponseCode(302)
-                    .setHeader("Location", destination.url("/capture"))
+                    .setHeader("Location", destination.url("/capture")),
             )
             client().use { api ->
                 assertEquals(302, failure<ApiFailure.Http> { api.organization() }.status)
@@ -347,14 +394,14 @@ class ApiClientTest {
                 MockResponse()
                     .setResponseCode(502)
                     .setHeader("Content-Encoding", "gzip")
-                    .setBody("invalid gzip")
+                    .setBody("invalid gzip"),
             )
             assertEquals(502, failure<ApiFailure.Http> { api.organization() }.status)
             server.enqueue(
                 gzipResponse(
-                        """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}"""
+                        """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}""",
                     )
-                    .setResponseCode(426)
+                    .setResponseCode(426),
             )
             assertEquals(
                 "0.2.0",
@@ -372,7 +419,7 @@ class ApiClientTest {
         client().use { api ->
             failure<ApiFailure.Network> {
                 api.initializePreferences(
-                    InitializePreferencesRequest(locale = InitializePreferencesRequestLocale.EN_US)
+                    InitializePreferencesRequest(locale = InitializePreferencesRequestLocale.EN_US),
                 )
             }
             assertEquals(1, server.requestCount)
@@ -423,7 +470,7 @@ class ApiClientTest {
             """{"id":"org_one","name":"Workspace","role":"admin","futureField":true}"""
         const val error = """{"error":{"code":"FIXTURE_ERROR","message":"Try again"}}"""
         const val preferences =
-            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"forYouCoverId":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
     }
 }
 

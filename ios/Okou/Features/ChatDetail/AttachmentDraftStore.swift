@@ -1,14 +1,15 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 import Photos
 import PhotosUI
 import SwiftUI
 
-@MainActor @Observable
+/// Upload state lives in the owning composer's graph, so its send rules and views read one source.
+@MainActor
 final class AttachmentDraftStore {
-  struct Item: Identifiable {
+  struct Item: Identifiable, Equatable {
     let id: UUID
     init(id: UUID = UUID(), file: ImportedAttachmentFile, state: UploadState = .waiting) {
       self.id = id
@@ -18,7 +19,7 @@ final class AttachmentDraftStore {
     let file: ImportedAttachmentFile
     var state: UploadState = .waiting
   }
-  enum UploadState {
+  enum UploadState: Equatable {
     case waiting
     case uploading(Double)
     case ready(ChatAttachment)
@@ -30,10 +31,36 @@ final class AttachmentDraftStore {
     let file: ImportedAttachmentFile
     let uploaded: ChatAttachment?
   }
+  /// What views and the composer's derivations read.
+  struct Content: Equatable {
+    var inputID = UUID()
+    var items: [Item] = []
+    var importingCount = 0
+    var error: String?
+
+    var hasAttachments: Bool { !items.isEmpty || importingCount > 0 }
+    var isReady: Bool {
+      importingCount == 0
+        && items.allSatisfy {
+          if case .ready = $0.state { return true }
+          return false
+        }
+    }
+    var uploaded: [ChatAttachment] {
+      items.compactMap { if case .ready(let file) = $0.state { file } else { nil } }
+    }
+  }
+
   var didRemove: (@MainActor (String?) -> Void)?
   var didChange: (@MainActor () -> Void)?
-  private(set) var inputID = UUID()
-  private(set) var items: [Item] = []
+  private(set) var inputID: UUID {
+    get { snapshot.inputID }
+    set { update { $0.inputID = newValue } }
+  }
+  private(set) var items: [Item] {
+    get { snapshot.items }
+    set { update { $0.items = newValue } }
+  }
   var savedItems: [SavedItem] {
     items.map { item in
       let uploaded: ChatAttachment?
@@ -64,18 +91,35 @@ final class AttachmentDraftStore {
     let parts = draft.draftUserMessage?.parts ?? []
     let ids = Set(parts.compactMap { $0["type"]?.string == "file" ? $0["fileId"]?.string : nil })
     let metadata = draft.draftAttachments ?? []
-    let saved = metadata.filter { ids.contains($0.id) }.compactMap { file -> SavedItem? in
-      guard let url = URL(string: file.url), !url.isFileURL else { return nil }
-      return SavedItem(
-        file: ImportedAttachmentFile(
-          url: url, filename: file.filename,
-          contentType: file.contentType, size: file.size, thumbnail: nil), uploaded: file.attachment
-      )
-    }
+    let saved = Self.remoteFiles(metadata.filter { ids.contains($0.id) })
     reset()
     restore(saved)
     if !ids.isSubset(of: Set(saved.compactMap { $0.uploaded?.id })) {
       error = "Some draft files have no recoverable metadata. Open this draft on the web."
+    }
+  }
+
+  private static func remoteFiles(_ files: [ComposerDraft.DraftAttachment]) -> [SavedItem] {
+    files.compactMap { file in
+      guard let url = URL(string: file.url), !url.isFileURL else { return nil }
+      return SavedItem(
+        file: ImportedAttachmentFile(
+          url: url, filename: file.filename, contentType: file.contentType, size: file.size,
+          thumbnail: nil),
+        uploaded: file.attachment)
+    }
+  }
+
+  /// New suggestion files can be validated alongside the user's ongoing imports.
+  func appendRemoteFiles(_ files: [ComposerDraft.DraftAttachment]) throws {
+    let saved = Self.remoteFiles(files)
+    guard saved.count == files.count else { throw ChatError.composerUnavailable }
+    for entry in saved {
+      guard let file = entry.uploaded else { continue }
+      let item = Item(file: entry.file, state: .checking(file))
+      items.append(item)
+      remoteFiles[item.id] = file
+      validateRemote(item)
     }
   }
 
@@ -102,31 +146,45 @@ final class AttachmentDraftStore {
       }
     }
   }
-  private(set) var importingCount = 0
-  var error: String?
+  private(set) var importingCount: Int {
+    get { snapshot.importingCount }
+    set { update { $0.importingCount = newValue } }
+  }
+  var error: String? {
+    get { snapshot.error }
+    set { update { $0.error = newValue } }
+  }
   private let commands: ChatCommands
   private let didFail: @MainActor (Error) -> Void
-  @ObservationIgnored private var uploads: [UUID: Task<Void, Never>] = [:]
-  @ObservationIgnored private var imports: [UUID: Task<Void, Never>] = [:]
+  private var uploads: [UUID: Task<Void, Never>] = [:]
+  private var imports: [UUID: Task<Void, Never>] = [:]
   private var closed = false
   private var remoteFiles: [UUID: ChatAttachment] = [:]
+  private let store: CCState.Store
+  private let content: CCState.State<Content>
+  /// Upload state for the composer's derivations and SwiftUI readers.
+  let value: Computed<Content>
 
-  init(commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    commands: ChatCommands, store: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.commands = commands
     self.didFail = didFail
+    self.store = store
+    let content = CCState.State(Content())
+    self.content = content
+    value = Computed { get in try get(content) }
   }
 
-  var hasAttachments: Bool { !items.isEmpty || importingCount > 0 }
-  var isReady: Bool {
-    importingCount == 0
-      && items.allSatisfy {
-        if case .ready = $0.state { return true }
-        return false
-      }
+  var snapshot: Content {
+    do { return try store.get(content) } catch {
+      preconditionFailure("Cannot read the attachment graph: \(error)")
+    }
   }
-  var uploaded: [ChatAttachment] {
-    items.compactMap { if case .ready(let file) = $0.state { file } else { nil } }
-  }
+  var hasAttachments: Bool { snapshot.hasAttachments }
+  var isReady: Bool { snapshot.isReady }
+  var uploaded: [ChatAttachment] { snapshot.uploaded }
 
   func importFiles(_ urls: [URL]) {
     startImport {
@@ -324,5 +382,17 @@ final class AttachmentDraftStore {
     let previous = savedItems
     items[index].state = state
     if previous != savedItems { didChange?() }
+  }
+
+  private func update(_ mutation: (inout Content) -> Void) {
+    do {
+      try store.set(
+        content,
+        update: { previous in
+          var next = previous
+          mutation(&next)
+          return next
+        })
+    } catch { preconditionFailure("Cannot update the attachment graph: \(error)") }
   }
 }

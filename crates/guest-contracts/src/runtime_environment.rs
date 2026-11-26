@@ -15,6 +15,7 @@ pub const TRUSTED_ROOTFS_ENVIRONMENT: &[(&str, &str)] = &[
     ("LANG", "C.UTF-8"),
     ("RUSTUP_HOME", "/usr/local/rustup"),
     ("NPM_CONFIG_UPDATE_NOTIFIER", "false"),
+    ("AGY_CLI_DISABLE_AUTO_UPDATE", "true"),
     (
         "NODE_EXTRA_CA_CERTS",
         "/usr/local/share/ca-certificates/vm0-proxy-ca.crt",

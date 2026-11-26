@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.committedSearchText
 import ai.okou.android.state.ArtifactPageState
 import ai.okou.android.state.rememberArtifactPageState
 import android.app.Activity
@@ -37,8 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -46,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
+import kotlinx.coroutines.flow.filterNotNull
 
 @Composable
 internal fun ArtifactsRoute(
@@ -54,29 +58,41 @@ internal fun ArtifactsRoute(
     listWidth: Int?,
     onClose: () -> Unit,
     onSource: (ConfirmedChat) -> Unit,
+    searchArtifactId: String? = null,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val position = rememberLazyListState()
     val focus = LocalFocusManager.current
+    val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
-    val selectedId = page.selectedId
+    val selectedId = searchArtifactId ?: page.selectedId
 
-    LifecycleStartEffect(model) {
-        model.setActive(true, ArtifactQuery(page.filter, input.text.toString().trim()))
+    fun catalogQuery(filter: ArtifactFilter, previousKeyword: String) =
+        ArtifactQuery(filter, input.committedSearchText()?.trim() ?: previousKeyword)
+
+    LifecycleStartEffect(model, searchArtifactId) {
+        model.setActive(
+            true,
+            catalogQuery(page.filter, model.state.value.query.keyword),
+            showCatalog = searchArtifactId == null,
+        )
         onStopOrDispose { model.setActive(false) }
     }
     LaunchedEffect(model, selectedId) { model.select(selectedId) }
-    LaunchedEffect(model, input) {
-        snapshotFlow { input.text.toString().trim() }
+    LaunchedEffect(model, input, searchArtifactId) {
+        if (searchArtifactId != null) return@LaunchedEffect
+        snapshotFlow { input.committedSearchText()?.trim() }
+            .filterNotNull()
             .collect { keyword ->
-                if (keyword != model.state.value.query.keyword) {
+                val query = ArtifactQuery(page.filter, keyword)
+                if (query != model.state.value.query) {
                     page.restoreRow = null
                     position.requestScrollToItem(0)
                     model.query(
-                        ArtifactQuery(page.filter, keyword),
+                        query,
                         debounce = keyword.isNotEmpty(),
                     )
                 }
@@ -87,7 +103,7 @@ internal fun ArtifactsRoute(
         focus.clearFocus()
         keyboard?.hide()
         val current = page.selectedId
-        if (current == null) {
+        if (current == null || searchArtifactId != null) {
             onClose()
         } else {
             page.restoreRow = current
@@ -97,21 +113,21 @@ internal fun ArtifactsRoute(
     }
 
     BackHandler(onBack = ::back)
-    val wide = listWidth != null
+    val wide = searchArtifactId == null && listWidth != null
     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
         if (wide || selectedId == null) {
             ArtifactCatalogList(
                 model,
                 state,
                 input,
-                page.filter,
+                catalogQuery(page.filter, state.query.keyword),
                 onFilter = { next ->
                     if (page.filter != next) {
                         page.filter = next
                         page.restoreRow = null
                         position.requestScrollToItem(0)
                         model.query(
-                            ArtifactQuery(next, input.text.toString().trim()),
+                            catalogQuery(next, model.state.value.query.keyword),
                             debounce = false,
                         )
                     }
@@ -121,7 +137,7 @@ internal fun ArtifactsRoute(
                 restoreRow = page.restoreRow,
                 onFocusRestored = { page.restoreRow = null },
                 onSelect = { item ->
-                    focus.clearFocus()
+                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id
                     model.select(item.id, item)
@@ -136,11 +152,17 @@ internal fun ArtifactsRoute(
                     else Modifier.width((listWidth - 1).dp),
             )
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selectedId != null) {
             Column(Modifier.weight(1f)) {
                 if (!wide)
-                    ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
+                    ArtifactToolbar(
+                        if (searchArtifactId == null) R.string.artifact_title
+                        else R.string.chat_search_artifact_preview,
+                        if (searchArtifactId == null) R.string.artifact_return_list
+                        else R.string.chat_search_close_artifact_preview,
+                        ::back,
+                    )
                 ArtifactSelectionPreview(
                     model,
                     state,
@@ -216,7 +238,6 @@ internal fun ArtifactSelectionPreview(
             preview,
             rememberScrollState(),
             wide,
-            state.offline,
             source,
             restoreSourceFocus = page.restoreSource,
             onSourceFocusRestored = { page.restoreSource = false },
@@ -237,7 +258,7 @@ internal fun ArtifactSelectionPreview(
                                     file.contentType.substringBefore(';').takeIf { '/' in it }
                                         ?: "application/octet-stream"
                                 putExtra(Intent.EXTRA_TITLE, file.filename)
-                            }
+                            },
                         )
                     } catch (_: ActivityNotFoundException) {
                         page.pickerArtifactId = null

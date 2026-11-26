@@ -116,7 +116,7 @@ const synchronizeWorkspaceLayout$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     set(sidebarMotion.commit$, preparation);
-    const artifactOpen = await get(artifactCatalogSidebar.open$);
+    const artifactOpen = get(artifactCatalogSidebar.open$);
     signal.throwIfAborted();
     if (artifactOpen) {
       set(artifactCatalogSidebar.imageCanvas.syncLayout$);
@@ -407,24 +407,6 @@ export const openArtifactSidebar$ = command(
     }
     set(openAttachmentOnThread$, thread, input, get(pageSignal$));
     return true;
-  },
-);
-
-/**
- * Route an artifact click into an artifact sidebar the page already has open,
- * replacing its content in place. Returns false when the page has no artifact
- * sidebar, leaving the caller on its own preview surface.
- */
-export const openArtifactInOpenSidebar$ = command(
-  ({ get, set }, input: ArtifactRefInput, threadId?: string): boolean => {
-    const active = get(activeThreadSidebar$);
-    if (
-      active?.target.type !== "artifacts" &&
-      active?.target.type !== "artifact"
-    ) {
-      return false;
-    }
-    return set(openArtifactSidebar$, input, threadId);
   },
 );
 

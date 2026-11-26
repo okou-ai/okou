@@ -253,6 +253,11 @@
         "modelCatalogCacheValidationLatency": "मॉडल कैटलॉग कैश सत्यापन विलंबता",
         "modelCatalogPrefetchRole": "मॉडल कैटलॉग प्रीफ़ेच भूमिका",
         "modelCatalogUpstreamEncoding": "मॉडल कैटलॉग अपस्ट्रीम एन्कोडिंग",
+        "openrouterAttempts": "OpenRouter प्रदाता प्रयास",
+        "openrouterAttemptsIncomplete": "OpenRouter अधूरे प्रयास",
+        "openrouterGenerationId": "OpenRouter जनरेशन आईडी",
+        "openrouterModel": "OpenRouter मॉडल",
+        "openrouterProvider": "OpenRouter प्रदाता",
         "params": "पैरामीटर",
         "permission": "अनुमति",
         "permissionError": "अनुमति त्रुटि",
@@ -373,7 +378,6 @@
     },
     "sidebar": {
       "ariaLabel": "साइड बार",
-      "chat": "चैट",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",
@@ -431,7 +435,6 @@
       "close": "बंद करना",
       "closeArtifact": "आर्टिफ़ैक्ट बंद करें",
       "closeNamed": "{{title}} बंद करें",
-      "closePreviewMenu": "पूर्वावलोकन मेनू बंद करें",
       "download": "डाउनलोड करना",
       "downloadArtifact": "आर्टिफ़ैक्ट डाउनलोड करें",
       "downloadMarkdownAs": "{{format}} के रूप में डाउनलोड करें",
@@ -504,6 +507,77 @@
       "kindIcon": "{{kind}} आर्टिफ़ैक्ट",
       "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं"
     },
+    "customDomain": {
+      "addressHint": "Choose the full address used when you share this website.",
+      "automaticHint": "यह वेबसाइट का CNAME और स्वामित्व TXT कॉन्फ़िगर करता है। नीचे दिए अतिरिक्त प्रमाणपत्र रिकॉर्ड जोड़ें, फिर वापस आकर सत्यापन करें।",
+      "backToDns": "DNS सेटअप पर वापस जाएँ",
+      "checkFailed": "कार्रवाई आवश्यक",
+      "checking": "जाँच जारी है…",
+      "checkNotChecked": "जाँच नहीं हुई",
+      "checkPassed": "सफल",
+      "checkPending": "प्रतीक्षा में",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership",
+        "provider": "डोमेन सक्रियण",
+        "route": "वेबसाइट रूटिंग"
+      },
+      "checkUnavailable": "जाँच नहीं हो सकी",
+      "configureProvider": "{{provider}} से सेटअप करें",
+      "connect": "Connect a domain",
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecordName": "{{type}} नाम {{name}} कॉपी करें",
+      "copyRecordValue": "{{type}} मान {{name}} कॉपी करें",
+      "disconnectConfirm": "This domain will be disconnected from this website.",
+      "dnsConfigured": "DNS कॉन्फ़िगर हो गया है",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "findingProvider": "DNS सेटअप विकल्प खोजे जा रहे हैं…",
+      "hostnameExample": "www.example.com",
+      "httpsReady": "HTTPS ready",
+      "keepTxtValues": "एक ही नाम वाले मौजूदा TXT मान रखें। हर मान को अलग TXT रिकॉर्ड के रूप में जोड़ें।",
+      "lastChecked": "Last checked {{time}}",
+      "manage": "Manage {{hostname}}",
+      "manualHint": "रिकॉर्ड अपनी DNS सेटिंग में कॉपी करें, फिर वापस आकर सत्यापन करें।",
+      "needsSetup": "Finish setup",
+      "noDnsChanges": "आपके DNS रिकॉर्ड मेल खाते हैं। DNS में बदलाव की ज़रूरत नहीं है।",
+      "okouUrl": "Okou URL",
+      "openDns": "{{provider}} DNS खोलें",
+      "ownDomain": "Enter a domain you own",
+      "recordName": "नाम",
+      "recordValue": "मान",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeHostname": "Remove {{hostname}}",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "retryVerification": "नीचे दिए गए परिणाम देखें, फिर दोबारा जाँचने के लिए सत्यापित करें पर क्लिक करें।",
+      "saveToEnable": "आपका शेयरिंग पता सहेजें पर क्लिक करने के बाद ही बदलता है।",
+      "setUpDns": "DNS रिकॉर्ड सेट करें",
+      "setupStages": "डोमेन सेटअप के चरण",
+      "sharingAddress": "आपका शेयरिंग पता",
+      "steps": {
+        "dns": "DNS सेटअप",
+        "enable": "सक्रिय करें",
+        "verify": "सत्यापन"
+      },
+      "title": "Custom domain",
+      "urlPreview": "https://{{hostname}}",
+      "verificationChecks": "डोमेन सत्यापन जाँच",
+      "verificationComplete": "सभी जाँच सफल रहीं। डोमेन सक्रिय करने के लिए जारी रखें।",
+      "verificationDetails": "सत्यापन विवरण",
+      "verified": "Domain verified. Save to use this address.",
+      "verifiedRecords": "सत्यापित रिकॉर्ड ({{total}})",
+      "verify": "Verify",
+      "verifyAgain": "फिर से जाँचें",
+      "verifyDomain": "डोमेन सत्यापन",
+      "verifyFailed": "आपके डोमेन की पुष्टि नहीं हो सकी। फिर से कोशिश करें।",
+      "verifyingHint": "आपके डोमेन की जाँच हो रही है। नतीजे नीचे दिखाई देंगे।",
+      "yourDomains": "Connected domains"
+    },
     "deletion": {
       "cancel": "रद्द करें",
       "delete": "हटाएँ",
@@ -572,9 +646,47 @@
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
+    "library": {
+      "allArtifacts": "सभी आर्टिफ़ैक्ट",
+      "allTypes": "सभी प्रकार",
+      "clearFilters": "फ़िल्टर हटाएँ",
+      "clearSearch": "खोज साफ़ करें",
+      "created": "बनाया गया",
+      "emptyDescription": "कोई दूसरा नाम या प्रकार आज़माएँ।",
+      "emptyTitle": "कोई आर्टिफ़ैक्ट नहीं मिला",
+      "loadMore": "और लोड करें",
+      "name": "नाम",
+      "retry": "फिर से कोशिश करें",
+      "search": "आर्टिफ़ैक्ट खोजें",
+      "sortAscending": "आरोही क्रम में लगाएँ",
+      "sortDescending": "अवरोही क्रम में लगाएँ",
+      "type": "प्रकार"
+    },
     "metadata": {
       "generated": "{{date}} उत्पन्न किया गया",
       "updated": "{{date}} को अपडेट किया गया"
+    },
+    "people": {
+      "accounts": "मेल खाने वाले कार्यक्षेत्र सदस्य",
+      "anyone": "कोई भी",
+      "invitationProcessed": "साझा करने का आमंत्रण संसाधित किया गया",
+      "label": "लोगों के साथ साझा करें",
+      "noAccounts": "कोई सदस्य नहीं मिला। आमंत्रित करने के लिए पूरा ईमेल दर्ज करें।",
+      "owner": "स्वामी",
+      "placeholder": "नाम या ईमेल पता",
+      "remove": "{{email}} का ऐक्सेस हटाएँ",
+      "removed": "ऐक्सेस हटाया गया",
+      "restricted": "आमंत्रित लोग",
+      "restrictedDescription": "केवल आप और आमंत्रित लोग",
+      "searching": "कार्यक्षेत्र के सदस्य खोजे जा रहे हैं…",
+      "searchUnavailable": "सदस्यों की खोज अस्थायी रूप से उपलब्ध नहीं है। कुछ देर बाद फिर कोशिश करें।",
+      "share": "आमंत्रित करें",
+      "updateUnavailable": "साझा करने की सेटिंग अपडेट नहीं हो सकीं। कुछ देर बाद फिर कोशिश करें।",
+      "viewers": "ऐक्सेस वाले लोग",
+      "workspace": "कार्यक्षेत्र",
+      "workspaceDescription": "{{organization}} के सदस्य और आमंत्रित लोग",
+      "workspaceDescriptionUnnamed": "कार्यक्षेत्र के सदस्य और आमंत्रित लोग",
+      "you": "{{name}} (आप)"
     },
     "preview": {
       "audioLabel": "{{filename}} के लिए ऑडियो पूर्वावलोकन",
@@ -645,15 +757,9 @@
       "updated": "वेबसाइट URL अपडेट किया गया"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} सक्रिय HTML पूर्वावलोकन",
-      "all": "सभी",
       "avatar": "अवतार",
-      "categories": "टेम्पलेट श्रेणियां",
-      "category": "टेम्पलेट श्रेणी",
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
-      "illustration": "चित्रण",
-      "illustrationPreview": "{{title}} चित्रण पूर्वावलोकन",
       "importDeck": "अपना डेक इंपोर्ट करें",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "अपना दस्तावेज़ आयात करें",
@@ -664,18 +770,10 @@
       "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
-      "noMatches": "कोई मेल नहीं",
-      "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "searchConnector": "टेम्पलेट खोजें",
-      "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
-      "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
-      "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
@@ -703,15 +801,11 @@
         "terracottaClay": "मिट्टी के बर्तन",
         "warmSand": "सुबह का अखबार"
       },
-      "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
-      "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
         "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
-      "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
-      "workflow": "वर्कफ़्लो",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "ऐसा वर्कफ़्लो बनाएँ जो Gmail लेबल लगते ही चले और उस ईमेल को संभाले।",
@@ -1149,6 +1243,12 @@
       "teamWarning": "वर्तमान बिलिंग अवधि समाप्त होने तक आपकी टीम की पहुंच सक्रिय रहती है। उसके बाद, यह वर्कस्पेस {{plan}} पर चला जाता है।",
       "title": "डाउनग्रेड योजना"
     },
+    "feedback": {
+      "otherPlaceholder": "हमें और बताएँ…",
+      "rewardTerms": "हर कार्यक्षेत्र में एक बार · क्रेडिट 30 दिन तक मान्य हैं",
+      "submitFeedback": "फ़ीडबैक भेजें",
+      "thanks": "आपके फ़ीडबैक के लिए धन्यवाद"
+    },
     "invoices": {
       "amount": "मात्रा",
       "date": "तारीख",
@@ -1292,40 +1392,6 @@
     "sidebar": {
       "description": "अधिक क्रेडिट और समवर्ती रन",
       "getPlan": "{{plan}} प्राप्त करें"
-    },
-    "survey": {
-      "checkoutAbandoned": {
-        "answers": {
-          "just_checking_price": "बस कीमत देख रहा था",
-          "needs_approval": "किसी और की मंज़ूरी चाहिए",
-          "not_ready_yet": "अभी तय करने के लिए तैयार नहीं हूँ",
-          "not_seeing_value": "अभी तक इसकी उपयोगिता नहीं दिखी",
-          "other": "कुछ और",
-          "payment_issue": "भुगतान में समस्या आई",
-          "price_higher_than_expected": "कीमत उम्मीद से ज़्यादा थी",
-          "results_not_good_enough": "नतीजों से संतुष्ट नहीं था"
-        },
-        "description": "बस एक सवाल। आपका जवाब हमें बेहतर बनने में मदद करता है।",
-        "question": "आपको खरीदारी पूरी करने से किस बात ने रोका?"
-      },
-      "creditsExhausted": {
-        "answers": {
-          "no_need_now": "अभी और की ज़रूरत नहीं है",
-          "not_sure_worth_it": "अभी पक्का नहीं कि यह इसके लायक है",
-          "other": "कुछ और",
-          "still_trying": "पहले इसे और आज़माना चाहता हूँ",
-          "too_expensive": "यह बहुत महंगा है"
-        },
-        "question": "आज अपग्रेड करने से आपको क्या रोक रहा है?",
-        "reward": "इस कार्यक्षेत्र में पहले पात्र उत्तर पर {{credits}} बोनस क्रेडिट मिलते हैं, जो 30 दिनों तक मान्य हैं।",
-        "thanksWithCredits": "धन्यवाद! {{credits}} क्रेडिट जोड़ दिए गए हैं, आप जारी रख सकते हैं।"
-      },
-      "error": "आपका जवाब नहीं भेजा जा सका। फिर से कोशिश करें।",
-      "notNow": "अभी नहीं",
-      "otherLabel": "आपका जवाब",
-      "otherPlaceholder": "और बताएँ (वैकल्पिक)",
-      "submit": "भेजें",
-      "thanks": "बताने के लिए धन्यवाद।"
     },
     "toasts": {
       "autoRechargeUpdated": "स्वतः-रिचार्ज अद्यतन किया गया",
@@ -1717,6 +1783,7 @@
       "waiting": "Mastercard Data Connect की प्रतीक्षा हो रही है। वहाँ प्रक्रिया पूरी करें, फिर Chat पर लौटें।"
     },
     "billing": {
+      "addCreditsOrUpgrade": "जारी रखने के लिए $5 से क्रेडिट जोड़ें, या खास सुविधाएँ अनलॉक करने के लिए Pro में अपग्रेड करें।",
       "addCreditsToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए क्रेडिट जोड़ें।",
       "askAdminCredits": "वर्कस्पेस व्यवस्थापक से क्रेडिट जोड़ने के लिए कहें ताकि आप {{assistantName}} के साथ चैट करना जारी रख सकें।",
       "askAdminUpgrade": "किसी वर्कस्पेस व्यवस्थापक से प्रो में अपग्रेड करने के लिए कहें ताकि आप {{assistantName}} के साथ चैट करना जारी रख सकें।",
@@ -1730,7 +1797,6 @@
       "customAmountError": "$1 और $10,000 के बीच दर्ज करें",
       "customDollarAmount": "कस्टम डॉलर राशि",
       "outOfCredits": "आपके पास क्रेडिट नहीं हैं",
-      "redirecting": "पुनर्निर्देशन...",
       "upgradeToContinue": "{{assistantName}} के साथ चैट जारी रखने के लिए प्रो में अपग्रेड करें।",
       "upgradeToPro": "प्रो में अपग्रेड",
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
@@ -1892,11 +1958,10 @@
       "add": "जोड़ें",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
-        "addStyle": "शैली जोड़ें",
-        "addTemplate": "टेम्पलेट जोड़ें",
         "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
+        "presentationPlaceholderWithDefault": "आपका प्रेज़ेंटेशन किस बारे में है? (डिफ़ॉल्ट: {{format}})",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
@@ -1907,6 +1972,16 @@
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
+      "presentationFormatSetup": {
+        "htmlDescription": "एक लिंक जो किसी भी ब्राउज़र में खुलता है",
+        "htmlLabel": "वेब स्लाइड",
+        "openSettings": "सेटिंग्स खोलें",
+        "pptxDescription": "एक संपादन योग्य .pptx फ़ाइल",
+        "pptxLabel": "PowerPoint",
+        "savedDefault": "{{format}} अब प्रेज़ेंटेशन के लिए आपका डिफ़ॉल्ट है",
+        "settingsHint": "हर नए प्रेज़ेंटेशन के लिए इस्तेमाल होगा। आप इसे सेटिंग्स में बदल सकते हैं।",
+        "title": "शुरू करने के लिए डिफ़ॉल्ट फ़ॉर्मैट चुनें"
+      },
       "selectedModelUnavailable": "चयनित मॉडल उपलब्ध नहीं है. भेजने से पहले इसे कॉन्फ़िगर करें.",
       "selectedModelUnavailableToast": "चयनित मॉडल उपलब्ध नहीं है",
       "selectModel": "मॉडल चुनें",
@@ -1933,12 +2008,10 @@
         "scheduleHint": "शेड्यूल पर चलाएँ",
         "share": "चैट शेयर करें",
         "shareHint": "इस बातचीत का लिंक शेयर करें",
-        "templates": "टेम्पलेट",
         "unpin": "पिन हटाएँ"
       },
       "slashPanel": {
-        "browseAll": "सभी टेम्पलेट देखें",
-        "hint": "वर्कफ़्लो खोजें या टेम्पलेट चुनें…",
+        "hint": "कोई कार्रवाई चुनें",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
@@ -1980,8 +2053,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "कनेक्टर खाता",
       "actionFailed": "खाता स्विच नहीं किया जा सका।",
+      "allowForHour": "1 घंटे के लिए अनुमति दें",
       "customConnector": "कस्टम कनेक्टर",
       "loadFailed": "यह कनेक्टर खाता लोड नहीं हो सका।",
+      "memberScope": "अपनी सभी चैट में अनुमति दें। यहाँ यह खाता चुनें।",
       "reconnectRequired": "फिर से कनेक्ट करना आवश्यक है। बाद के रन मौजूदा फ़ॉलबैक का उपयोग कर सकते हैं।",
       "selected": "{{account}} पर स्विच किया गया",
       "switch": "स्विच करें",
@@ -2138,6 +2213,12 @@
         },
         "inReview": "समीक्षा में",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} क्रेडिट",
+            "confirm": "काम पर लौटें",
+            "description": "क्रेडिट असली काम के लिए लगते हैं: हर रन, हर आउटपुट, और शेड्यूल पर चलने वाला हर वर्कफ़्लो।",
+            "title": "आज का हिस्सा पूरा"
+          },
           "connector": {
             "confirm": "सभी कनेक्टर देखें",
             "connected": "कनेक्टेड",
@@ -2516,11 +2597,10 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "archive": "चैट आर्काइव करें",
+      "archive": "आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{assistantName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
-      "delete": "चैट हटाएं",
       "deleteDescription": "इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।",
       "deleteTitle": "चैट हटाएं?",
       "draft": "मसौदा",
@@ -2531,7 +2611,7 @@
       "markUnread": "अपठित के रूप में चिह्नित करें",
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
-      "mute": "चैट म्यूट करें",
+      "mute": "म्यूट करें",
       "muted": "म्यूट किया गया",
       "newChatWith": "{{assistantName}} के साथ नई चैट",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
@@ -2539,7 +2619,7 @@
       "noUnread": "कोई अपठित चैट नहीं",
       "openChatMenu": "चैट मेनू खोलें",
       "openListMenu": "चैट सूची मेनू खोलें",
-      "pin": "चैट पिन करें",
+      "pin": "पिन करें",
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
@@ -2547,8 +2627,8 @@
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
-      "unmute": "चैट अनम्यूट करें",
-      "unpin": "चैट अनपिन करें",
+      "unmute": "अनम्यूट करें",
+      "unpin": "अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "अपठित"
     },
@@ -2577,11 +2657,6 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "presentationFormat": "प्रस्तुति का प्रारूप",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
@@ -2599,7 +2674,6 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "viewAll": "सभी देखें",
       "visualization": {
         "allCharts": "सभी चार्ट",
         "back": "Back to visualization options",
@@ -2781,8 +2855,6 @@
         "workflow": "वर्कफ़्लो"
       },
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
-      "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ"
@@ -2854,6 +2926,7 @@
       "storageFailed": "ऑडियो सेव नहीं हो सका। केवल इस डिवाइस पर पहले से सेव ऑडियो उपलब्ध है।",
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
+      "uploadingRecording": "रिकॉर्डिंग अपलोड हो रही है…",
       "useRecording": "रिकॉर्डिंग इस्तेमाल करें"
     },
     "walletAction": {
@@ -2934,6 +3007,8 @@
     "accountsInChat": "चुनें कि इस चैट में कौन-से खाते चालू हैं।",
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
     "manageAccounts": "खाते प्रबंधित करें",
+    "memberPolicyLoadFailed": "खातों की पहुँच लोड नहीं हो सकी।",
+    "memberSettingsDescription": "चुनें कि Okou आपकी चैट में किन {{connector}} खातों का उपयोग कर सकता है।",
     "permissions": "अनुमतियाँ",
     "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
     "settingsDescription": "चुनें कि Okou आपकी चैट में कौन-से {{connector}} खाते इस्तेमाल कर सकता है। आप हर चैट में ऐक्सेस बदल सकते हैं।",
@@ -2988,6 +3063,7 @@
       "edit": "संपादन करना",
       "grant": "अनुदान",
       "reconnect": "रिकनेक्ट",
+      "returnToOkou": "Okou पर वापस जाएँ",
       "revoke": "रद्द करना",
       "save": "बचाना",
       "saving": "सहेजा जा रहा है...",
@@ -3873,7 +3949,6 @@
         "overview": "विक्रेता और ग्राहक का विवरण"
       }
     },
-    "filter": "दस्तावेज़ श्रेणी",
     "formats": {
       "pdf": "PDF",
       "word": "Word दस्तावेज़"
@@ -3883,10 +3958,8 @@
     "nextPage": "अगला नमूना पृष्ठ",
     "openLarger": "बड़ा पूर्वावलोकन खोलें",
     "page": "पृष्ठ {{page}}",
-    "preview": "{{title}} का पूर्वावलोकन",
     "previousPage": "पिछला नमूना पृष्ठ",
-    "title": "दस्तावेज़",
-    "useNamed": "{{title}} इस्तेमाल करें"
+    "title": "दस्तावेज़"
   },
   "featureGuide": {
     "close": "नई सुविधाओं की गाइड बंद करें",
@@ -4400,7 +4473,6 @@
   },
   "myOkou": {
     "conflict": "आपके सहेजे गए निर्देश कहीं और बदल गए हैं। आपका ड्राफ़्ट सुरक्षित है। सहेजे गए निर्देश फिर लोड करने से पहले इसे देखें या कॉपी करें।",
-    "description": "इस कार्यक्षेत्र में Okou के लिए आपके निर्देश",
     "discard": "छोड़ें",
     "draftKept": "पेज या कार्यक्षेत्र बदलने पर आपका ड्राफ़्ट इसी ब्राउज़र टैब में सुरक्षित रहता है।",
     "instructions": "निर्देश",
@@ -5165,6 +5237,7 @@
     }
   },
   "projects": {
+    "archiveProject": "संग्रहित करें",
     "back": "Back",
     "close": "Close",
     "collapse": "संक्षिप्त करें",
@@ -5173,8 +5246,8 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
@@ -5203,6 +5276,7 @@
     "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "प्रोजेक्ट बहाल करें",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -5671,7 +5745,6 @@
           "title": "वरीयता"
         },
         "proactiveLearning": {
-          "description": "चुनें कि Okou कैसे सक्रिय रूप से काम करे।",
           "title": "Proactive"
         },
         "tools": {
@@ -5754,7 +5827,27 @@
       "actions": {
         "resetUsage": "उपयोग रीसेट करें"
       },
+      "antigravity": {
+        "title": "Google AI (Antigravity)"
+      },
       "deviceAuth": {
+        "antigravity": {
+          "address": "ब्राउज़र का पता",
+          "addressPlaceholder": "http://localhost:51121/oauth-callback?…",
+          "addressRequired": "जारी रखने के लिए ब्राउज़र का पता पेस्ट करें।",
+          "connectedToast": "Google AI खाता कनेक्ट हो गया",
+          "connectTitle": "Google AI (Antigravity) कनेक्ट करें",
+          "expired": "साइन-इन की समय-सीमा समाप्त हो गई। फिर से शुरू करें।",
+          "failed": "Google साइन-इन विफल रहा। फिर से कोशिश करें।",
+          "instructions": "अपने निजी Google AI Pro या Ultra खाते से एक्सेस स्वीकृत करें। इसके बाद Google एक ऐसा पेज खोलता है जो लोड नहीं होता। अपने ब्राउज़र से उस पेज का पूरा पता कॉपी करें और नीचे पेस्ट करें।",
+          "openApproval": "Google साइन-इन खोलें",
+          "preparing": "Google साइन-इन तैयार किया जा रहा है…",
+          "reconnectAction": "फिर से साइन इन करें",
+          "reconnectTitle": "Google AI (Antigravity) फिर से कनेक्ट करें",
+          "signIn": "Google से साइन इन करें",
+          "submit": "कनेक्ट करें",
+          "usageNotice": "आंतरिक स्टाफ़ पायलट। Google तृतीय-पक्ष क्लाइंट के ज़रिए उपयोग किए गए खातों को प्रतिबंधित कर सकता है।"
+        },
         "claude": {
           "authorizationCode": "प्राधिकरण संकेत - लिपि",
           "codePlaceholder": "Claude से कोड पेस्ट करें",
@@ -5954,6 +6047,14 @@
           "title": "डिफ़ॉल्ट मॉडल"
         },
         "description": "नए चैट के लिए डिफ़ॉल्ट सेटिंग और संदेश भेजने का तरीका चुनें।",
+        "presentationFormat": {
+          "htmlDescription": "नए प्रेज़ेंटेशन ब्राउज़र में लिंक के रूप में खुलते हैं",
+          "pptxDescription": "नए प्रेज़ेंटेशन संपादन योग्य .pptx फ़ाइल के रूप में मिलते हैं",
+          "saveFailed": "डिफ़ॉल्ट फ़ॉर्मैट सहेजा नहीं जा सका। फिर से कोशिश करें।",
+          "title": "डिफ़ॉल्ट प्रस्तुति फ़ॉर्मैट",
+          "unavailable": "आपका डिफ़ॉल्ट फ़ॉर्मैट लोड नहीं हो सका",
+          "unsetDescription": "पहली बार प्रेज़ेंटेशन बनाते समय हम पूछेंगे"
+        },
         "sectionTitle": "चैट"
       },
       "debug": {
@@ -6060,7 +6161,6 @@
         "title": "सुबह की संक्षिप्त जानकारी"
       },
       "proactiveSuggestions": {
-        "description": "हर घंटे जुड़े स्रोतों की जाँच करें, रोज़ अपनी प्रोफ़ाइल अपडेट करें और उपयोगी अगले कदमों के सुझाव पाएँ।",
         "errorMessage": "सेटिंग लोड या अपडेट नहीं हो सकीं।",
         "missingTimezone": "प्राथमिकताओं में अपना समय क्षेत्र सेट करें।",
         "preparationFailed": "अभी उपलब्ध नहीं है।",
@@ -6351,7 +6451,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "सभी",
     "markAllRead": "सभी को पढ़ा दिखाएं",
     "noResults": "कोई परिणाम नहीं मिला",
     "resultCount_one": "{{count}} परिणाम",
@@ -6359,10 +6458,8 @@
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "artifacts": "आर्टिफ़ैक्ट्स",
-      "chats": "चैट",
       "messages": "संदेश",
-      "workflows": "वर्कफ़्लो"
+      "threads": "थ्रेड"
     }
   },
   "ssh": {
@@ -6522,11 +6619,8 @@
   "templates": {
     "actions": {
       "delete": "हटाएँ",
-      "menu": "{{title}} के लिए क्रियाएँ",
-      "preview": "{{title}} का पूर्वावलोकन करें",
       "rename": "टेम्पलेट का नाम बदलें"
     },
-    "builtIn": "बिल्ट-इन",
     "custom": "कस्टम",
     "delete": {
       "cancel": "रद्द करें",
@@ -6541,11 +6635,6 @@
       "page": "पृष्ठ {{number}}"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
-    "rename": {
-      "action": "नाम बदलें",
-      "cancel": "रद्द करें",
-      "save": "सहेजें"
-    },
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",
     "sharedByMember": "संगठन के एक सदस्य द्वारा साझा किया गया",
@@ -7354,6 +7443,8 @@
       "all": "सभी",
       "automated": "स्वचालित",
       "automations": "ऑटोमेशन",
+      "clearFilters": "फ़िल्टर हटाएँ",
+      "clearSearch": "खोज साफ़ करें",
       "createdBy": "के द्वारा बनाई गई",
       "createInChat": "चैट में बनाएं",
       "description": "किसी कार्य के लिए पुन: प्रयोज्य SOP। किसी एक को शुरुआत से लिखें या इसे अपने दैनिक कार्य से डिस्टिल करें, फिर इसे चलाएं, संपादित करें या स्वचालित करें।",
@@ -7362,13 +7453,18 @@
         "automated": "वर्कफ़्लो में एक ऑटोमेशन जोड़ें और यह यहां दिखाई देगा।",
         "private": "अभी तक कोई निजी वर्कफ़्लो नहीं.",
         "public": "अभी तक कोई सार्वजनिक वर्कफ़्लो नहीं।",
+        "search": "कोई अन्य खोज आज़माएँ या फ़िल्टर बदलें।",
         "without": "यहां प्रत्येक वर्कफ़्लो एक शेड्यूल या इवेंट पर चलता है।"
       },
+      "filter": "वर्कफ़्लो फ़िल्टर करें",
+      "filters": "फ़िल्टर",
+      "noResults": "कोई मेल खाता वर्कफ़्लो नहीं",
       "noWorkflows": "कोई वर्कफ़्लो नहीं",
       "open": "{{title}} खोलें",
       "openRecovery": "{{title}} की रिकवरी खोलें",
       "ownerLoading": "लेखक लोड हो रहा है…",
       "ownerUnavailable": "लेखक उपलब्ध नहीं है",
+      "search": "वर्कफ़्लो खोजें…",
       "section": {
         "event": "ऑटोमेशन पर",
         "later": "बाद में",
@@ -7378,12 +7474,17 @@
       },
       "sort": {
         "alphabetical": "वर्णमाला",
-        "created": "समय बनाया",
-        "label": "अगला रन",
+        "created": "हाल में बनाए गए",
+        "heading": "इसके अनुसार क्रमबद्ध करें",
+        "label": "वर्कफ़्लो क्रमबद्ध करें",
         "nextRun": "अगला रन"
       },
       "title": "वर्कफ़्लो",
-      "viewAutomations": "ऑटोमेशन देखें"
+      "viewAutomations": "ऑटोमेशन देखें",
+      "visibility": "दृश्यता",
+      "withAutomations": "ऑटोमेशन के साथ",
+      "withoutAutomations": "ऑटोमेशन के बिना",
+      "workspaceShared": "वर्कस्पेस में साझा"
     },
     "skillImport": {
       "action": "स्किल्स इम्पोर्ट करें",

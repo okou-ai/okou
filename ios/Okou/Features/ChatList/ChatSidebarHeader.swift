@@ -8,6 +8,8 @@ struct ChatSidebarHeader: View {
   let isScrolled: Bool
   @Binding var accountError: String?
   let threadFilter: Binding<ChatListFilter>
+  /// Whether a chat is unread, for Mark all as read.
+  let hasUnreadChats: Bool
   let close: () -> Void
   let newProject: () -> Void
 
@@ -89,7 +91,7 @@ struct ChatSidebarHeader: View {
   private var headerActions: some View {
     HStack(spacing: 0) {
       ChatListFilterMenu(
-        store: store, selection: threadFilter,
+        store: store, selection: threadFilter, hasUnreadChats: hasUnreadChats,
         newProject: newProject
       )
       .frame(height: OkouControl.minimumTarget)

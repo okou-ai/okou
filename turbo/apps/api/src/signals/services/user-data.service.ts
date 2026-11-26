@@ -14,8 +14,14 @@ import {
   type UserLocale,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
+  updateUserPreferencesRequestSchema,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { presentationOutputFormatSchema } from "@okouai/api-contracts/validators/presentation-output-format";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import type {
+  ImageModelPreference,
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -34,6 +40,16 @@ import { isValidTimeZone } from "../utils";
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;
+}
+
+function presentationFormatEnabled({ orgId, userId }: UserScopedQuery) {
+  const context$ = userFeatureSwitchContext(orgId, userId);
+  return computed(async (get) => {
+    return isFeatureEnabled(
+      FeatureSwitchKey.PresentationOutputFormat,
+      await get(context$),
+    );
+  });
 }
 
 function parseSendMode(value: unknown): SendMode {
@@ -91,7 +107,9 @@ export function userPreferences({
   orgId,
   userId,
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
+  const formatEnabled$ = presentationFormatEnabled({ orgId, userId });
   return computed(async (get): Promise<UserPreferencesResponse> => {
+    const formatEnabled = await get(formatEnabled$);
     const db = get(db$);
     const [[row], [memory]] = await Promise.all([
       db
@@ -106,6 +124,9 @@ export function userPreferences({
           forYouCoverId: orgMembersMetadata.forYouCoverId,
           captureNetworkBodiesRemaining:
             orgMembersMetadata.captureNetworkBodiesRemaining,
+          ...(formatEnabled && {
+            presentationFormat: orgMembersMetadata.presentationFormat,
+          }),
         })
         .from(orgMembersMetadata)
         .where(
@@ -127,6 +148,13 @@ export function userPreferences({
         .limit(1),
     ]);
     const memoryInitialized = (memory?.headVersionId ?? null) !== null;
+    const presentationPreference = formatEnabled
+      ? {
+          presentationFormat: presentationOutputFormatSchema
+            .nullable()
+            .parse(row?.presentationFormat ?? null),
+        }
+      : {};
 
     if (!row) {
       return {
@@ -141,6 +169,7 @@ export function userPreferences({
         forYouCoverId: null,
         captureNetworkBodiesRemaining: 0,
         memoryInitialized,
+        ...presentationPreference,
       };
     }
 
@@ -156,6 +185,7 @@ export function userPreferences({
       forYouCoverId: row.forYouCoverId,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
       memoryInitialized,
+      ...presentationPreference,
     };
   });
 }
@@ -251,6 +281,10 @@ function mergeUserPreferences(
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
     memoryInitialized: existing.memoryInitialized,
+    ...(existing.presentationFormat !== undefined && {
+      presentationFormat:
+        preferences.presentationFormat ?? existing.presentationFormat,
+    }),
   };
 }
 
@@ -275,6 +309,9 @@ function userPreferenceUpdateColumns(
     ...(preferences.forYouCoverId !== undefined && {
       forYouCoverId: preferences.forYouCoverId,
     }),
+    ...(preferences.presentationFormat !== undefined && {
+      presentationFormat: preferences.presentationFormat,
+    }),
     ...(preferences.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: preferences.captureNetworkBodiesRemaining,
     }),
@@ -287,10 +324,9 @@ export const updateUserPreferences$ = command(
     args: UpdateUserPreferencesArgs,
     signal: AbortSignal,
   ): Promise<UpdateUserPreferencesResult> => {
-    const preferences = args.preferences;
     if (
-      preferences.timezone !== undefined &&
-      !isValidTimeZone(preferences.timezone)
+      args.preferences.timezone !== undefined &&
+      !isValidTimeZone(args.preferences.timezone)
     ) {
       return {
         ok: false,
@@ -303,6 +339,16 @@ export const updateUserPreferences$ = command(
     );
     signal.throwIfAborted();
 
+    const parsed = updateUserPreferencesRequestSchema.safeParse({
+      ...args.preferences,
+      ...(existing.presentationFormat === undefined && {
+        presentationFormat: undefined,
+      }),
+    });
+    if (!parsed.success) {
+      return { ok: false, message: "At least one preference must be provided" };
+    }
+    const preferences = parsed.data;
     const merged = mergeUserPreferences(existing, preferences);
 
     const updatedAt = nowDate();
@@ -320,6 +366,9 @@ export const updateUserPreferences$ = command(
         theme: merged.theme,
         colorTheme: merged.colorTheme,
         forYouCoverId: merged.forYouCoverId,
+        ...(merged.presentationFormat !== undefined && {
+          presentationFormat: merged.presentationFormat,
+        }),
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,
@@ -345,8 +394,11 @@ export const updateUserPreferences$ = command(
  * being cleared can never blank another that the same request also set.
  */
 function userModelPreferenceColumns(
-  preference: UpdateUserModelPreferenceRequest,
+  preference: ModelPreferenceWrite,
 ): Partial<typeof orgMembersMetadata.$inferInsert> {
+  if (!("selectedModel" in preference)) {
+    return { selectedImageModel: preference.selectedImageModel };
+  }
   return {
     // Nullable PR1 intents and canonical Auto both write the explicit selection.
     ...(preference.selectedModel === null ||
@@ -371,8 +423,11 @@ function userModelPreferenceColumns(
   };
 }
 
+type ModelPreferenceWrite =
+  UpdateUserModelPreferenceRequest | ImageModelPreference;
+
 interface UserModelPreferenceWriteArgs extends UserScopedQuery {
-  readonly preference: UpdateUserModelPreferenceRequest;
+  readonly preference: ModelPreferenceWrite;
 }
 
 const writeUserModelPreference$ = command(
@@ -384,12 +439,16 @@ const writeUserModelPreference$ = command(
     const writeDb = set(writeDb$);
     const updatedAt = nowDate();
     const columns = userModelPreferenceColumns(args.preference);
-    const modelSettingsPatch = args.preference.modelSettingsPatch;
+    const modelSettingsPatch =
+      "modelSettingsPatch" in args.preference
+        ? args.preference.modelSettingsPatch
+        : undefined;
     await writeDb
       .insert(orgMembersMetadata)
       .values({
         orgId: args.orgId,
         userId: args.userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         ...columns,
         createdAt: updatedAt,
         updatedAt,

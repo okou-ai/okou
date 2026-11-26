@@ -10,6 +10,32 @@ import XCTest
 final class ChatConnectorAccessStoreTests: XCTestCase {
   private typealias FixtureData = ConnectorHTTPFixtures
 
+  func testMemberAccessIgnoresLegacyDraftOverridesAndTheirDerivedChoicesOnFirstSend() async throws {
+    let fixture = makeFixture()
+    let client = fixture.http.client
+    let store = ComposerConnectorStore(
+      service: ChatComposerAccess(client: client),
+      authorizationService: ChatConnectorService(client: client), webURL: fixture.http.baseURL,
+      graph: makeTestWorkspaceGraph(),
+      memberAccessEnabled: { fixture.state.withLock { $0.memberAccess } }, didFail: { _ in })
+    defer { store.close() }
+    await store.refresh()
+    await store.setAccountAccess(
+      target: .builtin("slack"), connectionID: FixtureData.siblingID, enabled: true)
+    XCTAssertFalse(store.submissionOptions.initialConnectorAccessOverrides.isEmpty)
+    fixture.state.withLock { $0.memberAccess = true }
+    let commands = ChatCommands(client: client, sync: ChatSync(client: client))
+    _ = try await commands.createThread(
+      modelSelection: ChatModelSelection(), composerOptions: store.submissionOptions)
+    let requests = fixture.state.withLock { $0.requests }
+    XCTAssertFalse(
+      requests.contains {
+        $0.httpMethod == "PUT"
+          && ($0.url?.path.contains("/connector-access/") == true
+            || $0.url?.path.hasSuffix("/connector-current") == true)
+      })
+  }
+
   func testEnablingAnotherDraftAccountKeepsTheDisplayedCurrentThroughCreationAndReopening()
     async throws
   {
@@ -100,6 +126,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, thread: thread, didFail: { _ in })
+      webURL: fixture.http.baseURL, graph: makeTestWorkspaceGraph(), threadID: thread?.id,
+      didFail: { _ in })
   }
 }

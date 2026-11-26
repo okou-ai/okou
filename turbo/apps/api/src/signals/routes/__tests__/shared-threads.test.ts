@@ -259,7 +259,7 @@ describe("optional shared-thread titles", () => {
     expect(requests).toStrictEqual([]);
   });
 
-  it("removes forwarded chat provenance from the public snapshot", async () => {
+  it("removes forwarded chat and quoted source identities from the public snapshot", async () => {
     const actor = bdd.user();
     bdd.acceptStorageWrites();
     runs.acceptStorageDownloads();
@@ -279,6 +279,9 @@ describe("optional shared-thread titles", () => {
     const quote = "The deployment window is fifteen minutes.";
     const mailId = randomUUID();
     const sentId = `gmail-${randomUUID()}`;
+    const fileId = randomUUID();
+    const artifactId = randomUUID();
+    const artifactQuote = "The review deadline is Wednesday.";
     const userMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
@@ -287,6 +290,17 @@ describe("optional shared-thread titles", () => {
           quote,
           note: [],
           source: { type: "mail", id: mailId, status: "sent", sentId },
+        },
+        {
+          type: "feedback",
+          quote: artifactQuote,
+          note: [{ type: "text", text: "Keep the deadline" }],
+          source: {
+            type: "artifact",
+            fileId,
+            filenameSnapshot: "launch-plan.md",
+            artifactId,
+          },
         },
       ],
     };
@@ -323,7 +337,9 @@ describe("optional shared-thread titles", () => {
       {
         messageIndex: 0,
         role: "user",
-        content: `The user quoted this part of your reply:\n\n> ${quote}`,
+        content:
+          `The user quoted 2 parts of your reply:\n\n> ${quote}\n\n---\n\n` +
+          `> ${artifactQuote}\n\nKeep the deadline`,
         runIndex: 0,
       },
     ]);
@@ -334,6 +350,8 @@ describe("optional shared-thread titles", () => {
       source.threadId,
       mailId,
       sentId,
+      fileId,
+      artifactId,
     ]) {
       expect(publicData).not.toContain(privateValue);
     }

@@ -59,7 +59,7 @@ def original_status(value, sandbox=None, previous=None):
         ):
             raise ValueError("original parked status was not positively published")
         reuse = entries[0].get("reuse_key")
-        prefix = "thread:native-guarded-"
+        prefix = report.GUARDED_IDLE_REUSE_KEY_PREFIX
         if (
             not isinstance(reuse, str)
             or not reuse.startswith(prefix)

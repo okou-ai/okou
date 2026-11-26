@@ -154,9 +154,20 @@ internal fun WorkflowAutomation.githubRepositorySummary(): String? =
         ?.takeIf { it.isNotEmpty() }
         ?.joinToString()
 
+// The detail endpoint already scopes the workflow to callers with access.
+internal val WorkflowDetail.canAddAutomation: Boolean
+    get() = official == null
+
 // The workflow detail endpoint includes only the caller's automations.
-internal fun WorkflowDetail.canChange(ruleId: String?): Boolean =
-    if (ruleId == null) canManage else automations.any { it.id == ruleId && it.official == null }
+internal fun WorkflowDetail.canManageAutomation(ruleId: String): Boolean = automations.any {
+    it.id == ruleId && it.official == null
+}
+
+internal fun WorkflowDetail.canEdit(editor: WorkflowEdit): Boolean =
+    when (editor) {
+        is WorkflowEdit.Instructions -> canManage
+        is WorkflowEdit.Rule -> editor.id?.let(::canManageAutomation) ?: canAddAutomation
+    }
 
 internal sealed interface WorkflowEdit {
     val changed: Boolean
@@ -178,6 +189,7 @@ internal sealed interface WorkflowEdit {
         val original: RuleFields,
         val value: RuleFields = original,
         val enabled: Boolean = false,
+        val lastEventSource: EditableTrigger = EditableTrigger.Calendar,
     ) : WorkflowEdit {
         override val changed
             get() =
@@ -200,6 +212,29 @@ internal sealed interface WorkflowEdit {
             return detail.automations
                 .firstOrNull { it.id == id && !it.canEnable(connected) }
                 ?.source
+        }
+    }
+}
+
+internal fun WorkflowEdit.updateConfirmed(
+    detail: WorkflowDetail,
+    keepInput: Boolean = changed,
+): WorkflowEdit? {
+    if (!detail.canEdit(this)) return null
+    return when (this) {
+        is WorkflowEdit.Instructions -> {
+            val latest = detail.editableInstructions().original
+            if (latest == original) this
+            else copy(original = latest, value = if (keepInput) value else latest)
+        }
+        is WorkflowEdit.Rule -> {
+            if (id == null) return this
+            val latest =
+                detail.automations.firstOrNull { it.id == id }?.editableRule(original.timezone)
+                    ?: return null
+            if (latest.original == original) copy(enabled = latest.enabled)
+            else if (keepInput) copy(original = latest.original, enabled = latest.enabled)
+            else latest
         }
     }
 }
@@ -234,7 +269,7 @@ private fun changedText(before: String, after: String): CanonicalOptional<String
 
 internal fun WorkflowDetail.editableInstructions() =
     WorkflowEdit.Instructions(
-        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty())
+        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty()),
     )
 
 internal enum class EditableTrigger(val source: RuleSource) {
@@ -291,8 +326,8 @@ internal data class RuleFields(
                             CreateWorkflowAutomationRequestVariant3EventConfigMatch(
                                 subject =
                                     CreateWorkflowAutomationRequestVariant3EventConfigMatchSubject(
-                                        contains = subject
-                                    )
+                                        contains = subject,
+                                    ),
                             ),
                     ),
                     enabled = false,
@@ -318,7 +353,7 @@ internal data class RuleFields(
                         UpdateWorkflowAutomationRequestVariant1ScheduleVariant1Type.CRON,
                         cron(),
                         timezone,
-                    )
+                    ),
                 )
             EditableTrigger.Gmail ->
                 UpdateWorkflowAutomationRequestVariant2(
@@ -329,10 +364,10 @@ internal data class RuleFields(
                             UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Match(
                                 subject =
                                     UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchSubject(
-                                        contains = subject
-                                    )
+                                        contains = subject,
+                                    ),
                             ),
-                    )
+                    ),
                 )
             EditableTrigger.Calendar ->
                 UpdateWorkflowAutomationRequestVariant4(
@@ -342,7 +377,7 @@ internal data class RuleFields(
                         UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event
                             .EVENT_CREATED,
                         trimmedCalendarId,
-                    )
+                    ),
                 )
         }
 }

@@ -348,7 +348,7 @@ impl Run {
         if !self.diagnostics().is_check()
             && result
                 .as_ref()
-                .is_err_and(|failure| invalidates_access(*failure))
+                .is_err_and(|failure| invalidates_access(*failure, access.uses_device_policy()))
         {
             access.invalidate();
         }

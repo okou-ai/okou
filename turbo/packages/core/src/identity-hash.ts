@@ -23,6 +23,15 @@ export function fnv1a(input: string): string {
  * grants that org access to every endpoint that uses `isStaffOrg` as an
  * authorization check. Treat changes with the same care as role grants.
  */
-export const STAFF_ORG_ID_HASHES: readonly string[] = [
-  "afce210e", // org_3ANttyrbWYJk6JKRSTRLEsbsDLe
-];
+export const STAFF_ORG_ID_FINGERPRINTS = [
+  {
+    // org_3ANttyrbWYJk6JKRSTRLEsbsDLe
+    hash: "afce210e",
+    sha256: "715f6d0777ccb8a9963fa3369a2fb53628408f0895c556b5fd2566fb350581b5",
+  },
+] as const;
+
+export const STAFF_ORG_ID_HASHES: readonly string[] =
+  STAFF_ORG_ID_FINGERPRINTS.map(({ hash }) => {
+    return hash;
+  });

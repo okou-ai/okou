@@ -1,142 +1,105 @@
-import { screen, waitFor } from "@testing-library/react";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { orgOpenrouterPresetContract } from "@okouai/api-contracts/contracts/org-openrouter-preset";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-
-async function openDebug(role: "admin" | "member" = "admin", debug = true) {
-  context.mocks.data.org({ id: "org_1", name: "Test Org", role });
+async function openDebug(role: "member" | "admin") {
+  const org = { id: "org_test", name: "Debug workshop" };
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, { ...org, role });
+  });
   await setupPage({
     context,
     path: "/?settings=debug",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: debug },
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+    auth: {
+      user: { id: "user_harbor", fullName: "Harbor reader" },
+      organization: {
+        activeOrg: org,
+        memberships: [{ id: org.id, role: "org:" + role }],
+      },
+    },
   });
-  await screen.findByRole("heading", { name: debug ? "Debug" : "Preference" });
 }
 
-test("lets the administrator select a preset, restore the system default, and select another preset", async () => {
-  await openDebug();
-  const select = await screen.findByRole("combobox", {
-    name: "OpenRouter preset",
+function presets(initial: string | null) {
+  let value = initial;
+  const read = context.mocks.deferred<void>();
+  context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {
+    if (!read.settled()) {
+      read.resolve();
+    }
+    return respond(200, { openrouterPreset: value });
   });
+  context.mocks.api(orgOpenrouterPresetContract.update, ({ body, respond }) => {
+    value = body.openrouterPreset;
+    return respond(200, { openrouterPreset: value });
+  });
+  return read;
+}
+async function picker() {
+  return await screen.findByRole("combobox", { name: "OpenRouter preset" });
+}
+test("debug-openrouter-preset-001 the administrator switches organization presets and restores the default", async () => {
+  presets(null);
+  await openDebug("admin");
+  const trigger = await picker();
   await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("System default");
+    expect(trigger).toBeEnabled();
+    expect(trigger).toHaveTextContent("System default");
   });
-  click(select);
-  const options = await screen.findAllByRole("option");
-  expect(
-    options.map((option) => {
-      return option.textContent;
-    }),
-  ).toStrictEqual([
+  const choices = [
     "System default",
     "@preset/okou-1-0",
     "@preset/okou-1-0-dsf",
     "@preset/okou-experimental",
-  ]);
-  click(screen.getByRole("option", { name: "@preset/okou-1-0-dsf" }));
-  await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("@preset/okou-1-0-dsf");
-  });
-  click(select);
-  click(await screen.findByRole("option", { name: "System default" }));
-  await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("System default");
-  });
-  click(select);
-  click(
-    await screen.findByRole("option", { name: "@preset/okou-experimental" }),
-  );
-  await waitFor(() => {
-    expect(select).toBeEnabled();
-    expect(select).toHaveTextContent("@preset/okou-experimental");
-  });
-  expect(screen.getByText(/for the entire organization/u)).toBeInTheDocument();
-});
-
-test.each([
-  ["member", true],
-  ["admin", false],
-] as const)(
-  "hides the preset control for role %s with Debug %s",
-  async (role, debug) => {
-    context.mocks.api(orgOpenrouterPresetContract.get, () => {
-      throw new Error(
-        "Unauthorized UI must not request the organization preset",
-      );
-    });
-    await openDebug(role, debug);
+  ];
+  for (const name of [choices[2]!, choices[0]!, choices[3]!]) {
+    click(trigger);
+    const list = await screen.findByRole("listbox");
     expect(
-      screen.queryByRole("combobox", { name: "OpenRouter preset" }),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test.each(["@preset/okou-experimental", "System default"])(
-  "keeps the saved preset when saving %s fails and permits retry",
-  async (selection) => {
-    let current: string | null = "@preset/okou-1-0";
-    let fail = true;
-    context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {
-      return respond(200, { openrouterPreset: current });
-    });
-    context.mocks.api(
-      orgOpenrouterPresetContract.update,
-      ({ body, respond }) => {
-        if (fail) {
-          fail = false;
-          return respond(403, {
-            error: { code: "FORBIDDEN", message: "Preset update denied" },
-          });
-        }
-        current = body.openrouterPreset;
-        return respond(200, { openrouterPreset: current });
-      },
-    );
-    await openDebug();
-    const select = await screen.findByRole("combobox", {
-      name: "OpenRouter preset",
-    });
+      within(list)
+        .getAllByRole("option")
+        .map((x) => {
+          return x.textContent?.trim();
+        }),
+    ).toStrictEqual(choices);
+    click(within(list).getByRole("option", { name }));
     await waitFor(() => {
-      return expect(select).toHaveTextContent("@preset/okou-1-0");
+      expect(trigger).toHaveTextContent(name);
+      expect(trigger).toBeEnabled();
     });
-    click(select);
-    click(await screen.findByRole("option", { name: selection }));
-    await screen.findByText("Preset update denied");
-    await waitFor(() => {
-      expect(select).toBeEnabled();
-      expect(select).toHaveTextContent("@preset/okou-1-0");
-    });
-    click(select);
-    click(await screen.findByRole("option", { name: selection }));
-    await waitFor(() => {
-      expect(select).toBeEnabled();
-      expect(select).toHaveTextContent(selection);
-    });
-  },
-);
-
-test("displays an existing operator preset without adding it to the selectable allowlist", async () => {
-  context.mocks.api(orgOpenrouterPresetContract.get, ({ respond }) => {
-    return respond(200, { openrouterPreset: "@preset/operator-only" });
-  });
-  await openDebug();
-  const select = await screen.findByRole("combobox", {
-    name: "OpenRouter preset",
-  });
-  await waitFor(() => {
-    return expect(select).toHaveTextContent("@preset/operator-only");
-  });
-  click(select);
-  await screen.findByRole("option", { name: "@preset/okou-experimental" });
+  }
+  expect(screen.getByText(/entire organization/)).toBeInTheDocument();
+});
+test("debug-openrouter-preset-002 member Debug opens without reading the organization preset", async () => {
+  const read = presets(null);
+  await openDebug("member");
+  await findFastControl("button", "Run Morning Brief");
   expect(
-    screen.queryByRole("option", { name: "@preset/operator-only" }),
-  ).not.toBeInTheDocument();
+    screen.queryByRole("combobox", { name: "OpenRouter preset" }),
+  ).toBeNull();
+  expect(read.settled()).toBeFalsy();
+});
+test("debug-openrouter-preset-006 a saved operator preset can be viewed but not chosen in the list", async () => {
+  presets("@preset/operator-only");
+  await openDebug("admin");
+  const trigger = await picker();
+  await waitFor(() => {
+    expect(trigger).toHaveTextContent("@preset/operator-only");
+  });
+  click(trigger);
+  const list = await screen.findByRole("listbox");
+  expect(
+    within(list).queryByRole("option", { name: "@preset/operator-only" }),
+  ).toBeNull();
+  expect(
+    within(list).getByRole("option", { name: "@preset/okou-experimental" }),
+  ).toBeEnabled();
 });

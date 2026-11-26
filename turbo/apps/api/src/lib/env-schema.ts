@@ -101,6 +101,7 @@ function serviceEnvSchema() {
     GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL:
       email().optional(),
     CRON_SECRET: string().min(1),
+    BILLING_FEEDBACK_WEBHOOK_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_SETTLEMENT_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_PROJECTION_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_CAMPAIGN_SECRET: string().min(32).optional(),
@@ -137,6 +138,21 @@ function serviceEnvSchema() {
     PUBLIC_ARTIFACTS_BASE_URL: url(),
     OKOU_PUBLIC_ARTIFACTS_BASE_URL: url(),
     PUBLIC_ARTIFACT_SHARES_BASE_URL: url().optional(),
+    HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64: string().min(1).optional(),
+    HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST: string()
+      .regex(/^[a-z0-9_-]+$/u)
+      .optional(),
+    HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: string().min(1).optional(),
+    HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: string()
+      .regex(/^[a-f0-9]{32}$/u)
+      .optional(),
+    HOSTED_SITE_CUSTOM_DOMAIN_WORKER: string()
+      .min(1)
+      .default("zero-host-worker"),
+    HOSTED_SITE_CUSTOM_DOMAIN_TARGET: string()
+      .regex(/^[a-z0-9.-]+$/u)
+      .optional(),
+    HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES: string().optional(),
     R2_HOSTED_SITES_BUCKET_NAME: string().min(1).optional(),
     R2_HOSTED_SITES_ACCESS_KEY_ID: string().min(1).optional(),
     R2_HOSTED_SITES_SECRET_ACCESS_KEY: string().min(1).optional(),
