@@ -398,10 +398,11 @@ private fun SearchResults(
     val uncheckedChats = missingMessageChats - unresolvedChats
     if (missingMessageChats.isNotEmpty()) {
         val latestMissingChats by rememberUpdatedState(missingMessageChats)
+        val latestListConfirmation by rememberUpdatedState(list.confirmedAt)
         LaunchedEffect(keyword, messageHits) {
-            // A list publication can resolve part of the batch while the read completes.
-            snapshotFlow { latestMissingChats - unresolvedChats }
-                .collect { chats ->
+            // Composition can hide a snapshot that briefly contained a matched chat.
+            snapshotFlow { latestListConfirmation to (latestMissingChats - unresolvedChats) }
+                .collect { (_, chats) ->
                     if (chats.isNotEmpty()) unresolvedChats += resolveMessageChats(chats)
                 }
         }
