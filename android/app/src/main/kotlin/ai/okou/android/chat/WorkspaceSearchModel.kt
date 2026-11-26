@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.boundedReadRetryDelayMillis
+import ai.okou.android.api.boundedApiRetryDelayMillis
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -320,7 +320,7 @@ internal constructor(
                     ) {
                         onFailure(error)
                     }
-                    val retryDelay = error.boundedReadRetryDelayMillis(failures)
+                    val retryDelay = error.boundedApiRetryDelayMillis(failures)
                     if (authorized()) {
                         publish(
                             when {

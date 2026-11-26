@@ -18,7 +18,7 @@ internal suspend fun <E : Throwable> retryBoundedRead(
     while (true) {
         val error = attempt() ?: return null
         if (error is CancellationException) throw error
-        val wait = error.boundedReadRetryDelayMillis(retries) ?: return error
+        val wait = error.boundedApiRetryDelayMillis(retries) ?: return error
         delay(wait)
         currentCoroutineContext().ensureActive()
         if (!canRead()) return null
@@ -26,7 +26,8 @@ internal suspend fun <E : Throwable> retryBoundedRead(
     }
 }
 
-internal fun Throwable.boundedReadRetryDelayMillis(retries: Int): Long? {
+/** Timing for a read or a write that the caller has established can safely be repeated. */
+internal fun Throwable.boundedApiRetryDelayMillis(retries: Int): Long? {
     val defaultDelay = finiteReadRetryDelays.getOrNull(retries) ?: return null
     return when (this) {
         is ApiFailure.Network -> defaultDelay

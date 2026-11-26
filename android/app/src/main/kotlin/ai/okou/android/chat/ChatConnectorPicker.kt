@@ -481,8 +481,6 @@ internal fun ChatConnectorOptionsButton(
                         }
                     }
                 }
-                if (newChat && composerState.persistence == ComposerPersistence.Failed)
-                    ConnectorOptionFeedback(R.string.composer_local_failed)
                 if (reading.failure != null)
                     ConnectorOptionFeedback(R.string.connector_refresh_failed)
                 val resets = groups.flatMap { group ->

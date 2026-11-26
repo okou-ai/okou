@@ -107,8 +107,6 @@ class ChatComposerModel(
 
     fun observe(target: ComposerTarget) = owner.observe(connection, target)
 
-    fun retryLocal() = owner.retryLocal(connection)
-
     fun restoreDraft(target: ComposerTarget, key: String) =
         owner.restoreDraft(connection, target, key)
 
