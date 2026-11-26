@@ -56,7 +56,7 @@
   "crates/linux-mountinfo": "0.2.0",
   "crates/kerberos-worker": "0.3.11",
   "crates/rfb-client": "0.25.7",
-  "ios": "0.69.1",
+  "ios": "0.69.2",
   "crates/kerberos-credentials": "0.2.0",
   "desktop": "0.58.0"
 }
