@@ -304,6 +304,7 @@ function visual(
         Math.min(FIGURE_HEIGHT, formula.height),
       ],
       margin: [0, 4, 0, 8],
+      ...(math.displayMode ? { alignment: "center" as const } : {}),
       ...(link ? { link } : {}),
     };
   }
