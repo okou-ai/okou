@@ -96,7 +96,7 @@ internal fun WorkspaceSearchScreen(
     onFocused: () -> Unit,
     onClose: () -> Unit,
     onOpen: (ConfirmedChat) -> Unit,
-    refreshChats: () -> Unit = {},
+    resolveMessageChats: suspend (Set<String>) -> Set<String> = { it },
     remote: WorkspaceSearchResults? = null,
     workflowResults: SearchRead<SearchWorkflowHit>? = null,
     workspacePreparation: SearchRead<Nothing>? = null,
@@ -198,7 +198,7 @@ internal fun WorkspaceSearchScreen(
             onOpenWorkflow,
             onOpenArtifact,
             onMoreArtifacts,
-            refreshChats,
+            resolveMessageChats,
             restoreResultFocus,
             onSelectType = { type ->
                 selectType(type)
@@ -317,7 +317,7 @@ private fun SearchResults(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)?,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)?,
     onMoreArtifacts: (String, String) -> Unit,
-    refreshChats: () -> Unit,
+    resolveMessageChats: suspend (Set<String>) -> Set<String>,
     restoreResultFocus: Boolean,
     onSelectType: (WorkspaceSearchType) -> Unit,
 ) {
@@ -387,10 +387,17 @@ private fun SearchResults(
                     ?.let { SearchItem.Message(hit, it) }
             }
         }
-    val needsMessageChats =
-        remember(messageHits, chatsById) { messageHits.any { it.threadId !in chatsById } }
-    LaunchedEffect(keyword, messageHits) {
-        if (needsMessageChats) refreshChats()
+    val missingMessageChats =
+        remember(messageHits, chatsById) {
+            messageHits.asSequence().map { it.threadId }.filterNot(chatsById::containsKey).toSet()
+        }
+    var unresolvedChats by remember(keyword, messageHits) { mutableStateOf(emptySet<String>()) }
+    val uncheckedChats = missingMessageChats - unresolvedChats
+    LaunchedEffect(keyword, messageHits, uncheckedChats) {
+        if (uncheckedChats.isNotEmpty()) {
+            // Chats found by the owner remain pending until the visible list includes them.
+            unresolvedChats += resolveMessageChats(uncheckedChats)
+        }
     }
     val workflows = (workflowRead as? SearchRead.Ready)?.rows.orEmpty()
     val artifactPage = artifactRead as? SearchRead.Ready
@@ -462,12 +469,14 @@ private fun SearchResults(
             }
         }
     val listFailure = list.listReadFailure
+    val needsMessageChats = missingMessageChats.isNotEmpty()
     val needsChatList = showChats || needsMessageChats
     val listFailed = listFailure == ChatListReadFailure.NeedsRetry
     val waitingForList =
         needsChatList && list.confirmedAt == null && !listFailed ||
             needsMessageChats &&
-                (list.listPhase == ChatReadPhase.Loading ||
+                (uncheckedChats.isNotEmpty() ||
+                    list.listPhase == ChatReadPhase.Loading ||
                     !listFailed && listFailure == ChatListReadFailure.Retrying)
     val waitingForMessageMetadata = needsMessageChats && waitingForList
     val remotePending =
@@ -483,7 +492,7 @@ private fun SearchResults(
         }
     val confirmedChats = list.confirmedAt != null
     val chatRefreshFailed = needsChatList && listFailed
-    val missingMessageChats = needsMessageChats && !waitingForList
+    val messageChatsUnavailable = needsMessageChats && !waitingForList
     val sourceUnavailable =
         keyword.isNotEmpty() &&
             workspacePreparation == null &&
@@ -494,7 +503,7 @@ private fun SearchResults(
             }
     val readFailed =
         chatRefreshFailed ||
-            missingMessageChats ||
+            messageChatsUnavailable ||
             moreArtifactsFailed ||
             sourceUnavailable ||
             reads.any { it.hasFailure }

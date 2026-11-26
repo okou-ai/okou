@@ -57,6 +57,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -507,11 +508,12 @@ class SavedUiStateTest {
         val knownChat = searchResult("known", "Release brief")
         val missingChat = searchResult("missing", "Design review")
         val message = SearchMessageHit("missing", 1L, "Check the release brief", listOf(10..16))
+        val resolved = CompletableDeferred<Set<String>>()
         var list by
             mutableStateOf(
                 ChatListUiState(
                     confirmedAt = 1,
-                    listPhase = ChatReadPhase.Loading,
+                    listPhase = ChatReadPhase.Ready,
                     threadsByRecency = listOf(knownChat),
                 ),
             )
@@ -526,6 +528,10 @@ class SavedUiStateTest {
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
+                    resolveMessageChats = { chatIds ->
+                        assertEquals(setOf(missingChat.id), chatIds)
+                        resolved.await()
+                    },
                     remote =
                         WorkspaceSearchResults(
                             "Release",
@@ -537,18 +543,24 @@ class SavedUiStateTest {
         val row = compose.onNodeWithText(knownChat.title!!)
         val top = row.fetchSemanticsNode().boundsInRoot.top
         val progress = compose.onNode(searchProgress)
+        val notice = compose.onNodeWithText("Some search results are temporarily unavailable")
+        notice.assertDoesNotExist()
         compose.mainClock.advanceTimeBy(280)
         progress.assertIsDisplayed()
         assertEquals(top, row.fetchSemanticsNode().boundsInRoot.top)
 
+        compose.runOnIdle { resolved.complete(emptySet()) }
+        progress.assertIsDisplayed()
+        notice.assertDoesNotExist()
+
         compose.runOnIdle {
             list =
                 list.copy(
-                    listPhase = ChatReadPhase.Idle,
                     threadsByRecency = listOf(knownChat, missingChat),
                 )
         }
         progress.assertDoesNotExist()
+        notice.assertDoesNotExist()
         row.assertIsDisplayed()
         compose.onNodeWithText(message.content).assertIsDisplayed()
     }
