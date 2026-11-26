@@ -72,6 +72,9 @@
     <string name="connector_change_failed">작업을 완료하지 못했습니다. 계정을 확인한 후 다시 시도하세요.</string>
     <string name="connector_device_code">서비스 제공업체 페이지에 이 코드를 입력하세요</string>
     <string name="connector_external_code">승인 코드</string>
+    <string name="connector_checking_code">확인 중…</string>
+    <string name="connector_external_code_too_long">코드 길이 한도는 %1$d자입니다.</string>
+    <string name="connector_external_code_failed">코드를 확인하지 못했습니다.</string>
     <string name="connector_external_instructions">서비스 제공업체 페이지에서 승인을 마친 후 여기에 코드를 입력하세요.</string>
     <string name="connector_submit_code">코드 확인</string>
     <string name="connector_working">계정 확인 중…</string>
