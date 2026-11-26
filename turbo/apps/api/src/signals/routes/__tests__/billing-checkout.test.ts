@@ -532,4 +532,160 @@ describe("POST /api/billing/checkout", () => {
       subscriptionStatus: "active",
     });
   });
+
+  it("billing-checkout-014 rejects competing Plan previews and stale purchase replays", async () => {
+    const { admin, checkout } = setup();
+    const customerId = `cus_${randomUUID().slice(0, 8)}`;
+    context.mocks.stripe.customers.create.mockResolvedValueOnce({
+      id: customerId,
+    });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId: admin.orgId },
+      invoice_settings: { default_payment_method: "pm_saved_card" },
+      default_source: null,
+    });
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      amount_due: 2000,
+      total: 2000,
+      subtotal: 2000,
+      currency: "usd",
+      lines: { data: [], has_more: false },
+    });
+    const periodEnd = Math.floor(now() / 1000) + 30 * 86_400;
+    const period = { start: periodEnd - 30 * 86_400, end: periodEnd };
+    const listed: Record<string, unknown>[] = [];
+    const planSubscription = (
+      id: string,
+      priceId: string,
+      metadata: Record<string, string>,
+    ) => {
+      return {
+        id,
+        status: "active",
+        customer: customerId,
+        cancel_at_period_end: false,
+        cancel_at: null,
+        schedule: null,
+        trial_end: null,
+        metadata,
+        default_payment_method: "pm_saved_card",
+        latest_invoice: {
+          id: `in_${id}`,
+          status: "paid",
+          customer: customerId,
+          amount_due: 2000,
+          amount_paid: 2000,
+          total: 2000,
+          subtotal: 2000,
+          currency: "usd",
+          metadata: {},
+          parent: { subscription_details: { subscription: id, metadata } },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${id}`,
+                price: { id: priceId },
+                quantity: 1,
+                amount: 2000,
+                parent: { type: "subscription_item_details" },
+                period,
+              },
+            ],
+          },
+        },
+        items: {
+          data: [
+            {
+              price: { id: priceId },
+              quantity: 1,
+              current_period_start: period.start,
+              current_period_end: period.end,
+            },
+          ],
+        },
+      };
+    };
+    // Stripe lists every subscription created so far.
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: listed,
+      has_more: false,
+    });
+    context.mocks.stripe.subscriptions.create.mockImplementation(
+      (params: unknown) => {
+        const { items, metadata } = params as {
+          readonly items: readonly { readonly price: string }[];
+          readonly metadata: Record<string, string>;
+        };
+        const created = planSubscription(
+          `sub_${randomUUID().slice(0, 8)}`,
+          items[0]?.price ?? "",
+          metadata,
+        );
+        listed.push(created);
+        return Promise.resolve(created);
+      },
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+      (id: unknown) => {
+        return Promise.resolve(
+          listed.find((subscription) => {
+            return subscription.id === id;
+          }),
+        );
+      },
+    );
+    const preview = async (tier: "pro" | "team") => {
+      const response = await accept(
+        checkout.create({
+          headers,
+          body: { tier, supportsInAppPreview: true, ...redirects },
+        }),
+        [200],
+      );
+      if (!("previewToken" in response.body)) {
+        throw new Error("Expected a Plan purchase preview");
+      }
+      return response.body.previewToken;
+    };
+    const firstPro = await preview("pro");
+    const secondPro = await preview("pro");
+    const team = await preview("team");
+    const confirm = (previewToken: string) => {
+      return accept(
+        checkout.confirm({ headers, body: { previewToken } }),
+        [200, 409],
+      );
+    };
+
+    const racing = await Promise.all([confirm(firstPro), confirm(secondPro)]);
+    const teamConfirmation = await confirm(team);
+    listed.push(
+      planSubscription(`sub_${randomUUID().slice(0, 8)}`, TEAM_PRICE, {
+        orgId: admin.orgId,
+      }),
+    );
+    const winner = racing[0].status === 200 ? firstPro : secondPro;
+    const replay = await confirm(winner);
+
+    expect(
+      racing
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
+    const stale = {
+      code: "CONFLICT",
+      message: "Plan purchase preview is no longer valid",
+    };
+    expect(teamConfirmation.status).toBe(409);
+    expect(teamConfirmation.body).toMatchObject({ error: stale });
+    expect(replay.status).toBe(409);
+    expect(replay.body).toStrictEqual(teamConfirmation.body);
+    expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+  });
 });
