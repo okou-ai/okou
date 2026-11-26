@@ -2300,7 +2300,7 @@ account-org	src/signals/routes/__tests__/memory-publication-authorization.test.t
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-002	revisit		revisit: valid email unsubscribe token has no reachable issuing flow in this slice (must not hand-sign it); evidence: case needs a correctly signed token for GET/POST /api/email/unsubscribe; resume: obtain the token from the email send path that embeds the unsubscribe link (provider receipt) and write the case		B04
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-004	rewritten	103.5		src/signals/routes/__tests__/misc-routes.bdd.test.ts	B04
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-006	rewritten	157.9		src/signals/routes/__tests__/misc-routes.bdd.test.ts	B04
-account-org	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	planned				
+account-org	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	planned		affected by #50982 (Gemini 4 runs with a connected Antigravity account): rewrite against the current behaviour		
 account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	rewritten	28.7		src/signals/routes/__tests__/model-catalog-authority.test.ts	B05
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	planned				
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-002	planned				
@@ -2737,22 +2737,22 @@ workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	revisit		revisit: an expired import token was produced by re-implementing the production token signer in the test, which counts as a self-signed credential; evidence: the draft signed HS256 with the HKDF of SECRETS_ENCRYPTION_KEY; resume: issue the token through the real session route under mockNow two hours earlier, then read it back after moving the clock		B01
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	rewritten	6.0	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	skipped		slow-setup: needs 52 real uploads through the session cap; measured 2554 ms per test		pilot
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-001	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-002	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-003	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-004	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-006	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-008	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-010	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-016	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-017	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-019	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-020	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-022	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-024	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-027	planned				
-messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-031	planned				
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-001	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-002	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-003	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-004	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-006	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-008	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-010	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-016	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-017	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-019	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-020	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-022	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-024	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-027	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
+messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-031	planned		affected by #50984 (permission-aware artifact previews): rewrite against the current behaviour		
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-001	skipped		slow-setup: two production Slack OAuth installs plus a member connect flow before six channel reads; measured 224-226 ms with the light case running first		B01
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-003	rewritten	81.6	revisit: draft passes but not accepted: another case in the file is over 200 ms (slack-channels-004:203ms); evidence: idle 3-run median 102.0 ms (runs [102, 106, 91]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-004	rewritten	172.2	revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 203.1 ms (runs [202, 205, 203]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01
