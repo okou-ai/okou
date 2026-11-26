@@ -4,6 +4,8 @@ import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
 import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.state.ArtifactImageViewerState
+import ai.okou.android.state.rememberArtifactImageViewerState
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -14,8 +16,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -56,8 +56,7 @@ internal fun ArtifactImageViewer(
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
 ) {
-    val transform = rememberSaveable(saver = ImageViewTransform.Saver) { ImageViewTransform() }
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    val transform = rememberArtifactImageViewerState()
     val original = (preview.content as? ArtifactContent.Image)?.bitmap
     val unavailable =
         preview.problem == ArtifactProblem.Denied ||
@@ -99,7 +98,7 @@ internal fun ArtifactImageViewer(
                 onBack,
                 wide,
                 fullWindow,
-                { expanded = !fullWindow },
+                { transform.expanded = !fullWindow },
                 saveEnabled,
                 onSave,
                 onSource,
@@ -118,9 +117,9 @@ internal fun ArtifactImageViewer(
             )
         }
     }
-    if (wide && expanded) {
+    if (wide && transform.expanded) {
         Dialog(
-            onDismissRequest = { expanded = false },
+            onDismissRequest = { transform.expanded = false },
             properties =
                 DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         ) {
@@ -232,7 +231,7 @@ private fun ImageViewerButton(
 private fun ImageViewport(
     image: androidx.compose.ui.graphics.ImageBitmap?,
     description: String?,
-    transform: ImageViewTransform,
+    transform: ArtifactImageViewerState,
     @StringRes problem: Int?,
     loading: Boolean,
     previewOnly: Boolean,
@@ -327,7 +326,7 @@ private fun ImageViewport(
 private fun ZoomableArtifactImage(
     image: androidx.compose.ui.graphics.ImageBitmap,
     description: String?,
-    transform: ImageViewTransform,
+    transform: ArtifactImageViewerState,
     viewport: Size,
     fit: Size,
 ) {
@@ -410,43 +409,5 @@ private fun ZoomableArtifactImage(
             },
             contentScale = ContentScale.Fit,
         )
-    }
-}
-
-private class ImageViewTransform(
-    initialScale: Float = 1f,
-    initialOffset: Offset = Offset.Zero,
-) {
-    var scale by mutableFloatStateOf(initialScale)
-        private set
-
-    private var offset by mutableStateOf(initialOffset)
-
-    fun translation(viewport: Size, fit: Size): Offset =
-        clamp(Offset(offset.x * fit.width, offset.y * fit.height), scale, viewport, fit)
-
-    fun change(zoom: Float, pan: Offset, origin: Offset, viewport: Size, fit: Size) {
-        val next = (scale * zoom).coerceIn(1f, 8f)
-        val before = translation(viewport, fit)
-        val pivot = origin - Offset(viewport.width / 2, viewport.height / 2)
-        val after = clamp(before + pan + (before - pivot) * (next / scale - 1), next, viewport, fit)
-        scale = next
-        offset = Offset(after.x / fit.width, after.y / fit.height)
-    }
-
-    private fun clamp(offset: Offset, zoom: Float, viewport: Size, fit: Size): Offset {
-        val x = ((fit.width * zoom - viewport.width) / 2).coerceAtLeast(0f)
-        val y = ((fit.height * zoom - viewport.height) / 2).coerceAtLeast(0f)
-        return Offset(offset.x.coerceIn(-x, x), offset.y.coerceIn(-y, y))
-    }
-
-    companion object {
-        val Saver =
-            listSaver(
-                save = { view: ImageViewTransform ->
-                    listOf(view.scale, view.offset.x, view.offset.y)
-                },
-                restore = { ImageViewTransform(it[0], Offset(it[1], it[2])) },
-            )
     }
 }
