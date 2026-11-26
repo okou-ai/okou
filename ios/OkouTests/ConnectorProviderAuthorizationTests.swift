@@ -28,7 +28,6 @@ private final class ProviderApplication: ConnectorProviderApplication {
     self.launchFinished = launchFinished
   }
   func supports(_ target: ChatConnectorTarget) -> Bool { true }
-  func receive(_ url: URL) -> Bool { false }
   func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch {
     self.request = request
     openedURL = request.appURLs.first
@@ -41,7 +40,6 @@ private final class ProviderApplication: ConnectorProviderApplication {
         launchStarted()
       }
     }
-    if request.provider == "spotify" { return .code("provider-code") }
     return opens ? .opened : .unavailable
   }
   func finishLaunch() {
@@ -90,7 +88,6 @@ private final class ProviderAuthorizationFixture: Sendable {
     switch slug {
     case "tiktok": "https://app.okou.ai/connectors/tiktok/callback"
     case "dropbox": "db-42://2/token"
-    case "spotify": "ai.okou.ios://connector-provider/spotify"
     default: nil
     }
   }
@@ -107,7 +104,7 @@ private final class ProviderAuthorizationFixture: Sendable {
       }
       let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
       XCTAssertEqual(body.account.intent, "add")
-      let nativeProvider = ["strava", "tiktok", "dropbox", "spotify"].contains(slug)
+      let nativeProvider = ["strava", "tiktok", "dropbox"].contains(slug)
       XCTAssertEqual(body.nativeAppAuthorization, nativeProvider ? "ios" : nil)
       XCTAssertEqual(body.nativeAppClientId, slug == "dropbox" ? "42" : nil)
       XCTAssertEqual(body.callbackTarget, "app")
@@ -200,16 +197,16 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
   }
 
   func testNativeProvidersExchangeCodesBeforeConfirmingTheExactAccount() async throws {
-    for slug in ["tiktok", "dropbox", "spotify"] {
+    for slug in ["tiktok", "dropbox"] {
       let initial = expectation(description: "\(slug) launched")
-      let callback = slug == "spotify" ? nil : expectation(description: "\(slug) exchanged")
+      let callback = expectation(description: "\(slug) exchanged")
       let schedules = Mutex(0)
       let clock = ConnectorPollingClock(didSchedule: { _ in
         let count = schedules.withLock { value in
           value += 1
           return value
         }
-        if count == 1 { initial.fulfill() } else { callback?.fulfill() }
+        if count == 1 { initial.fulfill() } else { callback.fulfill() }
       })
       let provider = ProviderApplication(opens: true)
       let responses = ProviderAuthorizationFixture(slug: slug)
@@ -236,16 +233,14 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
           provider.openedURL?.absoluteString.components(separatedBy: "?").first,
           "dbapi-2://1/connect")
       }
-      if slug != "spotify" {
-        let base =
-          slug == "dropbox" ? "db-42://1/connect" : "https://app.okou.ai/connectors/tiktok/callback"
-        let codeParameter = slug == "dropbox" ? "oauth_code" : "code"
-        store.receiveProviderReturn(
-          URL(string: "\(base)?state=unrelated&\(codeParameter)=provider-code")!)
-        store.receiveProviderReturn(
-          URL(string: "\(base)?state=server-state&\(codeParameter)=provider-code")!)
-        await fulfillment(of: [try XCTUnwrap(callback)], timeout: 3)
-      }
+      let base =
+        slug == "dropbox" ? "db-42://1/connect" : "https://app.okou.ai/connectors/tiktok/callback"
+      let codeParameter = slug == "dropbox" ? "oauth_code" : "code"
+      store.receiveProviderReturn(
+        URL(string: "\(base)?state=unrelated&\(codeParameter)=provider-code")!)
+      store.receiveProviderReturn(
+        URL(string: "\(base)?state=server-state&\(codeParameter)=provider-code")!)
+      await fulfillment(of: [callback], timeout: 3)
       clock.advance(.seconds(2))
       try await waitForBusinessResult(watching: store) { store.active == nil }
       XCTAssertTrue(continued.withLock { $0 })
@@ -366,29 +361,32 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     XCTAssertEqual(responses.starts.withLock { $0 }, 1)
   }
 
-  func testGoogleExternalBrowserAuthorizationConfirmsTheExactBackendAccount() async throws {
-    let scheduled = expectation(description: "Google browser authorization polling")
-    let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
-    let provider = ProviderApplication(opens: true)
-    let responses = ProviderAuthorizationFixture(slug: "gmail")
-    let fixture = ChatHTTPFixture { try responses.response($0) }
-    let continued = Mutex(false)
-    let store = ConnectorActionStore(
-      service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
-      didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
-      providerApplication: provider, pollSleep: clock.sleep)
-    defer { store.close() }
-    store.activate(.configuration(target: .builtin("gmail"), threadID: nil))
-    await fulfillment(of: [scheduled], timeout: 3)
-    let flow = try XCTUnwrap(store.active)
-    let browser = try XCTUnwrap(flow.browserURL)
-    XCTAssertEqual(browser.absoluteString, responses.authorizationURL)
-    responses.completed.withLock { $0 = true }
-    store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
-    clock.advance(.seconds(2))
-    try await waitForBusinessResult(watching: store) { store.active == nil }
-    XCTAssertTrue(continued.withLock { $0 })
-    XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+  func testWebProvidersUseTheBrowserAndConfirmTheExactBackendAccount() async throws {
+    for slug in ["gmail", "spotify"] {
+      let scheduled = expectation(description: "\(slug) browser authorization polling")
+      let clock = ConnectorPollingClock(didSchedule: { _ in scheduled.fulfill() })
+      let provider = ProviderApplication(opens: true)
+      let responses = ProviderAuthorizationFixture(slug: slug)
+      let fixture = ChatHTTPFixture { try responses.response($0) }
+      let continued = Mutex(false)
+      let store = ConnectorActionStore(
+        service: ChatConnectorService(client: fixture.client), graph: makeTestWorkspaceGraph(),
+        didContinue: { continued.withLock { $0 = true } }, didFail: { _ in },
+        providerApplication: provider, pollSleep: clock.sleep)
+      defer { store.close() }
+      store.activate(.configuration(target: .builtin(slug), threadID: nil))
+      await fulfillment(of: [scheduled], timeout: 3)
+      let flow = try XCTUnwrap(store.active)
+      XCTAssertNil(provider.request)
+      let browser = try XCTUnwrap(flow.browserURL)
+      XCTAssertEqual(browser.absoluteString, responses.authorizationURL)
+      responses.completed.withLock { $0 = true }
+      store.receiveProviderReturn(try XCTUnwrap(flow.session?.nativeCallbackUrl))
+      clock.advance(.seconds(2))
+      try await waitForBusinessResult(watching: store) { store.active == nil }
+      XCTAssertTrue(continued.withLock { $0 })
+      XCTAssertEqual(responses.starts.withLock { $0 }, 1)
+    }
   }
 
   func testGoogleBrowserReturnWithoutCallbackChecksThePendingAttemptBeforeRetry() async throws {

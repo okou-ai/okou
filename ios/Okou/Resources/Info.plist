@@ -25,7 +25,7 @@
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
     <key>SentryDSN</key><string>$(OKOU_SENTRY_DSN)</string>
     <key>LSApplicationQueriesSchemes</key>
-    <array><string>strava</string><string>dbapi-2</string><string>dbapi-8-emm</string><string>spotify</string></array>
+    <array><string>strava</string><string>dbapi-2</string><string>dbapi-8-emm</string></array>
     <key>CFBundleURLTypes</key>
     <array><dict>
         <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
