@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">添付ファイル</string>
+    <string name="chat_attachment_photos">写真と動画</string>
+    <string name="chat_attachment_files">ファイル</string>
+    <string name="chat_attachment_count">添付ファイル %1$d 件</string>
+    <string name="chat_attachment_done">完了</string>
+    <string name="chat_attachment_remove">%1$s を削除</string>
+    <string name="chat_attachment_uploading">アップロード中 %1$d%%</string>
+    <string name="chat_attachment_waiting">アップロード待ち</string>
+    <string name="chat_attachment_failed">アップロードに失敗しました</string>
+    <string name="chat_attachment_reselect">ファイルを選び直す</string>
+    <string name="chat_attachment_too_large">ファイルが 512 MiB を超えています</string>
+    <string name="chat_attachment_type_file">ファイル</string>
+    <string name="chat_attachment_type_image">画像</string>
+    <string name="chat_attachment_type_video">動画</string>
+    <string name="chat_attachment_type_text">テキスト</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">プレビューを表示できません</string>
+    <string name="chat_attachment_save">保存</string>
+    <string name="chat_attachment_open">別のアプリで開く</string>
+</resources>

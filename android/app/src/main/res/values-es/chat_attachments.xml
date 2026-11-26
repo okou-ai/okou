@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">Adjuntos</string>
+    <string name="chat_attachment_photos">Fotos y vídeos</string>
+    <string name="chat_attachment_files">Archivos</string>
+    <string name="chat_attachment_count">Cantidad de adjuntos %1$d</string>
+    <string name="chat_attachment_done">Listo</string>
+    <string name="chat_attachment_remove">Quitar %1$s</string>
+    <string name="chat_attachment_uploading">Subiendo %1$d%%</string>
+    <string name="chat_attachment_waiting">Pendiente de subir</string>
+    <string name="chat_attachment_failed">Error al subir</string>
+    <string name="chat_attachment_reselect">Volver a elegir el archivo</string>
+    <string name="chat_attachment_too_large">El archivo supera los 512 MiB</string>
+    <string name="chat_attachment_type_file">Archivo</string>
+    <string name="chat_attachment_type_image">Imagen</string>
+    <string name="chat_attachment_type_video">Vídeo</string>
+    <string name="chat_attachment_type_text">Texto</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">Vista previa no disponible</string>
+    <string name="chat_attachment_save">Guardar</string>
+    <string name="chat_attachment_open">Abrir con</string>
+</resources>

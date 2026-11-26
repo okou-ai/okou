@@ -32,13 +32,17 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.uploadChatAttachment
 import ai.okou.android.artifacts.ArtifactQuery
 import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
+import ai.okou.android.chat.ChatAttachmentReference
+import ai.okou.android.chat.ChatAttachmentService
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.DraftChatAttachment
 import ai.okou.android.chat.HistoryBatch
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
@@ -65,6 +69,7 @@ import ai.okou.android.settings.CanonicalBuiltInToolsService
 import ai.okou.android.settings.ProactivePreferencesService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.Locale
@@ -152,7 +157,10 @@ class CanonicalWorkspaceSession(
     private val locale: InitializePreferencesRequestLocale = initialLocale(Locale.getDefault()),
     private val timezone: String = TimeZone.getDefault().id,
     onUpdateRequired: (RequiredUpdate) -> Unit = {},
-) : WorkspaceSession, WorkflowService {
+) : WorkspaceSession, WorkflowService, ChatAttachmentService {
+    override val attachmentService: ChatAttachmentService
+        get() = this
+
     override val workflowService: WorkflowService
         get() = this
 
@@ -278,6 +286,27 @@ class CanonicalWorkspaceSession(
 
     override suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) =
         api.saveComposerDraft(target, text)
+
+    override suspend fun saveAttachmentDraft(
+        target: ServerDraftTarget,
+        text: String,
+        attachments: List<ChatAttachmentReference>,
+    ) = api.saveComposerDraft(target, text, attachments)
+
+    override suspend fun uploadChatAttachment(
+        file: File,
+        attachment: DraftChatAttachment,
+        progress: (Long) -> Unit,
+    ) =
+        uploadChatAttachment(
+            api,
+            transfers,
+            file,
+            attachment.filename,
+            attachment.contentType,
+            checkNotNull(attachment.size),
+            progress,
+        )
 
     override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
 

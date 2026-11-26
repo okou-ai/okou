@@ -21,19 +21,25 @@ import ai.okou.android.settings.DefaultModelOptions
 import ai.okou.android.settings.DefaultModelRecord
 import ai.okou.android.settings.DefaultModelState
 import ai.okou.android.settings.ModelEffort
+import android.net.Uri
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
+import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.ConnectException
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.days
 import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -49,6 +55,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -59,6 +66,7 @@ internal abstract class ChatComposerModelTestFixture {
     protected val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
     protected class Service : ChatComposerService {
+        override var attachmentService: ChatAttachmentService? = null
         val requests = mutableListOf<SendRequestVariant1>()
         val creates = mutableListOf<CreateThreadRequest>()
         val accepted = mutableMapOf<String, SendRequestVariant1>()
@@ -116,12 +124,39 @@ internal abstract class ChatComposerModelTestFixture {
         override suspend fun observeInput(threadId: String, eventId: String) =
             read(threadId, eventId)
 
+        fun enableAttachments() {
+            attachmentService =
+                object : ChatAttachmentService {
+                    override suspend fun uploadChatAttachment(
+                        file: File,
+                        attachment: DraftChatAttachment,
+                        progress: (Long) -> Unit,
+                    ) =
+                        ChatAttachmentReference(
+                            attachment.key,
+                            attachment.filename,
+                            attachment.contentType,
+                            file.length(),
+                            "/artifacts/${attachment.key.replace("-", "")}.txt",
+                        )
+
+                    override suspend fun saveAttachmentDraft(
+                        target: ServerDraftTarget,
+                        text: String,
+                        attachments: List<ChatAttachmentReference>,
+                    ) {
+                        drafts[target] = plainDraftDocument(text, attachments)
+                    }
+                }
+        }
+
         fun gate() = CompletableDeferred<Unit>().also { gates += it }
     }
 
     protected fun check(
         blockedDisk: Boolean = false,
         sendClock: TestTimeSource = TestTimeSource(),
+        storageDispatcher: (CoroutineDispatcher) -> CoroutineDispatcher = { it },
         action:
             suspend TestScope.(
                 Service,
@@ -136,7 +171,7 @@ internal abstract class ChatComposerModelTestFixture {
             ComposerJournalStore(
                 ApplicationProvider.getApplicationContext(),
                 if (blockedDisk) temporary.newFile() else temporary.newFolder(),
-                dispatcher,
+                storageDispatcher(dispatcher),
                 sendClock,
             )
         val owners = mutableListOf<ViewModelStore>()
@@ -166,6 +201,41 @@ internal abstract class ChatComposerModelTestFixture {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun refreshedCopiesOfTheSameFileStayIndependentlyRemovable() = check { service, store, create ->
+        service.enableAttachments()
+        val file =
+            ChatAttachmentReference(
+                "926dfbef-07ff-4e5d-9a76-89dd56f0f361",
+                "release.md",
+                "text/markdown",
+                81,
+                "/artifacts/cc81471c8d954c6397aca8272bedd543.md",
+            )
+        val target = ServerDraftTarget(existing.threadId)
+        service.drafts[target] = plainDraftDocument("Compare copies", listOf(file))
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        val original = model.uiState.value.attachments(existing).single()
+
+        service.drafts[target] = plainDraftDocument("Compare copies", listOf(file, file))
+        model.open(existing)
+        runCurrent()
+        val refreshed = model.uiState.value.attachments(existing)
+        assertEquals(listOf(file, file), refreshed.map { it.reference })
+        assertEquals(original.key, refreshed.first().key)
+
+        model.removeAttachment(original.key)
+        advanceUntilIdle()
+        assertEquals(listOf(refreshed.last()), model.uiState.value.attachments(existing))
+        assertEquals(
+            listOf(refreshed.last()),
+            store.load(identity).journal.drafts.getValue(target.key).attachments,
+        )
+        assertEquals(plainDraftDocument("Compare copies", listOf(file)), service.drafts[target])
+    }
+
     @Test
     fun heldHydrationKeepsEditsAndDebouncesTheCanonicalFullValue() =
         check { service, store, create ->
@@ -504,6 +574,245 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun successivePickerResultsKeepTheirOrderWhenMetadataCompletesOutOfOrder() {
+        var holdNextRead = false
+        var resumeFirstRead: (() -> Unit)? = null
+        check(
+            storageDispatcher = { dispatcher ->
+                object : CoroutineDispatcher() {
+                    override fun dispatch(context: CoroutineContext, block: Runnable) {
+                        if (holdNextRead) {
+                            holdNextRead = false
+                            resumeFirstRead = { dispatcher.dispatch(context, block) }
+                        } else {
+                            dispatcher.dispatch(context, block)
+                        }
+                    }
+                }
+            },
+        ) { service, store, create ->
+            service.enableAttachments()
+            val first = Uri.parse("content://test-attachment/first.txt")
+            val second = Uri.parse("content://test-attachment/second.txt")
+            val resolver = shadowOf(store.contentResolver)
+            resolver.registerInputStream(first, "first".byteInputStream())
+            resolver.registerInputStream(second, "second".byteInputStream())
+            val model = create(false, identity)
+            model.open(existing)
+            advanceUntilIdle()
+
+            holdNextRead = true
+            model.addAttachments(existing.key, existing.key, listOf(first))
+            val resume = checkNotNull(resumeFirstRead)
+            try {
+                model.addAttachments(existing.key, existing.key, listOf(second))
+                runCurrent()
+                assertTrue(model.uiState.value.attachments(existing).isEmpty())
+                assertFalse(model.uiState.value.canSend(existing))
+            } finally {
+                resume()
+            }
+
+            val ready = model.uiState.first { it.canSend(existing) }
+            assertEquals(
+                listOf("first.txt", "second.txt"),
+                ready.attachments(existing).map { it.filename },
+            )
+            model.send(existing)
+            runCurrent()
+            assertEquals(
+                ready.attachments(existing).map { it.reference?.part() },
+                service.requests.single().userMessage.parts,
+            )
+        }
+    }
+
+    @Test
+    fun aPickerResultBlocksOnlyItsDraftUntilTheSelectionCanBeSentOrRemoved() =
+        check { service, store, create ->
+            service.attachmentService =
+                object : ChatAttachmentService {
+                    override suspend fun uploadChatAttachment(
+                        file: File,
+                        attachment: DraftChatAttachment,
+                        progress: (Long) -> Unit,
+                    ): ChatAttachmentReference = error("An unreadable selection cannot upload")
+
+                    override suspend fun saveAttachmentDraft(
+                        target: ServerDraftTarget,
+                        text: String,
+                        attachments: List<ChatAttachmentReference>,
+                    ) = error("An unreadable selection cannot sync")
+                }
+            val model = create(false, identity)
+            val other = ComposerTarget(threadId = CHAT_PROJECT)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "Include the selected file")
+            model.edit(other, "Another draft")
+            assertTrue(model.uiState.value.canSend(existing))
+
+            val selection = Uri.parse("content://unavailable-test-document/file.txt")
+            shadowOf(store.contentResolver)
+                .registerInputStream(
+                    selection,
+                    object : InputStream() {
+                        override fun read(): Int = throw IOException("The file is unreadable")
+                    },
+                )
+            model.addAttachments(existing.key, existing.key, listOf(selection))
+            assertFalse(model.uiState.value.canSend(existing))
+            assertTrue(model.uiState.value.canSend(other))
+            model.send(existing)
+            assertTrue(service.requests.isEmpty())
+
+            val unavailable =
+                model.uiState.first { state ->
+                    state.attachments(existing).singleOrNull()?.failure != null
+                }
+            val file = unavailable.attachments(existing).single()
+            assertEquals(AttachmentFailure.SourceUnavailable, file.failure)
+            assertFalse(unavailable.canSend(existing))
+            model.removeAttachment(file.key)
+            model.send(existing)
+            runCurrent()
+            assertEquals("Include the selected file", service.requests.single().prompt)
+        }
+
+    @Test
+    fun removingAnUploadingAttachmentKeepsTheSuccessfulSiblingAndRejectsTheLateResult() =
+        check { service, store, create ->
+            val ready =
+                ChatAttachmentReference(
+                        "12391eff-72d2-4c18-ac1a-acbb18e471c0",
+                        "ready.txt",
+                        "text/plain",
+                        2,
+                        "/artifacts/b5e27f6a307e428f8144c897a5b4ef10.txt",
+                    )
+                    .restoredAttachment()
+            val index = "84197d5f-7b0f-47c0-b5eb-50908b868c61"
+            val queued = DraftChatAttachment(index, "waiting.txt", "text/plain", 2, staged = true)
+            val directory = store.attachmentDirectory(identity)
+            directory.mkdirs()
+            directory.resolve(index).writeText("ok")
+            store
+                .persist(
+                    identity,
+                    ComposerJournal(
+                        format = 3,
+                        drafts =
+                            mapOf(
+                                existing.key to
+                                    EditableComposerDraft(
+                                        dirty = true,
+                                        attachments = listOf(ready, queued),
+                                    ),
+                            ),
+                    ),
+                )
+                .await()
+            val started = service.gate()
+            val release = service.gate()
+            service.attachmentService =
+                object : ChatAttachmentService {
+                    override suspend fun uploadChatAttachment(
+                        file: File,
+                        attachment: DraftChatAttachment,
+                        progress: (Long) -> Unit,
+                    ): ChatAttachmentReference {
+                        assertEquals("ok", file.readText())
+                        started.complete(Unit)
+                        withContext(NonCancellable) { release.await() }
+                        return checkNotNull(ready.reference)
+                            .copy(
+                                id = "fe1f9326-c401-4866-a34f-b065a5fcddef",
+                                filename = attachment.filename,
+                            )
+                    }
+
+                    override suspend fun saveAttachmentDraft(
+                        target: ServerDraftTarget,
+                        text: String,
+                        attachments: List<ChatAttachmentReference>,
+                    ) {
+                        service.drafts[target] = plainDraftDocument(text, attachments)
+                    }
+                }
+            val model = create(false, identity)
+            model.open(existing)
+            started.await()
+            assertFalse(model.uiState.value.canSend(existing))
+            model.removeAttachment(index)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.canSend(existing))
+            assertEquals(listOf(ready), model.uiState.value.attachments(existing))
+            assertEquals(
+                listOf(ready),
+                store.load(identity).journal.drafts.getValue(existing.key).attachments,
+            )
+        }
+
+    @Test
+    fun attachmentOnlyInputReconcilesWithoutResendingOrShowingItsTransportPrompt() =
+        check { service, store, create ->
+            val file =
+                ChatAttachmentReference(
+                    "926dfbef-07ff-4e5d-9a76-89dd56f0f361",
+                    "release.md",
+                    "text/markdown",
+                    81,
+                    "/artifacts/cc81471c8d954c6397aca8272bedd543.md",
+                )
+            val target = ServerDraftTarget(existing.threadId)
+            service.drafts[target] = plainDraftDocument("", listOf(file))
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            val model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            assertTrue(model.uiState.value.canSend(existing))
+            assertEquals(
+                file,
+                store
+                    .load(identity)
+                    .journal
+                    .drafts
+                    .getValue(target.key)
+                    .attachments
+                    .single()
+                    .reference,
+            )
+
+            model.send(existing)
+            runCurrent()
+            val frozen = service.requests.single()
+            assertEquals(false, frozen.hasTextContent)
+            assertEquals(AttachmentOnlyPrompt, frozen.prompt)
+            assertEquals(listOf(file.part()), frozen.userMessage.parts)
+            val threadId = checkNotNull(existing.threadId)
+            val pending = model.uiState.value.messagesFor(threadId).single()
+            assertEquals("", pending.text)
+            assertEquals(listOf(file), pending.attachments)
+            assertTrue(model.uiState.value.attachments(existing).isEmpty())
+            assertNull(store.load(identity).journal.entries[existing.key]?.pending)
+
+            model.edit(existing, "new draft")
+            service.read = { thread, event ->
+                assertEquals(frozen.clientEventId, event)
+                InputObservation(thread, event, TextDisposition.Queued)
+            }
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(frozen), service.requests)
+            assertEquals(
+                TextDisposition.Queued,
+                model.uiState.value.messagesFor(threadId).single().disposition,
+            )
+            assertEquals("new draft", model.uiState.value.entry(existing).text)
+        }
+
     @Test
     fun aReplacedModelCannotOverrideTheCurrentModelsSavedEffort() = check { service, _, create ->
         val target = ComposerTarget()

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">Lampiran</string>
+    <string name="chat_attachment_photos">Foto dan video</string>
+    <string name="chat_attachment_files">File</string>
+    <string name="chat_attachment_count">Jumlah lampiran %1$d</string>
+    <string name="chat_attachment_done">Selesai</string>
+    <string name="chat_attachment_remove">Hapus %1$s</string>
+    <string name="chat_attachment_uploading">Mengunggah %1$d%%</string>
+    <string name="chat_attachment_waiting">Menunggu unggahan</string>
+    <string name="chat_attachment_failed">Gagal mengunggah</string>
+    <string name="chat_attachment_reselect">Pilih ulang file</string>
+    <string name="chat_attachment_too_large">File melebihi 512 MiB</string>
+    <string name="chat_attachment_type_file">File</string>
+    <string name="chat_attachment_type_image">Gambar</string>
+    <string name="chat_attachment_type_video">Video</string>
+    <string name="chat_attachment_type_text">Teks</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">Pratinjau tidak tersedia</string>
+    <string name="chat_attachment_save">Simpan</string>
+    <string name="chat_attachment_open">Buka dengan</string>
+</resources>

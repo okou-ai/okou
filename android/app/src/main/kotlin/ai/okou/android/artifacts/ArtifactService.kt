@@ -21,9 +21,13 @@ import ai.okou.android.api.generated.ArtifactDownloadVariant1
 import ai.okou.android.api.generated.ArtifactReferenceTargetKind
 import ai.okou.android.api.generated.RelatedCommunicatingChatsItemsItemStatus
 import ai.okou.android.api.generated.RelatedCreatedChatsItemsItemStatus
+import ai.okou.android.chat.ChatAttachmentReference
+import ai.okou.android.chat.isAttachmentImage
+import ai.okou.android.chat.isAttachmentVideo
 import ai.okou.android.chat.renderHistoryMarkdown
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.ui.text.AnnotatedString
 import java.io.OutputStream
 import java.text.SimpleDateFormat
@@ -215,6 +219,28 @@ internal constructor(
 
     internal suspend fun info(id: String): ArtifactInfo {
         if (id.startsWith(ExternalImagePreviewPrefix)) return externalImageInfo(id)
+        chatAttachment(id)?.let { file ->
+            val grant = api.resolveChatUpload(file.id)
+            val kind =
+                when {
+                    file.contentType.isAttachmentImage -> ArtifactKind.Image
+                    file.contentType.isAttachmentVideo -> ArtifactKind.Video
+                    else -> ArtifactKind.File
+                }
+            val access =
+                ArtifactAccess(
+                    artifactHttpsUrl(grant.url),
+                    file.contentType,
+                    file.filename,
+                    save = ArtifactSave(id, file.filename, file.contentType),
+                )
+            return ArtifactInfo(
+                ArtifactItem(id, file.filename, kind, null),
+                null,
+                ArtifactResource.File(id, file.filename, file.contentType, grant.previewImageUrl),
+                resolvedAccess = access,
+            )
+        }
         val link = messageArtifactLink(id)
         if (link != null) {
             val reference = artifactReference(link)
@@ -340,6 +366,18 @@ internal constructor(
         width: Int,
         onAuthorized: (InlineImageGrant) -> Unit,
     ): Bitmap? {
+        chatAttachment(source)?.let { file ->
+            if (!file.contentType.isAttachmentImage) throw ApiFailure.IncompatibleResponse()
+            val grant = api.resolveChatUpload(file.id)
+            val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
+            onAuthorized(InlineImageGrant(source, file.filename))
+            return thumbnail(grant.previewImageUrl, width)
+                ?: readBitmap(
+                    url.inlineThumbnail(width, file.contentType) ?: url,
+                    width,
+                    MAX_IMAGE_BYTES,
+                )
+        }
         if (source.startsWith(ExternalImagePreviewPrefix)) {
             val info = externalImageInfo(source)
             val url = checkNotNull(info.resolvedAccess?.url)
@@ -413,10 +451,16 @@ internal constructor(
     }
 
     internal suspend fun save(file: ArtifactSave, destination: () -> OutputStream) {
-        val grant =
-            api.artifactDownload(file.reference) as? ArtifactDownloadVariant1
-                ?: throw ApiFailure.IncompatibleResponse()
-        val url = artifactHttpsUrl(grant.url) ?: throw ApiFailure.IncompatibleResponse()
+        val attachment = chatAttachment(file.reference)
+        val reference =
+            if (attachment != null) api.resolveChatUpload(attachment.id).downloadUrl
+            else {
+                val grant =
+                    api.artifactDownload(file.reference) as? ArtifactDownloadVariant1
+                        ?: throw ApiFailure.IncompatibleResponse()
+                grant.url
+            }
+        val url = artifactHttpsUrl(reference) ?: throw ApiFailure.IncompatibleResponse()
         transfers.download(url) { source -> destination().use { output -> source.copyTo(output) } }
     }
 
@@ -445,6 +489,22 @@ internal constructor(
             }
         return artifactReferencePath.matchEntire(path)?.groupValues?.get(1)
     }
+}
+
+private const val ChatAttachmentPreviewPrefix = "chat-attachment:"
+
+internal fun ChatAttachmentReference.attachmentPreviewId(): String =
+    ChatAttachmentPreviewPrefix +
+        listOf(id, filename, contentType).joinToString("/") { Uri.encode(it) }
+
+internal fun chatAttachment(value: String): ChatAttachmentReference? {
+    if (!value.startsWith(ChatAttachmentPreviewPrefix)) return null
+    val parts = value.removePrefix(ChatAttachmentPreviewPrefix).split('/')
+    if (parts.size != 3) return null
+    val (id, name, type) = parts.map(Uri::decode)
+    return if (id.isNotBlank() && name.isNotBlank() && type.isNotBlank())
+        ChatAttachmentReference(id, name, type)
+    else null
 }
 
 private val artifactReferencePath =
