@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.58.0](https://github.com/okou-ai/okou/compare/android-v0.57.4...android-v0.58.0) (2026-11-26)
+
+
+### Features
+
+* **android:** choose the model in existing conversations ([#50963](https://github.com/okou-ai/okou/issues/50963)) ([f9ba765](https://github.com/okou-ai/okou/commit/f9ba7657cf3535b3bd6030e347caabbc7ba7458d))
+
+
+### Bug Fixes
+
+* **android:** align connector tabs and external code verification ([#50972](https://github.com/okou-ai/okou/issues/50972)) ([f714cb3](https://github.com/okou-ai/okou/commit/f714cb3144332263492376fcf17b0bc8731c6764))
+* **android:** align the workspace entry list surface ([#50999](https://github.com/okou-ai/okou/issues/50999)) ([4016b07](https://github.com/okou-ai/okou/commit/4016b0780e0abb9eb228be70d634d8a5752f6972))
+* **android:** align update toolbar and progress styles ([#51006](https://github.com/okou-ai/okou/issues/51006)) ([66ef929](https://github.com/okou-ai/okou/commit/66ef929e506148b455e26940214ab685b29e49d8))
+* **android:** revalidate workspace credit visibility ([#51000](https://github.com/okou-ai/okou/issues/51000)) ([b663e2a](https://github.com/okou-ai/okou/commit/b663e2a325503408f35b05309a767fc16ffbe39d))
+
 ## [0.57.4](https://github.com/okou-ai/okou/compare/android-v0.57.3...android-v0.57.4) (2026-11-26)
 
 
