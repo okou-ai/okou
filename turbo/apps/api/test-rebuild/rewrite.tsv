@@ -630,8 +630,8 @@ browser	src/signals/routes/__tests__/browser.test.ts	browser-078	planned
 browser	src/signals/routes/__tests__/browser.test.ts	browser-079	planned				
 browser	src/signals/routes/__tests__/browser.test.ts	browser-080	planned				
 account-org	src/signals/routes/__tests__/built-in-generation.test.ts	built-in-generation-001	planned				
-connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	planned				B02
-connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	planned				B02
+connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	rewritten	125.6		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02
+connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	rewritten	195.0		src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	B02
 connectors	src/signals/routes/__tests__/builtin-mcp-discovery.test.ts	builtin-mcp-discovery-001	planned				
 connectors	src/signals/routes/__tests__/builtin-mcp-run.test.ts	builtin-mcp-run-001	planned				
 chat	src/signals/routes/__tests__/chat-activity-summary.test.ts	chat-activity-summary-001	planned				
