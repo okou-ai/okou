@@ -126,7 +126,7 @@ class NativeUpdateTest {
             runBlocking { withTimeout(10_000) { verification.await() } }
             val waiting = text(R.string.updates_waiting_to_install).enabled(false)
             assertFalse(find(waiting).isClickable)
-            device.captureUpdate("details-waiting-to-install")
+            captureUpdate(device, "details-waiting-to-install")
             device.enabledUpdateControl(text(R.string.updates_close)).click()
             val toolbar =
                 find(
@@ -135,12 +135,12 @@ class NativeUpdateTest {
                         .enabled(false),
                 )
             assertEquals(toolbarBounds, toolbar.visibleBounds)
-            device.captureUpdate("toolbar-waiting-to-install")
+            captureUpdate(device, "toolbar-waiting-to-install")
 
             owner.requireUpdate(RequiredUpdate(release.version))
             find(text(R.string.updates_required))
             assertFalse(find(waiting).isClickable)
-            device.captureUpdate("required-waiting-to-install")
+            captureUpdate(device, "required-waiting-to-install")
         } catch (error: Throwable) {
             failures += error
             try {
@@ -234,7 +234,7 @@ class NativeUpdateTest {
                     settings.scrollUntil(Direction.DOWN, visible) == true,
                 )
             }
-            fun captureState(name: String) = device.captureUpdate(name)
+            fun captureState(name: String) = captureUpdate(device, name)
             fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
                 val originalSize =
                     device
@@ -674,7 +674,7 @@ private fun UiDevice.enabledUpdateControl(label: BySelector): UiObject2 =
         "Expected enabled update control $label"
     }
 
-private fun UiDevice.captureUpdate(name: String) {
-    waitForIdle()
+private fun captureUpdate(device: UiDevice, name: String) {
+    device.waitForIdle()
     takeScreenshot().writeToTestStorage("android-update-$name")
 }
