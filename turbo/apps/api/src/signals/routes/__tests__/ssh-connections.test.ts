@@ -253,4 +253,52 @@ describe("SSH connection routes", () => {
     });
     await expect(listHosts()).resolves.toStrictEqual([reset.body]);
   });
+
+  it("ssh-connections-010 a peer sharing the user ID in another organization cannot reset the owner's host key", async () => {
+    useSecretKmsProbe();
+    const owner = await newActor();
+    signIn(owner);
+    const ownerHost = await accept(createHost("owner.example.com"), [201]);
+    const peer = await newActor({ userId: owner.userId });
+    signIn(peer);
+    const peerHost = await accept(createHost("peer.example.com"), [201]);
+
+    const foreign = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
+      }),
+      [404],
+    );
+    const unknown = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: randomUUID() },
+        body: { expectedGeneration: 1 },
+      }),
+      [404],
+    );
+    expect(foreign.body.error.code).toBe("SSH_CONNECTION_NOT_FOUND");
+    expect(foreign.body).toStrictEqual(unknown.body);
+
+    await expect(listHosts()).resolves.toStrictEqual([peerHost.body]);
+    signIn(owner);
+    await expect(listHosts()).resolves.toStrictEqual([ownerHost.body]);
+
+    const reset = await accept(
+      hosts().resetHostKey({
+        headers,
+        params: { connectionId: ownerHost.body.id },
+        body: { expectedGeneration: ownerHost.body.generation },
+      }),
+      [200],
+    );
+    expect(reset.body).toMatchObject({
+      id: ownerHost.body.id,
+      host: "owner.example.com",
+      generation: 2,
+    });
+    await expect(listHosts()).resolves.toStrictEqual([reset.body]);
+  });
 });
