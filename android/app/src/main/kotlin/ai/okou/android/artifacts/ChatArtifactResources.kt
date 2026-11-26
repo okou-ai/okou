@@ -96,6 +96,8 @@ internal fun ChatArtifactResources(
             else -> null
         }
     val selected = page.selectedId.takeIf { unavailable == null }
+    val refreshSnackbar =
+        rememberArtifactRefreshFeedback(model, query, state.takeIf { unavailable == null })
     LaunchedEffect(unavailable) {
         if (unavailable != null) {
             page.selectedId = null
@@ -248,7 +250,7 @@ internal fun ChatArtifactResources(
                 if (showSkeleton) {
                     items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
-                if (failure != null && failure != ArtifactCatalogFailure.More) {
+                if (failure == ArtifactCatalogFailure.Initial) {
                     item(key = "resource-read-failure") {
                         ArtifactReadNotice(
                             failure.label(chatResources = true),
@@ -409,6 +411,7 @@ internal fun ChatArtifactResources(
             ) {
                 ContentReadProgress(R.string.chat_resources_syncing)
             }
+            ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }
     }
 }

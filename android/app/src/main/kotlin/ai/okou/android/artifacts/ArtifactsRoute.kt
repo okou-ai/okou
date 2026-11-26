@@ -73,6 +73,13 @@ internal fun ArtifactsRoute(
     fun catalogQuery(filter: ArtifactFilter, previousKeyword: String) =
         ArtifactQuery(filter, input.committedSearchText()?.trim() ?: previousKeyword)
 
+    val visibleQuery = catalogQuery(page.filter, state.query.keyword)
+    val refreshSnackbar =
+        rememberArtifactRefreshFeedback(
+            model,
+            visibleQuery,
+            state.takeIf { searchArtifactId == null },
+        )
     LifecycleStartEffect(model, searchArtifactId) {
         model.setActive(
             true,
@@ -119,8 +126,9 @@ internal fun ArtifactsRoute(
             ArtifactCatalogList(
                 model,
                 state,
+                refreshSnackbar,
                 input,
-                catalogQuery(page.filter, state.query.keyword),
+                visibleQuery,
                 onFilter = { next ->
                     if (page.filter != next) {
                         page.filter = next
