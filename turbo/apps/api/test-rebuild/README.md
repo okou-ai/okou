@@ -400,3 +400,7 @@ The pilot rewrites selected cases from their BDD, the production contracts and t
 ### Reconciliation after settlement
 
 When every selected ID of a pilot file is rewritten or skipped, the file's temporary BDD is removed; its frozen text stays in history at `7ef96529`. `reconcile.mjs` reads `pilot.tsv` and records the frozen IDs of those settled files as `settled`. Strict mode still requires every one of the 7,453 frozen IDs to be either in a present BDD document or in a settled pilot file. Two BDDs, `me-model-providers-upsert` and `run-cron.bdd`, were removed while one ID in each was still `planned`. They were restored unchanged from `7ef96529`.
+
+## Step 4: Full rewrite (in progress)
+
+`rewrite.tsv` replaces `pilot.tsv` and covers all 3,517 selected IDs. Each row records the domain, frozen test file and case ID. It also records the status (`planned`, `rewritten`, `skipped` or `revisit`), the accepted local Vitest duration, a note, the new test file and the batch. Pilot results are carried over unchanged with batch `pilot`. A `revisit` ID is blocked in the first pass, and its note records the blocker, evidence and where to resume. `reconcile.mjs` treats a frozen file as settled once all of its selected IDs are `rewritten` or `skipped`.

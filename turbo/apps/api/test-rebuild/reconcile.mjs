@@ -56,10 +56,10 @@ let review = 0;
 let missing = 0;
 const present = new Set(documents);
 
-// A pilot file is settled once every selected ID in pilot.tsv is rewritten or
+// A frozen file is settled once every selected ID in rewrite.tsv is rewritten or
 // skipped. Its temporary BDD is then removed; the frozen text stays in history.
 const pilotStatuses = new Map();
-const [, ...pilotLines] = readFileSync(resolve(directory, "pilot.tsv"), "utf8")
+const [, ...pilotLines] = readFileSync(resolve(directory, "rewrite.tsv"), "utf8")
   .split("\n")
   .filter(Boolean);
 for (const line of pilotLines) {
