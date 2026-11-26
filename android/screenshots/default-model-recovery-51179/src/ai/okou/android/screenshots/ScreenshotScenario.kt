@@ -135,8 +135,21 @@ class ScreenshotScenario {
                         ) == true,
                     ) { "The Auto write did not update the confirmed preference" }
                     device.waitForIdle()
-                    check(checkNotNull(clickableParent(await(auto))).isChecked)
-                    check(checkNotNull(clickableParent(await(auto))).visibleBounds == autoBounds)
+                    val selected =
+                        checkNotNull(
+                            device.wait(
+                                object : Condition<UiDevice, UiObject2?> {
+                                    override fun apply(device: UiDevice): UiObject2? =
+                                        device.findObjects(auto).firstNotNullOfOrNull { node ->
+                                            generateSequence(node) { it.parent }.firstOrNull {
+                                                it.isCheckable && it.isChecked
+                                            }
+                                        }
+                                },
+                                12_000,
+                            ),
+                        ) { "Expected a checked Auto option in the open picker" }
+                    check(selected.visibleBounds == autoBounds)
                     check(device.hasObject(entry))
                     device.waitForIdle()
                     ScreenshotCapture.capture("02-auto-selected.png")
