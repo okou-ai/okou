@@ -1,3 +1,4 @@
+import { legacyProactiveClaimAllowed } from "./proactive-dispatch-ownership.service";
 import { workflowAutomationSnapshotCondition } from "./workflow-automation-snapshot";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { eq, sql, type SQL } from "drizzle-orm";
@@ -66,6 +67,7 @@ export function consumeWorkflowScheduleAnchorSql(
   }
   return sql`UPDATE workflow_automations SET next_run_at = NULL, last_run_at = ${claim.claimedAt}, updated_at = ${claim.claimedAt}
  WHERE id = ${claim.automationId}::uuid AND enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
+ AND ${legacyProactiveClaimAllowed()}
  AND workflow_id = ${claim.workflowId}::uuid AND official_blueprint_key = 'daily-delivery'
  AND ${observation}
  AND next_run_at = ${claim.scheduledAnchorAt} AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}

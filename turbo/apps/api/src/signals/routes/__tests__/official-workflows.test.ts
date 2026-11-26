@@ -1,8 +1,22 @@
-import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { runDataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
+import { http, HttpResponse } from "msw";
+import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
+import { billingStatusRoutes } from "../billing-status";
+import { webhooksAgentDataRequestRoutes } from "../webhooks-agent-data-request";
+import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
+import { notificationsRoutes } from "../notifications";
+import type { output } from "zod";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
+  cronCleanupSandboxesContract,
   cronProactiveContract,
   cronExecuteWorkflowAutomationsContract,
 } from "@okouai/api-contracts/contracts/cron";
+import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
+import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { cronProactiveRoutes } from "../cron-proactive";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
@@ -279,6 +293,15 @@ describe("Daily profile learning through Suggestions", () => {
   });
 });
 
+function shadowReport(
+  body: output<(typeof cronProactiveContract.compare.responses)[200]>,
+) {
+  if ("phase" in body) {
+    throw new Error("Expected the pre-handoff forecast");
+  }
+  return body;
+}
+
 describe("Proactive cron comparison", () => {
   const cronHeaders = { authorization: "Bearer test-cron-secret" };
 
@@ -363,12 +386,12 @@ describe("Proactive cron comparison", () => {
           [200],
         );
         expect(first.body.minute).toBe(original.nextRunAt);
-        expect(first.body.tasks[task]).toMatchObject({
+        expect(shadowReport(first.body).tasks[task]).toMatchObject({
           bothDue: 1,
           proactiveOnly: 0,
           automationOnly: 0,
         });
-        expect(first.body.differences).toStrictEqual([]);
+        expect(shadowReport(first.body).differences).toStrictEqual([]);
         const replay = await accept(
           client.compare({ headers: cronHeaders }),
           [200],
@@ -381,7 +404,7 @@ describe("Proactive cron comparison", () => {
             client.compare({ headers: cronHeaders }),
             [200],
           );
-          expect(withinGrace.body.tasks[task]).toMatchObject({
+          expect(shadowReport(withinGrace.body).tasks[task]).toMatchObject({
             overdue: 1,
             expired: 0,
           });
@@ -390,7 +413,7 @@ describe("Proactive cron comparison", () => {
             client.compare({ headers: cronHeaders }),
             [200],
           );
-          expect(expired.body.tasks[task]).toMatchObject({
+          expect(shadowReport(expired.body).tasks[task]).toMatchObject({
             overdue: 0,
             expired: 1,
           });
@@ -435,12 +458,12 @@ describe("Proactive cron comparison", () => {
       client.compare({ headers: cronHeaders }),
       [200],
     );
-    expect(report.body.tasks.suggestions).toMatchObject({
+    expect(shadowReport(report.body).tasks.suggestions).toMatchObject({
       bothDue: 0,
       proactiveOnly: 1,
     });
-    expect(report.body.tasks.learning.missingTimezone).toBe(1);
-    expect(report.body.differences).toContainEqual({
+    expect(shadowReport(report.body).tasks.learning.missingTimezone).toBe(1);
+    expect(shadowReport(report.body).differences).toContainEqual({
       orgId: actor.orgId,
       userId: actor.userId,
       task: "suggestions",
@@ -455,8 +478,8 @@ describe("Proactive cron comparison", () => {
       client.compare({ headers: cronHeaders }),
       [200],
     );
-    expect(stopped.body.tasks.suggestions.proactiveOnly).toBe(0);
-    expect(stopped.body.differences).toStrictEqual([]);
+    expect(shadowReport(stopped.body).tasks.suggestions.proactiveOnly).toBe(0);
+    expect(shadowReport(stopped.body).differences).toStrictEqual([]);
   });
 });
 
@@ -779,6 +802,661 @@ async function prepareBriefMember() {
   return { actor };
 }
 
+async function walletCredits(actor: ApiTestUser) {
+  const wallet = await accept(
+    setupApp({ context, routes: billingStatusRoutes })(
+      billingStatusContract,
+    ).get({ headers: authHeaders(actor) }),
+    [200],
+  );
+  return wallet.body.credits;
+}
+
+/** Reconcile a provider-reported search charge through the sandbox and terminal webhook. */
+async function completeWithSearchUsage(
+  runId: string,
+  headers: { authorization: string },
+  credits: number,
+) {
+  const router = "https://data-router.test/mcp";
+  mockEnv("OKOU_DATA_ROUTER_URL", router);
+  mockEnv("OKOU_DATA_TOKEN", "router-test-service-token");
+  const requestId = randomUUID();
+  await accept(
+    setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
+      runDataRouterRequestContract,
+    ).register({ headers, body: { runId, requestId } }),
+    [200],
+  );
+  let lookups = 0;
+  server.use(
+    http.post(router, () => {
+      lookups++;
+      return HttpResponse.json({
+        jsonrpc: "2.0",
+        id: "usage",
+        result: { structuredContent: { records: [{ requestId, credits }] } },
+      });
+    }),
+  );
+  await webhooks.requestAgentComplete({ runId, exitCode: 0 }, headers, [200]);
+  await flushWaitUntilForTest();
+  expect(lookups).toBe(1);
+}
+
+function proactiveCard() {
+  const draft = {
+    draftUserMessage: {
+      version: 1 as const,
+      parts: [{ type: "text" as const, text: "Review the update." }],
+    },
+    draftAttachments: null,
+  };
+  return {
+    id: randomUUID(),
+    type: "suggestion" as const,
+    priority: 1,
+    content: {
+      title: "Review the agenda",
+      rationale: "The agenda needs a decision.",
+      options: [
+        {
+          id: "review",
+          label: "Review",
+          description: "Review the meeting agenda.",
+          threadId: null,
+          draft,
+        },
+      ],
+      customOption: {
+        id: "custom" as const,
+        threadId: null,
+        draft: {
+          draftUserMessage: {
+            version: 1 as const,
+            parts: [
+              {
+                type: "feedback" as const,
+                quote: "Review the meeting agenda.",
+                note: [],
+              },
+            ],
+          },
+          draftAttachments: null,
+        },
+      },
+    },
+  };
+}
+
+describe("Standalone proactive dispatch", () => {
+  const cron = { authorization: "Bearer test-cron-secret" };
+  it("drains globally, preserves choices saved during the handoff and skips an inactive member's original slot", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...morningBriefPreferenceRoutes,
+        ...proactiveSuggestionsRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+      ],
+    });
+    const client = app(cronProactiveContract);
+    const start = Date.UTC(2030, 0, 2, 0, 0);
+    mockNow(start);
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    const headers = authHeaders(actor);
+    const brief = app(morningBriefPreferenceContract);
+    await accept(brief.update({ headers, body: { enabled: true } }), [200]);
+    await accept(
+      app(proactiveSuggestionsContract).update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    await accept(
+      client.handoff({ headers: {}, body: { action: "drain", apply: true } }),
+      [401],
+    );
+    const preview = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "drain", apply: false },
+      }),
+      [200],
+    );
+    expect(preview.body).toMatchObject({
+      phase: "automation",
+      ready: true,
+      changed: false,
+    });
+    const drained = await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    expect(drained.body).toMatchObject({
+      phase: "draining",
+      changed: true,
+      copied: 3,
+    });
+    await accept(brief.update({ headers, body: { enabled: false } }), [200]);
+    const early = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(early.body).toMatchObject({ phase: "draining", ready: false });
+    mockNow(start + 65 * 60_000);
+    expect(
+      (await accept(client.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ phase: "draining" });
+    await accept(
+      app(cronExecuteWorkflowAutomationsContract).execute({ headers: cron }),
+      [200],
+    );
+    const activated = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(activated.body).toMatchObject({
+      phase: "standalone",
+      changed: true,
+      queued: 0,
+      claims: 0,
+      running: 0,
+      callbacks: 0,
+    });
+    expect((await accept(brief.get({ headers }), [200])).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+    expect(
+      (await accept(client.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ phase: "standalone", inactive: 1, enqueued: 0 });
+    expect(
+      (await accept(client.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ phase: "standalone", inactive: 0, enqueued: 0 });
+  });
+
+  it("waits for an accepted Morning Brief, then reuses its thread and retains the delivery rights captured at the next start", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+        ...cronCleanupSandboxesRoutes,
+        ...morningBriefPreferenceRoutes,
+        ...proactiveSuggestionsRoutes,
+        ...feedRoutes,
+        ...notificationsRoutes,
+      ],
+    });
+    let clockTime = Date.UTC(2030, 0, 2, 4);
+    mockNow(clockTime);
+    const owned = await publicChatActor(context, {
+      clockTime: () => {
+        return clockTime;
+      },
+    });
+    const { actor } = owned;
+    const headers = authHeaders(actor);
+    await launchBudgetRun(
+      context,
+      owned,
+      await owned.sendChatRun(actor, {
+        prompt: "Prepare for this week's meetings.",
+      }),
+    );
+    installWorkflowVolumeS3Fixture(context);
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    const brief = app(morningBriefPreferenceContract);
+    const suggestions = app(proactiveSuggestionsContract);
+    await accept(
+      suggestions.updateWithFeed({ headers, body: { enabled: false } }),
+      [200],
+    );
+    await accept(brief.update({ headers, body: { enabled: true } }), [200]);
+    const [workflow] = await listMorningBriefInstallations(actor);
+    if (!workflow) {
+      throw new Error("Missing original Morning Brief installation");
+    }
+    const history = async () => {
+      const reply = await accept(
+        automationClient().list({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.id },
+        }),
+        [200],
+      );
+      const [schedule] = reply.body;
+      if (!schedule) {
+        throw new Error("Missing original Morning Brief schedule");
+      }
+      return schedule;
+    };
+    const { nextRunAt } = await history();
+    if (!nextRunAt) {
+      throw new Error("Missing original Morning Brief slot");
+    }
+    clockTime = Date.parse(nextRunAt) + 1000;
+    mockNow(clockTime);
+    await owned.run(() => {
+      return runs.registerDirectRunner(owned.runnerGroup);
+    });
+    await accept(
+      app(cronExecuteWorkflowAutomationsContract).execute({ headers: cron }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const started = await history();
+    if (!started.chatThreadId) {
+      throw new Error("Missing Morning Brief conversation");
+    }
+    const threadId = started.chatThreadId;
+    const first = await launchedAutomationRunId(actor, threadId);
+    if (!first) {
+      throw new Error("Missing active legacy Morning Brief");
+    }
+    const client = app(cronProactiveContract);
+    await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    clockTime += 5 * 60_000;
+    mockNow(clockTime);
+    const blocked = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(blocked.body).toMatchObject({
+      phase: "draining",
+      ready: false,
+      running: 1,
+    });
+    const earlier = await owned.runExecution(first);
+    await webhooks.requestAgentComplete(
+      { runId: first, exitCode: 0 },
+      earlier.sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const finished = await history();
+    if (!finished.nextRunAt) {
+      throw new Error("Legacy completion must establish the final cursor");
+    }
+    const activated = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(activated.body).toMatchObject({
+      phase: "standalone",
+      changed: true,
+    });
+    clockTime = Date.parse(finished.nextRunAt) - 60_000;
+    mockNow(clockTime);
+    await accept(
+      suggestions.updateWithFeed({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    clockTime += 60_000;
+    mockNow(clockTime);
+    await owned.run(() => {
+      return runs.registerDirectRunner(owned.runnerGroup);
+    });
+    const tick = await accept(client.compare({ headers: cron }), [200]);
+    expect(tick.body).toMatchObject({ enqueued: 1 });
+    await accept(
+      app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const second = await launchedAutomationRunId(actor, threadId);
+    if (!second || second === first) {
+      throw new Error(
+        "Standalone Morning Brief must reuse its original conversation",
+      );
+    }
+    const { execution, sandboxHeaders } = await owned.runExecution(second);
+    const agentHeaders = {
+      authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
+    };
+    await accept(
+      brief.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    await accept(
+      suggestions.updateWithFeed({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      app(feedContract).create({
+        headers: agentHeaders,
+        body: proactiveCard(),
+      }),
+      [200],
+    );
+    const body = {
+      to: "me" as const,
+      kind: "morning-brief" as const,
+      subject: "Morning Brief",
+      text: "Your meeting agenda is ready.",
+    };
+    const sent = await accept(
+      app(notificationsContract).mail({ headers: agentHeaders, body }),
+      [200],
+    );
+    const replay = await accept(
+      app(notificationsContract).mail({ headers: agentHeaders, body }),
+      [200],
+    );
+    expect(replay.body).toMatchObject({
+      notificationId: sent.body.notificationId,
+      deduplicated: true,
+    });
+    await webhooks.requestAgentComplete(
+      { runId: second, exitCode: 0 },
+      sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+  });
+
+  it("claims one hourly slot across simultaneous ticks, cancels unstarted work after opting out and covers search credits on the next Run", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...proactiveSuggestionsRoutes,
+        ...cronCleanupSandboxesRoutes,
+        ...notificationsRoutes,
+        ...feedRoutes,
+      ],
+    });
+    const client = app(cronProactiveContract);
+    const start = Date.UTC(2030, 0, 2, 9, 0);
+    mockNow(start);
+    let clockTime = start;
+    const owned = await publicChatActor(context, {
+      clockTime: () => {
+        return clockTime;
+      },
+    });
+    const { actor } = owned;
+    const source = await owned.sendChatRun(actor, {
+      prompt: "Review the day's work.",
+    });
+    await launchBudgetRun(context, owned, source);
+    await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    mockNow(start + 5 * 60_000);
+    const activated = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(activated.body.phase).toBe("standalone");
+    const choice = await accept(
+      app(proactiveSuggestionsContract).update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(choice.body.enabled).toBeTruthy();
+    clockTime = start + 66 * 60_000;
+    mockNow(clockTime);
+    await owned.run(() => {
+      return runs.registerDirectRunner(owned.runnerGroup);
+    });
+    const ticks = await Promise.all([
+      client.compare({ headers: cron }),
+      client.compare({ headers: cron }),
+    ]);
+    const enqueued = ticks.map((tick) => {
+      if (tick.status !== 200 || !("enqueued" in tick.body)) {
+        throw new Error("Expected standalone dispatcher");
+      }
+      return tick.body.enqueued;
+    });
+    expect(enqueued.sort()).toStrictEqual([0, 1]);
+    const settings = app(proactiveSuggestionsContract);
+    for (const enabled of [false, true]) {
+      await accept(
+        settings.update({ headers: authHeaders(actor), body: { enabled } }),
+        [200],
+      );
+    }
+    await accept(
+      app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const reads = createRunReadsApi(context);
+    const cancelled = await reads.requestListLogs(
+      actor,
+      { triggerSource: "proactive" },
+      [200],
+    );
+    expect(cancelled.body.data).toHaveLength(0);
+    clockTime += 60 * 60_000;
+    mockNow(clockTime);
+    await owned.run(() => {
+      return runs.registerDirectRunner(owned.runnerGroup);
+    });
+    const replacement = await accept(client.compare({ headers: cron }), [200]);
+    expect(replacement.body).toMatchObject({ enqueued: 1 });
+    await accept(
+      app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const logs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { triggerSource: "proactive" },
+      [200],
+    );
+    expect(logs.body.data).toHaveLength(1);
+    const run = logs.body.data[0];
+    if (!run) {
+      throw new Error("Expected the hourly Run");
+    }
+    const detail = await runs.readRun(actor, run.id);
+    expect(detail.source.model).toBe("okou/proactive");
+    const { execution, sandboxHeaders } = await owned.runExecution(run.id);
+    const headers = {
+      authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
+    };
+    await accept(
+      app(proactiveSuggestionsContract).updateWithFeed({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      app(feedContract).create({ headers, body: proactiveCard() }),
+      [200],
+    );
+    await accept(
+      app(notificationsContract).mail({
+        headers,
+        body: {
+          to: "me",
+          kind: "morning-brief",
+          subject: "Morning Brief",
+          text: "Check today's meetings.",
+        },
+      }),
+      [403],
+    );
+    const workflowList = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(actor),
+        query: {},
+      }),
+      [200],
+    );
+    expect(
+      workflowList.body.filter((workflow) => {
+        return workflow.official;
+      }),
+    ).toStrictEqual([]);
+    const balance = await walletCredits(actor);
+    expect(balance).toBeGreaterThan(0);
+    await completeWithSearchUsage(run.id, sandboxHeaders, 7);
+    await expect(walletCredits(actor)).resolves.toBe(balance);
+  });
+  it("starts nightly profile learning at zero balance, allows paid tools and rejects card and email publication", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [
+        ...cronProactiveRoutes,
+        ...cronCleanupSandboxesRoutes,
+        ...proactiveSuggestionsRoutes,
+        ...notificationsRoutes,
+        ...feedRoutes,
+      ],
+    });
+    // This owner has a nightly 02:18 UTC slot and a separate hourly :48 slot.
+    const actor = bdd.user({
+      orgId: "org_proactive_balance",
+      userId: "user_proactive_learning3",
+    });
+    let clockTime = Date.UTC(2030, 0, 2, 1, 59);
+    mockNow(clockTime);
+    const owned = await publicChatActor(context, {
+      actor,
+      clockTime: () => {
+        return clockTime;
+      },
+    });
+    const source = await owned.sendChatRun(actor, {
+      prompt: "Prepare for today's profile review.",
+    });
+    const manual = await owned.runExecution(source.runId);
+    const balance = await walletCredits(actor);
+    expect(balance).toBeGreaterThan(0);
+    await completeWithSearchUsage(source.runId, manual.sandboxHeaders, balance);
+    await expect(walletCredits(actor)).resolves.toBe(0);
+    const client = app(cronProactiveContract);
+    await accept(
+      client.handoff({ headers: cron, body: { action: "drain", apply: true } }),
+      [200],
+    );
+    clockTime += 5 * 60_000;
+    mockNow(clockTime);
+    const active = await accept(
+      client.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    expect(active.body.phase).toBe("standalone");
+    await bdd.completeOnboarding(actor, { timezone: "UTC" });
+    await accept(
+      app(proactiveSuggestionsContract).updateWithFeed({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    clockTime = Date.UTC(2030, 0, 2, 2, 18);
+    mockNow(clockTime);
+    await owned.run(() => {
+      return runs.registerDirectRunner(owned.runnerGroup);
+    });
+    const tick = await accept(client.compare({ headers: cron }), [200]);
+    expect(tick.body).toMatchObject({ enqueued: 1 });
+    await accept(
+      app(cronCleanupSandboxesContract).cleanup({ headers: cron }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const logs = await createRunReadsApi(context).requestListLogs(
+      actor,
+      { triggerSource: "proactive" },
+      [200],
+    );
+    expect(logs.body.data).toHaveLength(1);
+    const [run] = logs.body.data;
+    if (!run) {
+      throw new Error("Expected nightly profile learning");
+    }
+    const { execution, sandboxHeaders } = await owned.runExecution(run.id);
+    expect(execution.prompt).toContain("# Proactive Learning");
+    expect(execution.prompt).toContain("notes/user-profile.md");
+    mockEnv("OKOU_DATA_ROUTER_URL", "https://data-router.test/mcp");
+    mockEnv("OKOU_DATA_TOKEN", "router-test-service-token");
+    const tool = await createFirewallApi(context).requestFirewallAuth(
+      { authorization: `Bearer ${execution.firewallToken}` },
+      {
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OKOU_DATA_TOKEN")}`,
+        },
+        firewallBillable: true,
+      },
+      [200],
+    );
+    expect(tool.body).toMatchObject({ resolvedSecrets: ["OKOU_DATA_TOKEN"] });
+    const headers = {
+      authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
+    };
+    await accept(
+      app(proactiveSuggestionsContract).updateWithFeed({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      app(feedContract).create({ headers, body: proactiveCard() }),
+      [403],
+    );
+    await accept(
+      app(notificationsContract).mail({
+        headers,
+        body: {
+          to: "me",
+          kind: "morning-brief",
+          subject: "Morning Brief",
+          text: "Review the agenda.",
+        },
+      }),
+      [403],
+    );
+    await completeWithSearchUsage(run.id, sandboxHeaders, 7);
+    await expect(walletCredits(actor)).resolves.toBe(0);
+  });
+});
+
 describe("Workflow schedule recovery", () => {
   async function failManualScheduleRun(
     actor: ApiTestUser,
@@ -949,14 +1627,10 @@ describe("Debug Morning Brief", () => {
       routes: debugMorningBriefRoutes,
     });
     const anonymous = await accept(
-      app(debugMorningBriefContract).run({ body: { requestId: randomUUID() } }),
-      [401],
-    );
-    expect(anonymous.status).toBe(401);
-    await accept(
       app(debugMorningBriefContract).get({ params: { id: randomUUID() } }),
       [401],
     );
+    expect(anonymous.status).toBe(401);
     const { actor } = await workflowBdd.setupWorkflowOrg();
     if (!actor.orgId) {
       throw new Error("Expected a workspace");
@@ -965,13 +1639,6 @@ describe("Debug Morning Brief", () => {
       context,
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.OkouDebug]: false },
-    );
-    await accept(
-      app(debugMorningBriefContract).run({
-        headers: authHeaders(actor),
-        body: { requestId: randomUUID() },
-      }),
-      [403],
     );
     await accept(
       app(debugMorningBriefContract).get({

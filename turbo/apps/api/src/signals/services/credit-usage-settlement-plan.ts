@@ -11,10 +11,11 @@ import { and, eq, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
 import { LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS } from "./credit-low-balance-threshold";
-import type {
-  PricedUsageEvent,
-  ProcessOrgUsageEventsResult,
-  SettlementWorkObservation,
+import {
+  isPlatformPaidPolicy,
+  type PricedUsageEvent,
+  type ProcessOrgUsageEventsResult,
+  type SettlementWorkObservation,
 } from "./credit-usage-pricing";
 
 function initialSettlementObservation(): SettlementWorkObservation {
@@ -40,10 +41,9 @@ export function settlementObservation(pricingRows: number) {
 export function planUsageCharges(events: readonly PricedUsageEvent[]) {
   const byUser = new Map<string, number>();
   const outcomes = events.map((event) => {
-    const creditsCharged =
-      event.record.creditChargePolicy === "official_workflow_free"
-        ? 0
-        : event.grossCredits;
+    const creditsCharged = isPlatformPaidPolicy(event.record.creditChargePolicy)
+      ? 0
+      : event.grossCredits;
     byUser.set(
       event.record.userId,
       (byUser.get(event.record.userId) ?? 0) + creditsCharged,

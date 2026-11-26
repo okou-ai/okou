@@ -1,3 +1,4 @@
+import { legacyProactiveClaimAllowed } from "./proactive-dispatch-ownership.service";
 import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -143,6 +144,7 @@ const claimAutomation$ = command(
       })
       .where(
         and(
+          legacyProactiveClaimAllowed(),
           eq(workflowAutomations.id, automation.id),
           eq(workflowAutomations.nextRunAt, automation.nextRunAt),
           // A stale preflight must not claim a disabled row or turn a newly
@@ -272,6 +274,7 @@ const dueWorkflowAutomationRows$ = command(
           eq(workflowAutomations.enabled, true),
           eq(workflowAutomations.kind, "schedule"),
           lte(workflowAutomations.nextRunAt, args.at),
+          legacyProactiveClaimAllowed(),
           scheduleModeFilter(mode, args.at),
         ),
       )

@@ -54,6 +54,7 @@ function forbidden(message: string): BankingErrorResponse {
 }
 function isUnattendedTriggerSource(triggerSource: string | null): boolean {
   return (
+    triggerSource === "proactive" ||
     triggerSource === "automation-schedule" ||
     triggerSource === "automation-event"
   );

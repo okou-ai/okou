@@ -1,3 +1,7 @@
+import {
+  morningBriefReceiptSql,
+  proactiveRunReceipt$,
+} from "./proactive-run-context.service";
 import { createHash, randomUUID } from "node:crypto";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
@@ -116,6 +120,7 @@ interface NotificationDelivery {
   readonly idempotencyKey: string;
   readonly payloadHash: string;
   readonly email: string | null;
+  readonly proactiveMorningBrief: boolean;
   readonly runSource: Pick<
     typeof agentRuns.$inferSelect,
     "workflowAutomationId" | "officialWorkflowProvenance"
@@ -167,7 +172,7 @@ function morningBriefSourceSql(owner: Owner) {
       ),
     );
   const definitionName = sql`definition->>'name'`;
-  return sql`EXISTS (${source}) AND EXISTS (
+  return sql`${morningBriefReceiptSql(sql`active_run.id`, owner.orgId, owner.userId)} OR EXISTS (${source}) AND EXISTS (
     SELECT 1 FROM jsonb_array_elements(
       active_run.official_workflow_provenance->'definitions'
     ) AS definition
@@ -315,7 +320,7 @@ const commitMailNotification$ = command(
     const { idempotencyKey, payloadHash, runSource } = delivery;
     const keyScope = notificationKeyScope(owner, idempotencyKey);
     let preparedSourceAllowed = true;
-    if (body.kind === "morning-brief") {
+    if (body.kind === "morning-brief" && !delivery.proactiveMorningBrief) {
       const [source] = runSource.workflowAutomationId
         ? await db
             .select({
@@ -404,7 +409,10 @@ export const queueMailNotification$ = command(
     signal: AbortSignal,
   ) => {
     const [source] = await get(db$)
-      .select({ provenance: agentRuns.officialWorkflowProvenance })
+      .select({
+        provenance: agentRuns.officialWorkflowProvenance,
+        triggerSource: agentRuns.triggerSource,
+      })
       .from(agentRuns)
       .where(
         and(
@@ -415,6 +423,18 @@ export const queueMailNotification$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
+    const proactive =
+      source?.triggerSource === "proactive"
+        ? await set(proactiveRunReceipt$, owner, signal)
+        : null;
+    if (
+      source?.triggerSource === "proactive" &&
+      proactive?.task !== "morning-brief"
+    ) {
+      return resourceUnavailable(
+        "Only Morning Brief may send mail from a proactive Run.",
+      );
+    }
     if (
       source?.provenance?.definitions.some((definition) => {
         return definition.name === PROACTIVE_SUGGESTIONS_DEFINITION_NAME;
@@ -426,7 +446,9 @@ export const queueMailNotification$ = command(
     }
     const idempotencyKey =
       body.kind === "morning-brief"
-        ? await set(morningBriefNotificationKey$, owner.runId, signal)
+        ? proactive
+          ? `morning-brief:${proactive.id}`
+          : await set(morningBriefNotificationKey$, owner.runId, signal)
         : body.idempotencyKey;
     if (idempotencyKey === null) {
       return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
@@ -479,6 +501,7 @@ export const queueMailNotification$ = command(
         idempotencyKey,
         payloadHash,
         email: subscription.email,
+        proactiveMorningBrief: proactive?.task === "morning-brief",
         runSource: run,
       },
       signal,

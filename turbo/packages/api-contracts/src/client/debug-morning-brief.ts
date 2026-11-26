@@ -7,18 +7,6 @@ import type { ClientDescriptor } from "./types";
 export const debugMorningBriefContract: ClientDescriptor<
   typeof OriginalDebugMorningBriefContract
 > = {
-  run: {
-    method: "POST",
-    path: "/api/debug/morning-brief",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      409: true,
-      500: true,
-    },
-  },
   get: {
     method: "GET",
     path: "/api/debug/morning-brief/:id",

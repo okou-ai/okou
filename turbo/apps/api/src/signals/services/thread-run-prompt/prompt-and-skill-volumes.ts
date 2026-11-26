@@ -1,3 +1,4 @@
+import { proactiveInstructions } from "../proactive-run-context.service";
 import {
   mergeRunPrompt,
   renderRunPrompts,
@@ -77,6 +78,28 @@ function createIntegrationPrompts(
     threadContext.projectContext$,
   );
   return {
+    proactive: computed(async (get) => {
+      const source = await get(threadContext.proactiveInput$);
+      if (!source) {
+        return null;
+      }
+      const permission =
+        source.task === "morning-brief" && !source.suggestionsEnabled
+          ? "\nSuggestions are disabled for this Morning Brief. Skip all Suggestions maintenance."
+          : "";
+      return {
+        userPromptVariables: {
+          message: [
+            proactiveInstructions[source.task],
+            `Scheduled occurrence (UTC): ${source.scheduledAt.toISOString()}`,
+            permission,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        },
+        systemPromptVariables: {},
+      };
+    }),
     web: webPrompt$,
     agent_run: webPrompt$,
     slack: createSlackThreadPrompt(
@@ -158,7 +181,8 @@ function createSharedPromptSources(
   });
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const templates$ = computed(async (get) => {
-    if ((await get(contextType$)) === "automation") {
+    const type = await get(contextType$);
+    if (type === "automation" || type === "proactive") {
       return null;
     }
     const templates = await get(threadContext.templates$);
@@ -258,7 +282,9 @@ export function createPromptAndSkillVolumesSignals(
       suggestions,
     ] = await Promise.all([
       get(integrationPrompts[contextType]),
-      contextType === "automation" ? null : get(rotatedPrompt$),
+      contextType === "automation" || contextType === "proactive"
+        ? null
+        : get(rotatedPrompt$),
       get(templates$),
       get(agentPrompt$),
       get(userPrompt$),

@@ -1,3 +1,7 @@
+import {
+  proactiveInputSql,
+  PROACTIVE_SELECTED_MODEL,
+} from "./proactive-run-context.service";
 import { launchFrameworkForProviderType } from "./launch-framework";
 import { mintAntigravityRunCredential$ } from "./antigravity-run-credential.service";
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
@@ -1018,7 +1022,15 @@ export function createThreadClaimRunObjects(
         contextId: event.contextId,
         requiredOfficialWorkflowIds,
       });
-      if (event.preparation.isOfficialWorkflowThread) {
+      const proactive =
+        event.contextType === "proactive" &&
+        (await get(threadContext.proactiveInput$));
+      if (event.contextType === "proactive" && !proactive) {
+        throw new QueuedPromptLaunchUnavailableError(
+          "Proactive occurrence is no longer eligible",
+        );
+      }
+      if (event.preparation.isOfficialWorkflowThread && !proactive) {
         throw new QueuedPromptLaunchUnavailableError(
           OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
         );
@@ -1098,6 +1110,9 @@ export function createThreadClaimRunObjects(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgs$);
       switch (queuedMessage.contextType) {
+        case "proactive": {
+          return { triggerSource: "proactive", delivery: {} };
+        }
         case "web":
         case "agent_run": {
           return {
@@ -2510,7 +2525,7 @@ export function createThreadClaimRunObjects(
 
   const createRun$ = command(
     async (
-      { set },
+      { get, set },
       {
         claim,
         context,
@@ -2543,6 +2558,13 @@ export function createThreadClaimRunObjects(
         dimensions: input.args.timingDimensions,
         triggerSource: input.context.content.triggerSource,
       });
+      const proactive =
+        context.head.contextType === "proactive"
+          ? await get(threadContext.proactiveInput$)
+          : null;
+      if (context.head.contextType === "proactive" && !proactive) {
+        return null;
+      }
       const preparedCommit: PreparedThreadLaunchCommit = {
         ...commit,
         persistence: context.persistence,
@@ -2560,6 +2582,16 @@ export function createThreadClaimRunObjects(
             orgId: claim.orgId,
             chatThreadId: claim.chatThreadId,
             claimId: claim.claimId,
+            ...(proactive
+              ? {
+                  proactive: {
+                    id: context.head.id,
+                    userId: context.head.userId,
+                    suggestionsEnabled: proactive.suggestionsEnabled,
+                    cardDeliveryEnabled: proactive.cardDeliveryEnabled,
+                  },
+                }
+              : {}),
             automationQueueEventId:
               context.head.contextType === "automation"
                 ? context.head.id
@@ -3068,7 +3100,10 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProvider: modelPin.modelProviderType,
     modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
-    selectedModel: modelPin.selectedModel,
+    selectedModel:
+      args.content.triggerSource === "proactive"
+        ? PROACTIVE_SELECTED_MODEL
+        : modelPin.selectedModel,
     ...modelLaunchMetadataValues(args.modelProvider),
     ...(args.modelProvider.builtInModelRuntimeRoute &&
     isAutoSelectedModel(modelPin.selectedModel)
@@ -3688,10 +3723,12 @@ function pendingAtomicLaunchPlan(
     status: "pending",
     billingCompletedAt: null,
     creditChargePolicy:
-      context.rowsArgs.officialWorkflowProvenance &&
-      context.rowsArgs.agentRunMetadata.workflowAutomationId
-        ? "official_workflow_free"
-        : "standard",
+      context.rowsArgs.content.triggerSource === "proactive"
+        ? "platform_proactive"
+        : context.rowsArgs.officialWorkflowProvenance &&
+            context.rowsArgs.agentRunMetadata.workflowAutomationId
+          ? "official_workflow_free"
+          : "standard",
   });
   const attribution = new QueryBuilder()
     .$with("inserted_launch_billing_attribution", {
@@ -3795,9 +3832,13 @@ function pendingLaunchPublicationCtes({
     .where(queuedThreadInputCondition(claim.chatThreadId))
     .orderBy(asc(chatEvents.seqId))
     .limit(1);
+  const headMatches = eq(sql`(${currentHead})`, claimedInput.revokesEventId);
+  const eligibility = claim.proactive
+    ? sql`${headMatches} AND EXISTS (${proactiveInputSql({ ...claim, ...claim.proactive }, claim.proactive)})`
+    : headMatches;
   const claimCtes = sql`${canonicalChatEventInputCtes(
     [claimedInput],
-    eq(sql`(${currentHead})`, claimedInput.revokesEventId),
+    eligibility,
   )},
       inserted AS (${canonicalChatEventInsertSql("any")}),
       launch_claim_relations AS (
@@ -3814,7 +3855,12 @@ function pendingLaunchPublicationCtes({
     sql`EXISTS (SELECT 1 FROM inserted)
               AND (SELECT ${count()} FROM launch_claim_relations) >= 0`,
   )})`;
-  return sql`${claimCtes}${released}`;
+  const receipt = claim.proactive
+    ? sql`, admitted_proactive AS (
+    UPDATE proactive_occurrences SET run_id=${claimedInput.runId}::uuid,suggestions_enabled=${claim.proactive.suggestionsEnabled},card_delivery_enabled=${claim.proactive.cardDeliveryEnabled}
+    WHERE id=${claim.proactive.id}::uuid AND EXISTS (SELECT 1 FROM inserted) RETURNING id)`
+    : sql.empty();
+  return sql`${claimCtes}${receipt}${released}`;
 }
 
 function pendingLaunchGuardedRunId(

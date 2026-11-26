@@ -119,6 +119,7 @@ export const chatEvents = pgTable(
       | "telegram"
       | "agentphone"
       | "email"
+      | "proactive"
       | "automation"
       | "agent_run"
     >(),
@@ -249,6 +250,7 @@ export const chatEvents = pgTable(
           'agentphone',
           'email',
           'automation',
+          'proactive',
           'agent_run'
         )`,
       ),

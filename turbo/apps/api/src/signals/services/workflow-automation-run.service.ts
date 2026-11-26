@@ -1,3 +1,4 @@
+import { legacyProactiveClaimAllowed } from "./proactive-dispatch-ownership.service";
 import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
@@ -390,6 +391,7 @@ const commitProactiveWorkflowInput$ = command(
       .set({ nextRunAt: next, lastRunAt: at, updatedAt: at })
       .where(
         and(
+          legacyProactiveClaimAllowed(),
           eq(workflowAutomations.id, automation.id),
           eq(workflowAutomations.enabled, true),
           eq(

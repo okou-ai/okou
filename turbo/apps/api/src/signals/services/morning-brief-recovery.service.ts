@@ -1,3 +1,9 @@
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
+import { proactiveDispatchPhase$ } from "./proactive-dispatch-ownership.service";
+import {
+  standalonePreference$,
+  setStandalonePreferences$,
+} from "./proactive-dispatch-state.service";
 import { command } from "ccstate";
 
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
@@ -15,6 +21,30 @@ export const reconcileExistingMorningBrief$ = command(
     signal: AbortSignal,
   ): Promise<"current" | "absent" | "ineligible" | "conflict"> => {
     const owner = { orgId: args.orgId, userId: args.member.userId };
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      const preference = await set(
+        standalonePreference$,
+        owner,
+        "morning-brief",
+        signal,
+      );
+      if (!preference.enabled) {
+        return "absent";
+      }
+      const { timezone } = await set(loadProactivePreferences$, owner, signal);
+      await set(
+        setStandalonePreferences$,
+        {
+          owner: owner,
+          tasks: ["morning-brief"],
+          enabled: true,
+          timezone: timezone,
+          preserveChoice: true,
+        },
+        signal,
+      );
+      return "current";
+    }
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
     if (!ownership.installation) {
       return "absent";

@@ -1,12 +1,16 @@
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { pgTextDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, exists, isNotNull, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { writeDb$ } from "../external/db";
 
@@ -18,7 +22,7 @@ export function officialWorkflowThreadCondition(owner: {
   readonly orgId: string;
   readonly userId: string;
 }) {
-  return exists(
+  const installed = exists(
     new QueryBuilder()
       .select({ id: workflows.id })
       .from(workflowUserAutomationThreads)
@@ -37,6 +41,12 @@ export function officialWorkflowThreadCondition(owner: {
         ),
       ),
   );
+  return sql`(${installed} OR EXISTS (
+    SELECT 1 FROM proactive_schedules WHERE chat_thread_id = ${owner.threadId}::uuid
+      AND org_id = ${owner.orgId} AND user_id = ${owner.userId}
+    ) OR EXISTS (SELECT 1 FROM proactive_occurrences WHERE org_id=${owner.orgId} AND user_id=${owner.userId} AND chat_thread_id=${owner.threadId}::uuid))`.mapWith(
+    pgBooleanDecoder,
+  );
 }
 
 export const isOfficialWorkflowThread$ = command(
@@ -50,17 +60,18 @@ export const isOfficialWorkflowThread$ = command(
     signal: AbortSignal,
   ) => {
     const [row] = await set(writeDb$)
-      .select({ id: workflowUserAutomationThreads.chatThreadId })
-      .from(workflowUserAutomationThreads)
+      .select({ readOnly: officialWorkflowThreadCondition(owner) })
+      .from(chatThreads)
       .where(
         and(
-          eq(workflowUserAutomationThreads.chatThreadId, owner.threadId),
-          officialWorkflowThreadCondition(owner),
+          eq(chatThreads.id, owner.threadId),
+          eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    return row !== undefined;
+    return row?.readOnly === true;
   },
 );
 
@@ -82,10 +93,10 @@ export function officialWorkflowCreditAccessSql(owner: {
           eq(billingRunAttribution.runId, owner.runId),
           eq(billingRunAttribution.orgId, owner.orgId),
           eq(billingRunAttribution.userId, owner.userId),
-          eq(
-            billingRunAttribution.creditChargePolicy,
+          inArray(billingRunAttribution.creditChargePolicy, [
+            "platform_proactive",
             "official_workflow_free",
-          ),
+          ]),
         ),
       ),
   );

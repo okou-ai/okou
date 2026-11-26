@@ -14,6 +14,14 @@ import { i18n } from "../../i18n/index.ts";
 export type { LogStatus, TriggerSource };
 
 /** Build a display label for a trigger source. */
+function usesLarkIntegration(appendSystemPrompt: string | null | undefined) {
+  const isLark =
+    appendSystemPrompt
+      ?.split("# Current Integration\n")[1]
+      ?.startsWith("You are currently running inside: Lark\n") ?? false;
+  return isLark;
+}
+
 export function getTriggerSourceLabel(
   source: TriggerSource,
   appendSystemPrompt?: string | null,
@@ -47,10 +55,7 @@ export function getTriggerSourceLabel(
     case "feishu": {
       // Historical Lark runs retain the shared Feishu source. Preserve their
       // existing label only when the captured integration prompt identifies Lark.
-      const isLark =
-        appendSystemPrompt
-          ?.split("# Current Integration\n")[1]
-          ?.startsWith("You are currently running inside: Lark\n") ?? false;
+      const isLark = usesLarkIntegration(appendSystemPrompt);
       return i18n.t(($) => {
         return $.activity.sources[isLark ? "lark" : "feishu"];
       });
@@ -93,6 +98,11 @@ export function getTriggerSourceLabel(
     case "webhook": {
       return i18n.t(($) => {
         return $.activity.sources.webhook;
+      });
+    }
+    case "proactive": {
+      return i18n.t(($) => {
+        return $.settings.dialog.sections.proactiveLearning.title;
       });
     }
     case "automation-schedule": {

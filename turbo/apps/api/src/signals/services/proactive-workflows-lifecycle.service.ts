@@ -1,3 +1,5 @@
+import { proactiveDispatchPhase$ } from "./proactive-dispatch-ownership.service";
+import { setStandalonePreferences$ } from "./proactive-dispatch-state.service";
 import { command } from "ccstate";
 import {
   and,
@@ -141,6 +143,19 @@ const synchronizeProactiveSchedule$ = command(
 export const ensureProactiveWorkflows$ = command(
   async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
     const eligibility = await set(loadProactivePreferences$, owner, signal);
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      await set(
+        setStandalonePreferences$,
+        {
+          owner: owner,
+          tasks: ["suggestions", "learning"],
+          enabled: eligibility.suggestions,
+          timezone: eligibility.timezone,
+        },
+        signal,
+      );
+      return;
+    }
     const kinds = (
       Object.keys(PROACTIVE_WORKFLOW_DEFINITIONS) as ProactiveWorkflowKind[]
     ).filter((kind) => {
@@ -315,6 +330,9 @@ function proactiveScheduleGaps(ownerHash: SQL) {
 
 export const reconcileProactiveWorkflows$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
+      return;
+    }
     const minute = nowDate().getUTCMinutes();
     const ownerHash = sql`('x' || substr(encode(sha256(convert_to(${orgMembersMetadata.orgId} || '/' || ${orgMembersMetadata.userId}, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint`;
     let cursor: ProactiveWorkflowOwner | undefined;
