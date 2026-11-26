@@ -201,7 +201,7 @@ artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downl
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-009	skipped		slow-setup:run-token: agent input resolution needs a Run token with file:read, only issued by a dispatched chat Run (240-790 ms setup)		B01
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-001	planned		extension after sandbox reset		pilot
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-002	planned		extension after sandbox reset		pilot
-artifacts	src/signals/routes/__tests__/artifact-paywall.test.ts	artifact-paywall-001	planned				B03
+artifacts	src/signals/routes/__tests__/artifact-paywall.test.ts	artifact-paywall-001	rewritten	123.9		src/signals/routes/__tests__/artifact-paywall.test.ts	B03
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-001	planned				
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-002	planned				
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-003	planned				
