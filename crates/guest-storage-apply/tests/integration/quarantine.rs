@@ -176,6 +176,43 @@ fn final_memory_symlink_is_replaced_without_touching_its_referent() {
 }
 
 #[test]
+fn wide_manifest_with_an_aliased_cached_target_uses_synchronous_cleanup() {
+    let fixture = fixture().unwrap();
+    let memory = target(&fixture);
+    fs::create_dir_all(&memory).unwrap();
+    fs::write(memory.join("old.md"), b"old memory").unwrap();
+
+    let home = fixture.dir.path();
+    let cached = home.join("cached");
+    let outside = home.join("outside");
+    fs::create_dir(&cached).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep"), b"keep").unwrap();
+    let alias = cached.join("alias");
+    symlink(&outside, &alias).unwrap();
+
+    let mut input = manifest(&fixture).unwrap();
+    let mounts = input["storageMounts"].as_array_mut().unwrap();
+    for index in 0..64 {
+        mounts.push(json!({ "mountPath": cached.join(index.to_string()), "cached": true }));
+    }
+    mounts.push(json!({ "mountPath": alias, "cached": true }));
+    let output = fixture
+        .run_manifest_stdin(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(memory.join("new.md")).unwrap(), b"new memory");
+    assert!(!memory.join("old.md").exists());
+    assert_eq!(fs::read(outside.join("keep")).unwrap(), b"keep");
+    assert_eq!(fs::read_link(alias).unwrap(), outside);
+    assert!(discarded(&fixture).unwrap().is_empty());
+}
+
+#[test]
 fn unsafe_runtime_alias_does_not_grant_isolation_authority() {
     let fixture = fixture().unwrap();
     let memory = target(&fixture);
