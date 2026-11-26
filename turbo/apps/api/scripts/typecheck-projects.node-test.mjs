@@ -45,7 +45,6 @@ function fixture(t) {
     "tsconfig.bootstrap.json",
     "tsconfig.worker.json",
     "tsconfig.tests.json",
-    "tsconfig.bootstrap-wiring.json",
   ]) {
     copyFileSync(join(import.meta.dirname, "..", name), join(root, name));
   }
@@ -300,7 +299,6 @@ test("admission preserves compiler isolation and rejects downstream imports", (t
     "tsconfig.routes.json",
     "tsconfig.bootstrap.json",
     "tsconfig.tests.json",
-    "tsconfig.bootstrap-wiring.json",
   ]) {
     const downstream = config(root, name);
     for (const upstream of ["foundation", "admission"]) {
@@ -566,10 +564,6 @@ function verifyTestStageFailures(root, invoke, projects) {
         return `.typecheck/tsconfig.tests-${group}.json`;
       }),
     );
-    assert.doesNotMatch(
-      testFailure.stdout,
-      /Type check phase: bootstrap-wiring/,
-    );
   }
 }
 
@@ -636,7 +630,6 @@ if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
     ".typecheck/tsconfig.tests-0.json",
     ".typecheck/tsconfig.tests-1.json",
     ".typecheck/tsconfig.tests-2.json",
-    "tsconfig.bootstrap-wiring.json",
   ]);
   assert.deepEqual(commands().slice(0, 5), [
     {

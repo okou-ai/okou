@@ -24,7 +24,6 @@ const programConfigs = [
   "tsconfig.bootstrap.json",
   "tsconfig.worker.json",
   ...testProjectNames,
-  "tsconfig.bootstrap-wiring.json",
 ];
 
 function fail(message, details = []) {

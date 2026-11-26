@@ -599,7 +599,6 @@ from configuration or arguments.
 | `routes`                        | Production files under `src/signals/routes`                                                 | Gateways, foundation, admission, core                    |
 | `bootstrap`                     | The four production entry/registration modules                                              | Gateways, foundation, admission, core, routes            |
 | `tests-0`, `tests-1`, `tests-2` | The canonical test, bench and fixture roots, partitioned by path                            | Gateways, foundation, admission, core, routes            |
-| `bootstrap-wiring`              | The dedicated bootstrap wiring test                                                         | Gateways, foundation, admission, core, routes, bootstrap |
 
 `tsconfig.tests.json` is the authoritative test-root manifest; it is not an
 additional checked program. `scripts/prepare-typecheck-tests.mjs` parses it with
@@ -631,7 +630,7 @@ From `turbo`, the public commands remain:
 
 ```shell
 # Pi declarations -> regression tests/preparation/boundaries -> gateways ->
-# foundation -> admission -> core -> routes -> bootstrap -> tests 0/1/2 -> bootstrap wiring
+# foundation -> admission -> core -> routes -> bootstrap -> worker -> tests 0/1/2
 TSC_CHECKERS=2 pnpm --filter api run check-types
 
 # Standalone aggregate core: prepare Pi and gateway prerequisites first.
