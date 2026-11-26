@@ -36,14 +36,14 @@ non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-noti
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	planned				
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	planned				
 non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	planned				
-non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	planned				
-non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	planned				
+non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	planned				B02
+non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	planned				B02
 non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned				
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-001	skipped		adapter-runtime: library predicate with no public API path in this round		pilot
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-005	skipped		adapter-runtime: library predicate with no public API path in this round		pilot
 non-route	src/lib/__tests__/morning-brief-notification-source.test.ts	morning-brief-notification-source-009	skipped		adapter-runtime: library predicate with no public API path in this round		pilot
-non-route	src/lib/__tests__/run-activity.test.ts	run-activity-002	planned				
-non-route	src/lib/__tests__/run-activity.test.ts	run-activity-006	planned				
+non-route	src/lib/__tests__/run-activity.test.ts	run-activity-002	planned				B02
+non-route	src/lib/__tests__/run-activity.test.ts	run-activity-006	planned				B02
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	planned				
@@ -261,8 +261,8 @@ account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	skipped		slow-setup: twenty-two sequential device-auth connects (eleven Codex, eleven Claude Code) measure 784 ms		B01
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	rewritten	51.9		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	rewritten	42.2		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
-account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-001	planned				
-account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-002	planned				
+account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-001	planned				B02
+account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-002	planned				B02
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	rewritten	196.4		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	182.6		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		unfinished: out of time		B01
@@ -461,9 +461,9 @@ billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	bil
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-003	planned				
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-005	planned				
 billing	src/signals/routes/__tests__/billing-stripe-metadata-binding.test.ts	billing-stripe-metadata-binding-006	planned				
-billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-002	planned				
-billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-004	planned				
-billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-005	planned				
+billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-002	planned				B02
+billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-004	planned				B02
+billing	src/signals/routes/__tests__/billing-usage-media.bdd.test.ts	billing-usage-media.bdd-005	planned				B02
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-001	rewritten	36.9	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-002	rewritten	16.9	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-004	rewritten	133.4	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
@@ -476,9 +476,9 @@ billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-019	rewritten	28.9	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-022	rewritten	54.2	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing-usage-pack-checkout-024	rewritten	5.6	extension after sandbox reset	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	planned				
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	planned				
-billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	planned				
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	planned				B02
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	planned				B02
+billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	planned				B02
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	planned				
@@ -630,8 +630,8 @@ browser	src/signals/routes/__tests__/browser.test.ts	browser-078	planned
 browser	src/signals/routes/__tests__/browser.test.ts	browser-079	planned				
 browser	src/signals/routes/__tests__/browser.test.ts	browser-080	planned				
 account-org	src/signals/routes/__tests__/built-in-generation.test.ts	built-in-generation-001	planned				
-connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	planned				
-connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	planned				
+connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-002	planned				B02
+connectors	src/signals/routes/__tests__/builtin-mcp-account-surfaces.test.ts	builtin-mcp-account-surfaces-003	planned				B02
 connectors	src/signals/routes/__tests__/builtin-mcp-discovery.test.ts	builtin-mcp-discovery-001	planned				
 connectors	src/signals/routes/__tests__/builtin-mcp-run.test.ts	builtin-mcp-run-001	planned				
 chat	src/signals/routes/__tests__/chat-activity-summary.test.ts	chat-activity-summary-001	planned				
@@ -1147,15 +1147,15 @@ connectors	src/signals/routes/__tests__/connector-device-auth-claim-awaiting.tes
 connectors	src/signals/routes/__tests__/connector-device-auth-claim-terminal.test.ts	connector-device-auth-claim-terminal-005	planned				
 connectors	src/signals/routes/__tests__/connector-device-auth-completed-replay.test.ts	connector-device-auth-completed-replay-001	planned				
 connectors	src/signals/routes/__tests__/connector-device-auth-session-claim.test.ts	connector-device-auth-session-claim-002	planned				
-connectors	src/signals/routes/__tests__/connector-device-auth-session-creation.test.ts	connector-device-auth-session-creation-001	planned				
-connectors	src/signals/routes/__tests__/connector-device-auth-session-creation.test.ts	connector-device-auth-session-creation-002	planned				
+connectors	src/signals/routes/__tests__/connector-device-auth-session-creation.test.ts	connector-device-auth-session-creation-001	planned				B02
+connectors	src/signals/routes/__tests__/connector-device-auth-session-creation.test.ts	connector-device-auth-session-creation-002	planned				B02
 connectors	src/signals/routes/__tests__/connector-device-auth-session-expiration.test.ts	connector-device-auth-session-expiration-001	planned				
 connectors	src/signals/routes/__tests__/connector-device-auth-session-read.test.ts	connector-device-auth-session-read-001	planned				
 connectors	src/signals/routes/__tests__/connector-external-code-claim-completion.test.ts	connector-external-code-claim-completion-001	planned				
 connectors	src/signals/routes/__tests__/connector-external-code-completed-replay.test.ts	connector-external-code-completed-replay-001	planned				
 connectors	src/signals/routes/__tests__/connector-external-code-session-claim.test.ts	connector-external-code-session-claim-001	planned				
-connectors	src/signals/routes/__tests__/connector-external-code-session-creation.test.ts	connector-external-code-session-creation-001	planned				
-connectors	src/signals/routes/__tests__/connector-external-code-session-creation.test.ts	connector-external-code-session-creation-002	planned				
+connectors	src/signals/routes/__tests__/connector-external-code-session-creation.test.ts	connector-external-code-session-creation-001	planned				B02
+connectors	src/signals/routes/__tests__/connector-external-code-session-creation.test.ts	connector-external-code-session-creation-002	planned				B02
 connectors	src/signals/routes/__tests__/connector-external-code-session-expiration.test.ts	connector-external-code-session-expiration-001	planned				
 connectors	src/signals/routes/__tests__/connector-external-code-session-read.test.ts	connector-external-code-session-read-001	planned				
 connectors	src/signals/routes/__tests__/connector-grant-identity.test.ts	connector-grant-identity-001	planned				pilot
@@ -1245,9 +1245,9 @@ connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test
 connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-003	rewritten	161.9	extension after sandbox reset	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	B01
 connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-004	rewritten	40.1	extension after sandbox reset	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	pilot
 connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	connectors-native-app-authorization-005	rewritten	46.8	extension after sandbox reset	src/signals/routes/__tests__/connectors-native-app-authorization.test.ts	pilot
-connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-001	planned				
-connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-004	planned				
-connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-005	planned				
+connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-001	planned				B02
+connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-004	planned				B02
+connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-005	planned				B02
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-002	planned				
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-003	planned				
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-004	planned				
@@ -1413,8 +1413,8 @@ connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custo
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-003	planned				
 connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custom-connector-hostnames-004	planned				
 connectors	src/signals/routes/__tests__/custom-connector-network-execution.test.ts	custom-connector-network-execution-001	planned				
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-001	planned				
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-002	planned				
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-001	planned				B02
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-002	planned				B02
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-001	planned				
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-002	planned				
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-003	planned				
@@ -1615,14 +1615,14 @@ messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-005	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-006	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-user-deletion.test.ts	feishu-user-deletion-001	planned				
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-001	planned				
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-002	planned				
-billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-004	planned				
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-001	planned				B02
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-002	planned				B02
+billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-004	planned				B02
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-001	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-002	planned				
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-004	planned				
-account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-001	planned				
-account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-003	planned				
+account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-001	planned				B02
+account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-003	planned				B02
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-002	planned				
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-003	planned				
 account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-004	planned				
@@ -1637,8 +1637,8 @@ account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	gi
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-001	planned				
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-003	planned				
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-005	planned				
-account-org	src/signals/routes/__tests__/global-sweep-contracts.test.ts	global-sweep-contracts-001	planned				
-account-org	src/signals/routes/__tests__/global-sweep-contracts.test.ts	global-sweep-contracts-004	planned				
+account-org	src/signals/routes/__tests__/global-sweep-contracts.test.ts	global-sweep-contracts-001	planned				B02
+account-org	src/signals/routes/__tests__/global-sweep-contracts.test.ts	global-sweep-contracts-004	planned				B02
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-003	planned				
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-004	planned				
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-005	planned				
@@ -1872,8 +1872,8 @@ messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integ
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	rewritten	41.4		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	rewritten	7.6		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	planned		unfinished: out of time		B01
-messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-001	planned				
-messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-003	planned				
+messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-001	planned				B02
+messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-003	planned				B02
 messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-001	planned				
 messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-002	planned				
 messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-003	planned				
@@ -1939,10 +1939,10 @@ messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.t
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-039	planned				
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-043	planned				
 messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-045	planned				
-messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-001	planned				
-messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-004	planned				
-messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-005	planned				
-messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-006	planned				
+messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-001	planned				B02
+messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-004	planned				B02
+messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-005	planned				B02
+messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-006	planned				B02
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-001	rewritten	63.0		src/signals/routes/__tests__/integrations-slack.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-002	rewritten	75.0		src/signals/routes/__tests__/integrations-slack.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-slack.test.ts	integrations-slack-003	rewritten	153.4		src/signals/routes/__tests__/integrations-slack.test.ts	pilot
@@ -2135,17 +2135,17 @@ account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notificat
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-003	planned				
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-006	planned				
 account-org	src/signals/routes/__tests__/ios-notifications.test.ts	ios-notifications-007	planned				
-account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-001	planned				
-account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-002	planned				
+account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-001	planned				B02
+account-org	src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-002	planned				B02
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-001	planned				
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-004	planned				
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-006	planned				
 messaging	src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-007	planned				
-messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-002	planned				
-messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-004	planned				
-messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-006	planned				
-messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-008	planned				
-messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-010	planned				
+messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-002	planned				B02
+messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-004	planned				B02
+messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-006	planned				B02
+messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-008	planned				B02
+messaging	src/signals/routes/__tests__/lark-official.test.ts	lark-official-010	planned				B02
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-001	planned				
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-005	planned				
 messaging	src/signals/routes/__tests__/mail.test.ts	mail-006	planned				
@@ -2282,8 +2282,8 @@ account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	me
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-007	planned				
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-008	planned				
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-010	planned				
-account-org	src/signals/routes/__tests__/member-settings-lifecycle.test.ts	member-settings-lifecycle-001	planned				
-account-org	src/signals/routes/__tests__/member-settings-lifecycle.test.ts	member-settings-lifecycle-002	planned				
+account-org	src/signals/routes/__tests__/member-settings-lifecycle.test.ts	member-settings-lifecycle-001	planned				B02
+account-org	src/signals/routes/__tests__/member-settings-lifecycle.test.ts	member-settings-lifecycle-002	planned				B02
 account-org	src/signals/routes/__tests__/membership-refresh.test.ts	membership-refresh-002	planned				
 account-org	src/signals/routes/__tests__/membership-refresh.test.ts	membership-refresh-006	planned				
 account-org	src/signals/routes/__tests__/memory-publication-authorization.test.ts	memory-publication-authorization-001	planned				
@@ -2424,9 +2424,9 @@ artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	pre
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	rewritten	124.1		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-templates.test.ts	presentation-templates-001	planned				
 account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	preview-connector-catalog.catalog-generation-001	planned				
-artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-001	planned				
-artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-003	planned				
-artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-004	planned				
+artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-001	planned				B02
+artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-003	planned				B02
+artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-004	planned				B02
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-002	rewritten	167.7	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-003	rewritten	45.7	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-005	rewritten	32.2	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
@@ -2799,9 +2799,9 @@ messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-013	rewri
 messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-017	rewritten	26.1	extension after sandbox reset	src/signals/routes/__tests__/slack-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-018	rewritten	9.7	extension after sandbox reset	src/signals/routes/__tests__/slack-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/slack-oauth.test.ts	slack-oauth-021	rewritten	3.9	extension after sandbox reset	src/signals/routes/__tests__/slack-oauth.test.ts	pilot
-messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-001	planned				
-messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-002	planned				
-messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-006	planned				
+messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-001	planned				B02
+messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-002	planned				B02
+messaging	src/signals/routes/__tests__/slack-preview-image.test.ts	slack-preview-image-006	planned				B02
 remote-access	src/signals/routes/__tests__/ssh-access.test.ts	ssh-access-001	planned				
 remote-access	src/signals/routes/__tests__/ssh-access.test.ts	ssh-access-003	planned				
 remote-access	src/signals/routes/__tests__/ssh-access.test.ts	ssh-access-005	planned				
@@ -2815,12 +2815,12 @@ remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connectio
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-007	planned		extension after sandbox reset		pilot
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-008	planned		extension after sandbox reset		pilot
 remote-access	src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-009	planned		extension after sandbox reset		pilot
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-001	planned				
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-003	planned				
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-007	planned				
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-008	planned				
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-010	planned				
-remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-011	planned				
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-001	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-003	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-007	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-008	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-010	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-011	planned				B02
 remote-access	src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	ssh-credential-rotation-race-002	planned				
 remote-access	src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	ssh-credential-rotation-race-003	planned				
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-001	rewritten	23.9	extension after sandbox reset	src/signals/routes/__tests__/ssh-credentials.test.ts	pilot
@@ -2830,17 +2830,17 @@ remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentia
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-006	rewritten	75.0	extension after sandbox reset	src/signals/routes/__tests__/ssh-credentials.test.ts	pilot
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-007	rewritten	11.9	extension after sandbox reset	src/signals/routes/__tests__/ssh-credentials.test.ts	pilot
 remote-access	src/signals/routes/__tests__/ssh-credentials.test.ts	ssh-credentials-008	rewritten	39.8	extension after sandbox reset	src/signals/routes/__tests__/ssh-credentials.test.ts	pilot
-remote-access	src/signals/routes/__tests__/ssh-host-key-cas.test.ts	ssh-host-key-cas-001	planned				
-remote-access	src/signals/routes/__tests__/ssh-host-key-cas.test.ts	ssh-host-key-cas-003	planned				
+remote-access	src/signals/routes/__tests__/ssh-host-key-cas.test.ts	ssh-host-key-cas-001	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-host-key-cas.test.ts	ssh-host-key-cas-003	planned				B02
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-001	skipped		slow-setup: full Given (13 owner resources across 3 actors, VNC over 2 SSH tunnels) plus leave, 3 webhook cleanups and ~25 verification reads measured 511-570 ms for the webhook variant even with parallel setup; this case adds POST /api/org/leave on top		pilot
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-002	skipped		slow-setup: same fixture and verification as 003 (measured 511-570 ms even with parallel setup) plus DELETE /api/org/members; cannot drop required checks to reach 200 ms		pilot
 remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-member-lifecycle-003	skipped		slow-setup: written and passing but measured 511 ms and 570 ms (parallel setup), still a lower bound because the Kerberos KDC tunnel was simplified; 3 sequential Clerk webhook cleanups and ~40 requests are inherent to the case		pilot
-remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-001	planned				
-remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-002	planned				
-remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-005	planned				
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-003	planned				
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-004	planned				
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-005	planned				
+remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-001	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-002	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-005	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-003	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-004	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-005	planned				B02
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-003	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-007	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-008	planned				
@@ -2849,16 +2849,16 @@ account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	sto
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-012	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-014	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-015	planned				
-billing	src/signals/routes/__tests__/stripe-connect-events.test.ts	stripe-connect-events-001	planned				
-billing	src/signals/routes/__tests__/stripe-connect-events.test.ts	stripe-connect-events-003	planned				
+billing	src/signals/routes/__tests__/stripe-connect-events.test.ts	stripe-connect-events-001	planned				B02
+billing	src/signals/routes/__tests__/stripe-connect-events.test.ts	stripe-connect-events-003	planned				B02
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-002	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-003	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-004	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-006	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-009	planned				
 billing	src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-010	planned				
-billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-001	planned				
-billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-003	planned				
+billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-001	planned				B02
+billing	src/signals/routes/__tests__/subscription-credit-balances.test.ts	subscription-credit-balances-003	planned				B02
 billing	src/signals/routes/__tests__/subscription-deletion.test.ts	subscription-deletion-001	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-001	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-002	planned				
@@ -2944,8 +2944,8 @@ messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-010	rewri
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-011	rewritten	19.7	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-013	rewritten	70.4	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-017	rewritten	39.9	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
-messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-001	planned				
-messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-002	planned				
+messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-001	planned				B02
+messaging	src/signals/routes/__tests__/teams-route-ownership.test.ts	teams-route-ownership-002	planned				B02
 messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-001	planned				
 messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-002	planned				
 messaging	src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-005	planned				
@@ -3483,12 +3483,12 @@ workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-002	rewritten	98.8	extension after sandbox reset	src/signals/routes/__tests__/workflow-recency.test.ts	pilot
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-003	rewritten	79.2	extension after sandbox reset	src/signals/routes/__tests__/workflow-recency.test.ts	pilot
 workflows	src/signals/routes/__tests__/workflow-recency.test.ts	workflow-recency-007	rewritten	91.5	extension after sandbox reset	src/signals/routes/__tests__/workflow-recency.test.ts	pilot
-workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-001	planned				
-workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-002	planned				
-workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-007	planned				
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-001	planned				
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-002	planned				
-workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-005	planned				
+workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-001	planned				B02
+workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-002	planned				B02
+workflows	src/signals/routes/__tests__/workflow-webhook-lock.test.ts	workflow-webhook-lock-007	planned				B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-001	planned				B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-002	planned				B02
+workflows	src/signals/routes/__tests__/workflows-creation.test.ts	workflows-creation-005	planned				B02
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-001	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-002	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-004	planned				
@@ -3514,5 +3514,5 @@ workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-038	planned
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-040	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-041	planned				
 workflows	src/signals/routes/__tests__/workflows.test.ts	workflows-050	planned				
-workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-001	planned				
-workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-002	planned				
+workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-001	planned				B02
+workflows	src/signals/routes/__tests__/workspace-workflow-permissions.test.ts	workspace-workflow-permissions-002	planned				B02
