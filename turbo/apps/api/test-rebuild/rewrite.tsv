@@ -2266,9 +2266,9 @@ account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.tes
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-005	rewritten	179.0		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-006	rewritten	188.1		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-007	rewritten	181.5		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
-account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-003	planned				B04
-account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-004	planned				B04
-account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-006	planned				B04
+account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-003	rewritten	92.7		src/signals/routes/__tests__/me-model-providers-delete.test.ts	B04
+account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-004	rewritten	43.0		src/signals/routes/__tests__/me-model-providers-delete.test.ts	B04
+account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-006	rewritten	40.2		src/signals/routes/__tests__/me-model-providers-delete.test.ts	B04
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-003	rewritten	86.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-004	rewritten	40.5	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
 account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-006	rewritten	58.0	unfinished: out of time	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	B01
