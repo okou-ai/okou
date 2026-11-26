@@ -3385,7 +3385,7 @@ webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-018	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events		pilot
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-019	planned		unfinished: out of time		B01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	planned		unfinished: out of time		B01
-webhooks	src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	webhooks-stripe-credit-purchase-001	planned				B03
+webhooks	src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	webhooks-stripe-credit-purchase-001	rewritten	169.4		src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	B03
 webhooks	src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-001	planned				
 webhooks	src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-001	planned				
 webhooks	src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-003	planned				
