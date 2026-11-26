@@ -1803,25 +1803,25 @@ messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integ
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-042	planned					b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	planned					b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-001	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-002	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-003	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-004	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-010	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-011	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-012	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-013	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-014	planned				B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-001	rewritten	7.1		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-002	rewritten	7.3		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-003	rewritten	8.4		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-004	rewritten	5.2		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-010	rewritten	6.1		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-011	rewritten	7.1		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-012	rewritten	7.7		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-013	rewritten	6.9		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-014	rewritten	7.2		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-017	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-018	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-020	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-021	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-031	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-032	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-033	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-034	planned				B12	b-install
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-035	planned				B12	d-other
-messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-038	planned				B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-018	rewritten	7.0		src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-020	rewritten	62.5		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-021	rewritten	56.4		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-031	rewritten	121.5		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-032	skipped		slow-setup: Given+first When/Then 219 ms and 251 ms (three public Discord OAuth bindings 139/157 ms, about 50 ms each; four CLI device-flow sign-ins 47/49 ms)		B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-033	rewritten	52.3		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-034	rewritten	129.2		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-035	rewritten	169.4	split n=3: 1/3=169.4; 2/3=156.3; 3/3=151.5	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-038	rewritten	167.4		src/signals/routes/__tests__/integrations-discord.test.ts	B12	b-install
 messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-001	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-002	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-003	planned					d-other
