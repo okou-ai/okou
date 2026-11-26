@@ -45,7 +45,12 @@ import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
-import { joinAllInOrder, settle, settleIncludingAbort } from "../utils";
+import {
+  createDeferredPromise,
+  joinAllInOrder,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
 
 export interface OrgPickCursor {
   readonly queuedAt: Date;
@@ -471,6 +476,7 @@ function createPickObjects() {
       preparation: Awaited<
         ReturnType<(typeof prepareDirectRunDispatch$)["write"]>
       >,
+      resolveFirstPostHandoff: (() => void) | undefined,
       signal: AbortSignal,
     ) => {
       if (preparation.kind === "failed") {
@@ -481,7 +487,11 @@ function createPickObjects() {
       waitUntil(
         set(publishDirectRunCache$, preparation.cachePublication, signal),
       );
-      return set(dispatchPreparedRun$, preparation.delivery, signal);
+      return set(
+        dispatchPreparedRun$,
+        { ...preparation.delivery, resolveFirstPostHandoff },
+        signal,
+      );
     },
   );
 
@@ -490,6 +500,7 @@ function createPickObjects() {
     async (
       { get, set },
       claim: LeasedThreadClaim,
+      resolveFirstPostHandoff: (() => void) | undefined,
       signal: AbortSignal,
     ): Promise<PickResult> => {
       signal.throwIfAborted();
@@ -555,19 +566,20 @@ function createPickObjects() {
         : null;
       const pending = await awaitPendingAdmission(admitted);
       signal.throwIfAborted();
-      // Admission can append a claim or a public rejection. This pick owns
-      // publication for its captured thread, independently of Runner dispatch.
-      waitUntil(
-        set(
-          projectCommittedChatThreadSearch$,
-          {
-            userId: claim.userId,
-            orgId: claim.orgId,
-            threadId: claim.chatThreadId,
-          },
-          signal,
-        ),
-      );
+      // A standalone pick publishes its own committed claim or rejection.
+      if (!resolveFirstPostHandoff) {
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: claim.userId,
+              orgId: claim.orgId,
+              threadId: claim.chatThreadId,
+            },
+            signal,
+          ),
+        );
+      }
       if (!admitted || !pending) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
@@ -602,6 +614,7 @@ function createPickObjects() {
       const dispatched = await set(
         deliverPickedRun$,
         dispatchPreparation,
+        resolveFirstPostHandoff,
         signal,
       );
       signal.throwIfAborted();
@@ -624,11 +637,47 @@ function createPickObjects() {
       signal: AbortSignal,
     ): Promise<PickIteration> => {
       signal.throwIfAborted();
-      const { claim, cursor } = await set(claim$, input, signal);
-      return {
-        result: claim ? await set(pickClaim$, claim, signal) : { kind: "none" },
-        cursor,
-      };
+      const enqueued = input.requestInput;
+      const resolveFirstPostHandoff = (() => {
+        if (!enqueued) {
+          return undefined;
+        }
+        // This pick can publish both its initiating enqueue and the claim.
+        const handoff = createDeferredPromise<void>(signal);
+        waitUntil(
+          (async () => {
+            await handoff.promise;
+            signal.throwIfAborted();
+            await set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: enqueued.userId,
+                orgId: enqueued.orgId,
+                threadId: enqueued.chatThreadId,
+              },
+              signal,
+            );
+          })(),
+        );
+        return () => {
+          if (!handoff.settled()) {
+            handoff.resolve(undefined);
+          }
+        };
+      })();
+      const picked = (async (): Promise<PickIteration> => {
+        const { claim, cursor } = await set(claim$, input, signal);
+        return {
+          result: claim
+            ? await set(pickClaim$, claim, resolveFirstPostHandoff, signal)
+            : { kind: "none" },
+          cursor,
+        };
+      })();
+      // Release the same job when the pick exits before a POST.
+      return resolveFirstPostHandoff
+        ? await picked.finally(resolveFirstPostHandoff)
+        : await picked;
     },
   );
   return { pick$ };
