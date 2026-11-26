@@ -194,11 +194,11 @@ artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-cat
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-026	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-030	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-031	planned				
-artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-001	planned				B01
-artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-003	planned				B01
+artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-001	skipped		slow-setup: the /files step needs a Run token with host:read, only issued by a dispatched chat Run (240-790 ms setup)		B01
+artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-003	skipped		slow-setup: Pro entitlement (Stripe invoice webhook) + org membership + artifact upload/complete + owner resolve already measured 202 ms before the first share; the case still needs org share, two downloads/resolves, public share copy and unshare		B01
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-007	rewritten	131.2		src/signals/routes/__tests__/artifact-downloads.test.ts	pilot
-artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-008	planned				B01
-artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-009	planned				B01
+artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-008	skipped		slow-setup: agent input resolution needs a Run token with file:read, only issued by a dispatched chat Run (240-790 ms setup)		B01
+artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-009	skipped		slow-setup: agent input resolution needs a Run token with file:read, only issued by a dispatched chat Run (240-790 ms setup)		B01
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-001	planned		extension after sandbox reset		pilot
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-002	planned		extension after sandbox reset		pilot
 artifacts	src/signals/routes/__tests__/artifact-paywall.test.ts	artifact-paywall-001	planned				
@@ -254,19 +254,19 @@ account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-005	rewritten	8.8		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-007	rewritten	66.9		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-012	rewritten	90.5		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-014	planned				B01
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-014	skipped		slow-setup: five sequential Codex device-auth connects plus activate/reset/deletes and four list reads measure 267 ms in-file (each connect ~33 ms)		B01
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-015	rewritten	159.6		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-016	rewritten	107.7		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-017	rewritten	142.7		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
-account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	planned				B01
+account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-018	skipped		slow-setup: twenty-two sequential device-auth connects (eleven Codex, eleven Claude Code) measure 784 ms		B01
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-019	rewritten	51.9		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-device.bdd.test.ts	auth-device.bdd-020	rewritten	42.2		src/signals/routes/__tests__/auth-device.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-001	planned				
 account-org	src/signals/routes/__tests__/auth-me.test.ts	auth-me-002	planned				
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	rewritten	196.4		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	182.6		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
-account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned				B01
-account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	planned				B01
+account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	planned		unfinished: out of time		B01
+account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	planned		unfinished: out of time		B01
 account-org	src/signals/routes/__tests__/auto-run-routing.test.ts	auto-run-routing-001	planned				
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-001	planned				pilot
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-002	planned				pilot
@@ -288,11 +288,11 @@ account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook
 account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-014	rewritten	51.8		src/signals/routes/__tests__/banking-webhook.test.ts	pilot
 account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-018	rewritten	83.2		src/signals/routes/__tests__/banking-webhook.test.ts	pilot
 account-org	src/signals/routes/__tests__/banking-webhook.test.ts	banking-webhook-019	rewritten	30.6		src/signals/routes/__tests__/banking-webhook.test.ts	pilot
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-002	planned				B01
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-003	planned				B01
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-004	planned				B01
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-006	planned				B01
-account-org	src/signals/routes/__tests__/banking.test.ts	banking-007	planned				B01
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-002	skipped		slow-setup: account read needs an agent (Okou Run) token from a dispatched chat Run of a Pro member; only public path costs 240-790 ms setup		B01
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-003	skipped		slow-setup: balance denial needs an agent (Okou Run) token from a dispatched chat Run of a Pro member; only public path costs 240-790 ms setup		B01
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-004	skipped		slow-setup: balance read needs an agent (Okou Run) token from a dispatched chat Run of a Pro member; only public path costs 240-790 ms setup		B01
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-006	skipped		slow-setup: needs a Team member Run started by an event automation carrying an Okou token; dispatched Run setup alone costs 240-790 ms		B01
+account-org	src/signals/routes/__tests__/banking.test.ts	banking-007	skipped		slow-setup: transaction read needs an agent (Okou Run) token from a dispatched chat Run of a Pro member; only public path costs 240-790 ms setup		B01
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-008	rewritten	122.7		src/signals/routes/__tests__/banking.test.ts	pilot
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-010	rewritten	170.8		src/signals/routes/__tests__/banking.test.ts	pilot
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-013	rewritten	129.0		src/signals/routes/__tests__/banking.test.ts	pilot
@@ -691,18 +691,18 @@ chat	src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	chat-callbacks.bdd-
 chat	src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	chat-callbacks.bdd-076	planned				
 chat	src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	chat-callbacks.bdd-079	planned				
 chat	src/signals/routes/__tests__/chat-callbacks.bdd.test.ts	chat-callbacks.bdd-080	planned				
-chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-001	planned				B01
-chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-005	planned				B01
-chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-006	planned				B01
+chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-001	skipped		slow-setup: public scenario needs 7 dependent request phases (Chat, two OpenAI accounts, no-auth custom connector + member values, current/override, 5 reads, second connector, deletes); measured 200-306 ms without warm-up after parallelising; draft kept at /home/user/pilot-env/wip/chat-connector-access-001-overbudget.draft.ts		B01
+chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-005	revisit		revisit: written in batch B01 but not accepted (passed, 212 ms in the local acceptance batch; the file also has chat-connector-access-005:212 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/chat-connector-access.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+chat	src/signals/routes/__tests__/chat-connector-access.test.ts	chat-connector-access-006	skipped		slow-setup: real Run credential needs a dispatched chat Run of a Pro member (runner group, entitlement, model); only public path costs 240-790 ms setup		B01
 chat	src/signals/routes/__tests__/chat-connector-execution.test.ts	chat-connector-execution-002	planned				pilot
 chat	src/signals/routes/__tests__/chat-connector-execution.test.ts	chat-connector-execution-004	planned				pilot
 chat	src/signals/routes/__tests__/chat-connector-execution.test.ts	chat-connector-execution-005	planned				pilot
 chat	src/signals/routes/__tests__/chat-connector-execution.test.ts	chat-connector-execution-006	planned				pilot
 chat	src/signals/routes/__tests__/chat-connector-execution.test.ts	chat-connector-execution-007	planned				pilot
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-001	planned				B01
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-002	planned				B01
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	planned				B01
-chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	planned				B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-001	skipped		slow-setup: real Slack install + app_mention delivery via shared createPublicAnnotationIngress (runner group, Pro entitlement, model, run launch/cancel) measured 854-1007 ms; no lighter public ingress path		B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-002	skipped		slow-setup: real Feishu setup + browser-connect OAuth + encrypted event via createPublicAnnotationIngress measured 630-681 ms		B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-003	skipped		slow-setup: real Teams install + account connect + channel activity via createPublicAnnotationIngress measured 426-465 ms		B01
+chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	skipped		slow-setup: real Telegram account link + supergroup webhook via createPublicAnnotationIngress (runner/entitlement setup and run launch) measured 327-358 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	152.3		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
 chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	planned				
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned				pilot
@@ -1089,25 +1089,25 @@ browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-0
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-025	planned				
 connectors	src/signals/routes/__tests__/connected-connectors-accounts.test.ts	connected-connectors-accounts-001	planned				
 connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-003	skipped		slow-setup: about 15 sequential public requests (CLI device sign-in, manual grants, custom connector, defaults and deletions) measured 190-290 ms across runs; CI file average 196 ms, unstable at the 200 ms limit		pilot
-connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-004	planned				B01
+connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-004	skipped		slow-setup: needs the Run OKOU_TOKEN and sandbox token of a dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-005	skipped		slow-setup: about 15 sequential public requests (CLI device sign-in, manual grants, custom connector, defaults and deletions) measured 190-290 ms across runs; CI file average 196 ms, unstable at the 200 ms limit		pilot
 connectors	src/signals/routes/__tests__/connector-account-default-wakeups.test.ts	connector-account-default-wakeups-001	planned				
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-003	rewritten	128.5		src/signals/routes/__tests__/connector-account-detail.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-005	rewritten	67.5		src/signals/routes/__tests__/connector-account-detail.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-account-detail.test.ts	connector-account-detail-006	rewritten	114.0		src/signals/routes/__tests__/connector-account-detail.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-003	rewritten	126.8		src/signals/routes/__tests__/connector-account-scope-diff.test.ts	pilot
-connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-004	planned				B01
+connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-004	revisit		revisit: written in batch B01 but not accepted (passed, 224 ms in the local acceptance batch; the file also has connector-account-scope-diff-004:224 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-account-scope-diff.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 connectors	src/signals/routes/__tests__/connector-account-scope-diff.test.ts	connector-account-scope-diff-005	rewritten	126.2		src/signals/routes/__tests__/connector-account-scope-diff.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-002	rewritten	181.9		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-003	rewritten	96.5		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-004	rewritten	89.0		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
-connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-005	planned				B01
+connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-005	skipped		slow-setup: needs a dispatched Runner Run credential for /api/connector-accounts/inspect; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-007	rewritten	155.3		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-009	rewritten	180.4		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-010	rewritten	108.2		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-017	rewritten	79.0		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
-connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-018	planned				B01
-connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-019	planned				B01
+connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-018	skipped		slow-setup: needs 101 no-auth MCP accounts created one by one through the public connect API (no bulk public path); a single no-auth account case already measures 77-168 ms		B01
+connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-019	skipped		slow-setup: needs 101 no-auth MCP accounts created one by one through the public connect API (no bulk public path); a single no-auth account case already measures 77-168 ms		B01
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-021	rewritten	72.0		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-022	rewritten	122.5		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-024	rewritten	134.4		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
@@ -1130,19 +1130,19 @@ connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-cata
 connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-029	planned				
 connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-031	planned				
 connectors	src/signals/routes/__tests__/connector-check.stored-accounts.test.ts	connector-check.stored-accounts-002	planned				
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-001	planned				B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-001	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-005	rewritten	136.7		src/signals/routes/__tests__/connector-check.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-009	rewritten	84.6		src/signals/routes/__tests__/connector-check.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-010	rewritten	105.2		src/signals/routes/__tests__/connector-check.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-011	rewritten	141.1		src/signals/routes/__tests__/connector-check.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-012	rewritten	186.8		src/signals/routes/__tests__/connector-check.test.ts	pilot
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-014	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-015	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-016	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-020	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-022	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-024	planned				B01
-connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-026	planned				B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-014	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-015	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-016	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-020	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-022	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-024	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
+connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-026	skipped		slow-setup: diagnostics are checked with the Run token of an active/dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connector-device-auth-claim-awaiting.test.ts	connector-device-auth-claim-awaiting-001	planned				
 connectors	src/signals/routes/__tests__/connector-device-auth-claim-terminal.test.ts	connector-device-auth-claim-terminal-005	planned				
 connectors	src/signals/routes/__tests__/connector-device-auth-completed-replay.test.ts	connector-device-auth-completed-replay-001	planned				
@@ -1163,14 +1163,14 @@ connectors	src/signals/routes/__tests__/connector-grant-identity.test.ts	connect
 connectors	src/signals/routes/__tests__/connector-grant-identity.test.ts	connector-grant-identity-004	planned				pilot
 connectors	src/signals/routes/__tests__/connector-grant-identity.test.ts	connector-grant-identity-005	planned				pilot
 connectors	src/signals/routes/__tests__/connector-grant-identity.test.ts	connector-grant-identity-007	planned				pilot
-connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-001	planned				B01
-connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-002	planned				B01
-connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-005	planned				B01
+connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-001	revisit		revisit: written in batch B01 but not accepted (passed, 266 ms in the local acceptance batch; the file also has connector-oauth-completion-001:266 connector-oauth-completion-002:256 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-oauth-completion.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-002	revisit		revisit: written in batch B01 but not accepted (passed, 256 ms in the local acceptance batch; the file also has connector-oauth-completion-001:266 connector-oauth-completion-002:256 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-oauth-completion.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+connectors	src/signals/routes/__tests__/connector-oauth-completion.test.ts	connector-oauth-completion-005	revisit		revisit: written in batch B01 but not accepted (passed, 166 ms in the local acceptance batch; the file also has connector-oauth-completion-001:266 connector-oauth-completion-002:256 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-oauth-completion.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 connectors	src/signals/routes/__tests__/connector-permissions.expiration.test.ts	connector-permissions.expiration-001	planned				
-connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-002	planned				B01
-connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-003	planned				B01
-connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-004	planned				B01
-connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-005	planned				B01
+connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-002	revisit		revisit: written in batch B01 but not accepted (passed, 216 ms in the local acceptance batch; the file also has connector-permissions-002:216 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-permissions.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-003	revisit		revisit: written in batch B01 but not accepted (passed, 197 ms in the local acceptance batch; the file also has connector-permissions-002:216 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-permissions.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-004	revisit		revisit: written in batch B01 but not accepted (passed, 191 ms in the local acceptance batch; the file also has connector-permissions-002:216 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/connector-permissions.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-005	skipped		slow-setup: needs the Run OKOU_TOKEN of a dispatched chat Run to attempt the write; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connector-required-entries.test.ts	connector-required-entries-001	planned				
 connectors	src/signals/routes/__tests__/connector-run-failure-isolation.test.ts	connector-run-failure-isolation-002	planned				
 connectors	src/signals/routes/__tests__/connector-runtime-placeholders.test.ts	connector-runtime-placeholders-001	planned				
@@ -1602,13 +1602,13 @@ messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-me
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-010	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-011	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-message-delivery.test.ts	feishu-message-delivery-012	planned				pilot
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-001	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-002	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-003	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-004	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-005	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-008	planned				B01
-messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-010	planned				B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-001	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-002	revisit		revisit: written in batch B01 but not accepted (passed, 208 ms in the local acceptance batch; the file also has feishu-oauth-events-002:208 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/feishu-oauth-events.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-003	revisit		revisit: written in batch B01 but not accepted (passed, 150 ms in the local acceptance batch; the file also has feishu-oauth-events-002:208 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/feishu-oauth-events.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-004	revisit		revisit: written in batch B01 but not accepted (passed, 197 ms in the local acceptance batch; the file also has feishu-oauth-events-002:208 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/feishu-oauth-events.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-005	revisit		revisit: written in batch B01 but not accepted (passed, 89 ms in the local acceptance batch; the file also has feishu-oauth-events-002:208 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/feishu-oauth-events.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-008	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/feishu-oauth-events.test.ts	feishu-oauth-events-010	revisit		revisit: written in batch B01 but not accepted (passed, 143 ms in the local acceptance batch; the file also has feishu-oauth-events-002:208 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/feishu-oauth-events.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 messaging	src/signals/routes/__tests__/feishu-oauth-state.test.ts	feishu-oauth-state-002	planned				
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-001	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-004	planned				pilot
@@ -1642,8 +1642,8 @@ account-org	src/signals/routes/__tests__/global-sweep-contracts.test.ts	global-s
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-003	planned				
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-004	planned				
 account-org	src/signals/routes/__tests__/hooks-ops.bdd.test.ts	hooks-ops.bdd-005	planned				
-artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-001	planned		extension after sandbox reset		B01
-artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-002	planned		extension after sandbox reset		B01
+artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-001	skipped		slow-setup: 335-396 ms in-file even after a lighter case ran first (deployment, delivery and storage deletion flow)		B01
+artifacts	src/signals/routes/__tests__/host-delete.bdd.test.ts	host-delete.bdd-002	revisit		revisit: the only test in its file and 236 ms run alone, all of it first-test warm-up (115-131 ms when not first); resume: merge it into host.bdd.test.ts behind a lighter first case		B01
 artifacts	src/signals/routes/__tests__/host-delivery-authorization.test.ts	host-delivery-authorization-004	planned				
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-001	planned				pilot
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-003	planned				pilot
@@ -1651,13 +1651,13 @@ artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-005	pla
 artifacts	src/signals/routes/__tests__/host-preview.test.ts	host-preview-008	planned				pilot
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-002	rewritten	98.7		src/signals/routes/__tests__/host.bdd.test.ts	pilot
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-004	rewritten	142.4		src/signals/routes/__tests__/host.bdd.test.ts	pilot
-artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-006	planned				B01
+artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-006	planned		unfinished: out of time		B01
 artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-007	rewritten	116.8		src/signals/routes/__tests__/host.bdd.test.ts	pilot
-artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-008	planned				B01
+artifacts	src/signals/routes/__tests__/host.bdd.test.ts	host.bdd-008	planned		unfinished: out of time		B01
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-001	rewritten	140.7		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-004	rewritten	129.1		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-005	rewritten	68.5		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
-artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-007	planned				B01
+artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-007	skipped		slow-setup: Pro owner plus publish, banner/visibility reads, anonymous banner deliveries for both aliases, two PATCHes and a redeploy measure 214-313 ms even with independent reads run concurrently		B01
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-008	rewritten	79.1		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-010	rewritten	120.5		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-011	rewritten	100.1		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot
@@ -1857,21 +1857,21 @@ messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-e
 messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-072	planned				
 messaging	src/signals/routes/__tests__/integrations-email.test.ts	integrations-email-074	planned				
 messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-001	rewritten	23.5		src/signals/routes/__tests__/integrations-feishu-message.test.ts	pilot
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-002	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-003	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-004	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-005	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-007	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-010	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-013	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-014	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-017	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-019	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-021	planned				B01
-messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-025	planned				B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-002	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-003	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-004	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-005	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-007	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-010	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-013	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-014	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-017	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-019	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-021	planned		unfinished: out of time		B01
+messaging	src/signals/routes/__tests__/integrations-feishu-message.test.ts	integrations-feishu-message-025	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-001	rewritten	41.4		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-003	rewritten	7.6		src/signals/routes/__tests__/integrations-github-files.test.ts	pilot
-messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	planned				B01
+messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	planned		unfinished: out of time		B01
 messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-001	planned				
 messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-003	planned				
 messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-001	planned				
@@ -2341,7 +2341,7 @@ account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	rewri
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	rewritten	9.2	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-006	rewritten	38.9	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	rewritten	69.5	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	planned		extension after sandbox reset		B01
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	revisit		revisit: upstream removed GET /api/cron/sync-official-workflow-catalog, so Suggestions report status preparing instead of enabled; evidence: route absent from contracts after the main merge; resume: confirm how the built-in workflow catalog syncs now and update the BDD Then if behaviour changed		B01
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewritten	34.1	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	36.8	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	55.9	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
@@ -2414,7 +2414,7 @@ browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-002	rewritten	8
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-006	rewritten	114.2		src/signals/routes/__tests__/phone-use.test.ts	pilot
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-007	rewritten	55.5		src/signals/routes/__tests__/phone-use.test.ts	pilot
 browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-009	rewritten	92.1		src/signals/routes/__tests__/phone-use.test.ts	pilot
-browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-010	planned				B01
+browser	src/signals/routes/__tests__/phone-use.test.ts	phone-use-010	skipped		slow-setup: every phase needs Okou tokens from real Runs dispatched in the member's thread (several Runs: grant capture, replaced grant, post-stop and post-re-registration Runs); one dispatched chat Run alone costs 240-790 ms setup		B01
 chat	src/signals/routes/__tests__/pi-memory-recall.test.ts	pi-memory-recall-001	planned				
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-001	rewritten	120.4		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-003	rewritten	186.6		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
@@ -2708,15 +2708,15 @@ chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-threa
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-005	planned		extension after sandbox reset		pilot
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-008	planned		extension after sandbox reset		pilot
 chat	src/signals/routes/__tests__/shared-thread-attachments.test.ts	shared-thread-attachments-010	planned		extension after sandbox reset		pilot
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-001	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-006	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-011	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-012	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-013	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-014	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-015	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-016	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-017	planned		extension after sandbox reset		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-001	planned		unfinished: out of time		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-006	planned		unfinished: out of time		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-011	revisit		revisit: written in batch B01 but not accepted (passed, 87 ms in the local acceptance batch; the file also has shared-threads-013:262 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/shared-threads.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-012	planned		unfinished: out of time (test drafted with a 2 MiB selected message expecting 413 SHARED_THREAD_TOO_LARGE and no title request, but the run never got the Vitest lock before the hard stop; removed unverified)		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-013	revisit		revisit: written in batch B01 but not accepted (failed, 262 ms in the local acceptance batch; the file also has shared-threads-013:262 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/shared-threads.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-014	revisit		revisit: written in batch B01 but not accepted (passed, 182 ms in the local acceptance batch; the file also has shared-threads-013:262 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/shared-threads.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-015	planned		unfinished: out of time		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-016	planned		unfinished: out of time		B01
+chat	src/signals/routes/__tests__/shared-threads.test.ts	shared-threads-017	planned		unfinished: out of time		B01
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-001	rewritten	128.0	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-002	rewritten	30.1	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-003	rewritten	6.3	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
@@ -2729,7 +2729,7 @@ workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-014	rewritten	42.5	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-018	rewritten	74.5	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-024	rewritten	32.4	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
-workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	planned		extension after sandbox reset		B01
+workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-026	revisit		revisit: an expired import token was produced by re-implementing the production token signer in the test, which counts as a self-signed credential; evidence: the draft signed HS256 with the HKDF of SECRETS_ENCRYPTION_KEY; resume: issue the token through the real session route under mockNow two hours earlier, then read it back after moving the clock		B01
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-028	rewritten	6.0	extension after sandbox reset	src/signals/routes/__tests__/skill-import.bdd.test.ts	pilot
 workflows	src/signals/routes/__tests__/skill-import.bdd.test.ts	skill-import.bdd-029	skipped		slow-setup: needs 52 real uploads through the session cap; measured 2554 ms per test		pilot
 messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-001	planned				
@@ -2748,9 +2748,9 @@ messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	sl
 messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	planned				
 messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-027	planned				
 messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-031	planned				
-messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-001	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-003	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-004	planned		extension after sandbox reset		B01
+messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-001	skipped		slow-setup: two production Slack OAuth installs plus a member connect flow before six channel reads; measured 224-226 ms with the light case running first		B01
+messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-003	revisit		revisit: written in batch B01 but not accepted (passed, 103 ms in the local acceptance batch; the file also has slack-channels-004:212 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-channels.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-004	revisit		revisit: written in batch B01 but not accepted (passed, 212 ms in the local acceptance batch; the file also has slack-channels-004:212 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-channels.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-002	planned				
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-003	planned				
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-004	planned				
@@ -2761,23 +2761,23 @@ messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-013	p
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-015	planned				
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-016	planned				
 messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-020	planned				
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-001	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-002	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-003	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-005	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-007	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-008	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-010	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-014	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-015	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-016	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-017	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-018	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-023	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-024	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-025	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-027	planned		extension after sandbox reset		B01
-messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-031	planned		extension after sandbox reset		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-001	revisit		revisit: written in batch B01 but not accepted (passed, 282 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-002	revisit		revisit: written in batch B01 but not accepted (passed, 168 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-003	revisit		revisit: written in batch B01 but not accepted (passed, 190 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-005	revisit		revisit: written in batch B01 but not accepted (passed, 243 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-007	revisit		revisit: written in batch B01 but not accepted (passed, 69 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-008	revisit		revisit: written in batch B01 but not accepted (passed, 69 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-010	skipped		slow-setup: three production Slack OAuth installs (entry org, third org, own org), an uninstall event and an external-bot connect before about twelve checked calls; one install plus two connect flows (005) already measures 160 ms		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-014	revisit		revisit: written in batch B01 but not accepted (passed, 135 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-015	revisit		revisit: written in batch B01 but not accepted (passed, 213 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-016	revisit		revisit: written in batch B01 but not accepted (passed, 258 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-017	revisit		revisit: written in batch B01 but not accepted (passed, 113 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-018	revisit		revisit: written in batch B01 but not accepted (passed, 188 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-023	revisit		revisit: written in batch B01 but not accepted (passed, 174 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-024	revisit		revisit: written in batch B01 but not accepted (passed, 151 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-025	revisit		revisit: written in batch B01 but not accepted (passed, 104 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-027	revisit		revisit: written in batch B01 but not accepted (passed, 192 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-031	revisit		revisit: written in batch B01 but not accepted (passed, 59 ms in the local acceptance batch; the file also has slack-connector-oauth-001:282 slack-connector-oauth-016:258 slack-connector-oauth-005:243 slack-connector-oauth-015:213 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/slack-connector-oauth.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 messaging	src/signals/routes/__tests__/slack-link-unfurl.test.ts	slack-link-unfurl-001	planned				
 messaging	src/signals/routes/__tests__/slack-link-unfurl.test.ts	slack-link-unfurl-002	planned				
 messaging	src/signals/routes/__tests__/slack-link-unfurl.test.ts	slack-link-unfurl-003	planned				
@@ -3087,8 +3087,8 @@ remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configu
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-042	planned				
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-043	planned				
 remote-access	src/signals/routes/__tests__/vnc-configuration.test.ts	vnc-configuration-049	planned				
-remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-001	planned		extension after sandbox reset		B01
-remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-003	planned		extension after sandbox reset		B01
+remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-001	planned		unfinished: out of time		B01
+remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-003	planned		unfinished: out of time		B01
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-007	rewritten	195.3	extension after sandbox reset	src/signals/routes/__tests__/vnc-lifecycle.test.ts	pilot
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-008	rewritten	151.8	extension after sandbox reset	src/signals/routes/__tests__/vnc-lifecycle.test.ts	pilot
 remote-access	src/signals/routes/__tests__/vnc-lifecycle.test.ts	vnc-lifecycle-009	rewritten	72.7	extension after sandbox reset	src/signals/routes/__tests__/vnc-lifecycle.test.ts	pilot
@@ -3323,14 +3323,14 @@ webhooks	src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts	webhooks-ca
 webhooks	src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts	webhooks-callbacks.bdd-066	planned				
 webhooks	src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts	webhooks-callbacks.bdd-067	planned				
 webhooks	src/signals/routes/__tests__/webhooks-callbacks.bdd.test.ts	webhooks-callbacks.bdd-068	planned				
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-002	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-003	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-006	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-007	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-008	planned				B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-002	skipped		slow-setup: even without plan entitlement, workflow creation plus the public GitHub App install flow measured 247 ms before the webhook delivery		B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-003	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-006	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-007	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-008	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
 webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-010	rewritten	24.5		src/signals/routes/__tests__/webhooks-github-workflow.test.ts	pilot
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-013	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-014	planned				B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-013	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
+webhooks	src/signals/routes/__tests__/webhooks-github-workflow.test.ts	webhooks-github-workflow-014	skipped		slow-setup: needs a Pro-entitled workflow owner (Stripe invoice webhook + personal model) plus the full GitHub App install flow and a dispatched automation Run; setup alone measured 478 ms before the delivery		B01
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-006	planned				
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-007	planned				
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-009	planned				
@@ -3342,17 +3342,17 @@ webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-018	
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-019	planned				
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-021	planned				
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-022	planned				
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-005	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-006	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-007	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-008	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-009	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-011	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-016	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-017	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-018	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-019	planned				B01
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-021	planned				B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-005	revisit		revisit: written in batch B01 but not accepted (passed, 157 ms in the local acceptance batch; the file also has webhooks-google-calendar-021:259 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/webhooks-google-calendar.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-006	revisit		revisit: written in batch B01 but not accepted (passed, 151 ms in the local acceptance batch; the file also has webhooks-google-calendar-021:259 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/webhooks-google-calendar.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-007	skipped		slow-setup: needs a funded member with a supported model plus a webhook-dispatched Run; measured probe took 416 ms before Runner dispatch completed		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-008	skipped		slow-setup: two Calendar account connects, an event automation, a thread connector selection, a denial and an account deletion each moving the watch, then four checked calls; the comparable multi-account watch-moving flow (011) measured 337-464 ms (008 itself not probed)		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-009	skipped		slow-setup: two Calendar accounts plus a webhook-dispatched Run with connector secrets; the single-account dispatch probe already took 416 ms		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-011	skipped		slow-setup: three OAuth account connects, a default switch and two deletions each moving the watch measured 337-464 ms		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-016	skipped		slow-setup: member-override feature switch, two Calendar account connects, an event automation, a thread selection, an account policy change and two renewal-cron runs; the comparable multi-account watch-moving flow (011) measured 337-464 ms (016 itself not probed)		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-017	revisit		revisit: written in batch B01 but not accepted (passed, 141 ms in the local acceptance batch; the file also has webhooks-google-calendar-021:259 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/webhooks-google-calendar.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-018	skipped		slow-setup: three notifications dispatching two Runs plus sandbox completion of the first; the single-dispatch probe already took 416 ms		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-019	skipped		slow-setup: two event automations plus a webhook-dispatched Run; the single-dispatch probe already took 416 ms		B01
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-021	revisit		revisit: written in batch B01 but not accepted (passed, 259 ms in the local acceptance batch; the file also has webhooks-google-calendar-021:259 over the limit); evidence: draft saved at /home/user/pilot-env/wip/b01/webhooks-google-calendar.test.ts; resume: re-measure on a quiet machine, lighten the first case or setup, then accept the file		B01
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-005	planned				
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-006	planned				
 webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-007	planned				
@@ -3371,7 +3371,7 @@ webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	w
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-008	planned				
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-010	planned				
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-012	planned				
-webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-003	planned		extension after sandbox reset		B01
+webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-003	revisit		revisit: the invalid-signature check needs a verified Notion webhook, and the draft tolerated a verification left by earlier runs; evidence: the shared database keeps the active verification token; resume: find a public way to learn or rotate the token, otherwise isolated-db		B01
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-004	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events		pilot
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-005	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events		pilot
 webhooks	src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-007	skipped		isolated-db: signed Notion deliveries need the active verification token, which is stored once per database (re-verification returns 401) and persists in the shared test DB, so only an isolated DB can sign events		pilot
