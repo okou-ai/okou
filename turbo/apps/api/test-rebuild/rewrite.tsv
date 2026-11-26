@@ -982,12 +982,12 @@ account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-002	r
 account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-004	skipped		slow-setup: Given+first When/Then 506 ms and 482 ms (split row "(2/2) sandbox bearer approval"; the Given needs the sandbox token of a dispatched chat Run via createRunExecutionCredentials: Pro entitlement, thread + Run creation, Runner heartbeat dispatch; the PAT row (1/2) alone took 38-45 ms, so the ID cannot be fully split under 200 ms)		B04	
 account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-005	rewritten	159.5		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04	
 account-org	src/signals/routes/__tests__/cli-auth.bdd.test.ts	cli-auth.bdd-007	rewritten	113.3		src/signals/routes/__tests__/cli-auth.bdd.test.ts	B04	
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-001	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-002	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-004	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-005	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-021	planned					d-other
-remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-024	planned					d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-001	rewritten	30.0		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-002	rewritten	29.9		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-004	rewritten	83.1		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-005	rewritten	80.7		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-021	rewritten	60.8		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
+remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-024	rewritten	76.5		src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts		d-other
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-025	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-026	planned					a-run
 remote-access	src/signals/routes/__tests__/cloudflare-access-concurrency.test.ts	cloudflare-access-concurrency-027	planned					a-run
