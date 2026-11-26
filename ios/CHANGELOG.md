@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.8](https://github.com/okou-ai/okou/compare/ios-v0.66.7...ios-v0.66.8) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** return to the current for you card after viewing its source ([#50995](https://github.com/okou-ai/okou/issues/50995)) ([2b45f72](https://github.com/okou-ai/okou/commit/2b45f72d02f722a97207a5134074bd77d67b933e))
+
 ## [0.66.7](https://github.com/okou-ai/okou/compare/ios-v0.66.6...ios-v0.66.7) (2026-11-26)
 
 
