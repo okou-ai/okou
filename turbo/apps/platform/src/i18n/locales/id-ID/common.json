@@ -7428,6 +7428,7 @@
       "createdBy": "Dibuat oleh",
       "createInChat": "Buat di chat",
       "description": "SOP yang dapat digunakan kembali untuk suatu tugas. Tulis dari awal atau ringkas dari pekerjaan harian Anda, lalu jalankan, edit, atau otomatiskan.",
+      "directoryDescription": "SOP yang bisa dijalankan, diedit, atau diotomatiskan. Di produk lain disebut skill.",
       "empty": {
         "all": "Buat alur kerja dari chat atau simpan dari eksekusi yang bermanfaat.",
         "automated": "Tambahkan otomatisasi ke alur kerja dan akan muncul di sini.",

@@ -7455,6 +7455,7 @@
       "createdBy": "Created by",
       "createInChat": "Create in chat",
       "description": "A reusable SOP for a task. Write one from scratch or distill it from your daily work, then run, edit, or automate it.",
+      "directoryDescription": "A reusable SOP you can run, edit, or automate. Other products may call these skills.",
       "empty": {
         "all": "Create a workflow from chat or save one from a useful run.",
         "automated": "Add an automation to a workflow and it shows up here.",
