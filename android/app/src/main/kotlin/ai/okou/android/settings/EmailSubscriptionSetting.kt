@@ -8,20 +8,19 @@ import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
-import ai.okou.android.WorkspaceFeedbackHost
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -32,8 +31,6 @@ import androidx.lifecycle.compose.currentStateAsState
 @Composable
 internal fun EmailSubscriptionSetting(
     model: EmailSubscriptionSettings?,
-    snackbar: SnackbarHostState,
-    onFeedbackInOverlay: (Boolean) -> Unit,
     openAccount: () -> Unit,
 ) {
     val title = stringResource(R.string.settings_email_updates)
@@ -41,10 +38,7 @@ internal fun EmailSubscriptionSetting(
         enabled = model != null,
         content = { dismiss ->
             if (model != null) {
-                EmailSubscriptionSheet(title, model, snackbar, onFeedbackInOverlay, dismiss) {
-                    dismiss()
-                    openAccount()
-                }
+                EmailSubscriptionSheet(title, model, dismiss, openAccount)
             }
         },
     ) { modifier, open ->
@@ -62,26 +56,27 @@ internal fun EmailSubscriptionSetting(
 private fun EmailSubscriptionSheet(
     title: String,
     model: EmailSubscriptionSettings,
-    snackbar: SnackbarHostState,
-    onFeedbackInOverlay: (Boolean) -> Unit,
     dismiss: () -> Unit,
     openAccount: () -> Unit,
 ) {
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val state by model.state.collectAsStateWithLifecycle()
-    val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+    fun close() {
+        model.setPanelOpen(false)
+        dismiss()
+    }
+    DisposableEffect(model) {
+        model.setPanelOpen(true)
+        onDispose { model.setPanelOpen(false) }
+    }
     DisposableEffect(model, active) {
         model.visible(active)
         onDispose { model.visible(false) }
     }
-    DisposableEffect(Unit) {
-        routeFeedback(true)
-        onDispose { routeFeedback(false) }
-    }
     SettingsSheet(
         title = title,
-        onDismiss = dismiss,
+        onDismiss = ::close,
         modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
         titleInset = 8.dp,
         progress = {
@@ -89,10 +84,6 @@ private fun EmailSubscriptionSheet(
                 ContentReadProgress(R.string.settings_email_refreshing)
             }
         },
-        actions =
-            if (snackbar.currentSnackbarData != null) {
-                { WorkspaceFeedbackHost(snackbar, Modifier) }
-            } else null,
     ) {
         val indentation = Modifier.padding(horizontal = 8.dp)
         SettingsDetailStatus(stringResource(R.string.settings_email_scope), indentation)
@@ -115,26 +106,43 @@ private fun EmailSubscriptionSheet(
                         supportingText = confirmed.email,
                     )
                 }
-                if (!confirmed.canReceive) {
-                    SettingsDetailStatus(
-                        stringResource(R.string.settings_email_unavailable),
-                        indentation,
-                    )
-                    TextButton(
-                        onClick = openAccount,
-                        colors =
-                            ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                    ) {
-                        Text(stringResource(R.string.settings_email_check_address))
-                    }
-                } else if (state.read.unavailable) {
-                    SettingsDetailStatus(
-                        stringResource(R.string.settings_email_refresh_failed),
-                        indentation,
-                    )
+            }
+        }
+        val updateStatus =
+            when {
+                state.updateFailed -> stringResource(R.string.settings_email_save_failed)
+                state.unconfirmed != null ->
+                    stringResource(R.string.settings_email_save_unconfirmed)
+                state.desired != null -> stringResource(R.string.settings_email_saving)
+                else -> ""
+            }
+        val colors = MaterialTheme.colorScheme
+        val lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+        SettingsDetailStatus(
+            updateStatus,
+            indentation.heightIn(min = with(LocalDensity.current) { lineHeight.toDp() }),
+            color = if (state.updateFailed) colors.error else colors.onSurfaceVariant,
+        )
+        if (confirmed != null) {
+            if (!confirmed.canReceive) {
+                SettingsDetailStatus(
+                    stringResource(R.string.settings_email_unavailable),
+                    indentation,
+                )
+                TextButton(
+                    onClick = {
+                        close()
+                        openAccount()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                ) {
+                    Text(stringResource(R.string.settings_email_check_address))
                 }
+            } else if (state.read.unavailable) {
+                SettingsDetailStatus(
+                    stringResource(R.string.settings_email_refresh_failed),
+                    indentation,
+                )
             }
         }
     }

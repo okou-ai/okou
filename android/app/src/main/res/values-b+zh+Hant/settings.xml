@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">暫時無法載入郵件訂閱。</string>
     <string name="settings_email_refresh_failed">暫時無法同步，正在顯示已儲存的訂閱狀態。</string>
     <string name="settings_email_refreshing">正在同步郵件訂閱</string>
+    <string name="settings_email_saving">正在更新郵件訂閱…</string>
     <string name="settings_email_save_failed">未能更新郵件訂閱</string>
     <string name="settings_email_save_unconfirmed">郵件訂閱的儲存結果尚未確認</string>
     <string name="settings_models">模型</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">點數餘額</string>
     <string name="settings_credit_scope">「%1$s」的 Okou 點數</string>
-    <string name="settings_credit_update_failed">暫時無法更新，顯示上次餘額。</string>
     <string name="settings_credit_unavailable">暫時無法查看餘額。</string>
     <string name="settings_credit_member">個人用量包</string>
     <string name="settings_credit_workspace">工作區餘額</string>

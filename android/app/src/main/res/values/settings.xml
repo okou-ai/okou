@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">Email settings are temporarily unavailable.</string>
     <string name="settings_email_refresh_failed">Could not sync. Showing the last saved subscription.</string>
     <string name="settings_email_refreshing">Updating email subscription</string>
+    <string name="settings_email_saving">Updating email subscription…</string>
     <string name="settings_email_save_failed">Could not update email subscription.</string>
     <string name="settings_email_save_unconfirmed">The email subscription update is still unconfirmed.</string>
     <string name="settings_models">Models</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">Credit balance</string>
     <string name="settings_credit_scope">Okou credits in “%1$s”</string>
-    <string name="settings_credit_update_failed">Unable to refresh. Showing the last known balance.</string>
     <string name="settings_credit_unavailable">Unable to view the balance right now.</string>
     <string name="settings_credit_member">Personal usage pack</string>
     <string name="settings_credit_workspace">Workspace balance</string>
