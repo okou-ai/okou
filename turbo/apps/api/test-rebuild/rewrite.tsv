@@ -436,11 +436,11 @@ billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-014	r
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-015	rewritten	12.6		src/signals/routes/__tests__/billing-redeem.test.ts	B03
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-017	rewritten	14.2		src/signals/routes/__tests__/billing-redeem.test.ts	B03
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-019	rewritten	5.5		src/signals/routes/__tests__/billing-redeem.test.ts	B03
-billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-002	planned				B04
-billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-005	planned				B04
-billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-006	planned				B04
-billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-008	planned				B04
-billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-009	planned				B04
+billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-002	rewritten	15.1		src/signals/routes/__tests__/billing-restore.test.ts	B04
+billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-005	rewritten	73.8		src/signals/routes/__tests__/billing-restore.test.ts	B04
+billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-006	rewritten	78.9		src/signals/routes/__tests__/billing-restore.test.ts	B04
+billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-008	rewritten	60.5		src/signals/routes/__tests__/billing-restore.test.ts	B04
+billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-009	rewritten	46.8		src/signals/routes/__tests__/billing-restore.test.ts	B04
 billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-003	planned				
 billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-004	planned				
 billing	src/signals/routes/__tests__/billing-status.test.ts	billing-status-005	planned				
