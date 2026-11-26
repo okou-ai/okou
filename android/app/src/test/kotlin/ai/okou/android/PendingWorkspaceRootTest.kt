@@ -432,10 +432,15 @@ class PendingWorkspaceRootTest {
     @Test
     @Config(application = UncachedWorkspaceApplication::class)
     fun aFastChatListReadShowsTheEmptyStateWithoutASkeleton() {
-        compose.onNodeWithTag("chat_list").assertExists()
         val skeleton = compose.onNodeWithContentDescription("Loading chats…")
         compose.mainClock.autoAdvance = false
         try {
+            // Start the measurement at the list's first frame.
+            val list = compose.onAllNodes(hasTestTag("chat_list"))
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                list.fetchSemanticsNodes().isNotEmpty()
+            }
             compose.mainClock.advanceTimeBy(160)
             skeleton.assertDoesNotExist()
             compose.runOnIdle {
