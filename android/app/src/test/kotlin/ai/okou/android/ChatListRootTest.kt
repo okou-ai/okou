@@ -3939,6 +3939,44 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun emptyListActionsWaitForTheFirstConfirmedChatSnapshot() {
+        val app = compose.activity.application as ChatListApplication
+        val releaseChats = CountDownLatch(1)
+        app.fixture.events = { request ->
+            val initialRead = request.requestUrl?.queryParameter("sinceSeqId") == null
+            if (initialRead) releaseChats.await()
+            val events = if (initialRead) chatEventWire() else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
+        }
+        val project = compose.onNodeWithText("Research")
+        val action = compose.onNodeWithText("New chat in this Project")
+        val archiveEmpty = compose.onNodeWithText("No archived chats")
+        try {
+            app.responseGate.countDown()
+            compose.waitUntilExactlyOneExists(hasText("Research"), 10_000)
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
+            project.performClick()
+            project.assert(SemanticsMatcher.keyIsDefined(SemanticsActions.Collapse))
+            action.assertDoesNotExist()
+
+            compose.onNodeWithContentDescription("Filter").performClick()
+            compose.onNodeWithText("Archived").performClick()
+            compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
+            archiveEmpty.assertDoesNotExist()
+        } finally {
+            releaseChats.countDown()
+        }
+
+        compose.waitUntilExactlyOneExists(hasText("No archived chats"), 10_000)
+        compose.onNodeWithText("Back to Inbox").performClick()
+        compose.waitUntilExactlyOneExists(hasText("New chat in this Project"), 10_000)
+        action.performClick()
+        compose.onNodeWithText("Research").assertExists()
+        compose.onNodeWithTag("message_input").assertIsDisplayed()
+    }
+
+    @Test
     fun aPopulatedProjectStartsItsOwnChatFromTheRowMenu() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
