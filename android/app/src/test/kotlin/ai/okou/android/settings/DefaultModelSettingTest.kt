@@ -102,8 +102,10 @@ class DefaultModelSettingTest {
                         }
                     }
                 }
-                compose.waitUntil(10_000) {
-                    model.state.value.options != null && model.state.value.record != null
+                compose.waitUntil("Saved preference and catalog are loaded", 10_000) {
+                    compose.runOnIdle {
+                        model.state.value.options != null && model.state.value.record != null
+                    }
                 }
                 val entry = compose.onNodeWithText("Default model")
                 compose.onNodeWithText("GPT 5.6 Sol").assertIsDisplayed()
