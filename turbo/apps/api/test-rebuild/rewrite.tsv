@@ -2444,7 +2444,7 @@ artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-001	planned				
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	planned				
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	planned				
-account-org	src/signals/routes/__tests__/proactive-preferences.test.ts	proactive-preferences-001	planned				B05
+account-org	src/signals/routes/__tests__/proactive-preferences.test.ts	proactive-preferences-001	skipped		slow-setup: Given+first When/Then 545 ms and 507 ms (launching the primary chat Run with an execution token via createRunExecutionCredentials: 433 ms and 400 ms incl. ~100 ms file cold start; first Run-token read of proactive suggestions 9-10 ms; Official catalog publication not yet included)		B05
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-001	planned				
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-002	planned				
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-005	planned				
