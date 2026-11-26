@@ -2,13 +2,12 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// Presentation and local delivery state for one conversation in one workspace.
-@MainActor @Observable
+@MainActor
 final class ConversationStore {
   var failureRecoveryActions: ConversationFailureRecovery { failureRecovery }
-  @ObservationIgnored private lazy var failureRecovery = ConversationFailureRecovery(
+  private lazy var failureRecovery = ConversationFailureRecovery(
     conversation: self, commands: commands, graph: graph, lifecycleTasks: lifecycleTasks,
     detailOwner: { [weak self] in self?.detailOwner },
     refresh: { [weak self] in
@@ -23,12 +22,12 @@ final class ConversationStore {
       await submit(message)
     }, didRequestNewChat: didRequestNewChat, didSettle: didSettle,
     didFail: { [weak self] in self?.report($0) })
-  @ObservationIgnored private lazy var liveOutput = ConversationLiveOutput(
+  private lazy var liveOutput = ConversationLiveOutput(
     threadID: thread.id, lifecycleTasks: lifecycleTasks,
     isPersisted: { [weak self] in self?.isPersisted($0) == true },
     publish: { [weak self] in self?.projection.publishStream($0) })
 
-  @ObservationIgnored private lazy var reading = ConversationPresentation(
+  private lazy var reading = ConversationPresentation(
     conversation: self, projection: projection, sync: sync, commands: commands,
     reads: readResources, lifecycleTasks: lifecycleTasks, liveOutput: liveOutput,
     isClosed: { [weak self] in self?.closed != false }, isVisible: isVisible,
@@ -46,7 +45,7 @@ final class ConversationStore {
   let workflowSource: ComposerWorkflowSource?
   /// The chat's last confirmed metadata, kept in the workspace session's Store. The chat list
   /// confirms it through `WorkspaceStore`; `thread` reads and confirms it.
-  @ObservationIgnored private let threadState: CCState.State<ChatThread>
+  private let threadState: CCState.State<ChatThread>
   var draft: String {
     get { composer.text }
     set { composer.text = newValue }
@@ -55,7 +54,7 @@ final class ConversationStore {
   var attachmentDraft: AttachmentDraftStore { composer.attachments }
   private let draftStorage: ChatDraftStorage?
   private let draftTarget: ChatDraftTarget
-  @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
+  lazy var connectorActions = ConnectorActionStore(
     service: commands.connectorActions, graph: graph, commands: commands, thread: thread,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
@@ -63,15 +62,15 @@ final class ConversationStore {
       didSend()
       await refresh()
     }, didFail: didFail)
-  @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
+  lazy var attachmentViewer = MessageAttachmentStore(
     commands: commands, graph: graph, didFail: didFail)
-  @ObservationIgnored lazy var artifacts = MessageArtifactStore(
+  lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, webURL: webURL, markdown: messageMarkdown,
     graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
   // Its values live in the workspace session's Store; views read `transcript`.
-  @ObservationIgnored private let projection: ConversationProjection
+  private let projection: ConversationProjection
   /// What the transcript renders. ChatDetailView reads it through CCStateSwiftUI; the
   /// synchronous accessors below serve owner logic and actions, not view bodies.
   var transcript: Computed<ConversationProjection.Value> { projection.value }
@@ -90,7 +89,7 @@ final class ConversationStore {
 
   var streamedOutputs: [StreamedOutput] { projection.streamed }
   /// Subscribes to a run's live output; set by the workspace, which owns the realtime client.
-  @ObservationIgnored var runOutput: ConversationLiveOutput.Subscribe?
+  var runOutput: ConversationLiveOutput.Subscribe?
   private(set) var pending: [PendingMessage] {
     get { projection.pending }
     set {
@@ -115,8 +114,8 @@ final class ConversationStore {
   /// The delivery state, kept in the workspace session's Store. ChatDetailView reads it
   /// through CCStateSwiftUI; the accessors in the extension below serve owner logic,
   /// actions and tests.
-  @ObservationIgnored let delivery: Computed<Delivery>
-  @ObservationIgnored private let deliveryState = CCState.State(Delivery())
+  let delivery: Computed<Delivery>
+  private let deliveryState = CCState.State(Delivery())
 
   private let didRequestNewChat: @MainActor () -> Void
   var readSyncError: String? { reading.readSyncError }
@@ -135,7 +134,7 @@ final class ConversationStore {
   private let readResources: ConversationReadResources
   private let commands: ChatCommands
   private var quickShare: (id: UUID, task: Task<String, Error>)?
-  @ObservationIgnored lazy var sharing = ConversationSharing(
+  lazy var sharing = ConversationSharing(
     client: commands.approvalClient, threadID: thread.id, webURL: webURL,
     lifecycleTasks: lifecycleTasks, history: { [weak self] in self?.history ?? .empty },
     didFail: didFail)
@@ -168,13 +167,13 @@ final class ConversationStore {
     return try await task.value
   }
 
-  @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
+  lazy var approvals = ApprovalCardRegistry(
     thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
     })
-  @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
+  lazy var permissionActions = PermissionActionRegistry(
     commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }

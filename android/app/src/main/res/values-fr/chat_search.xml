@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">Certains résultats sont indisponibles</string>
     <string name="chat_search_message_unavailable">Ce message n’est plus disponible</string>
     <string name="chat_search_workflow_add_draft">Ajouter au brouillon d’une nouvelle discussion</string>
+    <string name="chat_search_workflow_opening_draft">Ouverture du brouillon d’une nouvelle discussion…</string>
     <string name="chat_search_workflow_details">Voir les détails du workflow</string>
     <string name="chat_search_workflow_shadowed">Un workflow privé utilise cette commande</string>
     <string name="chat_search_artifact_preview">Aperçu de l’artefact</string>

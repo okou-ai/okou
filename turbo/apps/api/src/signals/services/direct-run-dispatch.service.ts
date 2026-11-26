@@ -258,7 +258,6 @@ function hasPreferredHomeWait(
 }
 
 function createDispatchOffer(
-  envelope: DispatchEnvelope,
   ordinaryBody: SerializedDispatch,
   preference: PlacementPreference | undefined,
   window: DeliveryWindow,
@@ -286,16 +285,24 @@ function createDispatchOffer(
   if (waitUntil <= sentAt) {
     return ordinaryOffer;
   }
-  const preferredBody = serializeDispatch({
-    ...envelope,
+  const hint = JSON.stringify({
     preferredHomeCheckout: {
       predecessorRunId: preference.predecessorRunId,
       waitUntil,
     },
-  });
-  return preferredBody.bodyBytes <= RUNNER_DISPATCH_MAX_BODY_BYTES
-    ? { ...preferredBody, busyRetry: { until: waitUntil, retryAtExpiry: true } }
-    : ordinaryOffer;
+  } satisfies Pick<DispatchEnvelope, "preferredHomeCheckout">);
+  // Replace the ordinary JSON object's closing brace with the hint field.
+  const suffix = "," + hint.slice(1);
+  const bodyBytes =
+    ordinaryBody.bodyBytes - 1 + Buffer.byteLength(suffix, "utf8");
+  if (bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
+    return ordinaryOffer;
+  }
+  return {
+    body: ordinaryBody.body.slice(0, -1) + suffix,
+    bodyBytes,
+    busyRetry: { until: waitUntil, retryAtExpiry: true },
+  };
 }
 
 function isCurrentOwner(
@@ -373,7 +380,6 @@ const offerToProcess$ = command(
       readonly target: DirectRunCandidates[number];
       readonly runId: string;
       readonly body: SerializedDispatch;
-      readonly envelope: DispatchEnvelope;
       readonly preparedFirstOffer: WireDispatchOffer | undefined;
       readonly firstOwner: boolean;
       readonly token: string;
@@ -389,12 +395,7 @@ const offerToProcess$ = command(
     const offer =
       args.preparedFirstOffer ??
       (await encodeDispatchOffer(
-        createDispatchOffer(
-          args.envelope,
-          args.body,
-          args.target.preference,
-          args.window,
-        ),
+        createDispatchOffer(args.body, args.target.preference, args.window),
         args.window,
       ));
     signal.throwIfAborted();
@@ -533,7 +534,7 @@ export const dispatchPreparedRun$ = command(
         const preparedFirstOffer =
           firstOwner && !hasPreferredHomeWait(target.preference)
             ? await encodeDispatchOffer(
-                createDispatchOffer(envelope, body, target.preference, window),
+                createDispatchOffer(body, target.preference, window),
                 window,
               )
             : undefined;
@@ -571,7 +572,6 @@ export const dispatchPreparedRun$ = command(
             target,
             runId: input.run.id,
             body,
-            envelope,
             preparedFirstOffer,
             firstOwner,
             token,

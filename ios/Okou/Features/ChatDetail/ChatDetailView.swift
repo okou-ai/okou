@@ -5,7 +5,7 @@ import SwiftUI
 import Textual
 
 struct ChatDetailView: View {
-  @Bindable var conversation: ConversationStore
+  let conversation: ConversationStore
   let workspaceName: String?
   var didSend: (@MainActor () async -> Void)?
   let topContentInset: CGFloat
@@ -168,7 +168,7 @@ struct ChatDetailView: View {
     .messageAttachmentPreview(viewer: conversation.attachmentViewer)
     .messageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
-    .sheet(isPresented: $conversation.sharing.showsCreatedLink) {
+    .sheet(isPresented: Bindable(conversation.sharing).showsCreatedLink) {
       ChatSharingCreatedView(sharing: conversation.sharing)
         .presentationDetents([.medium, .large])
     }

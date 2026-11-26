@@ -17,7 +17,6 @@
     <string name="settings_email_receive">Ricevi email</string>
     <string name="settings_email_unavailable">Email non disponibile</string>
     <string name="settings_email_check_address">Verifica l’indirizzo email dell’account</string>
-    <string name="settings_email_load_failed">Le impostazioni email sono temporaneamente non disponibili.</string>
     <string name="settings_email_refresh_failed">Sincronizzazione non riuscita. È visibile l’ultima iscrizione salvata.</string>
     <string name="settings_email_refreshing">Sincronizzazione dell’iscrizione via email</string>
     <string name="settings_email_saving">Aggiornamento dell’iscrizione via email…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Scegli gli account in abbonamento che usi in «%1$s».</string>
     <string name="settings_accounts_scope_empty">Account di modello in «%1$s»</string>
     <string name="settings_workspace_status">«%1$s» · %2$s</string>
-    <string name="settings_accounts_unavailable">Impossibile visualizzare gli account dei modelli al momento.</string>
     <string name="settings_accounts_update_failed">Impossibile aggiornare gli account. Sono mostrate le ultime informazioni disponibili.</string>
     <string name="settings_accounts_empty">Nessun account di modello collegato</string>
     <string name="settings_accounts_empty_help">Collega ChatGPT o Claude per vedere le quote e scegliere un account.</string>
