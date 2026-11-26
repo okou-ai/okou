@@ -913,7 +913,14 @@ class ConnectorModel(
 
     internal fun dismissAction() {
         val action = mutableState.value.action
-        if (action?.busy == true || action?.reconciling == true) return
+        if (action?.busy == true) return
+        if (action?.reconciling == true) {
+            val receipt = action.authorization as? ConnectorAuthorization.Receipt
+            if (receipt?.externalCodeSessionId != null) {
+                updateAction { it.copy(authorization = receipt.copy(externalCodeSessionId = null)) }
+            }
+            return
+        }
         deviceJob?.cancel()
         deviceJob = null
         verificationJob?.cancel()

@@ -194,6 +194,34 @@ class ConnectorSheetLayoutTest {
     }
 
     @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun dismissedExternalReceiptKeepsCheckingWithoutReopeningTheForm() {
+        val restoration = StateRestorationTester(compose)
+        ConnectorApiFixture(includeGrantExamples = true).use { fixture ->
+            withConnectors(fixture, restoration) {
+                openExternalCodeForm()
+                fixture.failAccountReads = true
+                compose
+                    .onNodeWithTag("connector-input")
+                    .performTextReplacement(CONNECTOR_EXAMPLE_EXTERNAL_CODE)
+                compose.onNodeWithText("Confirm code").performClick()
+                val check = "Check authorization"
+                compose.waitUntilAtLeastOneExists(hasText(check), 10_000)
+                compose.onNodeWithText("Cancel").assertIsEnabled().performClick()
+                compose.waitUntilDoesNotExist(hasTestTag("connector-sheet"), 10_000)
+                restoration.emulateSavedInstanceStateRestore()
+                compose.onNodeWithTag("connector-detail").assertIsDisplayed()
+                compose.onNodeWithTag("connector-sheet").assertDoesNotExist()
+                fixture.failAccountReads = false
+                compose.waitUntilAtLeastOneExists(hasText("Verified account"), 10_000)
+                compose.onNodeWithTag("connector-sheet").assertDoesNotExist()
+                assertEquals(1, fixture.externalCodeRequests.get())
+            }
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w760dp-h892dp")
     fun bottomSheetUsesAvailableSpaceAndKeepsActionsBelowTheScrollBody() {
         showLongSheet()
