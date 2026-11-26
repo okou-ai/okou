@@ -1538,7 +1538,7 @@ messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscrip
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-007	rewritten	6.1		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	rewritten	17.2		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	skipped		slow-setup: the run-credential row needs a Run execution token; that Given alone (one executing Run via helpers/run-execution-credentials forActor) measured 438.5 ms and 432.5 ms in two runs (webhooks-x-resource-usage probe), so the 403 FORBIDDEN half cannot be a row under 200 ms; the unauthenticated 401 half alone would be cheap		B04
-messaging	src/signals/routes/__tests__/email.test.ts	email-001	planned				B06
+messaging	src/signals/routes/__tests__/email.test.ts	email-001	rewritten	23.1		src/signals/routes/__tests__/email.test.ts	B06
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	rewritten	54.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	rewritten	82.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-004	rewritten	70.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
