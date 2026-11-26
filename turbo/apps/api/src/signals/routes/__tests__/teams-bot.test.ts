@@ -1,4 +1,4 @@
-import { createSign, generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 
 import {
   teamsBotContract,
@@ -7,10 +7,17 @@ import {
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import {
+  array,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -21,131 +28,179 @@ import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
   installTeamsForTest,
   postTeamsActivityForTest,
+  removeTeamsForTest,
   setupTeamsConnectTestEnv,
   teamsConnectFixture,
+  teamsFixtureExternalId,
   teamsMessageActivityForTest,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 
 const context = testContext();
 
-const SESSION = { authorization: "Bearer clerk-session" };
-const BOT_APP_TENANT_ID = "11111111-1111-1111-1111-111111111111";
-const OTHER_BOT_APP_ID = "99999999-9999-9999-9999-999999999999";
-const BOT_FRAMEWORK_KEYS_URL =
-  "https://login.botframework.com/v1/.well-known/keys";
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
-/** A Bot Framework signing key published only for the audience check. */
-const botFrameworkKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+/** The only issuer production accepts (`BOT_FRAMEWORK_ISSUER`, lib/teams-bot-auth.ts). */
+const BOT_FRAMEWORK_ISSUER = "https://api.botframework.com";
+const TOKEN_ALGORITHM = "RS256";
 
-interface TeamsSentActivity {
-  readonly conversationId: string;
-  readonly replyTo: string | null;
-  readonly body: Record<string, unknown>;
+/** Simulated Bot Framework key pair; generated once because RSA generation is slow. */
+const botFrameworkSigner = generateKeyPairSync("rsa", { modulusLength: 2048 });
+
+/** Outgoing activity fields, after `TeamsActivityBody` in external/teams-bot-client.ts. */
+const botActivityBody = object({
+  type: string(),
+  text: string().optional(),
+  textFormat: string().optional(),
+  replyToId: string().optional(),
+  entities: array(zUnknown()).optional(),
+  attachments: array(
+    object({
+      contentType: string(),
+      content: object({
+        body: array(zUnknown()).optional(),
+        actions: array(zUnknown()).optional(),
+      }),
+    }),
+  ).optional(),
+  channelData: object({
+    tenant: object({ id: string() }).optional(),
+  }).optional(),
+});
+
+/** One activity the bot posted to a Teams conversation through the connector. */
+interface BotPost {
+  readonly conversation: string;
+  /** The activity this post answers; undefined for a new conversation message. */
+  readonly inReplyTo: string | undefined;
+  readonly activity: zInfer<typeof botActivityBody>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function paramString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/** Teams' Bot Framework connector records every activity the bot sends. */
-function recordTeamsDeliveries(
-  fixture: TeamsConnectFixture,
-): TeamsSentActivity[] {
-  const sent: TeamsSentActivity[] = [];
+/**
+ * Stands in for the Bot Framework connector. Production takes the bot token
+ * from `MICROSOFT_TEAMS_BOT_TOKEN_URL` when set and posts to
+ * `<serviceUrl>/v3/conversations/<conversation>/activities[/<replyTo>]`
+ * (external/teams-bot-client.ts `botTokenUrl`, `teamsConversationActivityUrl`).
+ */
+function captureBotPosts(fixture: TeamsConnectFixture): readonly BotPost[] {
+  const posts: BotPost[] = [];
+  const tokenUrl = "https://bot-token.okou.test/oauth2/token";
+  const serviceUrl = fixture.serviceUrl.replace(/\/+$/u, "");
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", randomUUID());
+  mockOptionalEnv("MICROSOFT_TEAMS_BOT_TOKEN_URL", tokenUrl);
   server.use(
-    http.post(
-      `https://login.microsoftonline.com/${BOT_APP_TENANT_ID}/oauth2/v2.0/token`,
-      () => {
-        return HttpResponse.json({
-          access_token: "teams-bot-access-token",
-          expires_in: 3600,
-        });
-      },
-    ),
-    http.post(
-      `${fixture.serviceUrl}v3/conversations/:conversationId/activities/:activityId?`,
+    http.post(tokenUrl, () => {
+      return HttpResponse.json({ access_token: randomUUID() });
+    }),
+    http.post<{ conversationId: string; activityId?: string }>(
+      `${serviceUrl}/v3/conversations/:conversationId/activities/:activityId?`,
       async ({ request, params }) => {
-        const body: unknown = await request.json();
-        sent.push({
-          conversationId: paramString(params.conversationId) ?? "",
-          replyTo: paramString(params.activityId),
-          body: isRecord(body) ? body : {},
+        posts.push({
+          conversation: params.conversationId,
+          inReplyTo: params.activityId,
+          activity: botActivityBody.parse(await request.json()),
         });
-        return HttpResponse.json({ id: `sent-${sent.length}` });
+        return HttpResponse.json({ id: randomUUID() });
       },
     ),
   );
-  return sent;
+  return posts;
 }
 
-async function postActivity(activity: Record<string, unknown>) {
+function adaptiveCardOf(post: BotPost | undefined) {
+  const content = post?.activity.attachments?.[0]?.content;
+  if (!content) {
+    throw new Error("Expected the bot post to carry an adaptive card");
+  }
+  return content;
+}
+
+/** Teams delivers `activity` with a valid bot token; the webhook answers 200. */
+async function deliverToBot(activity: Record<string, unknown>) {
   const response = await postTeamsActivityForTest({
     signal: context.signal,
     activity,
   });
   expect(response.status).toBe(200);
-  const body = teamsBotIngressResponseSchema.parse(await response.json());
+  const ingress = teamsBotIngressResponseSchema.parse(await response.json());
   await flushWaitUntilForTest();
-  return body;
+  return ingress;
 }
 
-async function readTeamsStatus(fixture: TeamsConnectFixture) {
+/** A non-message Teams event in the fixture team conversation, sent by Ada. */
+function teamsEvent(
+  fixture: TeamsConnectFixture,
+  event: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  return teamsMessageActivityForTest(fixture, {
+    text: undefined,
+    entities: undefined,
+    replyToId: undefined,
+    ...event,
+  });
+}
+
+/** The admin reads `GET /api/integrations/teams/connect`. */
+async function adminTeamsConnection(fixture: TeamsConnectFixture) {
   createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-  const response = await accept(
+  const { body } = await accept(
     setupApp({ context, routes: teamsConnectRoutes })(
       teamsConnectContract,
     ).getStatus({ headers: SESSION }),
     [200],
   );
-  return response.body;
+  return body;
 }
 
-function channelData(fixture: TeamsConnectFixture) {
-  return {
-    tenant: { id: fixture.teamsTenantId, name: fixture.teamsTenantName },
-    team: {
-      id: fixture.teamsTeamId,
-      aadGroupId: fixture.teamsTeamAadGroupId,
-      name: fixture.teamsTeamName,
-    },
-    channel: { id: fixture.teamsChannelId, name: "General" },
-    teamsAppId: fixture.teamsAppId,
-  };
+/**
+ * Publishes the simulated key as the Bot Framework signing key. Production
+ * reads the OpenID document from `MICROSOFT_TEAMS_BOT_OPENID_METADATA_URL`
+ * when set and follows its `jwks_uri` (lib/teams-bot-auth.ts).
+ */
+function publishBotFrameworkKey(keyId: string): void {
+  const openIdUrl = "https://bot-framework.okou.test/openid-configuration";
+  const keysUrl = "https://bot-framework.okou.test/signing-keys";
+  mockOptionalEnv("MICROSOFT_TEAMS_BOT_OPENID_METADATA_URL", openIdUrl);
+  server.use(
+    http.get(openIdUrl, () => {
+      return HttpResponse.json({
+        issuer: BOT_FRAMEWORK_ISSUER,
+        jwks_uri: keysUrl,
+        id_token_signing_alg_values_supported: [TOKEN_ALGORITHM],
+      });
+    }),
+    http.get(keysUrl, () => {
+      return HttpResponse.json({
+        keys: [
+          {
+            ...botFrameworkSigner.publicKey.export({ format: "jwk" }),
+            kid: keyId,
+          },
+        ],
+      });
+    }),
+  );
 }
 
-function cardOf(activity: TeamsSentActivity): Record<string, unknown> {
-  const attachments = activity.body.attachments;
-  const first: unknown = Array.isArray(attachments) ? attachments[0] : null;
-  if (!isRecord(first) || !isRecord(first.content)) {
-    throw new Error("Expected an adaptive card attachment");
-  }
-  return first.content;
-}
-
-function encodeJwtPart(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
-}
-
-function botFrameworkToken(audience: string, serviceUrl: string): string {
-  const seconds = Math.floor(now() / 1000);
-  const signingInput = `${encodeJwtPart({ alg: "RS256", typ: "JWT", kid: "other-audience-key" })}.${encodeJwtPart(
-    {
-      iss: "https://api.botframework.com",
-      aud: audience,
-      exp: seconds + 600,
-      nbf: seconds - 30,
-      serviceurl: serviceUrl,
-    },
-  )}`;
-  const signer = createSign("RSA-SHA256");
-  signer.update(signingInput);
-  return `${signingInput}.${signer.sign(botFrameworkKey.privateKey).toString("base64url")}`;
+/** A Bot Framework bearer token signed with the published key. */
+function botFrameworkBearer(
+  keyId: string,
+  claims: Readonly<Record<string, unknown>>,
+): string {
+  const signingInput = [
+    { alg: TOKEN_ALGORITHM, typ: "JWT", kid: keyId },
+    claims,
+  ]
+    .map((part) => {
+      return Buffer.from(JSON.stringify(part)).toString("base64url");
+    })
+    .join(".");
+  const signature = sign(
+    "sha256",
+    Buffer.from(signingInput),
+    botFrameworkSigner.privateKey,
+  );
+  return `Bearer ${signingInput}.${signature.toString("base64url")}`;
 }
 
 describe("POST /api/webhooks/teams/bot", () => {
@@ -153,58 +208,41 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
     await installTeamsForTest(context.signal, fixture);
-    const sent = recordTeamsDeliveries(fixture);
+    const posts = captureBotPosts(fixture);
 
-    const body = await postActivity(
+    const ingress = await deliverToBot(
       teamsMessageActivityForTest(fixture, {
-        id: `activity-disconnect-${fixture.fixtureId}`,
+        id: teamsFixtureExternalId(fixture, "activity-disconnect"),
         text: "disconnect",
         entities: [],
       }),
     );
 
-    expect(body.activity).toMatchObject({
+    expect(ingress.activity).toMatchObject({
       kind: "message",
       text: "disconnect",
       mentionsRecipient: false,
     });
-    expect(sent).toStrictEqual([]);
+    expect(posts).toStrictEqual([]);
   });
 
   it("teams-bot-006 rejects a Teams token issued for another bot app", async () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
-    server.use(
-      http.get(
-        "https://login.botframework.com/v1/.well-known/openidconfiguration",
-        () => {
-          return HttpResponse.json({
-            issuer: "https://api.botframework.com",
-            jwks_uri: BOT_FRAMEWORK_KEYS_URL,
-            id_token_signing_alg_values_supported: ["RS256"],
-          });
-        },
-      ),
-      http.get(BOT_FRAMEWORK_KEYS_URL, () => {
-        return HttpResponse.json({
-          keys: [
-            {
-              ...botFrameworkKey.publicKey.export({ format: "jwk" }),
-              kid: "other-audience-key",
-              use: "sig",
-              alg: "RS256",
-              endorsements: ["msteams"],
-            },
-          ],
-        });
-      }),
-    );
+    const keyId = randomUUID();
+    publishBotFrameworkKey(keyId);
+    const otherBotAppId = randomUUID();
 
     const response = await accept(
       setupApp({ context, routes: teamsBotRoutes })(teamsBotContract).post({
         body: teamsMessageActivityForTest(fixture),
         extraHeaders: {
-          authorization: `Bearer ${botFrameworkToken(OTHER_BOT_APP_ID, fixture.serviceUrl)}`,
+          authorization: botFrameworkBearer(keyId, {
+            iss: BOT_FRAMEWORK_ISSUER,
+            aud: otherBotAppId,
+            exp: Math.floor(now() / 1000) + 5 * 60,
+            serviceurl: fixture.serviceUrl,
+          }),
         },
       }),
       [401],
@@ -222,12 +260,12 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
     await installTeamsForTest(context.signal, fixture);
-    const sent = recordTeamsDeliveries(fixture);
+    const posts = captureBotPosts(fixture);
 
-    const body = await postActivity(teamsMessageActivityForTest(fixture));
+    const ingress = await deliverToBot(teamsMessageActivityForTest(fixture));
 
-    expect(body.ok).toBeTruthy();
-    expect(body.activity).toMatchObject({
+    expect(ingress.ok).toBeTruthy();
+    expect(ingress.activity).toMatchObject({
       kind: "message",
       tenantId: fixture.teamsTenantId,
       teamId: fixture.teamsTeamId,
@@ -245,7 +283,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       mentionsRecipient: true,
       idempotencyKey: `${fixture.teamsConversationId}:message:${fixture.teamsActivityId}`,
     });
-    const connectUrl = new URL(body.connectUrl ?? "");
+    const connectUrl = new URL(ingress.connectUrl ?? "");
     expect(`${connectUrl.origin}${connectUrl.pathname}`).toBe(
       "https://app.okou.test/settings/teams",
     );
@@ -257,15 +295,13 @@ describe("POST /api/webhooks/teams/bot", () => {
       conversationType: "channel",
       botName: "Nova",
     });
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({
-      conversationId: fixture.teamsConversationId,
-      replyTo: fixture.teamsActivityId,
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      conversation: fixture.teamsConversationId,
+      inReplyTo: fixture.teamsActivityId,
     });
-    expect(sent[0]?.body.text).toBeUndefined();
-    const card = cardOf(
-      sent[0] ?? { conversationId: "", replyTo: null, body: {} },
-    );
+    expect(posts[0]?.activity.text).toBeUndefined();
+    const card = adaptiveCardOf(posts[0]);
     expect(card.body).toStrictEqual([
       expect.objectContaining({
         text: expect.stringContaining("Please connect your account"),
@@ -275,14 +311,14 @@ describe("POST /api/webhooks/teams/bot", () => {
       {
         type: "Action.OpenUrl",
         title: "Connect",
-        url: body.connectUrl,
+        url: ingress.connectUrl,
       },
     ]);
 
     await connectTeamsAccountForTest(context, fixture, { learnSender: false });
-    const status = await readTeamsStatus(fixture);
+    const connection = await adminTeamsConnection(fixture);
 
-    expect(status).toMatchObject({
+    expect(connection).toMatchObject({
       isInstalled: true,
       isConnected: true,
       tenantId: fixture.teamsTenantId,
@@ -293,43 +329,27 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
     await installTeamsForTest(context.signal, fixture);
-    const sent = recordTeamsDeliveries(fixture);
-    const shared = {
-      timestamp: "2026-07-14T08:30:00.000Z",
-      serviceUrl: fixture.serviceUrl,
-      channelId: "msteams",
-      conversation: {
-        id: fixture.teamsConversationId,
-        conversationType: "channel",
-      },
-      channelData: channelData(fixture),
-      from: {
-        id: fixture.teamsUserId,
-        name: "Ada Lovelace",
-        aadObjectId: fixture.teamsAadObjectId,
-      },
-      recipient: { id: fixture.teamsBotId, name: "Nova" },
-    };
+    const posts = captureBotPosts(fixture);
 
-    await postActivity({
-      ...shared,
-      type: "installationUpdate",
-      id: `activity-installed-${fixture.fixtureId}`,
-      action: "add",
-    });
-    await postActivity({
-      ...shared,
-      type: "conversationUpdate",
-      id: `activity-members-added-${fixture.fixtureId}`,
-      membersAdded: [{ id: fixture.teamsBotId, name: "Nova" }],
-    });
+    await deliverToBot(
+      teamsEvent(fixture, {
+        type: "installationUpdate",
+        id: teamsFixtureExternalId(fixture, "activity-installed"),
+        action: "add",
+      }),
+    );
+    await deliverToBot(
+      teamsEvent(fixture, {
+        type: "conversationUpdate",
+        id: teamsFixtureExternalId(fixture, "activity-members-added"),
+        membersAdded: [{ id: fixture.teamsBotId, name: "Nova" }],
+      }),
+    );
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({
-      conversationId: fixture.teamsConversationId,
-      replyTo: null,
-    });
-    expect(sent[0]?.body).toMatchObject({
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.conversation).toBe(fixture.teamsConversationId);
+    expect(posts[0]?.inReplyTo).toBeUndefined();
+    expect(posts[0]?.activity).toMatchObject({
       type: "message",
       textFormat: "markdown",
       text: expect.stringContaining(
@@ -344,106 +364,91 @@ describe("POST /api/webhooks/teams/bot", () => {
       ],
       channelData: { tenant: { id: fixture.teamsTenantId } },
     });
-    expect(sent[0]?.body.replyToId).toBeUndefined();
+    expect(posts[0]?.activity.replyToId).toBeUndefined();
   });
 
   it("teams-bot-012 sends a personal welcome when Teams adds the bot in personal scope", async () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
-    const sent = recordTeamsDeliveries(fixture);
-    const personalConversationId = `a:personal-${fixture.teamsUserId}`;
+    const posts = captureBotPosts(fixture);
+    const personalChat = `a:personal-${fixture.teamsUserId}`;
 
-    await postActivity({
-      type: "installationUpdate",
-      id: `activity-personal-install-${fixture.fixtureId}`,
-      action: "add",
-      timestamp: "2026-07-14T08:30:00.000Z",
-      serviceUrl: fixture.serviceUrl,
-      channelId: "msteams",
-      conversation: {
-        id: personalConversationId,
-        conversationType: "personal",
-      },
-      channelData: {
-        tenant: { id: fixture.teamsTenantId },
-        teamsAppId: fixture.teamsAppId,
-      },
-      from: {
-        id: fixture.teamsUserId,
-        name: "Ada Lovelace",
-        aadObjectId: fixture.teamsAadObjectId,
-      },
-      recipient: { id: fixture.teamsBotId, name: "Nova" },
-    });
+    await deliverToBot(
+      teamsEvent(fixture, {
+        type: "installationUpdate",
+        id: teamsFixtureExternalId(fixture, "activity-personal-install"),
+        action: "add",
+        conversation: { id: personalChat, conversationType: "personal" },
+        channelData: {
+          tenant: { id: fixture.teamsTenantId },
+          teamsAppId: fixture.teamsAppId,
+        },
+      }),
+    );
 
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({
-      conversationId: personalConversationId,
-      replyTo: null,
-    });
-    expect(sent[0]?.body).toMatchObject({
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.conversation).toBe(personalChat);
+    expect(posts[0]?.inReplyTo).toBeUndefined();
+    expect(posts[0]?.activity).toMatchObject({
       type: "message",
       textFormat: "markdown",
       text: expect.stringMatching(
         /^Hi, I'm Nova\. I connect Teams conversations to AI agents[\s\S]*Commands: `help`, `connect`, `disconnect`\. Mention `@Nova` with a task or send a DM to work privately\.$/u,
       ),
     });
-    expect(sent[0]?.body.entities).toBeUndefined();
-    expect(sent[0]?.body.replyToId).toBeUndefined();
+    expect(posts[0]?.activity.entities).toBeUndefined();
+    expect(posts[0]?.activity.replyToId).toBeUndefined();
   });
 
   it("teams-bot-013 answers unmentioned help and greeting messages", async () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();
-    const sent = recordTeamsDeliveries(fixture);
-    const groupChatId = `19:group-${fixture.fixtureId}@thread.v2`;
-    const messages = [
-      { id: `activity-help-${fixture.fixtureId}`, text: "help" },
-      { id: `activity-slash-help-${fixture.fixtureId}`, text: "/help" },
+    const posts = captureBotPosts(fixture);
+    const groupChat = `19:group-${fixture.fixtureId}@thread.v2`;
+    const unmentioned = [
+      { id: teamsFixtureExternalId(fixture, "help"), text: "help" },
+      { id: teamsFixtureExternalId(fixture, "slash-help"), text: "/help" },
       {
-        id: `activity-group-help-${fixture.fixtureId}`,
+        id: teamsFixtureExternalId(fixture, "group-help"),
         text: "help",
-        conversation: { id: groupChatId, conversationType: "groupChat" },
+        conversation: { id: groupChat, conversationType: "groupChat" },
       },
-      { id: `activity-hi-${fixture.fixtureId}`, text: "Hi" },
+      { id: teamsFixtureExternalId(fixture, "greeting"), text: "Hi" },
     ];
 
-    const responses = [];
-    for (const message of messages) {
-      responses.push(
-        await postActivity(
+    const ingresses = [];
+    for (const message of unmentioned) {
+      ingresses.push(
+        await deliverToBot(
           teamsMessageActivityForTest(fixture, { ...message, entities: [] }),
         ),
       );
     }
 
     expect(
-      sent.map((activity) => {
-        return activity.replyTo;
+      posts.map((post) => {
+        return post.inReplyTo;
       }),
     ).toStrictEqual(
-      messages.map((message) => {
+      unmentioned.map((message) => {
         return message.id;
       }),
     );
-    expect(sent[0]?.body.text).toStrictEqual(
+    expect(posts[0]?.activity.text).toStrictEqual(
       expect.stringContaining("Nova Teams Bot Help"),
     );
-    expect(sent[2]).toMatchObject({
-      conversationId: groupChatId,
-      body: { text: expect.stringContaining("Nova Teams Bot Help") },
+    expect(posts[2]).toMatchObject({
+      conversation: groupChat,
+      activity: { text: expect.stringContaining("Nova Teams Bot Help") },
     });
-    const greetingCard = cardOf(
-      sent[3] ?? { conversationId: "", replyTo: null, body: {} },
-    );
-    expect(greetingCard.actions).toStrictEqual([
+    expect(adaptiveCardOf(posts[3]).actions).toStrictEqual([
       {
         type: "Action.OpenUrl",
         title: "Connect",
-        url: responses[3]?.connectUrl,
+        url: ingresses[3]?.connectUrl,
       },
     ]);
-    expect(responses[3]?.connectUrl).toStrictEqual(expect.any(String));
+    expect(ingresses[3]?.connectUrl).toStrictEqual(expect.any(String));
   });
 
   it("teams-bot-037 removes the bot installation and keeps the connected Teams identity", async () => {
@@ -452,23 +457,11 @@ describe("POST /api/webhooks/teams/bot", () => {
     await installTeamsForTest(context.signal, fixture);
     await connectTeamsAccountForTest(context, fixture, { learnSender: false });
 
-    await postActivity({
-      type: "conversationUpdate",
-      id: `activity-remove-${fixture.fixtureId}`,
-      timestamp: "2026-06-30T09:20:00.000Z",
-      serviceUrl: fixture.serviceUrl,
-      channelId: "msteams",
-      conversation: {
-        id: fixture.teamsConversationId,
-        conversationType: "channel",
-      },
-      channelData: channelData(fixture),
-      recipient: { id: fixture.teamsBotId, name: "Nova" },
-      membersRemoved: [{ id: fixture.teamsBotId, name: "Nova" }],
-    });
-    const status = await readTeamsStatus(fixture);
+    await removeTeamsForTest(context.signal, fixture);
+    await flushWaitUntilForTest();
+    const connection = await adminTeamsConnection(fixture);
 
-    expect(status).toMatchObject({
+    expect(connection).toMatchObject({
       isInstalled: false,
       isConnected: true,
       pendingInstallation: false,
@@ -480,6 +473,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         }),
       ],
     });
-    expect(status.installUrl).toStrictEqual(expect.any(String));
+    expect(connection.installUrl).toStrictEqual(expect.any(String));
   });
 });
