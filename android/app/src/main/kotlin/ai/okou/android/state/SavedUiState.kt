@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +94,10 @@ internal fun rememberWorkspacePresentationState(): SaveableStateHolder =
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
+
+@Composable
+internal fun rememberConversationQueueFlag(threadId: String?): MutableState<Boolean> =
+    key(threadId) { rememberSaveable { mutableStateOf(false) } }
 
 internal data class AttachmentPickerSelection(
     val draftKey: String,
