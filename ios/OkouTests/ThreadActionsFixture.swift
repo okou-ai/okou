@@ -202,11 +202,14 @@ final class ThreadActionsFixture: Sendable {
           "{\"id\":\"\(Self.thread)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     case "/api/chat-threads/\(Self.thread)/event-snapshot":
-      if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
+      return state.value.withLock { $0.parentStatus == 404 } ? missingThread : missingSnapshot
+    case "/api/chat-threads/\(Self.createdThread)/event-snapshot":
+      return missingSnapshot
+    case "/api/chat-threads/\(Self.createdThread)/event-rows":
       return ChatHTTPResponse(
-        status: 404,
-        body:
-          "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
+        body: #"{"rows":[],"cursor":{"lastEventId":null,"lastSeqId":0},"hasMore":false}"#)
+    case "/api/chat-threads/\(Self.createdThread)":
+      return ChatHTTPResponse(body: #"{"lastReadAt":null,"cancellationRecoveryPending":false}"#)
     case "/api/chat-threads/\(Self.thread)/event-rows":
       if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       let since =
@@ -300,6 +303,12 @@ final class ThreadActionsFixture: Sendable {
       return ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
     }
     return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+  }
+
+  private static var missingSnapshot: ChatHTTPResponse {
+    ChatHTTPResponse(
+      status: 404,
+      body: #"{"error":{"code":"CHAT_EVENT_SNAPSHOT_NOT_FOUND","message":"No snapshot"}}"#)
   }
 
   private static var missingThread: ChatHTTPResponse {
