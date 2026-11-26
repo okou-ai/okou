@@ -1996,6 +1996,7 @@
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
       },
+      "followupAcceptLabel": "Accetta",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Cerca chat o progetti…",

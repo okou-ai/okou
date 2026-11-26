@@ -1,6 +1,5 @@
 """Synthetic original-record/CLI consumers, not native Guest execution proof."""
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -105,10 +104,10 @@ def write_capture(directory, files):
 
 
 def original_eof():
-    files = {name: raw for name, raw in original(False).items() if name in report.EOF_FILES}
     complete = original(False)
+    files = {name: complete[name] for name in report.EOF_FILES}
     decision = json.loads(complete["control-4-response.bin"][4:])["result"]
-    cleanup = copy.deepcopy(decision.pop("retirement"))
+    cleanup = decision.pop("retirement")
     cleanup["started_ns"] = 35
     cleanup["denied"] = [decision]
     audit = {"schema": "guest-preparation-failure-cleanup-v1", "retirement": cleanup,
@@ -173,7 +172,7 @@ class ReaderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             directory = Path(root)
             for name, mutate in mutations:
-                files = copy.deepcopy(original(True))
+                files = original(True)
                 value = json.loads(files[name][4:] if name.endswith(".bin") else files[name])
                 mutate(value)
                 files[name] = framed(value) if name.endswith(".bin") else json.dumps(value).encode()
@@ -187,13 +186,20 @@ class ReaderTests(unittest.TestCase):
             directory = Path(root)
             files = original(True)
             digest = write_capture(directory, files)
-            (directory / "exec-terminal.bin").write_bytes(files["exec-terminal.bin"] + b"x")
-            for capture in (digest, "0" * 64):
-                result = subprocess.run(
-                    [sys.executable, "-B", str(Path(report.__file__)), str(directory),
-                     "--expected-source", SOURCE, "--expected-capture-sha256", capture],
-                    capture_output=True, timeout=10, check=False)
+            command = [sys.executable, "-B", str(Path(report.__file__)), str(directory),
+                       "--expected-source", SOURCE, "--expected-capture-sha256"]
+            with self.subTest(fault="wrong expected digest"):
+                result = subprocess.run(command + ["0" * 64], capture_output=True,
+                                        timeout=10, check=False)
                 self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(b"original capture hash mismatch", result.stderr)
+
+            with self.subTest(fault="changed terminal file"):
+                (directory / "exec-terminal.bin").write_bytes(files["exec-terminal.bin"] + b"x")
+                result = subprocess.run(command + [digest], capture_output=True,
+                                        timeout=10, check=False)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(b"original capture file changed", result.stderr)
 
 
 if __name__ == "__main__":

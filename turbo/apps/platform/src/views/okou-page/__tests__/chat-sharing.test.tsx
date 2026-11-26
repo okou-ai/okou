@@ -105,29 +105,91 @@ test("chat-sharing-001 / chat-sharing-007 Selecting message groups creates and c
   expect(selectionPopup()).not.toBeInTheDocument();
 });
 
-test("chat-sharing-005 copying code and clicking the answer preserve the intended message selection", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  await conversation(
-    "Inventory checked. [Catalog](https://example.test/catalog)\n\n```sh\necho inventory\n```",
+test("refreshed sharing selects whole rows and freezes the selection after creating a link", async () => {
+  context.mocks.browser.clipboardWriteText();
+  const snapshot = crypto.randomUUID();
+  const payload = context.mocks.deferred<string[]>();
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      payload.resolve(body.eventIds);
+      return respond(201, { id: snapshot });
+    },
   );
+  const ids = await conversation("Dispatch complete", true);
   click(await findFastControl("button", "Share messages"));
-  const share = await findFastControl("button", "Share");
-  const link = await findFastControl("link", "Catalog");
-  const row = within(
-    link.closest<HTMLElement>("[data-chat-share-selectable-group]")!,
+  const share = await findFastControl("button", "Create link");
+  const prompt = screen.getByText("Inspect inventory");
+  const row = prompt.closest<HTMLElement>(
+    "[data-chat-share-selectable-group]",
+  )!;
+  const checkbox = within(row).getByRole("checkbox");
+
+  click(row);
+  expect(checkbox).toBeChecked();
+  click(prompt);
+  expect(checkbox).not.toBeChecked();
+  click(checkbox);
+  expect(checkbox).toBeChecked();
+  click(within(row).getByText("Deselect message group"));
+  expect(checkbox).not.toBeChecked();
+  checkbox.focus();
+  await userEvent.keyboard(" ");
+  expect(checkbox).toBeChecked();
+
+  click(screen.getByText("Dispatch complete"));
+  expect(messageGroup("Dispatch complete").getByRole("checkbox")).toBeChecked();
+  click(share);
+  await screen.findByDisplayValue(
+    location.origin + "/share/threads/" + snapshot,
   );
-  click(row.getByLabelText("Copy to clipboard"));
-  await waitFor(() => {
-    return expect(clipboard.writes).toStrictEqual(["echo inventory\n"]);
-  });
-  expect(row.getByRole("checkbox")).not.toBeChecked();
-  expect(share).toBeDisabled();
-  click(row.getByText("Select message group"));
-  expect(share).toBeEnabled();
-  click(row.getByText(/Inventory checked\./));
-  expect(row.getByRole("checkbox")).toBeChecked();
-  expect(share).toBeEnabled();
+  await expect(payload.promise).resolves.toStrictEqual(ids);
+  click(row);
+  click(prompt);
+  click(checkbox);
+  expect(checkbox).toBeChecked();
 });
+
+test.each([false, true])(
+  "chat-sharing-005 embedded controls and text selection stay independent of sharing (refreshed: %s)",
+  async (refreshed) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    await conversation(
+      "Inventory checked. [Catalog](https://example.test/catalog)\n\n```sh\necho inventory\n```",
+      refreshed,
+    );
+    click(await findFastControl("button", "Share messages"));
+    const share = await findFastControl(
+      "button",
+      refreshed ? "Create link" : "Share",
+    );
+    const link = await findFastControl("link", "Catalog");
+    const row = within(
+      link.closest<HTMLElement>("[data-chat-share-selectable-group]")!,
+    );
+    click(row.getByLabelText("Copy to clipboard"));
+    await waitFor(() => {
+      return expect(clipboard.writes).toStrictEqual(["echo inventory\n"]);
+    });
+    expect(row.getByRole("checkbox")).not.toBeChecked();
+    expect(share).toBeDisabled();
+    click(link);
+    expect(row.getByRole("checkbox")).not.toBeChecked();
+    setPassageSelection("Inventory checked.");
+    click(row.getByText(/Inventory checked\./));
+    expect(window.getSelection()?.toString()).toBe("Inventory checked.");
+    expect(row.getByRole("checkbox")).not.toBeChecked();
+    window.getSelection()?.removeAllRanges();
+    click(row.getByText("Select message group"));
+    expect(share).toBeEnabled();
+    click(row.getByText(/Inventory checked\./));
+    expect(row.getByRole("checkbox")).toHaveAttribute(
+      "aria-checked",
+      String(!refreshed),
+    );
+    expect(share).toHaveProperty("disabled", refreshed);
+  },
+);
 
 function messageGroup(text: string) {
   return within(

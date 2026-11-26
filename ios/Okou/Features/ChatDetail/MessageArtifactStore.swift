@@ -2,10 +2,11 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One detail owns previews, catalog metadata and cancellation. No signed URL survives this scope.
-@MainActor @Observable
+/// The open preview, its share sheet and the current reads are kept in the workspace session's
+/// Store.
+@MainActor
 final class MessageArtifactStore {
   struct Share: Identifiable {
     let id = UUID()
@@ -19,16 +20,30 @@ final class MessageArtifactStore {
     var title: String?
   }
 
-  private(set) var preview: MessageArtifactPreviewRead?
-  private(set) var sharing: Share?
-  private(set) var reads: MessageArtifactResources
+  /// What views present: the open preview, its share sheet, and the reads that cards and the
+  /// preview use. References compare by identity.
+  struct Presentation: Equatable {
+    var preview: MessageArtifactPreviewRead?
+    var sharing: Share?
+    var reads: MessageArtifactResources
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.preview === rhs.preview && lhs.sharing?.id == rhs.sharing?.id && lhs.reads === rhs.reads
+    }
+  }
+
+  /// Views resolve it; `preview`, `sharing` and `reads` serve actions and tests.
+  let presentationValue: Computed<Presentation>
+  /// The current reads alone, so transcript cards follow a replacement but not a preview.
+  let readsValue: Computed<MessageArtifactResources>
+  private let presentationState: CCState.State<Presentation>
   private let service: ChatArtifacts
   /// The chat whose artifact list supplies names and sizes; nil for a result opened from
   /// workspace search, which arrives with its own title.
   private let threadID: String?
   private let markdown: MessageMarkdownCache
-  /// The workspace session's Store, which keeps the reads' graph values.
-  @ObservationIgnored private let graph: CCState.Store
+  /// The workspace session's Store, which keeps the reads' graph values and the presentation.
+  let graph: CCState.Store
   let webURL: URL
   var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
@@ -44,8 +59,32 @@ final class MessageArtifactStore {
     self.markdown = markdown
     self.graph = graph
     self.didFail = didFail
-    reads = MessageArtifactResources(
-      service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)
+    let presentationState = CCState.State(
+      Presentation(
+        reads: MessageArtifactResources(
+          service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)))
+    self.presentationState = presentationState
+    presentationValue = Computed { try $0(presentationState) }
+    readsValue = Computed(equals: { $0 === $1 }, { get in try get(presentationState).reads })
+  }
+
+  var presentation: Presentation {
+    // A synchronous local value, not a network or persistence boundary.
+    do { return try graph.get(presentationValue) } catch {
+      preconditionFailure("Cannot read the artifact viewer: \(error)")
+    }
+  }
+  var preview: MessageArtifactPreviewRead? { presentation.preview }
+  var sharing: Share? { presentation.sharing }
+  var reads: MessageArtifactResources { presentation.reads }
+
+  private func update(_ change: (inout Presentation) -> Void) {
+    var next = presentation
+    change(&next)
+    guard next != presentation else { return }
+    do { try graph.set(presentationState, next) } catch {
+      preconditionFailure("Cannot publish the artifact viewer: \(error)")
+    }
   }
 
   func resource(_ value: String) -> ChatArtifact? {
@@ -68,12 +107,16 @@ final class MessageArtifactStore {
     renewedHTMLSignature: Bool = false, thumbnail: Data? = nil
   ) {
     guard !closed else { return }
-    dismiss()
+    preview?.close()
     let item = MessageArtifactPreviewRead(
       artifact: reads.metadata(resource), images: images, imageSources: imageSources,
       thumbnail: thumbnail, renewedHTMLSignature: renewedHTMLSignature,
       reads: reads, service: service, markdown: markdown, webURL: webURL, didFail: didFail)
-    preview = item
+    // One write replaces the open preview, so moving between images never publishes none.
+    update {
+      $0.preview = item
+      $0.sharing = nil
+    }
     do { try item.start() } catch { didFail(error) }
   }
 
@@ -103,10 +146,10 @@ final class MessageArtifactStore {
 
   func share(_ file: ChatAttachmentFile, previewID: UUID) {
     guard !closed, preview?.id == previewID else { return }
-    sharing = Share(file: file)
+    update { $0.sharing = Share(file: file) }
   }
 
-  func dismissSharing() { sharing = nil }
+  func dismissSharing() { update { $0.sharing = nil } }
 
   func downloadForSharing(previewID: UUID, retry: Bool = false) {
     guard !closed, let preview, preview.id == previewID else { return }
@@ -130,16 +173,19 @@ final class MessageArtifactStore {
 
   func dismiss() {
     preview?.close()
-    preview = nil
-    sharing = nil
+    update {
+      $0.preview = nil
+      $0.sharing = nil
+    }
   }
 
   func deactivate() {
     dismiss()
     reads.close()
     if !closed {
-      reads = MessageArtifactResources(
+      let next = MessageArtifactResources(
         service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)
+      update { $0.reads = next }
     }
   }
 
