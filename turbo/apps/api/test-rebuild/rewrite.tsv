@@ -2877,7 +2877,7 @@ chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-016	planned
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-019	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-023	planned				
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-028	planned				
-remote-access	src/signals/routes/__tests__/tailscale-creation.test.ts	tailscale-creation-001	planned				B03
+remote-access	src/signals/routes/__tests__/tailscale-creation.test.ts	tailscale-creation-001	rewritten	105.2		src/signals/routes/__tests__/tailscale-creation.test.ts	B03
 remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-001	planned				
 remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-002	planned				
 remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-004	planned				
