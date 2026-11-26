@@ -408,7 +408,7 @@ internal fun WorkflowEditor(
     val issue = state.issue
     if (issue?.rejectedDraft != null) {
         LaunchedEffect(model, editing, issue) {
-            snapshotFlow { editing.draft }.first { it != issue.rejectedDraft }
+            snapshotFlow { editing.draft.hasSameInput(issue.rejectedDraft) }.first { !it }
             model.clearRejectedEdit(editing, issue)
         }
     }
@@ -570,6 +570,12 @@ internal fun WorkflowEditor(
         }
     }
 }
+
+private fun WorkflowEdit.hasSameInput(other: WorkflowEdit): Boolean =
+    when (this) {
+        is WorkflowEdit.Instructions -> other is WorkflowEdit.Instructions && value == other.value
+        is WorkflowEdit.Rule -> other is WorkflowEdit.Rule && id == other.id && value == other.value
+    }
 
 @Composable
 private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowWriteFailure?) {

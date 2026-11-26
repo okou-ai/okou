@@ -713,7 +713,14 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     @Test
     fun instructionConflictShowsTheServerOutcomeAndPreservesTheEdit() {
         openWorkflowDetail()
-        app.fixture.instructionSaveConflict = true
+        val model = compose.runOnIdle {
+            val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+            checkNotNull(session.uiState.value.ready?.workflows)
+        }
+        val fixture = app.fixture
+        val latest = "Review the release checklist in the web app."
+        fixture.beforeInstructionSave = { fixture.instruction = latest }
+        fixture.instructionSaveConflict = true
         compose.onNodeWithText("Edit instructions").performClick()
         val instruction = compose.onNodeWithContentDescription("Workflow instructions")
         instruction.performTextReplacement("Check the launch owner.")
@@ -721,12 +728,17 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         save.performClick()
 
         val error = "This workflow changed while saving. Your edits are preserved."
-        waitFor(error)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.state.value.detail?.instruction == latest }
+        }
         instruction.assertTextContains("Check the launch owner.")
         assertTrue(
-            compose.onNodeWithText(error).getUnclippedBoundsInRoot().bottom <=
+            compose.onNodeWithText(error).assertIsDisplayed().getUnclippedBoundsInRoot().bottom <=
                 save.assertIsEnabled().getUnclippedBoundsInRoot().top,
         )
+
+        instruction.performTextReplacement("Check the launch owner and date.")
+        compose.onNodeWithText(error).assertDoesNotExist()
     }
 
     @Test
