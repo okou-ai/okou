@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.59.0](https://github.com/okou-ai/okou/compare/android-v0.58.2...android-v0.59.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Bug Fixes
+
+* **android:** align settings first-read failure feedback ([#51062](https://github.com/okou-ai/okou/issues/51062)) ([3f87e23](https://github.com/okou-ai/okou/commit/3f87e23b88d3165835b3b5c7ecca62c85f3d212a))
+* **android:** recheck on reopening update details without a compatible release ([#51046](https://github.com/okou-ai/okou/issues/51046)) ([a901f5e](https://github.com/okou-ai/okou/commit/a901f5e839ad57514709e9db4dd04a1c73cc852d))
+
 ## [0.58.2](https://github.com/okou-ai/okou/compare/android-v0.58.1...android-v0.58.2) (2026-11-26)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.21...runner-provider-v0.21.22) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** deliver member instructions to antigravity runs ([#51071](https://github.com/okou-ai/okou/issues/51071)) ([a62e7e4](https://github.com/okou-ai/okou/commit/a62e7e45026cea7ea7dc4fca79146226360961ee))
+
 ## [0.21.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.20...runner-provider-v0.21.21) (2026-11-26)
 
 ## [0.21.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.21.19...runner-provider-v0.21.20) (2026-11-26)
