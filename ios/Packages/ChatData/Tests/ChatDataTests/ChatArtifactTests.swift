@@ -106,10 +106,12 @@ final class ChatArtifactTests: XCTestCase {
 
   func testOnlyStableWebsiteAddressesCanBeSharedAsLinks() throws {
     let api = URL(string: "https://api.okou.ai")!
-    let legacy = URL(string: "https://guide.sites.vm0.io/map?day=2#coffee")!
-    let site = try XCTUnwrap(
-      ChatArtifactReference.parse(legacy.absoluteString, webURL: webURL, apiURL: api))
-    XCTAssertEqual(site.source.websiteShareURL, legacy)
+    for address in [
+      "https://guide.sites.vm0.io/map?day=2#coffee", "https://coastal-hotel-example.okou.app"
+    ] {
+      let site = try XCTUnwrap(ChatArtifactReference.parse(address, webURL: webURL, apiURL: api))
+      XCTAssertEqual(site.source.websiteShareURL?.absoluteString, address)
+    }
     for address in [
       "https://pv-token.okou.app/page", "https://ps-token.sites.vm0.io/",
       "https://sh-token.okou.app/", "/artifacts/abcdefgh12.pdf",

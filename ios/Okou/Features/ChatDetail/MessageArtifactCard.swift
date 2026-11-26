@@ -205,7 +205,7 @@ extension ChatArtifact {
 
   private var address: URL? {
     switch source {
-    case .hostedSite(let url), .legacyHostedSite(let url), .published(let url): url
+    case .hostedSite(let url), .publishedSite(let url), .published(let url): url
     case .reference, .file: nil
     }
   }

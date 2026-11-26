@@ -57,6 +57,10 @@ public enum ChatArtifactReference {
       }
       return ChatArtifact(source: .published(published), filename: url.lastPathComponent)
     }
+    if ChatOfficialArtifactPreviews.websites.contains(url.absoluteString) {
+      return ChatArtifact(
+        source: .publishedSite(url), filename: url.host ?? "Web page", contentType: "text/html")
+    }
     if ChatOfficialArtifactPreviews.urls.contains(url.absoluteString) {
       return ChatArtifact(source: .published(url), filename: url.lastPathComponent)
     }
