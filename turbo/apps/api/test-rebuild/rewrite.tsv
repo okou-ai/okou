@@ -2389,11 +2389,11 @@ account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openr
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	29.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05	
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	24.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05	
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	rewritten	35.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B06	
-account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	planned					d-other
-account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-002	planned					d-other
-account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	planned					d-other
-account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-010	planned					d-other
-account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-011	planned					b-install
+account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	rewritten	15.6		src/signals/routes/__tests__/org-team.bdd.test.ts		d-other
+account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-002	rewritten	50.7	split n=2: 1/2=16.3; 2/2=50.7	src/signals/routes/__tests__/org-team.bdd.test.ts		d-other
+account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	rewritten	117.5	split n=2: 1/2=117.5; 2/2=97.9	src/signals/routes/__tests__/org-team.bdd.test.ts		d-other
+account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-010	rewritten	91.5		src/signals/routes/__tests__/org-team.bdd.test.ts		d-other
+account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-011	rewritten	197.3	split n=3: 1/3=178.2; 2/3=181.7; 3/3=197.3	src/signals/routes/__tests__/org-team.bdd.test.ts		b-install
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-012	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a dispatched thread Run whose execution environment carries an `OKOU_TOKEN`"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-001	rewritten	32.6		src/signals/routes/__tests__/paid-tools.test.ts	B04	
 billing	src/signals/routes/__tests__/paid-tools.test.ts	paid-tools-002	rewritten	18.2		src/signals/routes/__tests__/paid-tools.test.ts	B04	
