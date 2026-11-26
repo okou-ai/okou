@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import SwiftUI
 
 struct ChatThreadFeedback: Identifiable {
@@ -40,15 +41,26 @@ struct ChatThreadFeedback: Identifiable {
 struct ChatThreadFeedbackView: View {
   let store: WorkspaceStore
   let feedback: ChatThreadFeedback
+  /// The chat list's status, kept in the workspace session's Store, so a mark-all-read that
+  /// starts or ends updates whether the action applies.
+  @ResolvedValue private var listStatus: ThreadListStore.Status?
+
+  init(store: WorkspaceStore, feedback: ChatThreadFeedback) {
+    self.store = store
+    self.feedback = feedback
+    _listStatus = ResolvedValue(store.list.statusValue)
+  }
 
   var body: some View {
+    let markingAllRead = (listStatus ?? store.list.status).markingAllRead
     ChatFeedbackSurface(
       message: feedback.message,
       icon: feedback.kind == .error ? "circle-alert" : "circle-check",
       isWorking: feedback.isWorking,
       actionTitle: feedback.actionTitle,
-      actionEnabled: (feedback.actsOnHiddenChat
-        ? store.list.canWrite(feedback.threadID) : store.list.canUpdate(feedback.threadID))
+      actionEnabled: !markingAllRead
+        && (feedback.actsOnHiddenChat
+          ? store.list.canWrite(feedback.threadID) : store.list.canUpdate(feedback.threadID))
         && !store.needsUpgrade
         && (!feedback.requiresNavigation || !store.isCreating),
       actionHint: feedback.actionHint,
