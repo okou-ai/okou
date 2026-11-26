@@ -11,6 +11,7 @@ import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
 import android.text.format.Formatter
 import android.view.KeyEvent
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
@@ -30,9 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -48,24 +46,7 @@ class NativeUpdateTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
-        val installOp = "${app.packageName} REQUEST_INSTALL_PACKAGES"
-        val operations = device.executeShellCommand("cmd appops get $installOp")
-        val previousMode =
-            operations
-                .lineSequence()
-                .firstOrNull { it.startsWith("REQUEST_INSTALL_PACKAGES: ") }
-                ?.substringAfter(": ")
-                ?.substringBefore(';')
-                ?.trim()
-                ?: "default"
-                    .also {
-                        check(
-                            operations.startsWith("No operations.") ||
-                                operations.startsWith("Uid mode: "),
-                        )
-                    }
         val download = CompletableDeferred<Unit>()
-        val verification = CompletableDeferred<Unit>()
         val release = nativeUpdateRelease()
         val owner =
             AppUpdates(
@@ -74,10 +55,8 @@ class NativeUpdateTest {
 
                     override suspend fun check() = AndroidUpdates(null, release)
 
-                    override suspend fun recover(release: AndroidUpdatesRelease): File? {
-                        verification.complete(Unit)
-                        awaitCancellation()
-                    }
+                    override suspend fun recover(release: AndroidUpdatesRelease): File? =
+                        error("A paused Activity cannot start the install handoff")
 
                     override suspend fun download(
                         release: AndroidUpdatesRelease,
@@ -97,11 +76,9 @@ class NativeUpdateTest {
         var scenario: ActivityScenario<MainActivity>? = null
         val failures = mutableListOf<Throwable>()
         try {
-            // Hold file verification on the managed device so the handoff wait stays visible.
-            device.executeShellCommand("cmd appops set $installOp allow")
-            assertTrue(app.packageManager.canRequestPackageInstalls())
             app.updateOwner = owner
-            scenario = ActivityScenario.launch(MainActivity::class.java)
+            val activity = ActivityScenario.launch(MainActivity::class.java)
+            scenario = activity
             fun find(selector: BySelector): UiObject2 =
                 checkNotNull(device.wait(Until.findObject(selector), 10_000)) {
                     "Expected update state $selector"
@@ -122,24 +99,33 @@ class NativeUpdateTest {
                 .click()
             find(text(R.string.updates_preparing))
 
+            // Exercise the paused, still visible window without another Activity covering it.
+            activity.onActivity {
+                instrumentation.callActivityOnPause(it)
+                assertEquals(Lifecycle.State.STARTED, it.lifecycle.currentState)
+            }
             download.complete(Unit)
-            runBlocking { withTimeout(10_000) { verification.await() } }
-            val waiting = text(R.string.updates_waiting_to_install).enabled(false)
-            assertFalse(find(waiting).isClickable)
+            val waiting = text(R.string.updates_waiting_to_install)
+            fun assertNoWaitAction(control: UiObject2) {
+                assertFalse(
+                    generateSequence(control) { it.parent }.any { it.isClickable && it.isEnabled },
+                )
+            }
+            assertNoWaitAction(find(waiting))
             captureUpdate(device, "details-waiting-to-install")
             device.enabledUpdateControl(text(R.string.updates_close)).click()
             val toolbar =
                 find(
                     By.pkg(app.packageName)
-                        .desc(app.getString(R.string.updates_waiting_to_install))
-                        .enabled(false),
+                        .desc(app.getString(R.string.updates_waiting_to_install)),
                 )
+            assertNoWaitAction(toolbar)
             assertEquals(toolbarBounds, toolbar.visibleBounds)
             captureUpdate(device, "toolbar-waiting-to-install")
 
             owner.requireUpdate(RequiredUpdate(release.version))
             find(text(R.string.updates_required))
-            assertFalse(find(waiting).isClickable)
+            assertNoWaitAction(find(waiting))
             captureUpdate(device, "required-waiting-to-install")
         } catch (error: Throwable) {
             failures += error
@@ -155,7 +141,6 @@ class NativeUpdateTest {
                     { scenario?.close() },
                     { app.updateOwner = previous },
                     { owner.close() },
-                    { device.executeShellCommand("cmd appops set $installOp $previousMode") },
                 )) try {
                 cleanup()
             } catch (error: Throwable) {
