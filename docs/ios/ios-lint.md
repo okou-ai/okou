@@ -79,6 +79,7 @@ an upstream rule demonstrably covers the same contract and valid use cases.
 | `okou_storage_boundaries`       | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
 | `okou_task_lifecycle`           | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 | `okou_discarded_throwing_task`  | Do not explicitly discard a newly constructed Task whose visible errors escape its operation; retain a result owner or handle those errors inside the Task.                             | `no-floating-promises` and `no-void-statement`                    |
+| `okou_observable_graph`         | Keep CCState signals and Stores out of the stored properties of `@Observable` classes; native interaction state stays in Observation, business state in graph State.                    | No business state in local component state (Platform)             |
 | `okou_logging_boundaries`       | Use OSLog.Logger for production diagnostics; keep explicit output streams and native test/tool/Preview diagnostics with their owners.                                                   | `no-console`                                                      |
 
 The existing SwiftLint rules also check discarded throwing Tasks
@@ -120,6 +121,12 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   editing, and other control-owned state remain valid. `fileprivate` sharing
   inside a private resource implementation is not a public feature interface.
   A private setter alone still exposes a mutable atom through its getter.
+- `okou_observable_graph` checks the stored properties of `@Observable` classes
+  for a CCState `State`, `Computed`, `Command` or `Store`, by type annotation,
+  including generic arguments, or by constructor. A computed property that
+  returns an existing signal, and a graph owner that is not Observable, remain
+  valid. Observation-tracked native interaction state stays valid; an
+  `@ObservationIgnored` marker does not exempt a graph value.
 - A scoped native async command may use its context after suspension. Passing
   it to an ordinary helper or capturing it into a separate Task is different.
 - Known transport definition sites implement API requests or credential-free
