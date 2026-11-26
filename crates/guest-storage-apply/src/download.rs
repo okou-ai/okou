@@ -61,13 +61,8 @@ impl<'input> DownloadTask<'input> {
         self.url.strip_prefix("file://")
     }
 
-    pub(crate) fn set_inline_archive(&mut self, archive: &'input [u8]) -> bool {
-        // Writable Artifacts retain the existing file-backed inflate policy.
-        if self.telemetry.is_artifact() {
-            return false;
-        }
+    pub(crate) fn set_inline_archive(&mut self, archive: &'input [u8]) {
         self.inline_archive = Some(archive);
-        true
     }
 
     fn log_progress(&self) -> bool {
@@ -816,10 +811,13 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         && task.template_guidance.is_none()
         && let Some(path) = task.url.strip_prefix("file://")
     {
-        let archive = source::LocalArchive::open(path)?;
-        download.opened_file_compressed_bytes = archive.compressed_bytes;
+        let archive = match task.inline_archive {
+            Some(bytes) => source::LocalArchive::Inline(bytes),
+            None => source::LocalArchive::open(path)?,
+        };
+        download.opened_file_compressed_bytes = archive.compressed_bytes();
         let extract_start = Instant::now();
-        let result = archive::inflate::extract_staged(
+        let result = archive::inflate::extract_local(
             archive,
             target_path,
             local_attempt_metrics.as_ref(),
@@ -835,10 +833,7 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
     }
 
     let source = match task.inline_archive {
-        Some(archive) => Ok(source::ArchiveSource::local(
-            archive,
-            Some(archive.len() as u64),
-        )),
+        Some(archive) => Ok(source::LocalArchive::Inline(archive).into_source(None)),
         None => source::open_archive(
             &task.url,
             attempt_metrics.as_ref(),

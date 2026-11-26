@@ -2,7 +2,6 @@ use super::*;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::fs;
-use std::io::Seek;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tempfile::TempDir;
 
@@ -17,11 +16,15 @@ fn gzip_archive(path: &str, content: &[u8]) -> Vec<u8> {
     builder.into_inner().unwrap().finish().unwrap()
 }
 
-fn extract(dir: &TempDir, bytes: &[u8]) -> (Result<(), DownloadError>, Duration) {
-    let source = dir.path().join("archive.tar.gz");
-    fs::write(&source, bytes).unwrap();
-    let mut file = File::open(source).unwrap();
-    try_extract(&mut file, dir.path(), 1).expect("the test inflater starts")
+fn extract(dir: &TempDir, bytes: &[u8], inline: bool) -> (Result<(), DownloadError>, Duration) {
+    let mut archive = if inline {
+        LocalArchive::Inline(bytes)
+    } else {
+        let source = dir.path().join("archive.tar.gz");
+        fs::write(&source, bytes).unwrap();
+        LocalArchive::open(source.to_str().unwrap()).unwrap_or_else(|error| panic!("{error}"))
+    };
+    try_extract(&mut archive, dir.path(), 1).expect("the test inflater starts")
 }
 
 #[test]
@@ -33,7 +36,7 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
     for (file_count, large_file, expected) in
         [(16, None, true), (15, None, false), (16, Some(4), false)]
     {
-        let encoder = GzEncoder::new(File::create(&source).unwrap(), Compression::none());
+        let encoder = GzEncoder::new(fs::File::create(&source).unwrap(), Compression::none());
         let mut archive = tar::Builder::new(encoder);
         for index in 0..file_count {
             let size = if large_file == Some(index) {
@@ -50,51 +53,63 @@ fn wide_read_ahead_samples_a_prefix_of_small_regular_files() {
         }
         archive.into_inner().unwrap().finish().unwrap();
 
-        let mut file = File::open(&source).unwrap();
-        assert_eq!(has_small_file_prefix(&file), expected);
-        assert_eq!(file.stream_position().unwrap(), 0);
+        let staged =
+            LocalArchive::open(source.to_str().unwrap()).unwrap_or_else(|error| panic!("{error}"));
+        let bytes = fs::read(&source).unwrap();
+        for mut archive in [staged, LocalArchive::Inline(&bytes)] {
+            assert_eq!(has_small_file_prefix(&archive), expected);
+            let mut header = [0; 2];
+            archive.read_exact(&mut header).unwrap();
+            assert_eq!(&header, &bytes[..2]);
+        }
     }
 }
 
 #[test]
 fn extracts_across_recycled_blocks_with_tar_metadata() {
-    let dir = tempfile::tempdir().unwrap();
     let line = b"bounded archive extraction\n";
     let content = line.repeat((3 * BLOCK_BYTES).div_ceil(line.len()));
     let archive = gzip_archive("package/notes.txt", &content);
 
-    let (result, _) = extract(&dir, &archive);
-    result.unwrap_or_else(|error| panic!("{error}"));
+    for inline in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, _) = extract(&dir, &archive, inline);
+        result.unwrap_or_else(|error| panic!("{error}"));
 
-    let path = dir.path().join("package/notes.txt");
-    let metadata = fs::metadata(&path).unwrap();
-    assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
-    assert_eq!(metadata.mtime(), 1_730_000_000);
-    assert_eq!(metadata.atime(), 1_730_000_000);
-    assert_eq!(fs::read(path).unwrap(), content);
+        let path = dir.path().join("package/notes.txt");
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o640);
+        assert_eq!(metadata.mtime(), 1_730_000_000);
+        assert_eq!(metadata.atime(), 1_730_000_000);
+        assert_eq!(fs::read(path).unwrap(), content);
+    }
 }
 
 #[test]
 fn rejects_a_corrupt_gzip_trailer() {
-    let dir = tempfile::tempdir().unwrap();
     let content = b"archive data\n".repeat(24_000);
     let mut archive = gzip_archive("notes.txt", &content);
     let crc = archive.len() - 8;
     archive[crc] ^= 1;
 
-    let (result, _) = extract(&dir, &archive);
-    assert!(result.is_err());
+    for inline in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, _) = extract(&dir, &archive, inline);
+        assert!(result.is_err());
+    }
 }
 
 #[test]
 fn settles_the_inflater_after_an_early_write_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let blocker = dir.path().join("blocked");
-    fs::write(&blocker, b"existing file").unwrap();
     let content = vec![b'x'; 3 * BLOCK_BYTES];
     let archive = gzip_archive("blocked/notes.txt", &content);
 
-    let (result, _) = extract(&dir, &archive);
-    assert!(result.is_err());
-    assert_eq!(fs::read(blocker).unwrap(), b"existing file");
+    for inline in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocked");
+        fs::write(&blocker, b"existing file").unwrap();
+        let (result, _) = extract(&dir, &archive, inline);
+        assert!(result.is_err());
+        assert_eq!(fs::read(blocker).unwrap(), b"existing file");
+    }
 }

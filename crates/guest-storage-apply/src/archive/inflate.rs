@@ -5,9 +5,7 @@ use crate::source::{
     HttpBodyReadFailure, LocalArchive, LocalArchiveAttemptMetrics, measure_local_body,
 };
 use flate2::bufread::GzDecoder;
-use std::fs::File;
 use std::io::{self, BufReader, Read};
-use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::thread;
@@ -63,8 +61,8 @@ impl Read for InflateReader {
     }
 }
 
-pub(crate) fn extract_staged(
-    mut archive: LocalArchive,
+pub(crate) fn extract_local(
+    mut archive: LocalArchive<'_>,
     target: &Path,
     metrics: Option<&LocalArchiveAttemptMetrics>,
     concurrency: usize,
@@ -81,13 +79,12 @@ pub(crate) fn extract_staged(
     // Its fractional CPU quota can round down in available_parallelism even
     // when this thread and the inflater are eligible to use different CPUs.
     if let Some(compressed_bytes) = archive
-        .compressed_bytes
+        .compressed_bytes()
         .filter(|size| compressed_range.contains(size))
-        && has_expanded_work(&archive.file, compressed_bytes, min_expanded_bytes)
+        && has_expanded_work(&archive, compressed_bytes, min_expanded_bytes)
         && rustix::thread::sched_getaffinity(None).is_ok_and(|cpus| cpus.count() >= 2)
-        && (matches!(load, InflateLoad::Light) || has_small_file_prefix(&archive.file))
-        && let Some((result, body_read)) =
-            try_extract(&mut archive.file, target, writer_concurrency)
+        && (matches!(load, InflateLoad::Light) || has_small_file_prefix(&archive))
+        && let Some((result, body_read)) = try_extract(&mut archive, target, writer_concurrency)
     {
         if let Some(metrics) = metrics {
             metrics.record_body_read(body_read);
@@ -97,23 +94,28 @@ pub(crate) fn extract_staged(
     super::extract_tar_gz(archive.into_source(metrics), target, writer_concurrency)
 }
 
-fn has_expanded_work(file: &File, compressed_bytes: u64, min_expanded_bytes: u32) -> bool {
+fn has_expanded_work(
+    archive: &LocalArchive<'_>,
+    compressed_bytes: u64,
+    min_expanded_bytes: u32,
+) -> bool {
     // A gzip member ends with ISIZE, the low 32 bits of its decoded size.
     // Look at it only as a scheduling hint. The decoder still validates the
     // trailer, and neither the memory budget nor extraction depends on this value.
     let mut size = [0; size_of::<u32>()];
     let offset = compressed_bytes - size.len() as u64;
-    file.read_exact_at(&mut size, offset).is_ok() && u32::from_le_bytes(size) >= min_expanded_bytes
+    archive.read_exact_at(&mut size, offset).is_ok()
+        && u32::from_le_bytes(size) >= min_expanded_bytes
 }
 
-fn has_small_file_prefix(file: &File) -> bool {
+fn has_small_file_prefix(archive: &LocalArchive<'_>) -> bool {
     const COMPRESSED_PREFIX_BYTES: usize = 16 * 1024;
     const TAR_PREFIX_BYTES: u64 = 128 * 1024;
     const SAMPLE_FILES: usize = 16;
     const SMALL_FILE_BYTES: u64 = 8 * 1024;
 
     let mut compressed = [0; COMPRESSED_PREFIX_BYTES];
-    if file.read_exact_at(&mut compressed, 0).is_err() {
+    if archive.read_exact_at(&mut compressed, 0).is_err() {
         return false;
     }
     let decoder = GzDecoder::new(compressed.as_slice()).take(TAR_PREFIX_BYTES);
@@ -136,7 +138,7 @@ fn has_small_file_prefix(file: &File) -> bool {
 
 /// None means the worker could not start and the archive has not been read.
 fn try_extract(
-    file: &mut File,
+    archive: &mut LocalArchive<'_>,
     target: &Path,
     concurrency: usize,
 ) -> Option<(Result<(), DownloadError>, Duration)> {
@@ -147,7 +149,7 @@ fn try_extract(
         let (recycle, recycle_rx) = sync_channel(BLOCK_COUNT);
         let worker = thread::Builder::new()
             .name("archive-inflate".into())
-            .spawn_scoped(scope, move || inflate(file, ready_tx, recycle_rx))
+            .spawn_scoped(scope, move || inflate(archive, ready_tx, recycle_rx))
             .ok()?;
         let result = super::extract_tar(
             InflateReader {
@@ -176,14 +178,14 @@ fn try_extract(
 }
 
 fn inflate(
-    file: &mut File,
+    archive: &mut LocalArchive<'_>,
     ready: SyncSender<io::Result<DecodedBlock>>,
     recycle: Receiver<Vec<u8>>,
 ) -> Duration {
     let metrics = LocalArchiveAttemptMetrics::default();
     let mut decoder = GzDecoder::new(BufReader::with_capacity(
         COMPRESSED_BUFFER_BYTES,
-        measure_local_body(file, &metrics),
+        measure_local_body(archive, &metrics),
     ));
     let buffers: [_; BLOCK_COUNT] = std::array::from_fn(|_| vec![0; BLOCK_BYTES]);
     for mut buffer in buffers.into_iter().chain(recycle) {

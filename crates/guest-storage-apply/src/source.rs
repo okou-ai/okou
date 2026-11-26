@@ -127,12 +127,16 @@ fn timeout_phase(timeout: ureq::Timeout) -> &'static str {
     }
 }
 
-pub(crate) struct LocalArchive {
-    pub(crate) file: File,
-    pub(crate) compressed_bytes: Option<u64>,
+/// Compressed bytes from a staged file or borrowed from a validated input frame.
+pub(crate) enum LocalArchive<'input> {
+    Staged {
+        file: File,
+        compressed_bytes: Option<u64>,
+    },
+    Inline(&'input [u8]),
 }
 
-impl LocalArchive {
+impl LocalArchive<'static> {
     pub(crate) fn open(path: &str) -> Result<Self, DownloadError> {
         log_info!(LOG_TAG, "Reading local archive");
         let file = File::open(path)
@@ -142,22 +146,59 @@ impl LocalArchive {
             .ok()
             .filter(|metadata| metadata.is_file())
             .map(|metadata| metadata.len());
-        Ok(Self {
+        Ok(Self::Staged {
             file,
             compressed_bytes,
         })
+    }
+}
+
+impl<'input> LocalArchive<'input> {
+    pub(crate) fn compressed_bytes(&self) -> Option<u64> {
+        match self {
+            Self::Staged {
+                compressed_bytes, ..
+            } => *compressed_bytes,
+            Self::Inline(bytes) => Some(bytes.len() as u64),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn read_exact_at(&self, output: &mut [u8], offset: u64) -> io::Result<()> {
+        use std::os::unix::fs::FileExt;
+
+        match self {
+            Self::Staged { file, .. } => file.read_exact_at(output, offset),
+            Self::Inline(bytes) => {
+                let mut remaining = usize::try_from(offset)
+                    .ok()
+                    .and_then(|offset| bytes.get(offset..))
+                    .ok_or(io::ErrorKind::UnexpectedEof)?;
+                remaining.read_exact(output)
+            }
+        }
     }
 
     pub(crate) fn into_source(
         self,
         metrics: Option<&LocalArchiveAttemptMetrics>,
-    ) -> ArchiveSource<'static> {
-        match metrics {
-            Some(metrics) => ArchiveSource::local(
-                measure_local_body(self.file, metrics),
-                self.compressed_bytes,
-            ),
-            None => ArchiveSource::local(self.file, self.compressed_bytes),
+    ) -> ArchiveSource<'input> {
+        let size = self.compressed_bytes();
+        match (self, metrics) {
+            (Self::Staged { file, .. }, Some(metrics)) => {
+                ArchiveSource::local(measure_local_body(file, metrics), size)
+            }
+            (Self::Staged { file, .. }, None) => ArchiveSource::local(file, size),
+            (Self::Inline(bytes), _) => ArchiveSource::local(bytes, size),
+        }
+    }
+}
+
+impl Read for LocalArchive<'_> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Staged { file, .. } => file.read(output),
+            Self::Inline(bytes) => bytes.read(output),
         }
     }
 }

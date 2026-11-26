@@ -93,7 +93,7 @@ fn shared_workflow_archive(
 }
 
 #[test]
-fn binary_storage_applies_one_inline_archive_to_multiple_mounts() {
+fn binary_storage_applies_one_inline_archive_to_storage_and_artifact() {
     use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, inline_archives};
     use std::os::unix::fs::MetadataExt;
 
@@ -102,11 +102,13 @@ fn binary_storage_applies_one_inline_archive_to_multiple_mounts() {
     let content = std::fs::read(fixture).unwrap();
     let source = format!("{STAGED_ARCHIVE_DIR}/test-only-inline.tar.gz");
     let mounts = [root.path().join("first"), root.path().join("second")];
-    let manifest = json!({
-        "storageMounts": mounts.iter().map(|path| json!({
-            "mountPath": path, "archiveUrl": format!("file://{source}")
-        })).collect::<Vec<_>>()
-    });
+    let manifest = json!({"storageMounts": [
+        {"mountPath": mounts[0], "archiveUrl": format!("file://{source}")},
+        {
+            "mountPath": mounts[1], "archiveUrl": format!("file://{source}"),
+            "writeback": true, "storageId": "artifact-storage", "versionId": "v1"
+        }
+    ]});
     let input = inline_archives::encode_input(
         &serde_json::to_vec(&manifest).unwrap(),
         &[(&source, &content)],
@@ -120,6 +122,11 @@ fn binary_storage_applies_one_inline_archive_to_multiple_mounts() {
         assert_eq!(metadata.mode() & 0o777, 0o755);
         assert_eq!(metadata.mtime(), 1);
     }
+    std::fs::write(mounts[1].join("nested/file"), b"artifact update").unwrap();
+    assert_eq!(
+        std::fs::read(mounts[0].join("nested/file")).unwrap(),
+        b"shared archive data"
+    );
 }
 
 #[test]
