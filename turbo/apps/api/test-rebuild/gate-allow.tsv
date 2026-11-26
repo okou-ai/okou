@@ -55,3 +55,4 @@ feishu-branding-connection-013	Failed to send Feishu connect welcome	Given: Feis
 feishu-branding-connection-026	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
 integrations-telegram-007	Failed to send Telegram connect success message	Given: Telegram rejects the welcome DM with HTTP 403 "Bot was blocked"
 mail-039	Unhandled request error: Gmail rejected the draft send \(HTTP 400; reason: unrecognized\)	Given: Gmail rejects the send with HTTP 400 and an unknown reason; the Then expects HTTP 500
+mail-030	Unhandled request error: Failed to read Gmail draft \(HTTP 403\)	Given: Gmail answers the draft read with a non-scope 403; the Then expects the server error

@@ -507,6 +507,30 @@ async function sendText(native: Native, channelId: string, text: string) {
 }
 
 describe("Discord native authorization and reads", () => {
+  it("integrations-discord-native-008 fails guild history closed on application discovery failure 500 without blocking sends", async () => {
+    const native = await nativeAdmin();
+    server.use(
+      http.get(`${DISCORD_API}/applications/@me`, () => {
+        return HttpResponse.json(
+          { message: "Internal Server Error", code: 0 },
+          { status: 500 },
+        );
+      }),
+    );
+
+    const read = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [502],
+    );
+    const sent = await accept(
+      sendText(native, native.channelId, "still deliverable"),
+      [200],
+    );
+
+    expect(read.body.error.code).toBe("DISCORD_ERROR");
+    expect(sent.status).toBe(200);
+  });
+
   it("integrations-discord-native-005 marks ordinary guild content as limited", async () => {
     const native = await nativeAdmin({ applicationFlags: 0 });
 
@@ -1001,6 +1025,57 @@ function stripFences(chunk: string): string {
 }
 
 describe("Discord native sends and transport failures", () => {
+  it("integrations-discord-native-048 requires SEND_MESSAGES_IN_THREADS rather than parent SEND_MESSAGES", async () => {
+    const native = await nativeAdmin();
+    const { world } = native;
+    const thread = native.addThread(native.channelId, {});
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.send }),
+    ];
+    const first = await accept(
+      sendText(native, thread.id, "in the thread"),
+      [200],
+    );
+    channelOf(world, native.channelId).permission_overwrites = [
+      overwrite(world.discordUserId, 1, { deny: Permission.sendInThreads }),
+    ];
+    const second = await accept(
+      sendText(native, thread.id, "denied in the thread"),
+      [404],
+    );
+
+    expect(first.status).toBe(200);
+    expect(second.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("integrations-discord-native-054 surfaces a provider server failure without resending an uncertain write", async () => {
+    const native = await nativeAdmin();
+    server.use(
+      http.post(`${DISCORD_API}/channels/:channelId/messages`, () => {
+        return HttpResponse.json(
+          { message: "Internal Server Error", code: 0 },
+          { status: 500 },
+        );
+      }),
+    );
+
+    const sent = await accept(
+      sendText(native, native.channelId, "uncertain write"),
+      [502],
+    );
+    const history = await accept(
+      readHistory(native, { channelId: native.channelId }),
+      [200],
+    );
+
+    expect(sent.status).toBe(502);
+    expect(
+      history.body.messages.filter((message) => {
+        return message.author.bot === true;
+      }),
+    ).toStrictEqual([]);
+  });
+
   it("integrations-discord-native-035 preserves a long fenced answer and suppresses all mention notifications", async () => {
     const native = await nativeAdmin();
     const mentioned = uniqueDiscordSnowflake();

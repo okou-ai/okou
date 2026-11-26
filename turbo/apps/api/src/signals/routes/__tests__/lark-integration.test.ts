@@ -329,6 +329,21 @@ describe("Lark integration", () => {
     expect(after.connectedUserName).toBe("Lark User");
   });
 
+  it("lark-integration-003 rejects an App ID already registered on the other platform", async () => {
+    const admin = await larkAdmin();
+    const feishuInstallation = await installCompleted(admin, "feishu");
+
+    const checked = await accept(
+      connectClient("lark").checkAppId({
+        headers: signIn(admin),
+        query: { appId: feishuInstallation.appId },
+      }),
+      [409],
+    );
+
+    expect(checked.body.error.code).toBe("CONFLICT");
+  });
+
   it("lark-integration-001 (1/2) lists each platform's installation separately and refuses a cross-platform delete", async () => {
     const admin = await larkAdmin();
     const [feishuInstallation, larkInstallation] = await Promise.all([

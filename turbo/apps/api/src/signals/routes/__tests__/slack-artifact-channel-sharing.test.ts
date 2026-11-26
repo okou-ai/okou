@@ -480,6 +480,33 @@ describe("Slack artifact channel sharing", () => {
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
   });
 
+  it("slack-artifact-channel-sharing-023 does not repeat private prompts for retries, refreshes, or composer events", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "private");
+    w.emailMember();
+    const slackEvents = createBddIntegrationApi(context);
+    const linkShared = {
+      type: "link_shared",
+      channel: CHANNEL,
+      message_ts: MESSAGE_TS,
+      user: w.slackUserId,
+      links: [{ url: file.url, domain: new URL(file.url).hostname }],
+    };
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, linkShared, {
+      "x-slack-retry-num": "1",
+    });
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, {
+      ...linkShared,
+      is_unfurl_refresh: true,
+    });
+    await slackEvents.postSlackEvent(w.slackWorkspaceId, {
+      ...linkShared,
+      source: "composer",
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+  });
+
   it("slack-artifact-channel-sharing-003 omits workspace visibility for a workspace-visible file but still offers grants to external members", async () => {
     const w = await workspace();
     const file = await uploadFile(w.owner, "organization");

@@ -374,6 +374,25 @@ describe("POST /api/integrations/telegram/link", () => {
     });
   });
 
+  it("integrations-telegram-014 returns 404 when there is no official account to unlink", async () => {
+    officialBot();
+    const member = await onboardedMember();
+    signIn(member);
+
+    const response = await accept(
+      telegramClient().unlink({
+        headers: SESSION,
+        query: { botId: "official" },
+        body: undefined,
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: { message: "No linked Telegram account", code: "NOT_FOUND" },
+    });
+  });
+
   it("integrations-telegram-015 unlinks the official account only in the active organization", async () => {
     officialBot();
     serveTelegramMessages();

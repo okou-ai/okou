@@ -400,6 +400,46 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(posts[0]?.activity.replyToId).toBeUndefined();
   });
 
+  it("teams-bot-018 asks for a message when a personal Teams message is blank", async () => {
+    const fixture = teamsConnectFixture();
+    setupTeamsConnectTestEnv();
+    const posts = captureBotPosts(fixture);
+    const blankId = teamsFixtureExternalId(fixture, "blank");
+    const personalChat = `a:personal-${fixture.fixtureId}`;
+
+    const ingress = await deliverToBot(
+      teamsMessageActivityForTest(fixture, {
+        id: blankId,
+        text: "   ",
+        entities: [],
+        conversation: { id: personalChat, conversationType: "personal" },
+        channelData: { tenant: { id: fixture.teamsTenantId } },
+      }),
+    );
+
+    expect(ingress.activity).toMatchObject({
+      kind: "message",
+      conversationType: "personal",
+      text: "",
+      attachments: [],
+    });
+    expect(
+      posts.map((post) => {
+        return {
+          conversation: post.conversation,
+          inReplyTo: post.inReplyTo,
+          text: post.activity.text,
+        };
+      }),
+    ).toStrictEqual([
+      {
+        conversation: personalChat,
+        inReplyTo: blankId,
+        text: "Please include a message for Nova.",
+      },
+    ]);
+  });
+
   it("teams-bot-013 answers unmentioned help and greeting messages", async () => {
     const fixture = teamsConnectFixture();
     setupTeamsConnectTestEnv();

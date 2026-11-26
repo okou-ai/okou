@@ -559,4 +559,42 @@ describe("Teams workspace identity", () => {
       linkedAccounts: [linkedAccountOf(profile)],
     });
   });
+
+  it("teams-workspace-identity-016 releases the Teams account when Clerk deletes the user", async () => {
+    setupEnv();
+    const fixture = teamsConnectFixture();
+    const profile = profileOf(fixture);
+    const nextAdminId = `user_next_${fixture.fixtureId}`;
+    const nextOrgId = `org_next_${fixture.fixtureId}`;
+    await seedMember(fixture.orgId, fixture.userId);
+    await seedMember(nextOrgId, nextAdminId);
+    serveMicrosoft(profile);
+    await completeOauth(fixture.userId, fixture.orgId, "connect");
+    const event = { type: "user.deleted", data: { id: fixture.userId } };
+    context.mocks.clerk.verifyWebhook.mockResolvedValue(event);
+
+    await accept(
+      setupApp({ context, routes: webhooksClerkRoutes })(
+        webhookClerkContract,
+      ).post({
+        body: JSON.stringify(event),
+        extraHeaders: {
+          "svix-id": `msg_${randomUUID()}`,
+          "svix-timestamp": String(Math.floor(now() / 1000)),
+          "svix-signature": "v1,signed-by-clerk",
+        },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const next = await completeOauth(nextAdminId, nextOrgId, "connect");
+    const status = await readStatus(nextAdminId, nextOrgId);
+
+    expect(next.searchParams.get("status")).toBe("connected");
+    expect(status).toMatchObject({
+      isConnected: true,
+      isInstalled: false,
+      linkedAccounts: [linkedAccountOf(profile)],
+    });
+  });
 });

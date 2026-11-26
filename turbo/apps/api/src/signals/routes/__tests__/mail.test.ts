@@ -607,6 +607,42 @@ describe("POST /api/mail/drafts/link", () => {
     });
   });
 
+  it("mail-030 does not require reconnect for an unrelated Gmail permission denial", async () => {
+    const { actor, gmail, thread } = await gmailMember();
+    mockGmail(gmail.token, {
+      "r-draft": () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 403,
+              status: "PERMISSION_DENIED",
+              message: "The caller does not have permission",
+              details: [
+                {
+                  "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                  domain: "gmail.googleapis.com",
+                  reason: "PERMISSION_DENIED",
+                },
+              ],
+            },
+          },
+          { status: 403 },
+        );
+      },
+    });
+    const response = await rawRequest("/api/mail/drafts/link", {
+      method: "POST",
+      headers: { ...as(actor), "content-type": "application/json" },
+      body: JSON.stringify({ threadId: thread.id, gmailDraftId: "r-draft" }),
+    });
+    expect(response.status).toBe(500);
+    const saved = await gmailAccounts(actor);
+    expect(saved.defaultConnection).toMatchObject({
+      id: gmail.connectionId,
+      connectionStatus: "connected",
+    });
+  });
+
   it("mail-054 requires reconnect when Gmail rejects authorization during send with 401", async () => {
     const { actor, gmail, thread } = await gmailMember();
     mockGmail(gmail.token, { "r-draft": gmailJson("r-draft") }, () => {
