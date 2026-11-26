@@ -65,6 +65,9 @@ final class WorkspaceStore {
   /// The workspace's own status, kept in the workspace session's Store. Views resolve it; the
   /// accessors serve owner logic, actions and tests.
   let shellValue: Computed<Shell>
+  /// The part of the status that chat actions depend on, so their views re-render only when it
+  /// changes.
+  let actionStatusValue: Computed<ActionStatus>
   private let shellState: CCState.State<Shell>
   let sidebarInteraction = SidebarInteraction()
   private var chatLinkThreadID: String? { navigation.openingThreadID }
@@ -241,6 +244,7 @@ final class WorkspaceStore {
     let shellState = CCState.State(Shell(newComposer: composer))
     self.shellState = shellState
     shellValue = Computed { try $0(shellState) }
+    actionStatusValue = Computed { get in try ActionStatus(get(shellState)) }
     composer.setScenePhase(.inactive)
     resources.featureSnapshot.didRequireUpgrade = { [weak self] in self?.handle($0) }
   }
@@ -567,6 +571,23 @@ extension WorkspaceStore {
         && lhs.newComposer === rhs.newComposer
     }
   }
+
+  /// What chat actions depend on: a required update and a new chat being created, with the
+  /// workspace's last failure.
+  struct ActionStatus: Equatable {
+    var needsUpgrade: Bool
+    var isCreating: Bool
+    var error: String?
+
+    init(_ shell: Shell) {
+      needsUpgrade = shell.needsUpgrade
+      isCreating = shell.isCreating
+      error = shell.error
+    }
+  }
+
+  /// The current value of `actionStatusValue`.
+  var actionStatus: ActionStatus { ActionStatus(shell) }
 
   /// The current value of `shellValue`.
   var shell: Shell {

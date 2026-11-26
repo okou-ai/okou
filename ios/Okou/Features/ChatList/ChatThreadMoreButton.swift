@@ -12,7 +12,7 @@ struct ChatThreadMoreButton: View {
   @ResolvedValue private var threads: [ChatThread]?
   @ResolvedValue private var status: ThreadListStore.Status?
   @ResolvedValue private var mutations: ThreadListMutations.Activity?
-  @ResolvedValue private var shell: WorkspaceStore.Shell?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore, threadID: String) {
     self.store = store
@@ -20,14 +20,14 @@ struct ChatThreadMoreButton: View {
     _threads = ResolvedValue(store.list.threadsValue)
     _status = ResolvedValue(store.list.statusValue)
     _mutations = ResolvedValue(store.list.mutationsValue)
-    _shell = ResolvedValue(store.shellValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   var body: some View {
     if let thread = (threads ?? store.list.threads).first(where: { $0.id == threadID }) {
       // A changed chat, list status, chat write or workspace status rebuilds the menu, since the
       // control receives them as values.
-      let workspace = shell ?? store.shell
+      let workspace = actionStatus ?? store.actionStatus
       ChatThreadMoreControl(
         store: store, thread: thread, status: status ?? store.list.status,
         isUpdating: (mutations ?? store.list.mutations).updatingThreads.contains(thread.id),

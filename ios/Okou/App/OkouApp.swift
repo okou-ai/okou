@@ -239,9 +239,8 @@ private struct WorkspaceRootView: View {
   private var workspace: some View {
     WorkspaceNavigation(sidebar: sidebar, forYouBusy: store.forYou.busy) {
       // Mount the sidebar after identity and its complete local baseline are restored.
-      WorkspaceShellReader(store: store) { shell in
-        if shell.hasRestoredSidebar,
-          authentication.presentation?.userID == userID,
+      RestoredSidebarGate(store: store) {
+        if authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
           ChatSidebarView(
@@ -305,14 +304,10 @@ private struct WorkspaceRootView: View {
   }
 
   private var chatPage: some View {
-    WorkspaceShellReader(store: store) { shell in
-      SelectedConversationReader(store: store) { selected in
-        chatPage(selected: selected, shell: shell)
-      }
-    }
+    SelectedConversationReader(store: store) { selected in chatPage(selected: selected) }
   }
 
-  private func chatPage(selected: ConversationStore?, shell: WorkspaceStore.Shell) -> some View {
+  private func chatPage(selected: ConversationStore?) -> some View {
     Group {
       if let conversation = selected {
         WorkspaceChatDetail(
@@ -328,22 +323,11 @@ private struct WorkspaceRootView: View {
             newChatComposer
               .chatFeedbackAnchor()
           }
-          .modifier(
-            ComposerVoiceAnimation(
-              voice: shell.newComposer.voice,
-              animation: reduceMotion ? nil : .easeInOut(duration: 0.22)))
+          .modifier(NewChatVoiceAnimation(store: store, reduceMotion: reduceMotion))
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .allowsHitTesting(shell.newChatSubmission?.isPresenting != true)
-    .accessibilityHidden(shell.newChatSubmission?.isPresenting == true)
-    .overlay {
-      if let submission = shell.newChatSubmission, submission.isPresenting {
-        NewChatSubmissionView(submission: submission, conversation: selected, webURL: store.webURL)
-          .id(submission.message.id)
-          .background { OkouColor.background.ignoresSafeArea() }
-      }
-    }
+    .modifier(NewChatSubmissionCover(store: store, conversation: selected))
     .safeAreaBar(edge: .top, spacing: 0) {
       ChatWorkspaceHeader(store: store, height: headerHeight)
         .onGeometryChange(for: CGFloat.self) {
@@ -415,35 +399,91 @@ private struct WorkspaceRootView: View {
   }
 }
 
-/// Resolves the workspace's own status from the session graph, for content under the workspace's
-/// Store provider.
-private struct WorkspaceShellReader<Content: View>: View {
+/// Shows its content once the workspace has restored the sidebar's cached chats, Projects and
+/// disclosure. The status is read from the workspace session's graph, so this applies under the
+/// workspace's Store provider. The content is built by the parent, so a status change does not
+/// rebuild it.
+private struct RestoredSidebarGate<Content: View>: View {
   let store: WorkspaceStore
-  let content: (WorkspaceStore.Shell) -> Content
+  let content: Content
   @ResolvedValue private var shell: WorkspaceStore.Shell?
 
-  init(store: WorkspaceStore, @ViewBuilder content: @escaping (WorkspaceStore.Shell) -> Content) {
+  init(store: WorkspaceStore, @ViewBuilder content: () -> Content) {
     self.store = store
-    self.content = content
+    self.content = content()
     _shell = ResolvedValue(store.shellValue)
   }
 
-  var body: some View { content(shell ?? store.shell) }
+  var body: some View {
+    if (shell ?? store.shell).hasRestoredSidebar { content }
+  }
+}
+
+/// Animates the new chat's composer for voice input. The composer is read from the workspace
+/// session's graph, so this applies under the workspace's Store provider.
+private struct NewChatVoiceAnimation: ViewModifier {
+  let store: WorkspaceStore
+  let reduceMotion: Bool
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(store: WorkspaceStore, reduceMotion: Bool) {
+    self.store = store
+    self.reduceMotion = reduceMotion
+    _shell = ResolvedValue(store.shellValue)
+  }
+
+  func body(content: Content) -> some View {
+    content.modifier(
+      ComposerVoiceAnimation(
+        voice: (shell ?? store.shell).newComposer.voice,
+        animation: reduceMotion ? nil : .easeInOut(duration: 0.22)))
+  }
+}
+
+/// Covers the chat page with the new chat's first message while it is presented, and keeps the
+/// page beneath from taking input. The submission is read from the workspace session's graph,
+/// so this applies under the workspace's Store provider.
+private struct NewChatSubmissionCover: ViewModifier {
+  let store: WorkspaceStore
+  let conversation: ConversationStore?
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(store: WorkspaceStore, conversation: ConversationStore?) {
+    self.store = store
+    self.conversation = conversation
+    _shell = ResolvedValue(store.shellValue)
+  }
+
+  func body(content: Content) -> some View {
+    let submission = (shell ?? store.shell).newChatSubmission
+    content
+      .allowsHitTesting(submission?.isPresenting != true)
+      .accessibilityHidden(submission?.isPresenting == true)
+      .overlay {
+        if let submission, submission.isPresenting {
+          NewChatSubmissionView(
+            submission: submission, conversation: conversation, webURL: store.webURL
+          )
+          .id(submission.message.id)
+          .background { OkouColor.background.ignoresSafeArea() }
+        }
+      }
+  }
 }
 
 /// Covers the workspace once the API requires an update. The requirement is read from the
 /// workspace session's graph, so this applies under the workspace's Store provider.
 private struct RequiredUpdateCover: ViewModifier {
   let store: WorkspaceStore
-  @ResolvedValue private var shell: WorkspaceStore.Shell?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore) {
     self.store = store
-    _shell = ResolvedValue(store.shellValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   func body(content: Content) -> some View {
-    let needsUpgrade = (shell ?? store.shell).needsUpgrade
+    let needsUpgrade = (actionStatus ?? store.actionStatus).needsUpgrade
     content.fullScreenCover(isPresented: Binding(get: { needsUpgrade }, set: { _ in })) {
       RequiredUpdateView()
         .background(OkouColor.background)
@@ -636,21 +676,21 @@ private struct WorkspaceForkSheet: View {
   let flow: ChatForkStore
   @ResolvedValue private var projects: [ChatProject]?
   @ResolvedValue private var threads: [ChatThread]?
-  @ResolvedValue private var shell: WorkspaceStore.Shell?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore, flow: ChatForkStore) {
     self.store = store
     self.flow = flow
     _projects = ResolvedValue(store.projects.confirmedValue)
     _threads = ResolvedValue(store.list.threadsValue)
-    _shell = ResolvedValue(store.shellValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   var body: some View {
     ChatForkView(
       flow: flow, webURL: store.webURL, threads: threads ?? store.list.threads,
       project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
-      needsUpgrade: (shell ?? store.shell).needsUpgrade, dismiss: store.dismissFork)
+      needsUpgrade: (actionStatus ?? store.actionStatus).needsUpgrade, dismiss: store.dismissFork)
   }
 }
 

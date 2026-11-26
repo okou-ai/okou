@@ -81,7 +81,7 @@ struct ChatProjectPicker: View {
   /// Confirmed Projects and the last action error, kept in the workspace session's Store.
   @ResolvedValue private var resolvedProjects: ChatProjectStore.Presentation?
   /// The workspace's status, for an update requirement, kept in the same Store.
-  @ResolvedValue private var shell: WorkspaceStore.Shell?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(workspace: WorkspaceStore, thread: ChatThread, create: @escaping () -> Void) {
     self.workspace = workspace
@@ -89,10 +89,10 @@ struct ChatProjectPicker: View {
     self.create = create
     _projectRead = LoadableValue(task: workspace.projects.listValue, keepLast: true)
     _resolvedProjects = ResolvedValue(workspace.projects.presentation)
-    _shell = ResolvedValue(workspace.shellValue)
+    _actionStatus = ResolvedValue(workspace.actionStatusValue)
   }
 
-  private var needsUpgrade: Bool { (shell ?? workspace.shell).needsUpgrade }
+  private var needsUpgrade: Bool { (actionStatus ?? workspace.actionStatus).needsUpgrade }
 
   private var projectState: ChatProjectStore.Presentation {
     resolvedProjects ?? workspace.projects.currentPresentation

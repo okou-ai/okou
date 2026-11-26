@@ -34,7 +34,7 @@ struct ChatSidebarView: View {
   @ResolvedValue private var resolvedMutations: ThreadListMutations.Activity?
   /// The update requirement, a new chat being created and the workspace's last failure, kept in
   /// the workspace session's Store.
-  @ResolvedValue private var resolvedShell: WorkspaceStore.Shell?
+  @ResolvedValue private var resolvedActionStatus: WorkspaceStore.ActionStatus?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -61,7 +61,7 @@ struct ChatSidebarView: View {
     _resolvedSelection = ResolvedValue(store.selectedThreadValue)
     _resolvedListStatus = ResolvedValue(store.list.statusValue)
     _resolvedMutations = ResolvedValue(store.list.mutationsValue)
-    _resolvedShell = ResolvedValue(store.shellValue)
+    _resolvedActionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   private struct ProjectEditor {
@@ -103,7 +103,9 @@ struct ChatSidebarView: View {
     resolvedMutations ?? store.list.mutations
   }
 
-  private var shell: WorkspaceStore.Shell { resolvedShell ?? store.shell }
+  private var actionStatus: WorkspaceStore.ActionStatus {
+    resolvedActionStatus ?? store.actionStatus
+  }
 
   private var listError: String? {
     listRead.error?.localizedDescription ?? mutations.actionError ?? listStatus.syncError
@@ -143,7 +145,7 @@ struct ChatSidebarView: View {
         threadSection(presentation)
         // The inbox explains itself inside the section, below its projects.
         if !presentation.isInbox && presentation.isEmpty && listError == nil
-          && shell.error == nil
+          && actionStatus.error == nil
         {
           Text(emptyMessage(presentation.filter))
             .font(.okou(.subheadline))
@@ -267,7 +269,7 @@ struct ChatSidebarView: View {
         || (resolvedThreads ?? store.list.threads).contains {
           !$0.isMuted && $0.indicator == .unread
         }, markingAllRead: listStatus.markingAllRead,
-      updatingChats: !mutations.updatingThreads.isEmpty, needsUpgrade: shell.needsUpgrade,
+      updatingChats: !mutations.updatingThreads.isEmpty, needsUpgrade: actionStatus.needsUpgrade,
       close: close, newProject: { showEditor(creationEditor) })
   }
 
@@ -322,7 +324,7 @@ struct ChatSidebarView: View {
         }
       }
       let inboxEmpty =
-        contents.isInbox && chats.isEmpty && listError == nil && shell.error == nil
+        contents.isInbox && chats.isEmpty && listError == nil && actionStatus.error == nil
       if !contents.projects.isEmpty && (!chats.isEmpty || inboxEmpty) {
         // A hairline closes the projects, so their chats never run into the list below.
         OkouListDivider()
@@ -413,8 +415,8 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatSidebarPresentation.ProjectGroup) -> some View {
     ChatSidebarProjectRow(
       group: group, store: store, expanded: projectState.isExpanded(group.id),
-      isPending: projectState.pending.contains(group.id), needsUpgrade: shell.needsUpgrade,
-      isCreating: shell.isCreating, rowInset: rowInset,
+      isPending: projectState.pending.contains(group.id), needsUpgrade: actionStatus.needsUpgrade,
+      isCreating: actionStatus.isCreating, rowInset: rowInset,
       statusColumn: statusColumn, close: close,
       rename: { showEditor(editor(project: group.project)) },
       delete: { deletingProject = group.project })
@@ -525,11 +527,12 @@ struct ChatSidebarView: View {
       }
       .labelStyle(.iconOnly)
       .tint(OkouSwipeTint.neutral)
-      .disabled(!store.list.canUpdate(thread.id, mutations: mutations) || shell.needsUpgrade)
+      .disabled(!store.list.canUpdate(thread.id, mutations: mutations) || actionStatus.needsUpgrade)
       Button("Delete chat", okouSymbol: "trash-2") { deletingThreadID = thread.id }
         .labelStyle(.iconOnly)
         .tint(OkouSwipeTint.destructive)
-        .disabled(!store.list.canUpdate(thread.id, mutations: mutations) || shell.needsUpgrade)
+        .disabled(
+          !store.list.canUpdate(thread.id, mutations: mutations) || actionStatus.needsUpgrade)
     }
   }
 

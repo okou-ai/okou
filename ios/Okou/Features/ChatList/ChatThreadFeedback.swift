@@ -46,20 +46,20 @@ struct ChatThreadFeedbackView: View {
   /// being created updates whether the action applies.
   @ResolvedValue private var listStatus: ThreadListStore.Status?
   @ResolvedValue private var mutations: ThreadListMutations.Activity?
-  @ResolvedValue private var shell: WorkspaceStore.Shell?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore, feedback: ChatThreadFeedback) {
     self.store = store
     self.feedback = feedback
     _listStatus = ResolvedValue(store.list.statusValue)
     _mutations = ResolvedValue(store.list.mutationsValue)
-    _shell = ResolvedValue(store.shellValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   var body: some View {
     let markingAllRead = (listStatus ?? store.list.status).markingAllRead
     let activity = mutations ?? store.list.mutations
-    let workspace = shell ?? store.shell
+    let workspace = actionStatus ?? store.actionStatus
     ChatFeedbackSurface(
       message: feedback.message,
       icon: feedback.kind == .error ? "circle-alert" : "circle-check",
