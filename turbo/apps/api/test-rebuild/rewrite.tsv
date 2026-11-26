@@ -2351,11 +2351,11 @@ account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewri
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	planned				
 account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	planned				
-account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-001	planned				B03
-account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-003	planned				B03
-account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-005	planned				B03
-account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-009	planned				B03
-account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-010	planned				B03
+account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-001	rewritten	47.1		src/signals/routes/__tests__/org-cache.test.ts	B03
+account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-003	rewritten	66.8		src/signals/routes/__tests__/org-cache.test.ts	B03
+account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-005	rewritten	49.6		src/signals/routes/__tests__/org-cache.test.ts	B03
+account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-009	rewritten	11.3		src/signals/routes/__tests__/org-cache.test.ts	B03
+account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-010	rewritten	36.9		src/signals/routes/__tests__/org-cache.test.ts	B03
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-001	planned				
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-002	planned				
 billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-005	planned				
