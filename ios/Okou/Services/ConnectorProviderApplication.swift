@@ -5,30 +5,24 @@ import UIKit
 
 struct ConnectorProviderRequest {
   let provider: String
-  let webURL: URL
   let appURLs: [URL]
-  let callbackURL: URL?
-  let exchangeURL: URL?
 }
 
 enum ConnectorProviderLaunch {
   case opened
   case unavailable
-  case code(String)
 }
 
-/// Credentials and code exchange belong to the API, including SDK authorization.
+/// Credentials and code exchange belong to the API.
 @MainActor
 protocol ConnectorProviderApplication {
   var dropboxAppKey: String? { get }
   func supports(_ target: ChatConnectorTarget) -> Bool
   func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch
-  func receive(_ url: URL) -> Bool
 }
 
 @MainActor
 final class SystemConnectorProviderApplication: ConnectorProviderApplication {
-  private var spotify: SpotifyConnectorAuthorization?
   var dropboxAppKey: String? { ConnectorProviderAuthorization.dropboxAppKey }
 
   func supports(_ target: ChatConnectorTarget) -> Bool {
@@ -36,16 +30,10 @@ final class SystemConnectorProviderApplication: ConnectorProviderApplication {
       return ConnectorProviderAuthorization.dropboxAppKey != nil
     }
     guard let slug = target.connectorSlug else { return false }
-    return ["strava", "tiktok", "spotify"].contains(slug)
+    return ["strava", "tiktok"].contains(slug)
   }
 
   func authorize(_ request: ConnectorProviderRequest) async throws -> ConnectorProviderLaunch {
-    if request.provider == "spotify" {
-      let authorization = SpotifyConnectorAuthorization()
-      spotify = authorization
-      defer { if spotify === authorization { spotify = nil } }
-      return .code(try await authorization.authorize(request))
-    }
     for url in request.appURLs {
       try Task.checkCancellation()
       if url.scheme != "https", !UIApplication.shared.canOpenURL(url) { continue }
@@ -56,8 +44,6 @@ final class SystemConnectorProviderApplication: ConnectorProviderApplication {
     }
     return .unavailable
   }
-
-  func receive(_ url: URL) -> Bool { spotify?.receive(url) == true }
 }
 
 enum ConnectorProviderAuthorization {
@@ -89,8 +75,7 @@ enum ConnectorProviderAuthorization {
     let endpoints = [
       "strava": "https://www.strava.com/oauth/mobile/authorize",
       "tiktok": "https://www.tiktok.com/v2/auth/authorize/",
-      "dropbox": "https://www.dropbox.com/oauth2/authorize",
-      "spotify": "https://accounts.spotify.com/authorize"
+      "dropbox": "https://www.dropbox.com/oauth2/authorize"
     ]
     guard "https://\(webURL.host ?? "")\(components.percentEncodedPath)" == endpoints[provider],
       value("state") != nil, value("response_type") == "code"
@@ -135,19 +120,11 @@ enum ConnectorProviderAuthorization {
       guard let standard = components.url else { throw APIClientError.invalidResponse }
       urls.append(standard)
       components.scheme = "dbapi-8-emm"
-    case "spotify":
-      guard callback?.absoluteString == "ai.okou.ios://connector-provider/spotify",
-        isCallback(authorization.exchangeUrl, slug: "spotify"), value("client_id") != nil
-      else { throw APIClientError.invalidResponse }
-      return ConnectorProviderRequest(
-        provider: provider, webURL: webURL, appURLs: [], callbackURL: callback,
-        exchangeURL: authorization.exchangeUrl)
     default: throw APIClientError.invalidResponse
     }
     guard let url = components.url else { throw APIClientError.invalidResponse }
     urls.append(url)
-    return ConnectorProviderRequest(
-      provider: provider, webURL: webURL, appURLs: urls, callbackURL: callback, exchangeURL: nil)
+    return ConnectorProviderRequest(provider: provider, appURLs: urls)
   }
 
   @MainActor
@@ -236,10 +213,9 @@ enum ConnectorProviderAuthorization {
   }
 
   static func isProviderCallback(_ url: URL) -> Bool {
-    (url.scheme == "ai.okou.ios" && url.host == "connector-provider" && url.path == "/spotify")
-      || (url.scheme == "https"
-        && url.host == Bundle.main.object(forInfoDictionaryKey: "ConnectorCallbackHost") as? String
-        && url.path == "/connectors/tiktok/callback")
+    (url.scheme == "https"
+      && url.host == Bundle.main.object(forInfoDictionaryKey: "ConnectorCallbackHost") as? String
+      && url.path == "/connectors/tiktok/callback")
       || (dropboxAppKey.map { url.scheme == "db-\($0)" } == true)
   }
 

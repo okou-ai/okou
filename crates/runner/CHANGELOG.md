@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.251.25](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.24...runner-rs-v0.251.25) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** share bounded zstd frame traversal ([#51219](https://github.com/okou-ai/okou/issues/51219)) ([5a9cd33](https://github.com/okou-ai/okou/commit/5a9cd3310d44a1f3d88e4aeffd7f5c5523769115))
+* **runner:** share capture media type grammar ([#51240](https://github.com/okou-ai/okou/issues/51240)) ([6f3d3ce](https://github.com/okou-ai/okou/commit/6f3d3ce1cd8a8313d7636ee5247296e08a547db3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.24](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.23...runner-rs-v0.251.24) (2026-11-26)
 
 

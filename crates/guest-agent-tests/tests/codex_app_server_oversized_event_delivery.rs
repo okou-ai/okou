@@ -91,6 +91,13 @@ fn image(url: &str) -> CodexOutput<'_> {
     CodexOutput::Image { image_url: url }
 }
 
+fn owned_image(image_url: String) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("type".into(), Value::String("input_image".into())),
+        ("image_url".into(), Value::String(image_url)),
+    ]))
+}
+
 fn failed_command_item(output: String) -> Value {
     Value::Object(serde_json::Map::from_iter([
         ("type".into(), "commandExecution".into()),
@@ -440,8 +447,10 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     let aggregate = delivered_item(&delivered, "aggregate-images")?;
     assert_eq!(
         aggregate["item"]["output"],
-        serde_json::json!([
-            {"type":"input_text","text":"[image omitted for delivery]"},image(&half_image),image(&small_image)
+        Value::Array(vec![
+            serde_json::json!({"type":"input_text","text":"[image omitted for delivery]"}),
+            owned_image(half_image),
+            owned_image(small_image),
         ])
     );
     let structure = delivered_item(&delivered, "structure-output")?;
@@ -536,6 +545,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     let mut saw_local_plan = false;
     let mut saw_local_multi_change = false;
     let mut saw_local_image = false;
+    let expected_local_image = Value::Array(vec![owned_image(large_image)]);
     let mut reader = BufReader::with_capacity(
         1024 * 1024,
         std::fs::File::open(runtime.paths.agent_log_file())?,
@@ -586,10 +596,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             saw_local_multi_change = true;
         }
         if item_id == Some("large-image") && !saw_local_image {
-            assert_eq!(
-                event["item"]["output"],
-                serde_json::json!([image(&large_image)])
-            );
+            assert_eq!(event["item"]["output"], expected_local_image);
             saw_local_image = true;
         }
     }

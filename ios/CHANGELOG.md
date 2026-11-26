@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.69.1](https://github.com/okou-ai/okou/compare/ios-v0.69.0...ios-v0.69.1) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove spotify app authorization sdk ([#51237](https://github.com/okou-ai/okou/issues/51237)) ([45ada95](https://github.com/okou-ai/okou/commit/45ada953eccf4f768fe2e931063aca34e601019b))
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
 ## [0.69.0](https://github.com/okou-ai/okou/compare/ios-v0.68.0...ios-v0.69.0) (2026-11-26)
 
 

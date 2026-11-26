@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.63.0](https://github.com/okou-ai/okou/compare/android-v0.62.1...android-v0.63.0) (2026-11-26)
+
+
+### Features
+
+* **android:** align reply headers and stop controls with design ([#51224](https://github.com/okou-ai/okou/issues/51224)) ([d9de7cf](https://github.com/okou-ai/okou/commit/d9de7cf480729ca06431e688f51680d227714e82))
+* **android:** share artifact links and manage access ([#51204](https://github.com/okou-ai/okou/issues/51204)) ([6724356](https://github.com/okou-ai/okou/commit/6724356a5c14f25068ca31247b344fc3e6a62e4c))
+
+
+### Bug Fixes
+
+* **android:** retain loaded chat images on foreground ([#51196](https://github.com/okou-ai/okou/issues/51196)) ([fb355ee](https://github.com/okou-ai/okou/commit/fb355eefb97764032a5a651a2eff032c42d5afed))
+* **android:** reveal chat swipe labels continuously ([#51215](https://github.com/okou-ai/okou/issues/51215)) ([91dcfc7](https://github.com/okou-ai/okou/commit/91dcfc72b9a6730c7272f2838045db67597b7d09))
+* **android:** reveal the matched block from workspace search ([#51205](https://github.com/okou-ai/okou/issues/51205)) ([6bd96d6](https://github.com/okou-ai/okou/commit/6bd96d6aac095e5b23083656f117465a8a30ba37))
+* **android:** show accurate model account quota windows ([#51213](https://github.com/okou-ai/okou/issues/51213)) ([71c79f2](https://github.com/okou-ai/okou/commit/71c79f261c29dd787f2d14f7e552ab69302bd257))
+
+
+### Refactoring
+
+* **android:** share directory return focus ([#51165](https://github.com/okou-ai/okou/issues/51165)) ([190bc42](https://github.com/okou-ai/okou/commit/190bc42a9f817002dd5a8abfe0342edc1be06df1))
+
 ## [0.62.1](https://github.com/okou-ai/okou/compare/android-v0.62.0...android-v0.62.1) (2026-11-26)
 
 
