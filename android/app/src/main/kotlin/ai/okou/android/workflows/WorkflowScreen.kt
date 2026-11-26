@@ -3,6 +3,7 @@ package ai.okou.android.workflows
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
@@ -186,6 +187,8 @@ internal fun WorkflowScreen(
                     },
                 )
                 .maxByOrNull { it.failure.sequence }
+    // Keep the action timeout with the detail pane across tab and editor changes.
+    if (route.id != null) WorkspaceFeedbackTimeout(actionSnackbar)
     val detailFeedback: @Composable () -> Unit = {
         key(route.id, route.tab, editing != null) {
             WorkflowReadFeedbackHost(detailNotice, readAnnouncements.detail, actionSnackbar)

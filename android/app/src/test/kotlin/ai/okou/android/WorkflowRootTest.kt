@@ -1490,8 +1490,24 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText(rejected).fetchSemanticsNodes().isNotEmpty()
             }
-            compose.onNodeWithText(rejected).assertIsDisplayed()
+            val feedback = compose.onNodeWithText(rejected).assertIsDisplayed()
             compose.onNode(source).assertIsDisplayed()
+
+            compose.mainClock.autoAdvance = false
+            try {
+                compose.mainClock.advanceTimeBy(3_000)
+                feedback.assertIsDisplayed()
+                val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+                instructions.performClick()
+                compose.mainClock.advanceTimeBy(250)
+                instructions.assertIsSelected()
+                feedback.assertIsDisplayed()
+
+                compose.mainClock.advanceTimeBy(2_250)
+                feedback.assertDoesNotExist()
+            } finally {
+                compose.mainClock.autoAdvance = true
+            }
         } finally {
             releaseDelete.countDown()
         }
