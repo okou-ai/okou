@@ -267,9 +267,6 @@ struct ForYouView: View {
     // A card that fits stays put: only one taller than the room (large text, the keyboard up)
     // scrolls, so a vertical drag never pulls the card down off the deck.
     .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-    // The card a direction is written for stays where it is while the member types; tapping
-    // around it puts the input away.
-    .scrollDisabled(asContext)
     .scrollDismissesKeyboard(.interactively)
   }
 
@@ -330,12 +327,6 @@ struct ForYouView: View {
             RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
               .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
           }
-          // Lifted off the ground as a floating panel is, so the card reads as one object on it.
-          // Not as the context of a direction: the page is veiled then, and the room's foot,
-          // just under the card, would cut its shadow into a grey band.
-          .shadow(
-            color: .black.opacity(asContext ? 0 : OkouElevation.floatingOpacity),
-            radius: OkouElevation.floatingRadius, y: OkouElevation.floatingY)
       }
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
         ForYouCardPlacement(proxy.frame(in: .global))

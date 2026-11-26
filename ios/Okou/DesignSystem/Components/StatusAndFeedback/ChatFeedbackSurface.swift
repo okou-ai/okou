@@ -3,10 +3,9 @@ import UIKit
 
 /// The one floating surface for chat feedback — a finished action ("Chat archived · Undo") or a
 /// sync failure with Retry — above the bottom bar: Liquid Glass, a 16 pt Lucide glyph (a
-/// small spinner while it works), one 15 pt line, an optional text action and a ✕. A plain toast
-/// (a message sent, nothing to undo or open) has neither: it only lifts away on its own or under
-/// a swipe. Routine updates never show here. At accessibility sizes the action moves under the
-/// text.
+/// small spinner while it works), one 15 pt line, an optional text action and a ✕. A plain toast,
+/// with nothing to undo or open, has neither: it lifts away on its own or under a swipe. Routine
+/// updates never show here. At accessibility sizes the action moves under the text.
 /// Swipe horizontally to dismiss without competing with bottom-edge system gestures. For you
 /// floats it under its header instead, where it never covers a card's directions.
 struct ChatFeedbackSurface: View {
@@ -32,11 +31,8 @@ struct ChatFeedbackSurface: View {
   @State private var cardWidth: CGFloat = 0
   @State private var isTouching = false
 
-  /// Feedback with a control stays while VoiceOver is on, so it can be reached; a plain toast has
-  /// none and expires as it does for everyone.
   private var canAutoDismiss: Bool {
-    autoDismissAfter != nil && !isTouching && (!voiceOver || !showsDismiss)
-      && scenePhase == .active
+    autoDismissAfter != nil && !isTouching && !voiceOver && scenePhase == .active
   }
 
   /// The ✕ or an action at the trailing edge, which takes the trailing inset for its own target.

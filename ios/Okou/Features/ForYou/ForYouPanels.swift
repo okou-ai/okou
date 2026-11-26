@@ -30,8 +30,7 @@ struct ForYouHeader: View {
   }
 }
 
-/// The panel once every card is settled: nothing is left to handle, and there is no list of what
-/// was settled. Each card's own confirmation already offered its Undo or its chat.
+/// The panel once every card is settled: the rest picture, one line and the way back to chats.
 struct ForYouCaughtUp: View {
   let done: () -> Void
 

@@ -208,7 +208,7 @@ final class ForYouStore {
       try Task.checkCancellation()
       editor.models.isSending = true
       defer { editor.models.isSending = false }
-      _ = try await send(draft, target: target, attempt: attempt)
+      try await send(draft, target: target, attempt: attempt)
       workspace.composerWorkflows.recordUse(workflows)
       record(card)
       // Accepting the annotated message consumes the card on the server.
@@ -263,10 +263,7 @@ final class ForYouStore {
     } catch APIClientError.http(404, _, _, _) { return nil }
   }
 
-  @discardableResult
-  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws
-    -> String
-  {
+  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws {
     guard let document = draft.draftUserMessage, document.isSupported, let workspace,
       !workspace.isClosed
     else {
@@ -292,7 +289,6 @@ final class ForYouStore {
       modelSelection: attempt.model, reasoningEffort: attempt.effort,
       computerAccess: attempt.computerAccess)
     workspace.requestRefresh(.threadList)
-    return destination
   }
 
   private func record(_ card: ForYouCard) {
@@ -399,15 +395,5 @@ extension ForYouStore {
 private struct ForYouUnconfirmedChoice: LocalizedError {
   var errorDescription: String? {
     String(localized: "Retry the previous action to confirm its result.")
-  }
-}
-
-extension ForYouCard {
-  fileprivate var title: String {
-    switch content {
-    case .suggestion(let suggestion): suggestion.title
-    case .automation(let event): event.automationName
-    case .unsupported: ""
-    }
   }
 }

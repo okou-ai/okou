@@ -128,7 +128,7 @@ not copied from CSS and are not all mandated by Apple.
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
 | Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1 s working spinner turn, fold spring, 50 ms waveform sample, 30 fps Okou avatar; navigation transitions are system-owned)              |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
-| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send or a handled For you card, error, sidebar open/close and a For you card coming to rest in front (selection). Never while a finger scrolls or on typing                                                          |
+| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send or a handled For you card, error, and sidebar open/close. Never while a finger scrolls or on typing                                                                                                             |
 
 An icon inside a `Label` is decorative: its text names the action. Icon-only
 buttons require an explicit accessible label. Errors appear next to the owning
@@ -171,8 +171,7 @@ default content size and grow with the reader's text size.
   `foreground` for the primary line, `muted-foreground` for the secondary one.
   Don't add a size to separate two lines that weight or colour can separate.
 - **Keep text readable.** Sentences stay at Footnote 13 or larger; Caption is
-  for a word or two, or one short uppercase label line (a For you direction's
-  action), and a label in Caption does not count toward a surface's three sizes. Chinese, Japanese and Korean read denser at the same size:
+  for a word or two, or one short uppercase label line, and a label in Caption does not count toward a surface's three sizes. Chinese, Japanese and Korean read denser at the same size:
   prefer Subheadline 15 or larger for their reading text, and keep Footnote 13
   as their smallest sentence.
 - **Never shrink text to fit.** Let it wrap, truncate with a way to see the
@@ -239,18 +238,19 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`, unless a
   glass group draws the glass around them (the sidebar's chat list menu is `.plain()`).
   Paired controls in one bar are the same size.
-- **Glass over a picture is veiled.** Clear glass takes the colour of what is behind it: over
-  For you's sea its dock turned the sea's blue and melted into it. Controls that stand on a
+- **Glass over a picture is veiled.** Clear glass takes the colour of what is behind it: over a
+  strongly coloured picture a control turns the picture's colour and melts into it. Controls that stand on a
   strongly coloured scene use `OkouGlassControl(surface: .scene)` (and
   `OkouGlassPrompt(on: .scene)`): the glass holds an 85% veil of the page's `background`, so
   they read as controls lifted off the scene in both themes. `Glass.tint` with the background
   does not do this; a light tint on light glass left the sea's blue as it was. Bars over a page
   keep the clear glass.
-- **Text on glass takes the glass's vibrancy.** A prompt that stands in for an input on glass
-  (`OkouGlassPrompt`, For you's "What do you have in mind?") uses the hierarchical `.secondary`
-  style, not the fixed placeholder grey: the system adapts it to whatever the glass picks up, so
-  it keeps reading over a picture or a coloured scene. A fixed colour is drawn as it is and washed
-  out to about 2.3:1 on For you's sea; the vibrant style keeps the text in the glass's own hue.
+- **Text on glass over a picture takes the glass's vibrancy.** A prompt that stands in for an
+  input on glass over a picture or a coloured scene (`OkouGlassPrompt`) uses the hierarchical
+  `.secondary` style, not the fixed placeholder grey: the system adapts it to whatever the glass
+  picks up, so it keeps reading there, where a fixed colour washes out to about 2.3:1. On a plain
+  page or ground, the sidebar's New Message and For you's "What do you have in mind?" take the
+  placeholder grey with their `square-pen` mark, as an empty input's placeholder does.
   The sidebar filter uses `ChatListFilterMenu` with that native configuration.
   UIKit owns menu presentation and navigation-gesture arbitration.
 - **Floating panels** over the transcript (slash workflows, @mentions) use
@@ -501,8 +501,8 @@ single floating line, and colour is a small accent for status only.
   open, has no close button and no action. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
-  foregrounding; it stays available while VoiceOver is enabled, except a plain toast, which
-  has no control to reach and expires anyway. Pending operations and errors do not expire.
+  foregrounding; it stays available while VoiceOver is enabled. Pending operations and errors
+  do not expire.
   The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
@@ -944,17 +944,17 @@ feature; the catalog shows each one.
   the brush itself, unrepeated, each turned a quarter from the last, faded at its own edges and
   towards the middle, where the card is, so its lines frame the header, the dock and the card's
   sides without a seam. At night the wash is a warm brown and the lines quieter.
-- **The header** is back and the title over "Okou's picks to handle", nothing more. It shows no
-  count and no place ("1 of 5", "5 left"): the reader settles one card at a time, and the
-  layers under the card already say that more wait.
-- **Cards** stand on the ground in white by day (`background-50` at night) at sheet radius, lifted
-  by the floating panel's shadow, with a hairline and 24 pt above the heading and 20 pt
-  elsewhere. A direction is a step back from the white card (`background-50` by day, `card` at
+- **The header** is back and the title over "Okou's picks to handle". The reader settles one
+  card at a time, and the layers under the card say that more wait, so the header carries no
+  count or place.
+- **Cards** stand on the ground in white by day (`background-50` at night) at sheet radius, in
+  flow and without a shadow, as a grouped sheet's rows stand on theirs, with a hairline and 24 pt
+  above the heading and 20 pt elsewhere. A direction is a step back from the white card (`background-50` by day, `card` at
   night, a step up from the card) with a hairline (`state-pressed` and `control-border` while
   pressed, scaled to 98%), 16 pt around its text and 8 pt from the next, so it reads as a button
-  on the card in both schemes. It is its label and description only, with no mark and no line
-  saying whether it sends to a new chat or drafts in one, so both keep the button's whole width
-  (at most two lines of description); VoiceOver hears where it goes as the button's hint. While a
+  on the card in both schemes. It is its label and description, which keep the button's whole
+  width (at most two lines of description); VoiceOver hears where it goes, a new chat or a draft
+  in one, as the button's hint. While a
   choice is under way a 2 pt line runs along the button's foot (amber when it sends,
   `control-border` when it drafts; still under Reduce Motion), and the other directions fade. A
   card that ends in text, as a direction's context does, keeps as much room below the text as
@@ -971,8 +971,8 @@ feature; the catalog shows each one.
   it stops a gap short of them. When the actions would leave the heading less than a third of the
   card, as at the largest text sizes, heading and actions scroll together from the title.
 - **One card at a time.** Only the card in front can be read, and it stays until it is handled:
-  by a direction, the member's own direction, or Dismiss. There is no pager: the page holds only
-  the card in front, so a sideways swipe does nothing and the reader settles each card in turn. A
+  by a direction, the member's own direction, or Dismiss. The page holds only the card in front,
+  so the reader settles each card in turn. A
   handled card sinks away while the next one rises out of the deck into its place. Every card fills the room from 24 pt
   under the header down to the dock, on every phone, so the page keeps one composition whatever
   the screen or the deck's text. Room the text doesn't need lies between the heading and the
@@ -987,22 +987,20 @@ feature; the catalog shows each one.
 - **The dock** is the sidebar footer's pair: "What do you have in mind?" in the placeholder grey
   on a glass capsule, as New Message is, which grows into the composer, and a round glass ✕, as
   Search is, that opens Dismiss with its reasons menu.
-- **Handling a card says nothing.** A direction sent, the member's own direction, and Done,
-  Won't do, Later, Less like this or Just dismiss from the Dismiss menu (already the second
-  step) all simply move the card away: no confirmation and no Undo. Dismissing a paused
-  automation's event is the same.
+- **A handled card's leaving is its confirmation.** A direction sent, the member's own
+  direction, and Done, Won't do, Later, Less like this or Just dismiss from the Dismiss menu, which
+  is itself the second step, each move the card away. Dismissing a paused automation's event does
+  the same.
 - **Only an enabled automation gets a plain toast, under the header.** "Automation enabled" drops
   in as `ChatFeedbackSurface` with one line, no action and no ✕, since the deck alone does not
   show it. It floats over the ground so the deck never moves and the card's directions are never
   covered, and lifts away after six idle seconds or a sideways swipe. A failure floats in the
   same place and stays until it is dismissed.
-- **Caught up** is the rest picture, "All caught up", one line, and Back to chats. It lists
-  nothing of what the visit settled and offers no Undo.
+- **Caught up** is the rest picture, "All caught up", one line, and Back to chats.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the
   composer's glass and the keyboard read plain. The card stays above the input as its context:
-  its heading only, as tall as it is up to the room under the header, held still while the member
-  types and fading at its foot, without its shadow, with its directions and source set aside so
-  the draft is never left behind. The card already says what the direction answers, so the input
+  its heading only, as tall as it is up to the room under the header, scrolling and fading there
+  like a dense card, with its directions and source set aside so the draft is never left behind. The card already says what the direction answers, so the input
   carries no quote of it. A tap around the card puts the input away; the card itself stays
   readable.
 
