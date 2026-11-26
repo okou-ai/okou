@@ -43,7 +43,7 @@ private struct ConversationActivityContent: View {
   var body: some View {
     let text = executionText
     HStack(spacing: OkouSpace.sm) {
-      OkouRunningIndicator().frame(width: 16)
+      OkouThinkingMark()
       Text(verbatim: text)
         .font(.okou(.subheadline))
         .foregroundStyle(OkouColor.mutedForeground)

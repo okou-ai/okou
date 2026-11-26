@@ -278,8 +278,13 @@
       OkouCatalogPage(.statusAndFeedback, close: close) {
         OkouCatalogSection("Running") {
           HStack(spacing: OkouSpace.md) {
-            OkouRunningIndicator()
+            OkouThinkingMark()
             Text("The transcript's working line").font(.okou(.footnote))
+              .foregroundStyle(OkouColor.mutedForeground)
+          }
+          HStack(spacing: OkouSpace.md) {
+            OkouRunningIndicator()
+            Text(verbatim: "Working chat preview").font(.okou(.footnote))
               .foregroundStyle(OkouColor.mutedForeground)
           }
         }
