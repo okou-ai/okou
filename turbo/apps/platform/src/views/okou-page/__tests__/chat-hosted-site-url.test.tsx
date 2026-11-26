@@ -569,7 +569,7 @@ test("a workspace without an active subscription cannot select an existing verif
   ).toBeEnabled();
 });
 
-test("the domain wizard separates missing TXT values, activation checks, and saving the address", async () => {
+test("the domain wizard keeps two DNS records visible while HTTPS activates and copies the verified address before saving", async () => {
   const hostname = "www.customer-example.net";
   const domainId = "00000000-0000-4000-8000-000000000091";
   const revision = "00000000-0000-4000-8000-000000000092";
@@ -581,16 +581,6 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
       value: "okou-verification=demo",
     },
     { type: "CNAME" as const, name: hostname, value: "connect.okou.app" },
-    {
-      type: "TXT" as const,
-      name: `_acme-challenge.${hostname}`,
-      value: "certificate-one",
-    },
-    {
-      type: "TXT" as const,
-      name: `_acme-challenge.${hostname}`,
-      value: "certificate-two",
-    },
   ];
   const passed = { status: "passed" as const, message: "Verified" };
   let settings: zInfer<typeof hostedDomainSettingsSchema> = {
@@ -612,11 +602,14 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
           status: "incomplete",
           eligibleForSelection: false,
           checkedAt,
-          validationRecords: records.slice(2),
+          validationRecords: [],
           checks: {
             ownership: passed,
             dns: passed,
-            certificate: passed,
+            certificate: {
+              status: "pending",
+              message: "HTTPS is being configured automatically",
+            },
             provider: {
               status: "pending",
               message:
@@ -631,11 +624,10 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
             return {
               ...record,
               checkedAt,
-              observedValues:
-                index === 3 ? ["certificate-one"] : [record.value],
-              status: index === 3 ? ("pending" as const) : ("passed" as const),
+              observedValues: index === 1 ? [] : [record.value],
+              status: index === 1 ? ("pending" as const) : ("passed" as const),
               message:
-                index === 3
+                index === 1
                   ? "The record value does not match. Update it at your DNS provider, then click Verify."
                   : "Record matches",
             };
@@ -648,6 +640,7 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
     return respond(200, settings);
   });
   let verifiedOnce = false;
+  let readyForSelection = false;
   const verificationStarted = context.mocks.deferred<void>();
   const finishVerification = context.mocks.deferred<void>();
   context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
@@ -655,7 +648,7 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
       verificationStarted.resolve();
       await finishVerification.promise;
     }
-    const ready = verifiedOnce;
+    const ready = readyForSelection;
     verifiedOnce = true;
     settings = {
       ...settings,
@@ -669,6 +662,9 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
             eligibleForSelection: ready,
             checks: {
               ...domain.verification!.checks,
+              certificate: ready
+                ? passed
+                : domain.verification!.checks.certificate,
               provider: ready ? passed : domain.verification!.checks.provider,
               route: ready ? passed : domain.verification!.checks.route,
             },
@@ -712,36 +708,23 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
   );
   expect(getNamedButton("Verification", menu)).toBeEnabled();
   expect(getNamedButton("Enable", menu)).toBeDisabled();
-  expect(getNamedButton("Verified records (3)", menu)).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
-  expect(
-    within(menu).getByText(
-      "Keep existing TXT values at the same name. Add each value as a separate TXT record.",
-    ),
-  ).toBeInTheDocument();
+  expect(within(menu).getAllByText("Passed")).toHaveLength(1);
+  expect(within(menu).getByText("okou-verification=demo")).toBeVisible();
+  expect(within(menu).getByText("connect.okou.app")).toBeVisible();
   expect(getNamedButton("Verify", menu)).toBeEnabled();
   expect(
     queryAllByRoleFast("button", menu).find((button) => {
       return button.textContent === "Save";
     }),
   ).toBeUndefined();
-  expect(
-    queryAllByRoleFast("button", menu).find((button) => {
-      return (
-        button.getAttribute("aria-label") === `Copy CNAME value ${hostname}`
-      );
-    }),
-  ).toBeUndefined();
-  const name = `_acme-challenge.${hostname}`;
+  const name = `_okou-challenge.${hostname}`;
   click(getNamedButton(`Copy TXT name ${name}`, menu));
   await waitFor(() => {
     return expect(clipboard.writes.at(-1)).toBe(name);
   });
   click(getNamedButton(`Copy TXT value ${name}`, menu));
   await waitFor(() => {
-    return expect(clipboard.writes.at(-1)).toBe("certificate-two");
+    return expect(clipboard.writes.at(-1)).toBe("okou-verification=demo");
   });
   await expect(
     findNamedLink("Open Cloudflare DNS", menu),
@@ -763,11 +746,11 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
     "step",
   );
   await within(menu).findByText(
-    "Your DNS records match. No DNS changes are needed.",
+    "HTTPS setup usually takes a few minutes. We check every 30 seconds. No additional DNS records are needed.",
   );
   expect(getNamedButton("Verify again", menu)).toHaveFocus();
-  expect(within(menu).getAllByText("Passed")).toHaveLength(3);
-  expect(within(menu).getByText("Waiting")).toBeInTheDocument();
+  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
+  expect(within(menu).getAllByText("Waiting")).toHaveLength(2);
   expect(within(menu).getByText("Domain activation")).toBeInTheDocument();
   expect(within(menu).getByText("Website routing")).toBeInTheDocument();
   expect(
@@ -782,10 +765,11 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
     }),
   ).toHaveLength(0);
   click(getNamedButton("Back to DNS setup", menu));
-  click(await findNamedButton("Verified records (4)", menu));
-  await within(menu).findByText("certificate-one");
-  expect(within(menu).getByText("certificate-two")).toBeInTheDocument();
+  await within(menu).findByText("okou-verification=demo");
+  expect(within(menu).getByText("connect.okou.app")).toBeVisible();
+  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
   expect(getNamedButton("Verify", menu)).toBeEnabled();
+  readyForSelection = true;
   click(getNamedButton("Verify", menu));
   await within(menu).findByText("Domain verified. Save to use this address.");
   expect(getNamedButton("Enable", menu)).toHaveAttribute(
@@ -793,6 +777,10 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
     "step",
   );
   expect(within(menu).getByText(`https://${hostname}`)).toBeInTheDocument();
+  click(getNamedButton("Copy to clipboard", menu));
+  await waitFor(() => {
+    return expect(clipboard.writes.at(-1)).toBe(`https://${hostname}`);
+  });
   click(getNamedButton("DNS setup", menu));
   click(await findNamedButton("Continue", menu));
   await within(menu).findByText(
@@ -880,22 +868,17 @@ test("unavailable verification stays in the verification stage until DNS changes
         },
       });
     }
-    const certificate = {
-      type: "TXT" as const,
-      name: `_acme-challenge.${hostname}`,
-      value: "new-certificate-value",
-    };
     settings = {
       ...settings,
       domains: settings.domains.map((domain) => {
         return {
           ...domain,
-          records: [...records, certificate],
+          records,
           verification: {
             status: "incomplete",
             eligibleForSelection: false,
             checkedAt,
-            validationRecords: [certificate],
+            validationRecords: [],
             recordChecks: [
               ...records.map((record) => {
                 return {
@@ -905,13 +888,6 @@ test("unavailable verification stays in the verification stage until DNS changes
                   checkedAt,
                 };
               }),
-              {
-                ...certificate,
-                status: "pending",
-                message: "Add the certificate TXT value, then click Verify.",
-                observedValues: [],
-                checkedAt,
-              },
             ],
             checks: {
               ownership: passed,
@@ -919,7 +895,7 @@ test("unavailable verification stays in the verification stage until DNS changes
               provider: passed,
               certificate: {
                 status: "pending",
-                message: "Certificate TXT required",
+                message: "HTTPS is being configured automatically",
               },
               route: { status: "not_checked", message: "Waiting for HTTPS" },
             },
@@ -967,33 +943,20 @@ test("unavailable verification stays in the verification stage until DNS changes
   await within(menu).findByRole("heading", { name: "Set up DNS records" });
   expect(within(menu).getByText("okou-verification=retry")).toBeInTheDocument();
   click(getNamedButton("Verify", menu));
-  await within(menu).findByText("Certificate TXT required");
+  await within(menu).findByText("HTTPS is being configured automatically");
   expect(getNamedButton("Verification", menu)).toHaveAttribute(
     "aria-current",
     "step",
   );
   expect(getNamedButton("Verify again", menu)).toBeEnabled();
   click(getNamedButton("Back to DNS setup", menu));
-  await within(menu).findByText("new-certificate-value");
+  await within(menu).findByText("okou-verification=retry");
+  expect(within(menu).getByText("connect.okou.app")).toBeVisible();
+  expect(within(menu).getAllByText("Passed")).toHaveLength(2);
   expect(getNamedButton("DNS setup", menu)).toHaveAttribute(
     "aria-current",
     "step",
   );
-  const verifiedGroups = queryAllByRoleFast("button", menu).filter((button) => {
-    return button.textContent === "Verified records (2)";
-  });
-  expect(
-    verifiedGroups.map((button) => {
-      return button.getAttribute("aria-expanded");
-    }),
-  ).toStrictEqual(["false"]);
-  expect(within(menu).queryAllByText("Not checked")).toHaveLength(0);
-  await findNamedLink("Open Cloudflare DNS", menu);
-  expect(
-    queryAllByRoleFast("link", menu).find((link) => {
-      return link.textContent?.includes("Configure with");
-    }),
-  ).toBeUndefined();
   click(getNamedButton("Cancel", menu));
   await within(menu).findByRole("list", { name: "Connected domains" });
   click(getNamedButton("Cancel", menu));
@@ -1004,6 +967,118 @@ test("unavailable verification stays in the verification stage until DNS changes
   await waitFor(() => {
     expect(clipboard.writes.at(-1)).toBe(address(original));
   });
+});
+
+test("HTTPS activation resumes automatic refresh after reopening and still requires Save", async () => {
+  const hostname = "automatic.customer-example.net";
+  const domainId = "00000000-0000-4000-8000-000000000097";
+  const revision = "00000000-0000-4000-8000-000000000098";
+  const checkedAt = "2026-11-26T00:00:00Z";
+  const records = [
+    {
+      type: "TXT" as const,
+      name: `_okou-challenge.${hostname}`,
+      value: "okou-verification=automatic",
+    },
+    { type: "CNAME" as const, name: hostname, value: "connect.okou.app" },
+  ];
+  let settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: address(original),
+    effectiveUrl: address(original),
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [
+      {
+        id: domainId,
+        hostname,
+        revision,
+        ready: false,
+        removing: false,
+        records,
+        verification: null,
+      },
+    ],
+  };
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  let requests = 0;
+  const refreshStarted = context.mocks.deferred<void>();
+  const finishRefresh = context.mocks.deferred<void>();
+  context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
+    requests += 1;
+    if (requests >= 2) {
+      if (requests === 2) refreshStarted.resolve();
+      await finishRefresh.promise;
+    }
+    const ready = requests >= 2;
+    const passed = { status: "passed" as const, message: "Verified" };
+    const pending = {
+      status: "pending" as const,
+      message: "HTTPS is being configured automatically",
+    };
+    settings = {
+      ...settings,
+      domains: settings.domains.map((domain) => {
+        return {
+          ...domain,
+          ready,
+          verification: {
+            status: ready ? "ready" : "incomplete",
+            checkedAt,
+            eligibleForSelection: ready,
+            validationRecords: [],
+            recordChecks: records.map((record) => {
+              return {
+                ...record,
+                ...passed,
+                observedValues: [record.value],
+                checkedAt,
+              };
+            }),
+            checks: {
+              ownership: passed,
+              dns: passed,
+              provider: passed,
+              certificate: ready ? passed : pending,
+              route: ready ? passed : pending,
+            },
+          },
+        };
+      }),
+    };
+    return respond(200, settings);
+  });
+  const preview = await publishedReport(true);
+  const menu = await openHostedSiteShare(preview);
+  click(getNamedButton("Customize URL", menu));
+  click(
+    await waitFor(() => {
+      return tabNamed("Custom domain", menu);
+    }),
+  );
+  click(await findNamedButton(`Manage ${hostname}`, menu));
+  click(await findNamedButton("Verify", menu));
+  await within(menu).findByText(
+    "HTTPS setup usually takes a few minutes. We check every 30 seconds. No additional DNS records are needed.",
+  );
+  await refreshStarted.promise;
+  click(getNamedButton("Back to DNS setup", menu));
+  await within(menu).findByRole("heading", { name: "DNS is configured" });
+  click(getNamedButton("Cancel", menu));
+  await within(menu).findByRole("list", { name: "Connected domains" });
+  click(getNamedButton(`Manage ${hostname}`, menu));
+  await within(menu).findByRole("heading", { name: "Domain verification" });
+  finishRefresh.resolve();
+  await within(menu).findByText("Domain verified. Save to use this address.");
+  expect(requests).toBe(3);
+  expect(getNamedButton("Save", menu)).toBeEnabled();
+  expect(settings.selectedDomainId).toBeNull();
+  click(getNamedButton("Cancel", menu));
+  click(getNamedButton("Cancel", menu));
+  await expect(findNamedButton("Copy link", menu)).resolves.toBeEnabled();
 });
 
 test.each(["Cloudflare", "Vercel"] as const)(
@@ -1059,7 +1134,7 @@ test.each(["Cloudflare", "Vercel"] as const)(
     expect(link).toHaveAttribute("target", "_blank");
     expect(
       within(menu).getByText(
-        "This configures the website CNAME and ownership TXT. Add any extra certificate records below, then return here and click Verify.",
+        "Confirm the ownership TXT and website CNAME at your DNS provider. HTTPS is configured automatically, then return here and click Verify.",
       ),
     ).toBeInTheDocument();
     expect(getNamedButton("Verify", menu)).toBeEnabled();

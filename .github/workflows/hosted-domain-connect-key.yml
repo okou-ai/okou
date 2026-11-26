@@ -1,0 +1,38 @@
+name: Provision hosted website Domain Connect key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-domain-connect-production-key
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify provisioning guards and public key output
+        run: node --test ops/hosted-domain-connect/provision-key.node-test.mjs
+      - name: Generate or recover the signing key inside the trusted runner
+        env:
+          DOPPLER_SERVICE_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+        run: node ops/hosted-domain-connect/provision-key.node.mjs
+      - name: Retain public DNS records for publication
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hosted-domain-connect-public-key
+          path: ${{ runner.temp }}/hosted-domain-connect-public-key.json
+          if-no-files-found: error
+          retention-days: 30

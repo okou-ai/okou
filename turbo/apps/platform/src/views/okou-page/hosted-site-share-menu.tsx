@@ -10,7 +10,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import {
   Check,
-  Circle,
   ChevronRight,
   Loader2,
   PanelTop,
@@ -377,24 +376,20 @@ function WebsiteDomainChoices({
                   aria-current={selected ? "true" : undefined}
                   disabled={saving || domain.removing}
                   onClick={() => {
-                    return manageDomain(domain.id);
+                    return manageDomain(domain.id, signal);
                   }}
                 >
-                  {selected ? (
-                    <Check size={16} aria-hidden />
-                  ) : (
-                    <Circle
-                      size={16}
-                      className="text-muted-foreground"
-                      aria-hidden
-                    />
-                  )}
+                  <span
+                    className="flex size-4 shrink-0 items-center justify-center"
+                    aria-hidden
+                  >
+                    {selected && <Check size={16} />}
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block break-all text-sm font-medium">
                       {domain.hostname}
                     </span>
                     <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                      {domain.ready && <Check size={12} aria-hidden />}
                       {domain.ready
                         ? t(($) => {
                             return $.artifacts.customDomain.httpsReady;
@@ -430,12 +425,12 @@ function WebsiteDomainChoices({
         type="button"
         variant="quiet"
         disabled={saving}
-        className="mt-3 w-full justify-start font-normal"
+        className="mt-3 w-full justify-start gap-3 pl-3 font-normal"
         onClick={() => {
           detach(showDomains(signal), Reason.DomCallback);
         }}
       >
-        <Plus size={14} />
+        <Plus size={16} />
         {t(($) => {
           return $.artifacts.customDomain.connect;
         })}
@@ -647,15 +642,7 @@ function WebsiteDomainSelectionForm({
         role="status"
         className="mt-3 min-h-5 break-all text-xs text-muted-foreground"
       >
-        {notice ??
-          (domain
-            ? t(
-                ($) => {
-                  return $.artifacts.customDomain.urlPreview;
-                },
-                { hostname: domain.hostname },
-              )
-            : null)}
+        {notice}
       </p>
       <WebsiteUrlActions
         session={session}

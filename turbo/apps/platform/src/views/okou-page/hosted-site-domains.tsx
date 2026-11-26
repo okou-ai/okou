@@ -1,9 +1,7 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
-import { Collapsible } from "@base-ui/react/collapsible";
 import {
   Check,
   Loader2,
-  ChevronDown,
   ExternalLink,
   Circle,
   CircleAlert,
@@ -19,13 +17,11 @@ import {
   buttonVariants,
   cn,
   Input,
+  CopyButton,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { HostedSiteShareSession } from "../../signals/hosted-site-sharing.ts";
-import {
-  DomainRecords,
-  VerifiedDomainRecords,
-} from "./hosted-site-domain-records.tsx";
+import { DomainRecords } from "./hosted-site-domain-records.tsx";
 import type { DomainSetupStage } from "../../lib/hosted-site-domains.ts";
 
 import type { infer as zInfer } from "zod";
@@ -237,6 +233,13 @@ function DomainRecordIssues({
           : "ownership";
       return (
         category === name &&
+        domain.records.some((required) => {
+          return (
+            required.type === record.type &&
+            required.name === record.name &&
+            required.value === record.value
+          );
+        }) &&
         record.status !== "passed" &&
         record.status !== "not_checked"
       );
@@ -375,28 +378,6 @@ function DomainChecks({
     </>
   );
 }
-function DomainVerificationDetails({ domain }: { readonly domain: Domain }) {
-  const { t } = useTranslation();
-  return (
-    <Collapsible.Root className="group/verification">
-      <Collapsible.Trigger className="flex w-full items-center gap-2 rounded-lg py-2 text-left text-xs text-muted-foreground hover:bg-gray-50">
-        <span className="flex-1">
-          {t(($) => {
-            return $.artifacts.customDomain.verificationDetails;
-          })}
-        </span>
-        <ChevronDown
-          size={14}
-          className="shrink-0 group-data-[open]/verification:rotate-180"
-          aria-hidden
-        />
-      </Collapsible.Trigger>
-      <Collapsible.Panel className="pt-3">
-        <DomainChecks domain={domain} />
-      </Collapsible.Panel>
-    </Collapsible.Root>
-  );
-}
 function DomainSteps({
   session,
   stage,
@@ -412,6 +393,7 @@ function DomainSteps({
 }) {
   const { t } = useTranslation();
   const review = useSet(session.domains.reviewStage$);
+  const signal = useGet(session.signal$);
   const labels = [
     t(($) => {
       return $.artifacts.customDomain.steps.dns;
@@ -423,6 +405,7 @@ function DomainSteps({
       return $.artifacts.customDomain.steps.enable;
     }),
   ];
+  if (!signal) return null;
   return (
     <ol
       className="grid grid-cols-3 gap-2"
@@ -452,7 +435,7 @@ function DomainSteps({
               aria-current={stage === step ? "step" : undefined}
               disabled={busy || step > currentStage}
               onClick={() => {
-                review(step);
+                review(step, signal);
               }}
             >
               <span
@@ -472,8 +455,17 @@ function DomainSteps({
     </ol>
   );
 }
-function DomainEnable({ domain }: { readonly domain: Domain }) {
+function DomainEnable({
+  domain,
+  session,
+}: {
+  readonly domain: Domain;
+  readonly session: HostedSiteShareSession;
+}) {
   const { t } = useTranslation();
+  const copy = useSet(session.domains.copy$);
+  const signal = useGet(session.signal$);
+  const url = `https://${domain.hostname}`;
   return (
     <>
       <div className="space-y-2">
@@ -489,21 +481,18 @@ function DomainEnable({ domain }: { readonly domain: Domain }) {
             return $.artifacts.customDomain.sharingAddress;
           })}
         </p>
-        <code className="break-all text-sm">
-          {t(
-            ($) => {
-              return $.artifacts.customDomain.urlPreview;
-            },
-            { hostname: domain.hostname },
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 break-all text-sm">{url}</code>
+          {signal && (
+            <CopyButton
+              showTooltip={false}
+              copyAction={() => {
+                return copy(url, signal);
+              }}
+            />
           )}
-        </code>
+        </div>
       </div>
-      <p className="text-xs leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.artifacts.customDomain.saveToEnable;
-        })}
-      </p>
-      <DomainVerificationDetails domain={domain} />
     </>
   );
 }
@@ -517,14 +506,12 @@ function DomainWizard({
   if (!wizard) {
     return null;
   }
-  const {
-    stage,
-    currentStage,
-    remainingRecords,
-    matchedRecords,
-    dnsMatched,
-    certificateOnly,
-  } = wizard;
+  const { stage, currentStage, dnsMatched, certificateOnly } = wizard;
+  const activationPending =
+    dnsMatched &&
+    !Object.values(domain.verification?.checks ?? {}).some((check) => {
+      return check.status === "failed" || check.status === "unavailable";
+    });
   return (
     <div className="space-y-5">
       <DomainSteps
@@ -562,12 +549,7 @@ function DomainWizard({
           <DomainRecords
             session={session}
             domain={domain}
-            records={remainingRecords}
-          />
-          <VerifiedDomainRecords
-            session={session}
-            domain={domain}
-            records={matchedRecords}
+            records={domain.records}
           />
         </>
       ) : stage === 1 ? (
@@ -587,9 +569,9 @@ function DomainWizard({
                   ? t(($) => {
                       return $.artifacts.customDomain.verificationComplete;
                     })
-                  : dnsMatched
+                  : activationPending
                     ? t(($) => {
-                        return $.artifacts.customDomain.noDnsChanges;
+                        return $.artifacts.customDomain.certificateWaiting;
                       })
                     : t(($) => {
                         return $.artifacts.customDomain.retryVerification;
@@ -601,7 +583,7 @@ function DomainWizard({
           </div>
         </>
       ) : (
-        <DomainEnable domain={domain} />
+        <DomainEnable domain={domain} session={session} />
       )}
     </div>
   );
@@ -621,7 +603,8 @@ function DomainActions({
   const choose = useSet(session.domains.choose$);
   const review = useSet(session.domains.reviewStage$);
   const wizard = useLastResolved(session.domains.wizard$);
-  if (!wizard) {
+  const signal = useGet(session.signal$);
+  if (!wizard || !signal) {
     return null;
   }
   const { stage } = wizard;
@@ -633,7 +616,7 @@ function DomainActions({
         disabled={busy}
         onClick={() => {
           if (stage === 1) {
-            review(0);
+            review(0, signal);
           } else {
             cancel();
           }
@@ -653,7 +636,7 @@ function DomainActions({
         pending={operations.verifying || operations.saving}
         onClick={() => {
           if (reviewing) {
-            review(stage === 0 ? 1 : 2);
+            review(stage === 0 ? 1 : 2, signal);
           } else if (domain.ready) {
             choose(domain.id);
             operations.save();

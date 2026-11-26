@@ -41,7 +41,7 @@ import {
   deleteHostedDomain,
   findHostedDomain,
   readHostedDomain,
-  providerDomainRecords,
+  useHostedDomainHttpValidation,
   hostedDomainIngressConfigured,
 } from "../external/hosted-domain-provider";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
@@ -253,7 +253,6 @@ function domainRecords(domain: Domain) {
             value: target(),
           },
         ]),
-    ...(domain.verification?.validationRecords ?? []),
   ];
 }
 
@@ -695,12 +694,7 @@ const checkHostedDomain$ = command(
           .filter(Boolean) ?? [],
         bounded,
       );
-      const provider = await set(
-        provisionHostedDomain$,
-        domain,
-        bounded,
-        signal,
-      );
+      let provider = await set(provisionHostedDomain$, domain, bounded, signal);
       signal.throwIfAborted();
       if (
         provider.hostname !== domain.hostname ||
@@ -713,16 +707,35 @@ const checkHostedDomain$ = command(
         };
         return;
       }
-      verification.validationRecords = providerDomainRecords(provider);
+      if (
+        provider.ssl.method === "txt" &&
+        provider.ssl.status !== "active" &&
+        verification.checks.dns.status === "passed"
+      ) {
+        provider = await useHostedDomainHttpValidation(provider, bounded);
+        signal.throwIfAborted();
+      }
       verification.checks.provider = {
         status: provider.status === "active" ? "passed" : "pending",
         message:
           provider.status === "active"
             ? "Domain provider is ready"
-            : "Domain provider is not ready. Configure any additional TXT records and click Verify again.",
+            : "Domain activation is in progress. This usually takes a few minutes; no additional DNS records are needed.",
       };
       verification.checks.certificate = {
-        status: provider.ssl.status === "active" ? "passed" : "pending",
+        status:
+          provider.ssl.status === "active"
+            ? "passed"
+            : provider.ssl.validation_errors?.length ||
+                [
+                  "validation_timed_out",
+                  "issuance_timed_out",
+                  "deployment_timed_out",
+                  "expired",
+                  "deleted",
+                ].includes(provider.ssl.status)
+              ? "failed"
+              : "pending",
         message:
           provider.ssl.status === "active"
             ? "HTTPS certificate is active"
@@ -732,8 +745,18 @@ const checkHostedDomain$ = command(
                 })
                 .join("; ")
                 .slice(0, 400) ||
-              "HTTPS is not ready yet. Wait, then click Verify again.",
+              (provider.ssl.status.endsWith("_timed_out")
+                ? "HTTPS certificate setup timed out. Verify again or contact support."
+                : ["expired", "deleted"].includes(provider.ssl.status)
+                  ? "HTTPS certificate setup failed. Verify again or contact support."
+                  : "HTTPS certificate setup usually takes a few minutes; no additional DNS records are needed."),
       };
+      if (verification.checks.certificate.status === "pending") {
+        verification.checks.route = {
+          status: "pending",
+          message: "Website routing will be checked when HTTPS is ready",
+        };
+      }
       if (
         [
           verification.checks.dns,
@@ -851,7 +874,7 @@ export const verifyHostedSiteDomain$ = command(
       eligibleForSelection: false,
       checkedAt: started.toISOString(),
       recordChecks: [],
-      validationRecords: domain.verification?.validationRecords ?? [],
+      validationRecords: [],
       checks: {
         ownership: notChecked(),
         dns: notChecked(),
@@ -1127,6 +1150,13 @@ export const resolveHostedCustomDomain$ = command(
       .select({ domain: hostedSiteDomains, site: hostedSites })
       .from(hostedSiteDomains)
       .innerJoin(hostedSites, eq(hostedSiteDomains.siteId, hostedSites.id))
+      .innerJoin(
+        hostedSiteDomainSettings,
+        and(
+          eq(hostedSiteDomainSettings.siteId, hostedSiteDomains.siteId),
+          eq(hostedSiteDomainSettings.selectedDomainId, hostedSiteDomains.id),
+        ),
+      )
       .where(
         and(
           eq(hostedSiteDomains.hostname, hostname),
