@@ -585,17 +585,29 @@ describe("POST /api/image-io/generate", () => {
       status: job,
       realtime: realtimeFailed?.payload,
     });
+    const serializedWithoutIdsOrTimestamps = JSON.stringify(
+      {
+        status: job,
+        realtime: realtimeFailed?.payload,
+      },
+      (key, value: unknown) => {
+        if (key === "generationId" || key.endsWith("At")) {
+          return undefined;
+        }
+        return value;
+      },
+    );
     for (const secret of [
       privatePrompt,
       privateReferenceHost,
       "Invalid status code: 403",
-      "403",
       "tok_secret_99",
       providerRequestId,
       "gw_secret_req_403",
     ]) {
       expect(serializedOutputs).not.toContain(secret);
     }
+    expect(serializedWithoutIdsOrTimestamps).not.toContain("403");
 
     expect(storage.putKeys).toStrictEqual([]);
     await expect(readBalance(admin)).resolves.toBe(1000);
