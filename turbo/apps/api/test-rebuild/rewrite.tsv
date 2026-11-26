@@ -2841,9 +2841,9 @@ remote-access	src/signals/routes/__tests__/ssh-member-lifecycle.test.ts	ssh-memb
 remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-001	planned				B02
 remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-002	planned				B02
 remote-access	src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	ssh-network-binding-publication-005	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-003	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-004	planned				B02
-remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-005	planned				B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-003	rewritten	114.1		src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-004	rewritten	62.2		src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	B02
+remote-access	src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	ssh-tailscale-binding-atomicity-005	rewritten	73.7		src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	B02
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-003	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-007	planned				
 account-org	src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	storage-presigned-url-cache-008	planned				
