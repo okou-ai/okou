@@ -236,9 +236,9 @@ class ConversationRouteTest {
 
     @Test
     fun longPressCopiesTheReplyShownAfterAStreamUpdate() {
-        fun reply(text: String) =
+        fun reply(text: String, id: String = "output") =
             HistoryMessage(
-                "output",
+                id,
                 null,
                 HistoryRole.Assistant,
                 listOf(HistoryBlock(HistoryBlockKind.Text, text)),
@@ -276,9 +276,12 @@ class ConversationRouteTest {
             compose.onNodeWithTag("conversation_reply_avatar").getUnclippedBoundsInRoot(),
         )
         header.performTouchInput { longClick() }
-        compose
-            .onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
-            .performClick()
+        val copy =
+            compose.onNodeWithText(compose.activity.getString(R.string.conversation_copy_reply))
+        copy.assertIsDisplayed()
+        // A following reply can receive whitespace before its usable body arrives.
+        compose.runOnIdle { displayed.value = reply(" ", id = "next-output") }
+        copy.assertIsDisplayed().performClick()
         val clipboard =
             checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
         compose.waitUntil(5_000) { clipboard.primaryClip != null }

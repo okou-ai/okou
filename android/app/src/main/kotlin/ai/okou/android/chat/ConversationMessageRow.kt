@@ -301,7 +301,8 @@ internal fun ConversationReplyHeader(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (copyableReply != null) {
+            // Keep an opened menu anchored while the next reply's first chunks arrive.
+            if (copyableReply != null || menuMessage != null) {
                 Box {
                     IconButton(
                         onClick = openMenu,
@@ -350,7 +351,7 @@ internal fun ConversationReplyHeader(
     LaunchedEffect(menuMessage) {
         if (menuMessage == null && restoreFocus) {
             restoreFocus = false
-            focus.requestFocus()
+            if (copyableReply != null) focus.requestFocus()
         }
     }
 }
@@ -425,7 +426,7 @@ internal fun ConversationActivity(
                     )
                 },
             ) {
-                if (stopPlacement.inline) ConversationStopButton(controls, stopPlacement, true)
+                ConversationStopButton(controls, stopPlacement, inline = true)
             }
         } else {
             Spacer(Modifier.width(ConversationStopTouchSize))
