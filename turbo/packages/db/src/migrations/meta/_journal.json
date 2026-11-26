@@ -3921,6 +3921,13 @@
       "when": 1795644846811,
       "tag": "1638_retire_official_workflow_installation_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1639,
+      "version": "7",
+      "when": 1795659795482,
+      "tag": "1639_connector_account_external_identity",
+      "breakpoints": true
     }
   ]
 }

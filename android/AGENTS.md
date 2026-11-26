@@ -29,8 +29,8 @@ For persisted state, also read [Android local storage](../docs/android/android-l
 - Keep pure Kotlin domain/state holders independent of Android UI types.
   Introduce repositories/use cases when actual data and shared logic need them,
   not as empty layers around the scaffold.
-- Use shared Web semantic colors, Geist and official brand assets. Regenerate
-  colors with the source-owned script; Android owns geometry and accessibility.
+- Use the generated Material 3 color scheme, Geist and official brand assets.
+  Regenerate colors with the Android theme generator. Android owns geometry and accessibility.
   Use string resources and preserve user content verbatim.
 - Keep components private except the reviewed MAIN/LAUNCHER entry. Preserve
   source-manifest auditing and Semgrep's rejection of unreviewed findings.

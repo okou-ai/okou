@@ -1481,104 +1481,6 @@ test("A direct link reads its card on the next page without displaying the summa
   });
 });
 
-test("Folding the inline direction keeps what was written until it opens again", async () => {
-  const item = proposal("Supply forecast");
-  feed([item]);
-  await openDeck();
-  const card = await activeCard(item);
-  click(await findFastControl("button", "What do you have in mind?", card));
-  const region = await screen.findByRole("region", {
-    name: "What do you have in mind?",
-  });
-  const edit = await within(region).findByRole("textbox", { name: /message/i });
-  await appendDirection(edit, "Expedite shipping");
-  expect(
-    queryFastControl("button", "Prepare Supply forecast", card),
-  ).not.toBeInTheDocument();
-
-  click(await findFastControl("button", "Collapse", card));
-
-  // Folded, the editor is out of reach and the offered directions are back.
-  await expect(
-    findFastControl("button", "Prepare Supply forecast", card),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: "What do you have in mind?" }),
-  ).toBeNull();
-  click(await findFastControl("button", "What do you have in mind?", card));
-  const reopened = await screen.findByRole("region", {
-    name: "What do you have in mind?",
-  });
-  await expect(
-    within(reopened).findByRole("textbox", { name: /message/i }),
-  ).resolves.toHaveTextContent("Expedite shipping");
-  expect(
-    queryFastControl("button", "Prepare Supply forecast", card),
-  ).not.toBeInTheDocument();
-});
-
-test("Escape folds the inline direction and returns focus to its entry", async () => {
-  const item = proposal("Packing list");
-  feed([item]);
-  await openDeck();
-  const card = await activeCard(item);
-  click(await findFastControl("button", "What do you have in mind?", card));
-  const region = await screen.findByRole("region", {
-    name: "What do you have in mind?",
-  });
-  const edit = await within(region).findByRole("textbox", { name: /message/i });
-  await appendDirection(edit, "Add the spare parts");
-
-  await userEvent.setup({ delay: null }).keyboard("{Escape}");
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "What do you have in mind?" }),
-    ).toBeNull();
-  });
-  const entry = await findFastControl(
-    "button",
-    "What do you have in mind?",
-    card,
-  );
-  await waitFor(() => {
-    expect(entry).toHaveFocus();
-  });
-});
-
-test("Each direction says whether it sends now or drafts in its chat", async () => {
-  const item = proposal("Buyer review");
-  const source = crypto.randomUUID();
-  item.content.options.push({
-    ...item.content.options[0]!,
-    id: "continue",
-    label: "Continue with the buyer",
-    threadId: source,
-    draft: {
-      draftAttachments: null,
-      draftUserMessage: {
-        version: 1,
-        parts: [
-          { type: "chat_thread", threadId: source, titleSnapshot: "Ledger" },
-          { type: "text", text: "Continue with the buyer" },
-        ],
-      },
-    },
-  });
-  feed([item]);
-  await openDeck();
-  const card = await activeCard(item);
-
-  const send = await findFastControl("button", "Prepare Buyer review", card);
-  const draft = await findFastControl(
-    "button",
-    "Continue with the buyer",
-    card,
-  );
-  expect(send).toHaveTextContent("Send to a new chat");
-  expect(draft).toHaveTextContent("Draft in Ledger");
-});
-
 test("Arrow keys page the deck like its arrows, except while a direction is written", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);
@@ -1607,10 +1509,11 @@ test("Arrow keys page the deck like its arrows, except while a direction is writ
   await appendDirection(edit, "Expedite shipping");
   await user.keyboard("{ArrowLeft}");
   // Focus on another control keeps the direction open, so the keys still wait.
+  const dismiss = await findFastControl("button", "Dismiss", card);
   act(() => {
-    queryFastControl("button", "Collapse", card)?.focus();
+    dismiss.focus();
   });
-  expect(queryFastControl("button", "Collapse", card)).toHaveFocus();
+  expect(dismiss).toHaveFocus();
   await user.keyboard("{ArrowRight}");
   await appendDirection(edit, " today");
 

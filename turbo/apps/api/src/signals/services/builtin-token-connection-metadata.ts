@@ -62,7 +62,9 @@ function tokenMetadataInsert(
   if (write.conflict) {
     const target = sql`(${sql.join(
       write.conflict.target.map((column) => {
-        return sql.identifier(column.name);
+        return column instanceof SQL
+          ? sql`(${column})`
+          : sql.identifier(column.name);
       }),
       sql`, `,
     )}) WHERE ${write.conflict.where}`;

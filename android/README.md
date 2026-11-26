@@ -43,15 +43,28 @@ row in Settings shows preparation and temporary failures in its subtitle.
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
 Instructions leaves chat and Appearance available.
-Closing an edited Instructions panel asks whether to discard before removing
-the draft. Conflict recovery asks before loading the latest version and keeps
-the edit when that read fails. Saving keeps the panel and its edit visible
-with a disabled saving action until the request settles.
-Saves always carry the displayed base version; a concurrent Web edit preserves
-the local draft and requires explicitly loading the latest version. Clearing the
-field and saving clears Instructions. A lost save response reads the server back;
-an unresolved attempt stays frozen until that read or an explicit retry with the
-same version resolves it.
+Opening the editor displays a confirmed snapshot less than 10 minutes old and
+refreshes it in the background. A cold or expired open reserves the editor space
+through bounded read retries. A final failure shows the load-failure illustration
+in that space, or a Snackbar if confirmed content is already open. Content stays
+usable when the cache expires during an open session. Another window joining the
+session immediately shows the current text. A refresh updates the saved value
+and preserves any edited text, selection, and composition. The latest confirmed
+value determines whether Save is available and what to restore on discard.
+Discard still requires confirmation.
+The Material 3 text field keeps raw Markdown and native selection together.
+Output styling leaves the document and its offsets intact.
+Saving keeps the panel and its edit visible with a disabled saving action until
+the request settles. The panel closes after the save is confirmed. Field
+validation, save failures, and readback share the field's supporting line.
+An explicit save uses the latest confirmed
+version. A definitive stale-version rejection reads back the latest value and
+retries once with that version if the text differs. Clearing the field and saving
+clears Instructions. A lost save response reads the server back with the shared
+bounded read retry policy. Matching text confirms the save. A different server
+value restores the edit against the latest confirmed version. If reads end
+without a result, the editor retains the attempted draft until a later read or
+confirmed discard.
 
 Activities for the same API origin/user/workspace share one editing transaction
 while retaining their own native selection and session authorization. Request
@@ -59,16 +72,17 @@ progress, read failures and persisted intent are separate facts. Preparation
 must acknowledge that exact frozen intent before HTTP; a superseded queued write
 is not a durability receipt. Cancelling or failing preparation restores the
 editable intent, while cancellation after dispatch preserves the unknown attempt.
-Settlement only replaces its captured local revision. Retiring a controller
-cancels its own network work; the shared editor is released after the last
+Only the active authorized request settles its result. Retiring a controller
+cancels its own network work. The shared editor is released after the last
 controller detaches, and accepted local IO remains application-owned.
 
-Unsaved text and unresolved save attempts live in a separate application-owned,
-versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
-Format 1 contains content, the base response and attempt state, scoped by normalized
-API origin/user/workspace. It contains no credentials and survives editor retirement
-and process restart independently of the rebuildable chat cache. Disk errors retain
-accepted edits in memory and expose retry; malformed files are never silently reset.
+Ordinary edits live in the open editor. A separate application-owned AtomicFile
+journal under `noBackupFilesDir/personal-instructions` retains unresolved save
+attempts. Format 1 remains readable, including older unsubmitted drafts; these
+are recovered for the user to save or discard. The journal uses normalized API
+origin/user/workspace identity and contains no credentials. A failed save
+preparation retains editable text and prevents remote submission. Malformed files
+are never silently reset.
 Activity saved state carries only the native selection, keeping large text out of
 the size-limited Binder bundle.
 Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
@@ -119,8 +133,8 @@ startup, the unread dots, filter, and collapsed Project counts can use that
 snapshot for up to two minutes from confirmation. A successful indicators read
 replaces it. Running indicators and run controls still use live responses.
 Signed archive URLs are confined to a snapshot fetch, and credentials belong to
-the authentication owner. Personal Instructions drafts use the separate intent
-store described above.
+the authentication owner. Personal Instructions saves use the separate intent
+journal described above.
 
 Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their
@@ -213,6 +227,7 @@ Compile SDK is 37.2 and build tools are 37.0.0. The app targets API 37 and suppo
 (Android 7.0). Java 21 runs the build; app bytecode targets JVM 17.
 These pins align with the Clerk SDK release and are validated together.
 
+Use the repository's Node and pnpm versions for palette verification.
 From the repository root:
 
 ```bash
@@ -249,12 +264,13 @@ From the repository root:
 bash android/scripts/check.sh
 ```
 
-This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
+This audits source-manifest entry points, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
 assembly. Android Lint treats warnings as errors and reports newer dependency
 and Gradle toolchain versions as informational hints. Verification uses two Gradle
 workers, a 1536 MB build heap and in-process Kotlin compilation by default for
-small sandboxes.
+small sandboxes. Android CI also verifies generated palettes using the pinned Node
+and pnpm toolchain.
 
 Run the app's local JVM tests through Android Gradle Plugin with the configured
 Android SDK; no emulator is needed:
@@ -378,7 +394,8 @@ From `android/`:
 ```bash
 ./gradlew spotlessApply
 ./gradlew :app:lintDebug :app:assembleDebug
-python3 scripts/sync-design-tokens.py --check
+pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+node scripts/theme/generate.mjs --check
 python3 scripts/ci-changed.test.py
 ```
 
@@ -479,7 +496,7 @@ locale/script matching on APIs 24 and 35. These are local tests; they do not
 establish physical-device IME/rendering or startup budgets.
 MemberPreferencesModelTest covers shared display mode, confirmed and pending
 selections, failed saves, retry, readback and retired work. PaletteColorsTest resolves all sixteen
-mode/palette combinations from generated resources; LegacyLanguageSettingsTest
+mode/palette combinations from the generated Material 3 scheme. LegacyLanguageSettingsTest
 exercises pre-Android13 app-language changes through the real Activity.
 Add modules and shared helpers for actual application boundaries.
 SessionModelTest holds workspace responses to exercise cached appearance,

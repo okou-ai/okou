@@ -50,7 +50,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
@@ -311,14 +310,11 @@ private fun PaletteOptions(
 
 @Composable
 private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean) {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val preview =
-        remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
+    val preview = remember(dark, palette) { resolvePalette(palette, dark) }
     Box(
         Modifier.size(24.dp)
             .background(
-                Brush.linearGradient(listOf(preview.scheme.primary, preview.swatchCompanion)),
+                Brush.linearGradient(listOf(preview.primary, preview.tertiary)),
                 CircleShape,
             ),
     )

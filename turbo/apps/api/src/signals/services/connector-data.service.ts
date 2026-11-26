@@ -1,5 +1,4 @@
 import { connectorConnectionPrincipalValue } from "./connector-account-mutation.service";
-import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -2091,16 +2090,6 @@ function isExplicitReconnectIdentityMismatch(
   );
 }
 
-function authorizedExternalIdForMutation(args: {
-  readonly mutation: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity: boolean | undefined;
-  readonly externalId: string;
-}): string | undefined {
-  return args.matchExistingExternalIdentity && args.mutation.intent === "add"
-    ? args.externalId
-    : undefined;
-}
-
 export interface PreparedBuiltinConnectorTokenConnection {
   readonly calendarCleanup: readonly {
     readonly connectorId: string;
@@ -2118,7 +2107,6 @@ export interface PreparedBuiltinConnectorTokenConnection {
   readonly oauthGrantedScopes: readonly string[];
   readonly tokenExpiresAt: Date | null;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2180,7 +2168,6 @@ interface BuiltinConnectorTokenConnectionArgs {
   readonly expiresIn?: number;
   readonly extraConnectorSecrets?: Readonly<Record<string, string>>;
   readonly account: ConnectorAccountMutationIntent;
-  readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
 }
 
@@ -2222,12 +2209,7 @@ function tokenCleanupResult(
 export function builtinConnectorTokenMutationValues(
   args: Pick<
     PreparedBuiltinConnectorTokenConnection,
-    | "orgId"
-    | "userId"
-    | "runtimeMethod"
-    | "account"
-    | "matchExistingExternalIdentity"
-    | "userInfo"
+    "orgId" | "userId" | "runtimeMethod" | "account" | "userInfo"
   >,
 ): ConnectorConnectionMutationArgs {
   return {
@@ -2244,11 +2226,8 @@ export function builtinConnectorTokenMutationValues(
       args.userInfo.username,
     ),
     matchExternalIssuer: args.userInfo.identityNamespace,
-    matchExternalId: authorizedExternalIdForMutation({
-      mutation: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
-      externalId: args.userInfo.id,
-    }),
+    matchExternalId:
+      args.account.intent === "add" ? args.userInfo.id : undefined,
   };
 }
 export const prepareBuiltinConnectorTokenConnection$ = command(
@@ -2342,7 +2321,6 @@ export const prepareBuiltinConnectorTokenConnection$ = command(
       oauthGrantedScopes: args.oauthGrantedScopes,
       tokenExpiresAt,
       account: args.account,
-      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
       insertConnectionId: args.insertConnectionId,
     };
   },
@@ -2636,7 +2614,7 @@ const publishTokenConnection$ = command(
   },
 );
 
-const upsertBuiltinConnectorTokenConnectionAttempt$ = command(
+export const upsertBuiltinConnectorTokenConnection$ = command(
   async (
     { set },
     args: BuiltinConnectorTokenConnectionArgs,
@@ -2685,59 +2663,6 @@ const upsertBuiltinConnectorTokenConnectionAttempt$ = command(
           ? publication.publication.marketingRewardEventId
           : null,
     };
-  },
-);
-
-/** Failed uniqueness arbitration rolls back before this finite identity replacement. */
-export const upsertBuiltinConnectorTokenConnection$ = command(
-  async (
-    { set },
-    args: BuiltinConnectorTokenConnectionArgs,
-    signal: AbortSignal,
-  ) => {
-    const outcome = await settle(
-      set(upsertBuiltinConnectorTokenConnectionAttempt$, args, signal),
-    );
-    if (signal.aborted) {
-      // An accepted publication still returns its committed result.
-      if (outcome.ok) {
-        return outcome.value;
-      }
-      signal.throwIfAborted();
-    }
-    if (outcome.ok) {
-      return outcome.value;
-    }
-    const existing =
-      args.account.intent === "add"
-        ? await set(
-            connectorIdentityConflictAccount$,
-            {
-              error: outcome.error,
-              orgId: args.orgId,
-              userId: args.userId,
-              target: {
-                kind: "builtin",
-                connectorSlug: args.runtimeMethod.connectorSlug,
-              },
-              externalId: args.userInfo.id,
-              issuer: args.userInfo.identityNamespace,
-              externalUsername: args.userInfo.username,
-            },
-            signal,
-          )
-        : undefined;
-    if (!existing) {
-      throw outcome.error;
-    }
-    return await set(
-      upsertBuiltinConnectorTokenConnectionAttempt$,
-      {
-        ...args,
-        matchExistingExternalIdentity: true,
-      },
-      signal,
-    );
   },
 );
 

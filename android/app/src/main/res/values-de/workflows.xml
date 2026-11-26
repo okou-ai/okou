@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">Im Arbeitsbereich geteilt · Nutzung erlaubt</string>
     <string name="workflow_show_all">Alle anzeigen</string>
     <string name="workflow_status_connection">%1$s · Verbindung erforderlich</string>
-    <string name="workflow_time">Uhrzeit (HH:mm)</string>
+    <string name="workflow_time">Uhrzeit</string>
     <string name="workflow_timezone">Zeitzone</string>
     <string name="workflow_transcript">Google-Meet-Transkript verfügbar</string>
     <string name="workflow_trigger">Auslöser</string>

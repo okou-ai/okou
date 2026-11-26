@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatListReadFailure
@@ -2359,8 +2360,9 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
             val pixels = hit.captureToImage().toPixelMap()
             return pixels[pixels.width / 2, 1]
         }
-        val highlighted = Color(compose.activity.getColor(R.color.okou_accent))
-        val normal = Color(compose.activity.getColor(R.color.okou_background))
+        val palette = resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false)
+        val highlighted = palette.secondaryContainer
+        val normal = palette.background
         val hitBounds = hit.getUnclippedBoundsInRoot()
         compose.mainClock.advanceTimeBy(1_000)
         assertEquals(highlighted, hitBackground())

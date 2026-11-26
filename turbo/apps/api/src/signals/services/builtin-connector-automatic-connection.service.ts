@@ -1,16 +1,22 @@
-import {
-  connectorConnectionExternalPrincipal,
-  connectorConnectionPrincipalValue,
-} from "./connector-account-mutation.service";
-import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
-import { settle } from "../utils";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { tokenPublicationFields } from "./builtin-token-connection-metadata";
+import { connectorConnectionExternalConflict } from "./connector-account-mutation.service";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { command } from "ccstate";
-import { and, count, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  sql,
+  SQL,
+  getTableColumns,
+} from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -111,6 +117,28 @@ function automaticSiblingAccountInsert(
 ): SQL {
   const values = automaticConnectionValues(input);
   // Preserve database defaults with a bound INSERT column subset.
+  const identity = input.identity?.id;
+  const conflictTarget = connectorConnectionExternalConflict("builtin");
+  const conflict = identity
+    ? sql`ON CONFLICT (${sql.join(
+        conflictTarget.target.map((column) => {
+          return column instanceof SQL
+            ? sql`(${column})`
+            : sql.identifier(column.name);
+        }),
+        sql`, `,
+      )}) WHERE ${conflictTarget.where} DO UPDATE SET ${new PgDialect().buildUpdateSet(
+        connectors,
+        Object.fromEntries(
+          tokenPublicationFields(
+            getTableColumns(connectors),
+            automaticConnectionMetadata(input),
+          ).map(({ key, value }) => {
+            return [key, value];
+          }),
+        ),
+      )}, updated_at = clock_timestamp()`
+    : sql.empty();
   return sql`INSERT INTO ${connectors}
         (org_id, user_id, connector_slug, custom_connector_id, display_name,
          auth_method, automatic_auth_type, storage_version, external_id, external_issuer,
@@ -124,6 +152,7 @@ function automaticSiblingAccountInsert(
           ${sql.param(values.tokenExpiresAt, connectors.tokenExpiresAt)},
           false, NULL, false
         WHERE NOT EXISTS (SELECT 1 FROM ${preferred})
+        ${conflict}
         RETURNING id`;
 }
 
@@ -192,28 +221,12 @@ function automaticDefaultAccountConflict() {
   };
 }
 
-function automaticReconnectWhere(
-  input: AutomaticConnectionPublication,
-  replacingIdentity: boolean,
-) {
+function automaticReconnectCondition(input: AutomaticConnectionPublication) {
   return and(
     automaticConnectionOwnerCondition(input),
     input.account.intent === "reconnect"
       ? eq(connectors.id, input.account.connectionId)
       : sql`false`,
-    replacingIdentity
-      ? and(
-          eq(connectors.externalId, input.identity?.id ?? ""),
-          eq(connectors.externalIssuer, input.binding?.issuer ?? ""),
-          eq(
-            connectorConnectionExternalPrincipal(),
-            connectorConnectionPrincipalValue(
-              input.connectorSlug,
-              input.identity?.username,
-            ),
-          ),
-        )
-      : undefined,
     // Optional public discovery cannot erase OAuth accepted in parallel.
     input.preserveOAuth
       ? sql`${connectors.automaticAuthType} IS DISTINCT FROM 'oauth'`
@@ -221,21 +234,11 @@ function automaticReconnectWhere(
   );
 }
 
-function automaticSnapshotSelection() {
-  return {
-    id: connectors.id,
-    version: sql`${connectors}.xmin::text`
-      .mapWith(pgTextDecoder)
-      .as("row_version"),
-  };
-}
-
 /** Provider exchange and encryption finish before this local write. */
-const publishAutomaticConnectionAttempt$ = command(
+export const publishAutomaticConnection$ = command(
   async (
     { set },
     input: AutomaticConnectionPublication,
-    replacingIdentity: boolean,
     signal: AbortSignal,
   ): Promise<readonly { readonly connectionId: string }[]> => {
     const db = set(writeDb$);
@@ -251,16 +254,19 @@ const publishAutomaticConnectionAttempt$ = command(
     const sibling = db
       .$with("automatic_sibling_account", { id: connectors.id })
       .as(automaticSiblingAccountInsert(input, sql`${preferred}`));
-    const where = automaticReconnectWhere(input, replacingIdentity);
-    const snapshot = db
-      .$with("automatic_account_snapshot")
-      .as(
-        db
-          .select(automaticSnapshotSelection())
-          .from(connectors)
-          .where(where)
-          .limit(1),
-      );
+    const reconnectCondition = automaticReconnectCondition(input);
+    const snapshot = db.$with("automatic_account_snapshot").as(
+      db
+        .select({
+          id: connectors.id,
+          version: sql`${connectors}.xmin::text`
+            .mapWith(pgTextDecoder)
+            .as("row_version"),
+        })
+        .from(connectors)
+        .where(reconnectCondition)
+        .limit(1),
+    );
     const connection =
       input.account.intent === "reconnect"
         ? db.$with("automatic_published_account").as(
@@ -269,7 +275,7 @@ const publishAutomaticConnectionAttempt$ = command(
               .set({ ...metadata, updatedAt: sql`clock_timestamp()` })
               .where(
                 and(
-                  where,
+                  reconnectCondition,
                   // Two references keep this read CTE materialized: both the ID
                   // and tuple version belong to the statement's original row.
                   inArray(
@@ -279,9 +285,7 @@ const publishAutomaticConnectionAttempt$ = command(
                   // Reject a parent that changed while this UPDATE waited. Its
                   // children may be newer than this statement's snapshot, even
                   // when this attempt has no credentials to insert.
-                  replacingIdentity
-                    ? undefined
-                    : sql`${connectors}.xmin::text = (SELECT ${snapshot.version} FROM ${snapshot})`,
+                  sql`${connectors}.xmin::text = (SELECT ${snapshot.version} FROM ${snapshot})`,
                 ),
               )
               .returning({ id: connectors.id }),
@@ -363,55 +367,5 @@ const publishAutomaticConnectionAttempt$ = command(
       )
       .select({ connectionId: connection.id })
       .from(connection);
-  },
-);
-
-export const publishAutomaticConnection$ = command(
-  async (
-    { set },
-    input: AutomaticConnectionPublication,
-    signal: AbortSignal,
-  ): Promise<readonly { readonly connectionId: string }[]> => {
-    const outcome = await settle(
-      set(publishAutomaticConnectionAttempt$, input, false, signal),
-    );
-    if (signal.aborted) {
-      // An accepted publication still returns its committed result.
-      if (outcome.ok) {
-        return outcome.value;
-      }
-      signal.throwIfAborted();
-    }
-    if (outcome.ok) {
-      return outcome.value;
-    }
-    const existing =
-      input.account.intent === "add"
-        ? await set(
-            connectorIdentityConflictAccount$,
-            {
-              error: outcome.error,
-              orgId: input.orgId,
-              userId: input.userId,
-              target: { kind: "builtin", connectorSlug: input.connectorSlug },
-              externalId: input.identity?.id,
-              externalUsername: input.identity?.username,
-              issuer: input.binding?.issuer,
-            },
-            signal,
-          )
-        : undefined;
-    if (!existing) {
-      throw outcome.error;
-    }
-    return await set(
-      publishAutomaticConnectionAttempt$,
-      {
-        ...input,
-        account: { intent: "reconnect", connectionId: existing },
-      },
-      true,
-      signal,
-    );
   },
 );

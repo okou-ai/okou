@@ -283,7 +283,9 @@ function insertAutomaticNoAuthAccount(
   const fields = automaticNoAuthAccountFields(values);
   return sql`INSERT INTO ${connectors} (${sql.join(
     fields.map(({ column }) => {
-      return sql.identifier(column.name);
+      return column instanceof SQL
+        ? sql`(${column})`
+        : sql.identifier(column.name);
     }),
     sql`, `,
   )}) SELECT ${sql.join(
@@ -371,7 +373,9 @@ export function automaticNoAuthPublicationSql(
     }
     const conflict = sql`ON CONFLICT (${sql.join(
       write.conflict.target.map((column) => {
-        return sql.identifier(column.name);
+        return column instanceof SQL
+          ? sql`(${column})`
+          : sql.identifier(column.name);
       }),
       sql`, `,
     )}) WHERE ${write.conflict.where} DO NOTHING`;

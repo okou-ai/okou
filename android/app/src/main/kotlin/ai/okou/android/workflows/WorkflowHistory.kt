@@ -1,6 +1,5 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.api.generated.WorkflowRunHistoryEntry
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryEventType
@@ -97,7 +96,7 @@ internal fun WorkflowHistoryRow(
     }
     val statusColor =
         when (run.status) {
-            WorkflowRunHistoryEntryStatus.RUNNING -> LocalActivityStatusColor.current
+            WorkflowRunHistoryEntryStatus.RUNNING -> MaterialTheme.colorScheme.primary
             WorkflowRunHistoryEntryStatus.FAILED,
             WorkflowRunHistoryEntryStatus.TIMEOUT -> colors.error
             else -> colors.onSurfaceVariant

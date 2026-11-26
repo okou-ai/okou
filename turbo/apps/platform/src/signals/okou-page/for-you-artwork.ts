@@ -2,7 +2,9 @@ import { command, computed, state } from "ccstate";
 import {
   DEFAULT_FOR_YOU_COVER_ID,
   forYouCovers,
+  forYouIllustrations,
 } from "../../lib/for-you-artwork.ts";
+import { forYouVisitSnapshot$ } from "./agent-suggestion-session.ts";
 import {
   updateUserPreference$,
   userPreferences$,
@@ -45,4 +47,29 @@ export const forYouPaintedCover$ = computed(async (get) => {
 
 export const markForYouCoverPainted$ = command(({ set }, id: string) => {
   set(paintedCoverId$, id);
+});
+
+// A store lives for the page load. Card navigation, feedback and route changes
+// do not reshuffle the illustration sequence.
+const artwork$ = computed(() => {
+  const illustrations = [...forYouIllustrations];
+  for (let index = illustrations.length - 1; index > 0; index--) {
+    const other = Math.floor(Math.random() * (index + 1));
+    [illustrations[index], illustrations[other]] = [
+      illustrations[other],
+      illustrations[index],
+    ];
+  }
+  return { illustrations };
+});
+
+export const forYouIllustrations$ = computed((get) => {
+  const { illustrations } = get(artwork$);
+  const entries = get(forYouVisitSnapshot$)?.entries ?? [];
+  // Include handled cards so feedback and Undo cannot move another card's art.
+  return Object.fromEntries(
+    entries.map((entry, index) => {
+      return [entry.item.id, illustrations[index % illustrations.length]];
+    }),
+  );
 });

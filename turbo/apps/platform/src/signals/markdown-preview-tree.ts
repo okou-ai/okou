@@ -20,11 +20,12 @@ export function createMarkdownPreviewTree(
 ): MarkdownPreviewTreeComputed {
   return computed(async (get): Promise<Root> => {
     const { text: source } = await get(text$);
-    const plainTree = createPlainMarkdownTree(source, { mathEnabled: false });
+    const plainTree = createPlainMarkdownTree(source, { mathEnabled: true });
     if (plainTree !== null) {
       return plainTree;
     }
     const tree = parseMarkdownTree(source, {
+      math: true,
       mermaid: true,
       tableExportThreadId: threadId,
     });

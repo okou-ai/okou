@@ -238,8 +238,6 @@ interface ChatComposerProps {
   readonly showPendingItems?: boolean;
   readonly layout?: ComposerLayout;
   readonly discovery?: ReactNode;
-  /** The `card` layout opens from and folds back to a one-line entry. */
-  readonly expanded?: boolean;
 }
 
 interface ComposerComputerUseHost {
@@ -3910,24 +3908,12 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
   );
 }
 
-// In a card the composer grows out of the one-line entry it replaces and folds
-// back into it: the card keeps the entry's 44px, 12px corners and hairline, and
-// its content row opens on `--ease-capability`, so the border stays whole every
-// frame. The content fades in once the card has started to grow and fades out
-// first on the way back. A first mount already open starts from the fold.
-const CARD_LAYOUT_SURFACE =
-  "grid min-h-11 rounded-xl border-border shadow-none motion-safe:transition-[border-color,grid-template-rows] duration-[220ms,var(--duration-for-you-fold)] ease-[cubic-bezier(0.4,0,0.2,1),var(--ease-capability)] starting:grid-rows-[0fr]";
-const CARD_LAYOUT_CONTENT =
-  "min-h-0 overflow-clip ease-out motion-safe:transition-opacity starting:opacity-0";
-
 function ComposerCard({
   signals,
   layout,
-  expanded,
 }: {
   signals: ComposerSignals;
   layout: ComposerLayout;
-  expanded: boolean;
 }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions();
@@ -3950,11 +3936,7 @@ function ComposerCard({
         "z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         layout === "card" &&
-          cn(
-            "[&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0",
-            CARD_LAYOUT_SURFACE,
-            expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-          ),
+          "[&_.ProseMirror_p]:pl-0 [&_[data-feedback-item]]:min-h-0",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {
@@ -3984,18 +3966,7 @@ function ComposerCard({
         }
       }}
     >
-      <CardContent
-        className={cn(
-          "overflow-hidden rounded-[inherit] p-0",
-          layout === "card" &&
-            cn(
-              CARD_LAYOUT_CONTENT,
-              expanded
-                ? "opacity-100 delay-80 duration-240"
-                : "opacity-0 duration-100",
-            ),
-        )}
-      >
+      <CardContent className="overflow-hidden rounded-[inherit] p-0">
         <div
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
@@ -4026,7 +3997,6 @@ export function ChatComposer({
   showPendingItems = true,
   layout = "default",
   discovery,
-  expanded = true,
 }: ChatComposerProps) {
   const setLifecycleRef = useSet(signals.setLifecycleRef$);
   return (
@@ -4048,7 +4018,7 @@ export function ChatComposer({
         <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         {discovery}
-        <ComposerCard signals={signals} layout={layout} expanded={expanded} />
+        <ComposerCard signals={signals} layout={layout} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

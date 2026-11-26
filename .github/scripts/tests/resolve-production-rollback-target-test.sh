@@ -40,7 +40,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "eddbe0f4edae253b6a9240e0f312f25b36acad5b" ]; then
+    if [ "${3:-}" = "${MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT-c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3}" ]; then
+      [ "${MOCK_CONNECTOR_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "eddbe0f4edae253b6a9240e0f312f25b36acad5b" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_STAFF_SINGLE_AGENT_RUNNER_VALID:-1}" = "1" ]
       else
@@ -395,6 +397,11 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *1634_connector_identity_writer_preparation.sql* ]]; then
+      [ "${MOCK_CONNECTOR_IDENTITY_PREPARATION_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT-c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/single-character-skill-capability-free-api* ]]; then
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT-deadc0dedeadc0dedeadc0dedeadc0dedeadc0de}"
       exit 0
@@ -754,6 +761,30 @@ assert_failure() {
   fi
 }
 
+# Identity constraints require the prepared writer, including during rollback.
+# Invalid history and old writers must fail before any provider or host access.
+for identity_case in \
+  "MOCK_CONNECTOR_IDENTITY_PREPARATION_AVAILABLE=0|Cannot resolve the merged Connector identity writer preparation on main" \
+  "MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Connector identity writer preparation on main" \
+  "MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT=invalid|Cannot resolve the merged Connector identity writer preparation on main" \
+  "MOCK_CONNECTOR_IDENTITY_PREPARATION_VALID=0|Rollback target predates Connector identity writer preparation"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${identity_case#*|}" \
+    run_resolver "${tmp_dir}/connector-identity-preparation.output" "${identity_case%%|*}"
+  [ ! -s "${tmp_dir}/connector-identity-preparation.output" ] || fail "unprepared identity writer must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "identity writer policy must reject before provider or host access"
+  fi
+done
+
+# The deployed preparation is a valid target even though it predates activation.
+: >"${tmp_dir}/boundaries.log"
+run_resolver "${tmp_dir}/connector-identity-exact.output" \
+  "MOCK_CONNECTOR_IDENTITY_PREPARATION_COMMIT=${target_commit}" >"${tmp_dir}/connector-identity-exact.log"
+grep -Fxq "target_commit=${target_commit}" "${tmp_dir}/connector-identity-exact.output" || fail "exact identity preparation must remain eligible"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1634_connector_identity_writer_preparation.sql" "${tmp_dir}/boundaries.log" || fail "identity floor must use the preparation's first-parent main history"
+grep -Fxq "git merge-base --is-ancestor ${target_commit} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "exact preparation must be checked against the requested target"
+
 # Staff activation must not select an API or Runner without the separately
 # deployed readers, even when the other artifact contains them.
 : >"${tmp_dir}/boundaries.log"
@@ -1003,6 +1034,7 @@ done
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3c1d3 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "descendant API must satisfy the identity writer preparation floor"
 grep -Fxq "git show origin/main:.github/rollback-floors/home-cache-capacity-reader" "${tmp_dir}/boundaries.log" || fail "home cache floor must come from current main"
 grep -Fxq "git merge-base --is-ancestor ${home_cache_capacity_reader_floor} origin/main" "${tmp_dir}/boundaries.log" || fail "home cache floor must name a merged main commit"
 grep -Fxq "git merge-base --is-ancestor ${home_cache_capacity_reader_floor} ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API must accept larger home cache inventories"

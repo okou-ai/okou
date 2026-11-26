@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">वर्कस्पेस में शेयर किया गया · इस्तेमाल की अनुमति</string>
     <string name="workflow_show_all">सभी दिखाएँ</string>
     <string name="workflow_status_connection">%1$s · कनेक्शन चाहिए</string>
-    <string name="workflow_time">समय (HH:mm)</string>
+    <string name="workflow_time">समय</string>
     <string name="workflow_timezone">समय क्षेत्र</string>
     <string name="workflow_transcript">Google Meet ट्रांसक्रिप्ट तैयार है</string>
     <string name="workflow_trigger">ट्रिगर</string>

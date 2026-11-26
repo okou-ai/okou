@@ -1,8 +1,6 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
-import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.WorkspaceSearchInput
@@ -473,7 +471,7 @@ private fun ConnectorDirectory(
 private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
     val selected = if (connected) 1 else 0
     val focus = remember { List(2) { FocusRequester() } }
-    val accent = LocalActivityStatusColor.current
+    val accent = MaterialTheme.colorScheme.primary
     PrimaryTabRow(
         selectedTabIndex = selected,
         containerColor = MaterialTheme.colorScheme.background,
@@ -553,7 +551,6 @@ private fun ConnectorFilters(
             label = stringResource(R.string.connector_search),
             onClear = clearQuery,
             modifier = Modifier.weight(1f).focusRequester(searchFocus).testTag("connector-search"),
-            shape = ToolDirectorySearchShape,
             clearLabel = stringResource(R.string.connector_clear),
         )
         Box {
@@ -672,7 +669,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>, text
             Box(
                 Modifier.size(7.dp)
                     .background(
-                        if (attention) colors.error else LocalActivityStatusColor.current,
+                        if (attention) colors.error else MaterialTheme.colorScheme.primary,
                         CircleShape,
                     ),
             )

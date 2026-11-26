@@ -202,7 +202,6 @@ const writeGithubConnectorConnection$ = command(
         oauthGrantedScopes: args.oauthGrantedScopes,
         extraConnectorSecrets: args.extraConnectorSecrets,
         account: args.account,
-        matchExistingExternalIdentity: true,
       },
       signal,
     );

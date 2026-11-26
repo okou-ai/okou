@@ -4,6 +4,7 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.resolvePalette
 import ai.okou.android.state.ChatSearchState
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
@@ -398,9 +399,11 @@ class WorkspaceSearchScreenTest {
                 pixels[pixels.width * 7 / 8, centerY].toArgb(),
             )
         }
-        fun assertColors(expectedActive: Int, expectedTrack: Int) {
+        fun assertColors(palette: UserPreferencesColorTheme, dark: Boolean) {
             val (active, track) = colors()
-            assertEquals(expectedActive, active)
+            val expected = resolvePalette(palette, dark)
+            assertEquals(expected.primary.toArgb(), active)
+            val expectedTrack = expected.secondaryContainer.toArgb()
             // Allow one sRGB level for the native compositor's 8-bit rounding.
             for (shift in listOf(16, 8, 0)) {
                 val expected = (expectedTrack shr shift) and 0xFF
@@ -411,12 +414,12 @@ class WorkspaceSearchScreenTest {
                 )
             }
         }
-        assertColors(0xFFB5790C.toInt(), 0xFFF6EFE2.toInt())
+        assertColors(UserPreferencesColorTheme.DEFAULT, dark = false)
         val light = colors()
         compose.mainClock.advanceTimeBy(600)
         assertEquals(light, colors())
         compose.runOnIdle { dark = true }
-        assertColors(0xFF8BA6E2.toInt(), 0xFF2F333C.toInt())
+        assertColors(UserPreferencesColorTheme.BLUE_HORIZON, dark = true)
         assertEquals(bounds, progress.getUnclippedBoundsInRoot())
     }
 }

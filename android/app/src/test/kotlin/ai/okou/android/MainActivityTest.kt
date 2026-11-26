@@ -111,8 +111,7 @@ class MainActivityTest {
         val choice = compose.onNode(isSelectable() and hasText("Cotton sky"))
         choice.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         choice.assertDoesNotExist()
-        val colors =
-            resolvePalette(compose.activity, false, UserPreferencesColorTheme.COTTON_SKY).scheme
+        val colors = resolvePalette(UserPreferencesColorTheme.COTTON_SKY, dark = false)
         fun readable(value: String) {
             val layouts = mutableListOf<TextLayoutResult>()
             val node = compose.onNodeWithText(value, useUnmergedTree = true)

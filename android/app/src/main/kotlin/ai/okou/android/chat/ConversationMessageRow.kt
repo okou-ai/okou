@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
@@ -379,7 +378,7 @@ internal fun ConversationActivity(
     controls: ConversationRunControls? = null,
     stopPlacement: ConversationStopPlacement? = null,
 ) {
-    val color = LocalActivityStatusColor.current
+    val color = MaterialTheme.colorScheme.primary
     Row(
         modifier.fillMaxWidth().heightIn(min = if (stopped) 24.dp else ConversationStopTouchSize),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

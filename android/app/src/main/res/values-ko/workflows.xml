@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">워크스페이스 공유 · 사용 가능</string>
     <string name="workflow_show_all">전체 보기</string>
     <string name="workflow_status_connection">%1$s · 연결 필요</string>
-    <string name="workflow_time">시간 (HH:mm)</string>
+    <string name="workflow_time">시간</string>
     <string name="workflow_timezone">시간대</string>
     <string name="workflow_transcript">Google Meet 스크립트 준비됨</string>
     <string name="workflow_trigger">트리거</string>

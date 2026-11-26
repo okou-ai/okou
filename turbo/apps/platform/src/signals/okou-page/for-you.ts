@@ -7,7 +7,6 @@ import {
   settledFeedOrder$,
   suggestionDirectionItemId$,
 } from "./agent-suggestion-session.ts";
-import { suggestionDirectionFolded$ } from "./agent-suggestions.ts";
 
 /** The URL identifies the reading position; browsing never consumes a card. */
 export const forYouDeck$ = computed((get) => {
@@ -91,18 +90,42 @@ interface Pagination {
 }
 
 const paginationState$ = state<Pagination | null>(null);
+const cardMinHeightState$ = state(0);
 
 export const forYouPagination$ = computed((get) => {
   return get(paginationState$);
 });
 
+export const forYouCardMinHeight$ = computed((get) => {
+  return get(cardMinHeightState$);
+});
+
+/** Keep shorter cards from shrinking the stack after a departure unmounts. */
+export const measureForYouCardOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, card: HTMLElement) => {
+    const height = card.offsetHeight;
+    if (height > get(cardMinHeightState$)) {
+      set(cardMinHeightState$, height);
+    }
+  }),
+);
+
 export const setupForYouPagination$ = command(
   ({ set }, signal: AbortSignal) => {
     set(paginationState$, null);
+    set(cardMinHeightState$, 0);
+    window.addEventListener(
+      "resize",
+      () => {
+        set(cardMinHeightState$, 0);
+      },
+      { signal },
+    );
     signal.addEventListener(
       "abort",
       () => {
         set(paginationState$, null);
+        set(cardMinHeightState$, 0);
       },
       { once: true },
     );
@@ -150,49 +173,10 @@ export const finishForYouPaginationOnRef$ = onRef(
   }),
 );
 
-/** How far a dragged card follows the pointer before it starts to resist. */
-const DRAG_REACH = 160;
-
-function dragOffset(dx: number) {
-  const reach = Math.abs(dx);
-  return (
-    Math.sign(dx) *
-    (reach <= DRAG_REACH ? reach : DRAG_REACH + (reach - DRAG_REACH) * 0.35)
-  );
-}
-
-/**
- * Swipe is scoped to the card, which follows the pointer while it is dragged
- * sideways; native text inputs and links keep their gestures. A drag far
- * enough pages from where the card was let go, through the departure
- * animation's `--for-you-drag-x` start; a shorter one springs back.
- */
+/** Swipe is scoped to the card; native text inputs and links keep their gestures. */
 export const swipeForYouOnRef$ = onRef<HTMLElement>(
-  command(({ get, set }, area: HTMLElement, signal: AbortSignal) => {
-    const card =
-      area.closest<HTMLElement>('[data-slot="suggestion-stack-card"]') ?? area;
-    let origin: {
-      x: number;
-      y: number;
-      id: number;
-      dragging: boolean;
-      offset: number;
-    } | null = null;
-    // The card returns from where it was let go; the animation covers the
-    // jump as the offset clears in the same frame.
-    const springBack = (offset: number) => {
-      delete card.dataset.dragging;
-      card.style.removeProperty("--for-you-drag-x");
-      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        card.animate(
-          [
-            { transform: `translateX(${String(offset)}px)` },
-            { transform: "translateX(0)" },
-          ],
-          { duration: 320, easing: "cubic-bezier(0.32, 0.72, 0, 1)" },
-        );
-      }
-    };
+  command(({ get, set }, card: HTMLElement, signal: AbortSignal) => {
+    let origin: { x: number; y: number; id: number } | null = null;
     card.addEventListener(
       "pointerdown",
       (event) => {
@@ -205,49 +189,14 @@ export const swipeForYouOnRef$ = onRef<HTMLElement>(
         ) {
           return;
         }
-        origin = {
-          x: event.clientX,
-          y: event.clientY,
-          id: event.pointerId,
-          dragging: false,
-          offset: 0,
-        };
-      },
-      { signal },
-    );
-    card.addEventListener(
-      "pointermove",
-      (event) => {
-        const start = origin;
-        if (!start || start.id !== event.pointerId) {
-          return;
-        }
-        const dx = event.clientX - start.x;
-        const dy = event.clientY - start.y;
-        if (!start.dragging) {
-          if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            start.dragging = true;
-            card.setPointerCapture(event.pointerId);
-            card.dataset.dragging = "";
-            window.getSelection()?.removeAllRanges();
-          } else if (Math.abs(dy) > 10) {
-            origin = null;
-          }
-          return;
-        }
-        start.offset = dragOffset(dx);
-        card.style.setProperty("--for-you-drag-x", `${String(start.offset)}px`);
+        origin = { x: event.clientX, y: event.clientY, id: event.pointerId };
       },
       { signal },
     );
     card.addEventListener(
       "pointercancel",
       () => {
-        const start = origin;
         origin = null;
-        if (start?.dragging) {
-          springBack(start.offset);
-        }
       },
       { signal },
     );
@@ -262,21 +211,14 @@ export const swipeForYouOnRef$ = onRef<HTMLElement>(
         const dx = event.clientX - start.x;
         const dy = event.clientY - start.y;
         if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) {
-          if (start.dragging) {
-            springBack(start.offset);
-          }
           return;
         }
-        // The card keeps its drag offset: the departure starts from it, and the
-        // card leaves the deck when the departure ends.
         const { cards } = get(forYouDeck$);
         signal.throwIfAborted();
         const direction = dx < 0 ? "next" : "previous";
         const target = direction === "next" ? cards[1] : cards.at(-1);
         if (target && target !== cards[0]) {
           set(browseForYou$, target.entry.item.id, direction, signal);
-        } else {
-          springBack(start.offset);
         }
       },
       { signal },
@@ -367,8 +309,7 @@ export const pageForYouWithKeysOnRef$ = onRef<HTMLElement>(
         if (
           direction === null ||
           keyBelongsElsewhere(event, page) ||
-          (get(suggestionDirectionItemId$) !== null &&
-            !get(suggestionDirectionFolded$))
+          get(suggestionDirectionItemId$) !== null
         ) {
           return;
         }

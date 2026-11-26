@@ -190,6 +190,34 @@ export function connectorConnectionDefaultConflict(kind: "builtin" | "custom") {
       };
 }
 
+/** Provider identity is scoped to its owner and connector, never its display label. */
+export function connectorConnectionExternalConflict(
+  kind: "builtin" | "custom",
+) {
+  return kind === "builtin"
+    ? {
+        target: [
+          connectors.orgId,
+          connectors.userId,
+          connectors.connectorSlug,
+          connectors.externalId,
+          connectors.externalIssuer,
+          connectorConnectionExternalPrincipal(),
+        ],
+        where: sql`${connectors.connectorSlug} IS NOT NULL AND ${connectors.externalId} IS NOT NULL AND ${connectors.externalId} <> ''`,
+      }
+    : {
+        target: [
+          connectors.orgId,
+          connectors.userId,
+          connectors.customConnectorId,
+          connectors.externalId,
+          connectors.externalIssuer,
+        ],
+        where: sql`${connectors.customConnectorId} IS NOT NULL AND ${connectors.externalId} IS NOT NULL AND ${connectors.externalId} <> ''`,
+      };
+}
+
 /** AWS needs its STS principal; workspace grants need their provider namespace. */
 export function connectorConnectionExternalPrincipal() {
   return sql`CASE WHEN ${connectors.connectorSlug} = 'aws'
