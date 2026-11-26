@@ -768,10 +768,10 @@ chat	src/signals/routes/__tests__/chat-events-connectors.test.ts	chat-events-con
 chat	src/signals/routes/__tests__/chat-events-context-batches.test.ts	chat-events-context-batches-002	skipped		slow-setup: Given+first When/Then 371 ms and 373 ms (warm lower bound that omits the Slack, custom connector and workflow Given steps: entitled Pro actor with personal Claude Fable 5.1 124/116 ms, Codex OAuth device-auth connect 72/79 ms, initial send dispatching the Run plus its Runner execution input 175/178 ms)		B07	d-other
 chat	src/signals/routes/__tests__/chat-events-custom-domains-prompt.test.ts	chat-events-custom-domains-prompt-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-001	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-002	planned				B11	d-other
-chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-003	planned				B11	d-other
+chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-002	revisit		revisit: needs a dispatched Run (a-run, awaiting decision)		B11	d-other
+chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-003	revisit		revisit: needs a dispatched Run (a-run, awaiting decision)		B11	d-other
 chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-005	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-009	planned				B11	d-other
+chat	src/signals/routes/__tests__/chat-events-effort.test.ts	chat-events-effort-009	skipped		slow-setup: cold path unique to this case (the only writable row of its file, first in every order, no non-first sample); measured 182.8 and 271.8 ms; draft /home/user/pilot-env/wip/r16/chat-events-effort.test.ts		B11	d-other
 chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-001	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-history.test.ts	chat-events-history-002	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-identity.test.ts	chat-events-identity-002	planned					a-run
