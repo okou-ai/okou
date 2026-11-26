@@ -759,6 +759,20 @@
         }
       }
     },
+    "Couldn’t confirm archiving “%@”.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "未能确认“%@”已归档。" }
+        }
+      }
+    },
+    "Couldn’t confirm unarchiving “%@”.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "未能确认“%@”已取消归档。" }
+        }
+      }
+    },
     "Chat unarchived": {
       "localizations": {
         "zh-Hans": {
