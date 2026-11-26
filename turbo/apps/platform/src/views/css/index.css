@@ -261,43 +261,29 @@
   --animate-capability-tray-in: capability-tray-in 520ms
     cubic-bezier(0.32, 0.72, 0, 1) both;
 
-  /* A handled For you card sinks away where it stood: it settles back, lifts a
-     little and fades, accelerating out, while the next card rises from the
-     deck. Paging throws a card sideways instead, so the two read apart. */
-  --duration-card-settle: 260ms;
-  --animate-card-settle: card-settle var(--duration-card-settle)
-    cubic-bezier(0.4, 0, 1, 1) forwards;
+  --duration-card-fly-out: 520ms;
+  --animate-card-fly-out: card-fly-out var(--duration-card-fly-out)
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
   --duration-completion-in: 320ms;
   --animate-completion-in: completion-in var(--duration-completion-in) ease-out
-    var(--duration-card-settle) backwards;
+    var(--duration-card-fly-out) backwards;
   --duration-firework-rise: 420ms;
   --duration-firework-burst: 1200ms;
   --duration-firework-twinkle: 1000ms;
-  /* Paging throws the top card off the side it travels to, without tilting,
-     from wherever a drag let it go; the card paged to rises in place from the
-     deck's first layer. Both directions move the same way. */
-  --animate-card-page-next-out: card-page-next-out 260ms
-    cubic-bezier(0.4, 0, 1, 1) both;
-  --animate-card-page-previous-out: card-page-previous-out 260ms
-    cubic-bezier(0.4, 0, 1, 1) both;
-  --animate-card-rise: card-rise 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
-  /* A For you card's actions fold away and back by their grid row on
-     `--ease-capability`, so the actions keep their bottom edge and everything
-     above follows each frame. The fold clips only while it moves: a clip that
-     stayed would cut the focus rings of the rows it holds. Two names, one per
-     direction, so every change of direction starts the clip again. `clip`,
-     unlike `hidden`, is not a scroll container, so focus moving into a
-     folding row cannot scroll it. */
-  --duration-for-you-fold: 360ms;
-  --animate-for-you-fold-clip-open: for-you-fold-clip-open
-    var(--duration-for-you-fold);
-  --animate-for-you-fold-clip-shut: for-you-fold-clip-shut
-    var(--duration-for-you-fold);
-  /* A card heading's ends fade while more of it lies beyond them. Consumers
-     bind these to the heading's scroll timeline and range with the longhands,
-     which the shorthand here resets. */
-  --animate-for-you-edge-above: for-you-edge-above linear both;
-  --animate-for-you-edge-below: for-you-edge-below linear both;
+  --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
+  --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
+  --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
+  --animate-card-page-previous-out: card-page-previous-out 220ms ease-out both;
+  /* A suggestion's custom direction opens as its trigger's pill and grows to
+     the composer's height on a fast-start curve, since the row holds the
+     trigger's height until the composer's fraction of its own height passes
+     it. The composer fades in over the pill's fading fill. No fill mode: the
+     pill is clipped and filled only while it grows, so the composer's focus
+     veil and inline popovers are never cut afterwards. */
+  --animate-suggestion-direction-expand: suggestion-direction-expand 360ms
+    cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-suggestion-direction-content-in: suggestion-direction-content-in
+    360ms ease-out;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -323,49 +309,49 @@
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
   /* Clearing the last For you card sets off a few fireworks once the card has
-     settled away. Each burst climbs on a short trail, flashes, then opens into
+     flown away. Each burst climbs on a short trail, flashes, then opens into
      long and short rays with a spark at each tip and a ring of dots near the
      centre, and drifts down as it fades. Sparkles twinkle between the bursts.
      Bursts and sparkles are staggered through `--firework-delay`, so the delay
      lives in this inline block where each element's own value resolves. */
   --animate-firework-rise: firework-rise var(--duration-firework-rise)
     cubic-bezier(0.2, 0.7, 0.3, 1)
-    calc(var(--duration-card-settle) + var(--firework-delay)) both;
+    calc(var(--duration-card-fly-out) + var(--firework-delay)) both;
   --animate-firework-flash: firework-flash 420ms ease-out
     calc(
-      var(--duration-card-settle) + var(--firework-delay) +
+      var(--duration-card-fly-out) + var(--firework-delay) +
         var(--duration-firework-rise)
     )
     both;
   --animate-firework-ray: firework-ray var(--duration-firework-burst)
     cubic-bezier(0.15, 0.8, 0.3, 1)
     calc(
-      var(--duration-card-settle) + var(--firework-delay) +
+      var(--duration-card-fly-out) + var(--firework-delay) +
         var(--duration-firework-rise)
     )
     both;
   --animate-firework-tip: firework-tip var(--duration-firework-burst)
     cubic-bezier(0.15, 0.8, 0.3, 1)
     calc(
-      var(--duration-card-settle) + var(--firework-delay) +
+      var(--duration-card-fly-out) + var(--firework-delay) +
         var(--duration-firework-rise)
     )
     both;
   --animate-firework-ring: firework-ring var(--duration-firework-burst)
     cubic-bezier(0.15, 0.8, 0.3, 1)
     calc(
-      var(--duration-card-settle) + var(--firework-delay) +
+      var(--duration-card-fly-out) + var(--firework-delay) +
         var(--duration-firework-rise)
     )
     both;
   --animate-firework-fall: firework-fall var(--duration-firework-burst) ease-in
     calc(
-      var(--duration-card-settle) + var(--firework-delay) +
+      var(--duration-card-fly-out) + var(--firework-delay) +
         var(--duration-firework-rise)
     )
     both;
   --animate-firework-twinkle: firework-twinkle var(--duration-firework-twinkle)
-    ease-in-out calc(var(--duration-card-settle) + var(--firework-delay)) both;
+    ease-in-out calc(var(--duration-card-fly-out) + var(--firework-delay)) both;
 
   --color-palette-anchor: var(--okou-color-theme-anchor);
   --background-image-palette-gradient: linear-gradient(
@@ -756,85 +742,86 @@ body {
   }
 }
 
+@keyframes card-page-next-in {
+  from {
+    transform: translateX(8%) rotate(2deg);
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
 @keyframes card-page-next-out {
   from {
-    transform: translateX(var(--for-you-drag-x, 0px));
-    opacity: 1;
-  }
-  30% {
+    transform: translateX(0) rotate(0deg);
     opacity: 1;
   }
   to {
-    transform: translateX(-60%);
+    transform: translateX(-12%) rotate(-3deg);
     opacity: 0;
+  }
+}
+
+@keyframes card-page-previous-in {
+  from {
+    transform: translateX(-8%) rotate(-2deg);
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
   }
 }
 
 @keyframes card-page-previous-out {
   from {
-    transform: translateX(var(--for-you-drag-x, 0px));
-    opacity: 1;
-  }
-  30% {
+    transform: translateX(0) rotate(0deg);
     opacity: 1;
   }
   to {
-    transform: translateX(60%);
+    transform: translateX(12%) rotate(3deg);
     opacity: 0;
   }
 }
 
-/* The first deck layer's place: 8px down and 2% narrower. */
-@keyframes card-rise {
+/* The pill keeps the trigger's fill while its grid row grows to the composer,
+   so the card and the stack centred around it follow every frame, then hands
+   over to the composer fading in. `clip`, unlike `hidden`, is not a scroll
+   container: focusing the composer mid-way cannot scroll it. */
+@keyframes suggestion-direction-expand {
   from {
-    transform: translateY(8px) scaleX(0.98);
-  }
-  to {
-    transform: none;
-  }
-}
-
-/* A For you card's heading fades at an end while more of it lies beyond
-   that end. Both run on the heading's own scroll timeline. */
-@keyframes for-you-edge-above {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes for-you-edge-below {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes for-you-fold-clip-open {
-  from,
-  to {
+    grid-template-rows: 0fr;
     overflow: clip;
+    background-color: var(--color-muted);
   }
-}
-
-@keyframes for-you-fold-clip-shut {
-  from,
+  45% {
+    background-color: var(--color-muted);
+  }
   to {
+    grid-template-rows: 1fr;
     overflow: clip;
+    background-color: transparent;
   }
 }
 
-@keyframes card-settle {
+@keyframes suggestion-direction-content-in {
+  from,
+  35% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes card-fly-out {
   from {
-    transform: none;
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  72% {
     opacity: 1;
   }
   to {
-    transform: translateY(-12px) scale(0.96);
+    transform: translate(80%, -110px) rotate(16deg);
     opacity: 0;
     visibility: hidden;
   }

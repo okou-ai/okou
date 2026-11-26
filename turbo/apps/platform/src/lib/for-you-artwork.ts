@@ -1,8 +1,6 @@
 import { platformStaticAssetUrl } from "./static-assets.ts";
 
-// Okou-original 2.5:1 covers for the For you banner. `ground` is the average
-// color of each cover's lowest 6% band; the page continues the picture below it
-// in that color, so the cards stand on one scene. `header` holds the colors
+// Okou-original 2.5:1 covers for the For you banner. `header` holds the colors
 // the header uses over each cover: `wide` for containers of 56rem and up, where
 // the header sits on 34-47% of the artwork's height, and `compact` below that,
 // where it sits on the top 26%. Each `tint` is the average color of the left,
@@ -20,7 +18,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-01-thumb-beb59cdbe6bd.webp",
     ),
-    ground: "18 151 175",
     header: {
       wide: {
         tone: "light",
@@ -42,7 +39,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-02-thumb-6e0c54da4455.webp",
     ),
-    ground: "249 199 150",
     header: {
       wide: {
         tone: "light",
@@ -64,7 +60,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-03-thumb-72da71763deb.webp",
     ),
-    ground: "114 188 155",
     header: {
       wide: {
         tone: "dark",
@@ -86,7 +81,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-04-thumb-eaf89a5a0480.webp",
     ),
-    ground: "249 242 230",
     header: {
       wide: {
         tone: "light",
@@ -108,7 +102,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-05-thumb-87f12089b719.webp",
     ),
-    ground: "64 80 99",
     header: {
       wide: {
         tone: "dark",
@@ -130,7 +123,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-06-thumb-95ca9506d7b5.webp",
     ),
-    ground: "84 153 56",
     header: {
       wide: {
         tone: "light",
@@ -152,7 +144,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-07-thumb-ad9879df695e.webp",
     ),
-    ground: "15 147 209",
     header: {
       wide: {
         tone: "light",
@@ -174,7 +165,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-08-thumb-e4b71d5847f1.webp",
     ),
-    ground: "146 153 172",
     header: {
       wide: {
         tone: "light",
@@ -196,7 +186,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-09-thumb-2c41b44bce1d.webp",
     ),
-    ground: "6 28 60",
     header: {
       wide: {
         tone: "dark",
@@ -218,7 +207,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-10-thumb-b31ebc318796.webp",
     ),
-    ground: "250 169 81",
     header: {
       wide: {
         tone: "light",
@@ -240,7 +228,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-11-thumb-32fd94948836.webp",
     ),
-    ground: "113 166 172",
     header: {
       wide: {
         tone: "light",
@@ -262,7 +249,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-12-thumb-2c69c0ec1771.webp",
     ),
-    ground: "4 119 135",
     header: {
       wide: {
         tone: "light",
@@ -284,7 +270,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-13-thumb-3a78b4a5581b.webp",
     ),
-    ground: "133 163 103",
     header: {
       wide: {
         tone: "light",
@@ -306,7 +291,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-14-thumb-b2e919051b48.webp",
     ),
-    ground: "102 129 156",
     header: {
       wide: {
         tone: "dark",
@@ -328,7 +312,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-15-thumb-6a93a13eb6c8.webp",
     ),
-    ground: "101 79 127",
     header: {
       wide: {
         tone: "light",
@@ -350,7 +333,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-16-thumb-8ff4893544d7.webp",
     ),
-    ground: "251 227 165",
     header: {
       wide: {
         tone: "light",
@@ -372,7 +354,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-17-thumb-2527d154ca8f.webp",
     ),
-    ground: "26 59 56",
     header: {
       wide: {
         tone: "light",
@@ -394,7 +375,6 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-18-thumb-d742db4b4a7f.webp",
     ),
-    ground: "80 143 204",
     header: {
       wide: {
         tone: "light",
@@ -419,3 +399,58 @@ export const DEFAULT_FOR_YOU_COVER_ID: ForYouCoverId = forYouCovers[0].id;
 export const forYouCompleteIllustration = platformStaticAssetUrl(
   "views/for-you/assets/take-a-breather-fc0fc8a8ff33.webp",
 );
+
+export const forYouIllustrations = [
+  platformStaticAssetUrl(
+    "views/for-you/assets/unlock-opportunities-5872dbf43f59.webp",
+  ),
+  platformStaticAssetUrl("views/for-you/assets/set-the-pace-5fc2e4182e11.webp"),
+  platformStaticAssetUrl(
+    "views/for-you/assets/nurture-growth-d3db0a894266.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/build-bridges-8fe967b85524.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/weigh-options-1689837de7b5.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/safeguard-work-de4b41889059.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/set-priorities-d973ec9b2749.webp",
+  ),
+  platformStaticAssetUrl("views/for-you/assets/create-ideas-05ae08e5ccc8.webp"),
+  platformStaticAssetUrl("views/for-you/assets/launch-plans-e2c1963bbbd9.webp"),
+  platformStaticAssetUrl(
+    "views/for-you/assets/connect-the-dots-0c26a5aa7266.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/move-work-forward-a96629f67aed.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/bring-clarity-92972af14a40.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/read-and-review-1265cd702475.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/sort-the-inbox-fcaa91dcdd3b.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/deliver-results-2c6b5d3b55ca.webp",
+  ),
+  platformStaticAssetUrl("views/for-you/assets/find-the-way-1319abfe9fd6.webp"),
+  platformStaticAssetUrl(
+    "views/for-you/assets/organize-threads-f64528a49aff.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/take-a-breather-fc0fc8a8ff33.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/share-insights-f3ae2febde35.webp",
+  ),
+  platformStaticAssetUrl(
+    "views/for-you/assets/investigate-details-2340a6b01547.webp",
+  ),
+] as const;

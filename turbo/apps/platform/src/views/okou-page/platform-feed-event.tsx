@@ -9,7 +9,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
-import { ForYouCardLayout } from "./for-you-card-heading.tsx";
+import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 
 function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
   return new Date(disabledAt).toLocaleString(resolvedAppLocale(), {
@@ -23,54 +23,6 @@ function formatPauseTime(disabledAt: string, timeZone: string | undefined) {
   });
 }
 
-/** Why the automation stopped, and when, as the card's details. */
-function AutomationPauseDetails({
-  entry,
-}: {
-  readonly entry: ReturnType<typeof createPlatformEventEntry>;
-}) {
-  const { t } = useTranslation();
-  const preferences = useLastResolved(userPreferences$);
-  const { content } = entry.item;
-  return (
-    <div className="mt-6 space-y-3 rounded-xl border border-border bg-card p-4">
-      <p className="text-xs leading-4 font-medium text-muted-foreground">
-        {t(($) => {
-          return $.feedEvents.automationDisabled.systemSource;
-        })}
-      </p>
-      <p className="text-sm leading-[1.375rem] text-foreground">
-        {t(
-          ($) => {
-            return $.feedEvents.automationDisabled.reason;
-          },
-          { count: content.consecutiveFailures },
-        )}
-      </p>
-      {content.recoveryScheduled && (
-        <p className="text-sm leading-[1.375rem] text-muted-foreground">
-          {t(($) => {
-            return $.feedEvents.automationDisabled.recoveryScheduled;
-          })}
-        </p>
-      )}
-      <time
-        dateTime={content.disabledAt}
-        className="block text-xs leading-4 text-muted-foreground"
-      >
-        {t(
-          ($) => {
-            return $.feedEvents.automationDisabled.disabledAt;
-          },
-          {
-            time: formatPauseTime(content.disabledAt, preferences?.timezone),
-          },
-        )}
-      </time>
-    </div>
-  );
-}
-
 export function PlatformFeedEvent({
   entry,
   active,
@@ -82,14 +34,15 @@ export function PlatformFeedEvent({
   const signal = useGet(pageSignal$);
   const [dismissal, dismiss] = useLoadableSet(entry.dismiss$);
   const [activation, enable] = useLoadableSet(entry.enable$);
+  const preferences = useLastResolved(userPreferences$);
   const { content } = entry.item;
   const busy = activation.state === "loading" || dismissal.state === "loading";
   return (
     <article
       aria-labelledby={`suggestion-title-${entry.item.id}`}
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex flex-1 flex-col"
     >
-      <ForYouCardLayout
+      <ForYouCardHeading
         id={entry.item.id}
         active={active}
         title={t(($) => {
@@ -108,7 +61,7 @@ export function PlatformFeedEvent({
             }}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block max-w-full truncate rounded-sm text-xs leading-4 font-medium text-muted-foreground underline decoration-transparent underline-offset-3 hover:text-foreground hover:decoration-control-border focus-visible:outline-2 focus-visible:outline-ring"
+            className="inline-block max-w-full truncate rounded-md text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
             aria-label={t(($) => {
               return $.feedEvents.automationDisabled.viewAutomation;
             })}
@@ -116,49 +69,78 @@ export function PlatformFeedEvent({
             {content.automationName}
           </Link>
         }
-        details={<AutomationPauseDetails entry={entry} />}
-        actions={
-          !busy &&
-          (activation.state === "hasError" ||
-            dismissal.state === "hasError") && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(($) => {
-                return $.feedEvents.automationDisabled.actionFailed;
-              })}
-            </p>
-          )
-        }
-        footer={
-          <div className="flex flex-wrap items-center gap-2 px-2">
-            <Button
-              variant="default"
-              size="sm"
-              disabled={busy}
-              pending={activation.state === "loading"}
-              onClick={() => {
-                detach(enable(signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.feedEvents.automationDisabled.enable;
-              })}
-            </Button>
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={busy}
-              pending={dismissal.state === "loading"}
-              onClick={() => {
-                detach(dismiss(signal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.chat.agentSuggestions.dismiss;
-              })}
-            </Button>
-          </div>
-        }
       />
+      <div className="-mx-4 mt-5 mb-6 space-y-3 rounded-3xl bg-muted p-4">
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.feedEvents.automationDisabled.systemSource;
+          })}
+        </p>
+        <p className="text-base leading-6 text-foreground">
+          {t(
+            ($) => {
+              return $.feedEvents.automationDisabled.reason;
+            },
+            { count: content.consecutiveFailures },
+          )}
+        </p>
+        {content.recoveryScheduled && (
+          <p className="text-sm leading-6 text-muted-foreground">
+            {t(($) => {
+              return $.feedEvents.automationDisabled.recoveryScheduled;
+            })}
+          </p>
+        )}
+        <time
+          dateTime={content.disabledAt}
+          className="block text-sm text-muted-foreground"
+        >
+          {t(
+            ($) => {
+              return $.feedEvents.automationDisabled.disabledAt;
+            },
+            {
+              time: formatPauseTime(content.disabledAt, preferences?.timezone),
+            },
+          )}
+        </time>
+      </div>
+      <footer className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="default"
+            disabled={busy}
+            pending={activation.state === "loading"}
+            onClick={() => {
+              detach(enable(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.feedEvents.automationDisabled.enable;
+            })}
+          </Button>
+          <Button
+            variant="quiet"
+            disabled={busy}
+            pending={dismissal.state === "loading"}
+            onClick={() => {
+              detach(dismiss(signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.chat.agentSuggestions.dismiss;
+            })}
+          </Button>
+        </div>
+      </footer>
+      {!busy &&
+        (activation.state === "hasError" || dismissal.state === "hasError") && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {t(($) => {
+              return $.feedEvents.automationDisabled.actionFailed;
+            })}
+          </p>
+        )}
     </article>
   );
 }

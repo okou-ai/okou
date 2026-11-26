@@ -14,7 +14,7 @@ import { i18n } from "../../i18n/index.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import { createThreadMetaLookup } from "../chat-page/chat-thread-event-sourcing.ts";
 import {
   createInPlaceThreadComposerSignals,
@@ -114,104 +114,10 @@ export const suggestionDirectionComposer$ = computed((get) => {
   return get(internalDirectionComposer$);
 });
 
-// A folded editor keeps its session and everything written in it, so opening
-// it again shows it as it was left. Each reopening counts up, which tells the
-// editor to take focus once it is shown again.
-const directionFoldedState$ = state(false);
-const directionReopenedState$ = state(0);
-const focusDirectionEntryState$ = state(false);
-
-export const suggestionDirectionFolded$ = computed((get) => {
-  return get(directionFoldedState$);
-});
-
-export const suggestionDirectionReopened$ = computed((get) => {
-  return get(directionReopenedState$);
-});
-
-/** Folding from inside the editor hands focus back to the card's entry. */
-export const foldSuggestionDirection$ = command(
-  ({ set }, returnFocus: boolean) => {
-    set(directionFoldedState$, true);
-    set(focusDirectionEntryState$, returnFocus);
-  },
-);
-
-/**
- * The editor folds when the member leaves it: its own Escape blurs it, and a
- * press anywhere else on the For you page moves away from it. Leaving by
- * Escape hands focus back to the card's entry. Focus moving to another
- * control, a press inside the direction's own area (the editor, its caption
- * and the entry), or the window losing focus keeps it open, and the editor's
- * popups live outside the page, so choosing from them never folds it.
- */
-export const foldSuggestionDirectionOnRef$ = onRef<HTMLElement>(
-  command(({ get, set }, area: HTMLElement, signal: AbortSignal) => {
-    const document = area.ownerDocument;
-    let pressedInside = false;
-    area.addEventListener(
-      "pointerdown",
-      () => {
-        pressedInside = true;
-      },
-      { capture: true, signal },
-    );
-    document.addEventListener(
-      "pointerup",
-      () => {
-        pressedInside = false;
-      },
-      { signal },
-    );
-    area.addEventListener(
-      "focusout",
-      (event) => {
-        if (
-          event.relatedTarget !== null ||
-          pressedInside ||
-          get(directionFoldedState$) ||
-          !document.hasFocus()
-        ) {
-          return;
-        }
-        set(foldSuggestionDirection$, true);
-      },
-      { signal },
-    );
-    document.addEventListener(
-      "pointerdown",
-      (event) => {
-        const target = event.target;
-        if (
-          get(directionFoldedState$) ||
-          !(target instanceof Element) ||
-          area.contains(target) ||
-          !target.closest('[data-slot="for-you-page"]')
-        ) {
-          return;
-        }
-        set(foldSuggestionDirection$, false);
-      },
-      { signal },
-    );
-  }),
-);
-
-/** The entry takes focus back when Escape folded the editor from inside. */
-export const suggestionDirectionEntryOnRef$ = onRef<HTMLElement>(
-  command(({ get, set }, entry: HTMLElement) => {
-    if (get(focusDirectionEntryState$)) {
-      set(focusDirectionEntryState$, false);
-      entry.focus();
-    }
-  }),
-);
-
 const closeSuggestionDirection$ = command(({ get, set }) => {
   set(resetDirection$);
   set(internalDirectionComposer$, null);
   set(get(suggestionDirectionSession$), null);
-  set(directionFoldedState$, false);
 });
 
 /**
@@ -346,17 +252,6 @@ export const openSuggestionDirection$ = command(
     entry: AgentSuggestionEntry,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    // Reopening a folded editor shows it as it was left.
-    if (
-      get(directionFoldedState$) &&
-      get(get(suggestionDirectionSession$))?.entry === entry
-    ) {
-      set(directionFoldedState$, false);
-      set(directionReopenedState$, (count) => {
-        return count + 1;
-      });
-      return;
-    }
     const impression = set(entry.show$);
     captureSuggestionCard({
       eventName: "suggestion_card_action_clicked",
@@ -364,7 +259,6 @@ export const openSuggestionDirection$ = command(
     });
     const signal = set(resetDirection$, pageSignal);
     set(internalDirectionComposer$, null);
-    set(directionFoldedState$, false);
     signal.throwIfAborted();
     if (get(entry.hidden$)) {
       return;
@@ -379,7 +273,6 @@ export const openSuggestionDirection$ = command(
         if (get(get(suggestionDirectionSession$)) === session) {
           set(get(suggestionDirectionSession$), null);
           set(internalDirectionComposer$, null);
-          set(directionFoldedState$, false);
         }
       },
       { once: true },
