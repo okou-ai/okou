@@ -1,6 +1,5 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   findAction,
   queryAction,
@@ -21,9 +20,6 @@ const context = testContext();
 const bookshop =
   "https://static.vm0.io/vm0/artifact-templates/illustration/assets/bb2f13d1-f849-4a5c-a493-524bc0eda5c2/ref-bookshop-interior.jpg";
 function welcomeConversation(markdown: string, completed = false) {
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(200, { runs: [] });
-  });
   const chat = createMarkdownChatFixture(context);
   const answer = chat.outputMessage(markdown, { seqId: 1 });
   chat.install({

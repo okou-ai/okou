@@ -1,8 +1,9 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import type { MessageArtifactDetail } from "@okouai/api-contracts/contracts/message-artifact";
 import type { infer as zInfer } from "zod";
 import type { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
-  chatThreadArtifactsContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
   chatThreadsContract,
@@ -68,6 +69,96 @@ export function artifactFile(
     googleDriveSync: { status: "not_synced" },
     ...overrides,
   };
+}
+
+export function mockMessageArtifactDetails(
+  context: TestContext,
+  files: (
+    url: string,
+  ) =>
+    | readonly ChatThreadArtifactFile[]
+    | Promise<readonly ChatThreadArtifactFile[]>,
+) {
+  const publications = new Map<string, ChatThreadArtifactFile>();
+  context.mocks.api(
+    artifactReferencesContract.driveStatus,
+    ({ params, respond }) => {
+      const file = publications.get(params.publicationId);
+      return file?.googleDriveSync
+        ? respond(200, {
+            googleDriveConnectionId: file.googleDriveConnectionId,
+            googleDriveSync: file.googleDriveSync,
+          })
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Missing status" },
+          });
+    },
+  );
+  context.mocks.api(
+    artifactReferencesContract.byUrl,
+    async ({ query, respond }) => {
+      const candidates = await files(query.url);
+      const match = (url: string) => {
+        return (
+          new URL(url, location.origin).href.replace(/\/$/, "") ===
+          new URL(query.url, location.origin).href.replace(/\/$/, "")
+        );
+      };
+      const file = candidates.find((item) => {
+        return match(item.url) || (item.aliasUrl && match(item.aliasUrl));
+      });
+      if (!file) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown artifact" },
+        });
+      }
+      const publicationId = file.artifactId ?? crypto.randomUUID();
+      publications.set(publicationId, file);
+      let preview: MessageArtifactDetail["preview"];
+      if (file.artifactKind) {
+        preview = {
+          kind:
+            file.artifactKind === "hosted-site"
+              ? "website"
+              : "presentation-html",
+          pageUrl: file.url,
+          aliasUrl: file.aliasUrl,
+        };
+      } else if (file.contentType.startsWith("image/")) {
+        preview = { kind: "image", imageUrl: file.url };
+      } else if (file.contentType.startsWith("video/")) {
+        preview = { kind: "video", playbackUrl: file.url };
+      } else if (file.contentType.startsWith("audio/")) {
+        preview = { kind: "audio", playbackUrl: file.url };
+      } else if (file.contentType === "text/html") {
+        preview = { kind: "html", pageUrl: file.url };
+      } else {
+        preview = {
+          kind:
+            file.contentType === "text/markdown"
+              ? "markdown"
+              : file.contentType === "application/pdf"
+                ? "pdf"
+                : "file",
+          fileUrl: file.url,
+        };
+      }
+      return respond(200, {
+        url: file.url,
+        filename: file.filename,
+        contentType: file.contentType,
+        size: file.size,
+        preview,
+        owner: {
+          publicationId,
+          fileId: file.id,
+          createdAt: file.createdAt,
+          title: file.title,
+          artifactId: file.artifactId,
+        },
+      });
+    },
+  );
 }
 
 export function draftAttachment(
@@ -180,18 +271,8 @@ export function mockAttachmentChat(
       },
     });
   });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(200, {
-      runs:
-        options.artifacts === undefined
-          ? []
-          : [
-              {
-                runId: options.artifactRunId ?? ATTACHMENT_RUN_ID,
-                files: [...options.artifacts],
-              },
-            ],
-    });
+  mockMessageArtifactDetails(context, () => {
+    return options.artifacts ?? [];
   });
   if (options.draft) {
     const draft = options.draft;
@@ -291,19 +372,8 @@ export function mockSplitAttachmentChats(
       return respond(200, chatEventRowsResponse(rows, query));
     },
   );
-  context.mocks.api(chatThreadArtifactsContract.list, ({ params, respond }) => {
-    const chat = chats.get(params.threadId);
-    if (!chat) {
-      return respond(404, {
-        error: { code: "THREAD_NOT_FOUND", message: "Thread not found" },
-      });
-    }
-    return respond(200, {
-      runs:
-        chat.artifacts === undefined
-          ? []
-          : [{ runId: ATTACHMENT_RUN_ID, files: [...chat.artifacts] }],
-    });
+  mockMessageArtifactDetails(context, () => {
+    return [...(left.artifacts ?? []), ...(right.artifacts ?? [])];
   });
 }
 

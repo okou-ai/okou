@@ -3,7 +3,16 @@ import ChatData
 import ChatDomain
 import Foundation
 
-/// One detail owns previews, catalog metadata and cancellation. No signed URL survives this scope.
+/// Ordered transcript sources from the displayed work section that opened the preview.
+struct MessageArtifactGroup: Equatable, Sendable {
+  let id: String
+  let sources: [String]
+
+  /// Navigation carries the already ordered images in the active preview.
+  var resolved: Self { Self(id: id, sources: []) }
+}
+
+/// One detail owns previews, resource metadata and cancellation. No signed URL survives this scope.
 /// The open preview, its share sheet and the current reads are kept in the workspace session's
 /// Store.
 @MainActor
@@ -38,9 +47,6 @@ final class MessageArtifactStore {
   let readsValue: Computed<MessageArtifactResources>
   private let presentationState: CCState.State<Presentation>
   private let service: ChatArtifacts
-  /// The chat whose artifact list supplies names and sizes; nil for a result opened from
-  /// workspace search, which arrives with its own title.
-  private let threadID: String?
   private let markdown: MessageMarkdownCache
   /// The workspace session's Store, which keeps the reads' graph values and the presentation.
   let graph: CCState.Store
@@ -50,11 +56,10 @@ final class MessageArtifactStore {
   private var closed = false
 
   init(
-    service: ChatArtifacts, threadID: String?, webURL: URL, markdown: MessageMarkdownCache,
+    service: ChatArtifacts, webURL: URL, markdown: MessageMarkdownCache,
     graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
-    self.threadID = threadID
     self.webURL = webURL
     self.markdown = markdown
     self.graph = graph
@@ -62,7 +67,7 @@ final class MessageArtifactStore {
     let presentationState = CCState.State(
       Presentation(
         reads: MessageArtifactResources(
-          service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)))
+          service: service, webURL: webURL, graph: graph, didFail: didFail)))
     self.presentationState = presentationState
     presentationValue = Computed { try $0(presentationState) }
     readsValue = Computed(equals: { $0 === $1 }, { get in try get(presentationState).reads })
@@ -103,13 +108,13 @@ final class MessageArtifactStore {
   }
 
   func open(
-    _ resource: ChatArtifact, images: [ChatArtifact] = [], imageSources: [String] = [],
+    _ resource: ChatArtifact, images: [ChatArtifact] = [], group: MessageArtifactGroup? = nil,
     renewedHTMLSignature: Bool = false, thumbnail: Data? = nil
   ) {
     guard !closed else { return }
     preview?.close()
     let item = MessageArtifactPreviewRead(
-      artifact: reads.metadata(resource), images: images, imageSources: imageSources,
+      artifact: reads.metadata(resource), images: images, group: group,
       thumbnail: thumbnail, renewedHTMLSignature: renewedHTMLSignature,
       reads: reads, service: service, markdown: markdown, webURL: webURL, didFail: didFail)
     // One write replaces the open preview, so moving between images never publishes none.
@@ -130,18 +135,39 @@ final class MessageArtifactStore {
     guard [401, 403].contains(status ?? 0) || (status == 404 && expired) else { return false }
     switch content.artifact.source {
     case .reference, .file, .hostedSite:
-      open(content.artifact, images: content.images, renewedHTMLSignature: true)
+      open(
+        content.artifact, images: content.images, group: item.group?.resolved,
+        renewedHTMLSignature: true)
       return true
     case .publishedSite, .published: return false
     }
+  }
+
+  private struct ImageStep {
+    let direction: Int
+    let content: MessageArtifactPreviewRead.Content
+    let previewID: UUID
+    let thumbnail: Data?
+  }
+
+  private lazy var stepImage = Command<Void, ImageStep> { [weak self] _, step in
+    guard let self, !closed, let active = preview, active.id == step.previewID,
+      let image = step.content.image(step.direction)
+    else { return }
+    open(
+      image, images: step.content.images, group: active.group?.resolved, thumbnail: step.thumbnail)
   }
 
   func navigateImage(
     _ direction: Int, content: MessageArtifactPreviewRead.Content, previewID: UUID,
     thumbnail: Data? = nil
   ) {
-    guard !closed, preview?.id == previewID, let image = content.image(direction) else { return }
-    open(image, images: content.images, thumbnail: thumbnail)
+    do {
+      try graph.set(
+        stepImage,
+        ImageStep(
+          direction: direction, content: content, previewID: previewID, thumbnail: thumbnail))
+    } catch { didFail(error) }
   }
 
   func share(_ file: ChatAttachmentFile, previewID: UUID) {
@@ -157,17 +183,17 @@ final class MessageArtifactStore {
   }
 
   func refreshDetails() {
-    guard !closed, preview != nil else { return }
+    guard !closed, let preview else { return }
     do {
-      try reads.refreshCatalog()
+      try reads.refreshDetail(preview.artifact)
     } catch { didFail(error) }
   }
 
   func retry() {
     guard let preview else { return }
-    do { try reads.refreshCatalog() } catch { didFail(error) }
+    do { try reads.refreshDetail(preview.artifact) } catch { didFail(error) }
     open(
-      preview.artifact, images: preview.images, imageSources: preview.imageSources,
+      preview.artifact, images: preview.images, group: preview.group,
       thumbnail: preview.thumbnail)
   }
 
@@ -184,7 +210,7 @@ final class MessageArtifactStore {
     reads.close()
     if !closed {
       let next = MessageArtifactResources(
-        service: service, threadID: threadID, webURL: webURL, graph: graph, didFail: didFail)
+        service: service, webURL: webURL, graph: graph, didFail: didFail)
       update { $0.reads = next }
     }
   }

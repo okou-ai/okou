@@ -1,6 +1,9 @@
 import { createHostedSitePreviewGrant$ } from "./private-hosted-preview.service";
 import { readArtifactDeliveryRecord$ } from "./artifact-delivery.service";
-import { resolveSharedThreadHostedPreview$ } from "./shared-thread-artifacts.service";
+import {
+  authorizedSharedThreadHostedSnapshot$,
+  resolveSharedThreadHostedPreview$,
+} from "./shared-thread-artifacts.service";
 import { command } from "ccstate";
 import { uuid } from "zod";
 import { and, eq, isNull } from "drizzle-orm";
@@ -16,17 +19,33 @@ import {
   readHostedSitePolicy$,
 } from "./hosted-site-access.service";
 
-const resolvePublishedSitePreview$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly publicSlug: string;
-      readonly hostname: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ) => {
+interface HostedSitePreviewArgs {
+  readonly publicSlug: string;
+  readonly hostname: string;
+  readonly userId: string;
+}
+
+const readableHostedSite$ = command(
+  async ({ get, set }, args: HostedSitePreviewArgs, signal: AbortSignal) => {
     const expected = new URL(hostedLinkOrigin("current", args.publicSlug));
+    if (expected.hostname !== args.hostname.toLowerCase()) {
+      return null;
+    }
+    const delivery = await set(
+      readArtifactDeliveryRecord$,
+      {
+        layout: "current",
+        kind: "html",
+        alias: args.publicSlug,
+      },
+      signal,
+    );
+    if (delivery?.kind === "thread-resource") {
+      return { kind: "snapshot" as const, record: delivery };
+    }
+    if (delivery && delivery.kind !== "legacy-site") {
+      return null;
+    }
     // Ordinary site and deployment URLs also cover publications predating the
     // delivery registry, as in the canonical hosted-site files resolver.
     const parsedDeployment = uuid().safeParse(
@@ -74,6 +93,56 @@ const resolvePublishedSitePreview$ = command(
         return null;
       }
     }
+    return { kind: "publication" as const, row, policy, expected };
+  },
+);
+
+export const readableHostedSiteMetadata$ = command(
+  async ({ set }, args: HostedSitePreviewArgs, signal: AbortSignal) => {
+    const source = await set(readableHostedSite$, args, signal);
+    if (!source) {
+      return null;
+    }
+    if (source.kind === "snapshot") {
+      const snapshot = await set(
+        authorizedSharedThreadHostedSnapshot$,
+        {
+          record: source.record,
+          viewerId: args.userId,
+        },
+        signal,
+      );
+      return snapshot
+        ? { filename: args.publicSlug + ".html", artifactKind: "hosted-site" }
+        : null;
+    }
+    const deployment = source.row.deployment;
+    return {
+      filename: (deployment.manifest.title ?? args.publicSlug) + ".html",
+      artifactKind: deployment.manifest.artifactKind ?? "hosted-site",
+      size: deployment.sizeBytes,
+    };
+  },
+);
+
+export const resolveHostedSitePreview$ = command(
+  async ({ set }, args: HostedSitePreviewArgs, signal: AbortSignal) => {
+    const source = await set(readableHostedSite$, args, signal);
+    if (!source) {
+      return null;
+    }
+    if (source.kind === "snapshot") {
+      return await set(
+        resolveSharedThreadHostedPreview$,
+        {
+          publicSlug: args.publicSlug,
+          viewerId: args.userId,
+          record: source.record,
+        },
+        signal,
+      );
+    }
+    const { row, policy, expected } = source;
     const preview = row.deployment.manifest.preview;
     let image: { readonly url: string } | null = null;
     if (preview) {
@@ -123,46 +192,5 @@ const resolvePublishedSitePreview$ = command(
       ...target,
       ...(image ? { previewImageUrl: image.url } : {}),
     };
-  },
-);
-
-export const resolveHostedSitePreview$ = command(
-  async (
-    { set },
-    args: {
-      readonly publicSlug: string;
-      readonly hostname: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const expected = new URL(hostedLinkOrigin("current", args.publicSlug));
-    if (expected.hostname !== args.hostname.toLowerCase()) {
-      return null;
-    }
-    const delivery = await set(
-      readArtifactDeliveryRecord$,
-      {
-        layout: "current",
-        kind: "html",
-        alias: args.publicSlug,
-      },
-      signal,
-    );
-    if (delivery?.kind === "thread-resource") {
-      return await set(
-        resolveSharedThreadHostedPreview$,
-        {
-          publicSlug: args.publicSlug,
-          viewerId: args.userId,
-          record: delivery,
-        },
-        signal,
-      );
-    }
-    if (delivery && delivery.kind !== "legacy-site") {
-      return null;
-    }
-    return await set(resolvePublishedSitePreview$, args, signal);
   },
 );

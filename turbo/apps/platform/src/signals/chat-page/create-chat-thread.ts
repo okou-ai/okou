@@ -1,6 +1,6 @@
 import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
 import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
-import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
+import { createMessageArtifactDetails } from "./chat-artifact-preview.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   isAutoSelectedModel,
@@ -13,10 +13,8 @@ import {
   isChatRunTerminalEventType,
   revokedChatEventIds,
 } from "@okouai/api-contracts/contracts/chat-events";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
   ChatRunOptionsRequest,
-  ChatThreadArtifactRun,
   ChatThreadDraft,
   FeedbackNotePart,
   GenerationTemplateRequest,
@@ -94,14 +92,12 @@ import {
   type SemanticChatEventState,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
 import type { Root } from "hast";
-import { accept } from "../../lib/accept.ts";
 import {
   markdownCardKey,
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
 import { createPlainMarkdownTree } from "../../lib/markdown/plain-markdown.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { modelCatalog$ } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
@@ -1011,9 +1007,11 @@ function createRenderedChatGroups(
   const eventImageGroups$ = computed((get): EventImageGroupProjection[] => {
     return get(allChatGroups$).map((group) => {
       return {
+        id: group.beginEventId,
         role: group.role,
         events: group.events.map((event) => {
           return {
+            id: event.id,
             userMessage: isInputChatEvent(event)
               ? event.userMessage
               : undefined,
@@ -1447,32 +1445,6 @@ function createLatestEventSignals(
   };
 }
 
-function createThreadArtifactRuns(
-  threadId: string,
-  driveAccountRevision$: Computed<string>,
-) {
-  const reloadVersion$ = state(0);
-  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
-    get(reloadVersion$);
-    get(artifactCatalogRevision$);
-    get(driveAccountRevision$);
-    const client = get(apiClient$)(chatThreadArtifactsContract);
-    const result = await accept(
-      client.list({
-        params: { threadId },
-      }),
-      [200],
-    );
-    return result.body.runs;
-  });
-  const reloadArtifacts$ = command(({ set }) => {
-    set(reloadVersion$, (version) => {
-      return version + 1;
-    });
-  });
-  return { artifacts$, reloadArtifacts$ };
-}
-
 interface EventTreeRegistries {
   readonly chatActionContext: ChatActionContext;
   readonly subscriptionResetCardSignals: ReturnType<
@@ -1788,6 +1760,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         tree,
         artifactCardSignals,
         chatActionContext.threadId,
+        plan.eventId,
       );
       set(embedMarkdownMailDrafts$, tree, mailDraftCardSignals);
       embedImageLoadSignals(tree, (url) => {
@@ -1979,12 +1952,18 @@ function createPagedEventResources({
   chatActionContext,
   connector,
   onBrowserPageInput$,
+  driveAccountRevision$,
 }: {
   readonly chatActionContext: ChatActionContext;
   readonly connector: ComposerConnectorSignals;
+  readonly driveAccountRevision$: Computed<string>;
   readonly onBrowserPageInput$: Command<void, []>;
 }) {
   const { threadId } = chatActionContext;
+  const artifactDetails = createMessageArtifactDetails(
+    threadId,
+    driveAccountRevision$,
+  );
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
   const browserSessionSignals = createBrowserSessionSignals(
     threadId,
@@ -1993,7 +1972,8 @@ function createPagedEventResources({
     }),
     onBrowserPageInput$,
   );
-  const artifactCardSignals = createArtifactCardSignalsRegistry();
+  const artifactCardSignals =
+    createArtifactCardSignalsRegistry(artifactDetails);
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2081,6 +2061,7 @@ function createPagedEventResources({
     };
   });
   return {
+    artifactDetails,
     artifactCardSignals,
     eventRenderResources$,
     ensureUserMessageDocuments$,
@@ -2218,6 +2199,7 @@ function createMarkThreadReadIfNeeded({
 function createEventChangeEffects({
   threadId,
   driveAccountRevision$,
+  artifactDetails,
   mailDraftCardSignals,
   chatEvents,
   projections,
@@ -2225,6 +2207,7 @@ function createEventChangeEffects({
   syncVisibleEventTrees$,
 }: {
   readonly threadId: string;
+  readonly artifactDetails: ReturnType<typeof createMessageArtifactDetails>;
   readonly driveAccountRevision$: Computed<string>;
   readonly mailDraftCardSignals: MailDraftCardSignalsRegistry;
   readonly chatEvents: ChatEventSignals;
@@ -2246,6 +2229,7 @@ function createEventChangeEffects({
     threadId,
     mailDraftCardSignals,
     catalogs.gallery,
+    artifactDetails,
   );
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
@@ -2409,6 +2393,7 @@ function createChatThreadMessagePipeline({
   // Position is created before scroll writers are wired to the render window.
   const position = createThreadScrollPositionSignals(threadId);
   const resources = createPagedEventResources({
+    driveAccountRevision$,
     chatActionContext,
     connector,
     onBrowserPageInput$,
@@ -2461,6 +2446,7 @@ function createChatThreadMessagePipeline({
     initialEventsReadyView$,
   );
   const effects = createEventChangeEffects({
+    artifactDetails: resources.artifactDetails,
     threadId,
     driveAccountRevision$,
     mailDraftCardSignals: resources.publicSignals.mailDraftCardSignals,
@@ -2510,8 +2496,9 @@ function createChatThreadMessagePipeline({
     }),
     resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
+      threadId,
       projections.eventImageGroups$,
-      effects.sidebar.target$,
+      effects.sidebar,
     ),
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
@@ -2607,7 +2594,6 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
-  reloadArtifacts$: Command<void, []>;
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -3039,13 +3025,10 @@ const onWorkflowsChanged$ = command(
   },
 );
 
-function createArtifactRealtimeHandlers(
-  messages: RunTrackingDeps["messages"],
-  reloadArtifacts$: RunTrackingDeps["reloadArtifacts$"],
-) {
+function createArtifactRealtimeHandlers(messages: RunTrackingDeps["messages"]) {
   const onArtifactCatalogChanged$ = command(
     async ({ set }, signal: AbortSignal) => {
-      set(reloadArtifacts$);
+      set(messages.sidebar.artifactDetails.restartRequests$, signal);
       set(messages.sidebar.artifactCatalog.reload$);
       set(messages.refreshArtifactPreviews$);
       await set(messages.sidebar.refreshPreviewSessions$, signal);
@@ -3069,20 +3052,17 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
-  reloadArtifacts$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$: messages.catchUp$,
     cancellationRecovery,
   });
-  const artifactHandlers = createArtifactRealtimeHandlers(
-    messages,
-    reloadArtifacts$,
-  );
+  const artifactHandlers = createArtifactRealtimeHandlers(messages);
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ start", { threadId });
+    set(messages.sidebar.artifactDetails.restartRequests$, signal);
     await set(messages.setup$, signal);
     signal.throwIfAborted();
 
@@ -3993,10 +3973,6 @@ export function createChatPanelSignals(
     kind: "builtin",
     connectorSlug: "google-drive",
   });
-  const { artifacts$, reloadArtifacts$ } = createThreadArtifactRuns(
-    threadId,
-    driveAccountRevision$,
-  );
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -4018,7 +3994,7 @@ export function createChatPanelSignals(
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,
   });
-  const messages: MessageListSignals = { ...messagePipeline, artifacts$ };
+  const messages: MessageListSignals = messagePipeline;
   const threadOwned = createThreadOwnedSignals(threadId, messages.sidebar);
   const feedback = createChatThreadFeedbackSignals(
     threadId,
@@ -4046,7 +4022,6 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
-    reloadArtifacts$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
@@ -4084,6 +4059,5 @@ export function createChatPanelSignals(
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
     ...createThinkingIndicatorSignals(),
-    artifacts$: messages.artifacts$,
   };
 }

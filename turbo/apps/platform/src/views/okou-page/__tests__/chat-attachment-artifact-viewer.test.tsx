@@ -15,7 +15,6 @@ import { unzipSync, strFromU8 } from "fflate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -269,7 +268,7 @@ test("chat-attachment-artifact-viewer-007 only the agent image offers a share ac
     return expect(clipboard.writes).toContain(url);
   });
 });
-test("chat-attachment-artifact-viewer-008 the private site card uses its resolved screenshot when the thread inventory fails", async () => {
+test("chat-attachment-artifact-viewer-008 the private site card uses its resolved screenshot when its detail request fails", async () => {
   const f = attachment("basecamp.html", "text/html");
   f.url = "https://pv-field.okou.app/";
   const cover = "https://cdn.okou.io/artifacts/field/run/basecamp.png";
@@ -277,7 +276,7 @@ test("chat-attachment-artifact-viewer-008 the private site card uses its resolve
   mockAttachmentChat(context, {
     chatEvents: [assistantRow("![Basecamp](" + f.path + ")")],
   });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+  context.mocks.api(artifactReferencesContract.byUrl, ({ respond }) => {
     return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",

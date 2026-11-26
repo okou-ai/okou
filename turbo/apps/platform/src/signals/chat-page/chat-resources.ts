@@ -1,7 +1,7 @@
 import { command, computed, state, type Computed } from "ccstate";
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-preview.ts";
-import { isAuthenticatedAttachmentUrl } from "../attachment-resource-url.ts";
+import { authenticatedWebFile } from "../../lib/message-url.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
@@ -25,7 +25,7 @@ export const copyChatResourceArtifact$ = command(
     const detail = await detailRequest;
     signal.throwIfAborted();
     let url = detail ? artifactDetailPreview(detail).url : null;
-    if (url && isAuthenticatedAttachmentUrl(url)) {
+    if (url && authenticatedWebFile(url)) {
       const preview = await set(
         catalog.ensureSelectedArtifactPreview$,
         artifactId,

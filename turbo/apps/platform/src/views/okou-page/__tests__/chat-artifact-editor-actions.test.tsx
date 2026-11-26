@@ -1,5 +1,4 @@
 import {
-  chatThreadArtifactsContract,
   chatEventsContract,
   type UserMessageDocument,
   type UserMessageInputDocument,
@@ -12,13 +11,13 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { artifact } from "../../artifacts-page/__tests__/artifact-catalog-test-helpers.ts";
 import { imageArtifactDetail } from "./chat-navigation-artifact-test-helpers.ts";
 import {
-  ATTACHMENT_RUN_ID,
   artifactFile,
   findNamedButton,
   findNamedLink,
   findNamedMenuItem,
   getNamedButton,
   queryNamedButton,
+  mockMessageArtifactDetails,
 } from "./chat-attachment-test-helpers.ts";
 import { openMessageFile } from "./chat-artifact-preview-test-helpers.ts";
 import userEvent from "@testing-library/user-event";
@@ -72,15 +71,11 @@ test("chat-artifact-deletion-001 returns focus after Cancel and removes the owne
   const viewer = await openMessageFile(context, file, {
     relatedFiles: [legend],
   });
-  context.mocks.api(chatThreadArtifactsContract.list, async ({ respond }) => {
+  mockMessageArtifactDetails(context, async () => {
     if (!owned) {
       await inventory.promise;
     }
-    return respond(200, {
-      runs: [
-        { runId: ATTACHMENT_RUN_ID, files: owned ? [file, legend] : [legend] },
-      ],
-    });
+    return owned ? [file, legend] : [legend];
   });
   const more = await findNamedButton("More artifact actions", viewer);
   click(more);

@@ -8,6 +8,10 @@ import {
   enum as zEnum,
   url as zUrl,
 } from "zod";
+import {
+  messageArtifactDetailSchema,
+  messageArtifactDriveStatusSchema,
+} from "./message-artifact";
 import { parseArtifactReference } from "../validators/artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
@@ -36,6 +40,35 @@ export const artifactUrlSchema = union([zUrl(), artifactReferenceSchema]);
 
 const c = initContract();
 export const artifactReferencesContract = c.router({
+  byUrl: {
+    method: "GET",
+    path: "/api/artifacts/by-url",
+    headers: authHeadersSchema,
+    query: object({ url: string().min(1).max(8192) }),
+    responses: {
+      200: messageArtifactDetailSchema,
+      500: apiErrorSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read one message artifact by its stable link",
+  },
+  driveStatus: {
+    method: "GET",
+    path: "/api/artifacts/files/:publicationId/drive-status",
+    headers: authHeadersSchema,
+    pathParams: object({ publicationId: uuid() }),
+    query: object({ chatThreadId: uuid() }),
+    responses: {
+      200: messageArtifactDriveStatusSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read one publication's Drive status in the viewing chat",
+  },
   ownerArtifact: {
     method: "GET",
     path: "/api/artifact-references/:reference/owner-artifact",

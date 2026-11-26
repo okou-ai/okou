@@ -46,9 +46,8 @@ import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
-  findChatArtifactForUrl,
+  emptyPreviewItem$,
   type ChatArtifactPreviewItem,
-  type CrossChatArtifactPreviewSignals,
 } from "../../signals/chat-page/chat-artifact-preview.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
@@ -71,12 +70,10 @@ import { ArtifactMarkdownDocument } from "../components/artifact-markdown-docume
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
-  crossChatLightboxArtifact,
   lightboxUrl$,
   annotateLightboxImage$,
   closeLightboxWithDialogExit$,
   lightboxDialogFullscreen$,
-  navigateImageLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
   openFileLightbox$,
@@ -110,8 +107,6 @@ import {
   artifactTitleSubtitle,
 } from "./artifact-display.ts";
 import { ArtifactTitle } from "./artifact-title.tsx";
-import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
-import type { EventImageNavigationDirection } from "../../signals/chat-page/event-image-navigation.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
 import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
@@ -436,7 +431,6 @@ function artifactDialogMetadataFromItem(params: {
       params.item.file.googleDriveSync?.status === "synced"
         ? params.item.file.googleDriveSync.webViewLink
         : undefined,
-    runId: params.item.runId,
     size: params.item.file.size,
     threadId: params.threadId,
   };
@@ -1300,40 +1294,6 @@ function ArtifactPreviewDialog({
     );
   }
 
-  if (previewThreadId) {
-    return (
-      <ArtifactPreviewDialogContent
-        artifact={preview.artifact}
-        preview={preview}
-      />
-    );
-  }
-
-  if (leftThread) {
-    return (
-      <ArtifactPreviewDialogThreadResolver
-        key={leftThread.threadId}
-        preview={preview}
-        thread={leftThread}
-        fallbackThread={
-          rightThread && rightThread.threadId !== leftThread.threadId
-            ? rightThread
-            : undefined
-        }
-      />
-    );
-  }
-
-  if (rightThread) {
-    return (
-      <ArtifactPreviewDialogThreadResolver
-        key={rightThread.threadId}
-        preview={preview}
-        thread={rightThread}
-      />
-    );
-  }
-
   return (
     <ArtifactPreviewDialogContent
       artifact={preview.artifact}
@@ -1342,108 +1302,38 @@ function ArtifactPreviewDialog({
   );
 }
 
-export function useCrossChatArtifact(
-  signals: CrossChatArtifactPreviewSignals,
-  threadId: string,
-  url: string,
-) {
-  const view = useGet(signals.view$);
-  const artifact = useLastLoadable(signals.artifact$);
-  const currentView = view?.threadId === threadId && view.url === url;
-  return {
-    item:
-      currentView &&
-      artifact.state === "hasData" &&
-      artifact.data?.view === view
-        ? artifact.data.item
-        : undefined,
-    loading: currentView && artifact.state === "loading",
-  };
-}
-
 function ArtifactPreviewDialogThreadResolver({
-  fallbackThread,
   preview,
   thread,
 }: {
-  fallbackThread?: ChatPanelSignals;
   preview: AttachmentLightboxState;
   thread: ChatPanelSignals;
 }) {
-  const loadable = useLastLoadable(thread.artifacts$);
+  const detail = useLoadable(preview.artifactReads?.item$ ?? emptyPreviewItem$);
+  const item = detail.state === "hasData" ? detail.data : undefined;
   const imageNavigation = thread.imageNavigation.lightbox;
-  const imageRole = useGet(imageNavigation.role$);
-  const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
-  const hasNextImage = useGet(imageNavigation.hasNext$);
-  const resolveImageNavigationTarget = useSet(imageNavigation.target$);
-  const navigateImageLightbox = useSet(navigateImageLightbox$);
-  const crossChatArtifact = useCrossChatArtifact(
-    crossChatLightboxArtifact,
-    thread.threadId,
-    preview.url,
-  );
-  const item =
-    (loadable.state === "hasData"
-      ? findChatArtifactForUrl(loadable.data, preview.url)
-      : undefined) ?? crossChatArtifact.item;
-  const imageNavigationAvailable =
-    preview.kind === "image" &&
-    (imageRole === "assistant" || loadable.state === "hasData");
-  const openImageNavigationItem = (
-    navigationItem: ImageArtifactNavigationItem,
-  ) => {
-    navigateImageLightbox({
-      artifact: navigationItem.artifact
-        ? artifactDialogMetadataFromItem({
-            item: navigationItem.artifact,
-            threadId: thread.threadId,
-          })
-        : undefined,
-      filename: navigationItem.filename,
-      preview: navigationItem.preview,
-      // Navigation never leaves the event group it started in, so a user
-      // message's images stay attachments as the viewer steps through them.
-      shareAvailable: imageRole !== "user",
-      threadId: thread.threadId,
-      url: navigationItem.url,
-    });
-  };
-  const imageNavigationAction = (
-    direction: EventImageNavigationDirection,
-    available: boolean,
-  ) => {
-    if (!imageNavigationAvailable || !available) {
-      return undefined;
-    }
-    return () => {
-      const navigationItem = resolveImageNavigationTarget(
-        direction,
-        loadable.state === "hasData" ? loadable.data : [],
-      );
-      if (navigationItem) {
-        openImageNavigationItem(navigationItem);
-      }
-    };
-  };
-
+  const pageSignal = useGet(pageSignal$);
+  const neighbors = useLoadable(imageNavigation.neighbors$);
+  const hasPrevious =
+    neighbors.state === "hasData" && neighbors.data.previous !== undefined;
+  const hasNext =
+    neighbors.state === "hasData" && neighbors.data.next !== undefined;
+  const navigate = useSet(imageNavigation.navigate$);
   const imageNavigationActions = {
-    onNext: imageNavigationAction("next", hasNextImage),
-    onPrevious: imageNavigationAction("previous", hasPreviousImage),
+    onPrevious: hasPrevious
+      ? () => {
+          detach(navigate("previous", pageSignal), Reason.DomCallback);
+        }
+      : undefined,
+    onNext: hasNext
+      ? () => {
+          detach(navigate("next", pageSignal), Reason.DomCallback);
+        }
+      : undefined,
   };
-  if (!item && fallbackThread && loadable.state === "hasData") {
-    return (
-      <ArtifactPreviewDialogThreadResolver
-        preview={preview}
-        thread={fallbackThread}
-      />
-    );
-  }
-
   return (
     <ArtifactPreviewDialogContent
-      actionsPending={
-        !item && (loadable.state === "loading" || crossChatArtifact.loading)
-      }
+      actionsPending={!item && detail.state === "loading"}
       artifact={
         item
           ? artifactDialogMetadataFromItem({ item, threadId: thread.threadId })

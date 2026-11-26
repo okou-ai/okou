@@ -1,3 +1,5 @@
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
@@ -44,7 +46,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { ArtifactRef } from "../../signals/chat-page/thread-sidebar.ts";
 import {
-  findChatArtifactForUrl,
+  emptyPreviewItem$,
   type ChatArtifactPreviewItem,
 } from "../../signals/chat-page/chat-artifact-preview.ts";
 import {
@@ -52,7 +54,6 @@ import {
   CsvPreviewTable,
   parseCsvPreviewRows,
   TextPreviewLoader,
-  useCrossChatArtifact,
 } from "./attachment-chips.tsx";
 import { publicAttachmentUrl } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
@@ -84,9 +85,6 @@ import {
   type ArtifactTitleLink,
 } from "./artifact-display.ts";
 import { ArtifactTitle } from "./artifact-title.tsx";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
-import type { EventImageNavigationDirection } from "../../signals/chat-page/event-image-navigation.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
@@ -145,66 +143,40 @@ export function ArtifactSidebar({
   text$: providedText$,
   thread,
 }: ArtifactSidebarProps) {
-  const loadable = useLastLoadable(thread.artifacts$);
+  const detail = useLoadable(
+    artifactRef.artifactReads?.item$ ?? emptyPreviewItem$,
+  );
+  const item = detail.state === "hasData" ? detail.data : undefined;
   const setArtifactSourceRef = useSet(thread.feedback.setArtifactSourceRef$);
-  const openAttachment = useSet(thread.sidebar.openAttachment$);
-  const imageRole = useGet(thread.imageNavigation.sidebar.role$);
-  const pageSignal = useGet(pageSignal$);
-  const onNavigateImage = (item: ImageArtifactNavigationItem) => {
-    openAttachment(
-      {
-        url: item.url,
-        filename: item.filename,
-        ...(item.preview ? { preview: item.preview } : {}),
-        ...(imageRole === "user" ? { shareAvailable: false } : {}),
-      },
-      pageSignal,
-    );
-  };
   const imageNavigation = thread.imageNavigation.sidebar;
-  const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
-  const hasNextImage = useGet(imageNavigation.hasNext$);
-  const resolveImageNavigationTarget = useSet(imageNavigation.target$);
+  const pageSignal = useGet(pageSignal$);
+  const neighbors = useLoadable(imageNavigation.neighbors$);
+  const hasPreviousImage =
+    neighbors.state === "hasData" && neighbors.data.previous !== undefined;
+  const hasNextImage =
+    neighbors.state === "hasData" && neighbors.data.next !== undefined;
+  const navigate = useSet(imageNavigation.navigate$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
-  const crossChatArtifact = useCrossChatArtifact(
-    thread.sidebar.crossChatArtifact,
-    thread.threadId,
-    artifactRef.url,
-  );
-  const item =
-    (loadable.state === "hasData"
-      ? findChatArtifactForUrl(loadable.data, artifactRef.url)
-      : undefined) ?? crossChatArtifact.item;
-  const imageNavigationAction = (
-    direction: EventImageNavigationDirection,
-    available: boolean,
-  ) => {
-    if (loadable.state !== "hasData" || !available) {
-      return undefined;
-    }
-    const runs = loadable.data;
-    return () => {
-      const navigationItem = resolveImageNavigationTarget(direction, runs);
-      if (navigationItem) {
-        onNavigateImage(navigationItem);
-      }
-    };
-  };
-
   return (
     <>
       <ArtifactSidebarContent
-        actionsPending={
-          !item && (loadable.state === "loading" || crossChatArtifact.loading)
-        }
+        actionsPending={!item && detail.state === "loading"}
         artifactRef={artifactRef}
         readOwner$={readOwner$}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
         imageNavigation={{
-          onNext: imageNavigationAction("next", hasNextImage),
-          onPrevious: imageNavigationAction("previous", hasPreviousImage),
+          onNext: hasNextImage
+            ? () => {
+                detach(navigate("next", pageSignal), Reason.DomCallback);
+              }
+            : undefined,
+          onPrevious: hasPreviousImage
+            ? () => {
+                detach(navigate("previous", pageSignal), Reason.DomCallback);
+              }
+            : undefined,
         }}
         item={item}
         markdownTree$={markdownTree$}

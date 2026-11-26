@@ -6555,7 +6555,11 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div key={chatEventRenderKey(event)} className="contents">
+          <div
+            key={chatEventRenderKey(event)}
+            className="contents"
+            data-chat-group-id={group.beginEventId}
+          >
             {dateDivider ? (
               <ChatThreadDateDivider divider={dateDivider} />
             ) : null}
@@ -7813,6 +7817,7 @@ function PagedUserMessage({
     openImageLightbox(
       {
         threadId: thread.threadId,
+        sourceEventId: event.id,
         url: attachment.url,
         filename: attachment.filename,
         contentType: attachment.signals.contentType,
@@ -8212,6 +8217,7 @@ function PagedAssistantGroup({
   return (
     <div
       id={groupElementId}
+      data-chat-group-id={group.beginEventId}
       ref={turnOnRef}
       data-role="assistant"
       data-chat-run-id={runId}
@@ -8507,7 +8513,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       )}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
-        openArtifact(card, pageSignal);
+        detach(openArtifact(card, pageSignal), Reason.DomCallback);
       }}
     >
       <RelatedArtifactIcon kind={card.signals.kind} />

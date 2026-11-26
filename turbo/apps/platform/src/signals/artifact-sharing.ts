@@ -12,21 +12,16 @@ import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
-import {
-  isAuthenticatedAttachmentUrl,
-  type ArtifactShareIdentity,
-} from "./attachment-resource-url.ts";
+import type { ArtifactShareIdentity } from "./attachment-resource-url.ts";
+import { authenticatedWebFile } from "../lib/message-url.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
 import { resetSignal, throttleCommand } from "./utils.ts";
 
 // Hosted sites are public publications addressed by their own URL, so the
 // viewer offers their link instead of an artifact permission control.
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
-  if (!isAuthenticatedAttachmentUrl(url)) {
-    return null;
-  }
-  const fileId = new URL(url).searchParams.get("file_id");
-  return fileId ? { kind: "file", id: fileId } : null;
+  const file = authenticatedWebFile(url);
+  return file ? { kind: "file", id: file.id } : null;
 }
 
 export function isShareableArtifactReference(url: string): boolean {
