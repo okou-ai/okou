@@ -38,18 +38,21 @@ class ConversationQueueTest {
     @Test
     fun keepsTheFirstVisibleRowWhenTheOpenPanelChangesLayout() {
         show(mutableStateOf(entries(40)))
-        queue().performScrollToIndex(16)
+        compose.runOnIdle { position.requestScrollToItem(16, scrollOffset = 13) }
         item(16).assertIsDisplayed()
 
         listOf(IntSize(400, 440), IntSize(900, 800), IntSize(400, 800)).forEach { window ->
             compose.runOnIdle { size.value = window }
             item(16).assertIsDisplayed()
-            compose.runOnIdle { assertEquals(16, position.firstVisibleItemIndex) }
+            compose.runOnIdle {
+                assertEquals(16, position.firstVisibleItemIndex)
+                assertEquals(13, position.firstVisibleItemScrollOffset)
+            }
         }
     }
 
     @Test
-    fun movesFocusToTheNextRowWhenTheSuccessorIsOutsideTheViewport() = keyboard {
+    fun movesFocusToTheNextSurvivingRowOutsideTheViewportAfterABatchRemoval() = keyboard {
         val entries = mutableStateOf(entries(40))
         show(entries)
         item(2).performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
@@ -57,7 +60,7 @@ class ConversationQueueTest {
         item(2).assertIsFocused()
         compose.runOnIdle {
             assertTrue(position.layoutInfo.visibleItemsInfo.none { it.key == "queued-3" })
-            entries.value = entries.value.filterNot { it.message.id == "queued-2" }
+            entries.value = entries.value.drop(1).filterNot { it.message.id == "queued-2" }
         }
 
         item(3).assertIsDisplayed().assertIsFocused()
