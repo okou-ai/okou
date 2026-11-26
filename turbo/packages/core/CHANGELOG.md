@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.887.0](https://github.com/okou-ai/okou/compare/core-v8.886.1...core-v8.887.0) (2026-11-26)
+
+
+### Features
+
+* **app:** add unarchived and all chat filters for staff ([#51226](https://github.com/okou-ai/okou/issues/51226)) ([52a6fe8](https://github.com/okou-ai/okou/commit/52a6fe80fe66dbbef978f19e3a5e96fbbdb6b2f0))
+
+
+### Refactoring
+
+* resolve message artifacts by url and navigate within their chat group ([#51081](https://github.com/okou-ai/okou/issues/51081)) ([fe23396](https://github.com/okou-ai/okou/commit/fe233968313c8ef91e51bd11ea6d75a4551ddf83))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.136.0
+
 ## [8.886.1](https://github.com/okou-ai/okou/compare/core-v8.886.0...core-v8.886.1) (2026-11-26)
 
 
