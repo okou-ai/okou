@@ -1600,16 +1600,14 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "done": "Concluído",
       "closeFeedback": "Close feedback",
       "customDirection": "Eu gostaria de…",
       "customDirectionDescription": "Faça uma pergunta ou descreva o que gostaria de fazer.",
       "customPlaceholder": "O que você tem em mente?",
       "dismiss": "Dispensar",
       "dismissRecorded": "Suggestion dismissed",
+      "done": "Concluído",
       "doneRecorded": "Anotado, isso já está pronto",
-      "later": "Mais tarde",
-      "laterRecorded": "Anotado para mais tarde",
       "editDraft": "Preparar um rascunho na conversa existente",
       "editReason": "Edit reason",
       "feedbackPrompt": "O que achou desta sugestão?",
@@ -1644,11 +1642,11 @@
         "show": "Mostrar sugestão {{index}} de {{total}}"
       },
       "label": "Sugestões",
+      "later": "Mais tarde",
+      "laterRecorded": "Anotado para mais tarde",
       "lessLikeThis": "Menos sugestões assim",
       "lessRecorded": "Você verá menos sugestões desse tipo.",
       "messageSent": "Mensagem enviada",
-      "wontDo": "Não vou fazer",
-      "wontDoRecorded": "Anotado, você não vai fazer isso",
       "openChat": "Abrir conversa",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1658,7 +1656,9 @@
       "sentToChat": "Enviado para o chat",
       "unavailable": "Essa sugestão não está mais disponível. As sugestões foram atualizadas.",
       "undoFeedback": "Undo",
-      "viewSource": "Ver origem"
+      "viewSource": "Ver origem",
+      "wontDo": "Não vou fazer",
+      "wontDoRecorded": "Anotado, você não vai fazer isso"
     },
     "attachments": {
       "attach": "Anexar",

@@ -1571,16 +1571,14 @@
     },
     "agentSuggestions": {
       "addReason": "補充原因",
-      "done": "完成",
       "closeFeedback": "關閉回饋",
       "customDirection": "我想……",
       "customDirectionDescription": "提出問題，或說說你想做什麼。",
       "customPlaceholder": "你有什麼想法？",
       "dismiss": "忽略",
       "dismissRecorded": "已收起這則建議",
+      "done": "完成",
       "doneRecorded": "已記下，這件事已經處理了",
-      "later": "晚點再看",
-      "laterRecorded": "已記下，晚點再看",
       "editDraft": "在原對話中準備草稿",
       "editReason": "修改原因",
       "feedbackPrompt": "這則建議怎麼樣？",
@@ -1615,11 +1613,11 @@
         "show": "查看第 {{index}} 則建議（共 {{total}} 則）"
       },
       "label": "建議",
+      "later": "晚點再看",
+      "laterRecorded": "已記下，晚點再看",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",
       "messageSent": "訊息已傳送",
-      "wontDo": "不做了",
-      "wontDoRecorded": "已記下，這件事不做了",
       "openChat": "開啟聊天",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
@@ -1629,7 +1627,9 @@
       "sentToChat": "已傳送到該聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
       "undoFeedback": "復原",
-      "viewSource": "查看來源"
+      "viewSource": "查看來源",
+      "wontDo": "不做了",
+      "wontDoRecorded": "已記下，這件事不做了"
     },
     "attachments": {
       "attach": "新增附件",

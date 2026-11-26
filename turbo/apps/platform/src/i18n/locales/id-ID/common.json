@@ -1571,16 +1571,14 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "done": "Selesai",
       "closeFeedback": "Close feedback",
       "customDirection": "Saya ingin…",
       "customDirectionDescription": "Ajukan pertanyaan atau jelaskan apa yang ingin Anda lakukan.",
       "customPlaceholder": "Apa yang Anda pikirkan?",
       "dismiss": "Abaikan",
       "dismissRecorded": "Suggestion dismissed",
+      "done": "Selesai",
       "doneRecorded": "Dicatat, ini sudah selesai",
-      "later": "Nanti",
-      "laterRecorded": "Dicatat untuk nanti",
       "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
       "feedbackPrompt": "Bagaimana saran ini?",
@@ -1615,11 +1613,11 @@
         "show": "Tampilkan saran {{index}} dari {{total}}"
       },
       "label": "Saran",
+      "later": "Nanti",
+      "laterRecorded": "Dicatat untuk nanti",
       "lessLikeThis": "Kurangi saran seperti ini",
       "lessRecorded": "Anda akan melihat lebih sedikit saran seperti ini.",
       "messageSent": "Pesan terkirim",
-      "wontDo": "Tidak akan saya lakukan",
-      "wontDoRecorded": "Dicatat, Anda tidak akan melakukannya",
       "openChat": "Buka chat",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1629,7 +1627,9 @@
       "sentToChat": "Terkirim ke chat",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
       "undoFeedback": "Undo",
-      "viewSource": "Lihat sumber"
+      "viewSource": "Lihat sumber",
+      "wontDo": "Tidak akan saya lakukan",
+      "wontDoRecorded": "Dicatat, Anda tidak akan melakukannya"
     },
     "attachments": {
       "attach": "Lampirkan",

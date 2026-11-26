@@ -1575,16 +1575,14 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "done": "हो गया",
       "closeFeedback": "Close feedback",
       "customDirection": "मैं चाहता हूँ…",
       "customDirectionDescription": "कोई सवाल पूछें या बताएँ कि आप क्या करना चाहते हैं।",
       "customPlaceholder": "आपके मन में क्या है?",
       "dismiss": "खारिज करें",
       "dismissRecorded": "Suggestion dismissed",
+      "done": "हो गया",
       "doneRecorded": "नोट कर लिया, यह काम हो चुका है",
-      "later": "बाद में",
-      "laterRecorded": "बाद के लिए नोट कर लिया",
       "editDraft": "मौजूदा चैट में ड्राफ़्ट तैयार करें",
       "editReason": "Edit reason",
       "feedbackPrompt": "यह सुझाव कैसा लगा?",
@@ -1619,11 +1617,11 @@
         "show": "{{total}} में से सुझाव {{index}} दिखाएँ"
       },
       "label": "सुझाव",
+      "later": "बाद में",
+      "laterRecorded": "बाद के लिए नोट कर लिया",
       "lessLikeThis": "ऐसे सुझाव कम दिखाएँ",
       "lessRecorded": "आपको ऐसे सुझाव कम दिखेंगे।",
       "messageSent": "संदेश भेजा गया",
-      "wontDo": "नहीं करना है",
-      "wontDoRecorded": "नोट कर लिया, आपको यह नहीं करना है",
       "openChat": "चैट खोलें",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1633,7 +1631,9 @@
       "sentToChat": "चैट में भेजा गया",
       "unavailable": "यह सुझाव अब उपलब्ध नहीं है। सुझाव रीफ़्रेश कर दिए गए हैं।",
       "undoFeedback": "Undo",
-      "viewSource": "स्रोत देखें"
+      "viewSource": "स्रोत देखें",
+      "wontDo": "नहीं करना है",
+      "wontDoRecorded": "नोट कर लिया, आपको यह नहीं करना है"
     },
     "attachments": {
       "attach": "अटैच करें",

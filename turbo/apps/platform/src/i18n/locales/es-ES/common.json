@@ -1600,16 +1600,14 @@
     },
     "agentSuggestions": {
       "addReason": "Add a reason",
-      "done": "Listo",
       "closeFeedback": "Close feedback",
       "customDirection": "Me gustaría…",
       "customDirectionDescription": "Haz una pregunta o describe lo que te gustaría hacer.",
       "customPlaceholder": "¿Qué tienes en mente?",
       "dismiss": "Descartar",
       "dismissRecorded": "Suggestion dismissed",
+      "done": "Listo",
       "doneRecorded": "Anotado, ya está hecho",
-      "later": "Más tarde",
-      "laterRecorded": "Anotado para más tarde",
       "editDraft": "Preparar un borrador en el chat existente",
       "editReason": "Edit reason",
       "feedbackPrompt": "¿Qué te parece esta sugerencia?",
@@ -1644,11 +1642,11 @@
         "show": "Mostrar sugerencia {{index}} de {{total}}"
       },
       "label": "Sugerencias",
+      "later": "Más tarde",
+      "laterRecorded": "Anotado para más tarde",
       "lessLikeThis": "Menos como esta",
       "lessRecorded": "Verás menos sugerencias de este tipo.",
       "messageSent": "Mensaje enviado",
-      "wontDo": "No lo haré",
-      "wontDoRecorded": "Anotado, no lo harás",
       "openChat": "Abrir chat",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
@@ -1658,7 +1656,9 @@
       "sentToChat": "Enviado al chat",
       "unavailable": "Esa sugerencia ya no está disponible. Se han actualizado las sugerencias.",
       "undoFeedback": "Undo",
-      "viewSource": "Ver origen"
+      "viewSource": "Ver origen",
+      "wontDo": "No lo haré",
+      "wontDoRecorded": "Anotado, no lo harás"
     },
     "attachments": {
       "attach": "Adjuntar",
