@@ -131,7 +131,7 @@ function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
     ...settled,
   ];
   return (
-    <div className="pointer-events-none relative mx-auto -mt-22 w-full max-w-176 pb-6 sm:-mt-25">
+    <div className="pointer-events-none relative mx-auto -mt-20 w-full max-w-176 pb-6 sm:-mt-23">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
