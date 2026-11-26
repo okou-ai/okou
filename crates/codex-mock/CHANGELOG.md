@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.103](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.102...codex-mock-v0.12.103) (2026-11-26)
+
+
+### Refactoring
+
+* **codex-mock:** gate initialized requests at dispatch ([#50918](https://github.com/okou-ai/okou/issues/50918)) ([4781feb](https://github.com/okou-ai/okou/commit/4781feba4d569e4b75ed717099852478b6469fdb))
+
 ## [0.12.102](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.101...codex-mock-v0.12.102) (2026-11-25)
 
 
