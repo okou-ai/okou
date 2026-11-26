@@ -1431,9 +1431,9 @@ connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-003	rewritten	78.5		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-004	rewritten	73.6		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-005	rewritten	165.1		src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	B04
-account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-001	planned				B04
-account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-004	planned				B04
-account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-005	planned				B04
+account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-001	skipped		slow-setup: Given alone 440 ms and 432 ms, so Given+first When/Then exceeds 200 ms (funded Pro member with personal model subscription 237/240 ms + dispatched thread Run 203/192 ms, execution read ~0 ms; measured through the public runner fixture without Data Router env, the case adds registered requests and more Runs)		B04
+account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-004	skipped		slow-setup: Given alone 440 ms and 432 ms, so Given+first When/Then exceeds 200 ms (funded Pro member with personal model subscription 237/240 ms + dispatched thread Run 203/192 ms, execution read ~0 ms; measured through the public runner fixture without Data Router env, the case adds registered requests and more Runs)		B04
+account-org	src/signals/routes/__tests__/data-router.test.ts	data-router-005	skipped		slow-setup: Given alone 440 ms and 432 ms, so Given+first When/Then exceeds 200 ms (funded Pro member with personal model subscription 237/240 ms + dispatched thread Run 203/192 ms, execution read ~0 ms; measured through the public runner fixture without Data Router env, the case adds registered requests and more Runs)		B04
 browser	src/signals/routes/__tests__/desktop-shell.test.ts	desktop-shell-004	planned				
 browser	src/signals/routes/__tests__/desktop-shell.test.ts	desktop-shell-006	planned				
 browser	src/signals/routes/__tests__/desktop-shell.test.ts	desktop-shell-007	planned				
