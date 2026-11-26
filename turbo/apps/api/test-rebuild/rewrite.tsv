@@ -2995,18 +2995,18 @@ artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipa
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-008	rewritten	14.0	extension after sandbox reset	src/signals/routes/__tests__/uploads-multipart.test.ts	pilot	
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-009	rewritten	10.8	extension after sandbox reset	src/signals/routes/__tests__/uploads-multipart.test.ts	pilot	
 artifacts	src/signals/routes/__tests__/uploads-multipart.test.ts	uploads-multipart-010	rewritten	8.0	extension after sandbox reset	src/signals/routes/__tests__/uploads-multipart.test.ts	pilot	
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-003	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-004	planned				B09	a-run
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-006	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-007	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-008	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-009	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-015	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-016	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-018	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-019	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-022	planned				B09	d-other
-artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-023	planned				B09	a-run
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-003	rewritten	4.9		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-004	skipped		slow-setup: Given+first When/Then 471 ms and 423 ms in file order, 200/235/418 ms in three shuffled runs (the dispatched Run from createRunExecutionCredentials with plan limited-free, preferences false dominates; the prepare request itself takes a few ms)		B09	a-run
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-006	rewritten	6.7		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-007	rewritten	5.7		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-008	rewritten	20.9		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-009	rewritten	5.6		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-015	rewritten	6.6		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-016	rewritten	6.4		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-018	rewritten	124.4		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-019	revisit		revisit: over 200 ms by shuffled 3-run median (uploads-prepare-019 206.4 ms (216/206/168)); draft /home/user/pilot-env/wip/r15/uploads-prepare.test.ts; resume: split further or record slow-setup with Given+first When/Then		B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-022	rewritten	178.3		src/signals/routes/__tests__/uploads-prepare.test.ts	B09	d-other
+artifacts	src/signals/routes/__tests__/uploads-prepare.test.ts	uploads-prepare-023	skipped		slow-setup: Given+first When/Then 348 ms and 377 ms in shuffled runs where it was the first Run row, 198-205 ms otherwise (the same dispatched Run Given dominates; the rejected prepare request takes a few ms)		B09	a-run
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-001	rewritten	137.5		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03	
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-002	rewritten	163.4		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03	
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-003	rewritten	101.7		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03	
