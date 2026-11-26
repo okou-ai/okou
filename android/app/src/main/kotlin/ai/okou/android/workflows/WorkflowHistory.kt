@@ -102,8 +102,8 @@ internal fun WorkflowHistoryRow(
     timezone: String,
     sourceChatAvailable: (String) -> Boolean,
     sourceNavigationEnabled: Boolean,
-    focusModifier: Modifier,
     onOpenChat: (runId: String, threadId: String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val source = run.chatThreadId?.takeIf(sourceChatAvailable)
@@ -117,15 +117,15 @@ internal fun WorkflowHistoryRow(
         }
     val shape = RoundedCornerShape(8.dp)
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .heightIn(min = 52.dp)
             .clip(shape)
             .testTag("workflow_run_${run.id}")
             .then(
                 if (source == null) Modifier.semantics(mergeDescendants = true) {}
                 else
-                    focusModifier
-                        .updateFocusOutline(shape, colors.onBackground)
+                    Modifier.updateFocusOutline(shape, colors.onBackground)
                         .clickable(
                             enabled = sourceNavigationEnabled,
                             onClickLabel = openChatLabel,

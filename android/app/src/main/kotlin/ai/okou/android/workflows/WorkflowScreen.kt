@@ -930,11 +930,11 @@ private fun WorkflowDetailPane(
                                 timezone = timezone,
                                 sourceChatAvailable = sourceChatAvailable,
                                 sourceNavigationEnabled = !handoffPending,
-                                focusModifier =
+                                onOpenChat = onOpenChat,
+                                modifier =
                                     if (run.id == historyRow)
                                         Modifier.focusRequester(historyRowFocus)
                                     else Modifier,
-                                onOpenChat = onOpenChat,
                             )
                         }
                         if (history?.nextCursor != null) {
