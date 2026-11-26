@@ -13,7 +13,6 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -566,7 +565,6 @@ internal fun WorkspaceMenu(
     separatorBefore: Int? = null,
     back: () -> Unit = close,
 ) {
-    val colors = MaterialTheme.colorScheme
     val window = currentWindowSizeDp()
     val density = LocalDensity.current
     val position =
@@ -586,10 +584,10 @@ internal fun WorkspaceMenu(
                 Modifier.width((window.width - 24).coerceIn(1, 244).dp)
                     .heightIn(max = (window.height - 80).coerceAtLeast(48).dp)
                     .testTag("workspace_popup"),
-            shape = RoundedCornerShape(16.dp),
-            color = colors.surface,
-            shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, colors.outlineVariant),
+            shape = MenuDefaults.shape,
+            color = MenuDefaults.containerColor,
+            tonalElevation = MenuDefaults.TonalElevation,
+            shadowElevation = MenuDefaults.ShadowElevation,
         ) {
             key(filter) { WorkspaceMenuItems(items, filter, close, back, separatorBefore) }
         }
@@ -658,7 +656,7 @@ private fun WorkspaceMenuItems(
             .focusRequester(popupFocus)
             .focusTarget()
             .verticalScroll(rememberScrollState())
-            .padding(7.dp),
+            .padding(vertical = 8.dp),
     ) {
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
@@ -716,45 +714,36 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
         modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clip(shape)
             .then(if (focused) Modifier.border(2.dp, colors.onSurface, shape) else Modifier)
             .then(gesture)
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
             Icon(
                 painterResource(icon),
                 null,
-                Modifier.size(18.dp),
+                Modifier.size(24.dp),
                 tint = if (enabled) foreground else disabledColors.disabledLeadingIconColor,
             )
         }
         Text(
             label,
             Modifier.weight(1f),
-            style = filterLabelStyle(),
+            style = MaterialTheme.typography.labelLarge,
             color = if (enabled) foreground else disabledColors.disabledTextColor,
         )
         if (selected == true) {
             Icon(
                 painterResource(R.drawable.ic_check),
                 null,
-                Modifier.size(18.dp),
+                Modifier.size(24.dp),
                 tint = if (enabled) foreground else disabledColors.disabledTrailingIconColor,
             )
         }
     }
 }
-
-@Composable
-private fun filterLabelStyle() =
-    MaterialTheme.typography.bodyMedium.copy(
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.sp,
-    )
 
 private class WorkspaceMenuPosition(
     private val edge: Int,

@@ -473,7 +473,6 @@ private fun WorkflowDirectory(
                     state.catalogFailure != WorkflowReadFailure.Unavailable
             val actionFocus =
                 rememberWorkflowReturnFocus(restoreCreateFocus, enabled, onCreateFocusRestored)
-            val shape = RoundedCornerShape(12.dp)
             TextButton(
                 onClick = { if (!keepCreateFocus) onCreate(actionFocus.keyboardFocused) },
                 enabled = enabled,
@@ -481,18 +480,16 @@ private fun WorkflowDirectory(
                     actionFocus.modifier
                         .semantics { if (keepCreateFocus) disabled() }
                         .heightIn(min = 48.dp)
-                        .updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground)
+                        .updateFocusOutline(
+                            ButtonDefaults.textShape,
+                            MaterialTheme.colorScheme.onBackground,
+                        )
                         .testTag("workflow_create"),
-                shape = shape,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
-                Text(
-                    stringResource(R.string.workflow_new),
-                    style = workflowSmallStyle(),
-                    fontWeight = FontWeight(550),
-                )
+                Text(stringResource(R.string.workflow_new))
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
@@ -1091,12 +1088,7 @@ private fun WorkflowTabs(
                             },
                         ),
                         Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                        style =
-                            MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp,
-                                fontWeight = FontWeight(550),
-                            ),
+                        style = MaterialTheme.typography.labelLarge,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -1166,7 +1158,6 @@ internal fun WorkflowAction(
     showPendingProgress: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     val showProgress = pendingStatus != null && showPendingProgress
     val pendingSemantics =
@@ -1186,9 +1177,7 @@ internal fun WorkflowAction(
             Text(
                 label,
                 color = if (showProgress) Color.Transparent else Color.Unspecified,
-                style = workflowSmallStyle(),
                 textAlign = TextAlign.Center,
-                fontWeight = FontWeight(550),
             )
             if (showProgress) {
                 CircularProgressIndicator(
@@ -1204,10 +1193,9 @@ internal fun WorkflowAction(
             click,
             modifier
                 .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, colors.onPrimary)
+                .updateFocusOutline(ButtonDefaults.shape, colors.onPrimary)
                 .then(pendingSemantics),
             enabled = enabled,
-            shape = shape,
             contentPadding = padding,
         ) {
             content()
@@ -1223,7 +1211,6 @@ internal fun WorkflowAction(
                 .onFocusChanged { focused = it.isFocused }
                 .then(pendingSemantics),
             enabled = enabled,
-            shape = shape,
             border =
                 if (enabled && keyboardFocused) BorderStroke(2.dp, colors.onBackground)
                 else ButtonDefaults.outlinedButtonBorder(enabled),
