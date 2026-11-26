@@ -50,7 +50,7 @@ fn extracted_archive() -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_hands_warm_archives_to_blank_apply() {
+async fn run_in_sandbox_hands_warm_archives_with_artifact_to_blank_apply() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let name = "warm-storage";
@@ -58,16 +58,19 @@ async fn run_in_sandbox_hands_warm_archives_to_blank_apply() {
     // archive bytes selected for transport and their original source binding.
     let mut archive = extracted_archive();
     archive.resize(1024 * 1024, 0);
-    for (startup_path, mount, version, inline) in [
+    let mount = "/home/user/storage";
+    let storage_id = "artifact-storage-id";
+    let archive_url = "https://r2.example/archive";
+    for (startup_path, artifact_mount, version, inline) in [
         (
             SandboxStartupPath::Blank,
-            "/home/user/storage",
+            "/home/user/artifact",
             "blank",
             true,
         ),
         (
             SandboxStartupPath::Cold,
-            "/home/user/storage",
+            "/home/user/artifact",
             "cold",
             false,
         ),
@@ -81,13 +84,14 @@ async fn run_in_sandbox_hands_warm_archives_to_blank_apply() {
         let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
         let mut ctx = minimal_context();
         ctx.storage_manifest = Some(StorageManifest {
-            storages: vec![api_storage(
+            storages: vec![api_storage(name, mount, version, archive_url)],
+            artifacts: vec![api_artifact(
                 name,
-                mount,
+                artifact_mount,
+                storage_id,
                 version,
-                "https://r2.example/archive",
+                archive_url,
             )],
-            artifacts: Vec::new(),
         });
         let mut telemetry = test_telemetry(&config, &ctx);
         run_in_sandbox(
@@ -127,6 +131,13 @@ async fn run_in_sandbox_hands_warm_archives_to_blank_apply() {
             .unwrap()
             .strip_prefix("file://")
             .unwrap();
+        let [artifact] = manifest.artifacts.as_slice() else {
+            panic!("expected one writable Artifact");
+        };
+        assert_eq!(artifact.mount_path, artifact_mount);
+        assert_eq!(artifact.vas_storage_id.as_deref(), Some(storage_id));
+        assert_eq!(artifact.vas_version_id.as_deref(), Some(version));
+        assert_eq!(artifact.archive_url, manifest.storages[0].archive_url);
         if inline {
             assert_eq!(sources.get(path), Some(&archive.as_slice()));
             assert!(overrides.write_files_calls().is_empty());

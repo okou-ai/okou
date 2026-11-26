@@ -1831,12 +1831,7 @@ async fn populate_cache_inner(
             Vec::new()
         };
         outcomes.extend(decoded_outcomes);
-        let pending_archives = pending_archives.filter(|_| {
-            owned_keys.is_empty()
-                && target_groups
-                    .iter()
-                    .all(|group| group.targets().all(|target| !target.handle.is_artifact()))
-        });
+        let pending_archives = pending_archives.filter(|_| owned_keys.is_empty());
         outcomes.extend(
             population::prepare_ordinary(
                 target_groups,
