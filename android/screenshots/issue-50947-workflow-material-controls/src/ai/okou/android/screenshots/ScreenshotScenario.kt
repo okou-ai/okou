@@ -148,25 +148,25 @@ class ScreenshotScenario {
                 assertSelected("自动化")
                 ScreenshotCapture.capture("phone-automations.png")
 
-                action("运行记录").click()
+                tab("运行记录").click()
                 text("运行中")
                 assertSelected("运行记录")
-                val history = action("运行记录").visibleBounds
+                val history = tab("运行记录").visibleBounds
                 val footer = action("在聊天中使用").visibleBounds
                 val scrollX = history.centerX()
                 assertTrue(footer.height() >= 48)
                 assertTrue(device.swipe(scrollX, footer.top - 20, scrollX, history.bottom + 18, 30))
-                val pinned = action("运行记录").visibleBounds
+                val pinned = tab("运行记录").visibleBounds
                 assertTrue(
                     "The header scrolls before the tab row becomes sticky",
                     pinned.top < history.top,
                 )
                 assertTrue(device.swipe(scrollX, footer.top - 20, scrollX, pinned.bottom + 18, 30))
-                assertEquals(pinned.top, action("运行记录").visibleBounds.top)
+                assertEquals(pinned.top, tab("运行记录").visibleBounds.top)
                 checkTabGeometry()
                 ScreenshotCapture.capture("phone-history-sticky.png")
 
-                action("说明").click()
+                tab("说明").click()
                 action("编辑说明").click()
                 val displayName = input(fixture.releaseTitle)
                 val purposeTop = text("用途").visibleBounds.top
@@ -192,7 +192,7 @@ class ScreenshotScenario {
                 openDetail(fixture.releaseTitle)
                 val first = "说明"
                 instrumentation.setInTouchMode(false)
-                val tab =
+                val firstTabLabel =
                     checkNotNull(
                         automation.rootInActiveWindow
                             .findAccessibilityNodeInfosByText(first)
@@ -200,7 +200,7 @@ class ScreenshotScenario {
                     )
                 val focusTarget =
                     checkNotNull(
-                        generateSequence(tab) { it.parent }.firstOrNull { it.isClickable },
+                        generateSequence(firstTabLabel) { it.parent }.firstOrNull { it.isFocusable },
                     )
                 assertTrue(
                     focusTarget.isFocused ||
@@ -223,7 +223,7 @@ class ScreenshotScenario {
                 assertSelected(first)
                 instrumentation.setInTouchMode(true)
 
-                action("自动化").click()
+                tab("自动化").click()
                 action("添加自动化").click()
                 val frequency =
                     checkNotNull(
@@ -375,14 +375,19 @@ class ScreenshotScenario {
 
     private fun assertSelected(selected: String) {
         device.waitForIdle()
-        labels.forEach { label -> assertEquals(label, label == selected, action(label).isSelected) }
+        labels.forEach { label -> assertEquals(label, label == selected, tab(label).isSelected) }
     }
+
+    private fun tab(label: String): UiObject2 =
+        checkNotNull(generateSequence(text(label)) { it.parent }.firstOrNull { it.isFocusable }) {
+            "Missing native tab: $label"
+        }
 
     private fun awaitFocus(label: String) =
         device.awaitKeyboardFocus(By.pkg(app.packageName).text(label))
 
     private fun checkTabGeometry(): List<Rect> {
-        val bounds = labels.map { action(it).visibleBounds }
+        val bounds = labels.map { tab(it).visibleBounds }
         val first = bounds.first()
         for (tab in bounds) {
             assertTrue(tab.height() >= 48)
