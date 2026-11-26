@@ -40,6 +40,7 @@ class ScreenshotScenario {
         try {
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 1.0")
+            withWindow(412, 892, UserPreferencesTheme.LIGHT, ::capturePhone)
             withWindow(1180, 820, UserPreferencesTheme.DARK, ::captureWide)
         } finally {
             try {
@@ -56,6 +57,32 @@ class ScreenshotScenario {
                 }
             }
         }
+    }
+
+    private fun capturePhone(fixture: WorkflowApiFixture) {
+        openDirectory()
+        val release = CountDownLatch(1)
+        fixture.beforeReleaseDetailRead = { release.await() }
+        val pendingBounds = try {
+            action(fixture.releaseTitle).click()
+            node(By.desc("工作流"))
+            disabledControl(text("在聊天中使用")).visibleBounds.also { bounds ->
+                assertTrue(bounds.height() >= 48)
+                assertEquals(20, bounds.left)
+                ScreenshotCapture.capture("workflow-phone-loading.png")
+            }
+        } catch (failure: Throwable) {
+            captureFailure("phone-loading-failure")
+            throw failure
+        } finally {
+            release.countDown()
+        }
+        text("工作流说明")
+        val tabs = listOf("说明", "自动化", "运行记录").map { tab(it).visibleBounds }
+        assertTrue(tabs.all { it.height() >= 48 })
+        assertTrue(tabs.maxOf { it.width() } - tabs.minOf { it.width() } <= 1)
+        assertEquals(pendingBounds, action("在聊天中使用").visibleBounds)
+        ScreenshotCapture.capture("workflow-phone-detail.png")
     }
 
     private fun captureWide(fixture: WorkflowApiFixture) {
