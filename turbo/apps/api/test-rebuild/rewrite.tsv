@@ -2936,8 +2936,8 @@ messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-032	planned		
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-033	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned					d-other
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned					d-other
-messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	16.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B06	
-messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-001	planned				B07	
+messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	15.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B06	
+messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-001	rewritten	6.1		src/signals/routes/__tests__/teams-browser-connect.test.ts	B07	
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	rewritten	174.3	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	B01	
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-006	rewritten	83.5	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot	
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-007	rewritten	67.8	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot	

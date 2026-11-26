@@ -14,6 +14,35 @@ const context = testContext();
 const memberships = createStore();
 
 describe("GET /api/teams/connect", () => {
+  it("teams-browser-connect-001 sends a signed-out browser to app sign-in and back to the connect URL", async () => {
+    const appOrigin = "https://app-teams-connect.okou.test";
+    const apiOrigin = "https://api-teams-connect.okou.test";
+    mockEnv("APP_URL", appOrigin);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const query = {
+      tenantId: `tenant-${randomUUID()}`,
+      teamsUserId: `29:user-${randomUUID()}`,
+    };
+
+    const response = await accept(
+      setupApp({
+        context,
+        routes: teamsBrowserConnectRoutes,
+        baseUrl: apiOrigin,
+      })(teamsBrowserConnectContract).connect({ query }),
+      [307],
+    );
+
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.origin).toBe(appOrigin);
+    expect(location.pathname).toBe("/sign-in");
+    expect(location.searchParams.get("redirect_url")).toBe(
+      `${apiOrigin}/api/teams/connect?${new URLSearchParams(query).toString()}`,
+    );
+  });
+
   it("teams-browser-connect-002 sends the signed-in member to Microsoft OAuth for their active account", async () => {
     const apiOrigin = "https://api-teams-connect.okou.test";
     mockEnv("OKOU_API_BACKEND_URL", apiOrigin);
