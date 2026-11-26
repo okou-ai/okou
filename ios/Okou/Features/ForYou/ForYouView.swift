@@ -42,8 +42,9 @@ struct ForYouView: View {
   /// The visit's deck, kept in the workspace session's Store.
   @ResolvedValue private var resolvedDeck: ForYouStore.Deck?
   private var store: ForYouStore { workspace.forYou }
-  /// This render's deck. The synchronous read only covers a missing first resolution.
-  private var deck: ForYouStore.Deck { resolvedDeck ?? store.deck }
+  /// This render's visit: the deck's cards, phases and notices. The synchronous read only covers
+  /// a missing first resolution.
+  private var visit: ForYouStore.Deck { resolvedDeck ?? store.deck }
 
   init(workspace: WorkspaceStore, showChat: @escaping () -> Void, goBack: @escaping () -> Void) {
     self.workspace = workspace
@@ -80,9 +81,9 @@ struct ForYouView: View {
 
   var body: some View {
     layout
-      .modifier(ForYouHaptics(deck: deck))
+      .modifier(ForYouHaptics(deck: visit))
       .task(id: readingID) { if let id = readingID { await store.read(id) } }
-      .onChange(of: deck.current?.id, initial: true) { _, id in
+      .onChange(of: visit.current?.id, initial: true) { _, id in
         if ForYouLoop.cardID(pageID) != id { pageID = id }
       }
       .onChange(of: pageID) { _, id in
@@ -98,8 +99,8 @@ struct ForYouView: View {
   private var layout: some View {
     VStack(spacing: 0) {
       ForYouHeader(
-        count: deck.cards.count, live: livePosition, position: pagePosition,
-        isBusy: deck.busy, canPage: !deck.busy && !isComposing, showsPlace: !isComposing,
+        count: visit.cards.count, live: livePosition, position: pagePosition,
+        isBusy: visit.busy, canPage: !visit.busy && !isComposing, showsPlace: !isComposing,
         back: goBack, show: show)
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,7 +122,7 @@ struct ForYouView: View {
     .composerSuggestionOverlay()
   }
 
-  private var readingID: String? { phase == .active ? deck.current?.id : nil }
+  private var readingID: String? { phase == .active ? visit.current?.id : nil }
 
   /// While a direction is being written, a tap anywhere around its card puts it away: an empty
   /// one folds back into its pill, one with text only lowers the keyboard. The card itself stays
@@ -145,24 +146,24 @@ struct ForYouView: View {
   /// shows, and which panel stands in for the cards.
   private var layoutKey: [String] {
     let panel =
-      !deck.cards.isEmpty ? "cards" : deck.error != nil ? "error" : deck.loaded ? "rest" : "load"
-    return deck.cards.map(\.id) + [
-      panel, deck.error ?? "", deck.notice?.text ?? "", deck.notice?.undo?.undoID ?? "",
+      !visit.cards.isEmpty ? "cards" : visit.error != nil ? "error" : visit.loaded ? "rest" : "load"
+    return visit.cards.map(\.id) + [
+      panel, visit.error ?? "", visit.notice?.text ?? "", visit.notice?.undo?.undoID ?? "",
       hasDock ? "dock" : ""
     ]
   }
 
   private var hasDock: Bool {
-    guard case .suggestion = deck.current?.content else { return false }
+    guard case .suggestion = visit.current?.content else { return false }
     return true
   }
 
   private var isComposing: Bool {
-    guard let direction = deck.direction else { return false }
-    return direction.cardID == deck.current?.id
+    guard let direction = visit.direction else { return false }
+    return direction.cardID == visit.current?.id
   }
 
-  private var loop: ForYouLoop { ForYouLoop(deck.cards) }
+  private var loop: ForYouLoop { ForYouLoop(visit.cards) }
 
   /// The card the pager is closest to while it moves, counting round the deck.
   private var livePosition: Int { loop.index(nearest: pagePosition) }
@@ -185,7 +186,7 @@ struct ForYouView: View {
   /// The cards still to come, peeking under the card in front as the web's stack does. They
   /// stay put while the cards above them move.
   @ViewBuilder private var deck: some View {
-    let layers = min(Self.layerCount, deck.cards.count - 1)
+    let layers = min(Self.layerCount, visit.cards.count - 1)
     if layers > 0, let front, !isComposing {
       ForYouDeckLayers(
         count: layers, ground: Self.ground, drop: Self.layerDrop, inset: Self.layerInset,
@@ -207,13 +208,13 @@ struct ForYouView: View {
   /// recap. Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {
     Group {
-      if let error = deck.error, deck.current != nil {
+      if let error = visit.error, visit.current != nil {
         OkouBanner(Text(error), icon: "circle-alert", tone: .problem, dismiss: clearError)
-          .disabled(deck.busy)
+          .disabled(visit.busy)
           .padding(.top, OkouSpace.sm)
           .id(error)
           .transition(noticeTransition)
-      } else if let notice = deck.notice {
+      } else if let notice = visit.notice {
         confirmation(notice)
       }
     }
@@ -227,7 +228,7 @@ struct ForYouView: View {
       actionTitle: notice.undo != nil
         ? String(localized: "Undo")
         : notice.threadID != nil ? String(localized: "Open chat") : nil,
-      actionEnabled: !deck.busy,
+      actionEnabled: !visit.busy,
       actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
       autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
       dismiss: clearNotice
@@ -249,22 +250,22 @@ struct ForYouView: View {
   /// The cards, or the one panel that stands in for them. A panel takes over from the deck by
   /// rising into the card's place as the last card leaves.
   @ViewBuilder private var content: some View {
-    if !deck.cards.isEmpty {
+    if !visit.cards.isEmpty {
       pager.transition(.opacity)
-    } else if let error = deck.error {
+    } else if let error = visit.error {
       standalone {
         OkouLoadErrorRow(message: error, retry: { run { await store.load() } })
       }
       .transition(panelTransition)
-    } else if deck.loaded {
+    } else if visit.loaded {
       standalone {
         ForYouCaughtUp(
-          handled: deck.handled,
+          handled: visit.handled,
           undo: { undo in run { await store.undo(undo) } },
           open: { id in run { if await store.open(id) { showChat() } } },
           done: goBack
         )
-        .disabled(deck.busy)
+        .disabled(visit.busy)
       }
       .transition(panelTransition)
     } else {
@@ -290,7 +291,7 @@ struct ForYouView: View {
     // The card on top: the one the pager last rested on, or the one in front when that one has
     // left the deck.
     let rested = pages.contains { $0.id == topPageID } ? topPageID : nil
-    let top = rested ?? pageID ?? deck.current?.id
+    let top = rested ?? pageID ?? visit.current?.id
     return GeometryReader { viewport in
       ScrollViewReader { proxy in
         ScrollView(.horizontal) {
@@ -302,17 +303,17 @@ struct ForYouView: View {
                 .transition(cardExit)
                 // The top card lies over the deck as it is thrown off either side.
                 .zIndex(page.id == top ? 1 : 0)
-                .accessibilityHidden(page.id != deck.current?.id)
+                .accessibilityHidden(page.id != visit.current?.id)
             }
           }
           .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
         .scrollPosition(
-          id: Binding(get: { pageID ?? deck.current?.id }, set: { if pagerPlaced { pageID = $0 } })
+          id: Binding(get: { pageID ?? visit.current?.id }, set: { if pagerPlaced { pageID = $0 } })
         )
         .scrollIndicators(.hidden)
-        .scrollDisabled(isComposing || deck.busy)
+        .scrollDisabled(isComposing || visit.busy)
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
           geometry.containerSize.width > 0
             ? geometry.contentOffset.x / geometry.containerSize.width : 0
@@ -373,7 +374,7 @@ struct ForYouView: View {
   }
 
   private func place(_ proxy: ScrollViewProxy) {
-    guard let id = store.current?.id else { return }
+    guard let id = visit.current?.id else { return }
     var placement = Transaction()
     placement.disablesAnimations = true
     withTransaction(placement) { proxy.scrollTo(id, anchor: .leading) }
@@ -389,12 +390,12 @@ struct ForYouView: View {
     let leaveShrink = Self.leaveShrink
     let depth = !reduceMotion
     return ScrollView {
-      surface(placementOf: page.id, asContext: deck.direction?.cardID == page.card.id) {
+      surface(placementOf: page.id, asContext: visit.direction?.cardID == page.card.id) {
         cardView(page.card, height: cardHeight(for: page.card.id))
-          .disabled(deck.busy)
+          .disabled(visit.busy)
       }
       .padding(.top, OkouSpace.xxl)
-      .padding(.bottom, deckFoot(asContext: deck.direction?.cardID == page.card.id))
+      .padding(.bottom, deckFoot(asContext: visit.direction?.cardID == page.card.id))
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .defaultScrollAnchor(.bottom, for: .alignment)
@@ -512,7 +513,7 @@ struct ForYouView: View {
   /// card a direction is written for keeps only its heading, as tall as it is within the room
   /// above the input.
   private func cardHeight(for cardID: String) -> CGFloat? {
-    cardRoom(asContext: deck.direction?.cardID == cardID)
+    cardRoom(asContext: visit.direction?.cardID == cardID)
   }
 
   private func noteHorizon(_ line: CGFloat) {
@@ -524,7 +525,7 @@ struct ForYouView: View {
     case .suggestion(let suggestion):
       ForYouSuggestionView(
         suggestion: suggestion, height: height,
-        pendingOptionID: pendingOptionID, isContext: deck.direction?.cardID == card.id,
+        pendingOptionID: pendingOptionID, isContext: visit.direction?.cardID == card.id,
         openSource: { id in run { await store.openSource(id) } },
         choose: { option in
           guard !store.busy else { return }
@@ -549,9 +550,9 @@ struct ForYouView: View {
   /// one way to turn the suggestion down. The input grows out of the pill in place, as the
   /// web's does, and shrinks back into it.
   @ViewBuilder private var dock: some View {
-    if let card = deck.current, case .suggestion(let suggestion) = card.content {
+    if let card = visit.current, case .suggestion(let suggestion) = card.content {
       ZStack(alignment: .bottom) {
-        if let direction = deck.direction, direction.cardID == card.id {
+        if let direction = visit.direction, direction.cardID == card.id {
           ForYouDirectionComposer(
             direction: direction, card: card, suggestion: suggestion, workspace: workspace
           )
@@ -565,10 +566,10 @@ struct ForYouView: View {
       .animation(dockMotion, value: isComposing)
       .frame(maxWidth: OkouControl.readableWidth)
       .padding(.horizontal, OkouSpace.lg).padding(.bottom, OkouSpace.sm)
-      .disabled(deck.busy)
+      .disabled(visit.busy)
       // A paused automation has no dock: it sinks away, and comes back with the next suggestion.
       .transition(reduceMotion ? .opacity : .offset(y: OkouSpace.lg).combined(with: .opacity))
-    } else if deck.current != nil {
+    } else if visit.current != nil {
       // Its room stays, so the deck keeps one place and the card's top edge never moves.
       Color.clear
         .frame(height: OkouControl.minimumTarget + OkouSpace.md)
@@ -636,10 +637,10 @@ struct ForYouView: View {
   }
 
   private func show(_ index: Int) {
-    guard store.cards.indices.contains(index) else { return }
+    guard visit.cards.indices.contains(index) else { return }
     // The card in front stays on top and is thrown off as the pager moves to the one chosen.
     if !reduceMotion { isPaging = true }
-    withAnimation(reduceMotion ? nil : .smooth) { pageID = store.cards[index].id }
+    withAnimation(reduceMotion ? nil : .smooth) { pageID = visit.cards[index].id }
   }
 
   private func run(_ operation: @escaping @MainActor () async -> Void) {
