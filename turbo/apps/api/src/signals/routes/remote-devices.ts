@@ -1,5 +1,8 @@
 import { command } from "ccstate";
-import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import {
+  remoteDevicesContract,
+  type RemoteDeviceChannelKind,
+} from "@okouai/api-contracts/contracts/remote-devices";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -34,7 +37,6 @@ import {
   remoteDeviceView,
 } from "../services/remote-device-directory";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import type { RemoteDeviceChannelKind } from "@okouai/api-contracts/contracts/remote-devices";
 
 const missing = notFound("Remote device not found");
 const remoteDeviceFields = Object.freeze({

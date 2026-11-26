@@ -64,9 +64,10 @@ public struct ChatRemoteDevices: Sendable {
   }
 
   public func move(_ channel: ChatRemoteDevice.Channel, to deviceID: UUID) async throws {
-    let base = "/api/remote-devices/\(deviceID.uuidString.lowercased())"
+    let destination = deviceID.uuidString.lowercased()
+    let channelID = channel.id.uuidString.lowercased()
     try await client.data(
-      "\(base)/channels/\(channel.kind.rawValue)/\(channel.id.uuidString.lowercased())",
+      "/api/remote-devices/\(destination)/channels/\(channel.kind.rawValue)/\(channelID)",
       method: "PUT")
   }
 

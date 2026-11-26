@@ -14,6 +14,45 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 
+function RemoteDeviceApprovalStatus({
+  granted,
+  unavailable,
+  failure,
+}: {
+  readonly granted: boolean;
+  readonly unavailable: boolean;
+  readonly failure: "continuation" | "save" | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {granted && (
+        <p className="text-sm">
+          {t(($) => {
+            return $.remoteDevices.approved;
+          })}
+        </p>
+      )}
+      {unavailable && (
+        <p className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.remoteDevices.unavailable;
+          })}
+        </p>
+      )}
+      {failure && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return failure === "continuation"
+              ? $.remoteDevices.continuationFailed
+              : $.remoteDevices.saveFailed;
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function RemoteDeviceApprovalCard({
   signals,
   onCancel,
@@ -32,6 +71,12 @@ export function RemoteDeviceApprovalCard({
   const pending = operation.state === "loading";
   const canContinue =
     outcome === "allowed" && signals.action.callbackPrompt !== null;
+  const failure =
+    operation.state === "hasError"
+      ? canContinue
+        ? "continuation"
+        : "save"
+      : null;
   if (outcome === "cancelled") {
     return null;
   }
@@ -76,29 +121,13 @@ export function RemoteDeviceApprovalCard({
             )}
           </div>
           <div className="grid min-h-9 justify-items-start gap-1">
-            {(outcome === "allowed" || outcome === "continued") && (
-              <p className="text-sm">
-                {t(($) => {
-                  return $.remoteDevices.approved;
-                })}
-              </p>
-            )}
-            {outcome === "requested" && !device && load.state !== "loading" && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.remoteDevices.unavailable;
-                })}
-              </p>
-            )}
-            {operation.state === "hasError" && (
-              <p role="alert" className="text-sm text-destructive">
-                {t(($) => {
-                  return canContinue
-                    ? $.remoteDevices.continuationFailed
-                    : $.remoteDevices.saveFailed;
-                })}
-              </p>
-            )}
+            <RemoteDeviceApprovalStatus
+              granted={outcome === "allowed" || outcome === "continued"}
+              unavailable={
+                outcome === "requested" && !device && load.state !== "loading"
+              }
+              failure={failure}
+            />
             {outcome === "requested" && device && (
               <div className="flex flex-wrap gap-2">
                 <Button

@@ -15,6 +15,38 @@ import { searchParams$ } from "./route.ts";
 import { onRef } from "./utils.ts";
 
 const revision$ = state(0);
+const creation$ = state<{ readonly id: string; readonly name: string } | null>(
+  null,
+);
+
+export const remoteDeviceCreation$ = computed((get) => {
+  return get(creation$);
+});
+
+export const setRemoteDeviceCreationOpen$ = command(
+  ({ set }, open: boolean) => {
+    set(creation$, open ? { id: crypto.randomUUID(), name: "" } : null);
+  },
+);
+
+export const updateRemoteDeviceName$ = command(({ get, set }, name: string) => {
+  const draft = get(creation$);
+  if (draft) {
+    set(creation$, { ...draft, name });
+  }
+});
+
+export const mountRemoteDeviceCreation$ = onRef(
+  command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(creation$, null);
+      },
+      { once: true },
+    );
+  }),
+);
 
 export const remoteDevicesEnabled$ = computed(async (get) => {
   return (await get(featureSwitches$))[FeatureSwitchKey.RemoteDevices];
@@ -60,22 +92,23 @@ export const remoteDeviceDirectory$ = computed(async (get) => {
 });
 
 export const createRemoteDevice$ = command(
-  async (
-    { get, set },
-    id: string,
-    displayName: string,
-    signal: AbortSignal,
-  ) => {
-    const result = await accept(
+  async ({ get, set }, signal: AbortSignal) => {
+    const draft = get(creation$);
+    if (!draft?.name.trim()) {
+      return;
+    }
+    await accept(
       get(apiClient$)(remoteDevicesContract).create({
-        body: { id, displayName },
+        body: { id: draft.id, displayName: draft.name },
         fetchOptions: { signal },
       }),
       [200, 201],
       signal,
     );
     set(invalidateRemoteDeviceDirectory$);
-    return result.body;
+    if (get(creation$)?.id === draft.id) {
+      set(creation$, null);
+    }
   },
 );
 

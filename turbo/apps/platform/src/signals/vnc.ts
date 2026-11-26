@@ -1503,10 +1503,13 @@ function connectionRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: Editor,
+  selection: {
+    readonly editor: Editor;
+    readonly remoteDeviceId: string | undefined;
+  },
   signal: AbortSignal,
-  remoteDeviceId?: string,
 ) {
+  const { editor, remoteDeviceId } = selection;
   if (dialog.kind === "create") {
     const body = createVncConnectionRequestSchema.safeParse({
       ...connectionFields(form, editor),
@@ -1694,9 +1697,8 @@ const prepareVncFormSave$ = command(
           clients,
           dialog,
           form,
-          editor,
+          { editor, remoteDeviceId },
           signal,
-          remoteDeviceId,
         );
     if (!request) {
       set(notice$, { code: VNC_ERROR_CODES.INVALID_INPUT, source: "save" });
@@ -1722,6 +1724,14 @@ const handleVncSaveFailure$ = command(
     return undefined;
   },
 );
+
+const finishVncSave$ = command(({ set }, kind: VncDialogState["kind"]) => {
+  set(closeVncDialog$);
+  set(invalidateVnc$);
+  if (!kind.endsWith("-credential")) {
+    set(invalidateRemoteDeviceDirectory$);
+  }
+});
 
 export const saveVncForDevice$ = command(
   async (
@@ -1800,15 +1810,7 @@ export const saveVncForDevice$ = command(
       result.status === 201 ||
       result.status === 204
     ) {
-      set(closeVncDialog$);
-      set(invalidateVnc$);
-      if (
-        dialog.kind === "create" ||
-        dialog.kind === "edit" ||
-        dialog.kind === "delete"
-      ) {
-        set(invalidateRemoteDeviceDirectory$);
-      }
+      set(finishVncSave$, dialog.kind);
       return savedConnectionId;
     }
     return set(handleVncSaveFailure$, {

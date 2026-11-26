@@ -26,7 +26,7 @@ import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { ChevronDown, KeyRound, Laptop, Plus } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { now } from "../../lib/time.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -35,11 +35,15 @@ import { enterRemoteSetup$ } from "../../signals/remote-control-setup.ts";
 import {
   createRemoteDevice$,
   invalidateRemoteDeviceDirectory$,
+  mountRemoteDeviceCreation$,
   mountRemoteDeviceDirectory$,
   moveRemoteDeviceChannel$,
+  remoteDeviceCreation$,
   remoteDeviceDirectory$,
   selectedRemoteDeviceId$,
+  setRemoteDeviceCreationOpen$,
   updateRemoteDeviceAccess$,
+  updateRemoteDeviceName$,
 } from "../../signals/remote-devices.ts";
 import { remoteResourceSearchParams } from "../../signals/remote-resource-detail.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -61,22 +65,26 @@ function deviceLink(deviceId?: string) {
 function ChannelKind({ kind }: { readonly kind: RemoteDeviceChannelKind }) {
   const { t } = useTranslation();
   switch (kind) {
-    case "desktop":
+    case "desktop": {
       return t(($) => {
         return $.remoteControlSetup.computerUse;
       });
-    case "ios":
+    }
+    case "ios": {
       return t(($) => {
         return $.remoteDevices.ios;
       });
-    case "ssh":
+    }
+    case "ssh": {
       return t(($) => {
         return $.ssh.label;
       });
-    case "vnc":
+    }
+    case "vnc": {
       return t(($) => {
         return $.vnc.label;
       });
+    }
   }
 }
 
@@ -271,21 +279,19 @@ export function ComposerRemoteDevices() {
   );
 }
 
-function AddRemoteDeviceForm({ onSaved }: { readonly onSaved: () => void }) {
+function AddRemoteDeviceForm() {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const [id] = useState(() => {
-    return crypto.randomUUID();
-  });
-  const [name, setName] = useState("");
+  const draft = useGet(remoteDeviceCreation$);
+  const setName = useSet(updateRemoteDeviceName$);
+  const setOpen = useSet(setRemoteDeviceCreationOpen$);
   const [saving, save] = useLoadableSet(createRemoteDevice$);
   return (
     <form
       className="grid gap-4"
       onSubmit={onDomEventFn(async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        await save(id, name, signal);
-        onSaved();
+        await save(signal);
       })}
     >
       <label className="grid gap-2 text-sm font-medium">
@@ -293,7 +299,7 @@ function AddRemoteDeviceForm({ onSaved }: { readonly onSaved: () => void }) {
           return $.remoteDevices.name;
         })}
         <Input
-          value={name}
+          value={draft?.name ?? ""}
           onChange={(event) => {
             setName(event.target.value);
           }}
@@ -312,7 +318,9 @@ function AddRemoteDeviceForm({ onSaved }: { readonly onSaved: () => void }) {
         <Button
           type="button"
           variant="outline"
-          onClick={onSaved}
+          onClick={() => {
+            setOpen(false);
+          }}
           disabled={saving.state === "loading"}
         >
           {t(($) => {
@@ -321,7 +329,7 @@ function AddRemoteDeviceForm({ onSaved }: { readonly onSaved: () => void }) {
         </Button>
         <Button
           type="submit"
-          disabled={!name.trim()}
+          disabled={!draft?.name.trim()}
           pending={saving.state === "loading"}
         >
           {t(($) => {
@@ -335,10 +343,15 @@ function AddRemoteDeviceForm({ onSaved }: { readonly onSaved: () => void }) {
 
 function AddRemoteDeviceDialog() {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const draft = useGet(remoteDeviceCreation$);
+  const setOpen = useSet(setRemoteDeviceCreationOpen$);
+  const mount = useSet(mountRemoteDeviceCreation$);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" variant="outline" />}>
+    <Dialog open={draft !== null} onOpenChange={setOpen}>
+      <DialogTrigger
+        ref={mount}
+        render={<Button size="sm" variant="outline" />}
+      >
         <Plus size={16} aria-hidden />
         {t(($) => {
           return $.remoteDevices.add;
@@ -358,11 +371,7 @@ function AddRemoteDeviceDialog() {
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <AddRemoteDeviceForm
-            onSaved={() => {
-              setOpen(false);
-            }}
-          />
+          <AddRemoteDeviceForm />
         </DialogBody>
       </DialogContent>
     </Dialog>
@@ -554,7 +563,6 @@ function RemoteDeviceDetails({
 export function RemoteDeviceDirectory() {
   const { t } = useTranslation();
   const activeId = useGet(selectedRemoteDeviceId$);
-  const startSetup = useSet(enterRemoteSetup$);
   const load = useLoadable(remoteDeviceDirectory$);
   const devices = useLastResolved(remoteDeviceDirectory$);
   if (!devices && load.state === "loading") {
@@ -588,6 +596,16 @@ export function RemoteDeviceDirectory() {
       </div>
     );
   }
+  return <RemoteDeviceOverview devices={devices} />;
+}
+
+function RemoteDeviceOverview({
+  devices,
+}: {
+  readonly devices: readonly RemoteDeviceDirectoryItem[];
+}) {
+  const { t } = useTranslation();
+  const startSetup = useSet(enterRemoteSetup$);
   return (
     <section
       className="grid gap-4"

@@ -892,6 +892,28 @@ function createPermissionActionBlock(
   return null;
 }
 
+function createRemoteDeviceApprovalBlock(
+  url: string,
+  context: ChatActionContext | undefined,
+): CardDescriptorBlock | null {
+  const approval = parseRemoteDeviceApprovalUrl(url, context);
+  if (approval.status === "valid") {
+    return {
+      type: "remote-device-approval",
+      resourceKey: url,
+      descriptor: approval.descriptor,
+    };
+  }
+  if (approval.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: url,
+      descriptor: { originalUrl: url },
+    };
+  }
+  return null;
+}
+
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
@@ -948,23 +970,12 @@ function createActionBlockFromUrl(
     };
   }
 
-  const remoteDeviceApproval = parseRemoteDeviceApprovalUrl(
+  const remoteDeviceApproval = createRemoteDeviceApprovalBlock(
     url,
     chatActionContext,
   );
-  if (remoteDeviceApproval.status === "valid") {
-    return {
-      type: "remote-device-approval",
-      resourceKey: url,
-      descriptor: remoteDeviceApproval.descriptor,
-    };
-  }
-  if (remoteDeviceApproval.status === "invalid") {
-    return {
-      type: "unavailable-action",
-      resourceKey: url,
-      descriptor: { originalUrl: url },
-    };
+  if (remoteDeviceApproval) {
+    return remoteDeviceApproval;
   }
 
   const permissionAction = createPermissionActionBlock(url, chatActionContext);

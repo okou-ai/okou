@@ -1642,13 +1642,9 @@ function createCardRefRegistrar(
           };
         }
         case "remote-device-approval": {
-          return {
-            kind: descriptor.type,
-            signals: set(
-              cards.remoteDeviceApprovalSignals.register$,
-              descriptor.descriptor,
-            ),
-          };
+          const { register$ } = cards.remoteDeviceApprovalSignals;
+          const signals = set(register$, descriptor.descriptor);
+          return { kind: descriptor.type, signals };
         }
         case "permission-action":
         case "permission-batch-action": {
