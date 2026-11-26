@@ -375,6 +375,7 @@ struct ChatDetailView: View {
           UserMessageView(
             message: message, webURL: conversation.webURL,
             viewer: conversation.attachmentViewer, loadsAttachments: presentation.loadsAttachments,
+            voicePlayback: conversation.composer.voicePlayback,
             sendTransition: presentation.loadsAttachments ? scrolling.sendTransition : nil
           ) {
             if presentation.loadsAttachments, !conversation.sharing.isSelecting {
