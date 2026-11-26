@@ -9,6 +9,8 @@ struct ComposerConnectorDefaults: View {
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
   @ResolvedValue private var managesAccounts: Bool?
+  /// The authorization attempt, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedAuthorization: ConnectorActionStore.Presentation?
   @State private var renaming: ChatConnectorAccount?
   @State private var name = ""
   @State private var disconnecting: ChatConnectorAccount?
@@ -22,10 +24,14 @@ struct ComposerConnectorDefaults: View {
     self.page = page
     self.busy = busy
     _managesAccounts = ResolvedValue(store.managementValue)
+    _resolvedAuthorization = ResolvedValue(store.authorization.presentationValue)
   }
 
+  private var authorization: ConnectorActionStore.Presentation {
+    resolvedAuthorization ?? store.authorization.presentation
+  }
   private var isAuthorizing: Bool {
-    store.authorization.isAuthorizing(target: resources.connector.target)
+    authorization.isAuthorizing(target: resources.connector.target)
   }
 
   var body: some View {
@@ -106,7 +112,7 @@ struct ComposerConnectorDefaults: View {
             }
         }
       }
-      .disabled(busy || store.authorization.active != nil)
+      .disabled(busy || authorization.active != nil)
       .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
     } footer: {
       if page.policies == nil {

@@ -60,12 +60,12 @@ final class ConnectorConnectEntryTests: XCTestCase {
       service: service, graph: makeTestWorkspaceGraph(), didContinue: {}, didFail: { _ in })
     defer { store.close() }
     store.activate(.configuration(target: .builtin("slack"), threadID: nil))
-    try await waitForBusinessResult { store.active?.canSubmit == true }
+    try await waitForBusinessResult(watching: store) { store.active?.canSubmit == true }
     let flow = try XCTUnwrap(store.active)
     flow.methodID = "api-token"
     flow.values["token"] = "synthetic-token"
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     let account = try await service.account(id: FixtureData.accountID, target: .builtin("slack"))
     XCTAssertTrue(account.ready)
     XCTAssertEqual(account.authMethod, "api-token")
@@ -134,7 +134,7 @@ final class ConnectorConnectEntryTests: XCTestCase {
       target: .builtin("slack"), threadID: nil, connectionID: FixtureData.accountID)
 
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     let canceled = try XCTUnwrap(store.active)
     XCTAssertEqual(canceled.methodID, "oauth")
     canceled.methodID = "api-token"
@@ -144,12 +144,12 @@ final class ConnectorConnectEntryTests: XCTestCase {
     XCTAssertEqual(unchanged.authMethod, "oauth")
 
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     let manual = try XCTUnwrap(store.active)
     manual.methodID = "api-token"
     manual.values["token"] = "synthetic-token"
     store.submit()
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     let tokenAccount = try await service.account(
       id: FixtureData.accountID, target: .builtin("slack"))
     XCTAssertEqual(tokenAccount.id, FixtureData.accountID)
@@ -157,7 +157,7 @@ final class ConnectorConnectEntryTests: XCTestCase {
     XCTAssertTrue(tokenAccount.ready)
 
     store.activate(action)
-    try await waitForBusinessResult { store.active != nil }
+    try await waitForBusinessResult(watching: store) { store.active != nil }
     let oauth = try XCTUnwrap(store.active)
     XCTAssertEqual(oauth.methodID, "api-token")
     oauth.methodID = "oauth"
@@ -165,7 +165,7 @@ final class ConnectorConnectEntryTests: XCTestCase {
     await fulfillment(of: [scheduled], timeout: 3)
     authorized.withLock { $0 = true }
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     let oauthAccount = try await service.account(
       id: FixtureData.accountID, target: .builtin("slack"))
     XCTAssertEqual(oauthAccount.id, FixtureData.accountID)
@@ -201,7 +201,7 @@ final class ConnectorConnectEntryTests: XCTestCase {
       providerApplication: UnavailableProviderApplication(), pollSleep: clock.sleep)
     defer { store.close() }
     store.activate(.configuration(target: .builtin("gmail"), threadID: nil))
-    try await waitForBusinessResult { store.active?.canSubmit == true }
+    try await waitForBusinessResult(watching: store) { store.active?.canSubmit == true }
     confirmed.withLock { $0 = true }
     store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
