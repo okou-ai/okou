@@ -31,11 +31,11 @@ non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	planned
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-002	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	planned				pilot
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	rewritten	11.0		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	rewritten	7.7		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	rewritten	7.2		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	rewritten	6.7		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	rewritten	11.1		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	rewritten	11.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	rewritten	7.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	rewritten	7.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	rewritten	6.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	rewritten	11.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	rewritten	35.6		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	rewritten	27.9		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned				
@@ -48,8 +48,8 @@ non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	planned				
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7		src/lib/__tests__/user-export-zip.test.ts	B06
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3		src/lib/__tests__/user-export-zip.test.ts	B06
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	planned				
@@ -62,13 +62,13 @@ non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	planned
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	planned				
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	rewritten	9.5		src/signals/external/__tests__/wechat-client.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	rewritten	7.0		src/signals/external/__tests__/wechat-client.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	rewritten	25.0		src/signals/external/__tests__/wechat-client.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	rewritten	7.8		src/signals/external/__tests__/wechat-media.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	rewritten	4.4		src/signals/external/__tests__/wechat-media.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	rewritten	9.3		src/signals/external/__tests__/wechat-media.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	rewritten	34.2		src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	rewritten	9.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	rewritten	7.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	rewritten	25.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-client.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	rewritten	7.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	rewritten	4.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	rewritten	9.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	rewritten	34.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/external/__tests__/wechat-media.test.ts	B06
 account-org	src/signals/routes/__tests__/agent-custom-connectors.test.ts	agent-custom-connectors-001	planned				
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-001	rewritten	105.3		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-002	rewritten	135.4		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
@@ -1500,9 +1500,9 @@ messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-005	rewritten	176.2	split n=3: 1/3=137.8; 2/3=161.9; 3/3=176.2; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-006	rewritten	171.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-010	rewritten	191.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	B04
-messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-001	rewritten	7.4		src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
-messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-006	rewritten	5.7		src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
-messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-017	rewritten	16.6		src/signals/routes/__tests__/discord-interactions-verification.test.ts	B06
+messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-001	rewritten	7.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
+messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-006	rewritten	5.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
+messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-017	rewritten	16.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/discord-interactions-verification.test.ts	B06
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-001	rewritten	48.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-002	rewritten	22.7		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-003	rewritten	21.9		src/signals/routes/__tests__/discord-interactions.test.ts	B04
@@ -1538,7 +1538,7 @@ messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscrip
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-007	rewritten	6.1		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	rewritten	17.2		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	skipped		slow-setup: the run-credential row needs a Run execution token; that Given alone (one executing Run via helpers/run-execution-credentials forActor) measured 438.5 ms and 432.5 ms in two runs (webhooks-x-resource-usage probe), so the 403 FORBIDDEN half cannot be a row under 200 ms; the unauthenticated 401 half alone would be cheap		B04
-messaging	src/signals/routes/__tests__/email.test.ts	email-001	rewritten	23.1		src/signals/routes/__tests__/email.test.ts	B06
+messaging	src/signals/routes/__tests__/email.test.ts	email-001	rewritten	23.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/email.test.ts	B06
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	rewritten	54.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	rewritten	82.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-004	rewritten	70.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
@@ -1570,7 +1570,7 @@ messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-017	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				pilot
-messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.7		src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06
+messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-003	planned				pilot
@@ -2199,9 +2199,9 @@ billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handof
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-016	rewritten	11.9		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-017	rewritten	86.4		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-019	rewritten	15.1		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-002	rewritten	86.6		src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	rewritten	164.7		src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	rewritten	168.2		src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-002	rewritten	86.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	rewritten	164.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	rewritten	168.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	B06
 billing	src/signals/routes/__tests__/marketing-reward-checkin.test.ts	marketing-reward-checkin-001	rewritten	177.2		src/signals/routes/__tests__/marketing-reward-checkin.test.ts	B05
 billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-002	revisit		revisit: custom HTTP connector OAuth authorize+callback flow not investigated within first-pass time box; evidence: no shared helper for custom-connector OAuth completion found in this pass; resume: drive custom connector create + OAuth authorize/callback via the custom-connectors routes with MSW token endpoint, then assert consumer.received		B04
 billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-004	rewritten	158.6	cold-start review: shuffled 3-run median over 200 ms (marketing-reward-events-004 median 103.3 ms (runs 148/103/101)); resume: split or slow-setup	src/signals/routes/__tests__/marketing-reward-events.test.ts	B04
@@ -2210,7 +2210,7 @@ billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marke
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-004	revisit		revisit: small file fails the shuffled 3-run median (after removing 007, 002 was first in two of three runs at 285/316 ms (121 ms warm)); evidence: marketing-reward-notification-005 74.1 ms (75/74/53); marketing-reward-notification-004 140.0 ms (197/140/104); marketing-reward-notification-002 129.6 ms (130/117/180); marketing-reward-notification-007 275.1 ms (325/275/271); draft /home/user/pilot-env/wip/r13b/marketing-reward-notification.test.ts; resume: split 007 and re-measure the file		B06
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-005	revisit		revisit: small file fails the shuffled 3-run median (after removing 007, 002 was first in two of three runs at 285/316 ms (121 ms warm)); evidence: marketing-reward-notification-005 74.1 ms (75/74/53); marketing-reward-notification-004 140.0 ms (197/140/104); marketing-reward-notification-002 129.6 ms (130/117/180); marketing-reward-notification-007 275.1 ms (325/275/271); draft /home/user/pilot-env/wip/r13b/marketing-reward-notification.test.ts; resume: split 007 and re-measure the file		B06
 billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-007	revisit		revisit: small file fails the shuffled 3-run median (007 over 200 ms in every run); evidence: marketing-reward-notification-005 74.1 ms (75/74/53); marketing-reward-notification-004 140.0 ms (197/140/104); marketing-reward-notification-002 129.6 ms (130/117/180); marketing-reward-notification-007 275.1 ms (325/275/271); draft /home/user/pilot-env/wip/r13b/marketing-reward-notification.test.ts; resume: split 007 and re-measure the file		B06
-billing	src/signals/routes/__tests__/marketing-reward-routing.test.ts	marketing-reward-routing-002	rewritten	144.0		src/signals/routes/__tests__/marketing-reward-routing.test.ts	B06
+billing	src/signals/routes/__tests__/marketing-reward-routing.test.ts	marketing-reward-routing-002	rewritten	144.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/marketing-reward-routing.test.ts	B06
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-002	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-005	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-007	planned				
@@ -2302,8 +2302,8 @@ account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-004	rewritten	103.5		src/signals/routes/__tests__/misc-routes.bdd.test.ts	B04
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-006	rewritten	157.9		src/signals/routes/__tests__/misc-routes.bdd.test.ts	B04
 account-org	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	planned		affected by #50982 (Gemini 4 runs with a connected Antigravity account): rewrite against the current behaviour		
-account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	rewritten	11.3		src/signals/routes/__tests__/model-catalog-authority.test.ts	B05
-account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	rewritten	27.9		src/signals/routes/__tests__/model-catalog-authority.test.ts	B06
+account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	rewritten	11.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/model-catalog-authority.test.ts	B05
+account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	rewritten	27.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/model-catalog-authority.test.ts	B06
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	planned				
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-002	planned				
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-005	planned				
@@ -2381,10 +2381,10 @@ account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-006	rewritten	18.4		src/signals/routes/__tests__/org-member-directory.test.ts	B03
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-007	rewritten	14.1		src/signals/routes/__tests__/org-member-directory.test.ts	B03
 account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member-directory-008	rewritten	15.5		src/signals/routes/__tests__/org-member-directory.test.ts	B03
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	rewritten	54.2		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	26.2		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	61.1		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
-account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	rewritten	36.9		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B06
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	rewritten	54.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	26.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	61.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	rewritten	36.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/org-openrouter-preset.test.ts	B06
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-002	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	planned				
@@ -2431,7 +2431,7 @@ artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	pre
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-008	rewritten	100.3		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	rewritten	124.1		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-templates.test.ts	presentation-templates-001	rewritten	27.4		src/signals/routes/__tests__/presentation-templates.test.ts	B03
-account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	preview-connector-catalog.catalog-generation-001	rewritten	84.1		src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	B06
+account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	preview-connector-catalog.catalog-generation-001	rewritten	84.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	B06
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-001	revisit		revisit: not reached within the batch time box; needs the Fal queue + private artifact bucket fixture and realtime capture; evidence: helpers/public-image-run.ts createImageRun/readWebhookUrl/postFalWebhookEnvelope exist; resume: build on createImageRun with fal-ai/flux-pro/v1.1, POST /api/image-io/generate, complete via Fal webhook, then read generation and /api/web/file-url as owner, colleague, other org and anonymous		B02
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-003	revisit		revisit: not reached within the batch time box; depends on the same completed private generation fixture as 001; evidence: as 001; resume: after 001 fixture, queue a second image with the stable artifact URL and assert the Fal request carries the signed private URL		B02
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-004	revisit		revisit: not reached within the batch time box; depends on the same completed private generation fixture as 001; evidence: as 001; resume: after 001 fixture, a colleague posts the artifact URL and gets 400 with no extra Fal request or signing		B02
@@ -2446,7 +2446,7 @@ artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-016	rewritten	14.5	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-001	revisit		revisit: Feishu completion needs an installed Feishu app plus an authorized delivery target; evidence: completeUpload$ resolves the org Feishu installation, runs authorizeFileDelivery$ for the chat/user target, then uploads to /open-apis/im/v1/files and sends a message; helpers/feishu-artifact-install.ts installs the app (feature switch, setup, URL verification, member bind) but its cost and the delivery-access preparation were not measured; resume: reuse the private upload storage and web file-url checks from private-integration-uploads-005, install Feishu with installArtifactFeishuForTest, bind the member open ID, mock im/v1/files and im/v1/messages, then measure (the GitHub variant already exceeded 200 ms because of its install Given).		B06
 account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	revisit		revisit: over 200 ms (204 ms, 310 ms and 302 ms, writer run under load); evidence: the written row passed; Given = onboarding 40-41 ms + GitHub App install through createGithubBddApi().installGithubApp 128-163 ms, init+PUT 7-16 ms, completion + preview + other-org read 84-123 ms; Given+init/PUT was 220 ms and 175 ms, so not provably slow-setup, and a split cannot drop the install Given; resume: re-measure on an idle machine with the same body as private-integration-uploads-005 (GitHub upload-init/upload-complete routes, comment POST to api.github.com/repos/<repo>/issues/<n>/comments returning 201); record slow-setup if Given+init/PUT stays over 200 ms.		B06
-account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	rewritten	191.4		src/signals/routes/__tests__/private-integration-uploads.test.ts	B06
+account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	rewritten	191.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/private-integration-uploads.test.ts	B06
 account-org	src/signals/routes/__tests__/proactive-preferences.test.ts	proactive-preferences-001	skipped		slow-setup: Given+first When/Then 545 ms and 507 ms (launching the primary chat Run with an execution token via createRunExecutionCredentials: 433 ms and 400 ms incl. ~100 ms file cold start; first Run-token read of proactive suggestions 9-10 ms; Official catalog publication not yet included)		B05
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-001	planned				
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-002	planned				
@@ -2462,8 +2462,8 @@ chat	src/signals/routes/__tests__/projects.test.ts	projects-007	planned
 chat	src/signals/routes/__tests__/projects.test.ts	projects-008	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-009	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-010	planned				
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7		src/signals/routes/__tests__/provider-console-paths.test.ts	B06
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9		src/signals/routes/__tests__/provider-console-paths.test.ts	B06
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/provider-console-paths.test.ts	B06
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	rewritten	7.1	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	rewritten	5.3	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
@@ -2917,7 +2917,7 @@ remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-029	plann
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-030	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-034	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-001	skipped		slow-setup: Given+first When/Then (onboarded member with Teams installed and personal identity connected, signed personal message dispatching the Run, run-log read showing one running teams Run) measured 378.8 ms and 394.2 ms in two runs (file already warm); dominant step is the first When itself, the signed personal message that dispatches the Run (226.8 ms and 251.8 ms), Given via helpers/public-teams-dispatch-fixture create({ onboarded: true }) 146.1 ms and 135.7 ms; with fixture teardown the whole row took 547-603 ms		B06
-messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	rewritten	170.9		src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	B06
+messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	rewritten	170.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	B06
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-001	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	planned				
@@ -2937,7 +2937,7 @@ messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-032	planned
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-033	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned				
-messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	16.0		src/signals/routes/__tests__/teams-browser-connect.test.ts	B06
+messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	16.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B06
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	rewritten	174.3	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	B01
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-006	rewritten	83.5	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-007	rewritten	67.8	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
@@ -3021,8 +3021,8 @@ billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	u
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-021	rewritten	86.0		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-024	rewritten	137.4		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-026	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup) to spend the organization into -5000 credits after the ZERO100 credits expire		B03
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	rewritten	7.6		src/signals/routes/__tests__/usage-record.test.ts	B06
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	rewritten	35.3		src/signals/routes/__tests__/usage-record.test.ts	B06
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	rewritten	7.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/usage-record.test.ts	B06
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	rewritten	35.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/usage-record.test.ts	B06
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-005	planned				

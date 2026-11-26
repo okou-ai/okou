@@ -466,3 +466,13 @@ The first case of a file took 1,171 ms. Dispatch itself took 5 ms. In the normal
 **Selection review.** Of eleven writer candidates, four were user-reachable and uncovered and were selected: `subscription-controls-007`, `mcp-connectors-011`, `agentphone-connect.bdd-006` and `ssh-connections-010`.
 
 **`skill-import.bdd-003`.** It passed ten shuffled runs on four workers alongside five neighbouring files. The single earlier failure came from a whole-suite run during which main was merged and a migration applied.
+
+### Round 13: provisional shuffled-median rule and B06
+
+**Provisional timing rule (Manager decision, pending Ethan).** A row passes when its median over three shuffled whole-file runs (different seeds, one worker) is at most 200 ms. Such rows carry `accepted by shuffled 3-run median (provisional cold-start rule)` so they can be revisited if a strict rule is chosen. A case whose cold path no other case reaches pays it in every order and stays slow-setup or split.
+
+**Release of held drafts.** All 160 rows of the 36 held files passed in three shuffled orders, so no order dependence was found. Eight files passed the median rule and were committed. Eight single-row files have a cold path of their own and are slow-setup. The other twenty files stay revisits with their medians, because a few rows still exceed 200 ms. Small files often fail when a row runs first in two of the three orders. `connector-oauth-completion-002` is committed and fails the shuffled median, so it is flagged for splitting.
+
+**Timer.** `credit-low-balance-alert-002` waits on `retryClerkRead`. That is three attempts with a 1000 ms `signal-timers` delay plus jitter, so the case is recorded as `timer`.
+
+**VNC fixture.** Cleanup in `helpers/vnc-execution.ts` now skips cancellation for a Run that has already finished. A probe confirmed it across a completed Run, a running Run and a following fixture.
