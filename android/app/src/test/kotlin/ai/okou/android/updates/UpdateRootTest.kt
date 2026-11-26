@@ -677,6 +677,46 @@ class UpdateRootTest {
     }
 
     @Test
+    fun installFocusFollowsItsSlotUntilTheUserMovesToClose() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            allowInstallAndDiscoverUpdate()
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+
+            val download = updateDetailText("Download update")
+            download.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            download.performKeyInput { pressKey(Key.Enter) }
+            finishDownload()
+            val first = nextLaunch()
+            returnFrom(first.requestCode)
+            val install = updateDetailText("Continue installation")
+            install.assertIsFocused()
+
+            val verification = CompletableDeferred<Unit>()
+            try {
+                compose.runOnIdle { app.fixture.heldRecovery = verification }
+                install.performKeyInput { pressKey(Key.Enter) }
+                val waiting = updateDetailText("Waiting to install")
+                waiting.assertIsFocused().performKeyInput { pressKey(Key.DirectionLeft) }
+                val close = updateDetailText("Close")
+                close.assertIsFocused()
+                verification.complete(Unit)
+                val second = nextLaunch()
+                returnFrom(second.requestCode)
+                install.assertIsEnabled()
+                close.assertIsFocused()
+            } finally {
+                verification.complete(Unit)
+            }
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    @Test
     fun backgroundCompletionOutsideUpdatesInstallsOnResume() {
         allowInstallAndDiscoverUpdate()
         openUpdateSettings()

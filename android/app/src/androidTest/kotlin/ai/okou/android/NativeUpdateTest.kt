@@ -11,6 +11,7 @@ import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
 import android.text.format.Formatter
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -98,6 +99,24 @@ class NativeUpdateTest {
                 )
                 .click()
             find(text(R.string.updates_preparing))
+            val close = text(R.string.updates_close)
+            val closeLabel = app.getString(R.string.updates_close)
+            instrumentation.setInTouchMode(false)
+            val closeNode =
+                checkNotNull(
+                    instrumentation.uiAutomation.rootInActiveWindow
+                        ?.findAccessibilityNodeInfosByText(closeLabel)
+                        ?.firstOrNull { it.text?.toString() == closeLabel },
+                )
+            val focusTarget =
+                checkNotNull(
+                    generateSequence(closeNode) { it.parent }.firstOrNull { it.isFocusable },
+                )
+            assertTrue(
+                focusTarget.isFocused ||
+                    focusTarget.performAction(AccessibilityNodeInfo.ACTION_FOCUS),
+            )
+            device.awaitKeyboardFocus(close)
 
             // Exercise the paused, still visible window without another Activity covering it.
             activity.onActivity {
@@ -112,8 +131,9 @@ class NativeUpdateTest {
                 )
             }
             assertNoWaitAction(find(waiting))
+            device.awaitKeyboardFocus(close)
             captureUpdate(device, "details-waiting-to-install")
-            device.enabledUpdateControl(text(R.string.updates_close)).click()
+            device.enabledUpdateControl(close).click()
             val toolbar =
                 find(
                     By.pkg(app.packageName)
@@ -139,6 +159,7 @@ class NativeUpdateTest {
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },
+                    { instrumentation.resetInTouchMode() },
                     { app.updateOwner = previous },
                     { owner.close() },
                 )) try {
