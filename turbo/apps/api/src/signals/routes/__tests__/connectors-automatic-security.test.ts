@@ -360,4 +360,198 @@ describe("builtin Automatic account and consent ownership", () => {
     expect(initialProvider.registrationBodies).toHaveLength(1);
     expect(replacementProvider.registrationBodies).toHaveLength(1);
   });
+
+  it("connectors-automatic-security-002 (1/3) retires a rejected DCR client and marks the member's accounts reconnect-required", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer: `https://dcr-inv-1-${randomUUID().slice(0, 8)}.example.test`,
+      authorizationCodeErrors: [null, null, "invalid_client", null],
+    });
+    const member = await memberOf(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+    );
+    const firstStart = await startAutomaticAuthorization(member, fixture.slug, {
+      intent: "add",
+    });
+    const [, secondStart] = await Promise.all([
+      completeAutomaticCallback(firstStart.state, provider.issuer),
+      startAutomaticAuthorization(member, fixture.slug, { intent: "add" }),
+    ]);
+    const [firstReceipt] = await Promise.all([
+      readOAuthCompletion(member, fixture.slug, firstStart.attemptId, [200]),
+      completeAutomaticCallback(secondStart.state, provider.issuer),
+    ]);
+    if (!("connectionId" in firstReceipt.body)) {
+      throw new Error("Expected a completed connection ID");
+    }
+
+    const rejectedStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: firstReceipt.body.connectionId },
+    );
+    const rejectedCallback = await completeAutomaticCallback(
+      rejectedStart.state,
+      provider.issuer,
+    );
+    createRouteMocks(context).clerk.session(
+      member.userId,
+      member.orgId,
+      member.orgRole,
+    );
+    const [rejectedReceipt, listed] = await Promise.all([
+      accept(
+        accountsApi.oauthCompletion({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { attemptId: rejectedStart.attemptId },
+          query: { kind: "builtin", connectorSlug: fixture.slug },
+        }),
+        [404],
+      ),
+      accept(
+        accountsApi.connections({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { kind: "builtin", connectorSlug: fixture.slug },
+        }),
+        [200],
+      ),
+    ]);
+
+    expect(rejectedCallback.body.status).toBe("error");
+    expect(rejectedReceipt.status).toBe(404);
+    expect(listed.body.connections).toHaveLength(2);
+    for (const account of listed.body.connections) {
+      expect(account.connectionStatus).toBe("reconnect-required");
+    }
+  });
+
+  it("connectors-automatic-security-002 (2/3) keeps another workspace owner's account connected after DCR retirement", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer: `https://dcr-inv-2-${randomUUID().slice(0, 8)}.example.test`,
+      authorizationCodeErrors: [null, null, null, "invalid_client", null],
+    });
+    const [member, otherOwner] = await Promise.all([
+      memberOf(`user_${randomUUID()}`, `org_${randomUUID()}`),
+      memberOf(`user_${randomUUID()}`, `org_${randomUUID()}`),
+    ]);
+    const firstStart = await startAutomaticAuthorization(member, fixture.slug, {
+      intent: "add",
+    });
+    const [, secondStart] = await Promise.all([
+      completeAutomaticCallback(firstStart.state, provider.issuer),
+      startAutomaticAuthorization(member, fixture.slug, { intent: "add" }),
+    ]);
+    const [foreignStart] = await Promise.all([
+      startAutomaticAuthorization(otherOwner, fixture.slug, { intent: "add" }),
+      completeAutomaticCallback(secondStart.state, provider.issuer),
+    ]);
+    const [firstReceipt] = await Promise.all([
+      readOAuthCompletion(member, fixture.slug, firstStart.attemptId, [200]),
+      completeAutomaticCallback(foreignStart.state, provider.issuer),
+    ]);
+    if (!("connectionId" in firstReceipt.body)) {
+      throw new Error("Expected a completed connection ID");
+    }
+
+    const rejectedStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: firstReceipt.body.connectionId },
+    );
+    const rejectedCallback = await completeAutomaticCallback(
+      rejectedStart.state,
+      provider.issuer,
+    );
+    createRouteMocks(context).clerk.session(
+      otherOwner.userId,
+      otherOwner.orgId,
+      otherOwner.orgRole,
+    );
+    const foreignListed = await accept(
+      accountsApi.connections({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { kind: "builtin", connectorSlug: fixture.slug },
+      }),
+      [200],
+    );
+
+    expect(rejectedCallback.body.status).toBe("error");
+    expect(foreignListed.body.connections).toHaveLength(1);
+    expect(foreignListed.body.connections[0]?.connectionStatus).toBe(
+      "connected",
+    );
+  });
+
+  it("connectors-automatic-security-002 (3/3) registers a new client on retry reconnect after invalid_client retirement", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      authentication: "oauth",
+      endpoint: fixture.endpoint,
+      issuer: `https://dcr-inv-3-${randomUUID().slice(0, 8)}.example.test`,
+      authorizationCodeErrors: [null, null, null, "invalid_client", null],
+    });
+    const [member, otherOwner] = await Promise.all([
+      memberOf(`user_${randomUUID()}`, `org_${randomUUID()}`),
+      memberOf(`user_${randomUUID()}`, `org_${randomUUID()}`),
+    ]);
+    const firstStart = await startAutomaticAuthorization(member, fixture.slug, {
+      intent: "add",
+    });
+    const [, secondStart] = await Promise.all([
+      completeAutomaticCallback(firstStart.state, provider.issuer),
+      startAutomaticAuthorization(member, fixture.slug, { intent: "add" }),
+    ]);
+    const [foreignStart] = await Promise.all([
+      startAutomaticAuthorization(otherOwner, fixture.slug, { intent: "add" }),
+      completeAutomaticCallback(secondStart.state, provider.issuer),
+    ]);
+    const [firstReceipt] = await Promise.all([
+      readOAuthCompletion(member, fixture.slug, firstStart.attemptId, [200]),
+      completeAutomaticCallback(foreignStart.state, provider.issuer),
+    ]);
+    if (!("connectionId" in firstReceipt.body)) {
+      throw new Error("Expected a completed connection ID");
+    }
+    const firstConnectionId = firstReceipt.body.connectionId;
+    const rejectedStart = await startAutomaticAuthorization(
+      member,
+      fixture.slug,
+      { intent: "reconnect", connectionId: firstConnectionId },
+    );
+    const rejectedCallback = await completeAutomaticCallback(
+      rejectedStart.state,
+      provider.issuer,
+    );
+    expect(rejectedCallback.body.status).toBe("error");
+
+    const retryStart = await startAutomaticAuthorization(member, fixture.slug, {
+      intent: "reconnect",
+      connectionId: firstConnectionId,
+    });
+    const retryCallback = await completeAutomaticCallback(
+      retryStart.state,
+      provider.issuer,
+    );
+    const retryReceipt = await readOAuthCompletion(
+      member,
+      fixture.slug,
+      retryStart.attemptId,
+      [200],
+    );
+
+    expect(retryCallback.body.status).toBe("success");
+    expect(retryReceipt.body).toStrictEqual({
+      connectionId: firstConnectionId,
+    });
+    expect(provider.registrationBodies).toHaveLength(3);
+  });
 });

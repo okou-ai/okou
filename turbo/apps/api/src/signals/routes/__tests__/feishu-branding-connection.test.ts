@@ -865,36 +865,36 @@ async function permissionsAfterReconnect({
   managedConnectorId,
   startOauth,
   finishOauth,
-  authorize,
 }: Reconnecting) {
   if (!managedConnectorId) {
     throw new Error("Expected managedConnectorId");
   }
-  await authorize();
   const target = {
     kind: "custom" as const,
     customConnectorId: managedConnectorId,
   };
-  const [granted, reconnectUrl] = await Promise.all([
-    accept(
-      app(connectorPermissionsContract).apply({
-        headers: signIn(bot.admin),
-        body: {
-          target,
-          mode: "patch",
-          grants: [
-            {
-              permission: "messages:send-as-user",
-              action: "allow",
-              expiresIn: "1h",
-            },
-          ],
-        },
-      }),
-      [200],
-    ),
+  const [firstUrl, reconnectUrl] = await Promise.all([
+    startOauth(),
     startOauth(),
   ]);
+  await finishOauth(firstUrl);
+  const granted = await accept(
+    app(connectorPermissionsContract).apply({
+      headers: signIn(bot.admin),
+      body: {
+        target,
+        mode: "patch",
+        grants: [
+          {
+            permission: "messages:send-as-user",
+            action: "allow",
+            expiresIn: "1h",
+          },
+        ],
+      },
+    }),
+    [200],
+  );
   await finishOauth(reconnectUrl);
   const [, permissions] = await Promise.all([
     flushWaitUntilForTest(),
@@ -980,6 +980,61 @@ describe("lark integration", () => {
     const removed = await removeInstallation(bot);
 
     expect(removed.status).toBe(200);
+  });
+
+  it("feishu-branding-connection-026 (1/4) connects through Lark OAuth without delivering the rejected welcome", async () => {
+    const reconnecting = await connectWithRejectedWelcome("lark");
+
+    const connected = await connectOnce(reconnecting);
+
+    expect(connected.scopes).toStrictEqual([...FEISHU_OAUTH_SCOPES]);
+    expect(connected.location).toBe(
+      `https://applink.larksuite.com/client/bot/open?appId=${reconnecting.bot.appId}`,
+    );
+    expect(connected.published).toBeGreaterThan(0);
+    expect(connected.connectedUserName).toBe("Feishu User");
+    expect(connected.replies).not.toContain("You're connected!");
+  });
+
+  it("feishu-branding-connection-026 (2/4) keeps the granted member permissions after reconnecting", async () => {
+    const reconnecting = await connectWithRejectedWelcome("lark", {
+      loadManagedConnector: true,
+    });
+
+    const { granted, kept } = await permissionsAfterReconnect(reconnecting);
+
+    expect(kept).toStrictEqual(granted);
+    expect(kept).toMatchObject([
+      { permission: "messages:send-as-user", action: "allow" },
+    ]);
+  });
+
+  it("feishu-branding-connection-026 (3/4) retries the welcome card with the rejected idempotency key on reconnect", async () => {
+    const reconnecting = await connectWithRejectedWelcome("lark");
+
+    const { welcome, rejectedKey } = await welcomeAfterReconnect(reconnecting);
+
+    expect(rejectedKey).toBeDefined();
+    expect(welcome).toHaveLength(1);
+    expect(welcome[0]).toMatchObject({
+      path: "/open-apis/im/v1/messages",
+      receiveId: "ou_feishu_user",
+      msgType: "interactive",
+      uuid: rejectedKey,
+    });
+    expect(welcome[0]?.content).toContain("Okou");
+  });
+
+  it("feishu-branding-connection-026 (4/4) reports the reconnected Lark installation status", async () => {
+    const reconnecting = await connectWithRejectedWelcome("lark");
+
+    const installation = await statusAfterReconnect(reconnecting);
+
+    expect(installation).toMatchObject({
+      appId: reconnecting.bot.appId,
+      isConnected: true,
+      connectedUserName: "Feishu User",
+    });
   });
 
   it("feishu-branding-connection-023 deduplicates unconnected messages and sends one connect link", async () => {

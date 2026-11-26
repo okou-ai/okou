@@ -1,5 +1,11 @@
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -12,6 +18,9 @@ import { chatThreadRoutes } from "../chat-threads";
 import { teamsConnectRoutes } from "../teams-connect";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import {
@@ -294,6 +303,56 @@ async function postPersonalTeamsMessage(
   await flushWaitUntilForTest();
 }
 
+async function createChannelMentionThread() {
+  const fixture = teamsConnectFixture();
+  const notices: string[] = [];
+  configureTeamsHandlers(fixture, notices);
+  await Promise.all([
+    createStore().set(
+      seedOrgMembership$,
+      {
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        role: "admin",
+        name: "Teams workspace",
+      },
+      context.signal,
+    ),
+    updateFeatureSwitchesForUser(
+      context,
+      { userId: fixture.userId, orgId: fixture.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.OkouDebug]: true },
+    ),
+    installTeamsForTest(context.signal, fixture),
+  ]);
+  await connectTeamsAccountForTest(context, fixture, {
+    displayName: "Ada Lovelace",
+    learnSender: false,
+  });
+
+  const response = await postTeamsActivityForTest({
+    signal: context.signal,
+    activity: teamsMessageActivityForTest(fixture, {
+      text: "<at>Nova</at> deploy the preview",
+    }),
+  });
+  expect(response.status).toBe(200);
+  teamsBotIngressResponseSchema.parse(await response.json());
+  await flushWaitUntilForTest();
+
+  const lifecycle = await accept(
+    chatThreads.events({ headers: authFor(fixture), query: {} }),
+    [200],
+  );
+  const createdEvent = lifecycle.body.events.find((event) => {
+    return event.kind === "created";
+  });
+  if (!createdEvent) {
+    throw new Error("Expected a created thread lifecycle event");
+  }
+  return { fixture, chatThreadId: createdEvent.chatThreadId };
+}
+
 describe("Teams webhook dispatch", () => {
   it("test-teams-state-003 (1/4) reports installed and connected status for the connected un-onboarded member", async () => {
     const member = await createInstalledTeamsMember({ onboarded: false });
@@ -376,5 +435,48 @@ describe("Teams webhook dispatch", () => {
         return event.kind === "created";
       }),
     ).toBeTruthy();
+  });
+});
+
+describe("Teams chat callbacks", () => {
+  it("internal-callbacks-teams-010 (1/2) enables cloud browser on the thread created by a Teams bot mention", async () => {
+    const { fixture, chatThreadId } = await createChannelMentionThread();
+
+    const metadata = await accept(
+      threadsApi(chatThreadMetadataContract).get({
+        headers: authFor(fixture),
+        params: { id: chatThreadId },
+      }),
+      [200],
+    );
+    expect(metadata.body.cloudBrowserEnabled).toBeTruthy();
+  });
+
+  it("internal-callbacks-teams-010 (2/2) preserves Teams canonical input with normalized mention text and source link", async () => {
+    const { fixture, chatThreadId } = await createChannelMentionThread();
+
+    const events = await readProjectedChatEvents(context, {
+      threadId: chatThreadId,
+      headers: authFor(fixture),
+    });
+    const promptEvent = events.find((event) => {
+      return event.eventType === "input.prompt";
+    });
+    if (!promptEvent || promptEvent.eventType !== "input.prompt") {
+      throw new Error("Expected an input.prompt event");
+    }
+    expect(promptEvent.content).toBeNull();
+    expect(promptEvent.userMessage.version).toBe(1);
+    expect(promptEvent.userMessage.parts).toStrictEqual([
+      {
+        type: "text",
+        text: "@Nova deploy the preview",
+      },
+      {
+        type: "source",
+        kind: "teams",
+        href: `https://teams.microsoft.com/l/message/${encodeURIComponent(fixture.teamsChannelId)}/${encodeURIComponent(fixture.teamsActivityId)}?tenantId=${encodeURIComponent(fixture.teamsTenantId)}`,
+      },
+    ]);
   });
 });

@@ -1,8 +1,14 @@
+import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { describe, expect, it } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { slackConnectRoutes } from "../slack-connect";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 function logoFormData(
   bytes: Uint8Array<ArrayBuffer>,
@@ -526,5 +532,120 @@ describe("org-team.bdd", () => {
       role: "member",
     });
     expect(demoted.message).toBe(`Updated role for ${admin.email}`);
+  });
+
+  const slackConnectApi = setupApp({ context, routes: slackConnectRoutes })(
+    slackConnectContract,
+  );
+
+  async function readSlackConnected(actor: ApiTestUser): Promise<boolean> {
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    const response = await accept(
+      slackConnectApi.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    return response.body.isConnected;
+  }
+
+  it("org-team.bdd-011 (1/3) disconnects a slack-linked member on org deletion", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
+
+    const admin = api.user({ orgRole: "org:admin" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
+    }
+
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(admin),
+      slackOrg.installForOrg({ orgId, installer: admin }),
+    ]);
+
+    await expect(readSlackConnected(admin)).resolves.toBeTruthy();
+
+    api.mockClerkOrg(admin, {
+      members: [{ actor: admin, role: "org:admin" }],
+    });
+    const deleted = await api.deleteOrg(admin);
+    expect(deleted.message).toBe("Organization deleted");
+
+    await expect(readSlackConnected(admin)).resolves.toBeFalsy();
+  });
+
+  it("org-team.bdd-011 (2/3) disconnects a slack-linked member on admin removal", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
+
+    const admin = api.user({ orgRole: "org:admin" });
+    const targetAdmin = api.user({ orgId: admin.orgId, orgRole: "org:admin" });
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
+    }
+
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(targetAdmin),
+      slackOrg.installForOrg({ orgId, installer: targetAdmin }),
+    ]);
+
+    await expect(readSlackConnected(targetAdmin)).resolves.toBeTruthy();
+
+    api.mockClerkOrg(admin, {
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: targetAdmin, role: "org:admin" },
+      ],
+    });
+    const removed = await api.removeMember(admin, { email: targetAdmin.email });
+    expect(removed.message).toBe(`Removed ${targetAdmin.email} from org`);
+
+    await expect(readSlackConnected(targetAdmin)).resolves.toBeFalsy();
+  });
+
+  it("org-team.bdd-011 (3/3) disconnects a slack-linked member on org leave", async () => {
+    const api = createAuthOrgBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const slackOrg = createPublicSlackOrgApi(context);
+    integrations.configureSlackAppMocks();
+
+    const admin = api.user({ orgRole: "org:admin" });
+    const installer = api.user({
+      orgId: admin.orgId,
+      orgRole: "org:admin",
+    });
+    const leavingMember: ApiTestUser = { ...installer, orgRole: "org:member" };
+    const orgId = admin.orgId;
+    if (!orgId) {
+      throw new Error("Expected orgId");
+    }
+
+    await Promise.all([
+      api.bootstrapLimitedFreeOnboarding(installer),
+      slackOrg.installForOrg({ orgId, installer }),
+    ]);
+
+    await expect(readSlackConnected(leavingMember)).resolves.toBeTruthy();
+
+    api.mockClerkOrg(admin, {
+      members: [
+        { actor: admin, role: "org:admin" },
+        { actor: leavingMember, role: "org:member" },
+      ],
+    });
+    const left = await api.leaveOrg(leavingMember);
+    expect(left.message).toBe("Left org");
+
+    await expect(readSlackConnected(leavingMember)).resolves.toBeFalsy();
   });
 });

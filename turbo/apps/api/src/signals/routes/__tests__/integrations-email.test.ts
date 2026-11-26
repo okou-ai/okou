@@ -514,22 +514,24 @@ function createEmailHarness() {
       (options.useRolloutAddress
         ? createUniqueEmailSignupAddressFixture()
         : `admin-${randomUUID()}@workspace.test`);
-    await postSubscriptionInvoicePaid(context.signal, {
-      orgId,
-      userId,
-      tier: "pro",
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: generatedStripeSubscriptionId(),
-      currentPeriodEnd: new Date(realWallNow + 30 * 24 * 60 * 60 * 1000),
-    });
     addDirectoryUser({ id: userId, email, orgIds: [orgId] });
-    if (options.enableEmailSwitch !== false && !options.useRolloutAddress) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId, orgId, orgRole: "org:admin" },
-        { [FeatureSwitchKey.EmailIntegration]: true },
-      );
-    }
+    await Promise.all([
+      postSubscriptionInvoicePaid(context.signal, {
+        orgId,
+        userId,
+        tier: "pro",
+        customerId: generatedStripeCustomerId(),
+        subscriptionId: generatedStripeSubscriptionId(),
+        currentPeriodEnd: new Date(realWallNow + 30 * 24 * 60 * 60 * 1000),
+      }),
+      options.enableEmailSwitch !== false && !options.useRolloutAddress
+        ? updateFeatureSwitchesForUser(
+            context,
+            { userId, orgId, orgRole: "org:admin" },
+            { [FeatureSwitchKey.EmailIntegration]: true },
+          )
+        : Promise.resolve(),
+    ]);
     syncClerkDirectory();
     return { userId, orgId, email };
   }
@@ -1022,6 +1024,134 @@ describe("Email multi-account connections", () => {
     expect(secondFinal.emails).toStrictEqual([email]);
     const firstFinal = await harness.getLinkStatus(userId, orgOne);
     expect(firstFinal.emails).toStrictEqual([]);
+  });
+
+  it("integrations-email-062 (1/4) ignores connection codes sent to okou+confirm addresses", async () => {
+    const harness = createEmailHarness();
+    const admin = await harness.provisionProAdmin();
+    const firstExternal = `alt1-${randomUUID()}@external.test`;
+
+    const initial = await harness.getLinkStatus(admin.userId, admin.orgId);
+    expect(initial.emails).toStrictEqual([admin.email]);
+
+    const firstCode = await harness.createLinkCode(admin.userId, admin.orgId);
+    await harness.deliverInboundEmail({
+      from: firstExternal,
+      to: [`okou+confirm-${"a".repeat(32)}@okou.io`],
+      subject: firstCode.code,
+      text: "",
+    });
+    expect(
+      (await harness.getLinkStatus(admin.userId, admin.orgId)).emails,
+    ).toStrictEqual([admin.email]);
+  });
+
+  it("integrations-email-062 (2/4) binds multiple non-login email addresses via subject and body codes without starting tasks", async () => {
+    const harness = createEmailHarness();
+    const admin = await harness.provisionProAdmin();
+    const firstExternal = `alt1-${randomUUID()}@external.test`;
+    const secondExternal = `alt2-${randomUUID()}@external.test`;
+
+    await harness.getLinkStatus(admin.userId, admin.orgId);
+    const [firstCode, secondCode] = await Promise.all([
+      harness.createLinkCode(admin.userId, admin.orgId),
+      harness.createLinkCode(admin.userId, admin.orgId),
+    ]);
+    await harness.deliverInboundEmail({
+      from: firstExternal,
+      subject: firstCode.code,
+      text: "",
+    });
+    await harness.deliverInboundEmail({
+      from: secondExternal,
+      subject: "Link second address",
+      text: `${secondCode.code}\nSent from my phone`,
+    });
+
+    expect(
+      (await harness.getLinkStatus(admin.userId, admin.orgId)).emails,
+    ).toStrictEqual([admin.email, firstExternal, secondExternal]);
+    await expect(
+      harness.listThreadIds(admin.userId, admin.orgId),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("integrations-email-062 (3/4) creates a conversation for an ordinary request from the subject-linked non-login address", async () => {
+    const harness = createEmailHarness();
+    const [, admin] = await Promise.all([
+      harness.configureRunner(),
+      harness.provisionProAdmin(),
+    ]);
+    const firstExternal = `alt1-${randomUUID()}@external.test`;
+    const secondExternal = `alt2-${randomUUID()}@external.test`;
+
+    const [firstCode, secondCode] = await Promise.all([
+      harness.createLinkCode(admin.userId, admin.orgId),
+      harness.createLinkCode(admin.userId, admin.orgId),
+    ]);
+    await Promise.all([
+      harness.deliverInboundEmail({
+        from: firstExternal,
+        subject: firstCode.code,
+        text: "",
+        flush: false,
+      }),
+      harness.deliverInboundEmail({
+        from: secondExternal,
+        subject: "Link second address",
+        text: `${secondCode.code}\nSent from my phone`,
+        flush: false,
+      }),
+    ]);
+
+    await harness.deliverInboundEmail({
+      from: firstExternal,
+      subject: "First ordinary request",
+      text: "Check my notes",
+    });
+
+    await expect(
+      harness.listThreadIds(admin.userId, admin.orgId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("integrations-email-062 (4/4) creates a conversation for an ordinary request from the body-linked non-login address", async () => {
+    const harness = createEmailHarness();
+    const [, admin] = await Promise.all([
+      harness.configureRunner(),
+      harness.provisionProAdmin(),
+    ]);
+    const firstExternal = `alt1-${randomUUID()}@external.test`;
+    const secondExternal = `alt2-${randomUUID()}@external.test`;
+
+    const [firstCode, secondCode] = await Promise.all([
+      harness.createLinkCode(admin.userId, admin.orgId),
+      harness.createLinkCode(admin.userId, admin.orgId),
+    ]);
+    await Promise.all([
+      harness.deliverInboundEmail({
+        from: firstExternal,
+        subject: firstCode.code,
+        text: "",
+        flush: false,
+      }),
+      harness.deliverInboundEmail({
+        from: secondExternal,
+        subject: "Link second address",
+        text: `${secondCode.code}\nSent from my phone`,
+        flush: false,
+      }),
+    ]);
+
+    await harness.deliverInboundEmail({
+      from: secondExternal,
+      subject: "Second ordinary request",
+      text: "Draft an update",
+    });
+
+    await expect(
+      harness.listThreadIds(admin.userId, admin.orgId),
+    ).resolves.toHaveLength(1);
   });
 
   it("integrations-email-063 deduplicates verification webhook retries and cannot reuse a code for another sender", async () => {

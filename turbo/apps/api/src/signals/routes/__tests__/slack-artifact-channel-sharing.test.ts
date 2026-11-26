@@ -21,6 +21,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
 import { artifactSharingRoutes } from "../artifact-sharing";
+import { hostRoutes } from "../host";
 import { hostedSiteAccessRoutes } from "../hosted-site-access";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -52,23 +53,27 @@ const RESPONSE_URL = "https://hooks.slack.com/actions/T0/1/artifact-share";
 
 type Owner = ApiTestUser & { readonly orgId: string };
 
+const integrationApi = createBddIntegrationApi(context);
+const appClient = setupApp({
+  context,
+  routes: [
+    ...artifactSharingRoutes,
+    ...artifactShareRoutes,
+    ...artifactReferenceRoutes,
+    ...hostRoutes,
+    ...hostedSiteAccessRoutes,
+    ...uploadsPrepareRoutes,
+    ...uploadsCompleteRoutes,
+  ],
+});
+
 function client(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
     actor.orgRole,
   );
-  return setupApp({
-    context,
-    routes: [
-      ...artifactSharingRoutes,
-      ...artifactShareRoutes,
-      ...artifactReferenceRoutes,
-      ...hostedSiteAccessRoutes,
-      ...uploadsPrepareRoutes,
-      ...uploadsCompleteRoutes,
-    ],
-  });
+  return appClient;
 }
 
 /** Clerk profiles with verified emails for every Okou account in the case. */
@@ -199,29 +204,41 @@ async function publishSite(
 ): Promise<Artifact> {
   const html =
     "<html><head><title>Channel report</title></head><body>Report</body></html>";
-  const host = createHostBddApi(context);
-  const deployment = await host.prepareHostedSite(owner, {
-    site: `share-${randomUUID().slice(0, 8)}`,
-    title: "Channel report",
-    artifactKind: "hosted-site",
-    spaFallback: false,
-    visibility,
-    files: [hostedTextFile("/index.html", html)],
-  });
+  const prepared = await accept(
+    client(owner)(hostContract).prepare({
+      headers,
+      body: {
+        site: `share-${randomUUID().slice(0, 8)}`,
+        title: "Channel report",
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        visibility,
+        files: [hostedTextFile("/index.html", html)],
+      },
+    }),
+    [200],
+  );
   for (const key of stored.objects.keys()) {
     if (key.endsWith("/index.html")) {
       stored.objects.set(key, html);
     }
   }
-  const completed = await host.completeHostedSite(
-    owner,
-    deployment.deploymentId,
+  const completed = await accept(
+    client(owner)(hostContract).complete({
+      headers,
+      params: { deploymentId: prepared.body.deploymentId },
+      body: {},
+    }),
+    [200],
   );
   const url =
     link === "artifact"
-      ? new URL(completed.artifactUrl ?? completed.url, env("APP_URL")).href
-      : completed.url;
-  return { kind: "site", id: deployment.siteId, url, reference: null };
+      ? new URL(
+          completed.body.artifactUrl ?? completed.body.url,
+          env("APP_URL"),
+        ).href
+      : completed.body.url;
+  return { kind: "site", id: prepared.body.siteId, url, reference: null };
 }
 
 /**
@@ -232,14 +249,16 @@ async function workspace() {
   const slack = createPublicSlackOrgApi(context);
   const installed = await slack.installOrg({ withConnection: true });
   const owner: Owner = { ...installed.actor, orgId: installed.orgId };
-  await store.set(
-    seedOrgMembership$,
-    { orgId: owner.orgId, userId: owner.userId, role: "admin" },
-    context.signal,
-  );
-  await updateFeatureSwitchesForUser(context, owner, {
-    [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-  });
+  await Promise.all([
+    store.set(
+      seedOrgMembership$,
+      { orgId: owner.orgId, userId: owner.userId, role: "admin" },
+      context.signal,
+    ),
+    updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.HostedSiteEmailSharing]: true,
+    }),
+  ]);
   const accounts: ApiTestUser[] = [owner];
   directory(accounts);
   const stored = privateArtifactStorage();
@@ -345,16 +364,18 @@ async function workspace() {
     if (!userOrgId) {
       throw new Error("Expected the member to belong to a workspace");
     }
-    await store.set(
-      seedOrgMembership$,
-      { orgId: userOrgId, userId: user.userId },
-      context.signal,
-    );
-    const { slackUserId } = await slack.connectMember({
-      orgId: userOrgId,
-      userId: user.userId,
-      slackWorkspaceId: installed.slackWorkspaceId,
-    });
+    const [, { slackUserId }] = await Promise.all([
+      store.set(
+        seedOrgMembership$,
+        { orgId: userOrgId, userId: user.userId },
+        context.signal,
+      ),
+      slack.connectMember({
+        orgId: userOrgId,
+        userId: user.userId,
+        slackWorkspaceId: installed.slackWorkspaceId,
+      }),
+    ]);
     accounts.push(user);
     directory(accounts);
     join(slackUserId);
@@ -362,16 +383,13 @@ async function workspace() {
   }
 
   async function postLink(url: string, user = installed.slackUserId) {
-    await createBddIntegrationApi(context).postSlackEvent(
-      installed.slackWorkspaceId,
-      {
-        type: "link_shared",
-        channel: CHANNEL,
-        message_ts: MESSAGE_TS,
-        user,
-        links: [{ url, domain: new URL(url).hostname }],
-      },
-    );
+    await integrationApi.postSlackEvent(installed.slackWorkspaceId, {
+      type: "link_shared",
+      channel: CHANNEL,
+      message_ts: MESSAGE_TS,
+      user,
+      links: [{ url, domain: new URL(url).hostname }],
+    });
     await flushWaitUntilForTest();
   }
 
@@ -429,7 +447,7 @@ async function workspace() {
     if (!token) {
       throw new Error("Expected a sharing prompt token");
     }
-    const body = await createBddIntegrationApi(context).postSlackInteractive({
+    const body = await integrationApi.postSlackInteractive({
       type: "block_actions",
       team: { id: installed.slackWorkspaceId },
       user: { id: installed.slackUserId },
@@ -781,6 +799,65 @@ describe("Slack artifact channel sharing", () => {
     context.mocks.slack.chat.unfurl.mockClear();
     context.mocks.slack.chat.postEphemeral.mockClear();
     await w.postLink(file.url);
+    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
+    expect(w.promptText()).toContain(
+      "Access could not be confirmed for 1 member.",
+    );
+    expect(w.promptText()).not.toContain("need access");
+  });
+
+  it("slack-artifact-channel-sharing-002 (1/3) privately prompts the site owner before any shares exist", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    await w.connectedMember();
+    w.emailMember();
+
+    await w.postLink(site.url);
+
+    expect(w.promptRecipients()).toStrictEqual([w.slackUserId]);
+    expect(w.promptActions()).toMatchObject({
+      channel: CHANNEL,
+      user: w.slackUserId,
+      actionIds: [...ALL_ACTIONS],
+    });
+    await expect(w.shareEmails(site)).resolves.toStrictEqual([]);
+  });
+
+  it("slack-artifact-channel-sharing-002 (2/3) shares the site only with members present at click time", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    const viewer = await w.connectedMember();
+    const departed = w.emailMember();
+    await w.postLink(site.url);
+
+    w.leave(departed.id);
+    const joined = w.emailMember();
+    await w.click("artifact_share_channel");
+
+    await expect(w.shareEmails(site)).resolves.toStrictEqual(
+      [viewer.email, joined.email].sort(),
+    );
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    const summary = w.callbacks.at(-1) ?? "";
+    expect(summary).toContain("2 current channel members");
+    expect(summary).not.toContain(departed.email);
+  });
+
+  it("slack-artifact-channel-sharing-002 (3/3) does not unfurl or re-prompt missing access when reposting the shared site", async () => {
+    const w = await workspace();
+    const site = await publishSite(w.owner, w.stored, "private");
+    await w.connectedMember();
+    const departed = w.emailMember();
+    await w.postLink(site.url);
+    w.leave(departed.id);
+    w.emailMember();
+    await w.click("artifact_share_channel");
+
+    // Since #50984 the joined member's unclaimed invitation keeps the
+    // owner prompt open as unconfirmed access instead of staying silent.
+    context.mocks.slack.chat.unfurl.mockClear();
+    context.mocks.slack.chat.postEphemeral.mockClear();
+    await w.postLink(site.url);
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
     expect(w.promptText()).toContain(
       "Access could not be confirmed for 1 member.",
