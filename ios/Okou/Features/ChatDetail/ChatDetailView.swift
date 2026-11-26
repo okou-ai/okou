@@ -364,16 +364,19 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
-    case .usage(let runID):
-      ConversationRunUsageView(
-        runID: runID, usage: conversation.runUsage,
-        showDetails: { usageDetails = UsageDetails(id: runID) }
-      )
+    case .usage(let runID, let answer):
+      HStack(spacing: OkouSpace.sm) {
+        if let answer { messageActions(for: answer) }
+        ConversationRunUsageView(
+          runID: runID, usage: conversation.runUsage,
+          showDetails: { usageDetails = UsageDetails(id: runID) })
+      }
       .frame(maxWidth: .infinity, alignment: .leading)
       .background {
         if let anchor { ConversationRowAnchor(messageID: "usage:\(runID)", anchor: anchor) }
       }
-      .padding(.horizontal, 26)
+      .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset + OkouSpace.six)
+      .padding(.top, answer == nil ? 0 : OkouSpace.sm)
     }
   }
 
@@ -469,18 +472,20 @@ struct ChatDetailView: View {
       }
       deliveryStatus(message, pendingRetry: pendingRetry, isSending: isSending)
       if presentation.showsActions {
-        MessageActionBar(
-          text: message.copyText,
-          chatURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-          shareLink: { audience in
-            let id = try await conversation.shareAnswer(message.id, audience: audience)
-            return conversation.webURL.appending(path: "share/threads/\(id)")
-          }
-        )
-        // The answer's text is inset 6 pt; the first glyph sits on that edge.
-        .padding(.leading, OkouSpace.six)
+        messageActions(for: message)
+          .padding(.leading, OkouSpace.six)
       }
     }
+  }
+
+  private func messageActions(for message: ChatMessage) -> some View {
+    MessageActionBar(
+      text: message.copyText,
+      chatURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+      shareLink: { audience in
+        let id = try await conversation.shareAnswer(message.id, audience: audience)
+        return conversation.webURL.appending(path: "share/threads/\(id)")
+      })
   }
 
   @ViewBuilder
