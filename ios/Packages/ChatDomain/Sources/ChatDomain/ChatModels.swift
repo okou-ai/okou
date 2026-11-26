@@ -167,6 +167,7 @@ public struct ChatHistory: Equatable, Sendable {
   public let workSections: [ChatWorkSection]
   public private(set) var executionState: ChatExecutionState
   public let activeRunIDs: [String]
+  public let latestRunID: String?
   public private(set) var activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
@@ -184,6 +185,7 @@ public struct ChatHistory: Equatable, Sendable {
     executionState: ChatExecutionState,
     activeRunIDs: [String],
     activityRunID: String? = nil,
+    latestRunID: String? = nil,
     queuedEventIDs: [String],
     persistedEventIDs: Set<String> = [],
     workSections: [ChatWorkSection] = [],
@@ -203,6 +205,7 @@ public struct ChatHistory: Equatable, Sendable {
     self.executionState = executionState
     self.activeRunIDs = activeRunIDs
     self.activityRunID = activityRunID
+    self.latestRunID = latestRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
   }
