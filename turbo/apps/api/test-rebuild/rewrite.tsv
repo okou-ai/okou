@@ -1183,36 +1183,36 @@ connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	co
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-002	revisit		revisit: two DCR accounts plus a foreign account and an invalid_client callback need a split per BRIEF7; evidence: not reached within first-pass budget; resume: same flow as 001 with authorizationCodeErrors invalid_client and a second workspace owner		B04	
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-005	revisit		revisit: expiring DCR registration needs mockNow advance and the start/callback flow; evidence: not reached within first-pass budget, dcrClientSecretExpiresAt is supported by the provider mock; resume: connect with secret expiring at now+60, mockNow(+61s), reconnect, read account, complete callback		B04	
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-006	rewritten	150.8		src/signals/routes/__tests__/connectors-automatic-security.test.ts	B04	
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-001	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-002	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-003	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-004	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-005	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-006	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-007	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-008	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-011	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-012	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-013	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-014	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-015	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-017	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-018	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-024	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-025	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-028	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-032	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-034	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-035	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-036	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-037	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-040	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-041	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-043	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-044	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-051	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-055	planned				B10	d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-001	rewritten	43.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-002	rewritten	24.6		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-003	rewritten	47.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-004	rewritten	58.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-005	rewritten	82.7		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-006	rewritten	84.1		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-007	rewritten	95.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-008	rewritten	92.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-011	rewritten	56.1		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-012	rewritten	61.4		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-013	rewritten	48.1		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-014	rewritten	89.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-015	rewritten	78.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-017	rewritten	24.7		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-018	rewritten	30.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-024	rewritten	26.1		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-025	rewritten	25.8		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-028	rewritten	20.3		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-032	rewritten	24.8		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-034	rewritten	23.1		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-035	rewritten	56.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-036	rewritten	55.8		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-037	rewritten	63.9		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-040	rewritten	51.8		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-041	rewritten	106.6		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-043	rewritten	113.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-044	rewritten	104.5		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-051	rewritten	100.8		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-055	rewritten	27.2		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	rewritten	22.9		src/signals/routes/__tests__/connectors-automatic.test.ts	B10	d-other
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-001	rewritten	147.5	split n=2: 1/2=147.5; 2/2=147.3; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-003	rewritten	85.7	accepted by shuffled 3-run median (provisional cold-start rule); median 85.7 ms; earlier strict measurement: round 10 measured 214.3 ms (3-run median) as the first case reaching its code path, after acceptance at 94.8 ms	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-004	rewritten	24.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
