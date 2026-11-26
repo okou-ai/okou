@@ -28,7 +28,8 @@ private struct ConnectorAccountDestination: ViewModifier {
 
   func body(content: Content) -> some View {
     let resources = destination
-    let isOpen = resources.map { open ?? !$0.isClosed } ?? false
+    // The owner's own flag also closes the page if the graph write did not land.
+    let isOpen = resources.map { (open ?? true) && !$0.isClosed } ?? false
     content.navigationDestination(
       isPresented: Binding(
         get: { isOpen },
