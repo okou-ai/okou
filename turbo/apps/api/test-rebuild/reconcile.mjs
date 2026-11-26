@@ -56,7 +56,41 @@ let review = 0;
 let missing = 0;
 const present = new Set(documents);
 
+// A pilot file is settled once every selected ID in pilot.tsv is rewritten or
+// skipped. Its temporary BDD is then removed; the frozen text stays in history.
+const pilotStatuses = new Map();
+const [, ...pilotLines] = readFileSync(resolve(directory, "pilot.tsv"), "utf8")
+  .split("\n")
+  .filter(Boolean);
+for (const line of pilotLines) {
+  const [, testFile, , status] = line.split("\t");
+  const file = `turbo/apps/api/${testFile}`;
+  pilotStatuses.set(file, [...(pilotStatuses.get(file) ?? []), status]);
+}
+const settledFiles = new Set(
+  [...pilotStatuses]
+    .filter(([, statuses]) => {
+      return statuses.every((status) => {
+        return status === "rewritten" || status === "skipped";
+      });
+    })
+    .map(([file]) => {
+      return file;
+    }),
+);
+let settled = 0;
+let settledFileCount = 0;
+
 for (const [bdd, { file, cases }] of expected) {
+  if (!present.has(bdd) && settledFiles.has(file)) {
+    for (const test of cases) {
+      rows.push([file, test.id, test.mode, bdd, "settled"].join("\t"));
+    }
+    settled += cases.length;
+    settledFileCount += 1;
+    completeFiles += 1;
+    continue;
+  }
   const blocks = present.has(bdd)
     ? readFileSync(resolve(repo, bdd), "utf8").split(/^## /mu).slice(1)
     : [];
@@ -129,6 +163,8 @@ console.log(
     cases: ids.size,
     writtenFiles: present.size,
     completeFiles,
+    settledFiles: settledFileCount,
+    settled,
     written,
     review,
     missing,

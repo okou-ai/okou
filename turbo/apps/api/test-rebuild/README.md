@@ -396,3 +396,7 @@ The pilot rewrites selected cases from their BDD, the production contracts and t
   - `onboarding-012` logged `Could not prepare Suggestions` because the test never configured the admin's Clerk membership list. A real admin always has one, so the test now seeds it through the shared `seedOrgMembership$` helper, and the warning is gone. This was a test-side state, not a product defect.
 
 `upstream-changes.tsv` records API tests that changed on `main` after the frozen baseline. Merging `main` at `4781feba4d` changed nine old test files and renamed `cron-official-workflow-catalog.test.ts` to `builtin-workflow-automations.test.ts`. The branch keeps those files deleted and keeps the pilot rewrite of `onboarding.test.ts`. The frozen BDDs are unchanged, and the upstream changes should be reviewed at the next screening.
+
+### Reconciliation after settlement
+
+When every selected ID of a pilot file is rewritten or skipped, the file's temporary BDD is removed; its frozen text stays in history at `7ef96529`. `reconcile.mjs` reads `pilot.tsv` and records the frozen IDs of those settled files as `settled`. Strict mode still requires every one of the 7,453 frozen IDs to be either in a present BDD document or in a settled pilot file. Two BDDs, `me-model-providers-upsert` and `run-cron.bdd`, were removed while one ID in each was still `planned`. They were restored unchanged from `7ef96529`.
