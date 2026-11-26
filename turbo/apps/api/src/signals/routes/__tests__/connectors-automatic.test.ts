@@ -854,7 +854,7 @@ describe("builtin MCP automatic authentication", () => {
       identity: {
         subject: "automatic-user-123",
         tokenUsername: "token-user",
-        tokenEmail: "token-user@example.test",
+        tokenEmail: "id-token-claim@example.test",
         userInfoUsername: "userinfo-user",
         userInfoEmail: "userinfo-user@example.test",
       },
@@ -890,7 +890,7 @@ describe("builtin MCP automatic authentication", () => {
       endpoint: fixture.endpoint,
       identity: {
         subject: "untrusted-user",
-        tokenUsername: "untrusted-name",
+        tokenUsername: "claimed-by-invalid-token",
         tokenEmail: "untrusted@example.test",
         invalidIdToken: true,
       },
@@ -1120,5 +1120,89 @@ describe("builtin MCP automatic authentication", () => {
     expect(
       flow.provider.registrationBodies[0]?.token_endpoint_auth_method,
     ).toBeUndefined();
+  });
+
+  it("connectors-automatic-033 publishes two concurrent no-auth accounts with exactly one default", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "none",
+      authentication: "none",
+      endpoint: fixture.endpoint,
+    });
+    const actor = member();
+
+    const [first, second] = await Promise.all([
+      connectNow(actor, fixture),
+      connectNow(actor, fixture),
+    ]);
+    const listed = await listAccounts(actor, fixture);
+
+    expect(first.connectionId).toBeTruthy();
+    expect(second.connectionId).toBeTruthy();
+    expect(first.connectionId).not.toBe(second.connectionId);
+    expect(new Set(listed.map((account) => account.id))).toStrictEqual(
+      new Set([first.connectionId, second.connectionId]),
+    );
+    expect(listed).toHaveLength(2);
+    expect(listed.filter((account) => account.isDefault)).toHaveLength(1);
+    for (const account of listed) {
+      expect(account).toMatchObject({
+        authMethod: "smart-connect",
+        connectionStatus: "connected",
+      });
+    }
+  });
+
+  it("connectors-automatic-059 does not resurrect an account deleted during its reconnect token exchange", async () => {
+    const fixture = automaticMcpCatalogFixture("oauth");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      endpoint: fixture.endpoint,
+    });
+    const actor = member();
+    const first = await authorize(actor, fixture);
+    await callback({
+      state: first.state,
+      iss: provider.issuer,
+      code: "first-code",
+    });
+    const connectionId = await completedConnection(
+      actor,
+      fixture,
+      first.oauthAttemptId,
+    );
+    const second = await authorize(actor, fixture, reconnect(connectionId));
+    let reconnectExchanges = 0;
+    server.use(
+      http.post(`${provider.issuer}/token`, async () => {
+        reconnectExchanges += 1;
+        act(actor);
+        await accept(
+          accounts.delete({
+            headers,
+            params: { connectionId },
+            body: { target: { kind: "builtin", connectorSlug: fixture.slug } },
+          }),
+          [200],
+        );
+        // Fall through so the provider then returns its new tokens.
+        return undefined;
+      }),
+    );
+
+    const completed = await callback({
+      state: second.state,
+      iss: provider.issuer,
+      code: "reconnect-code",
+    });
+    if (reconnectExchanges !== 1) {
+      throw new Error("Expected exactly one reconnect token exchange");
+    }
+    const completion = await receipt(actor, fixture, second.oauthAttemptId);
+    const listed = await listAccounts(actor, fixture);
+
+    expect(completed.status).toBe("error");
+    expect(completion.status).toBe(404);
+    expect(listed).toStrictEqual([]);
   });
 });
