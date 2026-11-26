@@ -151,7 +151,7 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
                     .unwrap()
                     .push(duplicate);
             }
-            _ => unreachable!(),
+            _ => panic!("unexpected invalid bundle case {kind}"),
         }
         let error = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap_err();
         assert!(!error.contains("secret-fixture"));

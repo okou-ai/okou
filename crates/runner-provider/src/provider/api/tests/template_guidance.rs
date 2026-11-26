@@ -64,7 +64,7 @@ fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() 
                     serde_json::json!([template("user-template"), template("user-template")])
             }
             "null" => body["startupInputs"]["contentBundles"]["templates"] = Value::Null,
-            _ => unreachable!(),
+            _ => panic!("unexpected invalid template case {kind}"),
         }
         let error = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap_err();
         assert!(!error.contains("secret-fixture"));
