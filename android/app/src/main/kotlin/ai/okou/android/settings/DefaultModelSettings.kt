@@ -209,7 +209,6 @@ internal class DefaultModelSettings(
         if (destination == null && page != null) resumeReadback()
         presented = true
         destination = page
-        if (page != SettingsDestination.Overview) clearSettingsCatalogRefreshFailure()
         synchronizeReads()
     }
 
@@ -302,10 +301,11 @@ internal class DefaultModelSettings(
                 (composerOptionsVisible ||
                     destination == SettingsDestination.Overview ||
                     destination == SettingsDestination.Instructions)
+        if (!catalogVisible || destination != SettingsDestination.Overview)
+            clearSettingsCatalogRefreshFailure()
         if (!catalogVisible) {
             catalogRead?.cancel()
             catalogRead = null
-            clearSettingsCatalogRefreshFailure()
         } else if (catalogRead == null) {
             catalogRead = scope.launch { refreshCatalog() }
         }
@@ -369,10 +369,6 @@ internal class DefaultModelSettings(
     }
 
     private suspend fun refreshCatalog() {
-        val current = mutable.value
-        if (current.catalogUnavailable)
-            mutable.value =
-                current.copy(catalogUnavailable = false, settingsCatalogRefreshFailure = null)
         var failures = 0
         while (authorized()) {
             try {

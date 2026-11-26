@@ -385,8 +385,10 @@ class DefaultModelSettingsTest {
             assertEquals(3, attempts.size)
             model.showSettings(SettingsDestination.ModelAccounts)
             assertNull(model.state.value.settingsCatalogRefreshFailure)
+            model.foreground(false)
             unavailable = false
             model.showSettings(SettingsDestination.Overview)
+            model.foreground(true)
             runCurrent()
             assertFalse(model.state.value.catalogUnavailable)
             assertNull(model.state.value.settingsCatalogRefreshFailure)
