@@ -287,4 +287,44 @@ describe("POST /api/billing/portal", () => {
       return_url: returnUrl,
     });
   });
+
+  it("billing-portal-013 rejects a return URL on an unrelated origin", async () => {
+    const { portal } = setup();
+
+    const response = await accept(
+      portal.create({
+        headers,
+        body: { returnUrl: "https://evil.example.com/settings/billing" },
+      }),
+      [400],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      message: "returnUrl must match the platform origin",
+      code: "BAD_REQUEST",
+    });
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("billing-portal-014 rejects a return URL that only starts with okou.ai", async () => {
+    const { portal } = setup();
+
+    const response = await accept(
+      portal.create({
+        headers,
+        body: { returnUrl: "https://okou.ai.evil.example/settings/billing" },
+      }),
+      [400],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      message: "returnUrl must match the platform origin",
+      code: "BAD_REQUEST",
+    });
+    expect(
+      context.mocks.stripe.billingPortal.sessions.create,
+    ).not.toHaveBeenCalled();
+  });
 });

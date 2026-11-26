@@ -410,13 +410,13 @@ billing	src/signals/routes/__tests__/billing-invoices.test.ts	billing-invoices-0
 billing	src/signals/routes/__tests__/billing-invoices.test.ts	billing-invoices-005	planned				
 billing	src/signals/routes/__tests__/billing-model-reporting.test.ts	billing-model-reporting-001	planned				
 billing	src/signals/routes/__tests__/billing-model-reporting.test.ts	billing-model-reporting-004	planned				
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-003	rewritten	27.4	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-004	rewritten	91.2	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-005	rewritten	73.4	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-011	rewritten	16.2	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-012	rewritten	34.0	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-013	planned		extension after sandbox reset		B01
-billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-014	planned		extension after sandbox reset		B01
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-003	rewritten	26.9	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-004	rewritten	88.0	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-005	rewritten	49.2	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-011	rewritten	17.2	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-012	rewritten	36.4	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-013	rewritten	6.0	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	B01
+billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-014	rewritten	4.9	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	B01
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-001	planned				
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-003	planned				
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-005	planned				
