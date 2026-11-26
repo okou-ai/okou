@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import ai.okou.android.ReadFailureAnnouncement
 import ai.okou.android.artifacts.ArtifactFilter
 import ai.okou.android.artifacts.ExternalImagePreviewPrefix
 import ai.okou.android.chat.ConversationAnchor
@@ -284,13 +285,7 @@ internal class ChatSearchState(
     var pendingFocus by mutableStateOf(focusedResult)
         private set
 
-    private var announcedReadFailure = false
-
-    fun shouldAnnounceReadFailure(failed: Boolean): Boolean {
-        val announce = failed && !announcedReadFailure
-        announcedReadFailure = failed
-        return announce
-    }
+    val readFailureAnnouncement = ReadFailureAnnouncement()
 
     fun edit(value: TextFieldValue) {
         query = value
@@ -325,13 +320,13 @@ internal class ChatSearchState(
     fun reset() {
         type = WorkspaceSearchType.All
         clearQuery()
+        readFailureAnnouncement.reset()
         resetPosition()
     }
 
     private fun resetPosition() {
         pendingAnchor = null
         pendingFocus = null
-        announcedReadFailure = false
         position.requestScrollToItem(0)
     }
 

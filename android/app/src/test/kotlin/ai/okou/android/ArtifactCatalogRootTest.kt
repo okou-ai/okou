@@ -403,6 +403,12 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText(fixture.summary.title).assertIsDisplayed()
         compose.onNodeWithTag("artifact_refresh_feedback").assertIsDisplayed()
 
+        compose.mainClock.advanceTimeBy(5_500L)
+        compose.onNodeWithText(failure).assertDoesNotExist()
+        failRefresh.set(true)
+        resumeArtifactRoute()
+        awaitText(failure)
+
         val videos = compose.onNodeWithText("Videos")
         videos.performClick()
         awaitText(fixture.video.title)

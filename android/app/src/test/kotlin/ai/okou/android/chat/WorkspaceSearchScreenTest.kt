@@ -309,6 +309,19 @@ class WorkspaceSearchScreenTest {
         emptyMessages.assertIsDisplayed()
         partial.assertIsDisplayed()
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+
+        compose.onNodeWithTag("search_type_Chats").performClick()
+        partial.assertDoesNotExist()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        partial.assertIsDisplayed()
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
+        partial.assertDoesNotExist()
+        compose.runOnIdle {
+            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshFailed = true))
+        }
+        emptyMessages.assertIsDisplayed()
+        partial.assertIsDisplayed()
     }
 
     @Test

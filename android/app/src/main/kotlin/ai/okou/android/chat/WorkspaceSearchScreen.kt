@@ -10,6 +10,7 @@ import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
 import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberReadFailureFeedback
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
 import ai.okou.android.state.ChatSearchState
@@ -38,8 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -544,7 +543,6 @@ private fun SearchResults(
                 R.string.chat_search_artifacts_failed
             else -> null
         }
-    val snackbar = remember(search) { SnackbarHostState() }
     val notice =
         if (readFailed && !pending && !showFailure) {
             val message =
@@ -552,11 +550,13 @@ private fun SearchResults(
                 else R.string.chat_search_unavailable
             stringResource(message)
         } else null
-    LaunchedEffect(search, keyword, type, notice) {
-        if (search.shouldAnnounceReadFailure(notice != null) && notice != null) {
-            snackbar.showSnackbar(notice, duration = SnackbarDuration.Indefinite)
-        }
-    }
+    val snackbar =
+        rememberReadFailureFeedback(
+            scope = keyword to type,
+            failureRound = Unit.takeIf { notice != null },
+            message = notice,
+            announcement = search.readFailureAnnouncement,
+        )
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
@@ -755,6 +755,7 @@ private fun SearchResults(
             WorkspaceFeedbackHost(
                 snackbar,
                 Modifier.padding(bottom = 8.dp),
+                manageTimeout = false,
                 surfaceModifier = Modifier.testTag("chat_search_feedback"),
             )
         }
