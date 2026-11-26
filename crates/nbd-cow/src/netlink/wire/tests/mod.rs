@@ -7,7 +7,7 @@ const GENL_VERSION_OFFSET: usize = NLMSG_HEADER_LEN + 1;
 const GENL_RESERVED_OFFSET: usize = NLMSG_HEADER_LEN + U16_LEN;
 
 fn nlmsg_flags(msg: &[u8]) -> u16 {
-    read_u16_at(msg, NLMSG_FLAGS_OFFSET, "flags slice", "flags conversion").unwrap()
+    u16::from_ne_bytes(field_bytes(msg, NLMSG_FLAGS_OFFSET, "flags slice").unwrap())
 }
 
 #[test]
@@ -16,11 +16,11 @@ fn build_nla_basic() {
     let nla = build_nla(42, payload);
 
     assert_eq!(
-        read_u16_at(&nla, 0, "len slice", "len conversion").unwrap(),
+        u16::from_ne_bytes(field_bytes(&nla, 0, "len slice").unwrap()),
         6
     );
     assert_eq!(
-        read_u16_at(&nla, U16_LEN, "type slice", "type conversion").unwrap(),
+        u16::from_ne_bytes(field_bytes(&nla, U16_LEN, "type slice").unwrap()),
         42
     );
     assert_eq!(
@@ -56,7 +56,7 @@ fn build_nla_empty_payload() {
 
     assert_eq!(nla.len(), NLA_HEADER_LEN);
     assert_eq!(
-        read_u16_at(&nla, 0, "len slice", "len conversion").unwrap(),
+        u16::from_ne_bytes(field_bytes(&nla, 0, "len slice").unwrap()),
         NLA_HEADER_LEN as u16
     );
 }
@@ -67,7 +67,7 @@ fn build_nested_nla_sets_nested_flag() {
     let nla = build_nested_nla(7, payload);
 
     assert_eq!(
-        read_u16_at(&nla, U16_LEN, "type slice", "type conversion").unwrap(),
+        u16::from_ne_bytes(field_bytes(&nla, U16_LEN, "type slice").unwrap()),
         7 | NLA_F_NESTED
     );
     assert_eq!(nla.len(), 8);
@@ -81,18 +81,12 @@ fn build_nested_nla_matches_regular_payload_and_padding() {
 
     assert_eq!(nested_nla.len(), nla.len());
     assert_eq!(
-        read_u16_at(&nested_nla, 0, "nested len slice", "nested len conversion").unwrap(),
-        read_u16_at(&nla, 0, "len slice", "len conversion").unwrap()
+        u16::from_ne_bytes(field_bytes(&nested_nla, 0, "nested len slice").unwrap()),
+        u16::from_ne_bytes(field_bytes(&nla, 0, "len slice").unwrap())
     );
     assert_eq!(
-        read_u16_at(
-            &nested_nla,
-            U16_LEN,
-            "nested type slice",
-            "nested type conversion"
-        )
-        .unwrap(),
-        read_u16_at(&nla, U16_LEN, "type slice", "type conversion").unwrap() | NLA_F_NESTED
+        u16::from_ne_bytes(field_bytes(&nested_nla, U16_LEN, "nested type slice").unwrap()),
+        u16::from_ne_bytes(field_bytes(&nla, U16_LEN, "type slice").unwrap()) | NLA_F_NESTED
     );
     assert_eq!(nested_nla.get(NLA_HEADER_LEN..), nla.get(NLA_HEADER_LEN..));
 }
@@ -107,19 +101,13 @@ fn build_genl_msg_can_omit_ack_for_family_lookup() {
     assert_eq!(nlmsg_flags(&msg), NLM_F_REQUEST);
     assert_eq!(header.seq, 42);
     assert_eq!(
-        read_u32_at(&msg, NLMSG_PID_OFFSET, "pid slice", "pid conversion").unwrap(),
+        u32::from_ne_bytes(field_bytes(&msg, NLMSG_PID_OFFSET, "pid slice").unwrap()),
         0
     );
     assert_eq!(msg.get(GENL_CMD_OFFSET), Some(&3));
     assert_eq!(msg.get(GENL_VERSION_OFFSET), Some(&1));
     assert_eq!(
-        read_u16_at(
-            &msg,
-            GENL_RESERVED_OFFSET,
-            "genl reserved slice",
-            "genl reserved conversion"
-        )
-        .unwrap(),
+        u16::from_ne_bytes(field_bytes(&msg, GENL_RESERVED_OFFSET, "genl reserved slice").unwrap()),
         0
     );
     assert_eq!(msg.get(GENL_ATTR_OFFSET..), Some(attrs.as_slice()));

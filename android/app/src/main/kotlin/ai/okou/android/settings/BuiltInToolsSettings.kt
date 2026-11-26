@@ -7,7 +7,9 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -47,6 +49,7 @@ internal class BuiltInToolsSettings(
     private val cache: WorkspaceSettingsCache?,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
     private val notice: (SettingsNotice) -> Unit,
 ) {
     private val mutable = MutableStateFlow(BuiltInToolsState())
@@ -66,6 +69,7 @@ internal class BuiltInToolsSettings(
         visible = false
         read?.cancel()
         read = null
+        clearCatalogFeedback()
     }
 
     fun leaveSettings() {
@@ -78,6 +82,7 @@ internal class BuiltInToolsSettings(
         if (!visible || !authorized()) return
         // Reconnecting starts fresh reads even if a request on the old link is still pending.
         read?.cancel()
+        clearCatalogFeedback()
         read = scope.launch {
             launch { refreshCatalog() }
             launch { refreshToolPreferences() }
@@ -87,16 +92,35 @@ internal class BuiltInToolsSettings(
 
     private suspend fun refreshCatalog() {
         val current = state.value.catalog
-        if (current.value != null && !current.isStale(System.currentTimeMillis())) return
-        mutable.update { it.copy(catalog = it.catalog.copy(refreshing = true)) }
+        if (current.value != null && !current.isStale(nowMillis())) return
+        mutable.update {
+            it.copy(
+                catalog = it.catalog.copy(unavailable = false, refreshing = current.value != null),
+            )
+        }
         val families = readResource(reportFailure = false, load = service::catalog)
+        currentCoroutineContext().ensureActive()
         if (!authorized()) return
         mutable.update {
             it.copy(
                 catalog =
-                    if (families == null) it.catalog.copy(unavailable = true, refreshing = false)
-                    else SettingsRead(value = families, readAt = System.currentTimeMillis()),
+                    if (families == null)
+                        it.catalog.copy(
+                            unavailable = true,
+                            refreshing = false,
+                            refreshFailure = current.value?.let { SettingsRefreshFailure() },
+                        )
+                    else SettingsRead(value = families, readAt = nowMillis()),
             )
+        }
+    }
+
+    private fun clearCatalogFeedback() {
+        mutable.update {
+            val catalog = it.catalog
+            if (catalog.refreshing || catalog.refreshFailure != null)
+                it.copy(catalog = catalog.copy(refreshing = false, refreshFailure = null))
+            else it
         }
     }
 
