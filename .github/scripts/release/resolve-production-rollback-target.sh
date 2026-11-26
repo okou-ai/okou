@@ -315,6 +315,18 @@ if ! git merge-base --is-ancestor "$agent_contraction_commit" "$TARGET_COMMIT"; 
   fail "Rollback target predates the Agent storage contraction: ${agent_contraction_commit}."
 fi
 
+# Identity uniqueness outlives the activating API. Earlier writers cannot replace
+# a duplicate authorization after its indexes exist. Keep the separately deployed
+# preparation eligible by resolving its merged main history, not activation.
+if ! connector_identity_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- turbo/packages/db/src/migrations/1634_connector_identity_writer_preparation.sql | sed -n '1p') ||
+  [[ ! "$connector_identity_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Connector identity writer preparation on main."
+fi
+if ! git merge-base --is-ancestor "$connector_identity_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Connector identity writer preparation: ${connector_identity_preparation_commit}."
+fi
+
 # Workflows retain the authoritative cursor in Cloudflare. Earlier APIs also
 # require the retired SQL ownership marker and cannot serve the contracted schema.
 wechat_workflows_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \

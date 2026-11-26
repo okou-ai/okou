@@ -63,6 +63,29 @@ export const connectors = pgTable(
   (table) => {
     return [
       index("idx_connectors_org").on(table.orgId),
+      uniqueIndex("idx_connectors_builtin_external_identity")
+        .on(
+          table.orgId,
+          table.userId,
+          table.connectorSlug,
+          table.externalId,
+          table.externalIssuer,
+          sql`(CASE WHEN ${table.connectorSlug} = 'aws' THEN substring(${table.externalUsername} from '[(]([^()]+)[)]$') WHEN ${table.connectorSlug} IN ('notion', 'slack', 'hubspot') AND ${table.externalIssuer} = '' THEN NULL ELSE '' END)`,
+        )
+        .where(
+          sql`${table.connectorSlug} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,
+        ),
+      uniqueIndex("idx_connectors_custom_external_identity")
+        .on(
+          table.orgId,
+          table.userId,
+          table.customConnectorId,
+          table.externalId,
+          table.externalIssuer,
+        )
+        .where(
+          sql`${table.customConnectorId} IS NOT NULL AND ${table.externalId} IS NOT NULL AND ${table.externalId} <> ''`,
+        ),
       index("idx_connectors_stripe_oauth_external_id")
         .on(table.externalId)
         .where(

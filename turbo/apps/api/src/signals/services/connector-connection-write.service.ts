@@ -12,6 +12,7 @@ import { logger } from "../../lib/log";
 import {
   connectorConnectionDefaultConflict,
   connectorConnectionExternalPrincipal,
+  connectorConnectionExternalConflict,
   connectorConnectionIdentityValues,
   connectorConnectionReplacementValues,
   connectorConnectionTargetValues,
@@ -439,9 +440,10 @@ type ConnectorConnectionMetadataWrite = {
       readonly kind: "insert";
       readonly phase: "default" | "sibling";
       readonly values: typeof connectors.$inferInsert;
-      readonly conflict: ReturnType<
-        typeof connectorConnectionDefaultConflict
-      > | null;
+      readonly conflict:
+        | ReturnType<typeof connectorConnectionDefaultConflict>
+        | ReturnType<typeof connectorConnectionExternalConflict>
+        | null;
     }
 );
 
@@ -467,7 +469,9 @@ function connectorConnectionMetadataInsert(
     },
     conflict: isDefault
       ? connectorConnectionDefaultConflict(args.target.kind)
-      : null,
+      : insert.matchExternalId !== null
+        ? connectorConnectionExternalConflict(args.target.kind)
+        : null,
   };
 }
 

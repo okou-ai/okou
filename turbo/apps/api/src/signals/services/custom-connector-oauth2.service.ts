@@ -1,4 +1,3 @@
-import { connectorIdentityConflictAccount$ } from "./connector-identity-conflict-recovery";
 import {
   connectorHttpsReturnState,
   connectorHttpsCallbackUrl,
@@ -1915,7 +1914,12 @@ function customOAuth2CredentialContractRef(
 function customOAuthConnectionMutationValues(
   args: Pick<
     StoreCustomConnectorOAuth2ConnectionArgs,
-    "orgId" | "userId" | "connectorId" | "account"
+    | "orgId"
+    | "userId"
+    | "connectorId"
+    | "account"
+    | "token"
+    | "automaticOAuthBinding"
   >,
   contract: ReturnType<typeof customConnectorOAuth2CredentialContractFromRows>,
 ): ConnectorConnectionMutationArgs {
@@ -1924,6 +1928,9 @@ function customOAuthConnectionMutationValues(
     userId: args.userId,
     target: { kind: "custom", customConnectorId: args.connectorId },
     mutation: args.account,
+    matchExternalIssuer: args.automaticOAuthBinding?.issuer,
+    matchExternalId:
+      args.account.intent === "add" ? args.token.userInfo?.id : undefined,
     allowSiblings: !isIntegrationManagedCustomConnectorProviderAdapter(
       contract.providerAdapter,
     ),
@@ -1951,11 +1958,10 @@ const customOAuthPublicationRow = object({
   complete: literal(1),
 }).strict();
 
-const storeCustomConnectorOAuth2ConnectionAttempt$ = command(
+export const storeCustomConnectorOAuth2Connection$ = command(
   async function storeCustomConnectorOAuth2Connection(
     { set },
     args: StoreCustomConnectorOAuth2ConnectionArgs,
-    matchExternalIdentity: boolean,
     signal: AbortSignal,
   ): Promise<StoreCustomConnectorOAuth2ConnectionResult> {
     const db = set(writeDb$);
@@ -1973,15 +1979,10 @@ const storeCustomConnectorOAuth2ConnectionAttempt$ = command(
       contractRef,
     );
     signal.throwIfAborted();
-    const mutationReadArgs = {
-      ...customOAuthConnectionMutationValues(args, contract),
-      ...(matchExternalIdentity
-        ? {
-            matchExternalId: args.token.userInfo?.id,
-            matchExternalIssuer: args.automaticOAuthBinding?.issuer,
-          }
-        : {}),
-    };
+    const mutationReadArgs = customOAuthConnectionMutationValues(
+      args,
+      contract,
+    );
     const revisions = new Map<string, string>();
     const resolution = await (async () => {
       let read = connectionMutationReadPlan(mutationReadArgs);
@@ -2081,51 +2082,6 @@ const storeCustomConnectorOAuth2ConnectionAttempt$ = command(
         marketingRewardEventId,
       };
     })();
-  },
-);
-export const storeCustomConnectorOAuth2Connection$ = command(
-  async (
-    { set },
-    args: StoreCustomConnectorOAuth2ConnectionArgs,
-    signal: AbortSignal,
-  ): Promise<StoreCustomConnectorOAuth2ConnectionResult> => {
-    const outcome = await settle(
-      set(storeCustomConnectorOAuth2ConnectionAttempt$, args, false, signal),
-    );
-    if (signal.aborted) {
-      // An accepted publication still returns its committed result.
-      if (outcome.ok) {
-        return outcome.value;
-      }
-      signal.throwIfAborted();
-    }
-    if (outcome.ok) {
-      return outcome.value;
-    }
-    const existing =
-      args.account.intent === "add"
-        ? await set(
-            connectorIdentityConflictAccount$,
-            {
-              error: outcome.error,
-              orgId: args.orgId,
-              userId: args.userId,
-              target: { kind: "custom", customConnectorId: args.connectorId },
-              externalId: args.token.userInfo?.id,
-              issuer: args.automaticOAuthBinding?.issuer,
-            },
-            signal,
-          )
-        : undefined;
-    if (!existing) {
-      throw outcome.error;
-    }
-    return await set(
-      storeCustomConnectorOAuth2ConnectionAttempt$,
-      args,
-      true,
-      signal,
-    );
   },
 );
 
