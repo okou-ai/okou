@@ -368,7 +368,7 @@ class PendingWorkspaceRootTest {
         val search = compose.onNodeWithTag("workspace_search_entry")
         val startupBounds = search.getUnclippedBoundsInRoot()
         val release = updateRelease("99.0.0")
-        val action = app.getString(R.string.updates_toolbar)
+        val action = app.getString(R.string.updates_download)
         val button = compose.onNodeWithContentDescription(action)
         val overflow = compose.onNodeWithContentDescription("More actions")
         val previousService = app.updateService

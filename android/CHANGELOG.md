@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.58.0](https://github.com/okou-ai/okou/compare/android-v0.57.4...android-v0.58.0) (2026-11-26)
+
+
+### Features
+
+* **android:** choose the model in existing conversations ([#50963](https://github.com/okou-ai/okou/issues/50963)) ([f9ba765](https://github.com/okou-ai/okou/commit/f9ba7657cf3535b3bd6030e347caabbc7ba7458d))
+
+
+### Bug Fixes
+
+* **android:** align connector tabs and external code verification ([#50972](https://github.com/okou-ai/okou/issues/50972)) ([f714cb3](https://github.com/okou-ai/okou/commit/f714cb3144332263492376fcf17b0bc8731c6764))
+* **android:** align the workspace entry list surface ([#50999](https://github.com/okou-ai/okou/issues/50999)) ([4016b07](https://github.com/okou-ai/okou/commit/4016b0780e0abb9eb228be70d634d8a5752f6972))
+* **android:** align update toolbar and progress styles ([#51006](https://github.com/okou-ai/okou/issues/51006)) ([66ef929](https://github.com/okou-ai/okou/commit/66ef929e506148b455e26940214ab685b29e49d8))
+* **android:** revalidate workspace credit visibility ([#51000](https://github.com/okou-ai/okou/issues/51000)) ([b663e2a](https://github.com/okou-ai/okou/commit/b663e2a325503408f35b05309a767fc16ffbe39d))
+
+## [0.57.4](https://github.com/okou-ai/okou/compare/android-v0.57.3...android-v0.57.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align chat list action controls with design ([#50953](https://github.com/okou-ai/okou/issues/50953)) ([5d8eb5c](https://github.com/okou-ai/okou/commit/5d8eb5c70fae4e998e1f6d59376af3e02a2afe23))
+* **android:** align settings feedback and native controls ([#50958](https://github.com/okou-ai/okou/issues/50958)) ([986b9fe](https://github.com/okou-ai/okou/commit/986b9fe0c60aa7f1af40b26d4948f62afe0bd839))
+* **android:** align workflow tabs and outlined form controls ([#50965](https://github.com/okou-ai/okou/issues/50965)) ([ce66edb](https://github.com/okou-ai/okou/commit/ce66edbc01afe82fcdf41e3953d96f061872fe39))
+* **android:** align workspace search read feedback with design ([#50966](https://github.com/okou-ai/okou/issues/50966)) ([3b1592a](https://github.com/okou-ai/okou/commit/3b1592a3aa4123a520abd87a5674fef48cfe1710))
+
 ## [0.57.3](https://github.com/okou-ai/okou/compare/android-v0.57.2...android-v0.57.3) (2026-11-26)
 
 

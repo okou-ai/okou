@@ -1,5 +1,31 @@
 # Changelog
 
+## [10.44.11](https://github.com/okou-ai/okou/compare/cli-v10.44.10...cli-v10.44.11) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.130.0
+    * @okouai/core bumped to 8.883.1
+    * @okouai/pi-agent-runtime bumped to 1.52.85
+
+## [10.44.10](https://github.com/okou-ai/okou/compare/cli-v10.44.9...cli-v10.44.10) (2026-11-26)
+
+
+### Bug Fixes
+
+* **browser:** retain cli proxy shutdown diagnostics ([#50961](https://github.com/okou-ai/okou/issues/50961)) ([715a4e4](https://github.com/okou-ai/okou/commit/715a4e4a166d009ffadcbc6d466c261e69211273))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.883.0
+    * @okouai/pi-agent-runtime bumped to 1.52.84
+
 ## [10.44.9](https://github.com/okou-ai/okou/compare/cli-v10.44.8...cli-v10.44.9) (2026-11-26)
 
 

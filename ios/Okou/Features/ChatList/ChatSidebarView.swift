@@ -65,12 +65,6 @@ struct ChatSidebarView: View {
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
   @State private var deletingThreadID: String?
-  @State private var showsForYou = false
-  private func openForYou() { showsForYou = true }
-  private func showForYouChat() {
-    showsForYou = false
-    close()
-  }
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -227,11 +221,6 @@ struct ChatSidebarView: View {
       )
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
-    .fullScreenCover(isPresented: $showsForYou) {
-      ForYouView(workspace: store) {
-        showForYouChat()
-      }
-    }
     .sheet(
       isPresented: Binding(
         get: { searchPresented ?? store.search.isPresented },
@@ -264,7 +253,8 @@ struct ChatSidebarView: View {
 
   /// For you is always the list's first row, whatever the chats below it are doing.
   private var forYouRow: some View {
-    ForYouSidebarRow(summary: forYouSummary, rowInset: rowInset, open: openForYou)
+    ForYouSidebarRow(
+      summary: forYouSummary, rowInset: rowInset, open: store.sidebarInteraction.openForYou)
   }
 
   /// For you, then the projects, oldest first, then the chats outside them. Each list leads

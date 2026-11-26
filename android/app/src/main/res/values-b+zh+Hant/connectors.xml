@@ -72,6 +72,9 @@
     <string name="connector_change_failed">操作未完成。請核對帳號後再試一次。</string>
     <string name="connector_device_code">請在服務提供者的頁面輸入此代碼</string>
     <string name="connector_external_code">授權碼</string>
+    <string name="connector_checking_code">正在核對…</string>
+    <string name="connector_external_code_too_long">授權碼最多 %1$d 個字元。</string>
+    <string name="connector_external_code_failed">授權碼核對失敗。</string>
     <string name="connector_external_instructions">請在服務提供者的頁面完成授權，再於此輸入授權碼。</string>
     <string name="connector_submit_code">確認授權碼</string>
     <string name="connector_working">正在核對帳號…</string>

@@ -849,9 +849,11 @@ pub(super) fn prepare_run_payload_for_run(
         validate_codex_runtime_config_field(config).map_err(RunnerError::Internal)?;
     }
 
-    let disallowed_tools = if effective_cli_framework(&context.cli_agent_type)
-        == EffectiveCliFramework::ClaudeCode
-        && let Some(values) = &context.disallowed_tools
+    // The guest maps these Claude tool names onto Antigravity's native tools.
+    let disallowed_tools = if matches!(
+        effective_cli_framework(&context.cli_agent_type),
+        EffectiveCliFramework::ClaudeCode | EffectiveCliFramework::Antigravity
+    ) && let Some(values) = &context.disallowed_tools
     {
         validate_disallowed_tools(values).map_err(RunnerError::Internal)?;
         values.join(",")

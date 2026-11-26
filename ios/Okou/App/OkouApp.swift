@@ -237,7 +237,7 @@ private struct WorkspaceRootView: View {
   }
 
   private var workspace: some View {
-    WorkspaceNavigation(sidebar: sidebar) {
+    WorkspaceNavigation(sidebar: sidebar, forYouBusy: store.forYou.busy) {
       // Mount the sidebar after identity and its complete local baseline are restored.
       Group {
         if store.hasRestoredSidebar,
@@ -256,11 +256,16 @@ private struct WorkspaceRootView: View {
           .chatFeedbackOverlay(store: store, isPresented: sidebar.isOpen)
         }
       }
+    } forYou: {
+      ForYouView(workspace: store, showChat: closeSidebar, goBack: sidebar.goBack)
     } chat: {
       chatPage
     }
     .ignoresSafeArea()
     .sensoryFeedback(.selection, trigger: sidebar.isOpen)
+    .task(id: sidebar.path.contains(.forYou)) {
+      if sidebar.path.contains(.forYou) { await store.forYou.beginVisit() }
+    }
     .task(id: store.threadFeedback?.id) {
       guard let feedback = store.threadFeedback else { return }
       UIAccessibility.post(notification: .announcement, argument: feedback.message)
@@ -349,7 +354,7 @@ private struct WorkspaceRootView: View {
       }
     }
     .safeAreaBar(edge: .top, spacing: 0) {
-      ChatWorkspaceHeader(store: store, height: headerHeight, openSidebar: openSidebar)
+      ChatWorkspaceHeader(store: store, height: headerHeight)
         .onGeometryChange(for: CGFloat.self) {
           $0.size.height
         } action: {
@@ -362,9 +367,9 @@ private struct WorkspaceRootView: View {
     ) { flow in
       WorkspaceForkSheet(store: store, flow: flow)
     }
-    .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
+    .chatFeedbackOverlay(store: store, isPresented: sidebar.showsChat)
     .composerSuggestionOverlay(
-      topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
+      topInset: topContentHeight, isEnabled: sidebar.showsChat && !sidebar.isTransitioning
     )
   }
 
@@ -408,10 +413,6 @@ private struct WorkspaceRootView: View {
     if await lifecycle.openPendingNotification(), !Task.isCancelled {
       closeSidebar()
     }
-  }
-
-  private func openSidebar() {
-    sidebar.setOpen(true)
   }
 
   private func closeSidebar() {

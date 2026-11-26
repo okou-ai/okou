@@ -106,6 +106,8 @@ import java.text.NumberFormat
 private const val ProjectMotionMillis = 250
 private val ChatListLeadingIconSize = 18.dp
 private val ChatListLeadingIconGap = 8.dp
+private val ChatListRowFocusInset = 3.dp
+private const val ChatListRowHoverAlpha = 0.08f
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
@@ -117,10 +119,11 @@ private fun chatListRowBackground(
     selected: Boolean,
 ): Color {
     val colors = MaterialTheme.colorScheme
-    if (selected) return colors.secondaryContainer
     val hovered by interactions.collectIsHoveredAsState()
-    return if (hovered) colors.onBackground.copy(alpha = 0.05f).compositeOver(colors.background)
-    else colors.background
+    val background = if (selected) colors.secondaryContainer else colors.background
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onBackground
+    return if (hovered) foreground.copy(alpha = ChatListRowHoverAlpha).compositeOver(background)
+    else background
 }
 
 @Composable
@@ -949,7 +952,12 @@ private fun ProjectRow(
                 .focusRequester(rowFocus)
                 .focusProperties { canFocus = true }
                 .onFocusChanged { rowFocused = it.isFocused }
-                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
+                .updateFocusOutline(
+                    ChatListRowShape,
+                    colors.onBackground,
+                    keyboardOnly = true,
+                    outlineInset = ChatListRowFocusInset,
+                )
                 .combinedClickable(
                     interactionSource = interactions,
                     indication = ChatPressRipple,
@@ -1155,7 +1163,12 @@ private fun ChatRow(
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
-                .updateFocusOutline(ChatListRowShape, colors.onBackground, keyboardOnly = true)
+                .updateFocusOutline(
+                    ChatListRowShape,
+                    colors.onBackground,
+                    keyboardOnly = true,
+                    outlineInset = ChatListRowFocusInset,
+                )
                 .combinedClickable(
                     interactionSource = interactions,
                     indication = ChatPressRipple,

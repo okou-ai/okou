@@ -72,6 +72,9 @@
     <string name="connector_change_failed">Impossible de terminer cette action. Vérifiez le compte et réessayez.</string>
     <string name="connector_device_code">Saisissez ce code sur la page du fournisseur</string>
     <string name="connector_external_code">Code d’autorisation</string>
+    <string name="connector_checking_code">Vérification…</string>
+    <string name="connector_external_code_too_long">Longueur maximale du code de %1$d.</string>
+    <string name="connector_external_code_failed">Échec de la vérification du code.</string>
     <string name="connector_external_instructions">Terminez l’autorisation sur la page du fournisseur, puis saisissez le code ici.</string>
     <string name="connector_submit_code">Confirmer le code</string>
     <string name="connector_working">Vérification du compte…</string>

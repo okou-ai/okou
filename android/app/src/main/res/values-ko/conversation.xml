@@ -62,4 +62,6 @@
     </plurals>
     <string name="conversation_link_unavailable">이 대화 링크를 사용할 수 없습니다</string>
     <string name="conversation_link_no_browser">이 링크를 열 수 있는 브라우저가 없습니다</string>
+    <string name="chat_model_check_required">저장된 모델을 확인하지 못했습니다.</string>
+    <string name="chat_model_save_rejected">이 채팅의 모델을 저장하지 못했습니다.</string>
 </resources>

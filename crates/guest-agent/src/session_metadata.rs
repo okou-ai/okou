@@ -93,7 +93,14 @@ impl SessionHistoryLaunchSource {
                         });
                 (thread_id, source)
             }
-            Self::Antigravity => return None,
+            // agy keeps no resumable native history, but its conversation ID
+            // still identifies the session for finalization.
+            Self::Antigravity => {
+                if !is_valid_cli_agent_session_id(raw_session_id) {
+                    return None;
+                }
+                (raw_session_id.to_string(), None)
+            }
             Self::Pi => {
                 if !is_valid_cli_agent_session_id(raw_session_id) {
                     return None;

@@ -1273,3 +1273,28 @@ fn non_failure_codex_event_has_no_failure_diagnostic() {
 //   - `tests/codex_client_cases/codex_session_resume.rs` (codex variant)
 // The Claude/Codex helpers are private; their contracts are
 // exercised transitively through `send_event`.
+
+#[test]
+fn antigravity_init_captures_conversation_without_native_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = SessionMetadataStore::default();
+    let capture = SessionMetadataCapture::new(
+        SessionHistoryLaunchSource::Antigravity,
+        store.clone(),
+        temp.path().join("session-id").to_str().unwrap(),
+    );
+    let conversation_id = "8d7b6a3e-2f1c-4a5b-9c8d-7e6f5a4b3c2d";
+
+    capture.capture_event(&serde_json::json!({
+        "type": "system",
+        "subtype": "init",
+        "session_id": conversation_id,
+        "model": "gemini-4-neon-medium"
+    }));
+
+    let captured = store
+        .captured()
+        .expect("the projected init should identify the session");
+    assert_eq!(captured.cli_agent_session_id(), conversation_id);
+    assert!(captured.history_source().is_none());
+}

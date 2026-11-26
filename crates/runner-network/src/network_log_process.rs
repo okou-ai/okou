@@ -2,6 +2,8 @@ use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
 use tracing::{Instrument, warn};
 
 use crate::error::{RunnerError, RunnerResult};
+#[cfg(any(test, feature = "test-support"))]
+use crate::network_log_drain::NetworkLogDrainRequest;
 use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainProducer};
 use runner_host::child_cleanup::kill_and_reap_child_on_drop;
 
@@ -142,25 +144,13 @@ impl NetworkLogProcess {
     pub(crate) fn noop(child_label: &'static str, drain_source: &'static str) -> Self {
         let cancel = CancellationToken::new();
         let token = cancel.clone();
-        let (drain, mut drain_rx) = NetworkLogDrainProducer::channel(drain_source);
+        let (drain, drain_rx) = NetworkLogDrainProducer::channel(drain_source);
         Self {
             child_label,
             cancel,
-            task: Some(AbortOnDropHandle::new(tokio::spawn(async move {
-                loop {
-                    tokio::select! {
-                        _ = token.cancelled() => {
-                            return DrainableLineReaderExit::Cancelled;
-                        }
-                        request = drain_rx.recv() => {
-                            let Some(request) = request else {
-                                return DrainableLineReaderExit::DrainChannelClosed;
-                            };
-                            request.ack();
-                        }
-                    }
-                }
-            }))),
+            task: Some(AbortOnDropHandle::new(tokio::spawn(run_fixture_monitor(
+                token, drain_rx, None,
+            )))),
             child_custody: ChildCustody::Empty,
             reap_gate: None,
             drain,
@@ -174,7 +164,7 @@ impl NetworkLogProcess {
 
     /// Replace the monitor with a task that panics when triggered.
     #[cfg(any(test, feature = "test-support"))]
-    #[allow(clippy::expect_used, clippy::panic)]
+    #[allow(clippy::expect_used)]
     pub async fn replace_monitor_with_panic_trigger_for_test(
         &mut self,
         drain_source: &'static str,
@@ -192,27 +182,41 @@ impl NetworkLogProcess {
         let token = self.cancel.clone();
         let trigger = std::sync::Arc::new(tokio::sync::Notify::new());
         let task_trigger = std::sync::Arc::clone(&trigger);
-        let (drain, mut drain_rx) = NetworkLogDrainProducer::channel(drain_source);
+        let (drain, drain_rx) = NetworkLogDrainProducer::channel(drain_source);
         self.drain = drain;
-        self.task = Some(AbortOnDropHandle::new(tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        return DrainableLineReaderExit::Cancelled;
-                    }
-                    request = drain_rx.recv() => {
-                        let Some(request) = request else {
-                            return DrainableLineReaderExit::DrainChannelClosed;
-                        };
-                        request.ack();
-                    }
-                    _ = task_trigger.notified() => {
-                        panic!("simulated network-log monitor task panic");
-                    }
-                }
-            }
-        })));
+        self.task = Some(AbortOnDropHandle::new(tokio::spawn(run_fixture_monitor(
+            token,
+            drain_rx,
+            Some(task_trigger),
+        ))));
         trigger
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[allow(clippy::panic)]
+async fn run_fixture_monitor(
+    cancel: CancellationToken,
+    mut drain_rx: tokio::sync::mpsc::Receiver<NetworkLogDrainRequest>,
+    panic_trigger: Option<std::sync::Arc<tokio::sync::Notify>>,
+) -> DrainableLineReaderExit {
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => return DrainableLineReaderExit::Cancelled,
+            request = drain_rx.recv() => {
+                let Some(request) = request else {
+                    return DrainableLineReaderExit::DrainChannelClosed;
+                };
+                request.ack();
+            }
+            _ = async {
+                if let Some(trigger) = &panic_trigger {
+                    trigger.notified().await;
+                }
+            }, if panic_trigger.is_some() => {
+                panic!("simulated network-log monitor task panic");
+            }
+        }
     }
 }
 
