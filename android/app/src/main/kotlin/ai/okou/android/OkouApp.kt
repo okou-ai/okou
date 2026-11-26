@@ -1682,11 +1682,15 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!feedbackInOverlay && !showChatList && visibleConversationId == null) {
-                WorkspaceFeedbackHost(
-                    snackbar,
-                    Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
-                )
+            if (!showChatList && visibleConversationId == null) {
+                // The visible host can move into the model picker during the same notice.
+                WorkspaceFeedbackTimeout(snackbar)
+                if (!feedbackInOverlay)
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
+                        manageTimeout = false,
+                    )
             }
         },
         topBar = {

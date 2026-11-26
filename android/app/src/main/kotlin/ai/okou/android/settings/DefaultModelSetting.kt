@@ -353,7 +353,11 @@ internal fun ModelPickerSheet(
             Box(propagateMinConstraints = true) {
                 panel(centered)
                 Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
-                    WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 8.dp))
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = 8.dp),
+                        manageTimeout = false,
+                    )
                 }
             }
     }
