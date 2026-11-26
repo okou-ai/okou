@@ -73,9 +73,9 @@ class ScreenshotScenario {
                 fun text(label: String) = visible(By.pkg(app.packageName).text(label))
                 fun control(id: Int) = visible(By.pkg(app.packageName).text(app.getString(id)).enabled(true))
                 fun action(id: Int) = control(id).click()
-                fun nameField() =
+                fun nameField(value: String) =
                     By.pkg(app.packageName).clazz("android.widget.EditText")
-                        .desc(app.getString(R.string.workflow_name))
+                        .text(value)
 
                 fun entry() =
                     By.pkg(app.packageName)
@@ -94,7 +94,7 @@ class ScreenshotScenario {
                 visible(entry()).click()
                 text(fixture.releaseTitle).click()
                 action(R.string.workflow_edit_instructions)
-                visible(nameField())
+                visible(By.pkg(app.packageName).desc(app.getString(R.string.workflow_name)))
                 ScreenshotCapture.capture("15-workflow-editor.png")
 
                 lateinit var model: WorkflowModel
@@ -111,8 +111,8 @@ class ScreenshotScenario {
                         submitted.countDown()
                     }
                     fixture.instructionSaveConflict = true
-                    visible(nameField()).text = draftName
-                    visible(nameField().text(draftName))
+                    visible(nameField(fixture.releaseTitle)).text = draftName
+                    visible(nameField(draftName))
                     action(R.string.workflow_save)
                     assertTrue("The enabled Save reaches the workflow PATCH", submitted.await(10, TimeUnit.SECONDS))
                     assertTrue(
@@ -125,7 +125,7 @@ class ScreenshotScenario {
                             10_000,
                         ) == true,
                     )
-                    assertEquals(draftName, visible(nameField()).text)
+                    assertEquals(draftName, visible(nameField(draftName)).text)
                     val conflict = text(app.getString(R.string.workflow_write_conflict))
                     val save = control(R.string.workflow_save)
                     assertTrue(conflict.visibleBounds.bottom <= save.visibleBounds.top)
