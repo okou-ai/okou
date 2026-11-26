@@ -5160,6 +5160,8 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
 
             model.listVisibilityChanged(true)
+            val searchHit = setOf(CHAT_PERSONAL)
+            assertEquals(searchHit, model.resolveSearchChats(searchHit))
             model.refreshList()
             advanceTimeBy(4_999)
             runCurrent()
@@ -5170,6 +5172,8 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(model.resolveSearchChats(searchHit).isEmpty())
+            assertEquals(2, attempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             advanceTimeBy(1_000)
             runCurrent()
