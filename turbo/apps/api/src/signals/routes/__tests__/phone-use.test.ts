@@ -3,7 +3,11 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import {
+  createDeferredPromise,
+  joinAll,
+  settleIncludingAbort,
+} from "../../utils";
 import { phoneUseContract as contract } from "@okouai/api-contracts/contracts/phone-use";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -975,14 +979,91 @@ test(
       );
     });
 
-    const replacement = await scenario.run(() => {
+    const beforeReplacement = await scenario.launchRun(
+      actor,
+      undefined,
+      thread.id,
+    );
+    const beforeReplacementHeaders = {
+      authorization: `Bearer ${beforeReplacement.token}`,
+    };
+    await scenario.run(async () => {
       authenticate(actor.userId, orgId, sessionId);
-      return accept(client.register({ headers, body }), [200]);
+      await accept(
+        client.heartbeat({
+          headers,
+          params,
+          body: { generation, ready: true },
+        }),
+        [200],
+      );
+      const queued = await accept(
+        client.create({
+          headers: beforeReplacementHeaders,
+          body: { id: randomUUID(), action: { kind: "observe" } },
+        }),
+        [200],
+      );
+      expect(queued.body.status).toBe("queued");
+    });
+    const replacement = await scenario.run(async () => {
+      // Pause verification after the enqueue has read the old Chat grant.
+      const checkedGrant = createDeferredPromise<void>(context.signal);
+      const resumeEnqueue = createDeferredPromise<void>(context.signal);
+      context.mocks.clerk.sessions.getSession.mockImplementationOnce(
+        async () => {
+          checkedGrant.resolve();
+          await resumeEnqueue.promise;
+          return { id: sessionId, userId: actor.userId, status: "active" };
+        },
+      );
+      const enqueue = accept(
+        client.create({
+          headers: beforeReplacementHeaders,
+          body: { id: randomUUID(), action: { kind: "observe" } },
+        }),
+        [409],
+      );
+      const reconnect = async () => {
+        await checkedGrant.promise;
+        const registered = await accept(
+          client.register({ headers, body }),
+          [200],
+        );
+        await accept(
+          client.heartbeat({
+            headers,
+            params,
+            body: { generation: registered.body.generation, ready: true },
+          }),
+          [200],
+        );
+        return registered;
+      };
+      const [deniedEnqueue, registered] = await joinAll([
+        enqueue,
+        reconnect().finally(() => {
+          resumeEnqueue.resolve();
+        }),
+      ]);
+      expect(deniedEnqueue.body.error.code).toBe("CONFLICT");
+      return registered;
     });
     expect(replacement.body).toMatchObject({
       id: device.body.id,
       generation: generation + 1,
     });
+    const replacementClaim = await scenario.run(() => {
+      return accept(
+        client.next({
+          headers,
+          params,
+          body: { generation: replacement.body.generation },
+        }),
+        [200],
+      );
+    });
+    expect(replacementClaim.body.operation).toBeNull();
     const afterReplacement = await scenario.launchRun(
       actor,
       undefined,
