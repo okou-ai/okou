@@ -2085,6 +2085,33 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
+    connectorSlug: "vercel",
+    authMethodId: "oauth-installation",
+    contract: {
+      client: {
+        kind: "static-confidential-env",
+        clientIdEnv: "VERCEL_OAUTH_CLIENT_ID",
+        clientSecretEnv: "VERCEL_OAUTH_CLIENT_SECRET",
+      },
+      grant: {
+        kind: "auth-code",
+        callbackOrigin: "web",
+        outputNames: ["accessToken", "installationId"],
+        startOptionNames: [],
+      },
+      access: {
+        kind: "refresh-token",
+        inputNames: ["installationId"],
+        outputNames: ["accessToken"],
+        platformSecrets: [],
+      },
+      revoke: {
+        kind: "none",
+        inputNames: [],
+      },
+    },
+  },
+  {
     connectorSlug: "webflow",
     authMethodId: "oauth",
     contract: {

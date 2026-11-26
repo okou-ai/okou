@@ -112,7 +112,10 @@ import {
   stripeProvider,
 } from "./connectors/stripe/provider";
 import { todoistProvider } from "./connectors/todoist/provider";
-import { vercelProvider } from "./connectors/vercel/provider";
+import {
+  vercelInstallationProvider,
+  vercelProvider,
+} from "./connectors/vercel/provider";
 import { webflowProvider } from "./connectors/webflow/provider";
 import { metaAdsProvider } from "./connectors/meta-ads/provider";
 import { posthogProvider } from "./connectors/posthog/provider";
@@ -1102,6 +1105,11 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   ),
   authCodeProviderEntry("todoist", "oauth", todoistProvider),
   authCodeProviderEntry("vercel", "oauth", vercelProvider),
+  authCodeRefreshProviderEntry(
+    "vercel",
+    "oauth-installation",
+    vercelInstallationProvider,
+  ),
   authCodeProviderEntry("webflow", "oauth", webflowProvider),
   authCodeRefreshProviderEntry("meta-ads", "oauth", metaAdsProvider),
   authCodeRefreshTokenRevokeProviderEntry("tiktok", "oauth", tiktokProvider),

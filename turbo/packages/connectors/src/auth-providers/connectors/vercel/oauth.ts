@@ -1,7 +1,11 @@
-import { object, string } from "zod";
+import { number, object, string } from "zod";
 
-import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-config";
-import { throwOAuthError } from "../../oauth/error";
+import {
+  OAuthProviderHttpError,
+  standardOAuthErrorCode,
+  throwOAuthError,
+} from "../../oauth/error";
+import { ProviderResponseError } from "../../provider-error";
 
 const VERCEL_TOKEN_URL = "https://api.vercel.com/v2/oauth/access_token";
 
@@ -13,10 +17,15 @@ interface VercelUserInfo {
 
 interface VercelTokenResult {
   accessToken: string;
-  teamId: string | null;
   installationId: string | null;
-  userInfo: VercelUserInfo;
 }
+
+const installationIdSchema = string().startsWith("icfg_").min(6);
+const installationTokenSchema = object({
+  access_token: string().min(1),
+  expires_in: number().int().positive(),
+  scope: string().optional(),
+});
 
 /**
  * Build Vercel Integration OAuth authorization URL.
@@ -40,7 +49,6 @@ export function buildVercelAuthorizationUrl(
  * Exchange authorization code for access token via Vercel Integration OAuth.
  */
 export async function exchangeVercelCode(
-  authCodeGrant: ConnectorAuthCodeGrantConfig,
   clientId: string,
   clientSecret: string,
   code: string,
@@ -66,7 +74,6 @@ export async function exchangeVercelCode(
   const data = object({
     access_token: string().optional(),
     token_type: string().optional(),
-    team_id: string().nullable().optional(),
     installation_id: string().nullable().optional(),
     error: string().optional(),
     error_description: string().optional(),
@@ -80,20 +87,74 @@ export async function exchangeVercelCode(
     throw new Error("No access token in Vercel response");
   }
 
-  const userInfo = await fetchVercelUserInfo(data.access_token);
-
   return {
     accessToken: data.access_token,
-    teamId: data.team_id ?? null,
     installationId: data.installation_id ?? null,
-    userInfo,
+  };
+}
+
+export async function requestVercelInstallationToken(
+  args: {
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly installationId: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<{ accessToken: string; expiresIn: number; scope?: string }> {
+  const installationId = installationIdSchema.safeParse(args.installationId);
+  if (!installationId.success) {
+    throw new ProviderResponseError(
+      "Missing or invalid Vercel installation ID",
+    );
+  }
+
+  const response = await fetch(VERCEL_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_id: args.clientId,
+      client_secret: args.clientSecret,
+      grant_type: "client_credentials",
+      installation_id: installationId.data,
+    }),
+    redirect: "error",
+    ...(signal ? { signal } : {}),
+  });
+  const payload: unknown = await response.json().catch(() => {
+    signal?.throwIfAborted();
+    return undefined;
+  });
+  if (!response.ok) {
+    const failure = object({
+      code: string().optional(),
+      error: string().optional(),
+    }).safeParse(payload);
+    throw new OAuthProviderHttpError(
+      `Vercel installation token request failed: ${response.status}`,
+      response.status,
+      standardOAuthErrorCode(failure.data?.code ?? failure.data?.error),
+    );
+  }
+
+  const token = installationTokenSchema.safeParse(payload);
+  if (!token.success) {
+    throw new ProviderResponseError(
+      "Invalid Vercel installation token response",
+    );
+  }
+  return {
+    accessToken: token.data.access_token,
+    expiresIn: token.data.expires_in,
+    ...(token.data.scope === undefined ? {} : { scope: token.data.scope }),
   };
 }
 
 /**
  * Fetch the authenticated Vercel user's profile via the REST API.
  */
-async function fetchVercelUserInfo(
+export async function fetchVercelUserInfo(
   accessToken: string,
 ): Promise<VercelUserInfo> {
   const response = await fetch("https://api.vercel.com/v2/user", {
