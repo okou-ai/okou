@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.11.0](https://github.com/okou-ai/okou/compare/app-worker-v1.10.308...app-worker-v1.11.0) (2026-11-26)
+
+
+### Features
+
+* **app:** hide empty for you entries and prefetch the feed summary ([#50950](https://github.com/okou-ai/okou/issues/50950)) ([4139476](https://github.com/okou-ai/okou/commit/4139476cc27e777a8e284f73ae732b584feb4392))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.882.0
+
 ## [1.10.308](https://github.com/okou-ai/okou/compare/app-worker-v1.10.307...app-worker-v1.10.308) (2026-11-26)
 
 

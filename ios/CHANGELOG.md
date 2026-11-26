@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.6](https://github.com/okou-ai/okou/compare/ios-v0.66.5...ios-v0.66.6) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** keep model selection state in the session graph ([#50925](https://github.com/okou-ai/okou/issues/50925)) ([176ebd4](https://github.com/okou-ai/okou/commit/176ebd47b318936c2a82c12e1f7bec0a881d11ec))
+
 ## [0.66.5](https://github.com/okou-ai/okou/compare/ios-v0.66.4...ios-v0.66.5) (2026-11-25)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.882.0](https://github.com/okou-ai/okou/compare/core-v8.881.4...core-v8.882.0) (2026-11-26)
+
+
+### Features
+
+* **app:** hide empty for you entries and prefetch the feed summary ([#50950](https://github.com/okou-ai/okou/issues/50950)) ([4139476](https://github.com/okou-ai/okou/commit/4139476cc27e777a8e284f73ae732b584feb4392))
+
 ## [8.881.4](https://github.com/okou-ai/okou/compare/core-v8.881.3...core-v8.881.4) (2026-11-26)
 
 
