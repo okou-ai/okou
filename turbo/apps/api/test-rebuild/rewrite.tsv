@@ -2462,8 +2462,8 @@ chat	src/signals/routes/__tests__/projects.test.ts	projects-007	planned
 chat	src/signals/routes/__tests__/projects.test.ts	projects-008	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-009	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-010	planned				
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	planned				B06
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	planned				B06
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	rewritten	12.7		src/signals/routes/__tests__/provider-console-paths.test.ts	B06
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	rewritten	9.9		src/signals/routes/__tests__/provider-console-paths.test.ts	B06
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	rewritten	7.1	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	rewritten	5.3	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
