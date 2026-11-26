@@ -1,9 +1,6 @@
 use api_contracts::generated::types::{
-    runners::{
-        runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiModelConfigV2, PiModelConfigV3, cancellation,
-        },
-        storage as runner_storage,
+    runners::runs::{
+        CodexRuntimeConfig, PiLaunchConfig, PiModelConfigV2, PiModelConfigV3, cancellation,
     },
     webhooks::agent::{
         complete,
@@ -472,30 +469,6 @@ fn generated_commit_response_deserializes_success_shape() {
     assert_eq!(response.size, 42.0);
     assert_eq!(response.file_count, 3.0);
     assert_eq!(response.deduplicated, Some(true));
-}
-
-#[test]
-fn generated_storage_mount_entry_preserves_canonical_shape() {
-    let mount: runner_storage::StorageMountEntry = serde_json::from_value(json!({
-        "name": "memory",
-        "storageId": "storage-id-1",
-        "versionId": "version-1",
-        "mountPath": "/memory",
-        "empty": true,
-        "missingRootPolicy": "preserveParentVersion",
-        "writeback": true,
-    }))
-    .unwrap();
-
-    assert_eq!(mount.name, "memory");
-    assert_eq!(mount.storage_id, "storage-id-1");
-    assert_eq!(mount.version_id, "version-1");
-    assert_eq!(mount.empty, Some(true));
-    assert_eq!(mount.writeback, Some(true));
-    assert_eq!(
-        mount.missing_root_policy,
-        Some(runner_storage::ArtifactEntryMissingRootPolicy::PreserveParentVersion)
-    );
 }
 
 #[test]

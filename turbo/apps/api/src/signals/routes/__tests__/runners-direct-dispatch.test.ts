@@ -71,18 +71,11 @@ test("delivers complete input after binding its process", async () => {
   expect(input.prompt).toContain("direct complete input");
   expect(input.sandboxToken).toBeTruthy();
   expect(input.platformEnvironment.OKOU_TOKEN).toMatch(/^vm0_sandbox_/);
-  expect(input.contentBundles).toBeDefined();
-  const legacyMemory = input.storageManifest?.storageMounts[0];
-  expect(legacyMemory).toBeDefined();
-  expect(input.startupInputs?.memory).toMatchObject({
-    storageId: legacyMemory?.storageId,
-    versionId: legacyMemory?.versionId,
-  });
-  expect(input.startupInputs?.contentBundles).toStrictEqual({
-    ...input.contentBundles,
-    skills: input.contentBundles.skills.map(({ mountPath, ...bundle }) => {
-      return { name: mountPath.split("/").at(-1), bundle };
-    }),
+  expect(input.startupInputs.contentBundles.instructions).toBeDefined();
+  expect(input.startupInputs.memory).toMatchObject({
+    storageId: expect.any(String),
+    versionId: expect.any(String),
+    empty: true,
   });
   expect(run.status).toBe("running");
   expect(

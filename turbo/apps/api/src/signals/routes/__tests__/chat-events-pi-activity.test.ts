@@ -104,18 +104,12 @@ describe("CHAT-02: model-first routing", () => {
       model,
     });
     const execution = await runExecution(run.runId);
-    const memory = execution.execution.storageManifest?.storageMounts.find(
-      (mount) => {
-        return mount.name === "memory";
-      },
-    );
+    const memory = execution.execution.startupInputs.memory;
     if (!memory?.versionId) {
       throw new Error("Expected the ordinary Pi Run's selected Memory version");
     }
     expect(memory).toMatchObject({
-      mountPath: "/home/user/.pi/agent/memory",
       missingRootPolicy: "preserveParentVersion",
-      writeback: true,
     });
     expect(execution.execution.cliAgentType).toBe("pi");
     expect(execution.execution.piSessionId).toBe(run.threadId);
@@ -248,8 +242,8 @@ describe("CHAT-02: model-first routing", () => {
         // No local Memory output still preserves this Run's selected version.
         storageOutputs: [
           {
-            name: memory.name,
-            mountPath: memory.mountPath,
+            name: "memory",
+            mountPath: "/home/user/.pi/agent/memory",
             version: memory.versionId,
             missingRootPolicy: memory.missingRootPolicy,
           },

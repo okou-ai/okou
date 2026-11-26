@@ -9,7 +9,7 @@ fn template(owner: &str) -> Value {
 #[test]
 fn publication_accepts_large_template_bundles_in_separate_owner_directories() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    body["contentBundles"]["templates"] =
+    body["startupInputs"]["contentBundles"]["templates"] =
         serde_json::json!([template("user-template"), template("presentation-template")]);
     let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     let entries = response
@@ -38,40 +38,33 @@ fn publication_accepts_large_template_bundles_in_separate_owner_directories() {
 
 #[test]
 fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() {
-    for kind in ["owner", "id", "size", "url", "duplicate", "overlap", "null"] {
+    for kind in ["owner", "id", "size", "url", "duplicate", "null"] {
         let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-        body["contentBundles"]["templates"] = serde_json::json!([template("user-template")]);
+        body["startupInputs"]["contentBundles"]["templates"] =
+            serde_json::json!([template("user-template")]);
         match kind {
             "owner" => {
-                body["contentBundles"]["templates"][0]["ownerKind"] = serde_json::json!("other")
+                body["startupInputs"]["contentBundles"]["templates"][0]["ownerKind"] =
+                    serde_json::json!("other")
             }
             "id" => {
-                body["contentBundles"]["templates"][0]["templateId"] =
+                body["startupInputs"]["contentBundles"]["templates"][0]["templateId"] =
                     serde_json::json!("../../escape")
             }
             "size" => {
-                body["contentBundles"]["templates"][0]["archiveBytes"] =
+                body["startupInputs"]["contentBundles"]["templates"][0]["archiveBytes"] =
                     serde_json::json!(104 * 1024 * 1024)
             }
             "url" => {
-                body["contentBundles"]["templates"][0]["downloadUrl"] =
+                body["startupInputs"]["contentBundles"]["templates"][0]["downloadUrl"] =
                     serde_json::json!("https://secret-fixture@example.test/archive")
             }
             "duplicate" => {
-                body["contentBundles"]["templates"] =
+                body["startupInputs"]["contentBundles"]["templates"] =
                     serde_json::json!([template("user-template"), template("user-template")])
             }
-            "null" => body["contentBundles"]["templates"] = Value::Null,
-            _ => {
-                let mut mount = body["storageManifest"]["storageMounts"][0].clone();
-                mount["mountPath"] = serde_json::json!(format!(
-                    "/home/user/workspace/generated/user-template/{TEMPLATE_ID}"
-                ));
-                body["storageManifest"]["storageMounts"]
-                    .as_array_mut()
-                    .unwrap()
-                    .push(mount);
-            }
+            "null" => body["startupInputs"]["contentBundles"]["templates"] = Value::Null,
+            _ => panic!("unexpected invalid template case {kind}"),
         }
         let error = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap_err();
         assert!(!error.contains("secret-fixture"));
@@ -79,21 +72,15 @@ fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() 
 }
 
 #[test]
-fn publication_preserves_template_order_before_explicit_overlay_mounts() {
+fn publication_preserves_template_anchor_order() {
     let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
-    let target = format!("/home/user/workspace/generated/user-template/{TEMPLATE_ID}/references");
-    let mut overlay = body["storageManifest"]["storageMounts"][0].clone();
-    overlay["mountPath"] = serde_json::json!(target);
-    body["storageManifest"]["storageMounts"]
-        .as_array_mut()
-        .unwrap()
-        .push(overlay);
+    let target = "/home/user/.codex/skills/fixture-skill";
     let mut first = template("user-template");
     let mut second = template("presentation-template");
     // Optional unresolved mounts can be absent from the final storage manifest.
     first["beforeMountPaths"] = serde_json::json!(["/missing-optional-volume", target]);
     second["beforeMountPaths"] = serde_json::json!([target]);
-    body["contentBundles"]["templates"] = serde_json::json!([first, second]);
+    body["startupInputs"]["contentBundles"]["templates"] = serde_json::json!([first, second]);
     let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
     let entries = response.storage_manifest.unwrap().storages;
     let first_index = entries

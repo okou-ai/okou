@@ -1679,7 +1679,6 @@ fn execution_context_deserializes_with_firewalls() {
         "cliAgentType": "claude-code",
         "billableFirewalls": [],
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": [],
         "firewalls": [{
             "kind": "inline",
@@ -1731,7 +1730,6 @@ fn execution_context_deserializes_without_firewalls() {
         "cliAgentType": "claude-code",
         "billableFirewalls": [],
         "platformEnvironment": {},
-        "contentBundles": {"format": "tar-gzip-v1", "skills": []},
         "connectorRuntimeTargets": []
     });
     let ctx: ExecutionContext = serde_json::from_value(json).unwrap();

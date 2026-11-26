@@ -41,6 +41,7 @@ import type {
   RunFailureReasonToken,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
@@ -100,10 +101,7 @@ import {
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -568,15 +566,13 @@ function codexAuthJson(): string {
  */
 const NATIVE_RUNNER_ROUTE = { model: "claude-fable-5-1" } as const;
 
-function customSkillMount(
-  contentBundles: ExecutionContext["contentBundles"],
+function customSkillBundle(
+  contentBundles: ExecutionContext["startupInputs"]["contentBundles"],
   connectorId: string,
 ) {
-  return contentBundles.skills.find((mount) => {
-    return mount.mountPath.endsWith(
-      `-${connectorId.replaceAll("-", "").slice(0, 8)}`,
-    );
-  });
+  return contentBundles.skills.find(({ name }) => {
+    return name.endsWith(`-${connectorId.replaceAll("-", "").slice(0, 8)}`);
+  })?.bundle;
 }
 const piExecutionFixture = createChatEventsFixture(context);
 
@@ -1247,11 +1243,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "establish canonical storage for overlap",
         });
         const initialExecution = await api.executionInput(initialRun.runId);
-        const initialMemory = expectCanonicalStorageManifest(
-          initialExecution.storageManifest,
-        )?.storageMounts.find((mount) => {
-          return mount.name === "memory";
-        });
+        const initialMemory = initialExecution.startupInputs.memory;
         if (!initialMemory) {
           throw new Error("Expected the canonical memory mount");
         }
@@ -1303,9 +1295,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
               storageOutputs: [
                 {
-                  name: initialMemory.name,
+                  name: "memory",
                   version: preparedMemory.versionId,
-                  mountPath: initialMemory.mountPath,
+                  mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
                   ...(initialMemory.missingRootPolicy === undefined
                     ? {}
                     : { missingRootPolicy: initialMemory.missingRootPolicy }),
@@ -1325,8 +1317,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const requestMounts = readonlySkills.map(
-          ({ mountPath, sha256, archiveBytes }) => {
-            return { mountPath, sha256, archiveBytes };
+          ({ name, sha256, archiveBytes }) => {
+            return {
+              name,
+              bundle: expect.objectContaining({ sha256, archiveBytes }),
+            };
           },
         );
         const sessionError = new Error("session storage presign failed");
@@ -1368,30 +1363,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "Retry the complete canonical storage manifest",
         });
         const largeExecution = await api.executionInput(retry.runId);
-        const largeManifest = expectCanonicalStorageManifest(
-          largeExecution.storageManifest,
-        );
-        if (!largeManifest) {
-          throw new Error("Expected a canonical large Storage manifest");
-        }
+        const largeMemory = largeExecution.startupInputs.memory;
         for (const mount of requestMounts) {
-          expect(largeExecution.contentBundles.skills).toContainEqual(
-            expect.objectContaining(mount),
-          );
+          expect(
+            largeExecution.startupInputs.contentBundles.skills,
+          ).toContainEqual(expect.objectContaining(mount));
         }
-        expect(largeManifest.storageMounts).toContainEqual(
-          expect.objectContaining({
-            name: initialMemory.name,
-            storageId: initialMemory.storageId,
-            versionId: preparedMemory.versionId,
-            mountPath: initialMemory.mountPath,
-            writeback: true,
-          }),
-        );
-        for (const mount of largeManifest.storageMounts) {
-          expect(mount).not.toHaveProperty("orgId");
-          expect(mount).not.toHaveProperty("userId");
-        }
+        expect(largeMemory).toMatchObject({
+          storageId: initialMemory.storageId,
+          versionId: preparedMemory.versionId,
+        });
+        expect(largeMemory).not.toHaveProperty("orgId");
+        expect(largeMemory).not.toHaveProperty("userId");
         await api.requestCancelRun(actor, retry.runId, [200]);
         await finishCancelledRun(retry.runId, largeExecution.sandboxToken);
       });
@@ -1415,14 +1398,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: NATIVE_RUNNER_ROUTE.model,
         });
         const firstExecution = await api.executionInput(first.runId);
-        const firstMemory = expectCanonicalStorageManifest(
-          firstExecution.storageManifest,
-        )?.storageMounts.find(({ name }) => {
-          return name === "memory";
-        });
+        const firstMemory = firstExecution.startupInputs.memory;
         expect(firstMemory).toMatchObject({
           empty: true,
-          writeback: true,
+          missingRootPolicy: "preserveParentVersion",
           storageId: expect.any(String),
           versionId: expect.any(String),
         });
@@ -1434,13 +1413,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: NATIVE_RUNNER_ROUTE.model,
         });
         const nextExecution = await api.executionInput(next.runId);
-        expect(
-          expectCanonicalStorageManifest(
-            nextExecution.storageManifest,
-          )?.storageMounts.find(({ name }) => {
-            return name === "memory";
-          }),
-        ).toStrictEqual(firstMemory);
+        expect(nextExecution.startupInputs.memory).toStrictEqual(firstMemory);
         await api.requestCancelRun(member, next.runId, [200]);
         await finishCancelledRun(next.runId, nextExecution.sandboxToken);
       });
@@ -1466,20 +1439,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const initialStorageCalls = [...context.mocks.s3.send.mock.calls];
         const execution = await api.executionInput(created.runId);
-        const mounts =
-          expectCanonicalStorageManifest(execution.storageManifest)
-            ?.storageMounts ?? [];
-        expect(execution.contentBundles.skills).toContainEqual(
+        expect(execution.startupInputs.contentBundles.skills).toContainEqual(
           expect.objectContaining({
-            sha256: expect.any(String),
-            archiveBytes: expect.any(Number),
-            downloadUrl: expect.any(String),
-            mountPath: `/home/user/.claude/skills/${workflowName}`,
+            name: workflowName,
+            bundle: expect.objectContaining({
+              sha256: expect.any(String),
+              archiveBytes: expect.any(Number),
+              downloadUrl: expect.any(String),
+            }),
           }),
         );
-        const memoryArtifact = mounts.find((mount) => {
-          return mount.name === "memory";
-        });
+        const memoryArtifact = execution.startupInputs.memory;
         expect(memoryArtifact).toMatchObject({
           empty: true,
           storageId: expect.any(String),
@@ -1577,23 +1547,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(created.status).toBe("running");
 
         const execution = await api.executionInput(created.runId);
-        const manifest = expectCanonicalStorageManifest(
-          execution.storageManifest,
-        );
-        if (!manifest) {
-          throw new Error("Expected canonical Storage mounts");
-        }
-        const workflowMountPath = readonlySkill.mountPath;
-        expect(execution.contentBundles.skills).toContainEqual(
+        const workflowName = readonlySkill.name;
+        expect(execution.startupInputs.contentBundles.skills).toContainEqual(
           expect.objectContaining({
-            mountPath: workflowMountPath,
-            sha256: readonlySkill.sha256,
-            archiveBytes: readonlySkill.archiveBytes,
+            name: workflowName,
+            bundle: expect.objectContaining({
+              sha256: readonlySkill.sha256,
+              archiveBytes: readonlySkill.archiveBytes,
+            }),
           }),
         );
-        const memoryMount = manifest.storageMounts.find((mount) => {
-          return mount.name === "memory";
-        });
+        const memoryMount = execution.startupInputs.memory;
         if (!memoryMount) {
           throw new Error("Expected canonical memory mount");
         }
@@ -1606,8 +1570,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           runId: created.runId,
           storageMounts: expect.arrayContaining([
             {
-              mountPath: memoryMount.mountPath,
-              name: memoryMount.name,
+              mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+              name: "memory",
               version: memoryMount.versionId,
               writeback: true,
             },
@@ -1629,24 +1593,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "canonical storage execution",
         });
         const canonicalExecution = await api.executionInput(canonicalRun.runId);
-        const canonicalManifest = expectCanonicalStorageManifest(
-          canonicalExecution.storageManifest,
-        );
-        if (!canonicalManifest) {
-          throw new Error("Expected canonical storageMounts manifest");
-        }
-        expect(canonicalManifest.storageMounts).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              name: "memory",
-              writeback: true,
-            }),
-          ]),
-        );
-        for (const mount of canonicalManifest.storageMounts) {
-          expect(mount).not.toHaveProperty("orgId");
-          expect(mount).not.toHaveProperty("userId");
-        }
+        const memory = canonicalExecution.startupInputs.memory;
+        expect(memory).toMatchObject({
+          storageId: expect.any(String),
+          versionId: expect.any(String),
+          empty: true,
+        });
+        expect(memory).not.toHaveProperty("orgId");
+        expect(memory).not.toHaveProperty("userId");
 
         await api.requestCancelRun(actor, canonicalRun.runId, [200]);
       });
@@ -1663,8 +1617,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             "primary",
             "additional",
           ])
-        ).map(({ sha256, archiveBytes, mountPath }) => {
-          return { sha256, archiveBytes, mountPath };
+        ).map(({ sha256, archiveBytes, name }) => {
+          return {
+            name,
+            bundle: expect.objectContaining({ sha256, archiveBytes }),
+          };
         });
         await api.heartbeatRunner(runnerGroup);
 
@@ -1672,20 +1629,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "persist canonical storage mounts",
         });
         const initialExecution = await api.executionInput(initialRun.runId);
-        const initialManifest = initialExecution.storageManifest;
-        if (!initialManifest || !("storageMounts" in initialManifest)) {
-          throw new Error("Expected an initial canonical Storage manifest");
-        }
-        const initialMemory = initialManifest.storageMounts.find((mount) => {
-          return mount.name === "memory";
-        });
+        const initialMemory = initialExecution.startupInputs.memory;
         if (!initialMemory) {
           throw new Error("Expected the canonical memory mount");
         }
         for (const mount of workflowMounts) {
-          expect(initialExecution.contentBundles.skills).toContainEqual(
-            expect.objectContaining(mount),
-          );
+          expect(
+            initialExecution.startupInputs.contentBundles.skills,
+          ).toContainEqual(expect.objectContaining(mount));
         }
         const memoryFile = storageTextFile(
           "MEMORY.md",
@@ -1730,9 +1681,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
               storageOutputs: [
                 {
-                  name: initialMemory.name,
+                  name: "memory",
                   version: preparedMemory.versionId,
-                  mountPath: initialMemory.mountPath,
+                  mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
                   ...(initialMemory.missingRootPolicy === undefined
                     ? {}
                     : { missingRootPolicy: initialMemory.missingRootPolicy }),
@@ -1757,25 +1708,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const sessionExecution = await api.executionInput(sessionRun.runId);
 
         for (const bundle of workflowMounts) {
-          expect(sessionExecution.contentBundles.skills).toContainEqual(
-            expect.objectContaining(bundle),
-          );
+          expect(
+            sessionExecution.startupInputs.contentBundles.skills,
+          ).toContainEqual(expect.objectContaining(bundle));
         }
-        const sessionManifest = sessionExecution.storageManifest;
-        if (!sessionManifest || !("storageMounts" in sessionManifest)) {
-          throw new Error("Expected canonical mounts from session persistence");
-        }
-        expect(sessionManifest.storageMounts).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              name: "memory",
-              storageId: initialMemory.storageId,
-              versionId: preparedMemory.versionId,
-              mountPath: initialMemory.mountPath,
-              writeback: true,
-            }),
-          ]),
-        );
+        expect(sessionExecution.startupInputs.memory).toMatchObject({
+          storageId: initialMemory.storageId,
+          versionId: preparedMemory.versionId,
+        });
 
         await api.requestCancelRun(actor, sessionRun.runId, [200]);
       });
@@ -2227,15 +2167,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: selectedModel,
         });
         const firstExecution = await api.executionInput(first.runId);
-        const initialStorageManifest = expectCanonicalStorageManifest(
-          firstExecution.storageManifest,
-        );
-        if (!initialStorageManifest) {
-          throw new Error(
-            "Expected canonical Storage mounts for the direct run",
-          );
-        }
-        const initialStorageMounts = initialStorageManifest.storageMounts;
+        const initialMemory = firstExecution.startupInputs.memory;
+        expect(initialMemory).not.toBeNull();
         const cliAgentSessionId = `bdd-okou-direct-${first.runId}`;
         const firstHistory = `managed direct history ${first.runId}`;
         const firstHistoryHash = createHash("sha256")
@@ -2272,16 +2205,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sessionId: cliAgentSessionId,
           generationRunId: expect.any(String),
         });
-        const resumedStorageManifest = expectCanonicalStorageManifest(
-          resumedExecution.storageManifest,
-        );
-        if (!resumedStorageManifest) {
-          throw new Error(
-            "Expected canonical Storage mounts for the resumed run",
-          );
-        }
-        expect(resumedStorageManifest.storageMounts).toStrictEqual(
-          initialStorageMounts,
+        expect(resumedExecution.startupInputs.memory).toStrictEqual(
+          initialMemory,
         );
         await expect(api.readRun(actor, resumed.runId)).resolves.toMatchObject({
           source: { model: selectedModel, providerType: "codex-oauth-token" },
@@ -2911,19 +2836,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sourceUserId: actor.userId,
         });
 
-        const mountPaths = execution.contentBundles.skills.map((skill) => {
-          return skill.mountPath;
-        });
-        for (const workflowName of workflowNames) {
-          expect(mountPaths).toContain(
-            `/home/user/.codex/skills/${workflowName}`,
-          );
-        }
-        expect(
-          mountPaths.some((mountPath) => {
-            return mountPath.startsWith("/home/user/.claude/skills/");
-          }),
-        ).toBeFalsy();
+        const skillNames = execution.startupInputs.contentBundles.skills.map(
+          ({ name }) => {
+            return name;
+          },
+        );
+        expect(skillNames).toStrictEqual(
+          expect.arrayContaining([...workflowNames]),
+        );
 
         await api.requestCancelRun(actor, sent.runId, [200]);
         const cancelled = await api.readRun(actor, sent.runId);
@@ -4753,7 +4673,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(execution.secretValues).not.toContain("mcp-runtime-token");
         expect(
-          customSkillMount(execution.contentBundles, mcp.id),
+          customSkillBundle(execution.startupInputs.contentBundles, mcp.id),
         ).toMatchObject({
           sha256: expect.any(String),
           archiveBytes: expect.any(Number),
@@ -8309,10 +8229,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           inlineFirewallApis(execution.firewalls, customConnectorName),
         ).toHaveLength(1);
         expect(
-          execution.contentBundles.skills.map((skill) => {
-            return skill.mountPath;
+          execution.startupInputs.contentBundles.skills.map((skill) => {
+            return skill.name;
           }),
-        ).toContain(`/home/user/.claude/skills/${workflowName}`);
+        ).toContain(workflowName);
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -9039,13 +8959,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await api.heartbeatRunner(runnerGroup);
         const execution = await api.executionInput(run.runId);
-        const workflowMounts = execution.contentBundles.skills.filter(
-          (skill) => {
-            return (
-              skill.mountPath === `/home/user/.claude/skills/${workflowName}`
-            );
-          },
-        );
+        const workflowMounts =
+          execution.startupInputs.contentBundles.skills.filter((skill) => {
+            return skill.name === workflowName;
+          });
 
         expect(workflowMounts).toHaveLength(1);
         const selected = workflowMounts[0];
@@ -9053,7 +8970,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected the caller's private Workflow bundle");
         }
         expect(
-          readExecutionContentBundle(s3.objects, selected)
+          readExecutionContentBundle(s3.objects, selected.bundle)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(privateInstruction);
@@ -9114,10 +9031,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
         expect(execution.cliAgentType).toBe("claude-code");
         expect(
-          execution.contentBundles.skills.map((skill) => {
-            return skill.mountPath;
+          execution.startupInputs.contentBundles.skills.map((skill) => {
+            return skill.name;
           }),
-        ).toContain(`/home/user/.claude/skills/${workflowName}`);
+        ).toContain(workflowName);
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -9508,12 +9425,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           const { execution } = await fixture.runExecution(created.runId);
-          const storageMounts =
-            expectCanonicalStorageManifest(execution.storageManifest)
-              ?.storageMounts ?? [];
-          const memoryArtifact = storageMounts.find((mount) => {
-            return mount.name === "memory";
-          });
+          const memoryArtifact = execution.startupInputs.memory;
           if (!memoryArtifact) {
             throw new Error("Expected the run to mount memory");
           }
@@ -9642,9 +9554,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           const storageOutputs = [
             {
-              name: memoryArtifact.name,
+              name: "memory",
               version: outputVersion,
-              mountPath: memoryArtifact.mountPath,
+              mountPath: CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
               ...(memoryArtifact.missingRootPolicy === undefined
                 ? {}
                 : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
@@ -9665,7 +9577,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 ...nativeMetadata,
                 storageOutputs,
                 volumeVersionsSnapshot: {
-                  versions: { [memoryArtifact.name]: outputVersion },
+                  versions: { memory: outputVersion },
                 },
               },
             },
@@ -9702,7 +9614,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 ...nativeMetadata,
                 storageOutputs,
                 volumeVersionsSnapshot: {
-                  versions: { [memoryArtifact.name]: outputVersion },
+                  versions: { memory: outputVersion },
                 },
               },
             },

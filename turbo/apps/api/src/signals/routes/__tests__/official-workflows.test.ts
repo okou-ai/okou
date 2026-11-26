@@ -1957,17 +1957,17 @@ describe("Workflow Run admission", () => {
       const { execution, sandboxHeaders } = await owned.runExecution(
         current.runId,
       );
-      const skills = execution.contentBundles.skills;
+      const skills = execution.startupInputs.contentBundles.skills;
       expect(skills).toHaveLength(2 + BUILT_IN_SKILLS.length);
       for (const workflow of published) {
         const skill = skills.find((item) => {
-          return item.mountPath.endsWith(`/${workflow.workflowName}`);
+          return item.name === workflow.workflowName;
         });
         if (!skill) {
           throw new Error("Expected the current Workflow bundle");
         }
         expect(
-          readExecutionContentBundle(s3.objects, skill)
+          readExecutionContentBundle(s3.objects, skill.bundle)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(

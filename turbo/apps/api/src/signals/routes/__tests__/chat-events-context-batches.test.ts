@@ -252,23 +252,23 @@ describe("shared context statement projections through normal sends", () => {
         } else {
           expect(targets).toStrictEqual([]);
         }
-        const skills = execution.execution.contentBundles.skills;
+        const skills = execution.execution.startupInputs.contentBundles.skills;
         if (workflowName) {
           const skill = skills.find((item) => {
-            return item.mountPath.endsWith(`/${workflowName}`);
+            return item.name === workflowName;
           });
           if (!skill) {
             throw new Error("Expected the selected Workflow bundle");
           }
           expect(
-            readExecutionContentBundle(s3.objects, skill)
+            readExecutionContentBundle(s3.objects, skill.bundle)
               .get("SKILL.md")
               ?.toString(),
           ).toContain("Preserve this selected workflow.");
         } else {
           expect(
             skills.map((skill) => {
-              return skill.mountPath.split("/").at(-1);
+              return skill.name;
             }),
           ).toStrictEqual(BUILT_IN_SKILLS);
         }

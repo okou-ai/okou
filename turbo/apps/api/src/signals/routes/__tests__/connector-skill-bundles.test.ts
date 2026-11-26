@@ -78,14 +78,14 @@ describe("Connector Skill bundle delivery", () => {
         ],
       },
     });
-    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-    const bundle = execution.execution.contentBundles.skills.find(
+    const skillName = getCustomConnectorSkillName(selected.slug, selected.id);
+    const bundle = execution.execution.startupInputs.contentBundles.skills.find(
       (candidate) => {
-        return candidate.mountPath === mountPath;
+        return candidate.name === skillName;
       },
     )!;
     expect(
-      readExecutionContentBundle(s3.objects, bundle)
+      readExecutionContentBundle(s3.objects, bundle.bundle)
         .get("SKILL.md")
         ?.toString(),
     ).toContain("Selected Skill instructions.");
@@ -101,22 +101,22 @@ describe("Connector Skill bundle delivery", () => {
   it.each([
     {
       framework: "claude-code",
-      root: "/home/user/.claude/skills",
+
       model: "claude-fable-5-1",
     },
     {
       framework: "codex",
-      root: "/home/user/.codex/skills",
+
       model: "gpt-6-luna",
     },
     {
       framework: "pi",
-      root: "/home/user/.pi/agent/skills",
+
       model: "gpt-6-luna",
     },
   ] as const)(
     "delivers current authorized $framework Skill bytes during preparation and for the next Run",
-    async ({ framework, root, model }) => {
+    async ({ framework, model }) => {
       const owner = await publicChatActor(context, {});
       owner.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
@@ -159,7 +159,7 @@ describe("Connector Skill bundle delivery", () => {
           skillMarkdown: "Other workspace private instructions.",
         });
       });
-      const mountPath = `${root}/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
+      const skillName = getCustomConnectorSkillName(selected.slug, selected.id);
       const queued = await owner.queueChatRun(owner.actor, {
         prompt: "Use the selected Connector Skill",
         model,
@@ -175,19 +175,18 @@ describe("Connector Skill bundle delivery", () => {
       const run = await queued.launch();
       const first = await owner.runExecution(run.runId);
       expect(first.execution.cliAgentType).toBe(framework);
-      expect(first.execution.contentBundles.skills).toContainEqual(
-        expect.objectContaining({ mountPath: `${root}/nintendo-store` }),
-      );
-      const firstBundles = first.execution.contentBundles.skills.filter(
-        (bundle) => {
-          return bundle.mountPath.includes("/custom-");
-        },
-      );
+      expect(
+        first.execution.startupInputs.contentBundles.skills,
+      ).toContainEqual(expect.objectContaining({ name: "nintendo-store" }));
+      const firstBundles =
+        first.execution.startupInputs.contentBundles.skills.filter((bundle) => {
+          return bundle.name.startsWith("custom-");
+        });
       expect(firstBundles).toHaveLength(1);
       const bundle = firstBundles[0]!;
-      expect(bundle.mountPath).toBe(mountPath);
+      expect(bundle.name).toBe(skillName);
       expect(
-        readExecutionContentBundle(s3.objects, bundle)
+        readExecutionContentBundle(s3.objects, bundle.bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Updated instructions while the Run is queued.");
@@ -210,14 +209,14 @@ describe("Connector Skill bundle delivery", () => {
         model,
       });
       const second = await owner.runExecution(next.runId);
-      const updated = second.execution.contentBundles.skills.find(
+      const updated = second.execution.startupInputs.contentBundles.skills.find(
         (candidate) => {
-          return candidate.mountPath === mountPath;
+          return candidate.name === skillName;
         },
       )!;
-      expect(updated.sha256).not.toBe(bundle.sha256);
+      expect(updated.bundle.sha256).not.toBe(bundle.bundle.sha256);
       expect(
-        readExecutionContentBundle(s3.objects, updated)
+        readExecutionContentBundle(s3.objects, updated.bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Updated instructions for the next Run.");
@@ -256,14 +255,15 @@ describe("Connector Skill bundle delivery", () => {
       });
       const collision = await owner.runExecution(collisionRun.runId);
       for (const name of workflowNames) {
-        const mounts = collision.execution.contentBundles.skills.filter(
-          (candidate) => {
-            return candidate.mountPath === `${root}/${name}`;
-          },
-        );
+        const mounts =
+          collision.execution.startupInputs.contentBundles.skills.filter(
+            (candidate) => {
+              return candidate.name === name;
+            },
+          );
         expect(mounts).toHaveLength(1);
         expect(
-          readExecutionContentBundle(s3.objects, mounts[0]!)
+          readExecutionContentBundle(s3.objects, mounts[0]!.bundle)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(`Workflow overrides ${name}`);

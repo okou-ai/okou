@@ -19,12 +19,7 @@ import {
   type WorkflowAutomationSummary,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import {
-  CANONICAL_CLAUDE_CONFIG_DIR,
-  CANONICAL_CODEX_HOME_DIR,
-  PI_SKILLS_ROOT,
-  type ExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -853,15 +848,11 @@ function officialWorkflowBundle(
   execution: ExecutionContext,
   definitionName: string,
 ) {
-  const skillRoot =
-    execution.cliAgentType === "pi"
-      ? PI_SKILLS_ROOT
-      : execution.cliAgentType === "codex"
-        ? `${CANONICAL_CODEX_HOME_DIR}/skills`
-        : `${CANONICAL_CLAUDE_CONFIG_DIR}/skills`;
-  const bundles = execution.contentBundles.skills.filter((bundle) => {
-    return bundle.mountPath === `${skillRoot}/${definitionName}`;
-  });
+  const bundles = execution.startupInputs.contentBundles.skills.filter(
+    (bundle) => {
+      return bundle.name === definitionName;
+    },
+  );
   expect(bundles).toHaveLength(1);
   const [bundle] = bundles;
   if (!bundle) {
@@ -1064,8 +1055,8 @@ test.each(scenarios)(
       });
     }
     const bundle = officialWorkflowBundle(execution, definitionName);
-    expect(bundle.downloadUrl).toBe(
-      `https://static.vm0.io/workflows/builtin-skills/${bundle.sha256}.tar.gz`,
+    expect(bundle.bundle.downloadUrl).toBe(
+      `https://static.vm0.io/workflows/builtin-skills/${bundle.bundle.sha256}.tar.gz`,
     );
     expect(execution.prompt).toContain(heading);
     expectWorkflowInstructions(execution.prompt, definitionName, learning);

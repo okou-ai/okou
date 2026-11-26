@@ -146,7 +146,6 @@ describe("Seed Skill bundles through sync-skills", () => {
   });
 
   it("loads current Claude Code Seed bundles during preparation and retains delivered bytes", async () => {
-    const root = "/home/user/.claude/skills";
     const app = await setupApp({
       context,
       routes: cronSyncSkillsRoutes,
@@ -197,18 +196,16 @@ describe("Seed Skill bundles through sync-skills", () => {
     });
     expect(execution.cliAgentType).toBe("claude-code");
     expect(
-      execution.contentBundles.skills.map((bundle) => {
-        return bundle.mountPath;
+      execution.startupInputs.contentBundles.skills.map((bundle) => {
+        return bundle.name;
       }),
-    ).toStrictEqual(
-      BUILT_IN_SKILLS.map((name) => {
-        return `${root}/${name}`;
-      }),
-    );
+    ).toStrictEqual([...BUILT_IN_SKILLS]);
     for (const name of BUILT_IN_SKILLS) {
-      const bundle = execution.contentBundles.skills.find((entry) => {
-        return entry.mountPath === `${root}/${name}`;
-      })!;
+      const bundle = execution.startupInputs.contentBundles.skills.find(
+        (entry) => {
+          return entry.name === name;
+        },
+      )!;
       const expected = new Map(
         [...changed.files]
           .filter(([path]) => {
@@ -218,19 +215,16 @@ describe("Seed Skill bundles through sync-skills", () => {
             return [path.slice(name.length + 1), content];
           }),
       );
-      expect(readExecutionContentBundle(s3.objects, bundle)).toStrictEqual(
-        expected,
-      );
+      expect(
+        readExecutionContentBundle(s3.objects, bundle.bundle),
+      ).toStrictEqual(expected);
     }
-    const mountPaths = [
-      ...execution.contentBundles.skills.map((bundle) => {
-        return bundle.mountPath;
-      }),
-      ...(execution.storageManifest?.storageMounts ?? []).map((mount) => {
-        return mount.mountPath;
-      }),
-    ];
-    expect(new Set(mountPaths).size).toBe(mountPaths.length);
+    const skillNames = execution.startupInputs.contentBundles.skills.map(
+      ({ name }) => {
+        return name;
+      },
+    );
+    expect(new Set(skillNames).size).toBe(skillNames.length);
     await owned.run(() => {
       return fixture.failChatRun(
         run.runId,
@@ -244,16 +238,20 @@ describe("Seed Skill bundles through sync-skills", () => {
       model: "claude-fable-5-1",
     });
     const later = await owned.runExecution(next.runId);
-    const selected = later.execution.contentBundles.skills.find((bundle) => {
-      return bundle.mountPath === `${root}/gen`;
-    })!;
-    expect(readExecutionContentBundle(s3.objects, selected)).toStrictEqual(
+    const selected = later.execution.startupInputs.contentBundles.skills.find(
+      (bundle) => {
+        return bundle.name === "gen";
+      },
+    )!;
+    expect(
+      readExecutionContentBundle(s3.objects, selected.bundle),
+    ).toStrictEqual(
       new Map([["SKILL.md", laterSource.files.get("gen/SKILL.md")]]),
     );
-    expect(selected.sha256).not.toBe(
-      execution.contentBundles.skills.find((bundle) => {
-        return bundle.mountPath === `${root}/gen`;
-      })!.sha256,
+    expect(selected.bundle.sha256).not.toBe(
+      execution.startupInputs.contentBundles.skills.find((bundle) => {
+        return bundle.name === "gen";
+      })!.bundle.sha256,
     );
     await owned.run(() => {
       return fixture.failChatRun(
@@ -267,12 +265,9 @@ describe("Seed Skill bundles through sync-skills", () => {
 });
 
 describe("Seed Skill bundle delivery", () => {
-  it.each([
-    { framework: "codex", root: "/home/user/.codex/skills" },
-    { framework: "pi", root: "/home/user/.pi/agent/skills" },
-  ] as const)(
-    "delivers prepared $framework Seed bundles at their skill mounts",
-    async ({ framework, root }) => {
+  it.each([{ framework: "codex" }, { framework: "pi" }] as const)(
+    "delivers prepared $framework Seed bundles by name",
+    async ({ framework }) => {
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
@@ -295,28 +290,21 @@ describe("Seed Skill bundle delivery", () => {
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
       expect(execution.cliAgentType).toBe(framework);
       expect(
-        execution.contentBundles.skills.map((bundle) => {
-          return bundle.mountPath;
+        execution.startupInputs.contentBundles.skills.map((bundle) => {
+          return bundle.name;
         }),
-      ).toStrictEqual(
-        BUILT_IN_SKILLS.map((name) => {
-          return `${root}/${name}`;
-        }),
-      );
-      for (const bundle of execution.contentBundles.skills) {
+      ).toStrictEqual([...BUILT_IN_SKILLS]);
+      for (const bundle of execution.startupInputs.contentBundles.skills) {
         expect(
-          readExecutionContentBundle(s3.objects, bundle).get("SKILL.md"),
+          readExecutionContentBundle(s3.objects, bundle.bundle).get("SKILL.md"),
         ).toBeDefined();
       }
-      const mountPaths = [
-        ...execution.contentBundles.skills.map((bundle) => {
-          return bundle.mountPath;
-        }),
-        ...(execution.storageManifest?.storageMounts ?? []).map((mount) => {
-          return mount.mountPath;
-        }),
-      ];
-      expect(new Set(mountPaths).size).toBe(mountPaths.length);
+      const skillNames = execution.startupInputs.contentBundles.skills.map(
+        ({ name }) => {
+          return name;
+        },
+      );
+      expect(new Set(skillNames).size).toBe(skillNames.length);
       await owned.run(() => {
         return fixture.failChatRun(
           run.runId,
@@ -341,13 +329,13 @@ describe("Seed Skill bundle delivery", () => {
     });
     const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
     expect(
-      execution.contentBundles.skills.map((bundle) => {
-        return bundle.mountPath.split("/").at(-1);
+      execution.startupInputs.contentBundles.skills.map((bundle) => {
+        return bundle.name;
       }),
     ).toStrictEqual(["computer-use", "workflow-setup"]);
-    for (const bundle of execution.contentBundles.skills) {
+    for (const bundle of execution.startupInputs.contentBundles.skills) {
       expect(
-        readExecutionContentBundle(s3.objects, bundle).get("SKILL.md"),
+        readExecutionContentBundle(s3.objects, bundle.bundle).get("SKILL.md"),
       ).toBeDefined();
     }
     await owned.run(() => {

@@ -22,7 +22,7 @@ reqwest = { workspace = true, features = ["gzip", "json", "rustls"] }
 hyper.workspace = true
 hyper-util = { workspace = true, features = ["client-legacy", "tokio"] }
 serde = { workspace = true, features = ["derive", "std"] }
-serde_json = { workspace = true, features = ["std", "raw_value"] }
+serde_json = { workspace = true, features = ["std"] }
 serde_path_to_error.workspace = true
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }

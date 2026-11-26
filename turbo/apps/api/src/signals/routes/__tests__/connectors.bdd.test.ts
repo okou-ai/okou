@@ -88,8 +88,8 @@ async function observeCustomSkill(
     model: "claude-fable-5-1",
   });
   const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
-  const mount = execution.contentBundles.skills.find((item) => {
-    return item.mountPath.endsWith(
+  const skill = execution.startupInputs.contentBundles.skills.find((item) => {
+    return item.name.endsWith(
       `-${connectorId.replaceAll("-", "").slice(0, 8)}`,
     );
   });
@@ -97,7 +97,7 @@ async function observeCustomSkill(
     sent.runId,
     sandboxHeaders,
   );
-  return mount;
+  return skill?.bundle;
 }
 
 async function createBuiltinCredentialConsumer(
