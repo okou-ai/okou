@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">모델 계정을 전환하지 못했습니다.</string>
     <string name="settings_quota">할당량</string>
     <string name="settings_hour_quota">%1$d시간 할당량</string>
+    <string name="settings_minute_quota">%1$d분 할당량</string>
     <string name="settings_day_quota">%1$d일 할당량</string>
     <string name="settings_weekly_quota">주간 할당량</string>
     <string name="settings_quota_unavailable">할당량을 일시적으로 볼 수 없음</string>
