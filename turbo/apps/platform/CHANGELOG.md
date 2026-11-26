@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1188.1](https://github.com/okou-ai/okou/compare/app-v0.1188.0...app-v0.1188.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **app:** restore workflow directory row dividers and lighten its toolbar ([#50939](https://github.com/okou-ai/okou/issues/50939)) ([c604c13](https://github.com/okou-ai/okou/commit/c604c1373c9354edd8fb462a25b5299fa3491f5a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.883.0
+    * @okouai/ui bumped to 1.22.28
+
 ## [0.1188.0](https://github.com/okou-ai/okou/compare/app-v0.1187.0...app-v0.1188.0) (2026-11-26)
 
 
