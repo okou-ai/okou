@@ -583,7 +583,7 @@ src/signals/routes/__tests__/webhooks-google-forms.test.ts	22	11	11	none
 src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	13	7	7	none	
 src/signals/routes/__tests__/webhooks-notion.test.ts	22	11	11	none	
 src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	1	1	1	none	
-src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	2	1	1	none	
+src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	2	1	2	more	Rewrite review added webhooks-stripe-worker-002 (payment cases leave signature verification to this dedicated group, so the Connect signature check must be covered here like the Billing check in 001)
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	4	2	2	none	
 src/signals/routes/__tests__/webhooks-x-resource-usage.test.ts	9	5	5	none	
 src/signals/routes/__tests__/welcome-chat-threads-automatic.test.ts	7	4	5	more	Spot check of unselected cases added welcome-chat-threads-automatic-003 (a user joining a second workspace gets its own welcome thread).

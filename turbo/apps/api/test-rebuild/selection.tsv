@@ -7191,7 +7191,7 @@ src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-021	selecte
 src/signals/routes/__tests__/webhooks-notion.test.ts	webhooks-notion-022	not-selected	
 src/signals/routes/__tests__/webhooks-stripe-credit-purchase.test.ts	webhooks-stripe-credit-purchase-001	selected	business-rule
 src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-001	selected	access-isolation
-src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-002	not-selected	
+src/signals/routes/__tests__/webhooks-stripe-worker.test.ts	webhooks-stripe-worker-002	selected	access-isolation
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-001	selected	core-path
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-002	not-selected	
 src/signals/routes/__tests__/webhooks-workflow-automations.test.ts	webhooks-workflow-automations-003	selected	business-rule
