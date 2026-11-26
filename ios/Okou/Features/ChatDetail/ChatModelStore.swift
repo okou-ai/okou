@@ -230,6 +230,7 @@ final class ChatModelSelectionStore {
     let selection: ChatModelSelection
     let snapshot: ChatModelStore.Snapshot
     let isNewChat: Bool
+    let isClosed: Bool
     let isSaving: Bool
     let isRefreshing: Bool
     let isMutating: Bool
@@ -249,7 +250,7 @@ final class ChatModelSelectionStore {
     /// Whether `choice` (this new chat's choice, or the sheet's draft of it) differs from the
     /// default for new chats, so saving it as that default would change something.
     func canSaveForFutureChats(_ choice: ChatModelSelection) -> Bool {
-      guard isNewChat, let configuration else { return false }
+      guard !isClosed, isNewChat, let configuration else { return false }
       let current = configuration.resolved(choice)
       let defaultSelection = configuration.defaultSelection
       // Compare the preferred effort, preserving choices narrowed by the current runtime.
@@ -333,10 +334,9 @@ final class ChatModelSelectionStore {
     let active = models.activeValue
     let isNewChat = threadID == nil
     let presentation = Computed<Presentation> { get in
-      let current = try get(status)
-      let configured = try get(snapshot)
-      let activated = try get(active)
-      return Self.present(current, snapshot: configured, active: activated, isNewChat: isNewChat)
+      try Self.present(
+        get(status), snapshot: get(snapshot), active: get(active), isNewChat: isNewChat,
+        isClosed: !get(lifetime))
     }
     presentationValue = presentation
     optionalPresentationValue = Computed { get in try get(presentation) }
@@ -348,7 +348,8 @@ final class ChatModelSelectionStore {
   }
 
   private static func present(
-    _ status: Status, snapshot: ChatModelStore.Snapshot, active: Bool, isNewChat: Bool
+    _ status: Status, snapshot: ChatModelStore.Snapshot, active: Bool, isNewChat: Bool,
+    isClosed: Bool
   ) -> Presentation {
     let configuration = snapshot.configuration
     let base = status.stored ?? configuration?.defaultSelection ?? ChatModelSelection()
@@ -364,9 +365,10 @@ final class ChatModelSelectionStore {
       allowsSending = false
     }
     return Presentation(
-      selection: selection, snapshot: snapshot, isNewChat: isNewChat, isSaving: status.isSaving,
-      isRefreshing: status.isRefreshing, isMutating: status.isSaving || status.isSending,
-      uncertain: status.uncertain, error: status.error, allowsSending: allowsSending)
+      selection: selection, snapshot: snapshot, isNewChat: isNewChat, isClosed: isClosed,
+      isSaving: status.isSaving, isRefreshing: status.isRefreshing,
+      isMutating: status.isSaving || status.isSending, uncertain: status.uncertain,
+      error: status.error, allowsSending: allowsSending)
   }
 
   /// The current value of `presentationValue`.
@@ -551,6 +553,7 @@ final class ChatModelSelectionStore {
     do {
       try models.stateStore.set(reloadMetadata)
       let task = try models.stateStore.get(metadataValue)
+      // Only this method demands a read, so the mirror follows every evaluation that owns one.
       publishRefreshing()
       // A cancelled presentation waiter must not cancel the resident conversation's read.
       _ = await task.result
