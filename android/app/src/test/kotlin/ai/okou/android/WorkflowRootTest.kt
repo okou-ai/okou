@@ -1761,4 +1761,77 @@ internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Add to new chat draft").assertIsEnabled()
         compose.onNodeWithText("View workflow details").assertIsDisplayed()
     }
+
+    @Test
+    fun searchWorkflowDraftFailureKeepsTheActionsInPlaceAndRestoresFocus() = withHardwareKeyboard {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        val result = compose.onNodeWithText(app.fixture.releaseTitle)
+        result.performClick()
+        val idleLabel = "Add to new chat draft"
+        val pendingLabel = "Opening new chat draft…"
+        val error = "Could not open the new chat draft. Your existing draft is preserved."
+        waitFor(idleLabel)
+        val use = compose.onNodeWithText(idleLabel)
+        val opening = compose.onNodeWithText(pendingLabel)
+        val details = compose.onNodeWithText("View workflow details")
+        val failure = compose.onNodeWithText(error)
+        val useBounds = use.getUnclippedBoundsInRoot()
+        val detailsBounds = details.getUnclippedBoundsInRoot()
+
+        val firstRead = CountDownLatch(1)
+        val releaseFailure = CountDownLatch(1)
+        val retryRead = CountDownLatch(1)
+        val releaseRetry = CountDownLatch(1)
+        try {
+            app.fixture.rejectDraftRead = true
+            app.fixture.beforeDraftRead = {
+                firstRead.countDown()
+                check(releaseFailure.await(10, TimeUnit.SECONDS))
+            }
+            use.assertIsEnabled().pressEnter()
+            opening.assertIsNotEnabled()
+            compose.waitUntil(5_000) { compose.runOnIdle { firstRead.count == 0L } }
+            assertEquals(useBounds, opening.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            assertEquals(detailsBounds, details.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            releaseFailure.countDown()
+
+            waitFor(error)
+            assertTrue(failure.getUnclippedBoundsInRoot().bottom < useBounds.top)
+            assertEquals(
+                useBounds,
+                use.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot(),
+            )
+            assertEquals(detailsBounds, details.assertIsEnabled().getUnclippedBoundsInRoot())
+            assertEquals("Keep my existing draft", app.fixture.previousDraft)
+
+            app.fixture.rejectDraftRead = false
+            app.fixture.beforeDraftRead = {
+                retryRead.countDown()
+                check(releaseRetry.await(10, TimeUnit.SECONDS))
+            }
+            use.performKeyInput { pressKey(Key.Enter) }
+            opening.assertIsNotEnabled()
+            compose.waitUntil(5_000) { compose.runOnIdle { retryRead.count == 0L } }
+            failure.assertDoesNotExist()
+            releaseRetry.countDown()
+            waitForTag("message_input")
+            compose
+                .onNodeWithTag("message_input")
+                .assertTextContains("/release-review Keep my existing draft")
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            result.assertIsDisplayed().assertIsFocused()
+        } finally {
+            releaseFailure.countDown()
+            releaseRetry.countDown()
+        }
+    }
 }

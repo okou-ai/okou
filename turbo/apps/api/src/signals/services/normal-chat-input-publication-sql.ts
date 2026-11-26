@@ -252,7 +252,6 @@ export function normalChatInputPublicationSql(
   return sql`WITH ${sql.join(ctes, sql`,\n`)}
     SELECT (SELECT id FROM inserted) AS id,
       (SELECT created_at::text FROM inserted) AS "createdAt",
-      (SELECT seq_id FROM inserted) AS "seqId",
       (SELECT claim_id FROM normal_send_queue) AS "claimId",
       (SELECT claim_expires_at::text FROM normal_send_queue) AS "claimExpiresAt",
       (SELECT queued_at::text FROM normal_send_queue) AS "queuedAt",

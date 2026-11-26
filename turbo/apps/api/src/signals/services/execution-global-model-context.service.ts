@@ -1,13 +1,10 @@
 import { computed } from "ccstate";
-import { asc, inArray, sql } from "drizzle-orm";
+import { asc, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { resolveSkillRef } from "@okouai/core/github-url";
-import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { modelRoutes } from "@okouai/db/schema/model-route";
-import { builtInSkills } from "@okouai/db/schema/built-in-skill";
 import { array, unknown as zUnknown } from "zod";
 import { db$ } from "../external/db";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -18,22 +15,6 @@ import {
 } from "./context-rowset";
 import { validateModelCatalog } from "./model-catalog.service";
 import { usagePricingByKey } from "./built-in-route-pricing";
-
-const seedSkillColumns = Object.freeze({
-  url: builtInSkills.url,
-  contentBundle: builtInSkills.contentBundle,
-});
-
-function seedSkillRows(builder: QueryBuilder) {
-  return builder
-    .select({
-      payload: contextJsonProjection(seedSkillColumns)
-        .mapWith(zodDriverValueDecoder(zUnknown()))
-        .as("payload"),
-    })
-    .from(builtInSkills)
-    .where(inArray(builtInSkills.url, BUILT_IN_SKILLS.map(resolveSkillRef)));
-}
 
 /** Read execution-wide configuration and the model catalog in one snapshot. */
 export function createGlobalModelContext() {
@@ -120,9 +101,6 @@ export function createGlobalModelContext() {
         routes: contextJsonRows(routeRows).mapWith(
           zodDriverValueDecoder(zUnknown()),
         ),
-        seedSkills: contextJsonRows(seedSkillRows(builder)).mapWith(
-          zodDriverValueDecoder(zUnknown()),
-        ),
       })
       .from(sql`(values (1)) as context_seed(value)`);
     if (!row) {
@@ -149,11 +127,5 @@ export function createGlobalModelContext() {
       array(contextProjectionSchema(routes)).parse(row.routes),
     );
   });
-  // Decoding never checks preparation; the consuming run validates its skills.
-  const seedSkills$ = computed(async (get) => {
-    return array(contextProjectionSchema(seedSkillColumns)).parse(
-      (await get(globalRaw$)).seedSkills,
-    );
-  });
-  return { managedModelKeys$, modelPricing$, catalog$, seedSkills$ };
+  return { managedModelKeys$, modelPricing$, catalog$ };
 }

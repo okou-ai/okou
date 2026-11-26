@@ -259,7 +259,7 @@ import {
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
 } from "./workflow-automation-context.service";
-import type { AutomationRow } from "./workflow-automation-enqueue.service";
+import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 import { workflowAutomationTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import {
@@ -494,11 +494,13 @@ type AutonomyBudgetResult =
       readonly error: { readonly code: string; readonly message: string };
     };
 
+type LaunchAutomation = ThreadAutomationTarget["automation"];
+
 function buildWorkflowAutomationQueuedLaunchMaterial(args: {
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
-  readonly automation: AutomationRow;
+  readonly automation: LaunchAutomation;
   readonly chatThreadId: string;
 }): WorkflowAutomationQueuedLaunchMaterial | null {
   if (
@@ -524,7 +526,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
 }
 
 function workflowAutomationRunMetadata(
-  automation: AutomationRow,
+  automation: LaunchAutomation,
   triggerBrief: string | undefined,
   autonomyBudget: number,
 ) {
@@ -543,7 +545,7 @@ type RejectedQueueRunAssembly = Extract<
 type QueuedAutomationLaunch =
   | {
       readonly kind: "launch";
-      readonly automation: AutomationRow;
+      readonly automation: LaunchAutomation;
       readonly chatThreadId: string;
       readonly apiStartTime: number;
       readonly triggerBrief: string | undefined;
@@ -686,7 +688,7 @@ interface WorkflowAutomationQueuedLaunchMaterial {
 }
 
 function buildWorkflowAutomationCallbacks(
-  automation: AutomationRow,
+  automation: LaunchAutomation,
   chatThreadId: string,
   eventType: WorkflowAutomationEventType,
 ): RunLaunchCallbackRecord[] {
@@ -2142,7 +2144,7 @@ export function createThreadClaimRunObjects(
         return mountPath;
       },
     );
-    const selected = selectExecutionPackages(packageSources, {
+    const selected = selectExecutionPackages(packageSources?.sources ?? null, {
       skillRoot,
       protectedMountPaths: [...protectedMountPaths, ...officialMountPaths],
       ordinaryAutomation,
@@ -2152,6 +2154,7 @@ export function createThreadClaimRunObjects(
     }
     return {
       memoryMountPath,
+      prefetchedUrls: packageSources?.prefetchedUrls ?? null,
       packages: {
         mounts,
         bundles: selectExecutionContentBundles(selected, {
@@ -2188,7 +2191,12 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
+    return isRouteError(packagePlan)
+      ? null
+      : {
+          bundles: packagePlan.packages.bundles,
+          prefetchedUrls: packagePlan.prefetchedUrls,
+        };
   });
   const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */

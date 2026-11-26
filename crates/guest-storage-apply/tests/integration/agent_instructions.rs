@@ -44,6 +44,7 @@ fn storage_delivered_instructions_replace_exact_bytes_and_preserve_native_histor
         ("claude-code", ".claude", "CLAUDE.md"),
         ("codex", ".codex", "AGENTS.md"),
         ("pi", ".pi/agent", "AGENTS.md"),
+        ("antigravity", ".gemini", "GEMINI.md"),
     ] {
         let home = tempfile::tempdir().unwrap();
         let target = home.path().join(root);
@@ -110,7 +111,7 @@ fn instruction_application_refuses_symlinked_framework_parents() {
 
 #[test]
 fn instruction_presence_checks_preserve_local_files_and_do_not_create_missing_paths() {
-    for framework in ["claude-code", "codex", "pi"] {
+    for framework in ["claude-code", "codex", "pi", "antigravity"] {
         let home = tempfile::tempdir().unwrap();
         let paths = instruction_paths(home.path(), framework).unwrap();
         let input = metadata(framework).unwrap();

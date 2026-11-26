@@ -186,6 +186,63 @@ async fn disabled_diagnostics_do_not_add_timing_or_prevent_ordinary_failure() {
     h.run.shutdown().await;
 }
 
+#[test]
+fn carrier_progress_keeps_reuse_and_delivery_uncertainty_distinct() {
+    use crate::diagnostics::{Operation, trace::Progress};
+    use crate::vnc::{
+        Failure,
+        evidence::{Carrier, Snapshot},
+    };
+    use uuid::Uuid;
+
+    let rfb = Carrier {
+        configuration_id: Uuid::new_v4(),
+        generation: 1,
+        attempt_id: Uuid::new_v4(),
+        resource_id: None,
+        connection_id: None,
+        status: Progress::Passed,
+        node_setup: Some(Progress::Running),
+        origin_tls: None,
+        access: None,
+    };
+    let kdc = Carrier {
+        configuration_id: Uuid::new_v4(),
+        status: Progress::Running,
+        node_setup: Some(Progress::Passed),
+        origin_tls: Some(Progress::Passed),
+        ..rfb.clone()
+    };
+    let snapshot = Snapshot {
+        rfb_carrier: Some(Box::new(rfb)),
+        kdc_carrier: Some(Box::new(kdc)),
+        ..Snapshot::default()
+    };
+
+    for (failure, terminal) in [
+        (Failure::TimedOut, "unknown"),
+        (Failure::DeliveryUnknown, "failed"),
+    ] {
+        let report =
+            serde_json::to_value(snapshot.operation(Operation::Capture, failure, None)).unwrap();
+        let rfb = &report["rfb_carrier"];
+        assert_eq!(rfb["status"], "reused");
+        assert_eq!(rfb["node_setup"], terminal);
+        assert_eq!(rfb.get("origin_tls"), Some(&serde_json::Value::Null));
+        let kdc = &report["kdc_carrier"];
+        assert_eq!(kdc["status"], terminal);
+        assert_eq!(kdc["node_setup"], "reused");
+        assert_eq!(kdc["origin_tls"], "reused");
+        let capture = report["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["stage"] == "capture")
+            .unwrap();
+        assert_eq!(capture["status"], "unknown");
+    }
+}
+
 // A live pending report and native-watch handoff are pipeline owner boundaries;
 // ordinary RPC terminals instead finish pending stages as failed/unknown.
 #[tokio::test(start_paused = true)]

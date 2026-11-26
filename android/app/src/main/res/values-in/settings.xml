@@ -17,7 +17,6 @@
     <string name="settings_email_receive">Terima email</string>
     <string name="settings_email_unavailable">Email tidak tersedia</string>
     <string name="settings_email_check_address">Periksa email akun</string>
-    <string name="settings_email_load_failed">Pengaturan email untuk sementara tidak tersedia.</string>
     <string name="settings_email_refresh_failed">Tidak dapat menyinkronkan. Menampilkan langganan terakhir yang disimpan.</string>
     <string name="settings_email_refreshing">Menyinkronkan langganan email</string>
     <string name="settings_email_saving">Memperbarui langganan email…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Pilih akun langganan yang Anda gunakan di “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Akun model di “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_unavailable">Akun model tidak dapat dilihat saat ini.</string>
     <string name="settings_accounts_update_failed">Gagal memperbarui akun model. Informasi terakhir ditampilkan.</string>
     <string name="settings_accounts_empty">Belum ada akun model yang terhubung</string>
     <string name="settings_accounts_empty_help">Hubungkan ChatGPT atau Claude untuk melihat kuota dan memilih akun.</string>

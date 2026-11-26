@@ -2277,6 +2277,18 @@ const connectors = [
     ],
   }),
   connector({
+    connectorSlug: "tiktok",
+    label: "TikTok",
+    authMethods: [
+      standardOauthMethod({
+        connectorSlug: "tiktok",
+        prefix: "TIKTOK",
+        tokenEnvironmentNames: ["TIKTOK_TOKEN"],
+        scopes: ["user.info.basic", "video.list"],
+      }),
+    ],
+  }),
+  connector({
     connectorSlug: "tiktok-ads",
     label: "TikTok Ads",
     authMethods: [

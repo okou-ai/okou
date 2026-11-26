@@ -236,10 +236,9 @@ class AppUpdates(
         }
     }
 
-    internal fun checkAfterFailure() {
-        if (mutable.value.check != UpdateCheck.Failed) return
+    internal fun checkOnDetailsOpen() {
         startCheck(manual = false) { snapshot ->
-            snapshot.check == UpdateCheck.Failed &&
+            (snapshot.check == UpdateCheck.Checked || snapshot.check == UpdateCheck.Failed) &&
                 snapshot.displayedRelease?.let(snapshot::isEligible) != true
         }
     }

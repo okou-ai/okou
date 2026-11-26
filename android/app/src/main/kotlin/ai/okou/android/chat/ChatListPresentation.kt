@@ -76,31 +76,32 @@ internal data class ChatListSection(
     val firstRow: Int,
     val collapsed: Boolean,
     val provisionalChats: List<ProvisionalChat>,
+    val showsEmptyProjectAction: Boolean,
 ) {
     val firstChatRow: Int
         get() = if (group.project == null) firstRow else firstRow + 1
 
     val pinTail: Int
         get() = group.pinnedTailIndex(hasProvisional = provisionalChats.isNotEmpty())
-
-    val showsEmptyProjectAction: Boolean
-        get() =
-            group.project != null &&
-                !collapsed &&
-                group.threads.isEmpty() &&
-                provisionalChats.isEmpty()
 }
 
 internal fun chatListSections(
     groups: List<ChatListGroup>,
     expandedProjectIds: Set<String>,
     provisionalByProject: Map<String?, List<ProvisionalChat>> = emptyMap(),
+    hasConfirmedChatList: Boolean,
 ): List<ChatListSection> {
     var row = 0
     return groups.map { group ->
         val collapsed = group.project != null && group.project.id !in expandedProjectIds
         val provisional = provisionalByProject[group.projectId].orEmpty()
-        val section = ChatListSection(group, row, collapsed, provisional)
+        val showsEmptyProjectAction =
+            hasConfirmedChatList &&
+                group.project != null &&
+                !collapsed &&
+                group.threads.isEmpty() &&
+                provisional.isEmpty()
+        val section = ChatListSection(group, row, collapsed, provisional, showsEmptyProjectAction)
         row = section.firstChatRow + if (collapsed) 0 else group.threads.size + provisional.size
         section
     }

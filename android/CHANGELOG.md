@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.2](https://github.com/okou-ai/okou/compare/android-v0.58.1...android-v0.58.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** open settings selectors at the current option ([#51016](https://github.com/okou-ai/okou/issues/51016)) ([6bfbe17](https://github.com/okou-ai/okou/commit/6bfbe1798210522f745176f81c824dac6581b492))
+
 ## [0.58.1](https://github.com/okou-ai/okou/compare/android-v0.58.0...android-v0.58.1) (2026-11-26)
 
 

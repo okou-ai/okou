@@ -22,6 +22,7 @@ import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
   contentBundleUrlCacheSnapshotSql,
+  type PrefetchedContentBundleUrls,
   type ContentBundleUrlCacheSnapshot,
 } from "./content-bundle-presigned-url-cache";
 import {
@@ -89,21 +90,37 @@ const bundleCacheRowSchema = object({
 
 export function createExecutionBundleCache(
   bundles$: Computed<
-    Promise<ExecutionBundleCacheObservation["bundles"] | null>
+    Promise<{
+      readonly bundles: ExecutionBundleCacheObservation["bundles"];
+      readonly prefetchedUrls: PrefetchedContentBundleUrls | null;
+    } | null>
   >,
 ) {
   return computed(
     async (get): Promise<ExecutionBundleCacheObservation | null> => {
-      const bundles = await get(bundles$);
-      if (bundles === null) {
+      const input = await get(bundles$);
+      if (input === null) {
         return null;
       }
-      const db = get(rawSqlReadDb$);
+      const { bundles, prefetchedUrls } = input;
       const cache = get(contentBundleUrlCacheContext$);
+      // A covered hash with no cached URL is already known to require signing.
+      const covered = new Set(prefetchedUrls?.hashes);
+      const remaining = bundles.hashes.filter((hash) => {
+        return !covered.has(hash);
+      });
       const timestamp = nowDate().toISOString();
       const startedAt = monotonicNow();
+      if (remaining.length === 0) {
+        return {
+          bundles,
+          bundleUrlCache: { context: cache, rows: prefetchedUrls?.rows ?? [] },
+          timing: { timestamp, startedAt, readyAt: startedAt },
+        };
+      }
+      const db = get(rawSqlReadDb$);
       const rows = await db.execute(sql`SELECT
-        ${contentBundleUrlCacheSnapshotSql(cache, bundles.hashes)} AS "cachedBundleUrls"`);
+        ${contentBundleUrlCacheSnapshotSql(cache, remaining)} AS "cachedBundleUrls"`);
       const [row] = parseRawRows(bundleCacheRowSchema, rows);
       if (!row) {
         throw new Error("Execution bundle cache query returned no row");
@@ -111,7 +128,10 @@ export function createExecutionBundleCache(
       const readyAt = monotonicNow();
       return {
         bundles,
-        bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
+        bundleUrlCache: {
+          context: cache,
+          rows: [...(prefetchedUrls?.rows ?? []), ...row.cachedBundleUrls],
+        },
         timing: { timestamp, startedAt, readyAt },
       };
     },

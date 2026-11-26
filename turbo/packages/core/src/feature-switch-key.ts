@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   IosConnectorManagement = "iosConnectorManagement",
+  IosConnectorAppAuthorization = "iosConnectorAppAuthorization",
   ComposerVoiceMessages = "composerVoiceMessages",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   PhoneUse = "_phoneUse",

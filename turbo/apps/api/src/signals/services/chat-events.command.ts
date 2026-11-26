@@ -22,7 +22,6 @@ import {
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import {
-  pgInt8ToSafeIntegerSchema,
   pgTimestampWithoutTimezoneToDateSchema,
   parseRawRows,
 } from "../../lib/db-raw-rows";
@@ -1655,7 +1654,6 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
 const normalSendPublicationRowSchema = object({
   id: uuid().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
-  seqId: pgInt8ToSafeIntegerSchema.nullable(),
   claimId: uuid().nullable(),
   claimExpiresAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   queuedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
@@ -2153,7 +2151,7 @@ const appendNormalSendInput$ = command(
     if (row.id === null) {
       return null;
     }
-    if (row.createdAt === null || row.seqId === null) {
+    if (row.createdAt === null) {
       throw new Error("Normal chat input publication is incomplete");
     }
     const enqueueCommit = { eventId: row.id, committedAt: now() };
@@ -2171,7 +2169,7 @@ const appendNormalSendInput$ = command(
       };
     }
     return {
-      inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
+      createdAt: row.createdAt,
       enqueueCommit,
       publishedLease,
       marketingRewardEventId: args.getStartedWorkflowId
@@ -2948,11 +2946,7 @@ const publishPreparedNormalSend$ = command(
     if (committed === null) {
       return null;
     }
-    const {
-      inserted: { createdAt },
-      enqueueCommit,
-      publishedLease,
-    } = committed;
+    const { createdAt, enqueueCommit, publishedLease } = committed;
     args.enqueueTiming?.committed(enqueueCommit.committedAt);
     // Schedule before observing abort; touch, realtime and the running-run
     // notice follow this pick's outcome.

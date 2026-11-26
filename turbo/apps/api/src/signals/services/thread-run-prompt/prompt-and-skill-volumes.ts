@@ -132,9 +132,6 @@ function createSharedPromptSources(
   const disabledPaidTools$ = computed((get) => {
     return get(bootstrap.disabledPaidTools$);
   });
-  const seedSkills$ = computed((get) => {
-    return get(bootstrap.seedSkills$);
-  });
   const contextType$ = computed(async (get) => {
     const event = await get(pickedEvent$);
     if (!event?.contextType) {
@@ -170,7 +167,7 @@ function createSharedPromptSources(
   });
   const systemSkills$ = createSystemSkillVolumes(
     disabledPaidTools$,
-    seedSkills$,
+    threadContext.executionPackageSources$,
   );
   const skillVolumes$ = computed(
     async (get): Promise<readonly SkillVolume[]> => {

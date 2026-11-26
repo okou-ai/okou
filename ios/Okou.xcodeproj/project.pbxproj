@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		000000000000000000000092 /* SpotifyiOS in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000091 /* SpotifyiOS */; };
 		00000000000000000000000F /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000000E /* ClerkKit */; };
 		000000000000000000000011 /* ClerkKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000010 /* ClerkKitUI */; };
 		000000000000000000000013 /* Ably in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000012 /* Ably */; };
@@ -164,6 +165,7 @@
 				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
 				000000000000000000000082 /* CCState in Frameworks */,
 				000000000000000000000084 /* CCStateSwiftUI in Frameworks */,
+				000000000000000000000092 /* SpotifyiOS in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -256,6 +258,7 @@
 				000000000000000000000071 /* BeautifulMermaid */,
 				000000000000000000000081 /* CCState */,
 				000000000000000000000083 /* CCStateSwiftUI */,
+				000000000000000000000091 /* SpotifyiOS */,
 			);
 			productName = Okou;
 			productReference = 000000000000000000000009 /* Okou.app */;
@@ -384,6 +387,7 @@
 				000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */,
 				000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */,
+				000000000000000000000090 /* XCRemoteSwiftPackageReference "ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 000000000000000000000007 /* Products */;
@@ -796,6 +800,14 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		000000000000000000000090 /* XCRemoteSwiftPackageReference "ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/spotify/ios-sdk.git";
+			requirement = {
+				kind = exactVersion;
+				version = 5.0.1;
+			};
+		};
 		00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/clerk/clerk-ios.git";
@@ -847,6 +859,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		000000000000000000000091 /* SpotifyiOS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000090 /* XCRemoteSwiftPackageReference "ios-sdk" */;
+			productName = SpotifyiOS;
+		};
 		00000000000000000000000E /* ClerkKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 00000000000000000000000C /* XCRemoteSwiftPackageReference "clerk-ios" */;
