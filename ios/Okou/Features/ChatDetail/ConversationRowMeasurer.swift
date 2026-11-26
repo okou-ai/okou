@@ -142,8 +142,7 @@ final class ConversationRowMeasurer<Content: View> {
     var unitSessions: [MessageUnitMeasurements.Session] = []
     let hosts = rows.map { row in
       let unitSession: MessageUnitMeasurements.Session?
-      if case .message(let message, _, _, _, _, false, _) = row.content, message.role == .assistant
-      {
+      if case .message(let answer, _, _, _, _, false, _) = row.content, answer.role == .assistant {
         let session = MessageUnitMeasurements.Session(
           cache: source.markdown.unitMeasurements, layout: layout)
         unitSessions.append(session)
