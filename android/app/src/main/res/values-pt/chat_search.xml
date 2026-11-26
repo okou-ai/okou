@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">Não foi possível carregar alguns resultados</string>
     <string name="chat_search_message_unavailable">Esta mensagem não está mais disponível</string>
     <string name="chat_search_workflow_add_draft">Adicionar ao rascunho de um novo chat</string>
+    <string name="chat_search_workflow_opening_draft">Abrindo o rascunho de um novo chat…</string>
     <string name="chat_search_workflow_details">Ver detalhes do workflow</string>
     <string name="chat_search_workflow_shadowed">Um workflow privado usa este comando</string>
     <string name="chat_search_artifact_preview">Prévia do artefato</string>

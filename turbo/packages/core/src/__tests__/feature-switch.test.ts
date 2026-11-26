@@ -40,11 +40,11 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
+    FeatureSwitchKey.HideEmptyForYou,
     FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
-    FeatureSwitchKey.SlackArtifactChannelSharing,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [

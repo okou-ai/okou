@@ -27,16 +27,8 @@ impl NormalOperationTracker {
         let mut inner = self.inner();
         match inner.state {
             TrackerState::Open => {
-                let id = NormalOperationId(inner.next_operation_id);
-                inner.next_operation_id += 1;
-                inner
-                    .operations
-                    .insert(id, OperationPhase::ReservedBeforeWrite);
-                Ok(NormalOperationToken {
-                    id,
-                    inner: Arc::clone(&self.inner),
-                    released: false,
-                })
+                let id = inner.allocate_operation_id();
+                Ok(self.register_operation(&mut inner, id))
             }
             TrackerState::Fenced { .. } => Err(NormalOperationRejection::Fenced),
             TrackerState::NotParkable => Err(NormalOperationRejection::NotParkable),
@@ -55,68 +47,27 @@ impl NormalOperationTracker {
         {
             return Err(NormalOperationRejection::Fenced);
         }
-        let id = NormalOperationId(inner.next_operation_id);
-        inner.next_operation_id += 1;
-        inner
-            .operations
-            .insert(id, OperationPhase::ReservedBeforeWrite);
-        Ok(NormalOperationToken {
-            id,
-            inner: Arc::clone(&self.inner),
-            released: false,
-        })
+        let id = inner.allocate_operation_id();
+        Ok(self.register_operation(&mut inner, id))
     }
 
     pub(crate) fn try_fence(&self) -> Result<NormalOperationFence, NormalOperationFenceRejection> {
         let mut inner = self.inner();
-        match inner.state {
-            TrackerState::Open if inner.operations.is_empty() => {
-                let id = NormalOperationFenceId(inner.next_fence_id);
-                inner.next_fence_id += 1;
-                inner.state = TrackerState::Fenced { id };
-                Ok(NormalOperationFence {
-                    id,
-                    inner: Arc::clone(&self.inner),
-                })
-            }
-            TrackerState::Open => Err(NormalOperationFenceRejection::Busy),
-            TrackerState::Fenced { .. } => Err(NormalOperationFenceRejection::AlreadyFenced),
-            TrackerState::NotParkable => Err(NormalOperationFenceRejection::NotParkable),
-            TrackerState::Closed => Err(NormalOperationFenceRejection::Closed),
-        }
+        inner.require_idle_for_fence()?;
+        let id = inner.allocate_fence_id();
+        Ok(self.install_fence(&mut inner, id))
     }
 
     pub(crate) fn try_reserve_and_fence(
         &self,
     ) -> Result<(NormalOperationToken, NormalOperationFence), NormalOperationFenceRejection> {
         let mut inner = self.inner();
-        match inner.state {
-            TrackerState::Open if inner.operations.is_empty() => {
-                let operation_id = NormalOperationId(inner.next_operation_id);
-                inner.next_operation_id += 1;
-                let fence_id = NormalOperationFenceId(inner.next_fence_id);
-                inner.next_fence_id += 1;
-                inner
-                    .operations
-                    .insert(operation_id, OperationPhase::ReservedBeforeWrite);
-                inner.state = TrackerState::Fenced { id: fence_id };
-                Ok((
-                    NormalOperationToken {
-                        id: operation_id,
-                        inner: Arc::clone(&self.inner),
-                        released: false,
-                    },
-                    NormalOperationFence {
-                        id: fence_id,
-                        inner: Arc::clone(&self.inner),
-                    },
-                ))
-            }
-            TrackerState::Open => Err(NormalOperationFenceRejection::Busy),
-            TrackerState::Fenced { .. } => Err(NormalOperationFenceRejection::AlreadyFenced),
-            TrackerState::NotParkable => Err(NormalOperationFenceRejection::NotParkable),
-            TrackerState::Closed => Err(NormalOperationFenceRejection::Closed),
-        }
+        inner.require_idle_for_fence()?;
+        let operation_id = inner.allocate_operation_id();
+        let fence_id = inner.allocate_fence_id();
+        let operation = self.register_operation(&mut inner, operation_id);
+        let fence = self.install_fence(&mut inner, fence_id);
+        Ok((operation, fence))
     }
 
     pub(crate) fn mark_not_parkable(&self) {
@@ -142,6 +93,25 @@ impl NormalOperationTracker {
         ) {
             inner.state = TrackerState::Closed;
             inner.operations.clear();
+        }
+    }
+
+    fn register_operation(&self, inner: &mut Inner, id: NormalOperationId) -> NormalOperationToken {
+        inner
+            .operations
+            .insert(id, OperationPhase::ReservedBeforeWrite);
+        NormalOperationToken {
+            id,
+            inner: Arc::clone(&self.inner),
+            released: false,
+        }
+    }
+
+    fn install_fence(&self, inner: &mut Inner, id: NormalOperationFenceId) -> NormalOperationFence {
+        inner.state = TrackerState::Fenced { id };
+        NormalOperationFence {
+            id,
+            inner: Arc::clone(&self.inner),
         }
     }
 
@@ -233,6 +203,28 @@ struct Inner {
 }
 
 impl Inner {
+    fn allocate_operation_id(&mut self) -> NormalOperationId {
+        let id = NormalOperationId(self.next_operation_id);
+        self.next_operation_id += 1;
+        id
+    }
+
+    fn allocate_fence_id(&mut self) -> NormalOperationFenceId {
+        let id = NormalOperationFenceId(self.next_fence_id);
+        self.next_fence_id += 1;
+        id
+    }
+
+    fn require_idle_for_fence(&self) -> Result<(), NormalOperationFenceRejection> {
+        match self.state {
+            TrackerState::Open if self.operations.is_empty() => Ok(()),
+            TrackerState::Open => Err(NormalOperationFenceRejection::Busy),
+            TrackerState::Fenced { .. } => Err(NormalOperationFenceRejection::AlreadyFenced),
+            TrackerState::NotParkable => Err(NormalOperationFenceRejection::NotParkable),
+            TrackerState::Closed => Err(NormalOperationFenceRejection::Closed),
+        }
+    }
+
     #[cfg(test)]
     fn readiness(&self) -> NormalOperationReadiness {
         match self.state {

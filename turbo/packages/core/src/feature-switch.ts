@@ -187,6 +187,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Hide empty For you",
     description: "Show For you in the chat list only when the feed has cards.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
@@ -313,14 +314,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Artifact email sharing",
     description:
       "Share websites and files with existing accounts or invite verified email recipients.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackArtifactChannelSharing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Slack artifact sharing",
-    description:
-      "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

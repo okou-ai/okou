@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">Some search results are temporarily unavailable</string>
     <string name="chat_search_message_unavailable">This message is no longer available</string>
     <string name="chat_search_workflow_add_draft">Add to new chat draft</string>
+    <string name="chat_search_workflow_opening_draft">Opening new chat draft…</string>
     <string name="chat_search_workflow_details">View workflow details</string>
     <string name="chat_search_workflow_shadowed">A private workflow uses this command</string>
     <string name="chat_search_artifact_preview">Artifact preview</string>

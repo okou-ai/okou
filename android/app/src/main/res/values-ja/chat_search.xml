@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">一部の結果を読み込めませんでした</string>
     <string name="chat_search_message_unavailable">このメッセージは表示できません</string>
     <string name="chat_search_workflow_add_draft">新しいチャットの下書きに追加</string>
+    <string name="chat_search_workflow_opening_draft">新しいチャットの下書きを開いています…</string>
     <string name="chat_search_workflow_details">ワークフローの詳細を表示</string>
     <string name="chat_search_workflow_shadowed">このコマンドは非公開のワークフローで使用されています</string>
     <string name="chat_search_artifact_preview">成果物のプレビュー</string>

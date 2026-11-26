@@ -9,6 +9,13 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
+
+const MIN_PARALLEL_TARGETS: usize = 64;
+const TARGET_READERS: usize = 4;
+const SAMPLE_TARGETS: usize = 16;
+const SLOW_SAMPLE: Duration = Duration::from_millis(1);
 
 pub(crate) struct Quarantine {
     parent: CleanupDirectory,
@@ -73,30 +80,8 @@ impl Quarantine {
         {
             return Ok(None);
         }
-        // Inputs must not alias the private cleanup namespace through symlink
-        // ancestors. Missing roots are checked through their nearest parent.
-        for target in targets {
-            let mut existing = target;
-            loop {
-                match CleanupDirectory::open(existing) {
-                    Ok(_) => break,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        let Some(ancestor) = existing.parent() else {
-                            return Ok(None);
-                        };
-                        existing = ancestor;
-                    }
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            io::ErrorKind::NotADirectory | io::ErrorKind::PermissionDenied
-                        ) || error.raw_os_error() == Some(libc::ELOOP) =>
-                    {
-                        return Ok(None);
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
+        if !check_targets(&targets)? {
+            return Ok(None);
         }
         // Existing final exec/park and terminal cache preparation own every
         // unprotected child. No background deletion or additional queue exists.
@@ -150,6 +135,104 @@ impl Quarantine {
     }
 }
 
+fn check_targets(targets: &[&Path]) -> io::Result<bool> {
+    if targets.len() < MIN_PARALLEL_TARGETS {
+        return check_target_slice(targets);
+    }
+
+    let (sample, targets) = targets.split_at(SAMPLE_TARGETS);
+    let started = Instant::now();
+    if !check_target_slice(sample)? {
+        return Ok(false);
+    }
+    if started.elapsed() < SLOW_SAMPLE {
+        return check_target_slice(targets);
+    }
+
+    check_targets_in_parallel(targets)
+}
+
+fn check_targets_in_parallel(targets: &[&Path]) -> io::Result<bool> {
+    let chunk_size = targets.len().div_ceil(TARGET_READERS);
+    let (first, remaining) = targets.split_at(chunk_size);
+    // Overlap cold inode reads, but keep inspection results in manifest order.
+    // Scoped readers all finish before the caller can start cleanup.
+    thread::scope(|scope| {
+        let workers = remaining
+            .chunks(chunk_size)
+            .map(|paths| {
+                let worker = thread::Builder::new()
+                    .spawn_scoped(scope, move || check_target_slice(paths))
+                    .ok();
+                (paths, worker)
+            })
+            .collect::<Vec<_>>();
+        if !check_target_slice(first)? {
+            return Ok(false);
+        }
+        for (paths, worker) in workers {
+            let eligible = match worker {
+                Some(worker) => worker
+                    .join()
+                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload))?,
+                // A slice stays with the caller if the OS cannot start its reader.
+                None => check_target_slice(paths)?,
+            };
+            if !eligible {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    })
+}
+
+fn check_target_slice(targets: &[&Path]) -> io::Result<bool> {
+    // Inputs must not alias the private cleanup namespace through symlink
+    // ancestors. Missing roots are checked through their nearest parent.
+    for &target in targets {
+        let mut existing = target;
+        loop {
+            match CleanupDirectory::open(existing) {
+                Ok(_) => break,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    let Some(ancestor) = existing.parent() else {
+                        return Ok(false);
+                    };
+                    existing = ancestor;
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::NotADirectory | io::ErrorKind::PermissionDenied
+                    ) || error.raw_os_error() == Some(libc::ELOOP) =>
+                {
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+    Ok(true)
+}
+
 fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parallel_checks_return_the_first_unsuccessful_result_in_manifest_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("not-a-directory");
+        fs::write(&file, b"").unwrap();
+        let invalid = directory.path().join("invalid\0path");
+        let root = directory.path();
+
+        assert!(!check_targets_in_parallel(&[root, &file, root, &invalid]).unwrap());
+        let error = check_targets_in_parallel(&[root, &invalid, root, &file]).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
 }
