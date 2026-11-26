@@ -390,15 +390,15 @@ billing	src/signals/routes/__tests__/billing-customer-publication.test.ts	billin
 billing	src/signals/routes/__tests__/billing-customer-publication.test.ts	billing-customer-publication-002	planned				
 billing	src/signals/routes/__tests__/billing-customer-publication.test.ts	billing-customer-publication-003	planned				
 billing	src/signals/routes/__tests__/billing-customer-publication.test.ts	billing-customer-publication-006	planned				
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-003	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-005	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-006	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-008	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-010	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-011	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-014	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-015	planned				B03
-billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-017	planned				B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-003	rewritten	14.7		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-005	rewritten	73.2		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-006	rewritten	46.5		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-008	rewritten	35.2		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-010	rewritten	93.9		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-011	rewritten	49.5		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-014	rewritten	49.8		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-015	rewritten	81.7		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
+billing	src/signals/routes/__tests__/billing-downgrade.test.ts	billing-downgrade-017	rewritten	53.9		src/signals/routes/__tests__/billing-downgrade.test.ts	B03
 billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-001	planned				B03
 billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-004	planned				B03
 billing	src/signals/routes/__tests__/billing-feedback.test.ts	billing-feedback-005	planned				B03
