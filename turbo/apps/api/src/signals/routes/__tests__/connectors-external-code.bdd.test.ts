@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 
 import { testContext } from "../../../__tests__/test-context";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -404,4 +405,133 @@ describe("external-code session lifecycle", () => {
       remaining.status === 200 ? remaining.body.defaultConnection : undefined,
     ).toBeNull();
   });
+
+  it("connectors-external-code.bdd-001 (1/2) starts a protected AWS session and completes it into the default cli account", async () => {
+    const provider = mockAwsExternalCodeProvider();
+    const owner = bdd.user();
+    const other = bdd.user();
+
+    const session = await connectors.startExternalCode(owner, "aws", "cli");
+    expect(session).toMatchObject({ status: "pending", expiresIn: 600 });
+    const url = new URL(session.authorizationUrl);
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://us-east-1.signin.aws.amazon.com/v1/authorize",
+    );
+    expect(url.searchParams.get("client_id")).toBe(
+      "arn:aws:signin:::devtools/cross-device",
+    );
+    expect(url.searchParams.get("scope")).toBe("openid");
+    expect(url.searchParams.get("redirect_uri")).toBe(
+      "https://us-east-1.signin.aws.amazon.com/v1/sessions/confirmation",
+    );
+
+    const wrongToken = await completeAws(owner, {
+      ...session,
+      sessionToken: `${session.sessionToken}-wrong`,
+    });
+    expect(wrongToken.status).toBe(404);
+    expect(wrongToken.body).toMatchObject({
+      error: { message: "External-code authorization session not found" },
+    });
+    const foreign = await completeAws(other, session);
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(provider.tokenRequests).toHaveLength(0);
+
+    const completed = await connectors.requestExternalCodeComplete(
+      owner,
+      "aws",
+      {
+        sessionId: session.sessionId,
+        sessionToken: session.sessionToken,
+        code: `  ${awsVerificationCode(session.authorizationUrl)}  `,
+      },
+      [200],
+    );
+    if (completed.status !== 200) {
+      throw new Error("Expected AWS completion");
+    }
+    const connectionId = completed.body.connectionId;
+    expect(
+      provider.tokenRequests.map((request) => {
+        return { grantType: request.grantType, code: request.code };
+      }),
+    ).toStrictEqual([{ grantType: "authorization_code", code: "AWS-CODE" }]);
+    const account = await connectors.readBuiltinConnectorAccount(
+      owner,
+      "aws",
+      connectionId,
+    );
+    expect({
+      authMethod: account.authMethod,
+      externalId: account.externalId,
+      externalUsername: account.externalUsername,
+      oauthScopes: account.oauthScopes,
+      isDefault: account.isDefault,
+    }).toStrictEqual({
+      authMethod: "cli",
+      externalId: "123456789012",
+      externalUsername: expect.stringContaining(
+        "arn:aws:iam::123456789012:user/external-code",
+      ),
+      oauthScopes: ["openid"],
+      isDefault: true,
+    });
+    const expiresInMs = Date.parse(account.tokenExpiresAt ?? "") - now();
+    expect(expiresInMs).toBeGreaterThan(14 * 60_000);
+    expect(expiresInMs).toBeLessThanOrEqual(15 * 60_000 + 5000);
+    const exposed = JSON.stringify([completed.body, account]);
+    for (const secret of [
+      "aws-secret-access-key",
+      "aws-login-refresh-token",
+      "aws-session-token",
+    ]) {
+      expect(exposed).not.toContain(secret);
+    }
+    const listed = await connectors.listBuiltinConnectors(owner);
+    expect(
+      listed.connectors.find((connector) => {
+        return connector.slug === "aws";
+      }),
+    ).toMatchObject({ id: connectionId, externalId: "123456789012" });
+  });
+
+  it("connectors-external-code.bdd-001 (2/2) replays the completion and rejects a reconnect after deletion", async () => {
+    const provider = mockAwsExternalCodeProvider();
+    const owner = bdd.user();
+    const session = await startRejectedAwsSession(owner);
+    const first = await completeAws(owner, session);
+    if (first.status !== 200) {
+      throw new Error("Expected AWS completion");
+    }
+    const connectionId = first.body.connectionId;
+
+    const replay = await completeAws(owner, session);
+    expect(replay.body).toStrictEqual({ status: "complete", connectionId });
+    expect(provider.tokenRequests).toHaveLength(1);
+
+    const reconnect = await connectors.startExternalCode(owner, "aws", "cli", {
+      intent: "reconnect",
+      connectionId,
+    });
+    await connectors.deleteBuiltinConnectorAccount(owner, "aws", connectionId);
+    const orphaned = await completeAws(owner, reconnect);
+    expect(orphaned.status).toBe(409);
+    expect(orphaned.body).toMatchObject({
+      error: { message: "Connector account not found" },
+    });
+    await expect(defaultAwsAccount(owner)).resolves.toBeNull();
+  });
 });
+
+/** An AWS add session after the wrong-token and other-user completions were refused. */
+async function startRejectedAwsSession(owner: ApiTestUser) {
+  const other = bdd.user();
+  const session = await connectors.startExternalCode(owner, "aws", "cli");
+  await completeAws(owner, {
+    ...session,
+    sessionToken: `${session.sessionToken}-wrong`,
+  });
+  await completeAws(other, session);
+  return session;
+}
