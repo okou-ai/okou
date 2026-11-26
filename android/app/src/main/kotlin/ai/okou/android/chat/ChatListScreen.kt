@@ -676,7 +676,8 @@ internal fun ChatListScreen(
                     }
                 }
                 if (
-                    groups.all { it.project == null && it.threads.isEmpty() } &&
+                    hasConfirmedChatList &&
+                        groups.all { it.project == null && it.threads.isEmpty() } &&
                         pendingByProject.isEmpty() &&
                         metadataUsable &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
