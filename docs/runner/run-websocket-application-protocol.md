@@ -14,16 +14,16 @@ text message and waits for the Runner's `auth.ok`.
 
 The client then sends one application `hello` with the common schema version
 and the category versions it supports. The endpoint replies with a correlated
-`response` once it can serve the exact live Run. A successful hello response
+`ready` once it can serve the exact live Run. The `ready` message
 echoes the accepted `schemaVersion` and returns the highest shared version
-for each category in `result.categories`. It omits categories without a shared
-version. The client verifies the schema version and each category selection
+for each category in `categories`. It omits categories without a shared
+version. The client matches `requestId` to the hello ID and verifies the schema version and each category selection
 against its offer. An empty selection is valid.
 
 Both peers install their local roles before the exchange. The endpoint sends
-the hello response before any application call or event. The client applies
+one `ready` before any application call or event. The client applies
 the selection before dispatching subsequent messages. The handshake has a
-deadline. Repeated hello, an invalid handshake, or an unsupported common
+deadline. Repeated hello or ready, an invalid handshake, or an unsupported common
 schema version ends the connection. The common schema version and category
 selections remain fixed for its lifetime. Subsequent messages use those
 versions from the connection state.
@@ -33,17 +33,18 @@ versions from the connection state.
 Each complete WebSocket binary message carries one UTF-8 JSON object without
 a byte-order mark. WebSocket fragmentation is transparent to the application.
 Each message carries `type` and a freshly generated canonical lowercase UUID
-v4 `id`. Only the hello and its successful response carry `schemaVersion`
+v4 `id`. Only `hello` and `ready` carry `schemaVersion`
 (initially 1).
 
-| Type       | Sender                                  | Additional required fields                                                                                 |
-| ---------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `hello`    | Client                                  | `schemaVersion` and `categories`, mapping names to nonempty lists of supported versions                    |
-| `request`  | Either peer                             | `category`, `operation`, `params`                                                                          |
-| `response` | Either peer                             | `requestId` and exactly one of `result` or `error`. Successful hello responses also carry `schemaVersion`. |
-| `event`    | Either peer, as allowed by the category | `category`, `event`, `data`                                                                                |
+| Type       | Sender                                  | Additional required fields                                                              |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------- |
+| `hello`    | Client                                  | `schemaVersion` and `categories`, mapping names to nonempty lists of supported versions |
+| `ready`    | Endpoint                                | `schemaVersion`, `requestId` and `categories`, mapping names to selected versions       |
+| `request`  | Either peer                             | `category`, `operation`, `params`                                                       |
+| `response` | Either peer                             | `requestId` and exactly one of `result` or `error`                                      |
+| `event`    | Either peer, as allowed by the category | `category`, `event`, `data`                                                             |
 
-A response uses `requestId` to identify the hello or request it answers.
+A `response` uses `requestId` to identify the application request it answers.
 Inbound work and outbound waits use separate maps. A duplicate active
 inbound request ID closes the connection. Unknown or retired response
 correlations are discarded. The reader can dispatch responses while an
@@ -98,7 +99,7 @@ and sends an advisory notice. These JSON lines represent binary messages.
 
 ```jsonl
 {"schemaVersion":1,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"diagnostics":[1,2],"run":[1]}}
-{"schemaVersion":1,"type":"response","id":"00000000-0000-4000-8000-000000000002","requestId":"00000000-0000-4000-8000-000000000001","result":{"categories":{"diagnostics":2,"run":1}}}
+{"schemaVersion":1,"type":"ready","id":"00000000-0000-4000-8000-000000000002","requestId":"00000000-0000-4000-8000-000000000001","categories":{"diagnostics":2,"run":1}}
 {"type":"request","id":"00000000-0000-4000-8000-000000000003","category":"diagnostics","operation":"echo","params":{"message":"hello"}}
 {"type":"response","id":"00000000-0000-4000-8000-000000000004","requestId":"00000000-0000-4000-8000-000000000003","result":{"message":"hello"}}
 {"type":"request","id":"00000000-0000-4000-8000-000000000005","category":"diagnostics","operation":"echo","params":{"message":"from endpoint"}}
