@@ -86,9 +86,9 @@ messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-014	planned				
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-019	planned				
 messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-020	planned				
-messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-002	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-004	planned				B04
-messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-005	planned				B04
+messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-002	rewritten	165.8		src/signals/routes/__tests__/agentphone-verification.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-004	rewritten	19.7		src/signals/routes/__tests__/agentphone-verification.test.ts	B04
+messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-005	rewritten	24.3		src/signals/routes/__tests__/agentphone-verification.test.ts	B04
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-001	planned				
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-003	planned				
 messaging	src/signals/routes/__tests__/agentphone.bdd.test.ts	agentphone.bdd-004	planned				
