@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.repeated_bytes_helpers import repeat_bytes
+from tests.repeated_bytes_helpers import join_repeated_bytes, repeat_bytes
 from usage.json_selective import JsonSelectiveExtractor, ScalarField
 
 
@@ -10,7 +10,7 @@ from usage.json_selective import JsonSelectiveExtractor, ScalarField
     ("payload", "exact_work_units"),
     [
         (b"[" + (b"0," * 10)[:-1] + b"]", 22),
-        (b"{" + b",".join([b'"x":0'] * 10) + b"}", 43),
+        (join_repeated_bytes(b",", b'"x":0', 10, prefix=b"{", suffix=b"}"), 43),
         (b"   null", 5),
         (b'"' + b"\\n" * 17 + b'"', 3),
         (b'"' + b"\xe2\x98\x83" * 11 + b'"', 3),

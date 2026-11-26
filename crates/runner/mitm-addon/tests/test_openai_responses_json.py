@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from tests.repeated_bytes_helpers import join_repeated_bytes
 from usage import create_model_json_response_inspector
 
 
@@ -198,10 +199,12 @@ class TestOpenAIResponsesModelJsonResponseInspector:
         output_item = (
             b'{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}'
         )
-        body = (
-            b'{"id":"resp_many","model":"gpt-5.6-sol","output":['
-            + b",".join([output_item] * 700)
-            + b'],"usage":{"input_tokens":20,"output_tokens":9}}'
+        body = join_repeated_bytes(
+            b",",
+            output_item,
+            700,
+            prefix=b'{"id":"resp_many","model":"gpt-5.6-sol","output":[',
+            suffix=b'],"usage":{"input_tokens":20,"output_tokens":9}}',
         )
 
         result, error = _inspect_openai_responses_json(body)

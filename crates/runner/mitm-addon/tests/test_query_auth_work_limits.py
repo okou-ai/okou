@@ -21,6 +21,7 @@ import mitm_addon
 import request_streaming
 from tests.firewall_auth_helpers import firewall_auth_success
 from tests.mitmproxy_http_framing_helpers import CLIENT_IP, start_http_layer
+from tests.repeated_bytes_helpers import join_repeated_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 
@@ -87,18 +88,15 @@ def _budget_target(case: str) -> bytes:
     if case == "fragment-separators":
         return b"/items?x=1#" + b"&" * auth.MAX_QUERY_AUTH_QUERY_PAIRS
     if case == "dense-query":
-        return b"/items?" + b"&".join([b"x=1"] * 262_144)
+        return join_repeated_bytes(b"&", b"x=1", 262_144, prefix=b"/items?")
     client_pairs = (
         auth.MAX_QUERY_AUTH_QUERY_PAIRS
         - 1
         + int(case.endswith("over") or case == "incomplete-upload")
     )
-    query = (
-        b"api%5Fkey=client" + b"&" * (client_pairs - 1)
-        if case.startswith("empty-shadowed-")
-        else b"&".join([b"x=1"] * client_pairs)
-    )
-    return b"/items?" + query
+    if case.startswith("empty-shadowed-"):
+        return b"/items?api%5Fkey=client" + b"&" * (client_pairs - 1)
+    return join_repeated_bytes(b"&", b"x=1", client_pairs, prefix=b"/items?")
 
 
 @pytest.mark.parametrize(
