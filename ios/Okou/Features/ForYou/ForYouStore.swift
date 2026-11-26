@@ -6,24 +6,15 @@ import Foundation
 /// The deck keeps its order for one visit. Only the visible card gets a read receipt.
 @MainActor
 final class ForYouStore {
+  /// A plain toast for an action whose effect the page does not otherwise show, such as an
+  /// automation enabled. A message sent or a card turned down has none: the card leaving the
+  /// deck is the confirmation.
   struct Notice: Equatable {
     let text: String
-    var threadID: String?
-    var undo: Undo?
   }
-  struct Undo: Equatable {
-    let card: ForYouCard
-    let position: Int
-    let feedbackID: String
-    let undoID = UUID().uuidString
-  }
-  /// One card this visit settled, for the recap that closes it.
+  /// One card this visit settled. Only their count is read: a new one plays the success haptic.
   struct Handled: Identifiable, Equatable {
     let id: String
-    let title: String
-    let detail: String
-    var threadID: String?
-    var undo: Undo?
   }
   private struct Selection {
     let cardID: String
@@ -98,15 +89,6 @@ final class ForYouStore {
     } catch { self.error = error.localizedDescription }
   }
 
-  /// The pager came to rest on a card.
-  func show(_ id: String) {
-    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
-    updateDeck {
-      $0.position = index
-      $0.error = nil
-    }
-  }
-
   func read(_ id: String) async {
     guard current?.id == id, !readIDs.contains(id) else { return }
     do {
@@ -127,51 +109,23 @@ final class ForYouStore {
       do {
         try await feed.feedback(card, reason: reason, id: id)
       } catch let failure as APIClientError {
+        // Settled on another device: it leaves the deck all the same.
         guard failure.statusCode == 409 else { throw failure }
         remove(card)
-        notice = Notice(text: String(localized: "This suggestion was already handled."))
         return
       }
-      let undo = Undo(card: card, position: position, feedbackID: id)
-      notice = Notice(
-        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"), undo: undo)
-      record(card, detail: reason?.title ?? String(localized: "Dismissed"), undo: undo)
+      record(card)
       remove(card)
       feedbackID = nil
-    }
-  }
-
-  func undo(_ action: Undo) async {
-    await perform {
-      let restored = try await feed.feedback(
-        action.card, reason: nil, id: action.undoID, undoing: action.feedbackID)
-      if let index = handled.firstIndex(where: { $0.id == action.card.id }) {
-        // A card that came back is no longer settled; one that is gone can not be undone again.
-        if restored { handled.remove(at: index) } else { handled[index].undo = nil }
-      }
-      if restored {
-        updateDeck { deck in
-          if let index = deck.cards.firstIndex(where: { $0.id == action.card.id }) {
-            deck.position = index
-          } else {
-            deck.position = min(action.position, deck.cards.count)
-            deck.cards.insert(action.card, at: deck.position)
-          }
-        }
-      }
-      notice =
-        restored ? nil : Notice(text: String(localized: "This suggestion is no longer available."))
-      workspace?.requestRefresh(.forYou)
     }
   }
 
   func resolve(_ card: ForYouCard, event: ForYouAutomation, enable: Bool) async {
     await perform {
       try await feed.resolve(event, cardID: card.id, enable: enable)
-      notice = Notice(
-        text: enable
-          ? String(localized: "Automation enabled") : String(localized: "Event dismissed"))
-      record(card, detail: enable ? String(localized: "Enabled") : String(localized: "Dismissed"))
+      // Enabling did something worth a word; dismissing an event, like a card, says nothing.
+      notice = enable ? Notice(text: String(localized: "Automation enabled")) : nil
+      record(card)
       remove(card)
     }
   }
@@ -201,15 +155,7 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if openChat {
-        record(
-          card, detail: String(localized: "Draft ready · \(option.label)"),
-          threadID: option.threadId)
-      } else {
-        let threadID = selections[card.id]?.threadID
-        notice = Notice(text: String(localized: "Sent to a new chat"), threadID: threadID)
-        record(card, detail: String(localized: "Sent · \(option.label)"), threadID: threadID)
-      }
+      record(card)
       remove(card)
     }
     return openChat && error == nil
@@ -262,13 +208,9 @@ final class ForYouStore {
       try Task.checkCancellation()
       editor.models.isSending = true
       defer { editor.models.isSending = false }
-      let destination = try await send(draft, target: target, attempt: attempt)
+      try await send(draft, target: target, attempt: attempt)
       workspace.composerWorkflows.recordUse(workflows)
-      notice = Notice(
-        text: destination == target
-          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
-        threadID: destination)
-      record(card, detail: String(localized: "Sent"), threadID: destination)
+      record(card)
       // Accepting the annotated message consumes the card on the server.
       remove(card)
     }
@@ -321,10 +263,7 @@ final class ForYouStore {
     } catch APIClientError.http(404, _, _, _) { return nil }
   }
 
-  @discardableResult
-  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws
-    -> String
-  {
+  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws {
     guard let document = draft.draftUserMessage, document.isSupported, let workspace,
       !workspace.isClosed
     else {
@@ -350,15 +289,11 @@ final class ForYouStore {
       modelSelection: attempt.model, reasoningEffort: attempt.effort,
       computerAccess: attempt.computerAccess)
     workspace.requestRefresh(.threadList)
-    return destination
   }
 
-  private func record(
-    _ card: ForYouCard, detail: String, threadID: String? = nil, undo: Undo? = nil
-  ) {
+  private func record(_ card: ForYouCard) {
     handled.removeAll { $0.id == card.id }
-    handled.append(
-      Handled(id: card.id, title: card.title, detail: detail, threadID: threadID, undo: undo))
+    handled.append(Handled(id: card.id))
   }
 
   private func remove(_ card: ForYouCard) {
@@ -419,10 +354,6 @@ extension ForYouStore {
     get { deck.cards }
     set { updateDeck { $0.cards = newValue } }
   }
-  private(set) var position: Int {
-    get { deck.position }
-    set { updateDeck { $0.position = newValue } }
-  }
   private(set) var loaded: Bool {
     get { deck.loaded }
     set { updateDeck { $0.loaded = newValue } }
@@ -464,15 +395,5 @@ extension ForYouStore {
 private struct ForYouUnconfirmedChoice: LocalizedError {
   var errorDescription: String? {
     String(localized: "Retry the previous action to confirm its result.")
-  }
-}
-
-extension ForYouCard {
-  fileprivate var title: String {
-    switch content {
-    case .suggestion(let suggestion): suggestion.title
-    case .automation(let event): event.automationName
-    case .unsupported: ""
-    }
   }
 }
