@@ -47,6 +47,7 @@ pub(super) async fn prepare_mixed(
                         concurrency,
                         Some(&cancel_ordinary),
                         stage,
+                        None,
                     )
                     .await
                     .map(OrdinaryPreparation::Staged);
@@ -102,7 +103,14 @@ pub(super) async fn prepare_mixed(
                         &mut ready,
                         &mut complete,
                         &cancel_fresh,
-                        prepare_ordinary(groups, home, concurrency, Some(&cancel_fresh), stage),
+                        prepare_ordinary(
+                            groups,
+                            home,
+                            concurrency,
+                            Some(&cancel_fresh),
+                            stage,
+                            None,
+                        ),
                     )
                     .await?;
                     collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
@@ -193,8 +201,15 @@ pub(super) async fn prepare_mixed(
                             })
                             .collect(),
                         OrdinaryPreparation::Unread { groups, .. } => {
-                            prepare_ordinary(groups, home, CONCURRENCY, Some(&cancel_fresh), stage)
-                                .await?
+                            prepare_ordinary(
+                                groups,
+                                home,
+                                CONCURRENCY,
+                                Some(&cancel_fresh),
+                                stage,
+                                None,
+                            )
+                            .await?
                         }
                     };
                     return Ok(MixedPreparation { fresh, ordinary });
@@ -313,6 +328,7 @@ pub(super) async fn prepare_ordinary(
     concurrency: usize,
     cancel: Option<&CancellationToken>,
     stage: &mut GuestStageRecorder<'_>,
+    pending_archives: Option<&mut PendingGuestArchives>,
 ) -> RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> {
     let mut groups = JoinSet::new();
     let mut outcomes = Vec::new();
@@ -352,8 +368,16 @@ pub(super) async fn prepare_ordinary(
                 .await?;
         }
         check_cancel(cancel)?;
-        // A ready partial batch belongs to this owner, not the cold response.
-        flush_guest_stage_batch(&mut batch, stage).await?;
+        // Only a complete warm batch can replace the sole staging call. Use
+        // the sealed receive path for the attachment and leave small writes alone.
+        if let Some(pending) = pending_archives
+            && !stage.metrics.attempted
+            && batch.content_bytes >= 1024 * 1024
+        {
+            pending.0 = batch;
+        } else {
+            flush_guest_stage_batch(&mut batch, stage).await?;
+        }
         Ok(outcomes)
     }
     .await;

@@ -24,6 +24,10 @@ pub const MAX_MOUNTS: usize = 1024;
 pub const MAX_TOTAL_FILES: usize = 32 * MAX_MOUNTS;
 /// Prefix identifying binary input to the fixed storage helper.
 pub const INPUT_MAGIC: &[u8; 8] = b"VM0FILE1";
+/// Directory used by the Runner for staged compressed archives.
+pub const STAGED_ARCHIVE_DIR: &str = "/tmp/vm0-storage-cache";
+/// Maximum number of archives transferred in one staging or apply request.
+pub const MAX_STAGED_ARCHIVES: usize = 64;
 /// Archive source marker on the first mount of a packed decoded batch.
 pub const PACKED_BATCH_START_URL: &str = "decoded://batch";
 /// Archive source marker on the remaining mounts of a packed decoded batch.
@@ -40,6 +44,7 @@ pub const SEALED_STDIN_ARGUMENT: &str = "--storage-files-sealed-stdin";
 
 mod bindings;
 pub use bindings::{conflicting_mounts, validate_bindings};
+pub mod inline_archives;
 
 /// Build binary helper input containing a canonical manifest and decoded groups.
 pub fn encode_input(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {

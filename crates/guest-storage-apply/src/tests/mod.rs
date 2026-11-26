@@ -93,6 +93,57 @@ fn shared_workflow_archive(
 }
 
 #[test]
+fn binary_storage_applies_one_inline_archive_to_multiple_mounts() {
+    use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, inline_archives};
+    use std::os::unix::fs::MetadataExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let fixture = shared_workflow_archive(root.path(), &[("nested/file", b"shared archive data")]);
+    let content = std::fs::read(fixture).unwrap();
+    let source = format!("{STAGED_ARCHIVE_DIR}/test-only-inline.tar.gz");
+    let mounts = [root.path().join("first"), root.path().join("second")];
+    let manifest = json!({
+        "storageMounts": mounts.iter().map(|path| json!({
+            "mountPath": path, "archiveUrl": format!("file://{source}")
+        })).collect::<Vec<_>>()
+    });
+    let input = inline_archives::encode_input(
+        &serde_json::to_vec(&manifest).unwrap(),
+        &[(&source, &content)],
+    )
+    .unwrap();
+    assert!(super::run_storage_files_bytes(&input));
+    for mount in &mounts {
+        let file = mount.join("nested/file");
+        assert_eq!(std::fs::read(&file).unwrap(), b"shared archive data");
+        let metadata = file.metadata().unwrap();
+        assert_eq!(metadata.mode() & 0o777, 0o755);
+        assert_eq!(metadata.mtime(), 1);
+    }
+}
+
+#[test]
+fn binary_storage_rejects_an_unbound_inline_source_before_cleanup() {
+    use guest_contracts::storage_files::{STAGED_ARCHIVE_DIR, inline_archives};
+
+    let root = tempfile::tempdir().unwrap();
+    let keep = root.path().join("keep");
+    std::fs::write(&keep, b"before apply").unwrap();
+    let manifest = json!({
+        "storageMounts": [],
+        "cleanupPaths": [root.path()]
+    });
+    let source = format!("{STAGED_ARCHIVE_DIR}/unbound.tar.gz");
+    let input = inline_archives::encode_input(
+        &serde_json::to_vec(&manifest).unwrap(),
+        &[(&source, b"unused bytes")],
+    )
+    .unwrap();
+    assert!(!super::run_storage_files_bytes(&input));
+    assert_eq!(std::fs::read(keep).unwrap(), b"before apply");
+}
+
+#[test]
 fn shared_workflow_packages_materialize_independent_names_and_preserve_attachments() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
