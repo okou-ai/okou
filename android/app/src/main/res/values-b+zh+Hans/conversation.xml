@@ -62,7 +62,6 @@
     <string name="conversation_find_attachment">附件</string>
     <string name="conversation_link_unavailable">这个对话链接暂不可用</string>
     <string name="conversation_link_no_browser">没有可打开此链接的浏览器</string>
-    <string name="chat_model_check_required">无法核对已保存的模型。请重新核对后再发送。</string>
+    <string name="chat_model_check_required">无法核对已保存的模型。</string>
     <string name="chat_model_save_rejected">无法保存此聊天的模型。</string>
-    <string name="chat_model_save_unconfirmed">无法确认模型修改。面板显示当前设置。</string>
 </resources>

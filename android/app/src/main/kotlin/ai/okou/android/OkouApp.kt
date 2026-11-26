@@ -2065,11 +2065,11 @@ internal fun OkouApp(
                                                         },
                                                     )
                                                 if (hasComposer) {
-                                                    val modelSave by
+                                                    val modelEdits by
                                                         remember(listState, actionableThread.id) {
                                                             derivedStateOf {
                                                                 listState.value
-                                                                    .conversationModelSaves[
+                                                                    .conversationModelEdits[
                                                                         actionableThread.id]
                                                             }
                                                         }
@@ -2083,7 +2083,7 @@ internal fun OkouApp(
                                                             ConversationModelControls(
                                                                 chats,
                                                                 actionableThread,
-                                                                modelSave,
+                                                                modelEdits,
                                                             ),
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
