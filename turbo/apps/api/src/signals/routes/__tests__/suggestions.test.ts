@@ -1970,8 +1970,9 @@ describe("Suggestion feedback receipts", () => {
       [200],
     );
     const restored = summary.body.firstItem;
-    if (restored?.type !== "suggestion")
+    if (restored?.type !== "suggestion") {
       throw new Error("Expected restored suggestion");
+    }
     expect(restored.state.feedbacks[0]).toMatchObject({
       id,
       kind: "dismissed",
@@ -2000,7 +2001,7 @@ describe("Suggestion feedback receipts", () => {
       }),
       [200],
     );
-    expect(secondUndo.body.restored).toBe(true);
+    expect(secondUndo.body.restored).toBeTruthy();
     const consumed = await accept(
       client().consume({
         headers: humanHeaders,

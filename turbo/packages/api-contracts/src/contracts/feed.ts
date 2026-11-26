@@ -226,10 +226,12 @@ const cardReceiptSchema = suggestionReceiptSchema.extend({
 });
 const snapshotFeedbackSchema = suggestionFeedbackSchema
   .extend({ deferred: literal(true).optional() })
-  .overwrite(({ deferred, ...feedback }) => ({
-    ...feedback,
-    kind: deferred && feedback.kind === "dismissed" ? "later" : feedback.kind,
-  }));
+  .overwrite(({ deferred, ...feedback }) => {
+    return {
+      ...feedback,
+      kind: deferred && feedback.kind === "dismissed" ? "later" : feedback.kind,
+    };
+  });
 const suggestionSnapshotSchema = suggestionSchema.extend({
   state: suggestionStateSchema.extend({
     feedbacks: array(snapshotFeedbackSchema).max(100),

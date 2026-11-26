@@ -263,10 +263,9 @@ export const readFeedItems$ = command(
       status: 200 as const,
       body: {
         ...page,
-        receipts: receipts.map((receipt) => ({
-          ...receipt,
-          state: cardState(receipt.state),
-        })),
+        receipts: receipts.map((receipt) => {
+          return { ...receipt, state: cardState(receipt.state) };
+        }),
       },
     };
   },
