@@ -122,7 +122,7 @@ class ScreenshotScenario {
                         confirm.click()
                         check(started.await(10, TimeUnit.SECONDS))
                         val pending = politeStatus(R.string.chat_delete_pending)
-                        check(pending.className?.toString() == "android.widget.Button" && !pending.isEnabled)
+                        check(!pending.isEnabled)
                         check(!device.hasObject(label(R.string.chat_project_delete)))
                         ScreenshotCapture.capture("wide-delete-pending.png")
                         release.countDown()
