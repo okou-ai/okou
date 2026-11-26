@@ -125,6 +125,7 @@ async function member(
         orgId: user.orgId,
         userId: user.userId,
         role: user.orgRole === "org:admin" ? "admin" : "member",
+        emailAddresses: [user.email],
       },
       context.signal,
     );

@@ -300,6 +300,26 @@ async function workspace() {
     return { id };
   }
 
+  /** A member of the owner's workspace with a verified email and no Slack binding. */
+  async function unboundColleague() {
+    const user = createBddApi(context).user({
+      orgId: owner.orgId,
+      orgRole: "org:member",
+    });
+    await store.set(
+      seedOrgMembership$,
+      {
+        orgId: owner.orgId,
+        userId: user.userId,
+        emailAddresses: [user.email],
+      },
+      context.signal,
+    );
+    accounts.push(user);
+    directory(accounts);
+    return user;
+  }
+
   /** An Okou account connected to this Slack workspace. */
   async function connectedMember(orgId?: string) {
     const user = createBddApi(context).user(
@@ -445,6 +465,7 @@ async function workspace() {
     callbacks,
     emailMember,
     profileMember,
+    unboundColleague,
     connectedMember,
     postLink,
     promptActions,
@@ -478,6 +499,16 @@ describe("Slack artifact channel sharing", () => {
     await w.connectedMember(w.owner.orgId);
     await w.postLink(file.url);
     expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+  });
+
+  it("slack-artifact-channel-sharing-005 recognizes existing workspace access by verified email without requiring a Slack account binding", async () => {
+    const w = await workspace();
+    const file = await uploadFile(w.owner, "organization");
+    const colleague = await w.unboundColleague();
+    w.emailMember(colleague.email);
+    await w.postLink(file.url);
+    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
+    await expect(w.shareEmails(file)).resolves.toStrictEqual([]);
   });
 
   it("slack-artifact-channel-sharing-023 does not repeat private prompts for retries, refreshes, or composer events", async () => {
