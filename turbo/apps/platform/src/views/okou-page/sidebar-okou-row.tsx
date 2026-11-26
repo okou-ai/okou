@@ -9,7 +9,10 @@ import {
 import { ROUTES } from "../../signals/route-paths.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { Link } from "../router/link.tsx";
-import { forYouSummary$ } from "../../signals/okou-page/for-you-sources.ts";
+import {
+  forYouEntryVisible$,
+  forYouSummary$,
+} from "../../signals/okou-page/for-you-sources.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -84,6 +87,10 @@ export function ForYouChatListRow({
   const { t } = useTranslation();
   const active = useGet(activeRoute$) === "forYou";
   const unread = useLastResolved(forYouSummary$)?.hasUnread === true;
+  const visible = useLastResolved(forYouEntryVisible$);
+  if (!visible) {
+    return null;
+  }
   return (
     <Link
       pathname={ROUTES.forYou}

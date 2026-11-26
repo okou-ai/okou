@@ -3,6 +3,9 @@ import type { SuggestionImpression } from "../../lib/posthog.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -36,7 +39,25 @@ export const forYouSummary$ = computed(async (get) => {
   return result.body;
 });
 
+export const forYouEntryVisible$ = computed(async (get) => {
+  const switches = await get(featureSwitches$);
+  if (!switches[FeatureSwitchKey.HideEmptyForYou]) {
+    return true;
+  }
+  const [result] = await Promise.allSettled([get(forYouSummary$)]);
+  if (result.status === "rejected") {
+    // An unavailable feed has no row to show or stop on during navigation.
+    return false;
+  }
+  return Boolean(result.value.firstItem);
+});
+
 export const reloadForYouSources$ = command(({ get, set }) => {
+  // A feed change can arrive before the chat list reads its Worker summary.
+  discardApiBootstrapResponse(
+    feedContract.summary.method,
+    feedContract.summary.path,
+  );
   const state = get(sourceState$);
   set(state.version$, (version) => {
     return version + 1;

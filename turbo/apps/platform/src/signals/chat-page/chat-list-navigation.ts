@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { currentChatThreadNavigationList$ } from "../chat-thread-list.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
+import { forYouEntryVisible$ } from "../okou-page/for-you-sources.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { currentLeftThread$ } from "./chat-thread-panes.ts";
 import {
@@ -34,7 +35,7 @@ const entryKeys = Object.freeze([NEW_CHAT_ENTRY_KEY, FOR_YOU_ENTRY_KEY]);
  * navigation continues from where it stood. Without a current item, moving
  * down enters the list at its first visible item.
  */
-function findAdjacentListedKey({
+async function findAdjacentListedKey({
   currentKey,
   direction,
   orderedKeys,
@@ -45,8 +46,8 @@ function findAdjacentListedKey({
   direction: ChatListNavigationDirection;
   orderedKeys: readonly string[];
   listedKeys: readonly string[];
-  selectable: (key: string) => boolean;
-}): string | undefined {
+  selectable: (key: string) => boolean | Promise<boolean>;
+}): Promise<string | undefined> {
   const currentIndex =
     currentKey === null ? -1 : orderedKeys.indexOf(currentKey);
   if (currentKey !== null && currentIndex === -1) {
@@ -66,7 +67,7 @@ function findAdjacentListedKey({
     if (
       candidate !== undefined &&
       listed.has(candidate) &&
-      selectable(candidate)
+      (await selectable(candidate))
     ) {
       return candidate;
     }
@@ -95,19 +96,23 @@ export const navigateChatList$ = command(
       request.excludedThreadId === null
         ? null
         : threadRowKey(request.excludedThreadId);
-    const targetKey = findAdjacentListedKey({
+    const targetKey = await findAdjacentListedKey({
       currentKey: request.currentKey,
       direction: request.direction,
       orderedKeys: [...entryKeys, ...navigation.orderedKeys],
       listedKeys: [...entryKeys, ...navigation.listedKeys],
       // The entry and Project pages only open in the main pane.
       selectable: (key) => {
+        if (key === FOR_YOU_ENTRY_KEY && request.pane === "main") {
+          return get(forYouEntryVisible$);
+        }
         return (
           key !== excludedKey &&
           (request.pane === "main" || threadIdOfRowKey(key) !== null)
         );
       },
     });
+    signal.throwIfAborted();
     if (!targetKey) {
       return;
     }

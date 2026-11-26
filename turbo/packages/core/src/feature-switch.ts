@@ -170,6 +170,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.HideEmptyForYou]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Hide empty For you",
+    description: "Show For you in the chat list only when the feed has cards.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
     displayName: "Project archiving",

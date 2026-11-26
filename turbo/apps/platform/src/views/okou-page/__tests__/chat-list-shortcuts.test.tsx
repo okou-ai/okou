@@ -2,6 +2,7 @@ import {
   chatThreadMetadataContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -19,7 +20,10 @@ import {
   textContinuityDraft,
   continuitySidebarLink,
 } from "./chat-continuity-test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 import { getButtonByName } from "../../artifacts-page/__tests__/artifact-catalog-test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import { completedMarkdownReply } from "./markdown-page-test-helpers.ts";
@@ -35,7 +39,7 @@ const history = [
 
 const [older, middle, newest] = history;
 
-async function openHistory(path: string) {
+async function openHistory(path: string, hideEmptyForYou = false) {
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 48rem)";
   });
@@ -63,6 +67,7 @@ async function openHistory(path: string) {
   await setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.HideEmptyForYou]: hideEmptyForYou },
   });
   await waitFor(() => {
     expect(sidebarThreadLinks()[0]).toHaveAttribute(
@@ -100,6 +105,20 @@ test("chat-list-entry-navigation-002 traverses New chat, For you and the most re
   await user.keyboard(down);
   await waitFor(() => {
     expect(sidebarThreadLinks()[0]).toHaveAttribute("aria-current", "page");
+    expect(location.pathname).toBe(`/chats/${newest.id}`);
+  });
+});
+
+test("An empty For you feed leaves New chat and the newest thread adjacent", async () => {
+  await openHistory(`/chats/${newest.id}`, true);
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard(up);
+  await waitFor(() => {
+    expect(location.pathname).toBe("/");
+  });
+  expect(queryFastControl("link", /For you/)).toBeNull();
+  await user.keyboard(down);
+  await waitFor(() => {
     expect(location.pathname).toBe(`/chats/${newest.id}`);
   });
 });
