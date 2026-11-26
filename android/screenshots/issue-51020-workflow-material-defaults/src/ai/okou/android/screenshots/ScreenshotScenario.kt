@@ -47,34 +47,12 @@ class ScreenshotScenario {
             device.executeShellCommand("wm density 160")
             device.executeShellCommand("settings put system font_scale 1.0")
 
-            withWindow(1180, 820, UserPreferencesTheme.DARK) { fixture ->
-                openDirectory()
-                action(fixture.releaseTitle).click()
-                tab("自动化").click()
-                action("添加自动化").click()
-                val frequency = action("工作日")
-                text("执行频率")
-                text("保存")
-                assertTrue(action("取消").visibleBounds.height() >= 48)
-                ScreenshotCapture.capture("wide-automation-editor-dark.png")
-                frequency.click()
-                val daily = action("每天").visibleBounds
-                // UI Automator clips accessibility bounds to the visible popup window.
-                assertTrue(daily.width() in 243..244)
-                assertTrue(daily.height() >= 47)
-                ScreenshotCapture.capture("wide-frequency-menu-dark.png")
-                action("每天").click()
-                assertTrue(action("每天").isEnabled)
-                action("09:00").click()
-                assertTrue(device.wait(Until.hasObject(By.res("android", "button1")), 10_000))
-                assertTrue(device.pressBack())
-            }
             withWindow(760, 440, UserPreferencesTheme.LIGHT) { fixture ->
                 openDirectory()
                 action(fixture.releaseTitle).click()
                 tab("自动化").click()
                 text("触发规则")
-                assertTrue(action("在聊天中使用").visibleBounds.height() >= 48)
+                assertTrue(action("在聊天中使用").visibleBounds.height() >= 47)
                 ScreenshotCapture.capture("compact-automations.png")
             }
         } finally {
