@@ -31,11 +31,11 @@ non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	planned
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-002	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	planned				pilot
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	planned				
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	planned				
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	planned				
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	planned				
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	planned				
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	planned				B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	planned				B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	planned				B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	planned				B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	planned				B06
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	rewritten	35.6		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	rewritten	27.9		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned				
@@ -48,8 +48,8 @@ non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-001	
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-005	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-006	planned				
 non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	planned				
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	planned				
-non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	planned				
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	planned				B06
+non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	planned				B06
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	planned				
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	planned				
@@ -62,13 +62,13 @@ non-route	src/signals/external/__tests__/axiom.test.ts	axiom-001	planned
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-008	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-014	planned				
 non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	planned				
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	planned				
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	planned				
-non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	planned				
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	planned				
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	planned				
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	planned				
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	planned				
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	planned				B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	planned				B06
+non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	planned				B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	planned				B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	planned				B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	planned				B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	planned				B06
 account-org	src/signals/routes/__tests__/agent-custom-connectors.test.ts	agent-custom-connectors-001	planned				
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-001	rewritten	105.3		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-002	rewritten	135.4		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
@@ -167,7 +167,7 @@ account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates
 account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-002	rewritten	8.4		src/signals/routes/__tests__/android-updates.test.ts	B04
 account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-003	rewritten	7.3		src/signals/routes/__tests__/android-updates.test.ts	B04
 account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-004	rewritten	5.5		src/signals/routes/__tests__/android-updates.test.ts	B04
-account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-006	skipped		timer: 依赖定时器，暂缓 (the case needs the storage read to outlive the production AbortSignal.timeout(5000) deadline in loadAndroidRelease$)		B04
+account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-006	skipped		timer: waits on a production timer (the case needs the storage read to outlive the production AbortSignal.timeout(5000) deadline in loadAndroidRelease$)		B04
 account-org	src/signals/routes/__tests__/android-updates.test.ts	android-updates-011	rewritten	5.3		src/signals/routes/__tests__/android-updates.test.ts	B04
 account-org	src/signals/routes/__tests__/antigravity-device-auth.test.ts	antigravity-device-auth-001	rewritten	59.4		src/signals/routes/__tests__/antigravity-device-auth.test.ts	pilot
 account-org	src/signals/routes/__tests__/antigravity-device-auth.test.ts	antigravity-device-auth-002	rewritten	106.4		src/signals/routes/__tests__/antigravity-device-auth.test.ts	pilot
@@ -176,8 +176,8 @@ account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-002	rewritten	73.7		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-003	rewritten	23.7		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
 account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	antigravity-personal-subscription-006	rewritten	27.9		src/signals/routes/__tests__/antigravity-personal-subscription.test.ts	pilot
-artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-002	planned				
-artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-004	planned				
+artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-002	planned				B06
+artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-004	planned				B06
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-002	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-003	planned				
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-005	planned				
@@ -237,7 +237,7 @@ artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	rewritten	78.1		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	rewritten	73.8		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-005	rewritten	155.5		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
-artifacts	src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-002	planned				
+artifacts	src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-002	planned				B06
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	rewritten	25.4		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	rewritten	33.5		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-009	rewritten	71.1		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
@@ -268,7 +268,7 @@ account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	r
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	147.0		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	rewritten	133.6	split n=4: 1/4=54.3; 2/4=84.0; 3/4=133.6; 4/4=121.8	src/signals/routes/__tests__/auth-org.bdd.test.ts	B01
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	rewritten	167.4		src/signals/routes/__tests__/auth-org.bdd.test.ts	B01
-account-org	src/signals/routes/__tests__/auto-run-routing.test.ts	auto-run-routing-001	planned				
+account-org	src/signals/routes/__tests__/auto-run-routing.test.ts	auto-run-routing-001	planned				B06
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-001	planned				pilot
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-002	planned				pilot
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-003	planned				pilot
@@ -509,8 +509,8 @@ billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	bi
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-052	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-054	planned				
 billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-057	planned				
-billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-001	planned				
-billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-004	planned				
+billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-001	planned				B06
+billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-004	planned				B06
 browser	src/signals/routes/__tests__/browser-admission.test.ts	browser-admission-001	planned				
 browser	src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-001	planned				
 browser	src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-005	planned				
@@ -706,7 +706,7 @@ chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-anno
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-005	skipped		slow-setup:run-token: real Telegram account link + supergroup webhook via createPublicAnnotationIngress (runner/entitlement setup and run launch) measured 327-358 ms		B01
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-008	rewritten	177.7		src/signals/routes/__tests__/chat-event-annotations.test.ts	pilot
 chat	src/signals/routes/__tests__/chat-event-annotations.test.ts	chat-event-annotations-009	rewritten	72.0	selected in rewrite review	src/signals/routes/__tests__/chat-event-annotations.test.ts	B01
-chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: 3-run medians: (1/4) 286.4 ms as the file's first test, (2/4)-(4/4) 82.5-116.6 ms; draft /home/user/pilot-env/wip/r10/chat-event-snapshot.test.ts; resume: commit after a decision on first-test cold start (about 120-150 ms locally)		B03
+chat	src/signals/routes/__tests__/chat-event-snapshot.test.ts	chat-event-snapshot-001	rewritten	189.7	split n=4: 1/4=189.7; 2/4=105.5; 3/4=96.1; 4/4=98.8	src/signals/routes/__tests__/chat-event-snapshot.test.ts	B03
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-001	planned				pilot
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-004	planned				pilot
 chat	src/signals/routes/__tests__/chat-events-admission.test.ts	chat-events-admission-006	planned				pilot
@@ -1089,7 +1089,7 @@ browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-0
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-021	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-024	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 browser	src/signals/routes/__tests__/computer-use.bdd.test.ts	computer-use.bdd-025	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
-connectors	src/signals/routes/__tests__/connected-connectors-accounts.test.ts	connected-connectors-accounts-001	planned				
+connectors	src/signals/routes/__tests__/connected-connectors-accounts.test.ts	connected-connectors-accounts-001	planned				B06
 connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-003	skipped		slow-setup: about 15 sequential public requests (CLI device sign-in, manual grants, custom connector, defaults and deletions) measured 190-290 ms across runs; CI file average 196 ms, unstable at the 200 ms limit		pilot
 connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-004	skipped		slow-setup:run-token: needs the Run OKOU_TOKEN and sandbox token of a dispatched chat Run; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
 connectors	src/signals/routes/__tests__/connected-connectors.test.ts	connected-connectors-005	skipped		slow-setup: about 15 sequential public requests (CLI device sign-in, manual grants, custom connector, defaults and deletions) measured 190-290 ms across runs; CI file average 196 ms, unstable at the 200 ms limit		pilot
@@ -1113,8 +1113,8 @@ connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-acc
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-021	rewritten	72.0		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-022	rewritten	122.5		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-024	rewritten	134.4		src/signals/routes/__tests__/connector-accounts.test.ts	pilot
-connectors	src/signals/routes/__tests__/connector-catalog-immutable.test.ts	connector-catalog-immutable-002	planned				
-connectors	src/signals/routes/__tests__/connector-catalog-status-generation.test.ts	connector-catalog-status-generation-001	planned				
+connectors	src/signals/routes/__tests__/connector-catalog-immutable.test.ts	connector-catalog-immutable-002	planned				B06
+connectors	src/signals/routes/__tests__/connector-catalog-status-generation.test.ts	connector-catalog-status-generation-001	planned				B06
 connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-007	planned				
 connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-008	planned				
 connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-009	planned				
@@ -1173,13 +1173,13 @@ connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-
 connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-003	rewritten	184.5	cold-start pending: round 10 measured 208.5 ms (3-run median) as the first case reaching its code path, after acceptance at 184.5 ms; unchanged until the timing rule is decided	src/signals/routes/__tests__/connector-permissions.test.ts	B01
 connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-004	rewritten	162.1	revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 293.9 ms (runs [187, 323, 294]); draft at /home/user/pilot-env/wip/r7/connector-permissions.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/connector-permissions.test.ts	B01
 connectors	src/signals/routes/__tests__/connector-permissions.test.ts	connector-permissions-005	skipped		slow-setup: needs the Run OKOU_TOKEN of a dispatched chat Run to attempt the write; dispatched chat Run setup measured 684 ms alone in a probe (createRunExecutionCredentials + one GET), before any case steps		B01
-connectors	src/signals/routes/__tests__/connector-required-entries.test.ts	connector-required-entries-001	planned				
+connectors	src/signals/routes/__tests__/connector-required-entries.test.ts	connector-required-entries-001	planned				B06
 connectors	src/signals/routes/__tests__/connector-run-failure-isolation.test.ts	connector-run-failure-isolation-002	planned				
 connectors	src/signals/routes/__tests__/connector-runtime-placeholders.test.ts	connector-runtime-placeholders-001	planned				
 connectors	src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	connector-runtime-wakeups-001	planned				
 connectors	src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	connector-runtime-wakeups-002	planned				
-connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-001	planned				
-connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-002	planned				
+connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-001	planned				B06
+connectors	src/signals/routes/__tests__/connector-skill-bundles.test.ts	connector-skill-bundles-002	planned				B06
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-001	revisit		revisit: full DCR OAuth flow (start, callback, completion receipt) across three connects needs a split per BRIEF7; evidence: not reached within first-pass budget, mockAutomaticMcpOAuthProvider supports authorizationCodeErrors [null, temporarily_unavailable, null] and registrationBodies; resume: drive builtinConnectorAutomaticContract start/callback (responseMode json) and the oauth-completions receipt, split per connect		B04
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-002	revisit		revisit: two DCR accounts plus a foreign account and an invalid_client callback need a split per BRIEF7; evidence: not reached within first-pass budget; resume: same flow as 001 with authorizationCodeErrors invalid_client and a second workspace owner		B04
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-005	revisit		revisit: expiring DCR registration needs mockNow advance and the start/callback flow; evidence: not reached within first-pass budget, dcrClientSecretExpiresAt is supported by the provider mock; resume: connect with secret expiring at now+60, mockNow(+61s), reconnect, read account, complete callback		B04
@@ -1358,7 +1358,7 @@ connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-09
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-099	planned				
 connectors	src/signals/routes/__tests__/connectors.bdd.test.ts	connectors.bdd-100	planned				
 chat	src/signals/routes/__tests__/conversation-history-deletion.test.ts	conversation-history-deletion-001	planned				
-billing	src/signals/routes/__tests__/credit-low-balance-alert.test.ts	credit-low-balance-alert-002	skipped		slow-setup: Given+first When/Then 2916 ms and 2882 ms (Given createPublicCreditAlertScenario: Pro checkout, recharge invoice, admin and member CLI tokens, 346/354 ms incl. file cold start; the When, five-credit debit with the paginated 101-member refresh plus the omitted-admin PUT, 2570/2528 ms, possibly a production retry/timer, not investigated); the case passed with the existing helper		B05
+billing	src/signals/routes/__tests__/credit-low-balance-alert.test.ts	credit-low-balance-alert-002	skipped		timer: waits on a production retry timer; with live lookup unavailable, retryClerkRead (signals/external/clerk.ts) retries the Clerk read up to 3 attempts with a 1000 ms signal-timers delay plus jitter before returning 503; that wait is the 2.5 s seen in the When (Given 346-354 ms), so it is not slow-setup		B05
 workflows	src/signals/routes/__tests__/cron-compact-chat-thread-snapshots.test.ts	cron-compact-chat-thread-snapshots-001	planned				
 connectors	src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts	cron-connector-catalog-v4-001	planned				
 connectors	src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts	cron-connector-catalog-v4-006	planned				
@@ -1465,7 +1465,7 @@ messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gate
 messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-012	rewritten	6.1		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-013	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-gateway-auth.test.ts	discord-gateway-auth-014	rewritten	5.4		src/signals/routes/__tests__/discord-gateway-auth.test.ts	B04
-messaging	src/signals/routes/__tests__/discord-gateway-identity.test.ts	discord-gateway-identity-001	planned				
+messaging	src/signals/routes/__tests__/discord-gateway-identity.test.ts	discord-gateway-identity-001	planned				B06
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-004	planned				
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-005	planned				
 messaging	src/signals/routes/__tests__/discord-ingress.test.ts	discord-ingress-006	planned				
@@ -1502,13 +1502,14 @@ messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	
 messaging	src/signals/routes/__tests__/discord-interactions-preferences.test.ts	discord-interactions-preferences-010	revisit		revisit: cold-start pending (the first case reaching a code path pays about 100-150 ms; timing rule awaiting a decision); rows written and passing; evidence: 3-run medians discord-interactions-preferences-002 218.1 ms; discord-interactions-preferences-004 (1/3) 205.3 ms; discord-interactions-preferences-004 (2/3) 185.6 ms; discord-interactions-preferences-004 (3/3) 167.2 ms; discord-interactions-preferences-005 (1/3) 158.6 ms; discord-interactions-preferences-005 (2/3) 159.5 ms; discord-interactions-preferences-005 (3/3) 153.7 ms; discord-interactions-preferences-001 162.6 ms; discord-interactions-preferences-006 158.7 ms; discord-interactions-preferences-010 145.8 ms; draft /home/user/pilot-env/wip/r12/discord-interactions-preferences.test.ts		B04
 messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-001	rewritten	16.3		src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
 messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-006	rewritten	6.2		src/signals/routes/__tests__/discord-interactions-verification.test.ts	B05
+messaging	src/signals/routes/__tests__/discord-interactions-verification.test.ts	discord-interactions-verification-017	planned				B06
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-001	rewritten	48.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-002	rewritten	22.7		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-003	rewritten	21.9		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-004	rewritten	12.6		src/signals/routes/__tests__/discord-interactions.test.ts	B04
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-005	rewritten	11.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04
-messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	planned				
-messaging	src/signals/routes/__tests__/discord-oauth-export.test.ts	discord-oauth-export-001	planned				
+messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	planned				B06
+messaging	src/signals/routes/__tests__/discord-oauth-export.test.ts	discord-oauth-export-001	planned				B06
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-001	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-002	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-003	planned				
@@ -1537,7 +1538,7 @@ messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscrip
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-007	rewritten	6.1		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	rewritten	17.2		src/signals/routes/__tests__/email-subscription.test.ts	B04
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	skipped		slow-setup: the run-credential row needs a Run execution token; that Given alone (one executing Run via helpers/run-execution-credentials forActor) measured 438.5 ms and 432.5 ms in two runs (webhooks-x-resource-usage probe), so the 403 FORBIDDEN half cannot be a row under 200 ms; the unauthenticated 401 half alone would be cheap		B04
-messaging	src/signals/routes/__tests__/email.test.ts	email-001	planned				
+messaging	src/signals/routes/__tests__/email.test.ts	email-001	planned				B06
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	rewritten	54.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	rewritten	82.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-004	rewritten	70.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
@@ -1569,7 +1570,7 @@ messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-017	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				pilot
-messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	planned				
+messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	planned				B06
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-003	planned				pilot
@@ -1616,7 +1617,7 @@ messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-004	revisit		revisit: needs the Feishu connect + encrypted DM fixture plus a Runner completing a native-session run and a resumed follow-up; evidence: no exported Feishu DM fixture, dispatched Run setup measured 250-350 ms elsewhere; resume: build the fixture in-file, measure Given + first reply, then split or record slow-setup		B04
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-005	revisit		revisit: needs three Feishu DM runs under an org run limit of two and a released slot; evidence: no exported Feishu DM fixture, three dispatched Runs at 250-350 ms each exceed 200 ms; resume: build the fixture in-file, measure, likely slow-setup with data		B04
 messaging	src/signals/routes/__tests__/feishu-shared-conversation.test.ts	feishu-shared-conversation-006	revisit		revisit: needs an active Feishu run, a queued DM, a paid plan that ends, failing realtime publication and a Runner completion; evidence: no exported Feishu DM fixture, dispatched Run setup 250-350 ms elsewhere; resume: build the fixture in-file, measure, then split or record slow-setup		B04
-messaging	src/signals/routes/__tests__/feishu-user-deletion.test.ts	feishu-user-deletion-001	planned				
+messaging	src/signals/routes/__tests__/feishu-user-deletion.test.ts	feishu-user-deletion-001	planned				B06
 billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-001	rewritten	103.8		src/signals/routes/__tests__/friend-referrals.test.ts	B02
 billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-002	rewritten	164.3	split n=3: 1/3=164.3; 2/3=153.3; 3/3=159.4	src/signals/routes/__tests__/friend-referrals.test.ts	B02
 billing	src/signals/routes/__tests__/friend-referrals.test.ts	friend-referrals-004	rewritten	123.8		src/signals/routes/__tests__/friend-referrals.test.ts	B02
@@ -1754,8 +1755,8 @@ account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.t
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-012	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-013	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-014	planned				
-account-org	src/signals/routes/__tests__/integration-model-recovery-teams.test.ts	integration-model-recovery-teams-001	planned				
-account-org	src/signals/routes/__tests__/integration-model-recovery-telegram.test.ts	integration-model-recovery-telegram-001	planned				
+account-org	src/signals/routes/__tests__/integration-model-recovery-teams.test.ts	integration-model-recovery-teams-001	planned				B06
+account-org	src/signals/routes/__tests__/integration-model-recovery-telegram.test.ts	integration-model-recovery-telegram-001	planned				B06
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-002	planned				
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-003	planned				
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-008	planned				
@@ -2019,8 +2020,8 @@ messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	i
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-002	planned				
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-005	planned				
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-010	planned				
-messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-001	planned				
-messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-004	planned				
+messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-001	planned				B06
+messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-004	planned				B06
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-001	planned				
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	planned				
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	planned				
@@ -2198,25 +2199,25 @@ billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handof
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-016	rewritten	11.9		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-017	rewritten	86.4		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
 billing	src/signals/routes/__tests__/marketing-handoffs.test.ts	marketing-handoffs-019	rewritten	15.1		src/signals/routes/__tests__/marketing-handoffs.test.ts	B03
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-002	planned				
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	planned				
-billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	planned				
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-002	planned				B06
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-003	planned				B06
+billing	src/signals/routes/__tests__/marketing-invitation-observation.test.ts	marketing-invitation-observation-004	planned				B06
 billing	src/signals/routes/__tests__/marketing-reward-checkin.test.ts	marketing-reward-checkin-001	rewritten	177.2		src/signals/routes/__tests__/marketing-reward-checkin.test.ts	B05
 billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-002	revisit		revisit: custom HTTP connector OAuth authorize+callback flow not investigated within first-pass time box; evidence: no shared helper for custom-connector OAuth completion found in this pass; resume: drive custom connector create + OAuth authorize/callback via the custom-connectors routes with MSW token endpoint, then assert consumer.received		B04
 billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-004	rewritten	158.6		src/signals/routes/__tests__/marketing-reward-events.test.ts	B04
 billing	src/signals/routes/__tests__/marketing-reward-events.test.ts	marketing-reward-events-006	revisit		revisit: over 200 ms by 3-run median ((1/2) 200.1 ms, (2/2) 186.2 ms; (1/2) is the first row reaching the Slack install path); draft /home/user/pilot-env/wip/r11/marketing-reward-events.test.ts; resume: decide the cold-start rule or split further		B04
-billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-002	planned				
-billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-004	planned				
-billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-005	planned				
-billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-007	planned				
-billing	src/signals/routes/__tests__/marketing-reward-routing.test.ts	marketing-reward-routing-002	planned				
+billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-002	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-004	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-005	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-notification.test.ts	marketing-reward-notification-007	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-routing.test.ts	marketing-reward-routing-002	planned				B06
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-002	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-005	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-007	planned				
 billing	src/signals/routes/__tests__/marketing-reward-settlement.test.ts	marketing-reward-settlement-008	planned				
-billing	src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	marketing-reward-workflow-progress-001	planned				
-billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-001	planned				
-billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-002	planned				
+billing	src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	marketing-reward-workflow-progress-001	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-001	planned				B06
+billing	src/signals/routes/__tests__/marketing-reward-workflows.test.ts	marketing-reward-workflows-002	planned				B06
 connectors	src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-001	revisit		revisit: Given needs a dispatched Run whose token carries chat-thread account selections; evidence: in the mcp-connectors-002 probe the Run launch through helpers/run-execution-credentials.ts alone took 434 ms (Given+first list 580 ms and 618 ms); resume: coordinator decision on a lighter Run fixture, then split per BRIEF7		B04
 connectors	src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-002	skipped		slow-setup: Given+first When/Then 580 ms and 618 ms (Run launch via run-execution-credentials okouToken 434 ms; no-auth MCP custom connector + account 57 ms; first GET /api/mcp-connectors 24 ms, returned _public-mcp connected with runtimeAvailable true)		B04
 connectors	src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-003	revisit		revisit: Given needs a dispatched chat Run with an exact MCP account selection; evidence: Run launch alone 434 ms in the mcp-connectors-002 probe; resume: coordinator decision on a lighter Run fixture, then split per BRIEF7		B04
@@ -2302,6 +2303,7 @@ account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd
 account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd-006	rewritten	157.9		src/signals/routes/__tests__/misc-routes.bdd.test.ts	B04
 account-org	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	planned		affected by #50982 (Gemini 4 runs with a connected Antigravity account): rewrite against the current behaviour		
 account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	rewritten	28.7		src/signals/routes/__tests__/model-catalog-authority.test.ts	B05
+account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	planned				B06
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	planned				
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-002	planned				
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-005	planned				
@@ -2351,8 +2353,8 @@ account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewri
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	41.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	66.2	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	planned				
-account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	planned				
+account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	planned				B06
+account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	planned				B06
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-001	rewritten	47.1		src/signals/routes/__tests__/org-cache.test.ts	B03
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-003	rewritten	66.8		src/signals/routes/__tests__/org-cache.test.ts	B03
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-005	rewritten	49.6		src/signals/routes/__tests__/org-cache.test.ts	B03
@@ -2382,6 +2384,7 @@ account-org	src/signals/routes/__tests__/org-member-directory.test.ts	org-member
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-001	rewritten	82.3		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-003	rewritten	24.3		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
 account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-005	rewritten	31.8		src/signals/routes/__tests__/org-openrouter-preset.test.ts	B05
+account-org	src/signals/routes/__tests__/org-openrouter-preset.test.ts	org-openrouter-preset-004	planned				B06
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-001	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-002	planned				
 account-org	src/signals/routes/__tests__/org-team.bdd.test.ts	org-team.bdd-003	planned				
@@ -2428,7 +2431,7 @@ artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	pre
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-008	rewritten	100.3		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-template-publish.test.ts	presentation-template-publish-011	rewritten	124.1		src/signals/routes/__tests__/presentation-template-publish.test.ts	pilot
 artifacts	src/signals/routes/__tests__/presentation-templates.test.ts	presentation-templates-001	rewritten	27.4		src/signals/routes/__tests__/presentation-templates.test.ts	B03
-account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	preview-connector-catalog.catalog-generation-001	planned				
+account-org	src/signals/routes/__tests__/preview-connector-catalog.catalog-generation.test.ts	preview-connector-catalog.catalog-generation-001	planned				B06
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-001	revisit		revisit: not reached within the batch time box; needs the Fal queue + private artifact bucket fixture and realtime capture; evidence: helpers/public-image-run.ts createImageRun/readWebhookUrl/postFalWebhookEnvelope exist; resume: build on createImageRun with fal-ai/flux-pro/v1.1, POST /api/image-io/generate, complete via Fal webhook, then read generation and /api/web/file-url as owner, colleague, other org and anonymous		B02
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-003	revisit		revisit: not reached within the batch time box; depends on the same completed private generation fixture as 001; evidence: as 001; resume: after 001 fixture, queue a second image with the stable artifact URL and assert the Fal request carries the signed private URL		B02
 artifacts	src/signals/routes/__tests__/private-artifact-generation.test.ts	private-artifact-generation-004	revisit		revisit: not reached within the batch time box; depends on the same completed private generation fixture as 001; evidence: as 001; resume: after 001 fixture, a colleague posts the artifact URL and gets 400 with no extra Fal request or signing		B02
@@ -2441,9 +2444,9 @@ artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-010	rewritten	80.1	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-015	rewritten	24.1	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
 artifacts	src/signals/routes/__tests__/private-artifact-uploads.test.ts	private-artifact-uploads-016	rewritten	14.5	extension after sandbox reset	src/signals/routes/__tests__/private-artifact-uploads.test.ts	pilot
-account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-001	planned				
-account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	planned				
-account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	planned				
+account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-001	planned				B06
+account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-003	planned				B06
+account-org	src/signals/routes/__tests__/private-integration-uploads.test.ts	private-integration-uploads-005	planned				B06
 account-org	src/signals/routes/__tests__/proactive-preferences.test.ts	proactive-preferences-001	skipped		slow-setup: Given+first When/Then 545 ms and 507 ms (launching the primary chat Run with an execution token via createRunExecutionCredentials: 433 ms and 400 ms incl. ~100 ms file cold start; first Run-token read of proactive suggestions 9-10 ms; Official catalog publication not yet included)		B05
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-001	planned				
 chat	src/signals/routes/__tests__/project-reference-validation.test.ts	project-reference-validation-002	planned				
@@ -2459,8 +2462,8 @@ chat	src/signals/routes/__tests__/projects.test.ts	projects-007	planned
 chat	src/signals/routes/__tests__/projects.test.ts	projects-008	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-009	planned				
 chat	src/signals/routes/__tests__/projects.test.ts	projects-010	planned				
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	planned				
-account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	planned				
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-001	planned				B06
+account-org	src/signals/routes/__tests__/provider-console-paths.test.ts	provider-console-paths-003	planned				B06
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-002	rewritten	41.7	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-003	rewritten	7.1	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
 artifacts	src/signals/routes/__tests__/registry-resources-download.test.ts	registry-resources-download-005	rewritten	5.3	extension after sandbox reset	src/signals/routes/__tests__/registry-resources-download.test.ts	pilot
@@ -2913,8 +2916,8 @@ remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-026	plann
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-029	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-030	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
 remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-034	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		
-messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-001	planned				
-messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	planned				
+messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-001	planned				B06
+messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	planned				B06
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-001	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	planned				
@@ -2934,7 +2937,7 @@ messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-032	planned
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-033	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned				
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned				
-messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	planned				
+messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	planned				B06
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	rewritten	174.3	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	B01
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-006	rewritten	83.5	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-007	rewritten	67.8	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
@@ -2977,7 +2980,7 @@ artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	tem
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-027	planned				
 messaging	src/signals/routes/__tests__/test-teams-state.test.ts	test-teams-state-001	planned				
 messaging	src/signals/routes/__tests__/test-teams-state.test.ts	test-teams-state-003	planned				
-account-org	src/signals/routes/__tests__/transcribe.test.ts	transcribe-001	planned				
+account-org	src/signals/routes/__tests__/transcribe.test.ts	transcribe-001	planned				B06
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-001	planned				
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-004	planned				
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-005	planned				
@@ -3018,17 +3021,17 @@ billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	u
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-021	rewritten	86.0		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-024	rewritten	137.4		src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	B03
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-026	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup) to spend the organization into -5000 credits after the ZERO100 credits expire		B03
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	planned				
-account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	planned				
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	planned				B06
+account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	planned				B06
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-005	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-008	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-009	planned				
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-011	planned				
-account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-002	planned				
-account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-003	planned				
-account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-004	planned				
+account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-002	planned				B06
+account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-003	planned				B06
+account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-004	planned				B06
 account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-001	rewritten	56.0		src/signals/routes/__tests__/user-model-image-preference.test.ts	B05
 account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-003	rewritten	32.2		src/signals/routes/__tests__/user-model-image-preference.test.ts	B05
 account-org	src/signals/routes/__tests__/user-preferences.test.ts	user-preferences-001	rewritten	115.1	extension after sandbox reset	src/signals/routes/__tests__/user-preferences.test.ts	pilot
@@ -3133,7 +3136,7 @@ remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-010	p
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-001	planned				
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-016	planned				
 artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-018	planned				
-artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-001	skipped		timer: 依赖定时器，暂缓 (retryable STS failures wait on signal-timers delay between the three token attempts in signals/external/gcp-llm-auth.ts)		B04
+artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-001	skipped		timer: waits on a production timer (retryable STS failures wait on signal-timers delay between the three token attempts in signals/external/gcp-llm-auth.ts)		B04
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-007	rewritten	90.7		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-009	rewritten	88.0		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-029	rewritten	105.3		src/signals/routes/__tests__/voice-google-auth.test.ts	B04
