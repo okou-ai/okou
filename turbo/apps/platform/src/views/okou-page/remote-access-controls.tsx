@@ -63,6 +63,7 @@ import { sshIdentity$ } from "../../signals/ssh.ts";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Link } from "../router/link.tsx";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { remoteDevicesEnabled$ } from "../../signals/remote-devices.ts";
 
 interface RemoteHostDefaultToggleProps {
   protocol: RemoteAccessProtocol;
@@ -71,8 +72,9 @@ interface RemoteHostDefaultToggleProps {
 }
 
 export function RemoteHostDefaultToggle(props: RemoteHostDefaultToggleProps) {
+  const deviceMode = useLastResolved(remoteDevicesEnabled$);
   const identity = useLoadable(sshIdentity$);
-  if (identity.state !== "hasData" || !identity.data) {
+  if (deviceMode || identity.state !== "hasData" || !identity.data) {
     return null;
   }
   return (
@@ -642,8 +644,9 @@ export function ThreadRemoteAccessDialog({
 }: {
   signals: ComposerSignals;
 }) {
+  const deviceMode = useLastResolved(remoteDevicesEnabled$);
   const identity = useLoadable(sshIdentity$);
-  if (identity.state !== "hasData" || !identity.data) {
+  if (deviceMode || identity.state !== "hasData" || !identity.data) {
     return null;
   }
   return (

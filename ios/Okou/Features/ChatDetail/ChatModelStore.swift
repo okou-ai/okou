@@ -46,6 +46,7 @@ final class ChatModelStore {
   private var publication: Task<ChatModelConfiguration, Error>?
   private let lifetime = CCState.State(true)
   private let resources: WorkspaceResources
+  var remoteDevices: RemoteDeviceResources { resources.remoteDevices }
   private let ownsResources: Bool
   let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
@@ -321,6 +322,7 @@ final class ChatModelSelectionStore {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: models.webURL, graph: models.stateStore, threadID: threadID,
+      remoteDevices: models.remoteDevices,
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       }, readRetrySleep: models.readRetrySleep,

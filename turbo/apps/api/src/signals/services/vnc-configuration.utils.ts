@@ -33,6 +33,11 @@ export type VncResult<T> =
     };
 
 const failures = {
+  remoteDeviceNotFound: {
+    kind: "not_found",
+    code: VNC_ERROR_CODES.UNAVAILABLE,
+    message: "Remote device not found",
+  },
   membershipRevoked: {
     kind: "not_found",
     code: VNC_ERROR_CODES.UNAVAILABLE,

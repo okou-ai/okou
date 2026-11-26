@@ -60,6 +60,7 @@ const connectionSelectionSchema = union([
 ]);
 const createConnectionFields = {
   id: uuid(),
+  remoteDeviceId: uuid().optional(),
   displayName: displayNameSchema,
   host: hostSchema,
 };

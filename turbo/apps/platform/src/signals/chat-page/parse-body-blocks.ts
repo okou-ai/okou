@@ -11,6 +11,10 @@ import {
   parseConnectorAccountActionUrl,
   type ConnectorAccountActionDescriptor,
 } from "./connector-account-action-block.ts";
+import {
+  parseRemoteDeviceApprovalUrl,
+  type RemoteDeviceApprovalDescriptor,
+} from "./remote-device-approval-block.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
 import {
   parsePermissionBatchActionUrl,
@@ -106,6 +110,11 @@ export type ParsedBodyBlock =
       type: "connector-account-action";
       resourceKey: string;
       descriptor: ConnectorAccountActionDescriptor;
+    }
+  | {
+      type: "remote-device-approval";
+      resourceKey: string;
+      descriptor: RemoteDeviceApprovalDescriptor;
     }
   | {
       type: "permission-action";
@@ -883,6 +892,28 @@ function createPermissionActionBlock(
   return null;
 }
 
+function createRemoteDeviceApprovalBlock(
+  url: string,
+  context: ChatActionContext | undefined,
+): CardDescriptorBlock | null {
+  const approval = parseRemoteDeviceApprovalUrl(url, context);
+  if (approval.status === "valid") {
+    return {
+      type: "remote-device-approval",
+      resourceKey: url,
+      descriptor: approval.descriptor,
+    };
+  }
+  if (approval.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: url,
+      descriptor: { originalUrl: url },
+    };
+  }
+  return null;
+}
+
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
@@ -937,6 +968,14 @@ function createActionBlockFromUrl(
       resourceKey: connectorAccountAction.originalUrl,
       descriptor: { originalUrl: connectorAccountAction.originalUrl },
     };
+  }
+
+  const remoteDeviceApproval = createRemoteDeviceApprovalBlock(
+    url,
+    chatActionContext,
+  );
+  if (remoteDeviceApproval) {
+    return remoteDeviceApproval;
   }
 
   const permissionAction = createPermissionActionBlock(url, chatActionContext);
@@ -1569,7 +1608,8 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "connector-action": {
       return block.descriptor.originalUrl;
     }
-    case "connector-account-action": {
+    case "connector-account-action":
+    case "remote-device-approval": {
       return block.descriptor.originalUrl;
     }
     case "permission-action":

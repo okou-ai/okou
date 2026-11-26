@@ -11,6 +11,7 @@ final class ComposerConnectorStore {
   let webURL: URL
   let threadID: String?
   let includesRemote: Bool
+  let remoteDevices: RemoteDeviceResources?
   /// The workspace session's Store in production; every connector read keeps its values here.
   @ObservationIgnored let graph: CCState.Store
 
@@ -74,6 +75,7 @@ final class ComposerConnectorStore {
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
     graph: CCState.Store, threadID: String? = nil, includesRemote: Bool = true,
+    remoteDevices: RemoteDeviceResources? = nil,
     memberAccessEnabled: @escaping @MainActor () -> Bool = { false },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -87,6 +89,7 @@ final class ComposerConnectorStore {
     self.graph = graph
     self.threadID = threadID
     self.includesRemote = includesRemote
+    self.remoteDevices = remoteDevices
     self.memberAccessEnabled = memberAccessEnabled
     self.didFail = didFail
     let snapshotState = snapshotState
@@ -375,6 +378,9 @@ final class ComposerConnectorStore {
       URLQueryItem(name: "scope", value: "remote-control"),
       URLQueryItem(name: "type", value: `protocol`.rawValue)
     ]
+    if let remoteDevices, (try? graph.get(remoteDevices.enabled)) == true {
+      query.append(URLQueryItem(name: "setup", value: `protocol`.rawValue))
+    }
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }
