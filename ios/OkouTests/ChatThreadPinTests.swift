@@ -123,7 +123,9 @@ final class ChatThreadPinTests: XCTestCase {
 
     fixture.gates[0].open()
     await fulfillment(of: [writes[1]], timeout: 3)
-    try await waitForBusinessResult { store.list.error != nil }
+    try await waitForBusinessResult(watching: store.list.statusValue, in: store.graph) {
+      store.list.error != nil
+    }
     XCTAssertEqual(store.list.error, "Pin save unavailable")
     XCTAssertFalse(isPinned(store))
     XCTAssertTrue(store.list.canPin(PinFixture.target))

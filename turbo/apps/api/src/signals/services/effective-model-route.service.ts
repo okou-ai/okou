@@ -6,9 +6,12 @@ import {
   isCatalogModelRunnable,
   type ModelCatalog,
 } from "./model-catalog.service";
+// Antigravity routes are offered only to staff members who opted in; the
+// catalog and model selection apply that switch.
 const PERSONAL_TYPES = [
   "claude-code-oauth-token",
   "codex-oauth-token",
+  "antigravity",
 ] as const;
 type PersonalType = (typeof PERSONAL_TYPES)[number];
 

@@ -1,6 +1,5 @@
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import { escapeText } from "entities/escape";
 import {
   array,
   boolean,
@@ -21,6 +20,7 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { env } from "../../lib/env";
 import { hostedLinkDomain } from "../../lib/link-layout";
 import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
+import { slackArtifactPreviewBlocks } from "../../lib/slack-artifact-preview";
 import { db$ } from "../external/db";
 import {
   unfurlSlackLinks,
@@ -49,11 +49,6 @@ export const slackLinkSharedEventSchema = object({
 });
 
 export type SlackLinkSharedEvent = zInfer<typeof slackLinkSharedEventSchema>;
-
-function escapeSlackLinkText(value: string): string {
-  // Slack decodes only amp/lt/gt; retain non-breaking spaces as Unicode.
-  return escapeText(value).replaceAll("&nbsp;", "\u00a0");
-}
 
 function parseSlackLinkUrl(value: string): URL | null {
   if (!URL.canParse(value)) {
@@ -279,40 +274,8 @@ const slackArtifactUnfurl$ = command(
     if (!metadata) {
       return null;
     }
-    const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
-    // A pipe in the URL must not become Slack's link-label separator.
-    const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
-    const imageUrl =
-      metadata.imageUrl && metadata.imageUrl.length <= 3000
-        ? metadata.imageUrl
-        : null;
     return {
-      blocks: [
-        { type: "divider" },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*<${href}|${escapeSlackLinkText(title)}>*`,
-            verbatim: true,
-          },
-        },
-        ...(metadata.description
-          ? [
-              {
-                type: "section" as const,
-                text: {
-                  type: "plain_text" as const,
-                  text: metadata.description,
-                  emoji: false,
-                },
-              },
-            ]
-          : []),
-        ...(imageUrl
-          ? [{ type: "image" as const, image_url: imageUrl, alt_text: title }]
-          : []),
-      ],
+      blocks: slackArtifactPreviewBlocks(pageUrl.href, metadata),
     };
   },
 );

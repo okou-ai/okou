@@ -40,6 +40,7 @@ pub(crate) struct DownloadTask<'input> {
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
     files: Option<Vec<guest_contracts::storage_files::StorageFile<&'input [u8]>>>,
+    inline_archive: Option<&'input [u8]>,
     template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
 }
 
@@ -54,6 +55,19 @@ impl<'input> DownloadTask<'input> {
 
     pub(crate) fn mount_path(&self) -> &str {
         &self.mount_path
+    }
+
+    pub(crate) fn local_archive_path(&self) -> Option<&str> {
+        self.url.strip_prefix("file://")
+    }
+
+    pub(crate) fn set_inline_archive(&mut self, archive: &'input [u8]) -> bool {
+        // Writable Artifacts retain the existing file-backed inflate policy.
+        if self.telemetry.is_artifact() {
+            return false;
+        }
+        self.inline_archive = Some(archive);
+        true
     }
 
     fn log_progress(&self) -> bool {
@@ -92,6 +106,7 @@ impl<'input> DownloadTask<'input> {
             normalized_mount_path,
             telemetry,
             files: None,
+            inline_archive: None,
             template_guidance: None,
         }
     }
@@ -106,6 +121,7 @@ impl<'input> DownloadTask<'input> {
             normalized_mount_path,
             telemetry,
             files: None,
+            inline_archive: None,
             template_guidance: None,
         }
     }
@@ -528,12 +544,16 @@ fn download_with_readiness(
         .enumerate()
         .map(|(sequence, task)| {
             let estimated_work = if local_only && task.task.files.is_none() {
-                task.task
-                    .url
-                    .strip_prefix("file://")
-                    .and_then(|path| fs::metadata(path).ok())
-                    .filter(|metadata| metadata.is_file())
-                    .map_or(0, |metadata| metadata.len())
+                task.task.inline_archive.map_or_else(
+                    || {
+                        task.task
+                            .local_archive_path()
+                            .and_then(|path| fs::metadata(path).ok())
+                            .filter(|metadata| metadata.is_file())
+                            .map_or(0, |metadata| metadata.len())
+                    },
+                    |archive| archive.len() as u64,
+                )
             } else {
                 0
             };
@@ -814,11 +834,18 @@ fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         return result;
     }
 
-    let reader = match source::open_archive(
-        &task.url,
-        attempt_metrics.as_ref(),
-        local_attempt_metrics.as_ref(),
-    ) {
+    let source = match task.inline_archive {
+        Some(archive) => Ok(source::ArchiveSource::local(
+            archive,
+            Some(archive.len() as u64),
+        )),
+        None => source::open_archive(
+            &task.url,
+            attempt_metrics.as_ref(),
+            local_attempt_metrics.as_ref(),
+        ),
+    };
+    let reader = match source {
         Ok(reader) => reader,
         Err(error) => {
             if let (Some(metrics), Some(attempt_metrics)) =

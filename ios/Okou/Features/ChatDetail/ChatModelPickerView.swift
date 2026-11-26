@@ -137,10 +137,13 @@ private struct ChatModelPickerContent: View {
   @ResolvedValue private var resolvedPresentation: ChatModelSelectionStore.Presentation?
   @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
   @LoadableValue private var metadata: Loadable<ChatModelSelection?>
+  /// A subscription write's phase, kept in the same Store.
+  @ResolvedValue private var resolvedSubscriptionMutation: PersonalSubscriptionStore.Mutation?
 
   init(selection: ChatModelSelectionStore, settingsURL: URL?) {
     self.selection = selection
     self.settingsURL = settingsURL
+    _resolvedSubscriptionMutation = ResolvedValue(selection.models.subscriptions.mutationValue)
     _resolvedPresentation = ResolvedValue(selection.presentationValue)
     _resolvedConfiguration = ResolvedValue(
       task: selection.models.configurationValue, keepLast: true)
@@ -165,6 +168,9 @@ private struct ChatModelPickerContent: View {
   @Environment(\.dismiss) private var dismiss
   private var models: ChatModelStore { selection.models }
   private var subscriptions: PersonalSubscriptionStore { models.subscriptions }
+  private var subscriptionMutation: PersonalSubscriptionStore.Mutation {
+    resolvedSubscriptionMutation ?? subscriptions.mutation
+  }
   @State private var showsAuth = false
   /// The sheet's choice until Done saves it; nil follows the chat's saved choice.
   @State private var draft: ChatModelSelection?
@@ -364,7 +370,7 @@ private struct ChatModelPickerContent: View {
               Task { showsAuth = await subscriptions.reconnect(type: type) }
             }
             .disabled(
-              !configuration.canLinkSubscriptions || subscriptions.isMutating
+              !configuration.canLinkSubscriptions || subscriptionMutation.isMutating
                 || presentation.isBusy)
           }
         }
@@ -421,7 +427,7 @@ private struct ChatModelPickerContent: View {
       if configuration.canLinkSubscriptions {
         subscriptionsSection(configuration)
       }
-      if let error = subscriptions.error {
+      if let error = subscriptionMutation.error {
         Section {
           OkouLoadErrorRow(message: error) { _ = await subscriptions.refresh(force: true) }
         }

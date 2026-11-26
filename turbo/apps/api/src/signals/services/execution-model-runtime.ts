@@ -107,6 +107,27 @@ function compileClaudeSubscriptionRuntime(
   };
 }
 
+/**
+ * `agy` needs its native credential on disk, so the run carries no firewall
+ * secret reference. Dispatch adds the model and a freshly minted credential to
+ * the platform environment.
+ */
+function compileAntigravitySubscriptionRuntime(
+  input: ModelRuntimeInput,
+): CompiledModelRuntime {
+  const { selection } = input;
+  if (selection.kind !== "subscription") {
+    throw new Error("Subscription source requires a subscription selection");
+  }
+  return {
+    selectedModel: selection.selectedModel,
+    upstreamModel: selection.upstreamModel,
+    providerType: "antigravity",
+    environment: {},
+    secretNames: [],
+  };
+}
+
 function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
   const { source, selection } = input;
   if (
@@ -169,6 +190,9 @@ export function compileModelRuntime(
     }
     if (source.configuration.providerType === "claude-code-oauth-token") {
       return compileClaudeSubscriptionRuntime(input);
+    }
+    if (source.configuration.providerType === "antigravity") {
+      return compileAntigravitySubscriptionRuntime(input);
     }
   }
   throw new Error(

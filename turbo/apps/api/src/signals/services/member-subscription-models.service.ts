@@ -23,7 +23,7 @@ export type MemberSubscriptionModel = Readonly<{
   efforts: readonly ReasoningEffort[];
   serviceTier: string | null;
   ultrafastAvailable?: boolean;
-  providerType: "claude-code-oauth-token" | "codex-oauth-token";
+  providerType: "claude-code-oauth-token" | "codex-oauth-token" | "antigravity";
   providerId: string | null;
   needsReconnect: boolean;
   createdAt: Date;

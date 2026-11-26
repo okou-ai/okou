@@ -39,11 +39,13 @@ final class ConversationProjection {
   private let streamedValue: Computed<[ConversationStore.StreamedOutput]>
   /// Everything the transcript reads, for CCStateSwiftUI.
   let value: Computed<Value>
+  let pendingMessages: Computed<[ConversationStore.PendingMessage]>
   private let write: Command<Void, (inout Input) -> Void>
 
   init(store: CCState.Store) {
     self.store = store
     let input = input
+    pendingMessages = Computed { get in try get(input).pending }
     let streamedInput = streamedInput
     let messages = Computed<[ChatMessage]> { get in
       let value = try get(input)

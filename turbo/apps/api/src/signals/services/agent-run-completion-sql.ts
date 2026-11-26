@@ -71,7 +71,7 @@ function arrayElements(value: SQL) {
 
 function validResult(value: SQL) {
   return sql`jsonb_typeof(${value}) = 'object'
-    AND (NOT (${value} ? 'framework') OR ${value}->>'framework' IN ('pi','claude-code','codex') AND jsonb_typeof(${value}->'framework') = 'string')
+    AND (NOT (${value} ? 'framework') OR ${value}->>'framework' IN ('pi','claude-code','codex','antigravity') AND jsonb_typeof(${value}->'framework') = 'string')
     AND (NOT (${value} ? 'frameworkSessionId') OR jsonb_typeof(${value}->'frameworkSessionId') = 'string')
     AND (NOT (${value} ? 'storageOutputs') OR jsonb_typeof(${value}->'storageOutputs') = 'array'
       AND NOT EXISTS (SELECT 1 FROM ${arrayElements(sql`${value}->'storageOutputs'`)} AS item

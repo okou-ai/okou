@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -1802,6 +1803,20 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
+    internal suspend fun resolveSearchChats(chatIds: Set<String>): Set<String> {
+        fun missingChats() =
+            chatIds.toMutableSet().apply {
+                mutable.value.threadsByRecency.forEach { remove(it.id) }
+            }
+
+        requireCurrent()
+        val request = currentCoroutineContext()
+        // The list worker can skip the catch-up if another read already found the chats.
+        awaitListRead { request.isActive && canRefreshList() && missingChats().isNotEmpty() }
+        requireCurrent()
+        return missingChats()
+    }
+
     internal fun retryList() = requestListRead(userRequested = true)
 
     private fun canRefreshList() = listRetryAt == null
@@ -2337,6 +2352,7 @@ class ChatListModel(
         updates.close()
         warming.close()
         listReadRequests.close()
+        pendingListRead?.confirmations?.forEach { it.done.cancel() }
         pendingListRead = null
         readyListRebase = null
         projectOwner.close()

@@ -208,7 +208,7 @@ export const agentRuns = pgTable("agent_runs", migrationColumns, (table) => {
             jsonb_typeof(${table.launchSnapshot}) = 'object' AND
             jsonb_typeof(${table.launchSnapshot} -> 'framework') = 'string' AND
             ${table.launchSnapshot} ->> 'framework' = ANY (
-              ARRAY['claude-code', 'codex', 'pi']
+              ARRAY['claude-code', 'codex', 'pi', 'antigravity']
             ) AND
             ((
               jsonb_typeof(

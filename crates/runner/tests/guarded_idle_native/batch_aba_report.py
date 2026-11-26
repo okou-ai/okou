@@ -9,16 +9,12 @@ import pressure_report as pressure
 import report
 import status_evidence
 from cleanup_report import COUNTS, accounting, coverage, supplied_policy
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_BATCH_ABA_WITNESS "
 CASES = {f"BatchAba-{mode}" for mode in ("fresh", "snapshot")}
 PHASES = ("admission_blocked", "pool_wait_progress", "admission_wait_progress", "status_wait_progress",
           "batch_refused", "recovery_tail_progress", "recovery_completed", "producers_joined")
-
-
-def clock(value, begin, end):
-    return report.validate_phase_clock(value, begin, end, "batch ABA clocks lost required ordering")
 
 
 def queued(value):

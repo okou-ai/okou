@@ -120,7 +120,7 @@ fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool 
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), None, runtime_dir)
 }
 
 /// Apply a manifest supplied as JSON bytes.
@@ -149,7 +149,7 @@ fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path
         }
     };
 
-    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), None, runtime_dir)
 }
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
@@ -157,12 +157,13 @@ pub fn run_storage_files_bytes(input: &[u8]) -> bool {
     run_storage_files_in_context(input, None)
 }
 
-/// Apply validated decoded files with the captured per-Run cleanup lifetime.
+/// Apply a binary Storage input with the captured per-Run cleanup lifetime.
 pub fn run_storage_files_bytes_in_runtime(input: &[u8], runtime_dir: &Path) -> bool {
     run_storage_files_in_context(input, Some(runtime_dir))
 }
 
 fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> bool {
+    use guest_contracts::storage_files::inline_archives;
     use input_telemetry::{InputPhase, measure_phase, record_payload_size};
 
     let parsed = (|| {
@@ -177,6 +178,12 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
             manifest::parse(json)
                 .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))
         })?;
+        if inline_archives::is_archive_payload(payload) {
+            let archives = measure_phase(InputPhase::DecodeValidate, || {
+                inline_archives::decode(payload)
+            })?;
+            return Ok((manifest, Vec::new(), Some(archives)));
+        }
         let files = measure_phase(InputPhase::DecodeValidate, || {
             guest_contracts::storage_files::decode(payload)
         })?;
@@ -186,18 +193,18 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
                 files.iter().map(|group| group.mount_path.as_str()),
             )
         })?;
-        Ok::<_, std::io::Error>((manifest, files))
+        Ok::<_, std::io::Error>((manifest, files, None))
     })();
     match parsed {
-        Ok((manifest, files)) => {
-            if packed_files::is_packed(&manifest) {
+        Ok((manifest, files, archives)) => {
+            if archives.is_none() && packed_files::is_packed(&manifest) {
                 packed_files::apply(manifest, files, runtime_dir)
             } else {
-                run_manifest_with_files_in_runtime(manifest, files, runtime_dir)
+                run_manifest_with_files_in_runtime(manifest, files, archives, runtime_dir)
             }
         }
         Err(error) => {
-            log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
+            log_error!(LOG_TAG, "Invalid binary storage input: {error}");
             false
         }
     }
@@ -206,8 +213,13 @@ fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> boo
 fn run_manifest_with_files_in_runtime(
     manifest: Manifest,
     files: Vec<guest_contracts::storage_files::StorageFiles<&[u8]>>,
+    archives: Option<std::collections::HashMap<&str, &[u8]>>,
     runtime_dir: Option<&Path>,
 ) -> bool {
+    if archives.is_some() && manifest.archive_readiness.is_some() {
+        log_error!(LOG_TAG, "Inline Storage archives cannot use readiness");
+        return false;
+    }
     if manifest
         .archive_readiness
         .as_ref()
@@ -235,6 +247,18 @@ fn run_manifest_with_files_in_runtime(
     };
     let plan_start = Instant::now();
     let mut plan = RunPlan::from_manifest(&manifest);
+    if let Some(archives) = archives {
+        let started = Instant::now();
+        let bound = bind_inline_archives(&mut plan.download_tasks, &archives);
+        input_telemetry::record_phase(input_telemetry::InputPhase::Bindings, started, bound);
+        if !bound {
+            log_error!(
+                LOG_TAG,
+                "Inline Storage archive source missing from execution plan"
+            );
+            return false;
+        }
+    }
     if !bind_decoded_files(&mut plan.download_tasks, files) {
         log_error!(
             LOG_TAG,
@@ -362,6 +386,25 @@ fn run_manifest_with_files_in_runtime(
             false
         }
     }
+}
+
+fn bind_inline_archives<'input>(
+    tasks: &mut [download::DownloadTask<'input>],
+    archives: &std::collections::HashMap<&str, &'input [u8]>,
+) -> bool {
+    let mut used = std::collections::HashSet::with_capacity(archives.len());
+    for task in tasks {
+        if let Some((source, &archive)) = task
+            .local_archive_path()
+            .and_then(|path| archives.get_key_value(path))
+        {
+            if !task.set_inline_archive(archive) {
+                return false;
+            }
+            used.insert(source);
+        }
+    }
+    used.len() == archives.len()
 }
 
 fn bind_decoded_files<'input>(

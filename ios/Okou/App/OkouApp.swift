@@ -300,20 +300,7 @@ private struct WorkspaceRootView: View {
       // Signing out or switching workspaces leaves no chat titles behind for the widgets.
       OkouWidgetPublishing.clear()
     }
-    .alert(
-      "Unable to update chats",
-      isPresented: Binding(
-        get: {
-          store.list.actionError != nil
-            && store.list.renameRequest == nil && !store.list.isSavingRename
-        },
-        set: { if !$0 { store.list.dismissError() } }
-      )
-    ) {
-      Button("OK") { store.list.dismissError() }
-    } message: {
-      Text(store.list.actionError ?? "")
-    }
+    .modifier(ChatListActionAlert(list: store.list))
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       RequiredUpdateView()
         .background(OkouColor.background)
@@ -348,9 +335,11 @@ private struct WorkspaceRootView: View {
     .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
     .overlay {
       if let submission = store.newChatSubmission, submission.isPresenting {
-        NewChatSubmissionView(submission: submission, webURL: store.webURL)
-          .id(submission.message.id)
-          .background { OkouColor.background.ignoresSafeArea() }
+        NewChatSubmissionView(
+          submission: submission, conversation: store.selectedConversation, webURL: store.webURL
+        )
+        .id(submission.message.id)
+        .background { OkouColor.background.ignoresSafeArea() }
       }
     }
     .safeAreaBar(edge: .top, spacing: 0) {
@@ -472,6 +461,33 @@ private struct WorkspaceWidgetPublisher: View {
     Color.clear
       .frame(width: 0, height: 0)
       .task(id: snapshot) { [snapshot] in OkouWidgetPublishing.publish(snapshot) }
+  }
+}
+
+/// Reports a failed chat action once no rename editor is open or saving. The rename state is
+/// read from the workspace session's graph, so this applies under the workspace's Store provider.
+private struct ChatListActionAlert: ViewModifier {
+  let list: ThreadListStore
+  @ResolvedValue private var status: ThreadListStore.Status?
+
+  init(list: ThreadListStore) {
+    self.list = list
+    _status = ResolvedValue(list.statusValue)
+  }
+
+  func body(content: Content) -> some View {
+    let current = status ?? list.status
+    let error = list.actionError
+    content.alert(
+      "Unable to update chats",
+      isPresented: Binding(
+        get: { error != nil && current.renameRequest == nil && !current.isSavingRename },
+        set: { if !$0 { list.dismissError() } })
+    ) {
+      Button("OK") { list.dismissError() }
+    } message: {
+      Text(error ?? "")
+    }
   }
 }
 

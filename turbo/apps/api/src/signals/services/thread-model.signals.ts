@@ -1,3 +1,7 @@
+import {
+  launchFrameworkForProviderType,
+  type LaunchFramework,
+} from "./launch-framework";
 import { performance } from "node:perf_hooks";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
@@ -115,7 +119,7 @@ export interface ThreadModelSelection {
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */
-  readonly cliAgentType: "pi" | ReturnType<typeof getFrameworkForType>;
+  readonly cliAgentType: "pi" | LaunchFramework;
 }
 
 export interface ThreadModelSignals {
@@ -427,7 +431,7 @@ function createModelSelection(
         piExecution,
         cliAgentType: piExecution
           ? "pi"
-          : getFrameworkForType(modelProviderType),
+          : launchFrameworkForProviderType(modelProviderType),
       };
     },
   );
