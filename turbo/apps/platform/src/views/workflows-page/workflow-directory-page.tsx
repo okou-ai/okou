@@ -267,12 +267,14 @@ function WorkflowListPanel({
 }
 
 /**
- * Toolbar menu triggers share the search field's frame: the `outline` variant
- * draws the same height, radius, hairline and fill as `Input`, so the toolbar
- * reads as one row of controls and stays lighter than the header's page
- * actions.
+ * Toolbar menu triggers share the search field's frame: `neutral` already
+ * draws `Input`'s height, radius and hairline, and `bg-input` takes its fill in
+ * every theme, so the toolbar reads as one row of controls and stays lighter
+ * than the header's page actions. The fill is opaque, so the open state is an
+ * overlay like `neutral`'s hover and press.
  */
-const TOOLBAR_TRIGGER_CLASS = "shrink-0 gap-1.5 px-3";
+const TOOLBAR_TRIGGER_CLASS =
+  "shrink-0 gap-1.5 bg-input px-3 aria-expanded:bg-state-hover-overlay";
 
 function MenuRadioSection<T extends string>({
   label,
@@ -332,8 +334,7 @@ function FilterDropdown() {
         render={
           <Button
             type="button"
-            variant="outline"
-            highlightWhenOpen
+            variant="neutral"
             className={TOOLBAR_TRIGGER_CLASS}
             aria-label={t(($) => {
               return $.workflows.list.filter;
@@ -468,8 +469,7 @@ function SortDropdown({
         render={
           <Button
             type="button"
-            variant="outline"
-            highlightWhenOpen
+            variant="neutral"
             className={TOOLBAR_TRIGGER_CLASS}
             aria-label={i18n.t(($) => {
               return $.workflows.list.sort.label;
