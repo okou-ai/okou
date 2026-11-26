@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -81,6 +82,7 @@ import org.commonmark.node.HtmlInline
 import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link
+import org.commonmark.node.LinkReferenceDefinition
 import org.commonmark.node.ListBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.Node
@@ -90,6 +92,7 @@ import org.commonmark.node.SoftLineBreak
 import org.commonmark.node.StrongEmphasis
 import org.commonmark.node.Text as MarkdownText
 import org.commonmark.node.ThematicBreak
+import org.commonmark.parser.IncludeSourceSpans
 import org.commonmark.parser.Parser
 
 internal data class ChatArtifactActions(
@@ -103,6 +106,7 @@ internal data class ChatArtifactActions(
 
 internal val MessageArtifactCardSpacing = 8.dp
 internal val HistoryMarkdownBlockSpacing = 12.dp
+private val MarkdownTableCellPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 internal fun imageFocusReply(focusKey: String?): String? =
     focusKey?.takeIf { it.startsWith("image/") }?.substringAfter('/')?.substringBefore('/')
@@ -134,8 +138,8 @@ internal fun HistoryMarkdown(
                     inlineImages = inlineImages,
                 )
             }
-        val hit = highlight?.target?.markdownBlock?.takeIf { it in blocks.indices } ?: -1
-        val whole = highlight.takeIf { hit < 0 }
+        val hit = highlight?.target?.markdownBlockPath?.let(blocks::availableBlockPath)
+        val whole = highlight.takeIf { hit == null }
         val findImage =
             highlight?.target?.markdownImage?.takeIf { path ->
                 blocks.indexedImages().any { it.first == path }
@@ -163,7 +167,7 @@ internal fun HistoryMarkdown(
             messageId,
             artifactTurnKey,
             Modifier.conversationFindHighlight(whole),
-            hit,
+            hit.takeIf { findImage == null },
             highlight,
             links,
             compactReply,
@@ -197,7 +201,7 @@ private fun HistoryMarkdownBlocks(
     focusPrefix: String,
     artifactTurnKey: String,
     modifier: Modifier = Modifier,
-    hit: Int = -1,
+    hit: String? = null,
     highlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
     compactReply: Boolean = false,
@@ -214,7 +218,7 @@ private fun HistoryMarkdownBlocks(
                 if (previousEndsWithCard && block.startsWithCard) MessageArtifactCardSpacing
                 else HistoryMarkdownBlockSpacing
             val blockPath = "$path$index"
-            val selected = highlight.takeIf { index == hit && findImage == null }
+            val selected = highlight.takeIf { blockPath == hit }
             val blockModifier =
                 (if (index == 0) Modifier else Modifier.padding(top = spacing))
                     .conversationFindHighlight(selected)
@@ -232,6 +236,7 @@ private fun HistoryMarkdownBlocks(
                         links,
                         artifacts,
                         blockPath,
+                        hit,
                         findImage,
                         highlight,
                         messageBlock,
@@ -274,6 +279,7 @@ private fun HistoryMarkdownBlocks(
                                     "$focusPrefix/$index/$itemIndex",
                                     artifactTurnKey,
                                     Modifier.weight(1f),
+                                    hit = hit,
                                     links = links,
                                     compactReply = compactReply,
                                     findImage = findImage,
@@ -580,6 +586,13 @@ private fun HistoryMarkdownBlock.endsWithImage(): Boolean =
 private fun List<HistoryMarkdownBlock>.indexedImages(prefix: String = "") =
     asSequence().flatMapIndexed { index, block -> block.indexedImages("$prefix$index") }
 
+private fun List<HistoryMarkdownBlock>.availableBlockPath(path: String): String? {
+    val root = path.substringBefore('/')
+    val block = root.toIntOrNull()?.let { getOrNull(it) } ?: return null
+    return if (path == root || block.indexedContents(root).any { (key, _) -> key == path }) path
+    else root
+}
+
 private fun HistoryMarkdownBlock.indexedImages(
     path: String,
 ): Sequence<Pair<String, MarkdownImage>> =
@@ -664,8 +677,68 @@ private fun HistoryMarkdownContent.findPassages(
     if (start < text.length) yield(MarkdownFindPassage(index, text.text.substring(start)))
 }
 
-private val historyMarkdownParser =
-    Parser.builder().extensions(listOf(TablesExtension.create())).build()
+private val historyMarkdownExtensions = listOf(TablesExtension.create())
+
+private val historyMarkdownParser = Parser.builder().extensions(historyMarkdownExtensions).build()
+
+private val workspaceSearchMarkdownParser by lazy {
+    Parser.builder()
+        .extensions(historyMarkdownExtensions)
+        .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
+        .build()
+}
+
+internal fun HistoryMessage.workspaceSearchTarget(
+    range: IntRange?,
+    inlineImages: Boolean,
+): ConversationFindTarget {
+    if (role != HistoryRole.Assistant || range == null || range.isEmpty() || range.first < 0)
+        return ConversationFindTarget(id, null)
+    val source =
+        blocks.singleOrNull()?.takeIf { it.kind == HistoryBlockKind.Text }?.text
+            ?: return ConversationFindTarget(id, null)
+    // The index offsets count UTF-16 code units after JavaScript String.trim().
+    val prefix = source.indexOfFirst {
+        it != '\uFEFF' && (!it.isWhitespace() || it in '\u001C'..'\u001F')
+    }
+    if (prefix < 0 || range.last >= source.length - prefix) return ConversationFindTarget(id, null)
+    val sourceMatch = (prefix + range.first)..(prefix + range.last)
+    val document = workspaceSearchMarkdownParser.parse(source)
+    val (index, node) =
+        document.children().containingMatch(sourceMatch) ?: return ConversationFindTarget(id, null)
+    val (path, block) = node.matchedReadingBlock(index.toString(), sourceMatch)
+    if (block is LinkReferenceDefinition) return ConversationFindTarget(id, null)
+    val imagePath =
+        if (inlineImages && "![" in source && block !is ListBlock && block !is TableBlock) {
+            block.markdownImages().containingMatch(sourceMatch)?.let { "$path/${it.index}" }
+        } else null
+    return ConversationFindTarget(id, path, bodyIndex = 0, markdownImage = imagePath)
+}
+
+private fun Sequence<Node>.containingMatch(range: IntRange): IndexedValue<Node>? =
+    withIndex().firstOrNull { (_, node) ->
+        val spans = node.sourceSpans
+        val first = spans.firstOrNull() ?: return@firstOrNull false
+        val last = spans.last()
+        range.first >= first.inputIndex && range.last < last.inputIndex + last.length
+    }
+
+private fun Node.matchedReadingBlock(path: String, range: IntRange): Pair<String, Node> {
+    when (this) {
+        is ListBlock -> {
+            val (itemIndex, item) = children().containingMatch(range) ?: return path to this
+            val (blockIndex, block) = item.children().containingMatch(range) ?: return path to this
+            return block.matchedReadingBlock("$path/$itemIndex/$blockIndex", range)
+        }
+        is TableBlock -> {
+            val (rowIndex, row) = markdownRows().containingMatch(range) ?: return path to this
+            val (cellIndex, cell) =
+                row.markdownCells().containingMatch(range) ?: return path to this
+            return "$path/$rowIndex/$cellIndex" to cell
+        }
+        else -> return path to this
+    }
+}
 
 private val artifactMarkdownParser = Parser.builder().build()
 
@@ -738,11 +811,13 @@ private fun Node.historyMarkdownBlock(
 
 private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.next }
 
+private fun Node.markdownImages(): Sequence<Image> =
+    if (this is Image) sequenceOf(this) else children().flatMap { it.markdownImages() }
+
 private fun Node.inlineImageArtifacts(): Sequence<String> =
-    if (this is Image)
-        listOfNotNull(inlineImageSource(destination)?.takeIf { it.startsWith("/artifacts/") })
-            .asSequence()
-    else children().flatMap { it.inlineImageArtifacts() }
+    markdownImages().mapNotNull { image ->
+        inlineImageSource(image.destination)?.takeIf { it.startsWith("/artifacts/") }
+    }
 
 internal data class ReplyArtifact(val link: String, val title: String)
 
@@ -808,11 +883,9 @@ private fun historyMarkdownRows(
     replyCopy: ReplyCopy? = null,
 ): List<List<HistoryMarkdownCell>> =
     table
-        .children()
-        .flatMap { it.children() }
+        .markdownRows()
         .map { row ->
-            row.children()
-                .filterIsInstance<TableCell>()
+            row.markdownCells()
                 .map { cell ->
                     val images = if (inlineImages) mutableListOf<MarkdownImage>() else null
                     HistoryMarkdownCell(
@@ -837,6 +910,10 @@ private fun historyMarkdownRows(
         }
         .toList()
 
+private fun TableBlock.markdownRows(): Sequence<Node> = children().flatMap { it.children() }
+
+private fun Node.markdownCells(): Sequence<TableCell> = children().filterIsInstance<TableCell>()
+
 @Composable
 private fun HistoryMarkdownTable(
     rows: List<List<HistoryMarkdownCell>>,
@@ -846,6 +923,7 @@ private fun HistoryMarkdownTable(
     links: ConversationLinkActions?,
     artifacts: ChatArtifactActions?,
     path: String,
+    hit: String?,
     findImage: String?,
     highlight: ConversationFindHighlight?,
     messageBlock: String,
@@ -878,21 +956,30 @@ private fun HistoryMarkdownTable(
                         else Modifier,
                     ) {
                         for ((column, cell) in row.withIndex()) {
-                            HistoryMarkdownContent(
-                                cell.content,
+                            val cellPath = "$path/$index/$column"
+                            val selected = highlight.takeIf { cellPath == hit }
+                            val cellStyle =
                                 MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = if (index == 0) FontWeight.SemiBold else null,
-                                ),
+                                )
+                            HistoryMarkdownContent(
+                                cell.content,
+                                if (selected?.target?.highlighted == true)
+                                    cellStyle.copy(color = colors.onSecondaryContainer)
+                                else cellStyle,
                                 "$focusPrefix/$index/$column",
                                 links,
+                                // Reveal the entire cell, including space for the highlight
+                                // outline.
                                 Modifier.width(widths[column])
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    .conversationFindHighlight(selected, MarkdownTableCellPadding)
+                                    .padding(MarkdownTableCellPadding),
                                 artifacts,
                                 alignment = cell.alignment,
                                 imageScope =
                                     ImageFocusScope(
                                         messageBlock,
-                                        "$path/$index/$column",
+                                        cellPath,
                                         findImage,
                                         highlight,
                                     ),

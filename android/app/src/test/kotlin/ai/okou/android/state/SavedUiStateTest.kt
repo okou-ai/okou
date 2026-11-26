@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.SearchArtifactHit
+import ai.okou.android.chat.SearchMessageAnchor
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchRefresh
@@ -869,6 +870,27 @@ class SavedUiStateTest {
             TextRange(7),
             field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
+    }
+
+    @Test
+    fun workspaceNavigationRestoresThePendingMessageMatch() {
+        val restoration = StateRestorationTester(compose)
+        val expected =
+            WorkspaceNavigation(
+                target = WorkspaceTarget.Chat("chat"),
+                search = SearchRoute.ReturnOnBack,
+                searchMessageAnchor = SearchMessageAnchor(22, 0..3),
+            )
+        var observed = WorkspaceNavigation()
+        restoration.setContent {
+            var navigation by rememberWorkspaceNavigation()
+            SideEffect { observed = navigation }
+            Button(onClick = { navigation = expected }) { Text("Open matching message") }
+        }
+
+        compose.onNodeWithText("Open matching message").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle { assertEquals(expected, observed) }
     }
 
     @Test
