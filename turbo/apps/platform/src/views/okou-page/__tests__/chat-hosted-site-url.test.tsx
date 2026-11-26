@@ -751,7 +751,8 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
       return link.textContent?.includes("Configure with");
     }),
   ).toBeUndefined();
-  click(getNamedButton("Verify", menu));
+  const user = userEvent.setup({ delay: null, writeToClipboard: false });
+  await user.click(getNamedButton("Verify", menu));
   await verificationStarted.promise;
   await within(menu).findByRole("heading", { name: "Domain verification" });
   expect(within(menu).getAllByText("Checking…")).toHaveLength(5);
@@ -764,6 +765,9 @@ test("the domain wizard separates missing TXT values, activation checks, and sav
   await within(menu).findByText(
     "Your DNS records match. No DNS changes are needed.",
   );
+  expect(getNamedButton("Verify again", menu)).toHaveFocus();
+  expect(within(menu).getAllByText("Passed")).toHaveLength(3);
+  expect(within(menu).getByText("Waiting")).toBeInTheDocument();
   expect(within(menu).getByText("Domain activation")).toBeInTheDocument();
   expect(within(menu).getByText("Website routing")).toBeInTheDocument();
   expect(
@@ -941,6 +945,7 @@ test("unavailable verification stays in the verification stage until DNS changes
   );
   click(await findNamedButton(`Manage ${hostname}`, menu));
   await within(menu).findByRole("heading", { name: "Domain verification" });
+  expect(within(menu).getAllByText("Could not check")).toHaveLength(5);
   expect(getNamedButton("Verification", menu)).toHaveAttribute(
     "aria-current",
     "step",

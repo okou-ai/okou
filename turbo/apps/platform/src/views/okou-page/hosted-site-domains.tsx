@@ -294,6 +294,7 @@ function DomainChecks({
           const check = verifying
             ? undefined
             : domain.verification?.checks[name];
+          const checkStatus = check?.status;
           return (
             <li key={name}>
               <div className="flex items-start gap-2">
@@ -303,13 +304,13 @@ function DomainChecks({
                     className="mt-0.5 shrink-0 motion-safe:animate-spin"
                     aria-hidden
                   />
-                ) : status === "passed" ? (
+                ) : checkStatus === "passed" ? (
                   <Check
                     size={14}
                     className="mt-0.5 shrink-0 text-green-600"
                     aria-hidden
                   />
-                ) : status === "failed" ? (
+                ) : checkStatus === "failed" ? (
                   <CircleAlert
                     size={14}
                     className="mt-0.5 shrink-0 text-destructive"
@@ -326,19 +327,19 @@ function DomainChecks({
                     ? t(($) => {
                         return $.artifacts.customDomain.checking;
                       })
-                    : status === "passed"
+                    : checkStatus === "passed"
                       ? t(($) => {
                           return $.artifacts.customDomain.checkPassed;
                         })
-                      : status === "unavailable"
+                      : checkStatus === "unavailable"
                         ? t(($) => {
                             return $.artifacts.customDomain.checkUnavailable;
                           })
-                        : status === "failed"
+                        : checkStatus === "failed"
                           ? t(($) => {
                               return $.artifacts.customDomain.checkFailed;
                             })
-                          : status === "pending"
+                          : checkStatus === "pending"
                             ? t(($) => {
                                 return $.artifacts.customDomain.checkPending;
                               })
@@ -749,14 +750,13 @@ export function HostedSiteDomainRemoveDialog({
 }
 export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
   const { t } = useTranslation();
-  const settings = useLoadable(session.domains.settings$);
+  const configuration = useLastResolved(session.domains.settings$);
   const id = useGet(session.domains.managedDomainId$);
   const notice = useGet(session.domains.notice$);
   const signal = useGet(session.signal$);
-  if (!signal || settings.state !== "hasData" || !settings.data) {
+  if (!signal || !configuration) {
     return null;
   }
-  const configuration = settings.data;
   const domain = configuration.domains.find((item) => {
     return item.id === id;
   });
