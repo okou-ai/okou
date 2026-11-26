@@ -127,6 +127,7 @@ function setup(role: "org:admin" | "org:member" = "org:admin") {
       }),
       [200],
     );
+    return { customerId, subscriptionId, period };
   }
 
   return { admin, checkout, subscribe, readStatus };
@@ -686,6 +687,317 @@ describe("POST /api/billing/checkout", () => {
     expect(replay.body).toStrictEqual(teamConfirmation.body);
     expect(context.mocks.stripe.subscriptions.create).toHaveBeenCalledTimes(1);
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
+  });
+
+  it("billing-checkout-011 resumes a pending Team purchase and applies it before returning", async () => {
+    const { admin, checkout, subscribe, readStatus } = setup();
+    const {
+      customerId,
+      subscriptionId: proSubscriptionId,
+      period,
+    } = await subscribe("pro");
+    const pendingTeamId = `sub_team_${randomUUID().slice(0, 8)}`;
+    const teamInvoiceId = `in_team_${randomUUID().slice(0, 8)}`;
+    const teamMetadata = {
+      orgId: admin.orgId,
+      tier: "team",
+      priceId: TEAM_PRICE,
+      billingPurchaseId: `bp_${randomUUID()}`,
+    };
+    let teamPaid = false;
+    const teamInvoice = (invoiceStatus: "open" | "paid") => {
+      return {
+        id: teamInvoiceId,
+        status: invoiceStatus,
+        customer: customerId,
+        amount_due: 20_000,
+        amount_paid: invoiceStatus === "paid" ? 20_000 : 0,
+        total: 20_000,
+        subtotal: 20_000,
+        currency: "usd",
+        metadata: {},
+        parent: {
+          subscription_details: {
+            subscription: pendingTeamId,
+            metadata: teamMetadata,
+          },
+        },
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_${teamInvoiceId}`,
+              price: { id: TEAM_PRICE },
+              quantity: 1,
+              amount: 20_000,
+              parent: { type: "subscription_item_details" },
+              period,
+            },
+          ],
+        },
+      };
+    };
+    const proSubscription = {
+      id: proSubscriptionId,
+      status: "active",
+      customer: customerId,
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      metadata: { orgId: admin.orgId },
+      default_payment_method: "pm_saved_card",
+      items: {
+        data: [
+          {
+            price: { id: PRO_PRICE },
+            quantity: 1,
+            current_period_start: period.start,
+            current_period_end: period.end,
+          },
+        ],
+      },
+    };
+    const teamSubscription = () => {
+      return {
+        id: pendingTeamId,
+        status: teamPaid ? "active" : "incomplete",
+        customer: customerId,
+        cancel_at_period_end: false,
+        cancel_at: null,
+        schedule: null,
+        trial_end: null,
+        metadata: teamMetadata,
+        default_payment_method: "pm_saved_card",
+        latest_invoice: teamInvoice(teamPaid ? "paid" : "open"),
+        items: {
+          data: [
+            {
+              price: { id: TEAM_PRICE },
+              quantity: 1,
+              current_period_start: period.start,
+              current_period_end: period.end,
+            },
+          ],
+        },
+      };
+    };
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId: admin.orgId },
+      invoice_settings: { default_payment_method: "pm_saved_card" },
+      default_source: null,
+    });
+    context.mocks.stripe.subscriptions.list.mockImplementation(() => {
+      const data = [proSubscription, teamSubscription()];
+      return Promise.resolve({ data, has_more: false });
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+      (id: unknown) => {
+        if (id === pendingTeamId) {
+          return Promise.resolve(teamSubscription());
+        }
+        return Promise.resolve(proSubscription);
+      },
+    );
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      amount_due: 20_000,
+      total: 20_000,
+      subtotal: 20_000,
+      currency: "usd",
+      lines: { data: [], has_more: false },
+    });
+    context.mocks.stripe.invoices.pay.mockImplementation(() => {
+      teamPaid = true;
+      return Promise.resolve(teamInvoice("paid"));
+    });
+    context.mocks.stripe.subscriptions.cancel.mockResolvedValue({
+      ...proSubscription,
+      status: "canceled",
+    });
+
+    const body = {
+      tier: "team" as const,
+      supportsInAppPreview: true,
+      ...redirects,
+    };
+    const preview = await accept(checkout.create({ headers, body }), [200]);
+    if (!("previewToken" in preview.body)) {
+      throw new Error("Expected a Team purchase preview");
+    }
+
+    const confirmed = await accept(
+      checkout.create({
+        headers,
+        body: { ...body, previewToken: preview.body.previewToken },
+      }),
+      [200],
+    );
+
+    expect(confirmed.body).toStrictEqual({
+      status: "completed",
+      hostedInvoiceUrl: null,
+    });
+    expect(context.mocks.stripe.subscriptions.create).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.pay).toHaveBeenCalledWith(
+      teamInvoiceId,
+      {},
+      { idempotencyKey: expect.stringMatching(/^billing-operation:plan:/) },
+    );
+    expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
+      proSubscriptionId,
+      { invoice_now: false, prorate: false },
+    );
+    await expect(readStatus()).resolves.toMatchObject({
+      tier: "team",
+      subscriptionStatus: "active",
+    });
+  });
+
+  it("billing-checkout-012 rejects a resumable Plan purchase after its saved card changes", async () => {
+    const { admin, checkout, subscribe } = setup();
+    const {
+      customerId,
+      subscriptionId: proSubscriptionId,
+      period,
+    } = await subscribe("pro");
+    const pendingTeamId = `sub_team_${randomUUID().slice(0, 8)}`;
+    const teamInvoiceId = `in_team_${randomUUID().slice(0, 8)}`;
+    const teamMetadata = {
+      orgId: admin.orgId,
+      tier: "team",
+      priceId: TEAM_PRICE,
+      billingPurchaseId: `bp_${randomUUID()}`,
+    };
+    let pendingPaymentMethod = "pm_saved_card";
+    const proSubscription = {
+      id: proSubscriptionId,
+      status: "active",
+      customer: customerId,
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: null,
+      trial_end: null,
+      metadata: { orgId: admin.orgId },
+      default_payment_method: "pm_saved_card",
+      items: {
+        data: [
+          {
+            price: { id: PRO_PRICE },
+            quantity: 1,
+            current_period_start: period.start,
+            current_period_end: period.end,
+          },
+        ],
+      },
+    };
+    const teamSubscription = () => {
+      return {
+        id: pendingTeamId,
+        status: "incomplete",
+        customer: customerId,
+        cancel_at_period_end: false,
+        cancel_at: null,
+        schedule: null,
+        trial_end: null,
+        metadata: teamMetadata,
+        default_payment_method: pendingPaymentMethod,
+        latest_invoice: {
+          id: teamInvoiceId,
+          status: "open",
+          customer: customerId,
+          amount_due: 20_000,
+          amount_paid: 0,
+          total: 20_000,
+          subtotal: 20_000,
+          currency: "usd",
+          metadata: {},
+          parent: {
+            subscription_details: {
+              subscription: pendingTeamId,
+              metadata: teamMetadata,
+            },
+          },
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${teamInvoiceId}`,
+                price: { id: TEAM_PRICE },
+                quantity: 1,
+                amount: 20_000,
+                parent: { type: "subscription_item_details" },
+                period,
+              },
+            ],
+          },
+        },
+        items: {
+          data: [
+            {
+              price: { id: TEAM_PRICE },
+              quantity: 1,
+              current_period_start: period.start,
+              current_period_end: period.end,
+            },
+          ],
+        },
+      };
+    };
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      metadata: { orgId: admin.orgId },
+      invoice_settings: { default_payment_method: "pm_saved_card" },
+      default_source: null,
+    });
+    context.mocks.stripe.subscriptions.list.mockImplementation(() => {
+      const data = [proSubscription, teamSubscription()];
+      return Promise.resolve({ data, has_more: false });
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockImplementation(
+      (id: unknown) => {
+        if (id === pendingTeamId) {
+          return Promise.resolve(teamSubscription());
+        }
+        return Promise.resolve(proSubscription);
+      },
+    );
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      amount_due: 20_000,
+      total: 20_000,
+      subtotal: 20_000,
+      currency: "usd",
+      lines: { data: [], has_more: false },
+    });
+
+    const preview = await accept(
+      checkout.create({
+        headers,
+        body: { tier: "team", supportsInAppPreview: true, ...redirects },
+      }),
+      [200],
+    );
+    if (!("previewToken" in preview.body)) {
+      throw new Error("Expected a Team purchase preview");
+    }
+
+    pendingPaymentMethod = "pm_other_card";
+
+    const response = await accept(
+      checkout.confirm({
+        headers,
+        body: { previewToken: preview.body.previewToken },
+      }),
+      [409],
+    );
+
+    expect(response.body).toMatchObject({
+      error: {
+        code: "CONFLICT",
+        message: "Plan purchase preview is no longer valid",
+      },
+    });
     expect(context.mocks.stripe.invoices.pay).not.toHaveBeenCalled();
   });
 });
