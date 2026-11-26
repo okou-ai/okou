@@ -111,7 +111,7 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
       var ancestor = touch.view
       while let view = ancestor {
         if view is UIControl { return false }
-        if view is QuickLookImageCanvas, gestureRecognizer.view?.isDescendant(of: view) != true {
+        if view is MessageImageWebView, gestureRecognizer.view?.isDescendant(of: view) != true {
           return false
         }
         if let scroll = view as? UIScrollView,

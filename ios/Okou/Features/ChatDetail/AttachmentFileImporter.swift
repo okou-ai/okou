@@ -200,8 +200,7 @@ actor AttachmentFileImporter {
     Self.makeThumbnail(url, maximumPixelSize: maximumPixelSize)
   }
 
-  /// Decode ordinary static images directly; keep animated, unsupported and very large images
-  /// with Quick Look rather than allocating an unbounded full-resolution bitmap.
+  /// Keep full-resolution bitmap decoding bounded for the native image view.
   func previewImageData(_ url: URL) -> Data? {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
       CGImageSourceGetCount(source) == 1,
@@ -213,11 +212,15 @@ actor AttachmentFileImporter {
     return try? Data(contentsOf: url, options: .mappedIfSafe)
   }
 
+  func imageDocument(_ url: URL) -> LocalImageDocument? {
+    try? LocalImageDocument(image: url)
+  }
+
   /// The first page or slide of a document as Quick Look draws it, wide enough to fill a
   /// result card's cover from the top.
-  func documentCover(_ url: URL) async -> Data? {
+  func documentCover(_ url: URL, size: CGSize = CGSize(width: 400, height: 1_000)) async -> Data? {
     let request = QLThumbnailGenerator.Request(
-      fileAt: url, size: CGSize(width: 400, height: 1_000), scale: 2,
+      fileAt: url, size: size, scale: 2,
       representationTypes: .thumbnail)
     guard
       let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(

@@ -88,6 +88,7 @@ struct MessageImagePreview<File: QuickLookPreviewFile>: View {
   private struct Prepared {
     let url: URL
     let image: UIImage?
+    let document: LocalImageDocument?
   }
   @State private var prepared: Prepared?
 
@@ -100,8 +101,8 @@ struct MessageImagePreview<File: QuickLookPreviewFile>: View {
           } else {
             MessageZoomableImage(image: image).id(file.url)
           }
-        } else if QLPreviewController.canPreview(file.url as NSURL) {
-          MessageFileQuickLook(file: file, wrapsImageForZoom: true).id(file.url)
+        } else if let document = prepared.document {
+          MessageWebImage(document: document).id(file.url)
         } else {
           OkouEmptyState(
             "Preview unavailable", icon: "image",
@@ -114,9 +115,18 @@ struct MessageImagePreview<File: QuickLookPreviewFile>: View {
       }
     }
     .task(id: file.url) {
-      let data = await AttachmentFileImporter.shared.previewImageData(file.url)
+      let importer = AttachmentFileImporter.shared
+      let data = await importer.previewImageData(file.url)
       guard !Task.isCancelled else { return }
-      prepared = Prepared(url: file.url, image: data.flatMap(UIImage.init(data:)))
+      var image = data.flatMap(UIImage.init(data:))
+      let document = image == nil ? await importer.imageDocument(file.url) : nil
+      if image == nil, document == nil {
+        let cover = await importer.documentCover(
+          file.url, size: CGSize(width: 1_024, height: 1_024))
+        image = cover.flatMap(UIImage.init(data:))
+      }
+      guard !Task.isCancelled else { return }
+      prepared = Prepared(url: file.url, image: image, document: document)
     }
   }
 }
@@ -130,36 +140,19 @@ extension ImportedAttachmentFile: QuickLookPreviewFile {}
 
 struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerRepresentable {
   let file: File
-  var wrapsImageForZoom = false
 
   func makeCoordinator() -> Coordinator { Coordinator(file) }
-  func makeUIViewController(context: Context) -> UIViewController {
-    let preview = context.coordinator.preview
-    preview.dataSource = context.coordinator
-    guard wrapsImageForZoom else { return preview }
-
-    // Quick Look draws large or animated images out of process. Keep the touches in the
-    // same local zoom surface that owns pinch, pan and swipe for a decoded image.
-    let container = UIViewController()
-    container.addChild(preview)
-    let canvas = QuickLookImageCanvas(renderer: preview.view)
-    canvas.handlePan = context.environment.imagePreviewPan
-    context.coordinator.canvas = canvas
-    container.view = MessageImageScrollView(
-      content: canvas,
-      accessibilityLabel: String(localized: "Image. Pinch to zoom, or double tap."))
-    preview.didMove(toParent: container)
-    return container
+  func makeUIViewController(context: Context) -> QLPreviewController {
+    let controller = QLPreviewController()
+    controller.dataSource = context.coordinator
+    return controller
   }
-  func updateUIViewController(_ controller: UIViewController, context: Context) {
-    context.coordinator.canvas?.handlePan = context.environment.imagePreviewPan
+  func updateUIViewController(_ controller: QLPreviewController, context: Context) {
     guard context.coordinator.file.url != file.url else { return }
     context.coordinator.file = file
-    context.coordinator.preview.reloadData()
+    controller.reloadData()
   }
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
-    let preview = QLPreviewController()
-    weak var canvas: QuickLookImageCanvas?
     var file: File
     init(_ file: File) { self.file = file }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
@@ -169,32 +162,4 @@ struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerReprese
       file.url as NSURL
     }
   }
-}
-
-/// A remote Quick Look surface can receive touches directly from the window server.
-/// Put a local input view above it so the image scroll view receives pinches and drags.
-final class QuickLookImageCanvas: UIView {
-  var handlePan: (@MainActor (UIPanGestureRecognizer) -> Void)?
-  private let panDelegate = ImagePreviewPan.Coordinator()
-
-  init(renderer: UIView) {
-    super.init(frame: .zero)
-    let display = UIView()
-    let input = UIView()
-    display.isUserInteractionEnabled = false
-    display.addSubview(renderer)
-    addSubview(display)
-    addSubview(input)
-    let pan = UIPanGestureRecognizer(target: self, action: #selector(didPan(_:)))
-    panDelegate.configure(pan)
-    input.addGestureRecognizer(pan)
-    for view in [display, renderer, input] {
-      view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      view.frame = bounds
-    }
-  }
-
-  required init?(coder: NSCoder) { nil }
-
-  @objc private func didPan(_ pan: UIPanGestureRecognizer) { handlePan?(pan) }
 }

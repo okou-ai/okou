@@ -27,20 +27,17 @@ final class ImagePreviewSwipeTests: XCTestCase {
         translation: CGPoint(x: 230, y: 110), velocity: CGPoint(x: 800, y: 200)))
   }
 
-  func testSystemRenderedImageFitsAndZoomsInTheLocalScrollView() {
-    let renderer = UIView()
-    let rendered = QuickLookImageCanvas(renderer: renderer)
-    let canvas = MessageImageScrollView(content: rendered, accessibilityLabel: "Image")
-    canvas.frame = CGRect(x: 0, y: 0, width: 390, height: 700)
-    canvas.layoutIfNeeded()
-    XCTAssertEqual(rendered.bounds.size, canvas.bounds.size)
-    XCTAssertEqual(renderer.frame.size, canvas.bounds.size)
-    let target = canvas.hitTest(CGPoint(x: 195, y: 350), with: nil)
-    XCTAssertEqual(target?.superview, rendered)
-    XCTAssertFalse(target?.isDescendant(of: renderer) == true)
-
-    canvas.setZoomScale(2, animated: false)
-    XCTAssertEqual(rendered.frame.size, CGSize(width: 780, height: 1400))
-    XCTAssertGreaterThan(canvas.zoomScale, canvas.minimumZoomScale)
+  func testLocalImageDocumentLoadsOriginalBytesWithASafeFilename() throws {
+    let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension("gif")
+    let bytes = Data("image fixture".utf8)
+    try bytes.write(to: source)
+    defer { try? FileManager.default.removeItem(at: source) }
+    let document = try XCTUnwrap(try LocalImageDocument(image: source))
+    let resource = document.directory.appendingPathComponent("image.gif")
+    XCTAssertEqual(try Data(contentsOf: resource), bytes)
+    let html = try String(contentsOf: document.page, encoding: .utf8)
+    XCTAssertTrue(html.contains("src=\"image.gif\""))
+    XCTAssertFalse(html.contains(source.lastPathComponent))
   }
 }

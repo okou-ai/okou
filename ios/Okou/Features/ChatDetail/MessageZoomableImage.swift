@@ -14,34 +14,28 @@ struct MessageZoomableImage: UIViewRepresentable {
 }
 
 final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
-  private let zoomContent: UIView
-  private let imageSize: CGSize?
+  private let imageView: UIImageView
+  private let imageSize: CGSize
   private var viewport: CGSize = .zero
   private var zoomStep = 0
   var zoomChanged: ((Bool) -> Void)?
 
-  convenience init(image: UIImage, accessibilityLabel: String) {
-    self.init(
-      content: UIImageView(image: image), imageSize: image.size,
-      accessibilityLabel: accessibilityLabel)
-  }
-
-  init(content: UIView, imageSize: CGSize? = nil, accessibilityLabel: String) {
-    zoomContent = content
-    self.imageSize = imageSize
+  init(image: UIImage, accessibilityLabel: String) {
+    imageView = UIImageView(image: image)
+    imageSize = image.size
     super.init(frame: .zero)
     delegate = self
     contentInsetAdjustmentBehavior = .never
-    content.frame = CGRect(origin: .zero, size: imageSize ?? .zero)
-    content.isAccessibilityElement = true
-    content.accessibilityLabel = accessibilityLabel
-    content.accessibilityCustomActions = [
+    imageView.frame = CGRect(origin: .zero, size: image.size)
+    imageView.isAccessibilityElement = true
+    imageView.accessibilityLabel = accessibilityLabel
+    imageView.accessibilityCustomActions = [
       UIAccessibilityCustomAction(
         name: String(localized: "Zoom in"), target: self, selector: #selector(zoomIn)),
       UIAccessibilityCustomAction(
         name: String(localized: "Zoom out"), target: self, selector: #selector(zoomOut))
     ]
-    addSubview(content)
+    addSubview(imageView)
     let doubleTap = UITapGestureRecognizer(target: self, action: #selector(toggleZoom(_:)))
     doubleTap.numberOfTapsRequired = 2
     addGestureRecognizer(doubleTap)
@@ -53,12 +47,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
     super.layoutSubviews()
     guard bounds.size != viewport, bounds.width > 0, bounds.height > 0 else { return }
     viewport = bounds.size
-    if imageSize == nil {
-      setZoomScale(1, animated: false)
-      zoomContent.frame = CGRect(origin: .zero, size: viewport)
-    }
-    let size = imageSize ?? viewport
-    let fit = min(bounds.width / size.width, bounds.height / size.height)
+    let fit = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
     minimumZoomScale = min(1, fit)
     maximumZoomScale = max(4, fit * 8)
     setZoomScale(minimumZoomScale, animated: false)
@@ -66,7 +55,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
     updatePagingInteraction()
   }
 
-  func viewForZooming(in scrollView: UIScrollView) -> UIView? { zoomContent }
+  func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
   func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
     updatePagingInteraction(zooming: true)
   }
@@ -116,7 +105,7 @@ final class MessageImageScrollView: UIScrollView, UIScrollViewDelegate {
       setZoomScale(minimumZoomScale, animated: true)
     } else {
       let scale = min(maximumZoomScale, minimumZoomScale * 3)
-      let point = gesture.location(in: zoomContent)
+      let point = gesture.location(in: imageView)
       let size = CGSize(width: bounds.width / scale, height: bounds.height / scale)
       zoom(
         to: CGRect(
