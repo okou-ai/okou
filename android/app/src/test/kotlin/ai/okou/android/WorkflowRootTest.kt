@@ -1001,6 +1001,45 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    @Config(qualifiers = "de-rDE-w900dp-h820dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun wideEditorPreservesTheScrolledFilterStripAtLargeText() {
+        val originalScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(2f, it.resources.configuration.fontScale, 0f)
+            }
+            openWorkflowDetail()
+            selectScope("Nur ich")
+            val scope = compose.onNodeWithTag("workflow_scope_Private").assertIsSelected()
+            val initialBounds = scope.getUnclippedBoundsInRoot()
+            val filter =
+                compose.onNode(
+                    hasAnyDescendant(hasTestTag("workflow_scope_Private")) and
+                        SemanticsMatcher.keyIsDefined(
+                            SemanticsProperties.HorizontalScrollAxisRange,
+                        ),
+                )
+            val range =
+                filter.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange]
+            val extent = range.maxValue()
+            assertTrue(extent > 0f)
+            filter.performSemanticsAction(SemanticsActions.ScrollBy) { it(extent, 0f) }
+            val scrolledBounds = scope.getUnclippedBoundsInRoot()
+            assertTrue(scrolledBounds.left < initialBounds.left)
+
+            compose.onNodeWithText("Anweisungen bearbeiten").performClick()
+            assertEquals(scrolledBounds, scope.assertIsNotEnabled().getUnclippedBoundsInRoot())
+            compose.onNodeWithText("Abbrechen").performClick()
+            assertEquals(scrolledBounds, scope.assertIsEnabled().getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalScale)
+        }
+    }
+
+    @Test
     fun pendingRuleKeepsTheConfirmedStatusAndFocusedActionUntilTheReceipt() = withHardwareKeyboard {
         val fixture = app.fixture
         fixture.active.set(true)
