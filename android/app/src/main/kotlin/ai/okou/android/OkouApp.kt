@@ -57,6 +57,7 @@ import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.chat.imageFocusReply
 import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rememberChatAttachmentPicker
@@ -1897,6 +1898,9 @@ internal fun OkouApp(
                                         chatArtifacts,
                                         inlineArtifactLink,
                                         listWidth != null,
+                                        inlineImage =
+                                            imageFocusReply(navigation.chatArtifactFocusKey) !=
+                                                null,
                                     ) {
                                         closeResources(returnToCard = true)
                                     }

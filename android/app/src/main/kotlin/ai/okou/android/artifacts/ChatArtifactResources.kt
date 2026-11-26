@@ -45,6 +45,7 @@ internal fun ChatArtifactLinkPreview(
     model: ArtifactCatalogModel,
     link: String,
     wide: Boolean,
+    inlineImage: Boolean,
     onClose: () -> Unit,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
@@ -66,6 +67,7 @@ internal fun ChatArtifactLinkPreview(
             saveLauncher,
             onClose,
             R.string.back,
+            showArtifactImageViewer = !inlineImage,
         ) {
             ArtifactToolbar(
                 R.string.chat_search_artifact_preview,

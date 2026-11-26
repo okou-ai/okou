@@ -240,6 +240,7 @@ internal fun ArtifactSelectionPreview(
     @androidx.annotation.StringRes backLabel: Int,
     threads: List<ConfirmedChat> = emptyList(),
     onSource: (ConfirmedChat) -> Unit = {},
+    showArtifactImageViewer: Boolean = true,
     toolbar: @Composable () -> Unit,
 ) {
     var pickerFailed by remember(selectedId) { mutableStateOf(false) }
@@ -279,7 +280,8 @@ internal fun ArtifactSelectionPreview(
             }
         }
         if (
-            preview?.isImage == true &&
+            showArtifactImageViewer &&
+                preview?.isImage == true &&
                 !id.startsWith(ExternalImagePreviewPrefix) &&
                 chatAttachment(id) == null
         ) {

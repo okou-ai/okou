@@ -1247,7 +1247,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         instrumentation.setInTouchMode(false)
         try {
             compose.activityRule.scenario.recreate()
-            val fixture = ArtifactApiFixture(app.fixture)
+            val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
             fixture.install()
             fixture.installInlineHistory()
             app.fixture.historyReply +=
@@ -1283,6 +1283,12 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithContentDescription("Back").performClick()
             awaitText(fixture.image.title)
             summary.assertIsFocused()
+
+            image.performClick()
+            compose.waitUntilExactlyOneExists(hasTestTag("artifact_image_toolbar"), 10_000)
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.waitUntilExactlyOneExists(hasText(fixture.image.title) and isFocused(), 10_000)
+            assertTrue(fixture.catalogScopes.isEmpty())
         } finally {
             instrumentation.resetInTouchMode()
         }
