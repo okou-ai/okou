@@ -1,8 +1,8 @@
 domain	test_file	case_id	status	duration_ms	note	new_test_file	batch	precheck
-non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-002	planned				B11	d-other
-non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-006	planned				B11	d-other
-non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-008	planned				B11	d-other
-non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-009	planned				B11	d-other
+non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-002	rewritten	4.3		scripts/register-discord-commands.test.mjs	B11	d-other
+non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-006	rewritten	19.3		scripts/register-discord-commands.test.mjs	B11	d-other
+non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-008	rewritten	15.8		scripts/register-discord-commands.test.mjs	B11	d-other
+non-route	scripts/register-discord-commands.test.mjs	register-discord-commands-009	rewritten	10.6		scripts/register-discord-commands.test.mjs	B11	d-other
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-001	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
