@@ -340,7 +340,7 @@ class OkouAppTest {
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percentFormat = NumberFormat.getPercentInstance(Locale.GERMANY)
         listOf(
-                UpdateTransfer.Idle to compose.activity.getString(R.string.updates_toolbar),
+                UpdateTransfer.Idle to compose.activity.getString(R.string.updates_download),
                 UpdateTransfer.Downloading(release) to
                     compose.activity.getString(
                         R.string.updates_downloading,
