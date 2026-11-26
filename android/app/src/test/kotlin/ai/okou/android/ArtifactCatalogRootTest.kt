@@ -1754,7 +1754,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun decodedOriginalReplacesAuthorizedThumbnailWithoutResettingZoom() {
+    fun decodedOriginalKeepsZoomAndUsesTheFullViewportUntilFit() {
         val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
         val original = Bitmap.createBitmap(512, 256, Bitmap.Config.ARGB_8888)
         val bytes = ByteArrayOutputStream()
@@ -1778,19 +1778,25 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
             compose.onNodeWithText(fixture.image.title).performClick()
             compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
             val image = compose.onNodeWithTag("artifact_image_transform")
+            val fitInset = with(compose.density) { 16.dp.roundToPx() }
             fun actions() = image.fetchSemanticsNode().config[SemanticsActions.CustomActions]
-            fun centerIsBlue(): Boolean {
+            fun blueAt(x: (Int) -> Int): Boolean {
                 val frame = image.captureToImage()
-                val center = frame.toPixelMap()[frame.width / 2, frame.height / 2]
-                return center.blue > 0.75f && center.red < 0.2f
+                val pixel = frame.toPixelMap()[x(frame.width), frame.height / 2]
+                return pixel.blue > 0.75f && pixel.red < 0.2f
             }
-            assertTrue(!centerIsBlue())
+            assertTrue(!blueAt { it / 2 })
             image.performTouchInput { doubleClick() }
             compose.waitUntil(5_000) { actions().any { it.label == "Fit image" } }
             releaseOriginal.countDown()
 
-            compose.waitUntil(10_000) { centerIsBlue() }
-            assertTrue(actions().any { it.label == "Fit image" })
+            compose.waitUntil(10_000) {
+                actions().any { it.label == "Fit image" } && blueAt { fitInset / 2 }
+            }
+            image.performKeyInput { pressKey(Key.Zero) }
+            compose.waitUntil(5_000) { actions().none { it.label == "Fit image" } }
+            assertTrue(!blueAt { fitInset / 2 })
+            assertTrue(blueAt { fitInset + 4 })
             assertTrue(fixture.requestedDownloads.isEmpty())
         } finally {
             releaseOriginal.countDown()
