@@ -91,6 +91,11 @@ internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable 
     mutableStateOf(false)
 }
 
+@Composable
+internal fun rememberConversationQueueFlag(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
 internal data class AttachmentPickerSelection(
     val draftKey: String,
     val targetKey: String,

@@ -85,6 +85,7 @@ import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
+import ai.okou.android.state.rememberConversationQueueFlag
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberSearchWorkflowId
 import ai.okou.android.state.rememberWorkflowConnectorVisit
@@ -1361,10 +1362,11 @@ internal fun OkouApp(
             maxOf(TopAppBarDefaults.TopAppBarExpandedHeight, textHeight + 16.dp)
         }
     val stopPlacement = remember(controlThreadId) { ConversationStopPlacement() }
-    var queueOpen by remember(controlThreadId) { mutableStateOf(false) }
+    var queueOpen by key(controlThreadId) { rememberConversationQueueFlag() }
+    val queuePosition = key(controlThreadId) { rememberLazyListState() }
     val queueTrigger = remember(controlThreadId) { FocusRequester() }
     var queueTriggerFocused by remember(controlThreadId) { mutableStateOf(false) }
-    var restoreQueueTrigger by remember(controlThreadId) { mutableStateOf(false) }
+    var restoreQueueTrigger by key(controlThreadId) { rememberConversationQueueFlag() }
 
     val queueCount = runActions?.takeUnless { conversationMissing }?.presentation?.queue?.size ?: 0
     LaunchedEffect(conversationMissing) {
@@ -1435,6 +1437,7 @@ internal fun OkouApp(
                     queueCount,
                     onClick = {
                         restoreQueueTrigger = queueTriggerFocused
+                        queuePosition.requestScrollToItem(0)
                         queueOpen = true
                     },
                     modifier =
@@ -1998,6 +2001,7 @@ internal fun OkouApp(
                                                         conversationSnackbar.currentSnackbarData !=
                                                             null,
                                                 queueOpen = queueOpen,
+                                                queuePosition = queuePosition,
                                                 dismissQueue = { queueOpen = false },
                                                 onFollowup =
                                                     if (canEdit) { prompt -> followup = prompt }
@@ -2147,6 +2151,7 @@ internal fun OkouApp(
                                                     controls = runActions,
                                                     stopPlacement = stopPlacement,
                                                     queueOpen = queueOpen,
+                                                    queuePosition = queuePosition,
                                                     dismissQueue = { queueOpen = false },
                                                 )
                                             }
