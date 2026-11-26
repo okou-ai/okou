@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.10...runner-rs-v0.251.11) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** reuse validated guarded idle terminal identities ([#50913](https://github.com/okou-ai/okou/issues/50913)) ([ff0b438](https://github.com/okou-ai/okou/commit/ff0b438d5e2c2e201ea99242d73a9904b7054d83))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.9...runner-rs-v0.251.10) (2026-11-25)
 
 ### Release Dependencies
