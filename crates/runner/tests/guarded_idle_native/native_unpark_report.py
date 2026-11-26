@@ -3,7 +3,6 @@
 
 import pathlib
 
-import batch_aba_report as batch
 import later_parking_report as later
 import report
 import speculative_fault_report as saving
@@ -16,7 +15,7 @@ from native_transition_report import (
     wait_progress,
     wire,
 )
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 PREFIX = "NATIVE_UNPARK_WITNESS "
 FAULTS = ("UnparkDrop", "UnparkObserverUnwind", "UnparkProducerUnwind")
@@ -61,8 +60,8 @@ def validate(directory):
             replay_error="native unpark replayed run or resource identity",
             binding_error="native unpark lost original history binding",
         )
-        started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
-        observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
+        started = clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
+        observed = clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         request_sha = wire(captured.get("request_raw"))
         exact(captured, {"mode":mode,"history_run_id":history,"operation_run_id":operation,"reuse_key":reuse,
             "prepare_started_ns":started,"capture_observed_ns":observed,"request_raw":captured["request_raw"],

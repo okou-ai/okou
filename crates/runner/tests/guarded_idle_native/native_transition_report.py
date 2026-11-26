@@ -3,10 +3,9 @@
 import hashlib
 import json
 
-import batch_aba_report as batch
 import progress_report as foreground
 import report
-from report import exact
+from report import exact, validate_batch_phase_clock as clock
 
 
 def wire(value, response=False, state="Resumed"):
@@ -44,7 +43,7 @@ def wire(value, response=False, state="Resumed"):
 
 def validate_accepted_response(accepted, capture_event, acceptance_event, *, repark):
     """Require the original successful HTTP response held while the public operation waits."""
-    observed = batch.clock(
+    observed = clock(
         accepted.get("backend_response_observed_ns"),
         capture_event["monotonic_ns"],
         acceptance_event["monotonic_ns"],
@@ -77,12 +76,12 @@ def validate_accepted_response(accepted, capture_event, acceptance_event, *, rep
 
 def validate_preparation_loss(lost, previous_event, current_event, *, observer_unwound):
     """Require the original uncertain owner after the preparation observer drops."""
-    requested = batch.clock(
+    requested = clock(
         lost.get("cancel_requested_ns"),
         previous_event["monotonic_ns"],
         current_event["monotonic_ns"],
     )
-    dropped = batch.clock(lost.get("observation_dropped_ns"), requested, current_event["monotonic_ns"])
+    dropped = clock(lost.get("observation_dropped_ns"), requested, current_event["monotonic_ns"])
     exact(
         lost,
         {
@@ -105,15 +104,15 @@ def validate_preparation_loss(lost, previous_event, current_event, *, observer_u
 
 def wait_progress(progress, previous_event, current_event):
     """Validate common retained-wait custody and return the joined heartbeat identity."""
-    held = batch.clock(
+    held = clock(
         progress.get("pool_held_ns"),
         previous_event["monotonic_ns"],
         current_event["monotonic_ns"],
     )
-    polled = batch.clock(
+    polled = clock(
         progress.get("heartbeat_pending_ns"), held, current_event["monotonic_ns"]
     )
-    released = batch.clock(
+    released = clock(
         progress.get("pool_released_ns"), polled, current_event["monotonic_ns"]
     )
     foreground.observer(progress.get("observer"), polled, released)
@@ -141,12 +140,12 @@ def wait_progress(progress, previous_event, current_event):
 
 def validate_producer_join(joined, previous_event, current_event, *, producer_unwound, request_sha):
     """Require the observed producer join after release of the accepted response."""
-    released = batch.clock(
+    released = clock(
         joined.get("response_released_ns"),
         previous_event["monotonic_ns"],
         current_event["monotonic_ns"],
     )
-    finished = batch.clock(joined.get("producer_joined_ns"), released, current_event["monotonic_ns"])
+    finished = clock(joined.get("producer_joined_ns"), released, current_event["monotonic_ns"])
     exact(
         joined,
         {
