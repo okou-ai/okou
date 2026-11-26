@@ -88,7 +88,7 @@ class RealtimeCatchUpTest {
                 model.updates.foreground(true)
                 model.uiState.first {
                     it.threads.any { row -> row.title == "External title" } &&
-                        it.indicatorsPhase == ChatReadPhase.Failed
+                        it.indicatorsRetryProgressVisible
                 }
                 assertEquals(HistoryPhase.Loading, model.history.uiState.value.phase)
                 api.events = { request ->
@@ -131,8 +131,10 @@ class RealtimeCatchUpTest {
                             } == true
                     }
                 assertEquals(1, history.transcript!!.messages.count { it.id == added })
-                val indicators = model.uiState.first { it.indicatorsPhase != ChatReadPhase.Loading }
-                assertEquals(ChatReadPhase.Failed, indicators.indicatorsPhase)
+                assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
+                api.indicators = { jsonResponse("""{"threads":{},"unreadAt":{}}""") }
+                model.uiState.first { it.indicatorsPhase == ChatReadPhase.Ready }
+                assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
             }
         } finally {
             held.countDown()
