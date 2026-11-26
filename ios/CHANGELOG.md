@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.70.0](https://github.com/okou-ai/okou/compare/ios-v0.69.3...ios-v0.70.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** focus for you on one larger card at a time ([#51218](https://github.com/okou-ai/okou/issues/51218)) ([632780d](https://github.com/okou-ai/okou/commit/632780d28fe673558abb8f5e22bdaaab4da2d086))
+
+
+### Bug Fixes
+
+* **ios:** preserve inline voice recordings in sent messages ([#51251](https://github.com/okou-ai/okou/issues/51251)) ([4881092](https://github.com/okou-ai/okou/commit/4881092121fbe885d59bf634dbbdc123d7e5b584))
+
 ## [0.69.3](https://github.com/okou-ai/okou/compare/ios-v0.69.2...ios-v0.69.3) (2026-11-26)
 
 
