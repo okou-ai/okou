@@ -699,7 +699,7 @@ export function WorkflowDirectoryPage() {
               </h1>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 {t(($) => {
-                  return $.workflows.list.description;
+                  return $.workflows.list.directoryDescription;
                 })}
               </p>
             </div>

@@ -7480,7 +7480,8 @@
       "clearSearch": "Suche löschen",
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
-      "description": "Wiederverwendbare SOPs zum Ausführen und Automatisieren. Anderswo heißen sie Skills.",
+      "description": "Eine wiederverwendbare SOP für eine Aufgabe. Schreiben Sie eines von Grund auf oder destillieren Sie es aus Ihrer täglichen Arbeit und führen Sie es dann aus, bearbeiten oder automatisieren Sie es.",
+      "directoryDescription": "Wiederverwendbare SOPs zum Ausführen und Automatisieren. Anderswo heißen sie Skills.",
       "empty": {
         "all": "Erstellen Sie einen Workflow aus dem Chat oder speichern Sie einen aus einer nützlichen Ausführung.",
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",

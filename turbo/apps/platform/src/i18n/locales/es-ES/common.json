@@ -7562,7 +7562,8 @@
       "clearSearch": "Borrar búsqueda",
       "createdBy": "Creado por",
       "createInChat": "Crear en el chat",
-      "description": "Un procedimiento reutilizable para ejecutar, editar o automatizar. En otros productos: skills.",
+      "description": "Un procedimiento operativo reutilizable para una tarea. Escríbelo desde cero o extráelo de tu trabajo diario; después ejecútalo, edítalo o automatízalo.",
+      "directoryDescription": "Un procedimiento reutilizable para ejecutar, editar o automatizar. En otros productos: skills.",
       "empty": {
         "all": "Crea un flujo de trabajo desde el chat o guarda uno a partir de una ejecución útil.",
         "automated": "Si añades una automatización a un flujo de trabajo, aparece aquí.",
