@@ -1558,19 +1558,19 @@ account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switch
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-013	rewritten	16.7	asserts current behaviour after #51200 (9b08a6ab): the bundled agentSuggestion default is no longer injected into the effective switches; extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-015	rewritten	22.9	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
 account-org	src/signals/routes/__tests__/feature-switches.test.ts	feature-switches-016	rewritten	13.0	extension after sandbox reset	src/signals/routes/__tests__/feature-switches.test.ts	pilot	
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-001	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-002	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-003	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-001	rewritten	73.3		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-002	rewritten	95.1		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-003	rewritten	141.2	split n=2: 1/2=128.9; 2/2=141.2	src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-004	planned				pilot	a-run
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-005	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-007	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-010	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-011	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-013	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-016	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-007	rewritten	146.0	split n=2: 1/2=134.6; 2/2=146.0	src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-010	rewritten	76.6		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-011	rewritten	84.1		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-013	rewritten	191.3	split n=3: 1/3=123.7; 2/3=191.3; 3/3=179.7	src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-016	revisit		revisit: over 200 ms ((2/2) non-first shuffled median 214.0 ms over 162.6/228.3/224.9/160.5/214.0; (1/2) 158.7 ms); evidence: each row installs a Lark bot and connects the sender through OAuth before the /connect reply and the installation removal; resume: split (2/2) so the installation removal is its own row; draft in /home/user/pilot-env/wip/r18/feishu-branding-connection.with-016-026.test.ts		B14	b-install
 messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-017	planned				pilot	a-run
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	planned				B14	b-install
-messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	planned				B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-023	rewritten	100.9		src/signals/routes/__tests__/feishu-branding-connection.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/feishu-branding-connection.test.ts	feishu-branding-connection-026	revisit		revisit: over 200 ms and failed once in six shuffled runs ((2/3) non-first median 251.4 ms, (3/3) 221.0 ms, (3/3) failed in one run; (1/3) 140.6 ms); evidence: the Lark reconnect rows replay the rejected welcome, the OAuth connect and the reconnect before their own Then; resume: find the cause of the single (3/3) failure, then split the reconnect segment further; draft in /home/user/pilot-env/wip/r18/feishu-branding-connection.with-016-026.test.ts		B14	b-install
 messaging	src/signals/routes/__tests__/feishu-browser-connect.test.ts	feishu-browser-connect-001	rewritten	20.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/feishu-browser-connect.test.ts	B06	
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-001	planned				pilot	a-run
 messaging	src/signals/routes/__tests__/feishu-conversation.test.ts	feishu-conversation-002	planned				pilot	a-run
