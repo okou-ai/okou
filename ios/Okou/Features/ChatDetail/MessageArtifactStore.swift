@@ -107,12 +107,16 @@ final class MessageArtifactStore {
     renewedHTMLSignature: Bool = false, thumbnail: Data? = nil
   ) {
     guard !closed else { return }
-    dismiss()
+    preview?.close()
     let item = MessageArtifactPreviewRead(
       artifact: reads.metadata(resource), images: images, imageSources: imageSources,
       thumbnail: thumbnail, renewedHTMLSignature: renewedHTMLSignature,
       reads: reads, service: service, markdown: markdown, webURL: webURL, didFail: didFail)
-    update { $0.preview = item }
+    // One write replaces the open preview, so moving between images never publishes none.
+    update {
+      $0.preview = item
+      $0.sharing = nil
+    }
     do { try item.start() } catch { didFail(error) }
   }
 
