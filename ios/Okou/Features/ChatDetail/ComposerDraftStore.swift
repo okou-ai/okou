@@ -94,21 +94,6 @@ final class ComposerDraftStore {
     ComposerDraftRules.canEditDocument(signals.snapshot, signals.statusSnapshot)
   }
 
-  func insertVoiceClip(
-    _ fileID: String, recordingID: UUID, at target: ComposerEditor.VoiceInsertion?
-  ) {
-    guard consumedVoiceID != recordingID else { return }
-    consumedVoiceID = recordingID
-    let clip = MessageJSON.object([
-      "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
-    ])
-    if let target, editor.insertVoiceClip(clip, at: target) { return }
-    // A restored recording or a replaced editor has no live selection to insert into.
-    document.parts.append(clip)
-    resetEditors()
-    changed()
-  }
-
   func insertVoiceText(_ text: String, id: UUID, at target: ComposerEditor.VoiceInsertion) -> Bool {
     guard canEditVoice else { return false }
     if consumedVoiceID == id { return true }
@@ -554,6 +539,21 @@ final class ComposerDraftStore {
 }
 
 extension ComposerDraftStore {
+  func insertVoiceClip(
+    _ fileID: String, recordingID: UUID, at target: ComposerEditor.VoiceInsertion?
+  ) {
+    guard consumedVoiceID != recordingID else { return }
+    consumedVoiceID = recordingID
+    let clip = MessageJSON.object([
+      "type": .string("voice"), "clips": .array([.object(["fileId": .string(fileID)])])
+    ])
+    if let target, editor.insertVoiceClip(clip, at: target) { return }
+    // A restored recording or a replaced editor has no live selection to insert into.
+    document.parts.append(clip)
+    resetEditors()
+    changed()
+  }
+
   static func removeStoredDraft(_ id: String, from storage: ChatDraftStorage) throws {
     // A released conversation can still own imported files outside its serialized draft.
     let key = ChatDraftTarget.thread(id).key

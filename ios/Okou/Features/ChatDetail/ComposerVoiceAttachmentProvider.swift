@@ -56,9 +56,7 @@ final class ComposerVoiceClipControl: UIControl {
     chip.addSubview(time)
     addAction(UIAction { [weak self] _ in self?.toggle() }, for: .touchUpInside)
     render()
-    registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
-      (control: ComposerVoiceClipControl, _: UITraitCollection) in control.updateColors()
-    }
+    registerForTraitChanges([UITraitUserInterfaceStyle.self], action: #selector(updateColors))
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -127,11 +125,11 @@ final class ComposerVoiceClipControl: UIControl {
     return true
   }
 
-  enum State {
+  enum PlaybackState {
     case ready, loading, playing, paused, failed
   }
 
-  func render(_ state: State = .ready, elapsed: TimeInterval = 0) {
+  func render(_ state: PlaybackState = .ready, elapsed: TimeInterval = 0) {
     let visibleTime = state == .playing || state == .paused ? elapsed : duration
     time.text = visibleTime.map(Self.formatTime) ?? "–:––"
     progress = duration.map { $0 > 0 ? elapsed / $0 : 0 } ?? 0
@@ -160,7 +158,7 @@ final class ComposerVoiceClipControl: UIControl {
     return "\(seconds / 60):" + String(format: "%02d", seconds % 60)
   }
 
-  private func updateColors() {
+  @objc private func updateColors() {
     chip.backgroundColor = UIColor(isHighlighted ? OkouColor.statePressed : OkouColor.muted)
     glyph.tintColor = UIColor(OkouColor.foreground)
     time.textColor = UIColor(OkouColor.mutedForeground)

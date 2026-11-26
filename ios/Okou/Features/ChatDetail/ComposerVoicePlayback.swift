@@ -46,13 +46,13 @@ final class ComposerVoicePlayback {
       control.render(.paused, elapsed: elapsed)
       return
     }
-    if owns(control), operation != nil {
-      stop()
-      return
-    }
     if !owns(control) {
       stop()
       clip = control
+    }
+    guard operation == nil else {
+      stop()
+      return
     }
     control.render(.loading)
     operation = Task { [weak self, weak control] in
