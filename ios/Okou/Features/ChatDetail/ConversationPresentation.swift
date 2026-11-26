@@ -2,10 +2,9 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// Owns a conversation's shared history/read work and disposable native presentation window.
-@MainActor @Observable
+@MainActor
 final class ConversationPresentation {
   typealias PendingMessage = ConversationStore.PendingMessage
   typealias NavigationRequest = ConversationStore.NavigationRequest
@@ -101,15 +100,15 @@ final class ConversationPresentation {
   /// workspace session's Store. ChatDetailView reads `window` and `navigation`, and the earlier
   /// messages row reads `loadsEarlier`, through CCStateSwiftUI; the accessors in the extension
   /// below serve owner logic and tests.
-  @ObservationIgnored let window: Computed<Window>
-  @ObservationIgnored let navigation: Computed<Navigation>
-  @ObservationIgnored let loadsEarlier: Computed<Bool>
-  @ObservationIgnored private let readingState = CCState.State(Reading())
+  let window: Computed<Window>
+  let navigation: Computed<Navigation>
+  let loadsEarlier: Computed<Bool>
+  private let readingState = CCState.State(Reading())
   private(set) var detailOwner: UUID?
   /// History and read-mark synchronization, kept in the workspace session's Store.
   /// ChatDetailView and the chat list's sync status read `syncStatus` through CCStateSwiftUI.
-  @ObservationIgnored let syncStatus: Computed<SyncStatus>
-  @ObservationIgnored private let syncState = CCState.State(SyncStatus())
+  let syncStatus: Computed<SyncStatus>
+  private let syncState = CCState.State(SyncStatus())
   private(set) var readSyncError: String? {
     get { currentSyncStatus.readError }
     set { updateSync { $0.readError = newValue } }
@@ -119,17 +118,17 @@ final class ConversationPresentation {
     set { updateSync { $0.historyError = newValue } }
   }
   private var refreshAgain = false
-  @ObservationIgnored private var refreshTask: Task<Void, Never>? {
+  private var refreshTask: Task<Void, Never>? {
     didSet { updateSync { $0.isRefreshing = refreshTask != nil } }
   }
-  @ObservationIgnored private var readTask: Task<Void, Never>? {
+  private var readTask: Task<Void, Never>? {
     didSet { updateSync { $0.isMarkingRead = readTask != nil } }
   }
   private var readAgain = false
   private var refreshGeneration = UUID()
   private var expansionTask: Task<Void, Never>?
   private var renderWindow = ConversationRenderWindow()
-  @ObservationIgnored private var preservesRenderWindow = false
+  private var preservesRenderWindow = false
   private var suppressAutomaticRead = false
   private var manualUnreadThrough: Date?
   private var locallyReadThrough: Date?
