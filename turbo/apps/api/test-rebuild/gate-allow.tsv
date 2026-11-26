@@ -1,0 +1,18 @@
+# case_id	regex on the first log line	why the log is the production consequence of the case's own failure input
+billing-auto-recharge-014	Auto-recharge Stripe call failed	Given: Stripe declines the recharge payment (card_declined)
+billing-auto-recharge-019	Auto-recharge Stripe call failed	Given: Stripe declines every recharge payment (card_declined)
+billing-auto-recharge-020	Auto-recharge Stripe call failed	Given: Stripe declines the first two and later payments (card_declined)
+hosted-site-access-011	Unhandled request error: Clerk is unavailable	Given: the Clerk membership lookup fails; Then: HTTP 500
+feishu-installation-002	Rejected Feishu URL verification with an invalid token	Then: the rotated-out verification token is rejected
+feishu-installation-012	Rejected Feishu URL verification with an invalid token	Then: the rotated-out Lark verification token is rejected
+skill-import.bdd-024	Unhandled request error: Storage unavailable	Given: every object write fails; Then: HTTP 500
+webhooks-google-calendar-005	Failed to stop Google Calendar watch channel	Given: Google's channel stop endpoint fails with HTTP 500
+me-model-providers-upsert-013	Codex access token unavailable for reset-credit request	Given: the Codex refresh fails with refresh_token_expired; Then: HTTP 500
+me-model-providers-upsert-020	rejected personal codex auth_json paste	Given: auth.json without a refresh token; Then: HTTP 400
+private-artifact-uploads-010	Multipart upload resolution failed	Given: other callers complete/abort someone else's upload (ownership identity_mismatch); Then: 404
+org-cache-010	Unhandled request error: Clerk rejected the profile update	Given: Clerk rejects profile updates; Then: HTTP 500
+billing-redeem-010	coupon no longer valid on resume|redeem: stripe error	Given: the resumed session's coupon is no longer valid; Then: campaign_misconfigured
+billing-redeem-015	redeem: stripe error	Given: Stripe rejects session creation; Then: campaign_misconfigured
+slack-oauth-018	Slack OAuth exchange failed	Given: Slack's code exchange fails with invalid_code
+usage-pack-subscription-lifecycle-018	usage pack duplicate purchase refunded	Given: two plan purchases created before either was paid; Then: the duplicate usage-pack invoice is refunded and cancelled
+feishu-oauth-events-004	Rejected encrypted Feishu event with an invalid signature	When: an encrypted ordinary event with an invalid signature; Then: HTTP 401
