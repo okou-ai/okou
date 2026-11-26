@@ -1,22 +1,15 @@
 import ChatData
 import SwiftUI
 
-/// The page's header on the ground: back, the title over what the page is, and how many cards are
-/// left to handle, counting the one in front, in a quiet chip as tall as the back button. The chip
-/// is a part-white fill with a hairline, without glass or shadow, so it reads as information beside
-/// a control.
+/// The page's header on the ground: back, and the title over what the page is. It shows no
+/// count and no place in the deck: the reader settles one card at a time, and the layers under
+/// the card already say that more wait there.
 struct ForYouHeader: View {
-  /// The cards still to handle, the one in front first.
-  let remaining: [String]
   let isBusy: Bool
   let back: () -> Void
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   /// The header's second line, a step behind the title.
   private static let secondary: Double = 0.72
-  /// The chip's fill: the card's own white (its dark grey at night), part way, with a hairline, so
-  /// it stands on the warm ground as a quiet panel rather than as glass.
-  private static let chipFill: Double = 0.6
 
   var body: some View {
     HStack(spacing: OkouSpace.ten) {
@@ -31,32 +24,9 @@ struct ForYouHeader: View {
           .foregroundStyle(OkouColor.foreground.opacity(Self.secondary))
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      if !remaining.isEmpty {
-        remainingChip
-      }
     }
     .foregroundStyle(OkouColor.foreground)
     .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
-  }
-
-  /// "5 left": the number and the word at one size, the number in the heavier weight, and its
-  /// digits rolling as a card is handled or comes back.
-  private var remainingChip: some View {
-    let count = Text(remaining.count, format: .number).fontWeight(.semibold)
-      .foregroundStyle(OkouColor.foreground)
-    return Text("\(count) left")
-      .font(.okou(.subheadline)).monospacedDigit()
-      .foregroundStyle(OkouColor.foreground.opacity(Self.secondary))
-      .contentTransition(.numericText(value: Double(remaining.count)))
-      .animation(reduceMotion ? nil : OkouMotion.transition, value: remaining.count)
-      .padding(.horizontal, OkouSpace.md)
-      .frame(height: OkouControl.minimumTarget)
-      .background {
-        let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
-        shape.fill(OkouColor.card.opacity(Self.chipFill))
-          .overlay { shape.strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline) }
-      }
-      .accessibilityElement(children: .combine)
   }
 }
 
@@ -191,44 +161,5 @@ struct ForYouDeckLayers: View {
           .offset(y: CGFloat(layer) * drop)
       }
     }
-  }
-}
-
-/// The deck as the pager lays it out. With more than one card, the last card waits again before
-/// the first and the first again after the last, so a swipe past either end carries on round the
-/// deck, as the web's stack turns. Coming to rest on either copy hands over to the card itself.
-struct ForYouLoop {
-  struct Page: Identifiable {
-    let id: String
-    let card: ForYouCard
-  }
-
-  let pages: [Page]
-  /// How many pages come before the first card.
-  let lead: Int
-
-  private static let before = "#before"
-  private static let after = "#after"
-
-  init(_ cards: [ForYouCard]) {
-    let own = cards.map { Page(id: $0.id, card: $0) }
-    guard cards.count > 1, let first = cards.first, let last = cards.last else {
-      pages = own
-      lead = 0
-      return
-    }
-    pages =
-      [Page(id: last.id + Self.before, card: last)] + own
-      + [Page(id: first.id + Self.after, card: first)]
-    lead = 1
-  }
-
-  /// The card a page shows, for an id the pager reports.
-  static func cardID(_ pageID: String?) -> String? {
-    guard let pageID else { return nil }
-    for suffix in [before, after] where pageID.hasSuffix(suffix) {
-      return String(pageID.dropLast(suffix.count))
-    }
-    return pageID
   }
 }

@@ -782,13 +782,6 @@
         }
       }
     },
-    "%@ left": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "还剩 %@ 个" }
-        }
-      }
-    },
     "For you": {
       "localizations": {
         "zh-Hans": {

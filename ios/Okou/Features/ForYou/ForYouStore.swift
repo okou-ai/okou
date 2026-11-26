@@ -98,15 +98,6 @@ final class ForYouStore {
     } catch { self.error = error.localizedDescription }
   }
 
-  /// The pager came to rest on a card.
-  func show(_ id: String) {
-    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
-    updateDeck {
-      $0.position = index
-      $0.error = nil
-    }
-  }
-
   func read(_ id: String) async {
     guard current?.id == id, !readIDs.contains(id) else { return }
     do {

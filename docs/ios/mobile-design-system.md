@@ -943,12 +943,9 @@ feature; the catalog shows each one.
   the brush itself, unrepeated, each turned a quarter from the last, faded at its own edges and
   towards the middle, where the card is, so its lines frame the header, the dock and the card's
   sides without a seam. At night the wash is a warm brown and the lines quieter.
-- **The header** is back, the title over "Okou's picks to handle", and on the right how many
-  cards are left, counting the one in front ("5 left"): a chip as tall as the back button, the
-  number and the word in Subheadline with the number semibold, on a part-white fill (`card` at
-  60%) with a hairline. It has no glass and no shadow, because glass marks a control and the
-  count is not one, and it says what is left rather than a place ("1 of 5"), since there is no
-  place to move to. Its digits roll as a card is handled or comes back.
+- **The header** is back and the title over "Okou's picks to handle", nothing more. It shows no
+  count and no place ("1 of 5", "5 left"): the reader settles one card at a time, and the
+  layers under the card already say that more wait.
 - **Cards** stand on the ground in white by day (`background-50` at night) at sheet radius, lifted
   by the floating panel's shadow, with a hairline and 24 pt above the heading and 20 pt
   elsewhere. A direction is a step back from the white card (`background-50` by day, `card` at
@@ -975,9 +972,9 @@ feature; the catalog shows each one.
   it stops a gap short of them. When the actions would leave the heading less than a third of the
   card, as at the largest text sizes, heading and actions scroll together from the title.
 - **One card at a time.** Only the card in front can be read, and it stays until it is handled:
-  by a direction, the member's own direction, or Dismiss. Nothing pages to another card; a
-  sideways swipe does nothing, so the reader settles each card in turn. A handled card sinks away
-  while the next one rises out of the deck into its place. Every card fills the room from 24 pt
+  by a direction, the member's own direction, or Dismiss. There is no pager: the page holds only
+  the card in front, so a sideways swipe does nothing and the reader settles each card in turn. A
+  handled card sinks away while the next one rises out of the deck into its place. Every card fills the room from 24 pt
   under the header down to the dock, on every phone, so the page keeps one composition whatever
   the screen or the deck's text. Room the text doesn't need lies between the heading and the
   actions, so the actions stay at the bottom; the dock's room is held on a paused automation and
