@@ -78,6 +78,7 @@ function domainProvider() {
     correct = true,
     certificate = "pending",
     creates = 0,
+    patches = 0,
     queries = 0,
     deletes = 0,
     loseCreateResponse = false,
@@ -89,15 +90,19 @@ function domainProvider() {
       }
     | undefined;
   let mode: "cname" | "loop" | "apex" = "cname";
-  let provider: {
+  interface DomainProvider {
     id: string;
     hostname: string;
     status: string;
     ssl: {
       status: string;
+      method?: string;
+      settings?: { min_tls_version: string; early_hints?: string };
       validation_records?: { txt_name: string; txt_value: string }[];
     };
-  } | null = null;
+  }
+  let provider: DomainProvider | null = null;
+  const providers = new Map<string, DomainProvider>();
   server.use(
     http.get(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/fallback_origin",
@@ -159,7 +164,11 @@ function domainProvider() {
     }),
     http.get(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames",
-      () => {
+      ({ request }) => {
+        const hostname = new URL(request.url).searchParams.get("hostname");
+        const provider = [...providers.values()].find((item) => {
+          return item.hostname === hostname;
+        });
         return HttpResponse.json({
           success: true,
           result: provider
@@ -167,6 +176,7 @@ function domainProvider() {
                 {
                   ...provider,
                   ssl: {
+                    ...provider.ssl,
                     status: certificate,
                     validation_records: extraRecords,
                   },
@@ -183,7 +193,7 @@ function domainProvider() {
         const body = object({
           hostname: string(),
           ssl: object({
-            method: literal("txt"),
+            method: literal("http"),
             type: literal("dv"),
             settings: object({ min_tls_version: literal("1.2") }),
           }),
@@ -200,8 +210,14 @@ function domainProvider() {
           id: randomUUID(),
           hostname: body.hostname,
           status: "active",
-          ssl: { status: certificate, validation_records: extraRecords },
+          ssl: {
+            method: "http",
+            settings: body.ssl.settings,
+            status: certificate,
+            validation_records: extraRecords,
+          },
         };
+        providers.set(provider.id, provider);
         if (createGate) {
           if (!createGate.entered.settled()) {
             createGate.entered.resolve(undefined);
@@ -217,22 +233,50 @@ function domainProvider() {
     http.get(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
       ({ params }) => {
-        if (params.id !== provider?.id) {
+        const provider = providers.get(String(params.id));
+        if (!provider) {
           return HttpResponse.json({ success: false }, { status: 404 });
         }
         return HttpResponse.json({
           success: true,
-          result: provider && {
+          result: {
             ...provider,
-            ssl: { status: certificate, validation_records: extraRecords },
+            ssl: {
+              ...provider.ssl,
+              status: certificate,
+              validation_records: extraRecords,
+            },
           },
         });
       },
     ),
+    http.patch(
+      "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
+      async ({ request, params }) => {
+        const current = providers.get(String(params.id));
+        if (!current) {
+          return HttpResponse.json({ success: false }, { status: 404 });
+        }
+        const body = object({
+          ssl: object({
+            method: literal("http"),
+            type: literal("dv"),
+            settings: object({
+              min_tls_version: literal("1.3"),
+              early_hints: literal("on"),
+            }),
+          }),
+        }).parse(await request.json());
+        patches++;
+        current.ssl = { ...current.ssl, ...body.ssl };
+        return HttpResponse.json({ success: true, result: current });
+      },
+    ),
     http.delete(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
-      () => {
+      ({ params }) => {
         deletes++;
+        providers.delete(String(params.id));
         provider = null;
         return HttpResponse.json({ success: true, result: {} });
       },
@@ -250,6 +294,15 @@ function domainProvider() {
     ),
   );
   return {
+    txtValidation: () => {
+      if (provider) {
+        provider.ssl = {
+          ...provider.ssl,
+          method: "txt",
+          settings: { min_tls_version: "1.3", early_hints: "on" },
+        };
+      }
+    },
     extraRecords: (value: typeof extraRecords) => {
       extraRecords = value;
     },
@@ -292,8 +345,9 @@ function domainProvider() {
         id: randomUUID(),
         hostname,
         status: "active",
-        ssl: { status: "active" },
+        ssl: { method: "http", status: "active" },
       };
+      providers.set(provider.id, provider);
     },
     renameProvider: (hostname: string) => {
       if (provider) {
@@ -314,6 +368,12 @@ function domainProvider() {
     },
     ready: () => {
       certificate = "active";
+    },
+    certificateFailed: () => {
+      certificate = "validation_timed_out";
+    },
+    patches: () => {
+      return patches;
     },
     creates: () => {
       return creates;
@@ -696,7 +756,18 @@ test("private website sessions trust only the exact custom origin and do not sur
       [200],
     );
   };
-  await verify();
+  settings = (await verify()).body;
+  domain = settings.domains[0]!;
+  settings = (
+    await accept(
+      fixture.api.selectSiteDomain({
+        headers,
+        params: { siteId: fixture.prepared.siteId },
+        body: { domainId: domain.id, expectedRevision: settings.revision },
+      }),
+      [200],
+    )
+  ).body;
   const owner = fixture.owner;
   context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
     return Promise.resolve({
@@ -794,7 +865,15 @@ test("private website sessions trust only the exact custom origin and do not sur
     return !item.removing;
   })!;
   external.setTxt(domain.records[0]!.value);
-  await verify();
+  settings = (await verify()).body;
+  await accept(
+    fixture.api.selectSiteDomain({
+      headers,
+      params,
+      body: { domainId: domain.id, expectedRevision: settings.revision },
+    }),
+    [200],
+  );
   expect(
     (
       await accept(
@@ -918,63 +997,158 @@ test("a provider identity mismatch disables selection and never deletes another 
   expect(external.deletes()).toBe(0);
 });
 
-test("verifies each additional TXT value independently without treating certificate activation as DNS evidence", async () => {
+test("http certificate validation keeps the configuration to one ownership TXT and one CNAME", async () => {
   const fixture = await scenario();
   const external = domainProvider();
-  const added = await add(fixture);
-  const domain = added.domains[0]!;
+  const domain = (await add(fixture)).domains[0]!;
   external.setTxt(domain.records[0]!.value);
-  const name = `_acme-challenge.${domain.hostname}`;
   external.extraRecords([
-    { txt_name: name, txt_value: "certificate-one" },
-    { txt_name: name, txt_value: "certificate-two" },
+    {
+      txt_name: `_acme-challenge.${domain.hostname}`,
+      txt_value: "certificate-one",
+    },
+    {
+      txt_name: `_acme-challenge.${domain.hostname}`,
+      txt_value: "certificate-two",
+    },
   ]);
-  external.recordValues(name, ["certificate-one"]);
+  const checked = (await accept(verifyDomainRequest(fixture, domain), [200]))
+    .body.domains[0]!;
+  expect(checked.records).toStrictEqual(domain.records);
+  expect(
+    checked.records.map((record) => {
+      return record.type;
+    }),
+  ).toStrictEqual(["TXT", "CNAME"]);
+  expect(checked.verification!.checks.certificate.status).toBe("pending");
+  expect(checked.verification!.checks.route.status).toBe("pending");
+  expect(
+    checked.verification!.recordChecks.every((check) => {
+      return check.status === "passed";
+    }),
+  ).toBeTruthy();
+  external.ready();
+  const ready = (await accept(verifyDomainRequest(fixture, checked), [200]))
+    .body.domains[0]!;
+  expect(ready.ready).toBeTruthy();
+  expect(ready.records).toStrictEqual(domain.records);
+  expect(
+    (
+      await accept(
+        fixture.api.resolveCustomDomain({
+          params: { hostname: domain.hostname },
+        }),
+        [200],
+      )
+    ).body,
+  ).toBeNull();
+});
+
+test("a pending TXT certificate switches to HTTP without resetting TLS settings", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  const domain = (await add(fixture)).domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  await accept(verifyDomainRequest(fixture, domain), [200]);
+  external.txtValidation();
+  const migrated = (await accept(verifyDomainRequest(fixture, domain), [200]))
+    .body.domains[0]!;
+  expect(migrated.verification!.status).toBe("incomplete");
+  expect(migrated.records).toStrictEqual(domain.records);
+  expect(migrated.verification!.checks.certificate.status).toBe("pending");
+  external.ready();
+  const ready = (await accept(verifyDomainRequest(fixture, migrated), [200]))
+    .body.domains[0]!;
+  expect(ready.ready).toBeTruthy();
+  expect(external.patches()).toBe(1);
+});
+
+test("an active TXT certificate remains active without replacing its validation settings", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  const domain = (await add(fixture)).domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  const verified = (await accept(verifyDomainRequest(fixture, domain), [200]))
+    .body.domains[0]!;
+  external.txtValidation();
+  const checked = (await accept(verifyDomainRequest(fixture, verified), [200]))
+    .body.domains[0]!;
+  expect(checked.ready).toBeTruthy();
+  expect(external.patches()).toBe(0);
+  expect(external.creates()).toBe(1);
+});
+
+test("certificate validation failure is actionable without new DNS records", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.certificateFailed();
+  const domain = (await add(fixture)).domains[0]!;
+  external.setTxt(domain.records[0]!.value);
   const checked = (await accept(verifyDomainRequest(fixture, domain), [200]))
     .body.domains[0]!;
   expect(checked.ready).toBeFalsy();
-  expect(checked.verification!.checks.certificate.status).toBe("pending");
-  expect(checked.verification!.recordChecks).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        name,
-        value: "certificate-one",
-        status: "passed",
-        observedValues: ["certificate-one"],
-      }),
-      expect.objectContaining({
-        name,
-        value: "certificate-two",
-        status: "pending",
-        observedValues: ["certificate-one"],
-      }),
-    ]),
+  expect(checked.verification!.checks.certificate).toStrictEqual({
+    status: "failed",
+    message:
+      "HTTPS certificate setup timed out. Verify again or contact support.",
+  });
+  expect(checked.records).toStrictEqual(domain.records);
+  expect(external.creates()).toBe(1);
+});
+
+test("only the saved domain serves a website and switching retains configured domains", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  const first = (await add(fixture)).domains[0]!;
+  external.recordValues(first.records[0]!.name, [first.records[0]!.value]);
+  let settings = (await accept(verifyDomainRequest(fixture, first), [200]))
+    .body;
+  const select = async (domainId: string | null) => {
+    settings = (
+      await accept(
+        fixture.api.selectSiteDomain({
+          headers,
+          params: { siteId: fixture.prepared.siteId },
+          body: { domainId, expectedRevision: settings.revision },
+        }),
+        [200],
+      )
+    ).body;
+  };
+  const resolve = async (hostname: string) => {
+    return (
+      await accept(
+        fixture.api.resolveCustomDomain({ params: { hostname } }),
+        [200],
+      )
+    ).body;
+  };
+  await select(first.id);
+  expect((await resolve(first.hostname))?.siteId).toBe(fixture.prepared.siteId);
+  const secondSettings = await add(
+    fixture,
+    `second-${fixture.name}.customer-example.net`,
   );
-  const read = (
-    await accept(
-      fixture.api.siteDomains({
-        headers,
-        params: { siteId: fixture.prepared.siteId },
-      }),
-      [200],
-    )
-  ).body;
-  expect(read.domains[0]!.verification!.recordChecks).toStrictEqual(
-    checked.verification!.recordChecks,
+  const second = secondSettings.domains.find((domain) => {
+    return domain.id !== first.id;
+  })!;
+  external.recordValues(second.records[0]!.name, [second.records[0]!.value]);
+  settings = (await accept(verifyDomainRequest(fixture, second), [200])).body;
+  await expect(resolve(second.hostname)).resolves.toBeNull();
+  await select(second.id);
+  await expect(resolve(first.hostname)).resolves.toBeNull();
+  expect((await resolve(second.hostname))?.siteId).toBe(
+    fixture.prepared.siteId,
   );
-  external.recordValues(name, ["certificate-one", "certificate-two"]);
-  const next = (await accept(verifyDomainRequest(fixture, checked), [200])).body
-    .domains[0]!;
-  expect(
-    next
-      .verification!.recordChecks!.filter((record) => {
-        return record.name === name;
-      })
-      .every((record) => {
-        return record.status === "passed";
-      }),
-  ).toBeTruthy();
-  expect(next.ready).toBeFalsy();
+  await select(first.id);
+  expect((await resolve(first.hostname))?.siteId).toBe(fixture.prepared.siteId);
+  await expect(resolve(second.hostname)).resolves.toBeNull();
+  await select(null);
+  await expect(resolve(first.hostname)).resolves.toBeNull();
+  await expect(resolve(second.hostname)).resolves.toBeNull();
+  expect(settings.domains).toHaveLength(2);
 });
 
 function dnsSetupProvider(
@@ -996,7 +1170,7 @@ function dnsSetupProvider(
       const url = new URL(request.url);
       const name = url.searchParams.get("name")!;
       const discovery = name === "_domainconnect.customer-example.net";
-      const key = name === "_test._domainconnect.okou.ai";
+      const key = name === "_test.domainconnect.okou.ai";
       return HttpResponse.json({
         Status: 0,
         Answer: discovery
@@ -1078,7 +1252,7 @@ test.each(["cloudflare", "vercel"] as const)(
     expect(url.searchParams.get("host")).toBe(
       domain.hostname.slice(0, -".customer-example.net".length),
     );
-    expect(url.searchParams.get("target")).toBe("connect.okou.app");
+    expect(url.searchParams.get("target")).toBe("connect");
     expect(url.searchParams.get("redirect_uri")).toBe(
       "https://app.okou.ai/artifacts",
     );
@@ -1254,6 +1428,43 @@ test("a supported template without a published signing key keeps manual setup av
     automaticUrl: null,
   });
 });
+
+test.each(["connect.other.example", "nested.connect.okou.app"])(
+  "does not offer a signed template for a target outside its fixed target pattern: %s",
+  async (target) => {
+    const fixture = await scenario();
+    domainProvider();
+    mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_TARGET", target);
+    const domain = (await add(fixture)).domains[0]!;
+    const keys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    mockEnv(
+      "HOSTED_SITE_DOMAIN_CONNECT_PRIVATE_KEY_BASE64",
+      keys.privateKey
+        .export({ type: "pkcs8", format: "der" })
+        .toString("base64"),
+    );
+    mockEnv("HOSTED_SITE_DOMAIN_CONNECT_KEY_HOST", "_test");
+    dnsSetupProvider("cloudflare", {
+      publicKey: keys.publicKey
+        .export({ type: "spki", format: "der" })
+        .toString("base64"),
+    });
+    const setup = (
+      await accept(
+        fixture.api.siteDomainSetup({
+          headers,
+          params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+        }),
+        [200],
+      )
+    ).body;
+    expect(setup).toMatchObject({
+      status: "manual",
+      providerName: "Cloudflare",
+      automaticUrl: null,
+    });
+  },
+);
 
 test("free workspaces cannot request automatic DNS setup", async () => {
   const fixture = await scenario(false);

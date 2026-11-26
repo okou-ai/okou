@@ -3,7 +3,7 @@ import {
   fetchHostedDomainJson,
   HostedDomainDependencyError,
 } from "./hosted-domain-request";
-import { array, boolean, object, string, unknown } from "zod";
+import { array, boolean, object, record, string, unknown } from "zod";
 import { env } from "../../lib/env";
 
 const hostnameSchema = object({
@@ -13,6 +13,8 @@ const hostnameSchema = object({
   ownership_verification: object({ name: string(), value: string() }).nullish(),
   ssl: object({
     status: string(),
+    method: string().optional(),
+    settings: record(string(), unknown()).optional(),
     validation_errors: array(object({ message: string() })).optional(),
     validation_records: array(
       object({ txt_name: string().optional(), txt_value: string().optional() }),
@@ -108,7 +110,7 @@ export async function createHostedDomain(
         body: JSON.stringify({
           hostname,
           ssl: {
-            method: "txt",
+            method: "http",
             type: "dv",
             settings: { min_tls_version: "1.2" },
           },
@@ -125,21 +127,30 @@ export async function deleteHostedDomain(id: string, signal: AbortSignal) {
     signal,
   );
 }
-export function providerDomainRecords(
+export async function useHostedDomainHttpValidation(
   hostname: ReturnType<typeof hostnameSchema.parse>,
+  signal: AbortSignal,
 ) {
-  const records =
-    hostname.ssl.validation_records?.flatMap((item) => {
-      return item.txt_name && item.txt_value
-        ? [{ type: "TXT" as const, name: item.txt_name, value: item.txt_value }]
-        : [];
-    }) ?? [];
-  if (hostname.ownership_verification) {
-    records.push({
-      type: "TXT",
-      name: hostname.ownership_verification.name,
-      value: hostname.ownership_verification.value,
-    });
+  const updated = hostnameSchema.parse(
+    await providerRequest(
+      `/${encodeURIComponent(hostname.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          ssl: {
+            method: "http",
+            type: "dv",
+            ...(hostname.ssl.settings
+              ? { settings: hostname.ssl.settings }
+              : {}),
+          },
+        }),
+      },
+      signal,
+    ),
+  );
+  if (updated.id !== hostname.id || updated.hostname !== hostname.hostname) {
+    throw new HostedDomainDependencyError("provider");
   }
-  return records;
+  return updated;
 }

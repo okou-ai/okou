@@ -232,7 +232,7 @@ async function publishedSigningKey(signal: AbortSignal) {
     .export({ type: "spki", format: "der" })
     .toString("base64");
   const publicRecords = await queryHostedDomainDns(
-    `${keyHost}._domainconnect.okou.ai`,
+    `${keyHost}.domainconnect.okou.ai`,
     "TXT",
     signal,
   );
@@ -241,7 +241,7 @@ async function publishedSigningKey(signal: AbortSignal) {
       return (
         a.type === 16 &&
         a.name.toLowerCase().replace(/\.$/u, "") ===
-          `${keyHost}._domainconnect.okou.ai`
+          `${keyHost}.domainconnect.okou.ai`
       );
     })
     .map((a) => {
@@ -340,7 +340,8 @@ export async function discoverHostedDomainSetup(
         record.type === "TXT" && record.name === `_okou-challenge.${hostname}`
       );
     });
-    if (!target || !cname || cname.value !== target || !ownership) {
+    const templateTarget = target?.match(/^([a-z0-9-]+)\.okou\.app$/u)?.[1];
+    if (!templateTarget || !cname || cname.value !== target || !ownership) {
       return manual(provider);
     }
     const signing = await publishedSigningKey(signal);
@@ -352,7 +353,7 @@ export async function discoverHostedDomainSetup(
     const query = new URLSearchParams({
       domain: zone,
       verification: ownership.value.slice("okou-verification=".length),
-      target,
+      target: templateTarget,
     });
     if (host) {
       query.set("host", host);
