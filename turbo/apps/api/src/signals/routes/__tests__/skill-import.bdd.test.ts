@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
 import {
+  SKILL_IMPORT_SESSION_TTL_SECONDS,
   skillImportSessionsContract,
   skillImportSkillsContract,
 } from "@okouai/api-contracts/contracts/skill-import";
@@ -15,7 +16,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { skillImportRoutes } from "../skill-import";
 import { workflowsRoutes } from "../workflows";
 import { createRouteMocks } from "./helpers/route-test";
-import { now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 const context = testContext();
 
@@ -548,6 +549,24 @@ describe("POST /api/skill-import/skills", () => {
     await expect(
       listSessionSkills(member, session.sessionId),
     ).resolves.toStrictEqual([]);
+  });
+
+  it("skill-import.bdd-026 rejects an expired session token", async () => {
+    useObjectStorage();
+    const issuedAt = now();
+    mockNow(issuedAt);
+    const session = await openSession(newMember());
+    mockNow(issuedAt + (SKILL_IMPORT_SESSION_TTL_SECONDS + 60) * 1000);
+
+    const response = await accept(
+      skills().upload({
+        headers: bearer(session.token),
+        body: skill("expired-skill"),
+      }),
+      [401],
+    );
+    clearMockNow();
+    expect(response.body.error.code).toBe("SKILL_IMPORT_SESSION_INVALID");
   });
 
   it("skill-import.bdd-028 does not authenticate any other route", async () => {

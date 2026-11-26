@@ -6,10 +6,14 @@ import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runner
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
-import { runnersRoutes } from "../runners";
 import { nowDate } from "../../../lib/time";
+import { runnersRoutes } from "../runners";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
 
 function officialRunnerHeaders() {
   return {
@@ -103,4 +107,70 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
       ttl: 3_600_000,
     });
   });
+
+  it("run-cron.bdd-001 (1/4) accepts a member's chat message but rejects its Run without credits", async () => {
+    const { member } = await uncreditedMemberWithRunnerGroup();
+
+    const rejection = await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+
+    expect(rejection).toBe("insufficient_credits");
+  });
+
+  it("run-cron.bdd-001 (2/4) shows no active Run in the queue and accepts the Runner heartbeat", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+
+    const queue = await runs.readRunQueue(member);
+    const heartbeat = await runs.heartbeatRunner(group);
+
+    expect(queue.body).toMatchObject({
+      concurrency: { active: 0 },
+      runningTasks: [],
+    });
+    expect(heartbeat.body).toStrictEqual({ ok: true });
+  });
+
+  it("run-cron.bdd-001 (3/4) answers a read of a missing Run with not found", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+    await runs.heartbeatRunner(group);
+    const missingRunId = randomUUID();
+
+    const run = await runs.requestReadRun(member, missingRunId, [404]);
+
+    expect(run.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
+
+  it("run-cron.bdd-001 (4/4) answers a read of a missing Run context with not found", async () => {
+    const { member, group } = await uncreditedMemberWithRunnerGroup();
+    await runs.readThreadRunRejection(member, {
+      prompt: "Summarize today's work",
+    });
+    await runs.heartbeatRunner(group);
+    const missingRunId = randomUUID();
+
+    const runContext = await runs.requestRunContext(
+      member,
+      missingRunId,
+      [404],
+    );
+
+    expect(runContext.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
 });
+
+/** A member with a personal subscription model but no credits, and a Runner group. */
+async function uncreditedMemberWithRunnerGroup() {
+  const member = bdd.user();
+  const [group] = await Promise.all([
+    runs.configureRunnerGroup({ registerRunner: false }),
+    runs.ensurePersonalSubscriptionModel(member),
+  ]);
+  return { member, group };
+}

@@ -554,4 +554,80 @@ describe("GET /api/billing/status", () => {
       }),
     ).toBeFalsy();
   });
+
+  it("billing-status-010 reports active concurrency subscription availability without a plan subscription", async () => {
+    const actor = createBillingWebhookFixture();
+    await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+      ...actor,
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: generatedStripeSubscriptionId(),
+      subscriptionStatus: "active",
+      lines: [
+        {
+          slots: 2,
+          startsAt: new Date("2026-01-01T00:00:00.000Z"),
+          expiresAt: new Date("2099-04-20T00:00:00.000Z"),
+        },
+      ],
+    });
+    disableStripeBilling();
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body.hasSubscription).toBeTruthy();
+  });
+
+  it("billing-status-015 excludes canceled concurrency subscriptions from status", async () => {
+    const actor = createBillingWebhookFixture();
+    const customerId = generatedStripeCustomerId();
+    await postSubscriptionInvoicePaid(context.signal, {
+      ...actor,
+      tier: "team",
+      customerId,
+      subscriptionId: generatedStripeSubscriptionId(),
+      currentPeriodEnd: new Date("2099-04-20T00:00:00.000Z"),
+    });
+    await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+      ...actor,
+      customerId,
+      subscriptionId: generatedStripeSubscriptionId(),
+      subscriptionStatus: "canceled",
+      lines: [
+        {
+          slots: 2,
+          startsAt: new Date("2026-01-01T00:00:00.000Z"),
+          expiresAt: new Date("2099-04-20T00:00:00.000Z"),
+        },
+      ],
+    });
+    disableStripeBilling();
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body.concurrencyLimit).toBe(10);
+    expect(body.concurrencySubscriptions).toStrictEqual([]);
+  });
+
+  it("billing-status-027 returns defaults when org billing row does not exist", async () => {
+    const actor = createBillingWebhookFixture();
+    mockOptionalEnv("STRIPE_SECRET_KEY", apiTestEnvironment.STRIPE_SECRET_KEY);
+    mockEnv("OKOU_PRICE_CONCURRENCY", TEST_PRICE_CONCURRENCY);
+    context.mocks.stripe.prices.retrieve.mockRejectedValueOnce(
+      new Error("Stripe unavailable"),
+    );
+    signIn(actor);
+
+    const body = await readBillingStatus();
+
+    expect(body).toMatchObject({
+      tier: "limited-free-1",
+      status: "suspended",
+      credits: 0,
+      hasSubscription: false,
+      canBuyConcurrency: false,
+    });
+    expect("concurrencyUnitAmountCents" in body).toBeFalsy();
+  });
 });

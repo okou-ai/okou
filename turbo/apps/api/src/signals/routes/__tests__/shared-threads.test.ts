@@ -511,3 +511,45 @@ describe("optional shared-thread titles", () => {
     expect(titleRequests).toStrictEqual([]);
   });
 });
+
+describe("client-generated shared-thread IDs", () => {
+  it("shared-threads-013 publishes the share under the ID the client already copied", async () => {
+    const bdd = createBddApi(context);
+    const owner = bdd.user();
+    const { threadId, eventId, content } = await threadWithMessage(owner);
+    const clientShareId = randomUUID();
+
+    const created = await accept(
+      shares.create({
+        headers: signIn(owner),
+        params: { threadId },
+        body: { id: clientShareId, eventIds: [eventId] },
+      }),
+      [201],
+    );
+    expect(created.body).toStrictEqual({ id: clientShareId });
+
+    const [shareRead, metaRead, catalogEntries] = await Promise.all([
+      accept(
+        shares.get({ headers: signIn(null), params: { id: clientShareId } }),
+        [200],
+      ),
+      accept(shares.meta({ params: { id: clientShareId } }), [200]),
+      sharedCatalogEntries(owner, threadId),
+    ]);
+
+    expect(shareRead.body).toStrictEqual({
+      id: clientShareId,
+      title: "Shared conversation",
+      messages: [{ messageIndex: 0, role: "assistant", content }],
+    });
+    expect(metaRead.body).toStrictEqual({ title: "Shared conversation" });
+    expect(catalogEntries).toStrictEqual([
+      expect.objectContaining({
+        kind: "shared-thread",
+        sharedThreadId: clientShareId,
+        title: "Shared conversation",
+      }),
+    ]);
+  });
+});

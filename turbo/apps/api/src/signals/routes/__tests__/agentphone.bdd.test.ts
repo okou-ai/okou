@@ -1423,7 +1423,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).toBeFalsy();
   });
 
-  it("agentphone.bdd-087 offers role-aware recovery for a depleted workspace (org:admin, group=true)", async () => {
+  it("agentphone.bdd-087 (1/2) offers role-aware upgrade recovery for a depleted workspace admin in an iMessage group", async () => {
     const suite = setupAgentPhoneSuite();
     const start = now();
     mockNow(start);
@@ -1441,7 +1441,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
 
     mockNow(start + 90 * 24 * 60 * 60 * 1000);
-    suite.mockWorkspaceName(admin, "Original Phone Workspace");
     const beforeHelp = suite.sends.messages.length;
     await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",
@@ -1463,7 +1462,26 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(recoveryText).toContain("/?settings=billing&billingView=plans");
     expect(recoveryText).not.toContain("Original Phone Workspace");
     expect(recoveryText).not.toContain("/switch");
+  });
 
+  it("agentphone.bdd-087 (2/2) tells the depleted workspace admin to message directly on group /switch and keeps them linked", async () => {
+    const suite = setupAgentPhoneSuite();
+    const start = now();
+    mockNow(start);
+    const admin = suite.bdd.user({ orgRole: "org:admin" });
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    const groupId = bddGroupId(conversationId);
+
+    await suite.bdd.provisionWorkspace(admin);
+    suite.mockWorkspaceName(admin, "Original Phone Workspace");
+    await suite.agentPhone.linkViaWebhookConnectPrompt(
+      admin,
+      phone,
+      suite.sends,
+    );
+
+    mockNow(start + 90 * 24 * 60 * 60 * 1000);
     const beforeSwitch = suite.sends.messages.length;
     await suite.agentPhone.postAgentPhoneInboundMessage({
       channel: "imessage",

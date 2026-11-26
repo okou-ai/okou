@@ -6,6 +6,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi } from "./helpers/api-bdd";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
+import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -275,6 +276,43 @@ describe("POST /api/uploads/prepare", () => {
       );
       expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
     });
+  });
+
+  it("uploads-prepare-019 (1/2) allows uploads while the Stripe subscription is trialing and past_due", async () => {
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    await bdd.completeOnboarding(actor);
+    const plan = publicPlanLifecycle(context, actor, "pro");
+    recordStorage();
+
+    await plan.update("trialing");
+    const trialing = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [200],
+    );
+
+    await plan.update("past_due");
+    const pastDue = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [200],
+    );
+
+    expect([trialing.status, pastDue.status]).toStrictEqual([200, 200]);
+  });
+
+  it("uploads-prepare-019 (2/2) rejects uploads once the Stripe subscription is canceled", async () => {
+    const actor = bdd.user();
+    bdd.acceptStorageWrites();
+    await bdd.completeOnboarding(actor);
+    const plan = publicPlanLifecycle(context, actor, "pro");
+    recordStorage();
+
+    await plan.update("canceled");
+    const canceled = await accept(
+      signIn(actor).prepare({ headers, body: helloTxt }),
+      [402],
+    );
+    expect(canceled.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
 
   it("uploads-prepare-022 accepts representative MIME types from the allowlist", async () => {

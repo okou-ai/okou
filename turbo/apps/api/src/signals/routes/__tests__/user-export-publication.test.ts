@@ -67,10 +67,11 @@ function jsonEntry(files: Record<string, Uint8Array>, path: string): unknown {
   return JSON.parse(strFromU8(bytes));
 }
 
-/** The owner's workflow and thread exist; export request(s) are processed. */
+/** The owner's export request(s) are processed, optionally with workflow or thread content. */
 async function ownerExport(options: {
   readonly concurrent: boolean;
-  readonly includePeers: boolean;
+  readonly includeWorkflow?: boolean;
+  readonly includeThread?: boolean;
 }) {
   const owner = bdd.user({ orgRole: "org:member" });
   const peer = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
@@ -78,15 +79,18 @@ async function ownerExport(options: {
   bdd.acceptStorageWrites();
   const storage = installDurableUserExportStorage(context, { prefixes: [""] });
   const instruction = "Summarize the exported workflow inputs.";
-  const actors = options.includePeers ? [owner, peer, outsider] : [owner];
   const [workflowId, thread] = await Promise.all([
-    workflows.createWorkflow(owner, {
-      name: "exported-workflow",
-      visibility: "private",
-      instruction,
-    }),
-    chatFiles.createThread(owner, { title: "Exported conversation" }),
-    seedMemberships(actors),
+    options.includeWorkflow
+      ? workflows.createWorkflow(owner, {
+          name: "exported-workflow",
+          visibility: "private",
+          instruction,
+        })
+      : Promise.resolve(""),
+    options.includeThread
+      ? chatFiles.createThread(owner, { title: "Exported conversation" })
+      : Promise.resolve({ id: "" }),
+    seedMemberships([owner]),
   ]);
 
   const headers = signIn(owner);
@@ -109,9 +113,26 @@ async function ownerExport(options: {
   };
 }
 
-test("user-export-publication-002 (1/3) publishes one owned ZIP for concurrent export requests", async () => {
-  const { owner, storage, instruction, workflowId, threadId, started } =
-    await ownerExport({ concurrent: true, includePeers: false });
+test("user-export-publication-002 (1/5) deduplicates concurrent export requests into one completed job", async () => {
+  const { owner, started } = await ownerExport({ concurrent: true });
+
+  const status = await accept(
+    exportsApi.get({ headers: signIn(owner) }),
+    [200],
+  );
+
+  const [first, second] = started;
+  expect(second?.body.jobId).toBe(first?.body.jobId);
+  expect(status.body.job).toMatchObject({
+    id: first?.body.jobId,
+    status: "completed",
+    error: null,
+  });
+});
+
+test("user-export-publication-002 (2/5) publishes an owned ZIP containing the owner's workflow", async () => {
+  const { owner, storage, instruction, workflowId, started } =
+    await ownerExport({ concurrent: false, includeWorkflow: true });
 
   const status = await accept(
     exportsApi.get({ headers: signIn(owner) }),
@@ -123,26 +144,44 @@ test("user-export-publication-002 (1/3) publishes one owned ZIP for concurrent e
   }
   const files = unzipSync(storage.download(downloadUrl));
 
-  const [first, second] = started;
-  expect(second?.body.jobId).toBe(first?.body.jobId);
   expect(status.body.job).toMatchObject({
-    id: first?.body.jobId,
+    id: started[0]?.body.jobId,
     status: "completed",
     error: null,
   });
   expect(jsonEntry(files, `workflows/${workflowId}.json`)).toMatchObject({
     instruction,
   });
+});
+
+test("user-export-publication-002 (3/5) publishes an owned ZIP containing the owner's chat thread", async () => {
+  const { owner, storage, threadId, started } = await ownerExport({
+    concurrent: false,
+    includeThread: true,
+  });
+
+  const status = await accept(
+    exportsApi.get({ headers: signIn(owner) }),
+    [200],
+  );
+  const downloadUrl = status.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("The completed export has no download URL");
+  }
+  const files = unzipSync(storage.download(downloadUrl));
+
+  expect(status.body.job).toMatchObject({
+    id: started[0]?.body.jobId,
+    status: "completed",
+    error: null,
+  });
   expect(jsonEntry(files, `chat-threads/${threadId}.json`)).toMatchObject({
     title: "Exported conversation",
   });
 });
 
-test("user-export-publication-002 (2/3) hides the export from a same-workspace peer and an outsider", async () => {
-  const { peer, outsider } = await ownerExport({
-    concurrent: false,
-    includePeers: true,
-  });
+test("user-export-publication-002 (4/5) hides the export from a same-workspace peer and an outsider", async () => {
+  const { peer, outsider } = await ownerExport({ concurrent: false });
 
   const peerStatus = await accept(
     exportsApi.get({ headers: signIn(peer) }),
@@ -157,11 +196,8 @@ test("user-export-publication-002 (2/3) hides the export from a same-workspace p
   expect(outsiderStatus.body.job).toBeNull();
 });
 
-test("user-export-publication-002 (3/3) rate-limits another export request from the owner", async () => {
-  const { owner } = await ownerExport({
-    concurrent: false,
-    includePeers: false,
-  });
+test("user-export-publication-002 (5/5) rate-limits another export request from the owner", async () => {
+  const { owner } = await ownerExport({ concurrent: false });
 
   const again = await accept(
     exportsApi.post({ headers: signIn(owner), body: undefined }),

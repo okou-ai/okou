@@ -313,4 +313,58 @@ describe("connector HTTPS return to iOS", () => {
     expect(webRefusal.status).toBe("error");
     expect(webRefusal).not.toHaveProperty("nativeAppReturn");
   });
+
+  it("connectors-https-return-015 redirects direct callbacks to the result page with native return params and ignores unclaimed native state", async () => {
+    useHostedApp();
+    mockGitHubConnectorOAuth();
+    const actor = bdd.user();
+    const started = await startOauth(actor, "github", true);
+    const callback = setupApp({
+      baseUrl: "https://api.okou.ai",
+      context,
+      routes: builtinConnectorsSlugCallbackRoutes,
+    })(builtinConnectorsSlugCallbackContract);
+    const [direct, unclaimed] = await Promise.all([
+      accept(
+        callback.callback({
+          params: { connectorSlug: "github" },
+          query: {
+            state: stateOf(started.authorizationUrl),
+            error: "access_denied",
+          },
+          headers: {},
+          extraHeaders: { "x-okou-web-origin": "https://okou.ai" },
+        }),
+        [307],
+      ),
+      accept(
+        callback.callback({
+          params: { connectorSlug: "github" },
+          query: {
+            state: `ios-https-v1:${randomUUID()}`,
+            error: "access_denied",
+          },
+          headers: {},
+          extraHeaders: { "x-okou-web-origin": "https://okou.ai" },
+        }),
+        [307],
+      ),
+    ]);
+    const directUrl = new URL(direct.headers.get("location") ?? "");
+    expect(`${directUrl.origin}${directUrl.pathname}`).toBe(
+      `${APP_ORIGIN}/connectors/github/callback/error`,
+    );
+    expect(directUrl.searchParams.get("nativeAppAttemptId")).toBe(
+      started.oauthAttemptId,
+    );
+    expect(directUrl.searchParams.get("nativeAppHttpsHost")).toBe(
+      "app.okou.ai",
+    );
+    expect(directUrl.searchParams.get("message")).toBeTruthy();
+
+    const unclaimedUrl = new URL(unclaimed.headers.get("location") ?? "");
+    expect(unclaimedUrl.pathname).toBe("/connector/error");
+    expect(unclaimedUrl.searchParams.has("nativeAppAttemptId")).toBeFalsy();
+    expect(unclaimedUrl.searchParams.has("nativeAppHttpsHost")).toBeFalsy();
+  });
 });

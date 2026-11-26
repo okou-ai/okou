@@ -1476,6 +1476,297 @@ describe("webhooks-callbacks.bdd", () => {
     );
   });
 
+  it("webhooks-callbacks.bdd-051 (1/2) handles cancel_at_period_end, ignores mismatched setup checkouts, and applies restore and downgrade checkouts", async () => {
+    const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+    mockNow(startMs);
+    const startSec = Math.floor(startMs / 1000);
+    const periodEnd = startSec + 30 * DAY_SECONDS;
+    const member = bdd.user({ orgRole: "org:admin" });
+    const orgId = member.orgId;
+    if (!orgId) {
+      throw new Error("Expected member orgId");
+    }
+
+    webhooks.configureStripeBillingEnv();
+    const { customerId, subscriptionId } = await runs.grantProEntitlement(
+      member,
+      { periodEndUnix: periodEnd },
+    );
+
+    const cancelAtEndSub = stripeSubscriptionObject({
+      id: subscriptionId,
+      customerId,
+      priceId: "price_bdd_pro",
+      periodStart: startSec,
+      periodEnd,
+      cancelAtPeriodEnd: true,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      cancelAtEndSub,
+    );
+    await webhooks.postStripeEvent(
+      stripeEvent("customer.subscription.updated", cancelAtEndSub),
+      [200],
+    );
+    const afterCancelFlag = await billing.readBillingStatus(member);
+    expect(afterCancelFlag.scheduledChange).toStrictEqual({
+      type: "cancel",
+      targetTier: "limited-free-1",
+      effectiveDate: new Date(periodEnd * 1000).toISOString(),
+    });
+
+    await Promise.all(
+      [
+        {
+          id: stripeId("cs_pay"),
+          mode: "payment",
+          customer: customerId,
+          metadata: { purpose: "billing_restore", orgId, subscriptionId },
+        },
+        {
+          id: stripeId("cs_nocus"),
+          mode: "setup",
+          customer: null,
+          metadata: { purpose: "billing_restore", orgId, subscriptionId },
+        },
+        {
+          id: stripeId("cs_wrongsub"),
+          mode: "setup",
+          customer: customerId,
+          metadata: {
+            purpose: "billing_restore",
+            orgId,
+            subscriptionId: "sub_other",
+          },
+        },
+        {
+          id: stripeId("cs_team"),
+          mode: "setup",
+          customer: customerId,
+          metadata: {
+            purpose: "billing_downgrade",
+            orgId,
+            subscriptionId,
+            targetTier: "team",
+          },
+        },
+      ].map((mismatched) => {
+        return webhooks.postStripeEvent(
+          stripeEvent("checkout.session.completed", mismatched),
+          [200],
+        );
+      }),
+    );
+    expect(
+      (await billing.readBillingStatus(member)).scheduledChange,
+    ).toStrictEqual(afterCancelFlag.scheduledChange);
+
+    const customerUpdates: unknown[] = [];
+    const subscriptionUpdates: unknown[] = [];
+    context.mocks.stripe.customers.update.mockImplementation(
+      (id: unknown, payload: unknown) => {
+        customerUpdates.push({ id, payload });
+        return Promise.resolve({ id });
+      },
+    );
+    context.mocks.stripe.subscriptions.update.mockImplementation(
+      (id: unknown, payload: unknown) => {
+        subscriptionUpdates.push({ id, payload });
+        return Promise.resolve(
+          stripeSubscriptionObject({
+            id: subscriptionId,
+            customerId,
+            priceId: "price_bdd_pro",
+            periodStart: startSec,
+            periodEnd,
+            cancelAtPeriodEnd:
+              typeof payload === "object" &&
+              payload !== null &&
+              "cancel_at_period_end" in payload &&
+              Boolean(payload.cancel_at_period_end),
+          }),
+        );
+      },
+    );
+
+    await webhooks.postStripeEvent(
+      stripeEvent("checkout.session.completed", {
+        id: stripeId("cs_restore"),
+        mode: "setup",
+        customer: customerId,
+        setup_intent: {
+          id: "seti_restore",
+          payment_method: "pm_bdd_restore",
+        },
+        metadata: { purpose: "billing_restore", orgId, subscriptionId },
+      }),
+      [200],
+    );
+    expect(customerUpdates.at(-1)).toStrictEqual({
+      id: customerId,
+      payload: {
+        invoice_settings: { default_payment_method: "pm_bdd_restore" },
+      },
+    });
+    expect(subscriptionUpdates.at(-1)).toMatchObject({
+      id: subscriptionId,
+      payload: expect.objectContaining({ cancel_at_period_end: false }),
+    });
+    expect(
+      (await billing.readBillingStatus(member)).scheduledChange,
+    ).toBeNull();
+
+    await webhooks.postStripeEvent(
+      stripeEvent("checkout.session.completed", {
+        id: stripeId("cs_downgrade"),
+        mode: "setup",
+        customer: customerId,
+        setup_intent: {
+          id: "seti_downgrade",
+          payment_method: "pm_bdd_downgrade",
+        },
+        metadata: {
+          purpose: "billing_downgrade",
+          orgId,
+          subscriptionId,
+          targetTier: "limited-free-1",
+        },
+      }),
+      [200],
+    );
+    expect(customerUpdates.at(-1)).toStrictEqual({
+      id: customerId,
+      payload: {
+        invoice_settings: { default_payment_method: "pm_bdd_downgrade" },
+      },
+    });
+    expect(subscriptionUpdates.at(-1)).toMatchObject({
+      id: subscriptionId,
+      payload: expect.objectContaining({ cancel_at_period_end: true }),
+    });
+    expect(
+      (await billing.readBillingStatus(member)).scheduledChange,
+    ).toMatchObject({ type: "cancel", targetTier: "limited-free-1" });
+  });
+
+  it("webhooks-callbacks.bdd-051 (2/2) tracks cancel-ending subscription schedules across release, cancel, and uncancel updates", async () => {
+    const startMs = Date.parse("2026-06-01T12:00:00.000Z");
+    mockNow(startMs);
+    const startSec = Math.floor(startMs / 1000);
+    const periodEnd = startSec + 30 * DAY_SECONDS;
+    const member = bdd.user({ orgRole: "org:admin" });
+    if (!member.orgId) {
+      throw new Error("Expected member orgId");
+    }
+
+    webhooks.configureStripeBillingEnv();
+    const { customerId, subscriptionId } = await runs.grantProEntitlement(
+      member,
+      { periodEndUnix: periodEnd },
+    );
+
+    const sched1End = startSec + 60 * DAY_SECONDS;
+    const sched1Id = stripeId("sub_sched_1");
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValueOnce({
+      id: sched1Id,
+      end_behavior: "cancel",
+      current_phase: { start_date: startSec, end_date: periodEnd },
+      phases: [
+        { start_date: startSec, end_date: periodEnd },
+        { start_date: periodEnd, end_date: sched1End },
+      ],
+    });
+    await webhooks.postStripeEvent(
+      stripeEvent(
+        "customer.subscription.updated",
+        stripeSubscriptionObject({
+          id: subscriptionId,
+          customerId,
+          priceId: "price_bdd_pro",
+          periodStart: startSec,
+          periodEnd,
+          scheduleId: sched1Id,
+        }),
+      ),
+      [200],
+    );
+    const sched1Iso = new Date(sched1End * 1000).toISOString();
+    await expect(billing.readBillingStatus(member)).resolves.toMatchObject({
+      currentPeriodEnd: sched1Iso,
+      scheduledChange: { type: "cancel", effectiveDate: sched1Iso },
+    });
+
+    await webhooks.postStripeEvent(
+      stripeEvent("subscription_schedule.released", {
+        id: sched1Id,
+        subscription: subscriptionId,
+        customer: customerId,
+      }),
+      [200],
+    );
+    expect(
+      (await billing.readBillingStatus(member)).scheduledChange,
+    ).toBeNull();
+
+    const sched2End = startSec + 90 * DAY_SECONDS;
+    const sched2Id = stripeId("sub_sched_2");
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValueOnce({
+      id: sched2Id,
+      end_behavior: "cancel",
+      current_phase: { start_date: startSec, end_date: periodEnd },
+      phases: [{ start_date: startSec, end_date: sched2End }],
+    });
+    await webhooks.postStripeEvent(
+      stripeEvent(
+        "customer.subscription.updated",
+        stripeSubscriptionObject({
+          id: subscriptionId,
+          customerId,
+          priceId: "price_bdd_pro",
+          periodStart: startSec,
+          periodEnd,
+          scheduleId: sched2Id,
+        }),
+      ),
+      [200],
+    );
+    await webhooks.postStripeEvent(
+      stripeEvent("subscription_schedule.canceled", {
+        id: sched2Id,
+        subscription: subscriptionId,
+        customer: customerId,
+        current_phase: { start_date: startSec, end_date: sched2End },
+        phases: [{ start_date: startSec, end_date: sched2End }],
+      }),
+      [200],
+    );
+    expect(
+      (await billing.readBillingStatus(member)).scheduledChange,
+    ).toMatchObject({
+      type: "cancel",
+      effectiveDate: new Date(sched2End * 1000).toISOString(),
+    });
+
+    await webhooks.postStripeEvent(
+      stripeEvent(
+        "customer.subscription.updated",
+        stripeSubscriptionObject({
+          id: subscriptionId,
+          customerId,
+          priceId: "price_bdd_pro",
+          periodStart: startSec,
+          periodEnd,
+          cancelAtPeriodEnd: false,
+        }),
+      ),
+      [200],
+    );
+    await expect(billing.readBillingStatus(member)).resolves.toMatchObject({
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+    });
+  });
+
   it("webhooks-callbacks.bdd-054 preserves org data when a deleted user leaves an uncached Clerk member", async () => {
     webhooks.configureClerkWebhookSecret();
     webhooks.configureStripeBillingEnv();

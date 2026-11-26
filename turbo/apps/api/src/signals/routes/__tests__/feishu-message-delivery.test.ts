@@ -167,11 +167,18 @@ function mockFeishuPlatform(platform: Platform, tenantKey: string) {
   return { sent };
 }
 
-function findUrlInCard(value: unknown): string | undefined {
+function findUrlInCard(
+  value: unknown,
+  expectedOpenId?: string,
+): string | undefined {
   if (typeof value === "string") {
     if (value.startsWith("http://") || value.startsWith("https://")) {
       const parsed = new URL(value);
-      if (parsed.searchParams.has("installationId")) {
+      if (
+        parsed.searchParams.has("installationId") &&
+        (expectedOpenId === undefined ||
+          parsed.searchParams.get("openId") === expectedOpenId)
+      ) {
         return value;
       }
     }
@@ -179,7 +186,7 @@ function findUrlInCard(value: unknown): string | undefined {
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findUrlInCard(item);
+      const found = findUrlInCard(item, expectedOpenId);
       if (found) {
         return found;
       }
@@ -188,7 +195,7 @@ function findUrlInCard(value: unknown): string | undefined {
   }
   if (typeof value === "object" && value !== null) {
     for (const entry of Object.values(value)) {
-      const found = findUrlInCard(entry);
+      const found = findUrlInCard(entry, expectedOpenId);
       if (found) {
         return found;
       }
@@ -198,7 +205,10 @@ function findUrlInCard(value: unknown): string | undefined {
 }
 
 /** Reads the signed connection link out of the bot's connection prompt card. */
-function connectionToken(messages: readonly SentMessage[]) {
+function connectionToken(
+  messages: readonly SentMessage[],
+  expectedOpenId?: string,
+) {
   for (const message of messages) {
     if (
       typeof message.body === "object" &&
@@ -207,7 +217,7 @@ function connectionToken(messages: readonly SentMessage[]) {
       typeof message.body.content === "string"
     ) {
       const card: unknown = JSON.parse(message.body.content);
-      const found = findUrlInCard(card);
+      const found = findUrlInCard(card, expectedOpenId);
       if (found) {
         const params = new URL(found).searchParams;
         const value = (name: string) => {
@@ -418,17 +428,29 @@ async function replaceIdentityFromToken(
   return { newOpenId, legacyStatus: legacy.status, location, redirect };
 }
 
-async function replaceIdentity(
-  member: Awaited<ReturnType<typeof connectedMember>>,
-) {
-  const newOpenId = `ou_${randomUUID()}`;
-  const token = connectionToken(await member.dmMessages(newOpenId, "hello"));
-  return await replaceIdentityFromToken(member, newOpenId, token);
-}
-
 async function replacedMember(platform: Platform) {
-  const member = await connectedMember(platform);
-  const replacement = await replaceIdentity(member);
+  const bot = await configuredBot(platform);
+  const openId = `ou_${randomUUID()}`;
+  const newOpenId = `ou_${randomUUID()}`;
+  const [firstPrompt, secondPrompt] = await Promise.all([
+    bot.dmMessages(openId, "hello"),
+    bot.dmMessages(newOpenId, "hello"),
+  ]);
+  const token = connectionToken(firstPrompt, openId);
+  const started = await accept(
+    feishuBrowserClient.connectFromApp({
+      headers: signIn(bot.admin),
+      body: token,
+    }),
+    [200],
+  );
+  await completeOauth(started.body.openUrl, openId);
+  const member = { ...bot, openId, token };
+  const replacement = await replaceIdentityFromToken(
+    member,
+    newOpenId,
+    connectionToken(secondPrompt, newOpenId),
+  );
   return { ...member, ...replacement };
 }
 
@@ -583,6 +605,84 @@ describe("feishu identity replacement", () => {
 
   it("feishu-message-delivery-002 (5/5) keeps the installation connected and verified for the original app and tenant", async () => {
     const member = await replacedMember("feishu");
+
+    const status = await accept(
+      member.client.getStatus({ headers: signIn(member.admin) }),
+      [200],
+    );
+
+    expect(status.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      callbackVerified: true,
+      appId: member.app.appId,
+      tenantKey: member.tenantKey,
+    });
+  });
+});
+
+describe("lark identity replacement", () => {
+  it("feishu-message-delivery-010 (1/5) rejects another member rebinding the connected Lark account", async () => {
+    const redirect = new URL(await rebindAttempt("lark"));
+
+    expect(redirect.pathname).toBe("/settings/lark");
+    expect(redirect.searchParams.get("error")).toBe(
+      "This Lark account is already connected.",
+    );
+  });
+
+  it("feishu-message-delivery-010 (2/5) replaces the identity through the legacy link and keeps the managed connector", async () => {
+    const bot = await configuredBot("lark");
+    const openId = `ou_${randomUUID()}`;
+    const newOpenId = `ou_${randomUUID()}`;
+    const [firstPrompt, secondPrompt] = await Promise.all([
+      bot.dmMessages(openId, "hello"),
+      bot.dmMessages(newOpenId, "hello"),
+    ]);
+    const token = connectionToken(firstPrompt, openId);
+    const started = await accept(
+      feishuBrowserClient.connectFromApp({
+        headers: signIn(bot.admin),
+        body: token,
+      }),
+      [200],
+    );
+    await completeOauth(started.body.openUrl, openId);
+    const member = { ...bot, openId, token };
+    const before = await managedConnectorIds(member);
+
+    const replacement = await replaceIdentityFromToken(
+      member,
+      newOpenId,
+      connectionToken(secondPrompt, newOpenId),
+    );
+
+    expect(replacement.legacyStatus).toBe(307);
+    expect(new URL(replacement.location).origin).toBe(
+      "https://accounts.larksuite.com",
+    );
+    expect(new URL(replacement.redirect).searchParams.get("error")).toBeNull();
+    await expect(managedConnectorIds(member)).resolves.toStrictEqual(before);
+  });
+
+  it("feishu-message-delivery-010 (3/5) prompts the replaced identity to connect", async () => {
+    const member = await replacedMember("lark");
+
+    const reply = await member.dm(member.openId, "hello");
+
+    expect(reply).toContain("Connect your account");
+  });
+
+  it("feishu-message-delivery-010 (4/5) gives the new identity command help", async () => {
+    const member = await replacedMember("lark");
+
+    const reply = await member.dm(member.newOpenId, "/help");
+
+    expect(reply).toContain("Okou Bot commands");
+  });
+
+  it("feishu-message-delivery-010 (5/5) keeps the installation connected and verified for the original app and tenant", async () => {
+    const member = await replacedMember("lark");
 
     const status = await accept(
       member.client.getStatus({ headers: signIn(member.admin) }),

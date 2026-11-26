@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { createStore } from "ccstate";
 import { escapeText } from "entities/escape";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -9,10 +15,14 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { artifactShareRoutes } from "../artifact-shares";
 import { integrationsSlackRoutes } from "../integrations-slack";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createHostBddApi } from "./helpers/api-bdd-host";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   createPublicSlackOrgApi,
@@ -560,5 +570,226 @@ describe("Slack link previews", () => {
 
     expect(requests).toHaveLength(1);
     expect(Object.keys(requests[0]?.unfurls ?? {})).toStrictEqual([works]);
+  });
+
+  it("slack-link-unfurl-011 preserves sharing for report.png with none page metadata", async () => {
+    const fixture = await installedWorkspace();
+    await createStore().set(
+      seedOrgMembership$,
+      {
+        orgId: fixture.orgId,
+        userId: fixture.actor.userId,
+        role: "admin",
+        name: "Slack unfurl workspace",
+      },
+      context.signal,
+    );
+    const stored = createHostBddApi(context).captureHostedSitesS3();
+    const baseS3 = context.mocks.s3.send.getMockImplementation();
+    if (!baseS3) {
+      throw new Error("Expected captured hosted-site S3 storage");
+    }
+    const pngBytes = Buffer.from("fake-png-bytes");
+    context.mocks.s3.send.mockImplementation((operation, ...rest) => {
+      const key =
+        operation instanceof HeadObjectCommand ||
+        operation instanceof GetObjectCommand
+          ? operation.input.Key
+          : undefined;
+      if (
+        operation instanceof HeadObjectCommand &&
+        key?.startsWith("private-artifacts/")
+      ) {
+        return Promise.resolve({
+          ContentLength: pngBytes.byteLength,
+          ContentType: "image/png",
+          Metadata: { "artifact-id": key.split("/")[1] },
+        });
+      }
+      if (
+        operation instanceof GetObjectCommand &&
+        key?.startsWith("artifact-shares/") &&
+        !stored.objects.has(key)
+      ) {
+        return Promise.reject(
+          Object.assign(new Error("Missing publication policy"), {
+            name: "NoSuchKey",
+          }),
+        );
+      }
+      if (
+        operation instanceof GetObjectCommand &&
+        key?.startsWith("private-artifacts/") &&
+        !stored.objects.has(key)
+      ) {
+        return Promise.resolve({
+          Body: Readable.from([pngBytes]),
+          ContentLength: pngBytes.byteLength,
+          ContentType: "image/png",
+        });
+      }
+      return baseS3(operation, ...rest);
+    });
+
+    const authHeaders = Object.freeze({
+      authorization: "Bearer clerk-session",
+    });
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.orgId,
+      "org:admin",
+    );
+    const artifactApp = setupApp({
+      context,
+      routes: [
+        ...uploadsPrepareRoutes,
+        ...uploadsCompleteRoutes,
+        ...artifactShareRoutes,
+      ],
+    });
+    const prepared = await accept(
+      artifactApp(uploadsContract).prepare({
+        headers: authHeaders,
+        body: {
+          filename: "report.png",
+          contentType: "image/png",
+          size: pngBytes.byteLength,
+          purpose: "artifact",
+        },
+      }),
+      [200],
+    );
+    const completed = await accept(
+      artifactApp(uploadsContract).complete({
+        headers: authHeaders,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+
+    const privateUrl = new URL(completed.body.url, APP_ORIGIN).href;
+    const queryAndFragmentUrl = `${privateUrl}?ref=slack#page=1`;
+    const referenceUrl = new URL(
+      artifactReferencePath(prepared.body.id),
+      APP_ORIGIN,
+    ).href;
+    const missingReferenceUrl = new URL(
+      artifactReferencePath(randomUUID(), "missing.png"),
+      APP_ORIGIN,
+    ).href;
+    const pageFetches: Request[] = [];
+    server.use(
+      http.get(`${APP_ORIGIN}/artifacts/:reference`, ({ request }) => {
+        pageFetches.push(request);
+        return new HttpResponse("<!doctype html><html><body></body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }),
+    );
+
+    await expect(
+      shareLinks(fixture.slackWorkspaceId, [
+        privateUrl,
+        queryAndFragmentUrl,
+        referenceUrl,
+        missingReferenceUrl,
+      ]),
+    ).resolves.toStrictEqual([]);
+    expect(pageFetches).toStrictEqual([]);
+
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.orgId,
+      "org:admin",
+    );
+    const orgShared = await accept(
+      artifactApp(artifactSharesContract).update({
+        headers: authHeaders,
+        body: {
+          target: { kind: "file", id: prepared.body.id },
+          audience: "organization",
+        },
+      }),
+      [200],
+    );
+    const shortUrl = orgShared.body.shortUrl;
+    if (!shortUrl) {
+      throw new Error("Expected shortUrl for organization-shared file");
+    }
+
+    await expect(
+      shareLinks(fixture.slackWorkspaceId, [
+        privateUrl,
+        queryAndFragmentUrl,
+        referenceUrl,
+        shortUrl,
+        missingReferenceUrl,
+      ]),
+    ).resolves.toStrictEqual([]);
+    expect(pageFetches).toStrictEqual([]);
+
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.orgId,
+      "org:admin",
+    );
+    const published = await accept(
+      artifactApp(artifactSharesContract).update({
+        headers: authHeaders,
+        body: {
+          target: { kind: "file", id: prepared.body.id },
+          audience: "public",
+        },
+      }),
+      [200],
+    );
+
+    const knownUrls = [
+      ...new Set([
+        privateUrl,
+        queryAndFragmentUrl,
+        referenceUrl,
+        shortUrl,
+        ...(published.body.shortUrl ? [published.body.shortUrl] : []),
+      ]),
+    ];
+    const publishedRequests = await shareLinks(fixture.slackWorkspaceId, [
+      ...knownUrls,
+      missingReferenceUrl,
+    ]);
+    expect(publishedRequests).toHaveLength(1);
+    expect(Object.keys(publishedRequests[0]?.unfurls ?? {})).toStrictEqual(
+      knownUrls,
+    );
+    for (const url of knownUrls) {
+      const blocks = publishedRequests[0]?.unfurls[url]?.blocks ?? [];
+      const image = imageBlock(blocks);
+      expect(image?.alt_text).toBe("report.png");
+      expect(image?.image_url).toContain(
+        "/api/artifact-og/image?kind=reference",
+      );
+    }
+
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.orgId,
+      "org:admin",
+    );
+    await accept(
+      artifactApp(artifactSharesContract).update({
+        headers: authHeaders,
+        body: {
+          target: { kind: "file", id: prepared.body.id },
+          audience: "private",
+        },
+      }),
+      [200],
+    );
+
+    await expect(
+      shareLinks(fixture.slackWorkspaceId, knownUrls),
+    ).resolves.toStrictEqual([]);
+    expect(pageFetches).toStrictEqual([]);
   });
 });

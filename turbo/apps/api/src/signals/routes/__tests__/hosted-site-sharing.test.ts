@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
 import { hostRoutes } from "../host";
 import { hostedSiteSharingRoutes } from "../hosted-site-sharing";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -485,5 +486,76 @@ describe("hosted site sharing", () => {
     await expect(lookup("external@example.com")).resolves.toStrictEqual([]);
     await expect(lookup("externalhandle")).resolves.toStrictEqual([]);
     await expect(lookup("external")).resolves.toStrictEqual([]);
+  });
+
+  async function givenTenSharedRecipients() {
+    const startMs = Date.parse("2026-11-23T00:00:00Z");
+    mockNow(startMs);
+    acceptEmails();
+    const owner = await member();
+    clerkDirectory([{ user: owner, verified: true }]);
+    const [, site] = await Promise.all([
+      setSharing(owner, true),
+      publishPrivateSite(owner),
+    ]);
+    const api = sharingApi();
+    const headers = signIn(owner);
+    const firstTen = await Promise.all(
+      Array.from({ length: 10 }, (_, index) => {
+        return accept(
+          api.share({
+            headers,
+            params: { siteId: site.siteId },
+            body: { email: `recipient-${index}@example.com` },
+          }),
+          [200],
+        );
+      }),
+    );
+    return { startMs, site, api, headers, firstTen };
+  }
+
+  it("hosted-site-sharing-008 (1/2) allows ten shares and rejects the eleventh with HTTP 429", async () => {
+    const { site, api, headers, firstTen } = await givenTenSharedRecipients();
+
+    const [eleventh, listed] = await Promise.all([
+      accept(
+        api.share({
+          headers,
+          params: { siteId: site.siteId },
+          body: { email: "recipient-10@example.com" },
+        }),
+        [429],
+      ),
+      accept(api.list({ headers, params: { siteId: site.siteId } }), [200]),
+    ]);
+
+    expect(
+      firstTen.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 10 }, () => {
+        return 200;
+      }),
+    );
+    expect(eleventh.status).toBe(429);
+    expect(listed.body.shares).toHaveLength(10);
+  });
+
+  it("hosted-site-sharing-008 (2/2) allows sharing again once the 60-second rate-limit window passes", async () => {
+    const { startMs, site, api, headers } = await givenTenSharedRecipients();
+
+    mockNow(startMs + 60_000);
+    const afterWindow = await accept(
+      api.share({
+        headers,
+        params: { siteId: site.siteId },
+        body: { email: "recipient-11@example.com" },
+      }),
+      [200],
+    );
+
+    expect(afterWindow.status).toBe(200);
   });
 });

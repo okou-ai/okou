@@ -1,6 +1,14 @@
-import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  generateKeyPairSync,
+  randomInt,
+  randomUUID,
+} from "node:crypto";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import {
+  integrationsGithubUploadCompleteContract,
+  integrationsGithubUploadInitContract,
   integrationsTelegramUploadCompleteContract,
   integrationsTelegramUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
@@ -14,19 +22,33 @@ import { expect, test } from "vitest";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
+import { createApp } from "../../../app-factory";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { githubOauthRoutes } from "../github-oauth";
+import { integrationsGithubUploadCompleteRoutes } from "../integrations-github-upload-complete";
+import { integrationsGithubUploadInitRoutes } from "../integrations-github-upload-init";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const fileBytes = "private file";
+const GITHUB_APP_ID = "123456";
+const GITHUB_APP_SLUG = "okou-test";
+const GITHUB_APP_PRIVATE_KEY_B64 = Buffer.from(
+  generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }),
+).toString("base64");
 
 /** Links the member to the official bot with a Telegram Login Widget payload. */
 async function linkTelegram(member: ApiTestUser, telegramUserId: number) {
@@ -222,6 +244,188 @@ test("private-integration-uploads-005 keeps a Telegram upload private through co
   ]);
   expect(completed.body.url).toBe(init.body.fileUrl);
   expect(sentDocuments).toHaveLength(1);
+  expect(preview.body.publicUrl).toBeNull();
+  const downloaded = new URL(preview.body.downloadUrl).searchParams.get(
+    "object",
+  );
+  expect(downloaded?.split("/")[0]).toBe(privateBucket);
+  expect(elsewhere.status).toBe(404);
+});
+
+test("private-integration-uploads-003 keeps a GitHub upload private through completion", async () => {
+  mockOptionalEnv("GITHUB_APP_WEBHOOK_SECRET", randomUUID());
+  mockOptionalEnv("GITHUB_APP_SLUG", GITHUB_APP_SLUG);
+  mockOptionalEnv("GITHUB_APP_ID", GITHUB_APP_ID);
+  mockOptionalEnv("GITHUB_APP_PRIVATE_KEY", GITHUB_APP_PRIVATE_KEY_B64);
+  mockOptionalEnv("GITHUB_APP_CLIENT_ID", "github-app-client-id");
+  mockOptionalEnv("GITHUB_APP_CLIENT_SECRET", "github-app-client-secret");
+
+  const bdd = createBddApi(context);
+  const member = bdd.user();
+  if (!member.orgId) {
+    throw new Error("Expected organization ID");
+  }
+  const routeMocks = createRouteMocks(context);
+  routeMocks.clerk.session(member.userId, member.orgId, "org:admin");
+  mockClerkMembership(context, member, "org:admin");
+  const emailId = `email_${member.userId}`;
+  mockClerkUsers(context, [
+    {
+      id: member.userId,
+      emailAddresses: [{ id: emailId, emailAddress: member.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "GitHub",
+    },
+  ]);
+
+  const installationId = String(randomInt(1_000_000_000, 9_999_999_999));
+  const targetId = String(randomInt(1_000_000_000, 9_999_999_999));
+  const oauthCode = `code-${randomUUID()}`;
+  const oauthToken = `gho_${randomUUID()}`;
+
+  server.use(
+    http.get(
+      `https://api.github.com/app/installations/${installationId}`,
+      () => {
+        return HttpResponse.json({
+          id: Number(installationId),
+          app_id: Number(GITHUB_APP_ID),
+          app_slug: GITHUB_APP_SLUG,
+          account: {
+            id: Number(targetId),
+            login: "bdd-org",
+            type: "Organization",
+          },
+        });
+      },
+    ),
+    http.post(
+      `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      () => {
+        return HttpResponse.json(
+          {
+            token: `ghs_${installationId}`,
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+          { status: 201 },
+        );
+      },
+    ),
+    http.post("https://github.com/login/oauth/access_token", () => {
+      return HttpResponse.json({
+        access_token: oauthToken,
+        scope: "repo,project,workflow",
+      });
+    }),
+    http.get("https://api.github.com/user", () => {
+      return HttpResponse.json({
+        id: 7001,
+        login: "bdd-gh-admin",
+        email: null,
+      });
+    }),
+    http.get("https://api.github.com/user/memberships/orgs", () => {
+      return HttpResponse.json([
+        {
+          state: "active",
+          role: "admin",
+          organization: { id: Number(targetId) },
+        },
+      ]);
+    }),
+    http.post(
+      "https://api.github.com/repos/bdd-org/notes/issues/7/comments",
+      () => {
+        return HttpResponse.json({ id: 9001 }, { status: 201 });
+      },
+    ),
+  );
+
+  const oauthApp = createApp({
+    signal: context.signal,
+    routes: githubOauthRoutes,
+  });
+  const installQuery = new URLSearchParams({
+    userId: member.userId,
+    orgId: member.orgId,
+  }).toString();
+  const installRes = await oauthApp.request(
+    `http://localhost:3001/api/github/oauth/install?${installQuery}`,
+    { method: "GET", headers },
+  );
+  const installLocation = installRes.headers.get("location");
+  if (installRes.status !== 307 || !installLocation) {
+    throw new Error(`Expected 307 install redirect, got ${installRes.status}`);
+  }
+  const state = new URL(installLocation).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected signed install state");
+  }
+  const callbackQuery = new URLSearchParams({
+    installation_id: installationId,
+    setup_action: "install",
+    state,
+    code: oauthCode,
+  }).toString();
+  const callbackRes = await oauthApp.request(
+    `http://localhost:3001/api/github/app/setup/callback?${callbackQuery}`,
+    { method: "GET", headers },
+  );
+  expect(callbackRes.status).toBe(307);
+
+  const storage = installPrivateUploadStorage();
+  const init = await accept(
+    setupApp({ context, routes: integrationsGithubUploadInitRoutes })(
+      integrationsGithubUploadInitContract,
+    ).init({
+      headers,
+      body: {
+        filename: "notes.txt",
+        contentType: "text/plain",
+        length: Buffer.byteLength(fileBytes),
+      },
+    }),
+    [200],
+  );
+  const put = await fetch(init.body.uploadUrl, {
+    method: "PUT",
+    headers: { "content-type": "text/plain", ...init.body.uploadHeaders },
+    body: fileBytes,
+  });
+  const completed = await accept(
+    setupApp({ context, routes: integrationsGithubUploadCompleteRoutes })(
+      integrationsGithubUploadCompleteContract,
+    ).complete({
+      headers,
+      body: {
+        uploadId: init.body.uploadId,
+        repo: "bdd-org/notes",
+        issueNumber: 7,
+      },
+    }),
+    [200],
+  );
+
+  const files = setupApp({ context, routes: webFileUrlRoutes })(
+    webFilesContract,
+  );
+  const preview = await accept(
+    files.fileUrl({ headers, query: { file_id: init.body.uploadId } }),
+    [200],
+  );
+  createRouteMocks(context).clerk.session(member.userId, `org_${randomUUID()}`);
+  const elsewhere = await accept(
+    files.fileUrl({ headers, query: { file_id: init.body.uploadId } }),
+    [404],
+  );
+
+  const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+  expect(put.status).toBe(200);
+  expect(storage.presigned).toStrictEqual([
+    expect.objectContaining({ bucket: privateBucket }),
+  ]);
+  expect(completed.body.url).toBe(init.body.fileUrl);
   expect(preview.body.publicUrl).toBeNull();
   const downloaded = new URL(preview.body.downloadUrl).searchParams.get(
     "object",

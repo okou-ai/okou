@@ -273,6 +273,86 @@ describe("canonical Discord ingress", () => {
     );
   });
 
+  async function multiWorkspaceDmSender() {
+    configureUnboundGateway();
+    const authOrg = createAuthOrgBddApi(context);
+    const userId = `user_discord_${randomUUID()}`;
+    const discordUserId = uniqueDiscordSnowflake();
+    const workspaces = [
+      { userId, orgId: `org_discord_${randomUUID()}`, orgRole: "org:admin" },
+      { userId, orgId: `org_discord_${randomUUID()}`, orgRole: "org:admin" },
+    ] as const;
+    for (const workspace of workspaces) {
+      await authOrg.provisionWorkspace(authOrg.user(workspace));
+    }
+    mockDiscordMemberships(context, workspaces);
+    const first = await createPublicDiscordBinding(context, {
+      ...workspaces[0],
+      flow: "install",
+      discordUserId,
+      botUserId: DISCORD_TEST_APPLICATION_ID,
+    });
+    await createPublicDiscordBinding(context, {
+      ...workspaces[1],
+      flow: "install",
+      discordUserId,
+      botUserId: DISCORD_TEST_APPLICATION_ID,
+    });
+    const provider = mockDiscordProvider(first);
+    return { authOrg, workspaces, first, provider };
+  }
+
+  it("discord-ingress-053 (1/2) ignores both DMs and asks once to choose a workspace with /connect", async () => {
+    const { first, provider } = await multiWorkspaceDmSender();
+
+    const responses = [];
+    for (const content of ["first question", "second question"]) {
+      const dm = discordMessageForTest(first, {
+        channelId: provider.dmChannelId,
+        content,
+        guild: false,
+      });
+      responses.push((await postDiscordMessage(context, dm)).body);
+      await flushWaitUntilForTest();
+    }
+
+    for (const response of responses) {
+      expect(response).toMatchObject({ ok: true, outcome: "ignored" });
+    }
+    expect(provider.sentMessages).toHaveLength(1);
+    expect(provider.sentMessages[0]?.channel_id).toBe(provider.dmChannelId);
+    expect(provider.sentMessages[0]?.content).toContain("/connect");
+  });
+
+  it("discord-ingress-053 (2/2) creates no chat in either eligible workspace after ambiguous DMs", async () => {
+    const { authOrg, workspaces, first, provider } =
+      await multiWorkspaceDmSender();
+    const owners = [];
+    for (const workspace of workspaces) {
+      owners.push({
+        ...workspace,
+        sinceSetupSeqId: await threadEventCursor(
+          context,
+          authOrg.user(workspace),
+        ),
+      });
+    }
+
+    for (const content of ["first question", "second question"]) {
+      const dm = discordMessageForTest(first, {
+        channelId: provider.dmChannelId,
+        content,
+        guild: false,
+      });
+      await postDiscordMessage(context, dm);
+      await flushWaitUntilForTest();
+    }
+
+    for (const owner of owners) {
+      await expect(discordChatThreads(context, owner)).resolves.toHaveLength(0);
+    }
+  });
+
   it("discord-ingress-052 tells an unconnected DM sender how to connect about once an hour", async () => {
     configureUnboundGateway();
     const sender = {

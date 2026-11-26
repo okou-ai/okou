@@ -10,10 +10,13 @@ import { describe, expect, it } from "vitest";
 import { boolean, object, optional, string } from "zod";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 import {
+  FEISHU_OAUTH_SCOPES,
   feishuConnectContract,
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
+import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -25,6 +28,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { customConnectorsRoutes } from "../custom-connectors";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
@@ -61,7 +65,13 @@ const app = setupApp({
     ...feishuOauthRoutes,
     ...customConnectorsRoutes,
     ...connectorPermissionsRoutes,
+    ...featureSwitchesRoutes,
   ],
+});
+
+const rawFeishuEvents = setupRawAppRequest({
+  context,
+  routes: feishuEventsRoutes,
 });
 
 function integrations(platform: Platform) {
@@ -533,6 +543,61 @@ describe("feishu integration", () => {
     expect(connectorsAfter.body).toStrictEqual(connectors.body);
   });
 
+  it("feishu-branding-connection-013 (1/4) connects through Feishu OAuth without delivering the rejected welcome", async () => {
+    const reconnecting = await connectWithRejectedWelcome("feishu");
+
+    const connected = await connectOnce(reconnecting);
+
+    expect(connected.scopes).toStrictEqual([...FEISHU_OAUTH_SCOPES]);
+    expect(connected.location).toBe(
+      `https://applink.feishu.cn/client/bot/open?appId=${reconnecting.bot.appId}`,
+    );
+    expect(connected.published).toBeGreaterThan(0);
+    expect(connected.connectedUserName).toBe("Feishu User");
+    expect(connected.replies).not.toContain("You're connected!");
+  });
+
+  it("feishu-branding-connection-013 (2/4) keeps the granted member permissions after reconnecting", async () => {
+    const reconnecting = await connectWithRejectedWelcome("feishu", {
+      loadManagedConnector: true,
+    });
+
+    const { granted, kept } = await permissionsAfterReconnect(reconnecting);
+
+    expect(kept).toStrictEqual(granted);
+    expect(kept).toMatchObject([
+      { permission: "messages:send-as-user", action: "allow" },
+    ]);
+  });
+
+  it("feishu-branding-connection-013 (3/4) retries the welcome card with the rejected idempotency key on reconnect", async () => {
+    const reconnecting = await connectWithRejectedWelcome("feishu");
+
+    const { welcome, rejectedKey } = await welcomeAfterReconnect(reconnecting);
+
+    expect(rejectedKey).toBeDefined();
+    expect(welcome).toHaveLength(1);
+    expect(welcome[0]).toMatchObject({
+      path: "/open-apis/im/v1/messages",
+      receiveId: "ou_feishu_user",
+      msgType: "interactive",
+      uuid: rejectedKey,
+    });
+    expect(welcome[0]?.content).toContain("Okou");
+  });
+
+  it("feishu-branding-connection-013 (4/4) reports the reconnected Feishu installation status", async () => {
+    const reconnecting = await connectWithRejectedWelcome("feishu");
+
+    const installation = await statusAfterReconnect(reconnecting);
+
+    expect(installation).toMatchObject({
+      appId: reconnecting.bot.appId,
+      isConnected: true,
+      connectedUserName: "Feishu User",
+    });
+  });
+
   it("feishu-branding-connection-010 deduplicates unconnected messages and sends one connect link", async () => {
     const bot = await installedBot("feishu");
     const before = bot.sent.length;
@@ -593,7 +658,330 @@ describe("feishu integration", () => {
   });
 });
 
+async function connectWithRejectedWelcome(
+  platform: Platform,
+  options: { readonly loadManagedConnector?: boolean } = {},
+) {
+  // The Given needs a set-up installation, not a verified callback URL.
+  mockEnv("APP_URL", APP_URL);
+  const admin = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  const sent = serveProvider(platform, {
+    botName: "Owner Managed Bot",
+    avatarUrl: "https://example.com/okou-feishu.png",
+  });
+  context.mocks.s3.send.mockResolvedValue({ ETag: "fixture-etag" });
+  const apiOrigin = PLATFORMS[platform].apiOrigin;
+  let rejectedKey: string | undefined;
+  server.use(
+    http.post(`${apiOrigin}/open-apis/im/v1/messages`, async ({ request }) => {
+      if (rejectedKey !== undefined) {
+        return;
+      }
+      rejectedKey = outboundSchema.parse(await request.clone().json()).uuid;
+      return HttpResponse.json(
+        { code: 1500, msg: "temporarily unavailable" },
+        { status: 503 },
+      );
+    }),
+    http.post(`${apiOrigin}/open-apis/authen/v2/oauth/token`, () => {
+      return HttpResponse.json({
+        code: 0,
+        access_token: `u-${randomUUID()}`,
+        refresh_token: `r-${randomUUID()}`,
+        expires_in: 7200,
+      });
+    }),
+    http.get(`${apiOrigin}/open-apis/authen/v1/user_info`, () => {
+      return HttpResponse.json({
+        code: 0,
+        data: {
+          open_id: "ou_feishu_user",
+          name: "Feishu User",
+          tenant_key: "tenant_member",
+        },
+      });
+    }),
+  );
+  await Promise.all([
+    createStore().set(
+      seedOrgMembership$,
+      { ...admin, role: "admin", name: "Feishu workspace" },
+      context.signal,
+    ),
+    accept(
+      app(featureSwitchesContract).update({
+        headers: signIn(admin),
+        body: { switches: { [PLATFORMS[platform].featureSwitch]: true } },
+      }),
+      [200],
+    ),
+  ]);
+  const appId = `cli_${randomUUID()}`;
+  const verificationToken = `token-${randomUUID()}`;
+  const encryptKey = `encrypt-${randomUUID()}`;
+  const configured = await accept(
+    integrations(platform).setup({
+      headers: signIn(admin),
+      body: { appId, appSecret: "app-secret", verificationToken, encryptKey },
+    }),
+    [200],
+  );
+  const { installationId, callbackUrl } = configured.body;
+  if (!installationId || !callbackUrl) {
+    throw new Error("Expected a configured installation");
+  }
+  const bot: Bot = {
+    platform,
+    admin,
+    appId,
+    installationId,
+    callbackUrl,
+    verificationToken,
+    encryptKey,
+    sent,
+  };
+  const beforeLink = bot.sent.length;
+  const dmBody = directMessage(bot, "hello");
+  const timestamp = String(Math.floor(now() / 1000));
+  const nonce = randomUUID();
+  const signature = createHash("sha256")
+    .update(`${timestamp}${nonce}${bot.encryptKey}${dmBody}`)
+    .digest("hex");
+  const [listed] = await Promise.all([
+    options.loadManagedConnector
+      ? accept(
+          app(customConnectorsContract).list({ headers: signIn(admin) }),
+          [200],
+        )
+      : Promise.resolve(undefined),
+    accept(
+      integrations(platform).updateInstallation({
+        headers: signIn(admin),
+        params: { installationId },
+        body: { setupCompleted: true },
+      }),
+      [200],
+    ),
+    (async () => {
+      await rawFeishuEvents(bot.callbackUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-lark-request-timestamp": timestamp,
+          "x-lark-request-nonce": nonce,
+          "x-lark-signature": signature,
+        },
+        body: dmBody,
+      });
+      await flushWaitUntilForTest();
+    })(),
+  ]);
+  const managed = listed?.body.connectors.find((connector) => {
+    return connector.oauthConfig?.providerAdapter === "feishu";
+  });
+  if (options.loadManagedConnector && !managed) {
+    throw new Error("Expected the managed Feishu connector");
+  }
+  const link = firstUrlIn(bot.sent.slice(beforeLink));
+  const linkBody = {
+    installationId: link.searchParams.get("installationId") ?? "",
+    openId: link.searchParams.get("openId") ?? "",
+    chatId: link.searchParams.get("chatId") ?? "",
+    ts: Number(link.searchParams.get("ts")),
+    sig: link.searchParams.get("sig") ?? "",
+  };
+  const startOauth = async () => {
+    const connected = await accept(
+      app(feishuBrowserConnectContract).connectFromApp({
+        headers: signIn(bot.admin),
+        body: linkBody,
+      }),
+      [200],
+    );
+    return new URL(connected.body.openUrl);
+  };
+  const finishOauth = async (authorizationUrl: URL) => {
+    const callback = await accept(
+      app(feishuOauthContract).callback({
+        query: {
+          state: authorizationUrl.searchParams.get("state") ?? "",
+          code: "authorization-code",
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    return { authorizationUrl, location: callback.body.redirectUrl };
+  };
+  const authorize = async () => {
+    const authorizationUrl = await startOauth();
+    return await finishOauth(authorizationUrl);
+  };
+  return {
+    bot,
+    managedConnectorId: managed?.id,
+    startOauth,
+    finishOauth,
+    authorize,
+    rejectedKey: () => {
+      return rejectedKey;
+    },
+  };
+}
+
+type Reconnecting = Awaited<ReturnType<typeof connectWithRejectedWelcome>>;
+
+function installationStatus(bot: Bot) {
+  return accept(
+    integrations(bot.platform).getStatus({ headers: signIn(bot.admin) }),
+    [200],
+  );
+}
+
+/** The admin connects the user once; the welcome DM is rejected. */
+async function connectOnce({ bot, authorize }: Reconnecting) {
+  const published = feishuChanged(bot.admin);
+  const before = bot.sent.length;
+  const first = await authorize();
+  const [, status] = await Promise.all([
+    flushWaitUntilForTest(),
+    installationStatus(bot),
+  ]);
+  return {
+    scopes: first.authorizationUrl.searchParams.get("scope")?.split(" "),
+    location: first.location,
+    published: feishuChanged(bot.admin) - published,
+    connectedUserName: status.body.installations?.[0]?.connectedUserName,
+    replies: contents(bot.sent.slice(before)),
+  };
+}
+
+/** Connect, grant a member permission, then connect again. */
+async function permissionsAfterReconnect({
+  bot,
+  managedConnectorId,
+  startOauth,
+  finishOauth,
+  authorize,
+}: Reconnecting) {
+  if (!managedConnectorId) {
+    throw new Error("Expected managedConnectorId");
+  }
+  await authorize();
+  const target = {
+    kind: "custom" as const,
+    customConnectorId: managedConnectorId,
+  };
+  const [granted, reconnectUrl] = await Promise.all([
+    accept(
+      app(connectorPermissionsContract).apply({
+        headers: signIn(bot.admin),
+        body: {
+          target,
+          mode: "patch",
+          grants: [
+            {
+              permission: "messages:send-as-user",
+              action: "allow",
+              expiresIn: "1h",
+            },
+          ],
+        },
+      }),
+      [200],
+    ),
+    startOauth(),
+  ]);
+  await finishOauth(reconnectUrl);
+  const [, permissions] = await Promise.all([
+    flushWaitUntilForTest(),
+    accept(
+      app(connectorPermissionsContract).get({
+        headers: signIn(bot.admin),
+        query: target,
+      }),
+      [200],
+    ),
+  ]);
+  return { granted: granted.body.grants, kept: permissions.body.grants };
+}
+
+async function welcomeAfterReconnect({
+  bot,
+  startOauth,
+  finishOauth,
+  rejectedKey,
+}: Reconnecting) {
+  const [firstUrl, reconnectUrl] = await Promise.all([
+    startOauth(),
+    startOauth(),
+  ]);
+  await finishOauth(firstUrl);
+  await flushWaitUntilForTest();
+  const before = bot.sent.length;
+  await finishOauth(reconnectUrl);
+  await flushWaitUntilForTest();
+  return {
+    welcome: bot.sent.slice(before),
+    rejectedKey: rejectedKey(),
+  };
+}
+
+async function statusAfterReconnect({
+  bot,
+  startOauth,
+  finishOauth,
+}: Reconnecting) {
+  const [firstUrl, reconnectUrl] = await Promise.all([
+    startOauth(),
+    startOauth(),
+  ]);
+  await finishOauth(firstUrl);
+  await finishOauth(reconnectUrl);
+  const [, status] = await Promise.all([
+    flushWaitUntilForTest(),
+    installationStatus(bot),
+  ]);
+  return status.body.installations?.[0];
+}
+
 describe("lark integration", () => {
+  it("feishu-branding-connection-016 (1/3) answers a connected user's help with the provider bot name", async () => {
+    const bot = await installedBot("lark");
+    await connectSender(bot);
+    const before = bot.sent.length;
+
+    await deliver(bot, directMessage(bot, "/help"));
+
+    expect(contents(bot.sent.slice(before))).toContain(
+      "Owner Managed Bot commands",
+    );
+  });
+
+  it("feishu-branding-connection-016 (2/3) tells a connected user they are already connected to Okou", async () => {
+    const bot = await installedBot("lark");
+    await connectSender(bot);
+    const before = bot.sent.length;
+
+    await deliver(bot, directMessage(bot, "/connect"));
+
+    expect(contents(bot.sent.slice(before))).toContain(
+      "Your Lark account is already connected to Okou",
+    );
+  });
+
+  it("feishu-branding-connection-016 (3/3) removes the connected Lark installation", async () => {
+    const bot = await installedBot("lark");
+    await connectSender(bot);
+
+    const removed = await removeInstallation(bot);
+
+    expect(removed.status).toBe(200);
+  });
+
   it("feishu-branding-connection-023 deduplicates unconnected messages and sends one connect link", async () => {
     const bot = await installedBot("lark");
     const before = bot.sent.length;

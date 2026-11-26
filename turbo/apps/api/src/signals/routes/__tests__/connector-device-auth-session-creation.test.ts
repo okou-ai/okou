@@ -2,9 +2,12 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { builtinConnectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsOauthDeviceAuthRoutes } from "../connectors-oauth-device-auth";
 import { featureSwitchesRoutes } from "../feature-switches";
@@ -15,6 +18,19 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const bdd = createBddApi(context);
 const slug = "test-oauth-device" as const;
+const DEVICE_TOKEN_URL = "http://localhost:3000/api/test/oauth-provider/token";
+
+const REJECTED_DEVICE_RECONNECT = Object.freeze({
+  status: "error",
+  errorCode: "connector_account_rejected",
+  errorMessage: "Connector account not found",
+});
+
+const EXPIRED_DEVICE_SESSION = Object.freeze({
+  status: "expired",
+  errorCode: "expired_token",
+  errorMessage: "OAuth device authorization session expired",
+});
 
 const deviceAuth = setupApp({
   context,
@@ -271,4 +287,294 @@ describe("Builtin device-auth session creation", () => {
       ]),
     );
   });
+
+  it("connector-device-auth-claim-awaiting-001 (1/3) keeps the provider interval and then the slowed interval between due polls", async () => {
+    const scenario = await startAwaitingSiblingReconnect();
+
+    for (const offsetMs of [2000, 3999]) {
+      const pending = await scenario.pollAt(offsetMs);
+      expect(pending.status).toBe(200);
+      expect(pending.body).toStrictEqual({ status: "pending", interval: 2 });
+    }
+    for (const offsetMs of [4000, 10_999]) {
+      const slowed = await scenario.pollAt(offsetMs);
+      expect(slowed.status).toBe(200);
+      expect(slowed.body).toStrictEqual({ status: "pending", interval: 7 });
+    }
+  });
+
+  it("connector-device-auth-claim-awaiting-001 (2/3) fails the malformed provider success without changing accounts and keeps the slowed interval", async () => {
+    const scenario = await startAwaitingSiblingReconnect();
+    await pollThroughOffsets(scenario, [2000, 4000]);
+
+    const failed = await scenario.pollAt(11_000);
+    expect(failed.status).toBe(500);
+    expect(failed.body).toStrictEqual({ error: "Internal server error" });
+    await expect(rolesWithExternalId(scenario.owner)).resolves.toStrictEqual(
+      scenario.rolesBefore,
+    );
+
+    const stillPending = await scenario.pollAt(17_999);
+    expect(stillPending.status).toBe(200);
+    expect(stillPending.body).toStrictEqual({ status: "pending", interval: 7 });
+  });
+
+  it("connector-device-auth-claim-awaiting-001 (3/3) completes and replays the same non-default account without credentials", async () => {
+    const scenario = await startAwaitingSiblingReconnect();
+    await pollThroughOffsets(scenario, [2000, 4000, 11_000]);
+
+    const completed = await scenario.pollAt(18_000);
+    expect(completed.status).toBe(200);
+    expect(completed.body).toStrictEqual({
+      status: "complete",
+      connectionId: scenario.siblingId,
+    });
+    const replay = await scenario.pollAt(18_000);
+    expect(replay.status).toBe(200);
+    expect(replay.body).toStrictEqual(completed.body);
+
+    const exposed = JSON.stringify([completed.body, replay.body]);
+    expect(exposed).not.toContain("device-sibling-access-token");
+    expect(exposed).not.toContain(scenario.sessionToken);
+    const readback = await accept(
+      accountClient.connection({
+        headers: auth(scenario.owner),
+        params: { connectionId: scenario.siblingId },
+        query: { kind: "builtin", connectorSlug: slug },
+      }),
+      [200],
+    );
+    expect(readback.body).toMatchObject({
+      externalId: "device-sibling-user",
+      isDefault: false,
+    });
+  });
+
+  it("connector-device-auth-claim-terminal-005 (1/2) rejects the reconnect of a deleted account on every poll and keeps the default", async () => {
+    const { owner, defaultId, reconnectSession } =
+      await reconnectDeletedSibling();
+
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: REJECTED_DEVICE_RECONNECT,
+    });
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: REJECTED_DEVICE_RECONNECT,
+    });
+    await expect(roles(owner)).resolves.toStrictEqual([
+      { id: defaultId, isDefault: true },
+    ]);
+  });
+
+  it("connector-device-auth-claim-terminal-005 (2/2) adds a distinct account and still replays the rejected reconnect", async () => {
+    const { owner, defaultId, siblingId, reconnectSession } =
+      await reconnectDeletedSibling();
+    await poll(owner, reconnectSession);
+
+    const provider = mockTestOAuthDeviceConnectorProvider();
+    const added = await connect(owner, provider, "device-added-user");
+    expect(added.connectionId).not.toBe(defaultId);
+    expect(added.connectionId).not.toBe(siblingId);
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: REJECTED_DEVICE_RECONNECT,
+    });
+    await expect(roles(owner)).resolves.toStrictEqual(
+      sorted([
+        { id: defaultId, isDefault: true },
+        { id: added.connectionId, isDefault: false },
+      ]),
+    );
+  });
+
+  it("connector-device-auth-session-expiration-001 (1/2) keeps the reconnect pending at its deadline and expires it one millisecond later", async () => {
+    const { owner, expectedRoles, startTime, reconnectSession } =
+      await pendingExpiringSiblingReconnect();
+
+    mockNow(startTime + 60_000);
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: { status: "pending", interval: 0 },
+    });
+    mockNow(startTime + 60_001);
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: EXPIRED_DEVICE_SESSION,
+    });
+    await expect(roles(owner)).resolves.toStrictEqual(expectedRoles);
+  });
+
+  it("connector-device-auth-session-expiration-001 (2/2) stays expired after the provider recovers and a new reconnect completes the same account", async () => {
+    const { owner, siblingId, expectedRoles, startTime, reconnectSession } =
+      await pendingExpiringSiblingReconnect();
+    mockNow(startTime + 60_001);
+    await poll(owner, reconnectSession);
+
+    const provider = mockTestOAuthDeviceConnectorProvider();
+    provider.setSubject("device-sibling-user");
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: EXPIRED_DEVICE_SESSION,
+    });
+    const recovery = await start(owner, siblingId);
+    await expect(pollComplete(owner, recovery)).resolves.toBe(siblingId);
+    await expect(poll(owner, reconnectSession)).resolves.toMatchObject({
+      body: EXPIRED_DEVICE_SESSION,
+    });
+    await expect(roles(owner)).resolves.toStrictEqual(expectedRoles);
+  });
 });
+
+function mockDeviceTokenSequence(responses: readonly (() => Response)[]): void {
+  let calls = 0;
+  server.use(
+    http.post(DEVICE_TOKEN_URL, () => {
+      const respond = responses[calls];
+      calls += 1;
+      if (!respond) {
+        throw new Error("Unexpected extra device token poll");
+      }
+      return respond();
+    }),
+  );
+}
+
+async function rolesWithExternalId(actor: ApiTestUser) {
+  const response = await accept(
+    accountClient.connections({
+      headers: auth(actor),
+      query: { kind: "builtin", connectorSlug: slug, limit: 100 },
+    }),
+    [200],
+  );
+  return response.body.connections
+    .map((account) => {
+      return {
+        id: account.id,
+        externalId: account.externalId,
+        isDefault: account.isDefault,
+      };
+    })
+    .sort((left, right) => {
+      return left.id.localeCompare(right.id);
+    });
+}
+
+async function startAwaitingSiblingReconnect() {
+  const provider = mockTestOAuthDeviceConnectorProvider();
+  const owner = await deviceOwner();
+  const first = await connect(owner, provider, "device-default-user");
+  const sibling = await connect(owner, provider, "device-sibling-user");
+  const rolesBefore = [
+    {
+      id: first.connectionId,
+      externalId: "device-default-user",
+      isDefault: true,
+    },
+    {
+      id: sibling.connectionId,
+      externalId: "device-sibling-user",
+      isDefault: false,
+    },
+  ].sort((left, right) => {
+    return left.id.localeCompare(right.id);
+  });
+
+  const startTime = now();
+  mockNow(startTime);
+  mockTestOAuthDeviceConnectorProvider({ interval: 2 });
+  mockDeviceTokenSequence([
+    () => {
+      return HttpResponse.json(
+        { error: "authorization_pending" },
+        { status: 400 },
+      );
+    },
+    () => {
+      return HttpResponse.json({ error: "slow_down" }, { status: 400 });
+    },
+    () => {
+      return HttpResponse.json({ token_type: "Bearer" });
+    },
+    () => {
+      return HttpResponse.json({
+        access_token: "device-sibling-access-token",
+        sub: "device-sibling-user",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "read",
+      });
+    },
+  ]);
+  const session = await start(owner, sibling.connectionId);
+  return {
+    owner,
+    siblingId: sibling.connectionId,
+    rolesBefore,
+    sessionToken: session.sessionToken,
+    async pollAt(offsetMs: number) {
+      mockNow(startTime + offsetMs);
+      return await accept(
+        deviceAuth.poll({
+          headers: auth(owner),
+          params: { connectorSlug: slug, sessionId: session.sessionId },
+          body: { sessionToken: session.sessionToken },
+        }),
+        [200, 500],
+      );
+    },
+  };
+}
+
+async function pollThroughOffsets(
+  scenario: Awaited<ReturnType<typeof startAwaitingSiblingReconnect>>,
+  offsets: readonly number[],
+): Promise<void> {
+  for (const offsetMs of offsets) {
+    await scenario.pollAt(offsetMs);
+  }
+}
+
+async function reconnectDeletedSibling() {
+  const provider = mockTestOAuthDeviceConnectorProvider();
+  const owner = await deviceOwner();
+  const first = await connect(owner, provider, "device-default-user");
+  const sibling = await connect(owner, provider, "device-sibling-user");
+  provider.setSubject("device-sibling-user");
+  const reconnectSession = await start(owner, sibling.connectionId);
+  await accept(
+    accountClient.delete({
+      headers: auth(owner),
+      params: { connectionId: sibling.connectionId },
+      body: { target: { kind: "builtin", connectorSlug: slug } },
+    }),
+    [200],
+  );
+  return {
+    owner,
+    defaultId: first.connectionId,
+    siblingId: sibling.connectionId,
+    reconnectSession,
+  };
+}
+
+async function pendingExpiringSiblingReconnect() {
+  const provider = mockTestOAuthDeviceConnectorProvider();
+  const owner = await deviceOwner();
+  const first = await connect(owner, provider, "device-default-user");
+  const sibling = await connect(owner, provider, "device-sibling-user");
+  const expectedRoles = sorted([
+    { id: first.connectionId, isDefault: true },
+    { id: sibling.connectionId, isDefault: false },
+  ]);
+
+  const startTime = now();
+  mockNow(startTime);
+  mockTestOAuthDeviceConnectorProvider({
+    deviceCode: "pending",
+    expiresIn: 60,
+  });
+  const reconnectSession = await start(owner, sibling.connectionId);
+  return {
+    owner,
+    siblingId: sibling.connectionId,
+    expectedRoles,
+    startTime,
+    reconnectSession,
+  };
+}

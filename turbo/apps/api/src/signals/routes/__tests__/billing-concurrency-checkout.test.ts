@@ -3073,4 +3073,249 @@ describe("POST /api/billing/concurrency-checkout", () => {
       effectiveAt,
     });
   });
+
+  it("billing-concurrency-checkout-009 adds concurrency to an attached Team cancellation schedule", async () => {
+    const fixedNow = Date.parse("2026-06-01T00:00:00.000Z");
+    mockNow(fixedNow);
+    const prorationTimestamp = Math.floor(fixedNow / 1000);
+    const plan = await seedPlanWorkspace({
+      tier: "team",
+      periodEnd: new Date("2099-05-20T00:00:00.000Z"),
+    });
+    const scheduleId = `sub_sched_${randomUUID().slice(0, 8)}`;
+    const attachedSubscription = {
+      id: plan.subscriptionId,
+      customer: plan.customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: scheduleId,
+      trial_end: null,
+      metadata: {},
+      latest_invoice: {
+        id: `in_prev_${randomUUID().slice(0, 8)}`,
+        status: "paid",
+        paid: true,
+        hosted_invoice_url: null,
+      },
+      items: {
+        data: [planItem(TEAM_PRICE, plan.periodStart, plan.periodEnd)],
+      },
+    };
+    const cancelSchedule = {
+      id: scheduleId,
+      subscription: plan.subscriptionId,
+      end_behavior: "cancel",
+      current_phase: {
+        start_date: plan.periodStart,
+        end_date: plan.periodEnd,
+      },
+      phases: [
+        {
+          start_date: plan.periodStart,
+          end_date: plan.periodEnd,
+          items: [{ price: TEAM_PRICE, quantity: 1 }],
+        },
+      ],
+    };
+
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      attachedSubscription,
+    );
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+      cancelSchedule,
+    );
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue(
+      cancelSchedule,
+    );
+    context.mocks.stripe.invoices.createPreview.mockImplementation(
+      (params: unknown) => {
+        if (
+          typeof params === "object" &&
+          params !== null &&
+          "schedule" in params
+        ) {
+          return Promise.reject(
+            new Stripe.errors.StripeInvalidRequestError({
+              type: "invalid_request_error",
+              code: "invoice_upcoming_none",
+              message: "No upcoming invoices for schedule",
+            }),
+          );
+        }
+        return Promise.resolve(
+          previewInvoice({
+            lines: [
+              prorationLine({
+                amount: 15_000,
+                prorationTimestamp,
+                periodEnd: plan.periodEnd,
+              }),
+            ],
+          }),
+        );
+      },
+    );
+    clearStripeMocks();
+
+    const preview = await accept(
+      concurrencyCheckout.preview({
+        headers,
+        body: { quantity: 3 },
+      }),
+      [200],
+    );
+
+    expect(preview.body).toStrictEqual({
+      currentQuantity: 0,
+      targetQuantity: 3,
+      immediateAmountCents: 15_000,
+      nextRecurringAmountCents: 0,
+      currency: "usd",
+    });
+
+    const purchase = await accept(
+      concurrencyCheckout.create({
+        headers,
+        body: { quantity: 3, ...REDIRECTS },
+      }),
+      [200],
+    );
+
+    expect(purchase.body).toStrictEqual({
+      url: REDIRECTS.successUrl,
+    });
+    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith({
+      subscription: plan.subscriptionId,
+      preview_mode: "next",
+      subscription_details: {
+        items: [{ price: CONCURRENCY_PRICE, quantity: 3 }],
+        proration_behavior: "always_invoice",
+        proration_date: prorationTimestamp,
+      },
+    });
+    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith({
+      schedule: scheduleId,
+      preview_mode: "next",
+      schedule_details: {
+        end_behavior: "cancel",
+        proration_behavior: "none",
+        phases: [
+          {
+            start_date: plan.periodStart,
+            end_date: plan.periodEnd,
+            items: [
+              { price: TEAM_PRICE, quantity: 1 },
+              { price: CONCURRENCY_PRICE, quantity: 3 },
+            ],
+            proration_behavior: "none",
+          },
+        ],
+      },
+    });
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenCalledWith(
+      scheduleId,
+      {
+        end_behavior: "cancel",
+        proration_behavior: "always_invoice",
+        phases: [
+          {
+            start_date: plan.periodStart,
+            end_date: plan.periodEnd,
+            items: [
+              { price: TEAM_PRICE, quantity: 1 },
+              { price: CONCURRENCY_PRICE, quantity: 3 },
+            ],
+            proration_behavior: "none",
+          },
+        ],
+      },
+      expect.objectContaining({
+        idempotencyKey: expect.stringMatching(
+          /^concurrency-change:.*:schedule-update$/,
+        ),
+      }),
+    );
+    expect(
+      context.mocks.stripe.subscriptionSchedules.release,
+    ).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+  });
+
+  it("billing-concurrency-checkout-010 rejects a concurrency purchase while the Plan has a scheduled change", async () => {
+    const plan = await seedPlanWorkspace({
+      tier: "team",
+      periodEnd: new Date("2099-05-20T00:00:00.000Z"),
+    });
+    const scheduleId = `sub_sched_${randomUUID().slice(0, 8)}`;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: plan.subscriptionId,
+      customer: plan.customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      cancel_at: null,
+      schedule: scheduleId,
+      trial_end: null,
+      metadata: {},
+      items: {
+        data: [planItem(TEAM_PRICE, plan.periodStart, plan.periodEnd)],
+      },
+    });
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+      id: scheduleId,
+      subscription: plan.subscriptionId,
+      end_behavior: "release",
+      current_phase: {
+        start_date: plan.periodStart,
+        end_date: plan.periodEnd,
+      },
+      phases: [
+        {
+          start_date: plan.periodStart,
+          end_date: plan.periodEnd,
+          items: [{ price: TEAM_PRICE, quantity: 1 }],
+        },
+        {
+          start_date: plan.periodEnd,
+          end_date: plan.periodEnd + 30 * DAY_SECONDS,
+          items: [{ price: PRO_PRICE, quantity: 1 }],
+        },
+      ],
+    });
+    clearStripeMocks();
+
+    const preview = await accept(
+      concurrencyCheckout.preview({
+        headers,
+        body: { quantity: 3 },
+      }),
+      [409],
+    );
+    const purchase = await accept(
+      concurrencyCheckout.create({
+        headers,
+        body: { quantity: 3, ...REDIRECTS },
+      }),
+      [409],
+    );
+
+    const expectedError = {
+      error: {
+        code: "CONFLICT",
+        message: "Complete the pending concurrency update before adding slots",
+      },
+    };
+    expect(preview.body).toStrictEqual(expectedError);
+    expect(purchase.body).toStrictEqual(expectedError);
+    expect(
+      context.mocks.stripe.subscriptionSchedules.retrieve,
+    ).toHaveBeenCalledWith(scheduleId);
+    expect(context.mocks.stripe.invoices.createPreview).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).not.toHaveBeenCalled();
+  });
 });

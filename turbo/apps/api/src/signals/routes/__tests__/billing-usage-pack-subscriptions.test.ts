@@ -51,6 +51,30 @@ const context = testContext();
 const bdd = createBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
+const billingCheckoutApp = setupApp({
+  context,
+  routes: billingCheckoutRoutes,
+});
+const managementClient = billingCheckoutApp(billingUsagePackManagementContract);
+const migrationClient = billingCheckoutApp(billingUsagePackMigrationContract);
+const statusClient = setupApp({ context, routes: billingStatusRoutes })(
+  billingStatusContract,
+);
+const creditsClient = setupApp({
+  context,
+  routes: billingUsagePackCreditsRoutes,
+})(billingUsagePackCreditsContract);
+const stripeWebhookClient = setupApp({
+  context,
+  routes: webhooksStripeRoutes,
+})(webhookStripeContract);
+const clerkWebhookClient = setupApp({ context, routes: webhooksClerkRoutes })(
+  webhookClerkContract,
+);
+const inviteClient = setupApp({ context, routes: orgInviteRoutes })(
+  orgInviteContract,
+);
+
 interface Admin {
   readonly userId: string;
   readonly orgId: string;
@@ -99,23 +123,13 @@ function clerkMembers(...admins: readonly Admin[]) {
 
 async function readManagement(actor: Admin) {
   signIn(actor);
-  const read = await accept(
-    setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackManagementContract,
-    ).get({ headers }),
-    [200],
-  );
+  const read = await accept(managementClient.get({ headers }), [200]);
   return read.body;
 }
 
 async function readStatus(actor: Admin) {
   signIn(actor);
-  const read = await accept(
-    setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    ).get({ headers }),
-    [200],
-  );
+  const read = await accept(statusClient.get({ headers }), [200]);
   return read.body;
 }
 
@@ -247,9 +261,7 @@ async function deliverStripe(
 ) {
   context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(event);
   await accept(
-    setupApp({ context, routes: webhooksStripeRoutes })(
-      webhookStripeContract,
-    ).post({
+    stripeWebhookClient.post({
       body: JSON.stringify(event),
       extraHeaders: { "stripe-signature": "t=1,v1=usage-pack-subscriptions" },
     }),
@@ -291,30 +303,20 @@ function periodOf(event: PaidEvent) {
 
 async function ownCreditGrants(actor: Admin) {
   signIn(actor);
-  const read = await accept(
-    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-      billingUsagePackCreditsContract,
-    ).get({ headers }),
-    [200],
-  );
+  const read = await accept(creditsClient.get({ headers }), [200]);
   return read.body.creditGrants;
 }
 
 async function memberCreditGrants(owner: Admin, memberId: string) {
   signIn(owner);
-  const read = await accept(
-    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-      billingUsagePackCreditsContract,
-    ).get({ headers }),
-    [200],
-  );
+  const read = await accept(creditsClient.get({ headers }), [200]);
   return read.body.memberCredits?.find((entry) => {
     return entry.memberId === memberId;
   })?.creditGrants;
 }
 
 function invite() {
-  return setupApp({ context, routes: orgInviteRoutes })(orgInviteContract);
+  return inviteClient;
 }
 
 describe("member invitations", () => {
@@ -808,6 +810,251 @@ describe("member usage pack change confirmation", () => {
     await expect(
       memberCreditGrants(plan.owner, plan.memberId),
     ).resolves.toHaveLength(4);
+  });
+
+  async function scheduledMemberDowngrades() {
+    mockNow(Date.parse("2035-03-01T00:00:00.000Z"));
+    const owner = admin();
+    const members = [`user_${randomUUID()}`, `user_${randomUUID()}`];
+    const paid = await purchaseUsagePacks(
+      context,
+      owner,
+      members.map((userId) => {
+        return { userId, usd: 50 as const };
+      }),
+    );
+    const period = periodOf(paid);
+    const midPeriod = Math.floor(Date.parse("2035-03-16T00:00:00.000Z") / 1000);
+    mockNow(midPeriod * 1000);
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const subscription = planSubscription({
+      event: paid,
+      tier: "pro",
+      packs: [{ price: PRICE_50, quantity: 2 }],
+      start: period.start,
+      end: period.end,
+    });
+    const schedule: {
+      readonly id: string;
+      readonly end_behavior: string;
+      readonly current_phase: { start_date: number; end_date: number };
+      phases: SchedulePhase[];
+    } = {
+      id: scheduleId,
+      end_behavior: "release",
+      current_phase: { start_date: midPeriod, end_date: period.end },
+      phases: [
+        {
+          start_date: midPeriod,
+          end_date: period.end,
+          items: [
+            { price: planPrice("pro"), quantity: 1 },
+            { price: PRICE_50, quantity: 2 },
+          ],
+        },
+      ],
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
+    context.mocks.stripe.subscriptionSchedules.create.mockImplementation(() => {
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        ...subscription,
+        schedule: scheduleId,
+      });
+      return Promise.resolve(schedule);
+    });
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+      schedule,
+    );
+    context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+      (_id: unknown, input: unknown) => {
+        const params = schedulePhasesSchema.parse(input);
+        schedule.phases = params.phases.map((phase) => {
+          return {
+            ...phase,
+            end_date: phase.end_date ?? phase.start_date + 30 * 86_400,
+          };
+        });
+        return Promise.resolve(schedule);
+      },
+    );
+    stripePrices(0, 6000, PRICE_20);
+    const changeIds: string[] = [];
+    const statuses: string[] = [];
+    for (const memberId of members) {
+      signIn(owner);
+      const preview = await accept(
+        managementClient.previewChange({
+          headers,
+          body: { memberId, targetUsagePackUsd: 20 },
+        }),
+        [200],
+      );
+      changeIds.push(preview.body.changeId);
+      signIn(owner);
+      const confirmed = await accept(
+        managementClient.confirmChange({
+          headers,
+          params: { changeId: preview.body.changeId },
+          body: {},
+        }),
+        [200],
+      );
+      statuses.push(confirmed.body.status);
+    }
+    return { owner, members, paid, period, changeIds, statuses };
+  }
+
+  async function membersCreditGrants(owner: Admin, members: readonly string[]) {
+    signIn(owner);
+    const read = await accept(creditsClient.get({ headers }), [200]);
+    return (read.body.memberCredits ?? [])
+      .filter((entry) => {
+        return members.includes(entry.memberId);
+      })
+      .flatMap((entry) => {
+        return entry.creditGrants;
+      });
+  }
+
+  it("billing-usage-pack-subscriptions-036 (1/3) schedules both member downgrades into one mid-period Stripe schedule", async () => {
+    const { owner, members, period, changeIds, statuses } =
+      await scheduledMemberDowngrades();
+
+    expect(statuses).toStrictEqual(["scheduled", "scheduled"]);
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        phases: expect.arrayContaining([
+          expect.objectContaining({
+            start_date: period.end,
+            items: expect.arrayContaining([
+              expect.objectContaining({ price: PRICE_20, quantity: 1 }),
+              expect.objectContaining({ price: PRICE_50, quantity: 1 }),
+            ]),
+          }),
+        ]),
+      }),
+      {
+        idempotencyKey: `usage-pack-change:${changeIds[0]}:schedule-update`,
+      },
+    );
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        phases: [
+          expect.objectContaining({ end_date: period.end }),
+          expect.objectContaining({
+            start_date: period.end,
+            items: expect.arrayContaining([
+              expect.objectContaining({ price: PRICE_20, quantity: 2 }),
+            ]),
+          }),
+        ],
+      }),
+      {
+        idempotencyKey: `usage-pack-change:${changeIds[1]}:schedule-update`,
+      },
+    );
+    const [read, grants] = await Promise.all([
+      readManagement(owner),
+      membersCreditGrants(owner, members),
+    ]);
+    for (const memberId of members) {
+      expect(
+        read.allocations.find((allocation) => {
+          return allocation.memberId === memberId;
+        }),
+      ).toMatchObject({ usagePackUsd: 50, pendingChange: expect.anything() });
+    }
+    expect(grants).toHaveLength(4);
+  });
+
+  it("billing-usage-pack-subscriptions-036 (2/3) applies both scheduled downgrades at the period boundary", async () => {
+    const { owner, members, paid, period } = await scheduledMemberDowngrades();
+    mockNow((period.end + 60) * 1000);
+    const renewed = planSubscription({
+      event: paid,
+      tier: "pro",
+      packs: [{ price: PRICE_20, quantity: 2 }],
+      start: period.end,
+      end: period.end + 30 * 86_400,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(renewed);
+
+    await deliverStripe({
+      id: `evt_${randomUUID()}`,
+      type: "customer.subscription.updated",
+      created: period.end + 60,
+      data: { object: renewed },
+    });
+
+    const read = await readManagement(owner);
+    expect(
+      read.allocations
+        .map((allocation) => {
+          return [
+            allocation.memberId,
+            allocation.usagePackUsd,
+            allocation.pendingChange,
+          ];
+        })
+        .sort(),
+    ).toStrictEqual(
+      members
+        .map((memberId) => {
+          return [memberId, 20, null];
+        })
+        .sort(),
+    );
+  });
+
+  it("billing-usage-pack-subscriptions-036 (3/3) leaves management and credit grants unchanged on replayed boundary update", async () => {
+    const { owner, members, paid, period } = await scheduledMemberDowngrades();
+    mockNow((period.end + 60) * 1000);
+    const renewed = planSubscription({
+      event: paid,
+      tier: "pro",
+      packs: [{ price: PRICE_20, quantity: 2 }],
+      start: period.end,
+      end: period.end + 30 * 86_400,
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(renewed);
+    const boundary = {
+      id: `evt_${randomUUID()}`,
+      type: "customer.subscription.updated",
+      created: period.end + 60,
+      data: { object: renewed },
+    };
+
+    await deliverStripe(boundary);
+    await deliverStripe({ ...boundary, id: `evt_${randomUUID()}` });
+
+    const [readAfter, grantsAfter] = await Promise.all([
+      readManagement(owner),
+      membersCreditGrants(owner, members),
+    ]);
+    expect(
+      readAfter.allocations
+        .map((allocation) => {
+          return [
+            allocation.memberId,
+            allocation.usagePackUsd,
+            allocation.pendingChange,
+          ];
+        })
+        .sort(),
+    ).toStrictEqual(
+      members
+        .map((memberId) => {
+          return [memberId, 20, null];
+        })
+        .sort(),
+    );
+    expect(grantsAfter).toStrictEqual([]);
   });
 
   it("billing-usage-pack-subscriptions-020 refuses a downgrade when the Plan now ends before it takes effect", async () => {
@@ -1409,6 +1656,476 @@ describe("legacy subscription migration", () => {
       creditsBefore,
     );
   });
+
+  async function legacyTeamMigrationWithPendingInvite(
+    invoiceAmountCents: 20_000 | 0,
+  ) {
+    const owner = admin();
+    const customerId = `cus_${randomUUID()}`;
+    const subscriptionId = `sub_${randomUUID()}`;
+    const invitationId = `orginv_${randomUUID()}`;
+    const inviteeEmail = "pending-migration@example.test";
+    const periodEnd = Math.floor(now() / 1000) + 20 * 86_400;
+    const nextPeriodEnd = periodEnd + 30 * 86_400;
+    await postSubscriptionInvoicePaid(context.signal, {
+      orgId: owner.orgId,
+      userId: owner.userId,
+      tier: "team",
+      customerId,
+      subscriptionId,
+      currentPeriodEnd: new Date(periodEnd * 1000),
+    });
+    usagePackCatalog();
+    clerkMembers(owner);
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      {
+        data: [
+          {
+            id: invitationId,
+            emailAddress: inviteeEmail,
+            role: "org:member",
+            status: "pending",
+            createdAt: now(),
+          },
+        ],
+        totalCount: 1,
+      },
+    );
+    const legacySub = {
+      id: subscriptionId,
+      customer: customerId,
+      status: "active",
+      cancel_at: null,
+      cancel_at_period_end: false,
+      schedule: null,
+      discounts: [],
+      trial_end: null,
+      metadata: {},
+      items: {
+        data: [
+          {
+            id: "si_legacy_team",
+            price: {
+              id: "price_test_team",
+              recurring: { interval: "month", interval_count: 1 },
+            },
+            quantity: 1,
+            current_period_start: periodEnd - 30 * 86_400,
+            current_period_end: periodEnd,
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(legacySub);
+    context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+      currency: "usd",
+      amount_due: 20_000,
+      lines: {
+        has_more: false,
+        data: [
+          {
+            id: `il_prev_plan_${randomUUID()}`,
+            amount: 16_000,
+            subtotal: 16_000,
+            discount_amounts: [],
+            taxes: [],
+            quantity: 1,
+            pricing: { price_details: { price: planPrice("team") } },
+            period: { start: periodEnd, end: nextPeriodEnd },
+            parent: {
+              type: "subscription_item_details",
+              subscription_item_details: { proration: false },
+            },
+          },
+          {
+            id: `il_prev_pack_${randomUUID()}`,
+            amount: 4000,
+            subtotal: 4000,
+            discount_amounts: [],
+            taxes: [],
+            quantity: 2,
+            pricing: { price_details: { price: PRICE_20 } },
+            period: { start: periodEnd, end: nextPeriodEnd },
+            parent: {
+              type: "subscription_item_details",
+              subscription_item_details: { proration: false },
+            },
+          },
+        ],
+      },
+    });
+    signIn(owner);
+    const previewed = await accept(
+      migrationClient.preview({
+        headers,
+        body: {
+          targetTier: "team",
+          memberUsagePacks: [
+            { memberId: owner.userId, usagePackUsd: 20 },
+            { memberId: invitationId, usagePackUsd: 20 },
+          ],
+        },
+      }),
+      [200],
+    );
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+      id: scheduleId,
+    });
+    signIn(owner);
+    const confirmed = await accept(
+      migrationClient.confirm({
+        headers,
+        params: { migrationId: previewed.body.migrationId },
+        body: {},
+      }),
+      [200],
+    );
+
+    const paymentIntentId = `pi_${randomUUID()}`;
+    const migrationInvoiceId = `in_mig_${randomUUID()}`;
+    let subscriptionMetadata: Record<string, string> = {};
+    const buildMigratedSubscription = (
+      latestInvoiceId: string | null,
+      attachedSchedule: string | null = null,
+    ) => {
+      return {
+        id: subscriptionId,
+        customer: customerId,
+        status: "active",
+        cancel_at: null,
+        cancel_at_period_end: false,
+        schedule: attachedSchedule,
+        discounts: [],
+        trial_end: null,
+        metadata: subscriptionMetadata,
+        latest_invoice: latestInvoiceId,
+        items: {
+          data: [
+            {
+              id: "si_plan",
+              price: {
+                id: planPrice("team"),
+                recurring: { interval: "month", interval_count: 1 },
+              },
+              quantity: 1,
+              current_period_start: periodEnd,
+              current_period_end: nextPeriodEnd,
+            },
+            {
+              id: `si_${PRICE_20}`,
+              price: {
+                id: PRICE_20,
+                recurring: { interval: "month", interval_count: 1 },
+              },
+              quantity: 2,
+              current_period_start: periodEnd,
+              current_period_end: nextPeriodEnd,
+            },
+          ],
+        },
+      };
+    };
+    const migrationInvoice = {
+      id: migrationInvoiceId,
+      customer: customerId,
+      currency: "usd",
+      status: "paid",
+      paid: true,
+      paid_out_of_band: false,
+      amount_due: invoiceAmountCents,
+      amount_paid: invoiceAmountCents,
+      hosted_invoice_url: null,
+      metadata: {},
+      status_transitions: { paid_at: periodEnd + 60 },
+      parent: {
+        subscription_details: {
+          subscription: subscriptionId,
+          metadata: {},
+        },
+      },
+      payments: {
+        data:
+          invoiceAmountCents > 0
+            ? [
+                {
+                  status: "paid",
+                  amount_paid: invoiceAmountCents,
+                  payment: {
+                    type: "payment_intent",
+                    payment_intent: paymentIntentId,
+                  },
+                },
+              ]
+            : [],
+      },
+      lines: {
+        has_more: false,
+        data: [
+          {
+            id: `il_mig_plan_${randomUUID()}`,
+            amount: 16_000,
+            subtotal: 16_000,
+            discount_amounts: [],
+            quantity: 1,
+            price: { id: planPrice("team") },
+            pricing: { price_details: { price: planPrice("team") } },
+            period: { start: periodEnd, end: nextPeriodEnd },
+            parent: {
+              type: "subscription_item_details",
+              subscription_item_details: { proration: false },
+            },
+          },
+          {
+            id: `il_mig_pack_${randomUUID()}`,
+            amount: 4000,
+            subtotal: 4000,
+            discount_amounts: [],
+            quantity: 2,
+            price: { id: PRICE_20 },
+            pricing: { price_details: { price: PRICE_20 } },
+            period: { start: periodEnd, end: nextPeriodEnd },
+            parent: {
+              type: "subscription_item_details",
+              subscription_item_details: { proration: false },
+            },
+          },
+        ],
+      },
+    };
+
+    function startScheduledPhase(latestInvoiceId: string | null) {
+      mockNow((periodEnd + 60) * 1000);
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        buildMigratedSubscription(latestInvoiceId),
+      );
+      context.mocks.stripe.subscriptions.update.mockImplementation(
+        (_id: unknown, input: unknown) => {
+          if (
+            typeof input === "object" &&
+            input !== null &&
+            "metadata" in input &&
+            typeof input.metadata === "object" &&
+            input.metadata !== null
+          ) {
+            subscriptionMetadata = {
+              ...subscriptionMetadata,
+              ...(input.metadata as Record<string, string>),
+            };
+          }
+          const updated = buildMigratedSubscription(latestInvoiceId);
+          context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+            updated,
+          );
+          return Promise.resolve(updated);
+        },
+      );
+      context.mocks.stripe.invoices.retrieve.mockResolvedValue(
+        migrationInvoice,
+      );
+    }
+
+    async function deliverMigrationInvoice() {
+      await deliverStripe({
+        id: `evt_${randomUUID()}`,
+        type: "invoice.paid",
+        created: periodEnd + 60,
+        data: { object: migrationInvoice },
+      });
+    }
+
+    function mockRevokeSchedule() {
+      const revokeScheduleId = `sub_sched_rev_${randomUUID()}`;
+      const revokeSchedule: {
+        readonly id: string;
+        readonly end_behavior: string;
+        readonly current_phase: { start_date: number; end_date: number };
+        phases: SchedulePhase[];
+      } = {
+        id: revokeScheduleId,
+        end_behavior: "release",
+        current_phase: { start_date: periodEnd, end_date: nextPeriodEnd },
+        phases: [
+          {
+            start_date: periodEnd,
+            end_date: nextPeriodEnd,
+            items: [
+              { price: planPrice("team"), quantity: 1 },
+              { price: PRICE_20, quantity: 2 },
+            ],
+          },
+        ],
+      };
+      context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValue(
+        {},
+      );
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        buildMigratedSubscription(migrationInvoiceId, revokeScheduleId),
+      );
+      context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+        revokeSchedule,
+      );
+      context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+        (_id: unknown, input: unknown) => {
+          const params = schedulePhasesSchema.parse(input);
+          revokeSchedule.phases = params.phases.map((phase) => {
+            return {
+              ...phase,
+              end_date: phase.end_date ?? phase.start_date + 30 * 86_400,
+            };
+          });
+          return Promise.resolve(revokeSchedule);
+        },
+      );
+      return revokeSchedule;
+    }
+
+    return {
+      owner,
+      customerId,
+      subscriptionId,
+      invitationId,
+      scheduleId,
+      periodEnd,
+      migrationId: previewed.body.migrationId,
+      confirmedStatus: confirmed.body.status,
+      paymentIntentId,
+      migrationInvoiceId,
+      startScheduledPhase,
+      deliverMigrationInvoice,
+      mockRevokeSchedule,
+    };
+  }
+
+  it("billing-usage-pack-subscriptions-009 (1/2) schedules legacy Team migration and materializes the admin's $20 pack on paid invoice", async () => {
+    const mig = await legacyTeamMigrationWithPendingInvite(20_000);
+    expect(mig.confirmedStatus).toBe("scheduled");
+
+    mig.startScheduledPhase(mig.migrationInvoiceId);
+    await mig.deliverMigrationInvoice();
+
+    const read = await readManagement(mig.owner);
+    expect(read.allocations).toContainEqual(
+      expect.objectContaining({
+        memberId: mig.owner.userId,
+        usagePackUsd: 20,
+      }),
+    );
+  });
+
+  it("billing-usage-pack-subscriptions-009 (2/2) refunds only the pending invitation's $20 share of a migration payment on revoke", async () => {
+    const mig = await legacyTeamMigrationWithPendingInvite(20_000);
+    mig.startScheduledPhase(mig.migrationInvoiceId);
+    await mig.deliverMigrationInvoice();
+
+    const revokeSchedule = mig.mockRevokeSchedule();
+    context.mocks.stripe.refunds.create.mockResolvedValue({
+      id: `re_${randomUUID()}`,
+      status: "succeeded",
+      amount: 2000,
+      payment_intent: mig.paymentIntentId,
+    });
+
+    signIn(mig.owner);
+    const revoked = await accept(
+      invite().revoke({ headers, body: { invitationId: mig.invitationId } }),
+      [200],
+    );
+
+    expect(revoked.status).toBe(200);
+    expect(context.mocks.stripe.refunds.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_intent: mig.paymentIntentId,
+        amount: 2000,
+      }),
+      expect.anything(),
+    );
+    expect(revokeSchedule.phases.at(-1)?.items).toContainEqual(
+      expect.objectContaining({ price: PRICE_20, quantity: 1 }),
+    );
+  });
+
+  it("billing-usage-pack-subscriptions-010 (1/3) keeps a zero-amount Team migration scheduled after schedule completion while awaiting the invoice", async () => {
+    const mig = await legacyTeamMigrationWithPendingInvite(0);
+    expect(mig.confirmedStatus).toBe("scheduled");
+
+    mig.startScheduledPhase(null);
+    await deliverStripe({
+      id: `evt_${randomUUID()}`,
+      type: "subscription_schedule.completed",
+      created: mig.periodEnd + 60,
+      data: {
+        object: {
+          id: mig.scheduleId,
+          object: "subscription_schedule",
+          status: "completed",
+          subscription: mig.subscriptionId,
+          customer: mig.customerId,
+          metadata: {},
+        },
+      },
+    });
+
+    signIn(mig.owner);
+    const read = await accept(migrationClient.get({ headers }), [200]);
+    expect(read.body).toMatchObject({
+      status: "scheduled",
+      migrationId: mig.migrationId,
+    });
+  });
+
+  it("billing-usage-pack-subscriptions-010 (2/3) fulfills a zero-amount Team migration invoice once across replayed deliveries", async () => {
+    const mig = await legacyTeamMigrationWithPendingInvite(0);
+    mig.startScheduledPhase(mig.migrationInvoiceId);
+
+    await mig.deliverMigrationInvoice();
+    const [managementFirst, grantsFirst] = await Promise.all([
+      readManagement(mig.owner),
+      ownCreditGrants(mig.owner),
+    ]);
+    expect(managementFirst.allocations).toContainEqual(
+      expect.objectContaining({
+        memberId: mig.owner.userId,
+        usagePackUsd: 20,
+      }),
+    );
+
+    await mig.deliverMigrationInvoice();
+    const [managementSecond, grantsSecond] = await Promise.all([
+      readManagement(mig.owner),
+      ownCreditGrants(mig.owner),
+    ]);
+    expect(managementSecond).toStrictEqual(managementFirst);
+    expect(grantsSecond).toStrictEqual(grantsFirst);
+  });
+
+  it("billing-usage-pack-subscriptions-010 (3/3) revokes a zero-amount migration invitation without creating a Stripe refund", async () => {
+    const mig = await legacyTeamMigrationWithPendingInvite(0);
+    mig.startScheduledPhase(mig.migrationInvoiceId);
+    await mig.deliverMigrationInvoice();
+
+    const revokeSchedule = mig.mockRevokeSchedule();
+    context.mocks.stripe.refunds.create.mockClear();
+
+    signIn(mig.owner);
+    const revoked = await accept(
+      invite().revoke({ headers, body: { invitationId: mig.invitationId } }),
+      [200],
+    );
+
+    expect(revoked.body).toStrictEqual({
+      message: "Invitation revoked and refund initiated",
+    });
+    const after = await readManagement(mig.owner);
+    expect(after.allocations).toHaveLength(1);
+    expect(context.mocks.stripe.refunds.create).not.toHaveBeenCalled();
+    expect(revokeSchedule.phases.at(-1)?.items).toContainEqual(
+      expect.objectContaining({ price: PRICE_20, quantity: 1 }),
+    );
+  });
 });
 
 /** A Pro Plan whose only pack ($20) belongs to a member, bought at the period start. */
@@ -1832,6 +2549,203 @@ describe("existing subscription changes", () => {
     await expect(
       memberCreditGrants(plan.owner, plan.memberId),
     ).resolves.toStrictEqual(grantsBefore);
+  });
+
+  async function pendingTeamUpgrade() {
+    const plan = await proPlanWithMemberPack("2035-01-01T00:00:00.000Z");
+    mockNow(Date.parse("2035-01-16T00:00:00.000Z"));
+    stripePrices(8000, 18_000, planPrice("team"));
+    signIn(plan.owner);
+    const preview = await accept(
+      managementClient.previewSubscriptionChange({
+        headers,
+        body: {
+          targetTier: "team",
+          memberUsagePacks: [
+            { memberId: plan.owner.userId, usagePackUsd: 0 },
+            { memberId: plan.memberId, usagePackUsd: 20 },
+          ],
+        },
+      }),
+      [200],
+    );
+    const invoiceId = `in_${randomUUID()}`;
+    const pending = {
+      ...plan.subscription,
+      pending_update: {
+        expires_at: plan.period.end - 86_400,
+        subscription_items: [
+          { id: "si_plan", price: { id: planPrice("team") } },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      ...pending,
+      latest_invoice: {
+        id: invoiceId,
+        status: "open",
+        hosted_invoice_url: `https://invoice.stripe.test/${invoiceId}`,
+      },
+    });
+    signIn(plan.owner);
+    const confirmed = await accept(
+      managementClient.confirmSubscriptionChange({
+        headers,
+        body: { changeId: preview.body.changeId },
+      }),
+      [200],
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(pending);
+    await deliverStripe({
+      id: `evt_${randomUUID()}`,
+      type: "customer.subscription.updated",
+      created: Math.floor(now() / 1000),
+      data: { object: pending },
+    });
+    return {
+      plan,
+      preview: preview.body,
+      confirmed: confirmed.body,
+      invoiceId,
+    };
+  }
+
+  it("billing-usage-pack-subscriptions-024 (1/3) keeps Pro while the confirmed Team upgrade awaits payment", async () => {
+    const pending = await pendingTeamUpgrade();
+
+    expect(pending.confirmed).toStrictEqual({
+      status: "pending_payment",
+      effectiveAt: pending.preview.prorationDate,
+      hostedInvoiceUrl: `https://invoice.stripe.test/${pending.invoiceId}`,
+    });
+    await expect(readStatus(pending.plan.owner)).resolves.toMatchObject({
+      tier: "pro",
+    });
+  });
+
+  it("billing-usage-pack-subscriptions-024 (2/3) activates Team once across concurrent paid upgrade invoices", async () => {
+    const { plan, preview, invoiceId } = await pendingTeamUpgrade();
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      planSubscription({
+        event: plan.paid,
+        tier: "team",
+        packs: [{ price: PRICE_20, quantity: 1 }],
+        start: plan.period.start,
+        end: plan.period.end,
+      }),
+    );
+    const prorationDate = Math.floor(Date.parse(preview.prorationDate) / 1000);
+    const paidUpgrade = invoicePaid(
+      plan.paid,
+      [
+        invoiceLine(
+          planPrice("team"),
+          1,
+          8000,
+          { start: prorationDate, end: plan.period.end },
+          true,
+        ),
+      ],
+      8000,
+      invoiceId,
+    );
+
+    await Promise.all([deliverStripe(paidUpgrade), deliverStripe(paidUpgrade)]);
+
+    const [status, read, grants] = await Promise.all([
+      readStatus(plan.owner),
+      readManagement(plan.owner),
+      memberCreditGrants(plan.owner, plan.memberId),
+    ]);
+    expect(status).toMatchObject({ tier: "team" });
+    expect(read.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: plan.memberId,
+        usagePackUsd: 20,
+        pendingChange: null,
+      }),
+    ]);
+    const periodEndIso = new Date(plan.period.end * 1000).toISOString();
+    expect(grants).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grantType: "purchased",
+          amount: 20_000,
+          remaining: 20_000,
+          expiresAt: periodEndIso,
+        }),
+        expect.objectContaining({
+          grantType: "bonus",
+          amount: 400,
+          remaining: 400,
+          expiresAt: periodEndIso,
+        }),
+      ]),
+    );
+    expect(grants).toHaveLength(2);
+  });
+
+  it("billing-usage-pack-subscriptions-024 (3/3) preserves Team tier, pack allocation and grants on repeated paid invoice delivery", async () => {
+    const { plan, preview, invoiceId } = await pendingTeamUpgrade();
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      planSubscription({
+        event: plan.paid,
+        tier: "team",
+        packs: [{ price: PRICE_20, quantity: 1 }],
+        start: plan.period.start,
+        end: plan.period.end,
+      }),
+    );
+    const prorationDate = Math.floor(Date.parse(preview.prorationDate) / 1000);
+    const paidUpgrade = invoicePaid(
+      plan.paid,
+      [
+        invoiceLine(
+          planPrice("team"),
+          1,
+          8000,
+          { start: prorationDate, end: plan.period.end },
+          true,
+        ),
+      ],
+      8000,
+      invoiceId,
+    );
+
+    await deliverStripe(paidUpgrade);
+    await deliverStripe(paidUpgrade);
+
+    const [status, read, grants] = await Promise.all([
+      readStatus(plan.owner),
+      readManagement(plan.owner),
+      memberCreditGrants(plan.owner, plan.memberId),
+    ]);
+    expect(status).toMatchObject({ tier: "team" });
+    expect(read.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: plan.memberId,
+        usagePackUsd: 20,
+        pendingChange: null,
+      }),
+    ]);
+    const periodEndIso = new Date(plan.period.end * 1000).toISOString();
+    expect(grants).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          grantType: "purchased",
+          amount: 20_000,
+          remaining: 20_000,
+          expiresAt: periodEndIso,
+        }),
+        expect.objectContaining({
+          grantType: "bonus",
+          amount: 400,
+          remaining: 400,
+          expiresAt: periodEndIso,
+        }),
+      ]),
+    );
+    expect(grants).toHaveLength(2);
   });
 
   it("billing-usage-pack-subscriptions-027 clears the scheduled package change when the admin restores the Plan", async () => {
@@ -2410,9 +3324,7 @@ function paymentSucceeded(
 async function deliverClerk(type: string, data: Record<string, unknown>) {
   context.mocks.clerk.verifyWebhook.mockResolvedValue({ type, data });
   await accept(
-    setupApp({ context, routes: webhooksClerkRoutes })(
-      webhookClerkContract,
-    ).post({
+    clerkWebhookClient.post({
       body: JSON.stringify({ type, data }),
       extraHeaders: {
         "svix-id": `msg_${randomUUID()}`,
@@ -2426,12 +3338,7 @@ async function deliverClerk(type: string, data: Record<string, unknown>) {
 
 async function creditsView(owner: Admin) {
   signIn(owner);
-  const read = await accept(
-    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-      billingUsagePackCreditsContract,
-    ).get({ headers }),
-    [200],
-  );
+  const read = await accept(creditsClient.get({ headers }), [200]);
   return read.body;
 }
 

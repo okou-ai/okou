@@ -1136,6 +1136,102 @@ describe("POST /api/mail/drafts/link", () => {
       status: 200,
     });
   });
+
+  async function connectGmailFast(
+    actor: ApiTestUser,
+    options: { readonly expiringRefreshTo?: string } = {},
+  ): Promise<string> {
+    const token = `gmail-token-${randomUUID()}`;
+    mockGmailConnectorOAuth({
+      subject: `gmail-${actor.userId}`,
+      email: "sender@example.com",
+      accessToken: token,
+    });
+    const refreshTo = options.expiringRefreshTo;
+    if (refreshTo !== undefined) {
+      const refreshToken = `refresh-${token}`;
+      server.use(
+        http.post(
+          "https://oauth2.googleapis.com/token",
+          async ({ request }) => {
+            const body = new URLSearchParams(await request.clone().text());
+            const grant = body.get("grant_type");
+            if (
+              grant === "refresh_token" &&
+              body.get("refresh_token") !== refreshToken
+            ) {
+              return undefined;
+            }
+            return HttpResponse.json({
+              access_token: grant === "refresh_token" ? refreshTo : token,
+              refresh_token: refreshToken,
+              expires_in: 30,
+              token_type: "Bearer",
+              scope: "https://www.googleapis.com/auth/gmail.modify",
+            });
+          },
+        ),
+      );
+    }
+    const started = await connectors.startOauth(actor, "gmail", "oauth");
+    const callback = await connectors.completeOauthCallbackResult("gmail", {
+      code: "authorized",
+      state: oauthState(started.authorizationUrl),
+    });
+    expect(callback.body.status).toBe("success");
+    return token;
+  }
+
+  it("mail-075 (1/2) refreshes an actor's expired Gmail token without changing another actor's account", async () => {
+    const otherActor = bdd.user();
+    const [otherToken, otherThread] = await Promise.all([
+      connectGmailFast(otherActor),
+      chats.createThread(otherActor, { model: null }),
+    ]);
+    mockGmail(otherToken, { "r-other": gmailJson("r-other") });
+    const [, otherBefore] = await Promise.all([
+      linked(otherActor, otherThread.id, "r-other"),
+      gmailAccounts(otherActor),
+    ]);
+
+    const actor = bdd.user();
+    const refreshed = `refreshed-${randomUUID()}`;
+    const [, thread] = await Promise.all([
+      connectGmailFast(actor, { expiringRefreshTo: refreshed }),
+      chats.createThread(actor, { model: null }),
+    ]);
+    mockGmail(refreshed, { "r-draft": gmailJson("r-draft") });
+    const { mailDraftId } = await linked(actor, thread.id, "r-draft");
+
+    await expect(draftOf(actor, mailDraftId)).resolves.toMatchObject({
+      detailAvailable: true,
+    });
+    await expect(gmailAccounts(otherActor)).resolves.toStrictEqual(otherBefore);
+  });
+
+  it("mail-075 (2/2) keeps another actor's Gmail draft readable after the first actor refreshes", async () => {
+    const otherActor = bdd.user();
+    const [otherToken, otherThread] = await Promise.all([
+      connectGmailFast(otherActor),
+      chats.createThread(otherActor, { model: null }),
+    ]);
+    mockGmail(otherToken, { "r-other": gmailJson("r-other") });
+    const otherDraft = await linked(otherActor, otherThread.id, "r-other");
+
+    const actor = bdd.user();
+    const refreshed = `refreshed-${randomUUID()}`;
+    const [, thread] = await Promise.all([
+      connectGmailFast(actor, { expiringRefreshTo: refreshed }),
+      chats.createThread(actor, { model: null }),
+    ]);
+    mockGmail(refreshed, { "r-draft": gmailJson("r-draft") });
+    const { mailDraftId } = await linked(actor, thread.id, "r-draft");
+
+    await draftOf(actor, mailDraftId);
+    await expect(
+      draftOf(otherActor, otherDraft.mailDraftId),
+    ).resolves.toMatchObject({ detailAvailable: true });
+  });
 });
 
 describe("thread email list", () => {

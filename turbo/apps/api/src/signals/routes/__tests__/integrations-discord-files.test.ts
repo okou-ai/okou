@@ -21,6 +21,7 @@ import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
 import {
   configureDiscordApp,
   createPublicDiscordBinding,
+  removePublicDiscordBinding,
   uniqueDiscordSnowflake,
   type DiscordFixture,
 } from "./helpers/discord";
@@ -1365,6 +1366,146 @@ describe("Canonical Discord file publication and delivery", () => {
     };
     expect(first.body.delivery).toStrictEqual(expectedFailure);
     expect(second.body.delivery).toStrictEqual(expectedFailure);
+    expect(world.uploads).toHaveLength(1);
+  });
+
+  it("integrations-discord-files-029 (1/2) does not replay a receipt after its verified connection is removed", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("id,name\n1,alpha\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+    });
+
+    const operationId = randomUUID();
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          operationId,
+          channelId,
+        },
+      }),
+      [200],
+    );
+    if (!initialized.body.uploadUrl) {
+      throw new Error("Expected a signed upload URL");
+    }
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+    await accept(
+      app(integrationsDiscordUploadMaterializeContract).materialize({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [200],
+    );
+
+    const initialComplete = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [200],
+    );
+    expect(initialComplete.body.delivery.status).toBe("delivered");
+
+    await removePublicDiscordBinding(context, admin);
+
+    const afterRemoval = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [404],
+    );
+    expect(afterRemoval.body.error.code).toBe("NOT_FOUND");
+    expect(world.uploads).toHaveLength(1);
+  });
+
+  it("integrations-discord-files-029 (2/2) does not replay a receipt after its verified connection is replaced", async () => {
+    const { admin, fixture } = await bindAdminDiscord();
+    createStorageMock();
+    const channelId = uniqueDiscordSnowflake();
+    const bytes = Buffer.from("id,name\n1,alpha\n", "utf8");
+    const world = serveDiscordWorld(fixture, {
+      channels: [
+        { id: channelId, type: 0, guild_id: fixture.guildId, name: "general" },
+      ],
+    });
+
+    const operationId = randomUUID();
+    const initialized = await accept(
+      app(integrationsDiscordUploadInitContract).init({
+        headers: signIn(admin),
+        body: {
+          filename: "report.csv",
+          length: bytes.byteLength,
+          contentType: "text/csv",
+          checksumSha256: sha256Hex(bytes),
+          operationId,
+          channelId,
+        },
+      }),
+      [200],
+    );
+    if (!initialized.body.uploadUrl) {
+      throw new Error("Expected a signed upload URL");
+    }
+    await putUploadedBytes(
+      initialized.body.uploadUrl,
+      bytes,
+      "text/csv",
+      initialized.body.uploadHeaders,
+    );
+    await accept(
+      app(integrationsDiscordUploadMaterializeContract).materialize({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [200],
+    );
+
+    const initialComplete = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [200],
+    );
+    expect(initialComplete.body.delivery.status).toBe("delivered");
+
+    await removePublicDiscordBinding(context, admin);
+
+    const rebound = await createPublicDiscordBinding(context, {
+      userId: admin.userId,
+      orgId: admin.orgId,
+      orgRole: "org:admin",
+      flow: "connect",
+      guildId: fixture.guildId,
+      discordUserId: fixture.discordUserId,
+    });
+    expect(rebound.connectionId).not.toBe(fixture.connectionId);
+
+    const afterRebind = await accept(
+      app(integrationsDiscordUploadCompleteContract).complete({
+        headers: signIn(admin),
+        body: { assetId: initialized.body.assetId, operationId },
+      }),
+      [404],
+    );
+    expect(afterRebind.body.error.code).toBe("NOT_FOUND");
     expect(world.uploads).toHaveLength(1);
   });
 });

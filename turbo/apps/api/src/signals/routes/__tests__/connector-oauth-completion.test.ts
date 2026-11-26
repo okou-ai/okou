@@ -4,10 +4,12 @@ import {
   type ConnectorAccountMutationIntent,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { server } from "../../../mocks/server";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -343,4 +345,63 @@ describe("connector OAuth completion receipts", () => {
     );
     await expectMissingReceipt(owner, add.oauthAttemptId, customTarget);
   });
+
+  it("connector-oauth-completion-001 (1/2) shows the GitHub receipt only to its owner and exact target", async () => {
+    const { owner, attemptId, account } = await completedGithubAdd();
+    const colleague = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    const elsewhere = bdd.user({ userId: owner.userId });
+
+    const receipt = await readReceipt(owner, attemptId, githubTarget);
+    expect(receipt.status).toBe(200);
+    expect(receipt.headers.get("cache-control")).toBe("no-store");
+    expect(receipt.body).toStrictEqual({ connectionId: account.id });
+
+    const unknown = await expectMissingReceipt(
+      owner,
+      randomUUID(),
+      githubTarget,
+    );
+    await expect(
+      expectMissingReceipt(owner, attemptId, {
+        kind: "builtin",
+        connectorSlug: "gitlab",
+      }),
+    ).resolves.toStrictEqual(unknown);
+    await expect(
+      expectMissingReceipt(colleague, attemptId, githubTarget),
+    ).resolves.toStrictEqual(unknown);
+    await expect(
+      expectMissingReceipt(elsewhere, attemptId, githubTarget),
+    ).resolves.toStrictEqual(unknown);
+    const anonymous = await readReceipt(null, attemptId, githubTarget);
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("connector-oauth-completion-001 (2/2) keeps the receipt on retry and removes it with the account", async () => {
+    const { owner, attemptId, account } = await completedGithubAdd();
+
+    const retried = await readReceipt(owner, attemptId, githubTarget);
+    expect(retried.status).toBe(200);
+    expect(retried.body).toStrictEqual({ connectionId: account.id });
+
+    server.use(
+      http.delete(
+        "https://api.github.com/applications/github-client-id/grant",
+        () => {
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    await connectors.deleteBuiltinConnectorAccount(owner, "github", account.id);
+    await expectMissingReceipt(owner, attemptId, githubTarget);
+  });
 });
+
+/** An owner whose GitHub OAuth add attempt completed with one account. */
+async function completedGithubAdd() {
+  mockGitHubConnectorOAuth();
+  const owner = bdd.user();
+  const attemptId = await connectGithub(owner);
+  const account = await connectors.readDefaultBuiltinAccount(owner, "github");
+  return { owner, attemptId, account };
+}

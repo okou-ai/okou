@@ -230,11 +230,11 @@ describe("Marketing reward source events", () => {
   });
 
   it("marketing-reward-events-006 (3/3) publishes no additional authorization when the Slack user reconnects", async () => {
-    const { consumer, admin, teamId, slackUserId } =
-      await anonymousSlackWorkspace();
-    await connectSlackUser(admin, teamId, slackUserId);
-    await integrations.installSlackWorkspace(admin, {
-      teamId,
+    integrations.configureSlackAppMocks();
+    const consumer = marketingRewardConsumer();
+    const admin = integrations.user({ orgRole: "org:admin" });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(admin, {
       installerSlackUserId: slackUserId,
     });
     await flushWaitUntilForTest();

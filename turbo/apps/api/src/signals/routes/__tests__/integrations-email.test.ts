@@ -5,6 +5,7 @@ import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-thread
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { Webhook } from "svix";
@@ -21,12 +22,14 @@ import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { emailInboundRoutes } from "../email-inbound";
 import { integrationsEmailRoutes } from "../integrations-email";
+import { webFileUrlRoutes } from "../web-file-url";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
@@ -40,6 +43,7 @@ const context = testContext();
 
 const AUTH_HEADERS = Object.freeze({ authorization: "Bearer clerk-session" });
 const EMAIL_CHANNEL_ADDRESS = "okou@okou.io";
+const S3_DOWNLOAD_ORIGIN = "https://resend-attachments.s3.amazonaws.com";
 
 interface ClerkDirectoryUser {
   readonly id: string;
@@ -848,6 +852,133 @@ describe("Email integration", () => {
       [403],
     );
   });
+
+  async function deliverPrivateAttachmentEmail() {
+    const harness = createEmailHarness();
+    await harness.configureRunner();
+    const admin = await harness.provisionProAdmin({ useRolloutAddress: true });
+    const emailId = randomUUID();
+    const attachmentId = randomUUID();
+    const downloadUrl = `${S3_DOWNLOAD_ORIGIN}/attachments/${attachmentId}/comparison.txt`;
+    let downloadAuthorizationHeader: string | null = "unseen";
+
+    server.use(
+      http.get(
+        `https://api.resend.com/emails/receiving/${emailId}/attachments/${attachmentId}`,
+        ({ request }) => {
+          if (
+            request.headers.get("authorization") !==
+            `Bearer ${env("RESEND_API_KEY")}`
+          ) {
+            return HttpResponse.json(
+              { error: "Unauthorized" },
+              { status: 401 },
+            );
+          }
+          return HttpResponse.json({
+            id: attachmentId,
+            download_url: downloadUrl,
+          });
+        },
+      ),
+      http.get(downloadUrl, ({ request }) => {
+        downloadAuthorizationHeader = request.headers.get("authorization");
+        return new HttpResponse("A private comparison", {
+          status: 200,
+          headers: { "content-type": "text/plain" },
+        });
+      }),
+    );
+
+    await harness.deliverInboundEmail({
+      emailId,
+      from: admin.email,
+      subject: "Compare attachment",
+      text: "Please inspect the attached file.",
+      attachments: [{ id: attachmentId, filename: "comparison.txt" }],
+    });
+
+    const threads = await harness.listThreadIds(admin.userId, admin.orgId);
+    expect(threads).toHaveLength(1);
+    const threadId = threads[0];
+    if (!threadId) {
+      throw new Error("Expected one created email conversation");
+    }
+    harness.signIn(admin.userId, admin.orgId);
+    const events = await readProjectedChatEvents(context, {
+      threadId,
+      headers: AUTH_HEADERS,
+    });
+    const promptEvent = events.find((event) => {
+      return event.eventType === "input.prompt";
+    });
+    if (!promptEvent || promptEvent.eventType !== "input.prompt") {
+      throw new Error("Expected input.prompt event");
+    }
+    const filePart = promptEvent.userMessage.parts.find((part) => {
+      return part.type === "file";
+    });
+    if (!filePart || filePart.type !== "file" || !filePart.fileId) {
+      throw new Error("Expected file part with fileId in input.prompt");
+    }
+    return {
+      harness,
+      admin,
+      downloadUrl,
+      downloadAuthorizationHeader,
+      filePart,
+      fileId: filePart.fileId,
+    };
+  }
+
+  it("integrations-email-040 (1/2) downloads and stores the attachment without forwarding the Resend credential and records the prompt file part", async () => {
+    const { harness, downloadAuthorizationHeader, filePart } =
+      await deliverPrivateAttachmentEmail();
+
+    expect(downloadAuthorizationHeader).toBeNull();
+    const storedAttachment = harness.s3Puts.find((put) => {
+      return put.bodyText === "A private comparison";
+    });
+    expect(storedAttachment).toBeDefined();
+    expect(storedAttachment?.contentType).toBe("text/plain");
+    expect(filePart.filenameSnapshot).toBe("comparison.txt");
+    expect(filePart.contentType).toBe("text/plain");
+  });
+
+  it("integrations-email-040 (2/2) resolves the attachment privately for the owner and denies an outsider", async () => {
+    const { harness, admin, downloadUrl, fileId } =
+      await deliverPrivateAttachmentEmail();
+    const outsiderUserId = `user_outsider_${randomUUID()}`;
+    const outsiderOrgId = `org_outsider_${randomUUID()}`;
+    harness.addDirectoryUser({
+      id: outsiderUserId,
+      email: `outsider-${randomUUID()}@workspace.test`,
+      orgIds: [outsiderOrgId],
+    });
+    const fileUrlClient = setupApp({ context, routes: webFileUrlRoutes })(
+      webFilesContract,
+    );
+
+    harness.signIn(admin.userId, admin.orgId);
+    const resolved = await accept(
+      fileUrlClient.fileUrl({
+        headers: AUTH_HEADERS,
+        query: { file_id: fileId },
+      }),
+      [200],
+    );
+    expect(resolved.body.publicUrl).toBeNull();
+    expect(resolved.body.url).not.toBe(downloadUrl);
+
+    harness.signIn(outsiderUserId, outsiderOrgId);
+    await accept(
+      fileUrlClient.fileUrl({
+        headers: AUTH_HEADERS,
+        query: { file_id: fileId },
+      }),
+      [404],
+    );
+  });
 });
 
 describe("Email multi-account connections", () => {
@@ -1132,5 +1263,109 @@ describe("Email multi-account connections", () => {
       harness.listThreadIds(admin.userId, admin.orgId),
     ).resolves.toHaveLength(0);
     expect(harness.sentEmails).toHaveLength(0);
+  });
+
+  it("integrations-email-074 (1/2) automatically adds gmail accounts and keeps both listed after deleting the login connector account", async () => {
+    const harness = createEmailHarness();
+    const userId = `user_gmail_${randomUUID()}`;
+    const orgId = `org_gmail_${randomUUID()}`;
+    const loginEmail = `login-gmail-${randomUUID()}@gmail.test`;
+    const secondEmail = `second-gmail-${randomUUID()}@gmail.test`;
+    harness.addDirectoryUser({
+      id: userId,
+      email: loginEmail,
+      orgIds: [orgId],
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId, orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.EmailIntegration]: true },
+    );
+
+    const loginConnectionId = await harness.connectGmailMailbox(
+      { userId, orgId },
+      loginEmail,
+      "sub-login-gmail",
+    );
+    await harness.connectGmailMailbox(
+      { userId, orgId },
+      secondEmail,
+      "sub-second-gmail",
+    );
+
+    const initial = await harness.getLinkStatus(userId, orgId);
+    expect(initial.emails).toStrictEqual([loginEmail, secondEmail]);
+    expect(initial.emailSources).toStrictEqual({
+      [loginEmail]: "gmail",
+      [secondEmail]: "gmail",
+    });
+
+    harness.signIn(userId, orgId);
+    await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).delete({
+        headers: AUTH_HEADERS,
+        params: { connectionId: loginConnectionId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    const afterConnectorDelete = await harness.getLinkStatus(userId, orgId);
+    expect(afterConnectorDelete.emails).toStrictEqual([
+      loginEmail,
+      secondEmail,
+    ]);
+  });
+
+  it("integrations-email-074 (2/2) preserves individual deletion of a gmail-added email and does not relink it on inbound mail", async () => {
+    const harness = createEmailHarness();
+    const userId = `user_gmail_${randomUUID()}`;
+    const orgId = `org_gmail_${randomUUID()}`;
+    const loginEmail = `login-gmail-${randomUUID()}@gmail.test`;
+    const secondEmail = `second-gmail-${randomUUID()}@gmail.test`;
+    harness.addDirectoryUser({
+      id: userId,
+      email: loginEmail,
+      orgIds: [orgId],
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId, orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.EmailIntegration]: true },
+    );
+
+    const loginConnectionId = await harness.connectGmailMailbox(
+      { userId, orgId },
+      loginEmail,
+      "sub-login-gmail",
+    );
+    await harness.connectGmailMailbox(
+      { userId, orgId },
+      secondEmail,
+      "sub-second-gmail",
+    );
+
+    harness.signIn(userId, orgId);
+    await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).delete({
+        headers: AUTH_HEADERS,
+        params: { connectionId: loginConnectionId },
+        body: { target: { kind: "builtin", connectorSlug: "gmail" } },
+      }),
+      [200],
+    );
+    await harness.unlinkEmail(userId, orgId, secondEmail);
+    await harness.deliverInboundEmail({
+      from: secondEmail,
+      subject: "After individual deletion",
+      text: "Do not relink",
+    });
+
+    const finalStatus = await harness.getLinkStatus(userId, orgId);
+    expect(finalStatus.emails).toStrictEqual([loginEmail]);
+    expect(finalStatus.emailSources).toStrictEqual({});
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { orgDeleteContract } from "@okouai/api-contracts/contracts/org-routes";
 import { expect, test } from "vitest";
 
@@ -6,11 +7,14 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { integrationsSlackRoutes } from "../integrations-slack";
 import { orgDeleteRoutes } from "../org-delete";
 import { createBddApi } from "./helpers/api-bdd";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import {
   postConcurrencyEntitlementsInvoicePaid,
   postOneTimePurchaseCompleted,
@@ -739,4 +743,60 @@ test("org-delete-billing-022 retries a failed Clerk-deletion refund on redeliver
       idempotencyKey: `org-delete-refund:${workspace.orgId}:${subscription.id}:in_delete_clerk:${metadata.vm0_org_delete_at ?? "missing"}`,
     },
   ]);
+});
+
+test("org-delete-billing-019 keeps the organization when its proportional refund fails", async () => {
+  const workspace = await adminWorkspace();
+  const [slack, { subscription }] = await Promise.all([
+    createPublicSlackOrgApi(context).installOrg({
+      withConnection: true,
+      actor: workspace.admin,
+    }),
+    workspace.subscribePlan(),
+    bdd.updateUserTimezone(workspace.admin, "Asia/Shanghai"),
+    bdd.updateUserLocale(workspace.admin, "en-US"),
+  ]);
+  stripeAtDeletion({
+    subscriptionPages: [[subscription]],
+    invoices: {
+      [subscription.id]: [
+        paidInvoice([{ amount: 1000, period: billingPeriod(50) }]),
+      ],
+    },
+  });
+  const stripe = context.mocks.stripe;
+  stripe.creditNotes.create.mockRejectedValueOnce(
+    Object.assign(new Error("Stripe is temporarily unavailable"), {
+      type: "StripeAPIError",
+      statusCode: 503,
+    }),
+  );
+
+  const response = await workspace.deleteOrg([500]);
+
+  expect(response.status).toBe(500);
+  expect(stripe.subscriptions.cancel).toHaveBeenCalledOnce();
+  expect(
+    context.mocks.clerk.organizations.deleteOrganization,
+  ).not.toHaveBeenCalled();
+  createRouteMocks(context).clerk.session(
+    workspace.admin.userId,
+    workspace.orgId,
+  );
+  const slackApi = setupApp({ context, routes: integrationsSlackRoutes })(
+    integrationsSlackContract,
+  );
+  const [preferences, status] = await Promise.all([
+    createMiscRoutesApi(context).readPreferences(workspace.admin),
+    accept(slackApi.getStatus({ headers }), [200]),
+  ]);
+  expect(preferences.body).toMatchObject({
+    timezone: "Asia/Shanghai",
+    locale: "en-US",
+  });
+  expect(status.body).toMatchObject({
+    isInstalled: true,
+    isConnected: true,
+    workspaceName: slack.slackWorkspaceName,
+  });
 });

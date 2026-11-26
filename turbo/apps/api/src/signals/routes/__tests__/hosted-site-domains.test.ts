@@ -2,6 +2,7 @@ import {
   createHash,
   generateKeyPair,
   type KeyObject,
+  randomBytes,
   randomUUID,
   verify,
 } from "node:crypto";
@@ -18,6 +19,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { hostedSiteAccessRoutes } from "../hosted-site-access";
 import { hostedSiteDomainRoutes } from "../hosted-site-domains";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
@@ -609,6 +611,222 @@ describe("hosted site custom domains", () => {
     expect(removed.body.domains).toStrictEqual([]);
     expect(provider.created).toStrictEqual([]);
     expect(provider.deleted).toStrictEqual([]);
+  });
+
+  function signInWithAppSession(actor: ApiTestUser) {
+    const sessionId = `sess_${actor.userId}`;
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      toAuth: () => {
+        return {
+          userId: actor.userId,
+          orgId: actor.orgId,
+          orgRole: actor.orgRole,
+          sessionId,
+        };
+      },
+    });
+    context.mocks.clerk.sessions.getSession.mockImplementation((id) => {
+      return Promise.resolve({
+        id,
+        userId: String(id).slice("sess_".length),
+        status: "active",
+        expireAt: Date.parse("2100-01-01T00:00:00Z"),
+      });
+    });
+    return { authorization: "Bearer clerk-session" };
+  }
+
+  function anonymous() {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    return {};
+  }
+
+  async function privateCustomDomainSite() {
+    mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_TARGET", TARGET);
+    mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID", ZONE_ID);
+    mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN", `token-${randomUUID()}`);
+    mockEnv("HOSTED_SITE_CUSTOM_DOMAIN_WORKER", WORKER);
+    const domains = domainsApi();
+    const access = setupApp({ context, routes: hostedSiteAccessRoutes })(
+      hostContract,
+    );
+    const owner = await member();
+    const [, site] = await Promise.all([
+      upgrade(owner),
+      publishPublicSite(owner),
+      enableCustomDomains(owner),
+    ]);
+    const dns = installDns();
+    const provider = installProvider();
+    provider.activate();
+    const hostname = `${site.publicSlug}.customer-example.net`;
+    const connect = async () => {
+      const added = await accept(
+        domains.addSiteDomain({
+          headers: signIn(owner),
+          params: { siteId: site.siteId },
+          body: { hostname },
+        }),
+        [200],
+      );
+      const domain = added.body.domains.find((candidate) => {
+        return candidate.hostname === hostname;
+      });
+      if (!domain) {
+        throw new Error(`Expected ${hostname} in domain settings`);
+      }
+      const ownership = domain.records.find((record) => {
+        return record.type === "TXT";
+      });
+      if (!ownership) {
+        throw new Error("Expected a TXT ownership record");
+      }
+      dns.set(ownership.name, "TXT", [`"${ownership.value}"`]);
+      dns.set(hostname, "CNAME", [`${TARGET}.`]);
+      const verified = await accept(
+        domains.verifySiteDomain({
+          headers: signIn(owner),
+          params: { siteId: site.siteId, domainId: domain.id },
+          body: { expectedRevision: domain.revision },
+        }),
+        [200],
+      );
+      const selected = await accept(
+        domains.selectSiteDomain({
+          headers: signIn(owner),
+          params: { siteId: site.siteId },
+          body: {
+            domainId: domain.id,
+            expectedRevision: verified.body.revision,
+          },
+        }),
+        [200],
+      );
+      return domainOf(selected.body, domain.id);
+    };
+    const makePrivate = async () => {
+      const visibility = await accept(
+        access.siteVisibility({
+          headers: signIn(owner),
+          params: { siteId: site.siteId },
+        }),
+        [200],
+      );
+      await accept(
+        access.updateSiteVisibility({
+          headers: signIn(owner),
+          params: { siteId: site.siteId },
+          body: {
+            visibility: "private",
+            expectedRevision: visibility.body.revision,
+          },
+        }),
+        [200],
+      );
+    };
+    const [domain] = await Promise.all([connect(), makePrivate()]);
+    const authorizeSession = (targetOrigin: string) => {
+      const verifier = randomBytes(32).toString("base64url");
+      return {
+        verifier,
+        request: access.authorizeSiteSession({
+          headers: signInWithAppSession(owner),
+          params: { siteId: site.siteId },
+          body: {
+            origin: targetOrigin,
+            codeChallenge: createHash("sha256")
+              .update(verifier)
+              .digest("base64url"),
+            state: randomBytes(32).toString("base64url"),
+          },
+        }),
+      };
+    };
+    const customOriginSession = async (targetOrigin: string) => {
+      const authorization = authorizeSession(targetOrigin);
+      const authorized = await accept(authorization.request, [200]);
+      const code =
+        new URL(authorized.body.callbackUrl).searchParams.get("code") ?? "";
+      const exchanged = await accept(
+        access.exchangeSiteSession({
+          headers: anonymous(),
+          params: { siteId: site.siteId },
+          body: {
+            origin: targetOrigin,
+            code,
+            codeVerifier: authorization.verifier,
+          },
+        }),
+        [200],
+      );
+      return exchanged.body.sessionToken;
+    };
+    const sessionAccess = async (session: string, targetOrigin: string) => {
+      anonymous();
+      const response = await accept(
+        access.siteAccess({
+          headers: { authorization: `Bearer ${session}` },
+          params: { siteId: site.siteId },
+          query: { origin: targetOrigin },
+        }),
+        [200],
+      );
+      return response.body;
+    };
+    return {
+      owner,
+      site,
+      origin: `https://${hostname}`,
+      domain,
+      domains,
+      connect,
+      authorizeSession,
+      customOriginSession,
+      sessionAccess,
+    };
+  }
+
+  it("hosted-site-domains-010 (1/2) trusts only the exact custom origin for a private website session", async () => {
+    const { origin, authorizeSession, customOriginSession, sessionAccess } =
+      await privateCustomDomainSite();
+
+    await accept(authorizeSession(`${origin}:8443`).request, [403]);
+    const session = await customOriginSession(origin);
+
+    await expect(sessionAccess(session, origin)).resolves.toMatchObject({
+      allowed: true,
+    });
+  });
+
+  it("hosted-site-domains-010 (2/2) does not keep a custom-origin session across domain rebinding", async () => {
+    const {
+      owner,
+      site,
+      origin,
+      domain,
+      domains,
+      connect,
+      customOriginSession,
+      sessionAccess,
+    } = await privateCustomDomainSite();
+    const session = await customOriginSession(origin);
+
+    await accept(
+      domains.removeSiteDomain({
+        headers: signIn(owner),
+        params: { siteId: site.siteId, domainId: domain.id },
+        body: { expectedRevision: domain.revision },
+      }),
+      [200],
+    );
+    await connect();
+
+    await expect(sessionAccess(session, origin)).resolves.toMatchObject({
+      allowed: false,
+    });
   });
 
   it("hosted-site-domains-009 revokes the custom hostname when the website goes offline and keeps manual cleanup", async () => {

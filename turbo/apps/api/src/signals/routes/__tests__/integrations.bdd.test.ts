@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -14,13 +14,16 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
+  createAgentPhoneBddApi,
   uniquePhoneHandle,
 } from "./helpers/api-bdd-agentphone";
 import {
+  agentPhoneBddWebhookSecret,
   createBddIntegrationApi,
   mockSlackIdentityLookup,
 } from "./helpers/api-bdd-integrations";
@@ -31,10 +34,12 @@ import { uniqueSlackUserId } from "./helpers/slack-public-install";
 const context = testContext();
 const bdd = createBddApi(context);
 const integrations = createBddIntegrationApi(context);
+const agentPhone = createAgentPhoneBddApi(context);
 const runReads = createRunReadsApi(context);
 const routeMocks = createRouteMocks(context);
 
 const TELEGRAM_OFFICIAL_BOT_ID = "9876543210";
+const AGENTPHONE_API_BASE_URL = "https://api.agentphone.test";
 
 function signIn(actor: ApiTestUser): { authorization: string } {
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -45,6 +50,33 @@ function connectorAccountsClient() {
   return setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
+}
+
+function extractHttpsUrlFromText(text: string): URL {
+  const token = text.split(/\s+/u).find((part) => {
+    return part.startsWith("https://");
+  });
+  if (!token) {
+    throw new Error(`Expected an https URL in text: ${text}`);
+  }
+  return new URL(token);
+}
+
+function signAgentPhoneWebhook(
+  body: string,
+  event = "agent.message",
+  webhookId?: string,
+): Record<string, string> {
+  const timestamp = String(Math.floor(now() / 1000));
+  const signature = createHmac("sha256", agentPhoneBddWebhookSecret())
+    .update(`${timestamp}.${body}`)
+    .digest("hex");
+  return {
+    "x-webhook-signature": `sha256=${signature}`,
+    "x-webhook-timestamp": timestamp,
+    "x-webhook-event": event,
+    ...(webhookId ? { "x-webhook-id": webhookId } : {}),
+  };
 }
 
 function stringifyCalls(calls: readonly (readonly unknown[])[]): string[] {
@@ -1092,5 +1124,400 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     expect(uploadComplete.body).toMatchObject({
       error: { code: "NOT_FOUND" },
     });
+  });
+
+  it("integrations.bdd-066 (1/2) keeps AgentPhone start-link, connect, send, and unlink boundaries visible", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    integrations.clearAgentPhoneProvider();
+    const user = bdd.user({ orgRole: "org:admin" });
+    const otherUser = bdd.user({ orgRole: "org:admin" });
+    const thirdUser = bdd.user({ orgRole: "org:admin" });
+    const phoneHandle = uniquePhoneHandle();
+
+    await expect(
+      integrations.requestStartAgentPhoneLink(null, { phoneHandle }, [401]),
+    ).resolves.toMatchObject({ body: { error: { code: "UNAUTHORIZED" } } });
+
+    await expect(
+      integrations.requestStartAgentPhoneLink(user, { phoneHandle }, [503]),
+    ).resolves.toMatchObject({
+      body: {
+        error: {
+          code: "NOT_CONFIGURED",
+          message: "Phone messaging is not configured",
+        },
+      },
+    });
+
+    integrations.configureAgentPhoneProvider();
+    let providerMode: "ok" | "missing-id" | "503" = "ok";
+    const verificationTexts: string[] = [];
+    server.use(
+      http.post(
+        `${AGENTPHONE_API_BASE_URL}/v1/messages`,
+        async ({ request }) => {
+          const body = (await request.json()) as {
+            readonly body?: string;
+            readonly to_number?: string;
+          };
+          if (providerMode === "503") {
+            return HttpResponse.json(
+              { detail: "Temporarily unavailable" },
+              { status: 503 },
+            );
+          }
+          if (body.body) {
+            verificationTexts.push(body.body);
+          }
+          if (providerMode === "missing-id") {
+            return HttpResponse.json({
+              status: "sent",
+              channel: "sms",
+              from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+              to_number: body.to_number ?? phoneHandle,
+            });
+          }
+          return HttpResponse.json({
+            id: "msg-bdd-agentphone",
+            status: "sent",
+            channel: "sms",
+            from_number: AGENTPHONE_BDD_PHONE_NUMBER,
+            to_number: body.to_number ?? phoneHandle,
+          });
+        },
+      ),
+    );
+
+    const started = await integrations.requestStartAgentPhoneLink(
+      user,
+      { phoneHandle },
+      [200],
+    );
+    expect(started.body).toMatchObject({
+      phoneHandle,
+      verificationSent: true,
+    });
+    const rateLimited = await integrations.requestStartAgentPhoneLink(
+      user,
+      { phoneHandle },
+      [429],
+    );
+    expect(rateLimited.body).toMatchObject({
+      error: { code: "TOO_MANY_REQUESTS" },
+    });
+
+    const verificationUrl = extractHttpsUrlFromText(verificationTexts[0] ?? "");
+    expect(verificationUrl.origin).toBe("https://app.okou.ai");
+    for (const key of ["handle", "agent", "ts", "sig", "channel"]) {
+      expect(verificationUrl.searchParams.get(key)).toBeTruthy();
+    }
+    const realConnectBody = {
+      phoneHandle: verificationUrl.searchParams.get("handle") ?? "",
+      agentphoneAgentId: verificationUrl.searchParams.get("agent") ?? "",
+      timestamp: Number(verificationUrl.searchParams.get("ts")),
+      signature: verificationUrl.searchParams.get("sig") ?? "",
+      channel: verificationUrl.searchParams.get("channel") ?? undefined,
+    };
+
+    await expect(
+      integrations.requestConnectAgentPhone(
+        user,
+        { ...realConnectBody, signature: "forged-sig" },
+        [400],
+      ),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      integrations.requestConnectAgentPhone(
+        user,
+        { ...realConnectBody, channel: "voice" },
+        [400],
+      ),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(user),
+    ).resolves.toMatchObject({ linked: false });
+
+    const connected = await integrations.requestConnectAgentPhone(
+      user,
+      realConnectBody,
+      [200],
+    );
+    expect(connected.body).toMatchObject({ phoneHandle });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(user),
+    ).resolves.toMatchObject({ linked: true, phoneHandle });
+
+    await expect(
+      integrations.requestSendPhoneMessage(user, { text: "no agent" }, [404]),
+    ).resolves.toMatchObject({
+      body: { error: { message: "Phone agent not found" } },
+    });
+
+    const sent = await integrations.requestSendPhoneMessage(
+      user,
+      { text: "with agent", agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID },
+      [200],
+    );
+    expect(sent.body).toStrictEqual({
+      ok: true,
+      messageId: "msg-bdd-agentphone",
+      channel: "sms",
+      toNumber: phoneHandle,
+    });
+
+    providerMode = "missing-id";
+    const rawPhoneRequest = setupRawAppRequest({
+      context,
+      routes: integrationsPhoneMessageRoutes,
+    });
+    const missingIdRes = await rawPhoneRequest(
+      "/api/integrations/phone/message",
+      {
+        method: "POST",
+        headers: { ...signIn(user), "content-type": "application/json" },
+        body: JSON.stringify({
+          text: "missing id",
+          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+        }),
+      },
+    );
+    expect(missingIdRes.status).toBe(500);
+
+    providerMode = "503";
+    const providerDown = await integrations.requestSendPhoneMessage(
+      user,
+      { text: "provider down", agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID },
+      [502],
+    );
+    expect(providerDown.body).toMatchObject({
+      error: { code: "AGENTPHONE_ERROR" },
+    });
+
+    await expect(
+      integrations.requestConnectAgentPhone(otherUser, realConnectBody, [409]),
+    ).resolves.toMatchObject({ body: { error: { code: "CONFLICT" } } });
+    await expect(
+      integrations.requestStartAgentPhoneLink(user, { phoneHandle }, [409]),
+    ).resolves.toMatchObject({ body: { error: { code: "CONFLICT" } } });
+
+    await integrations.requestUnlinkAgentPhone(user, [204]);
+    await expect(
+      integrations.getAgentPhoneLinkStatus(user),
+    ).resolves.toMatchObject({ linked: false });
+    await integrations.requestUnlinkAgentPhone(user, [404]);
+
+    const unavailable = await integrations.requestStartAgentPhoneLink(
+      thirdUser,
+      { phoneHandle: uniquePhoneHandle() },
+      [503],
+    );
+    expect(unavailable.body).toMatchObject({
+      error: { code: "PROVIDER_UNAVAILABLE" },
+    });
+    if ("error" in unavailable.body) {
+      expect(unavailable.body.error.message.toLowerCase()).toContain("minute");
+    }
+  });
+
+  it("integrations.bdd-066 (2/2) keeps AgentPhone webhook boundaries visible", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    integrations.clearAgentPhoneProvider();
+    agentPhone.captureAgentPhoneSends();
+
+    const baseMessageBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "/connect",
+      },
+    });
+    const unconfigured = await integrations.requestAgentPhoneWebhook(
+      baseMessageBody,
+      {},
+      [404],
+    );
+    expect(unconfigured.body).toBe("Not Found");
+
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+
+    const badSig = await integrations.requestAgentPhoneWebhook(
+      baseMessageBody,
+      {
+        "x-webhook-signature": "sha256=invalid",
+        "x-webhook-timestamp": String(Math.floor(now() / 1000)),
+        "x-webhook-event": "agent.message",
+      },
+      [401],
+    );
+    expect(badSig.body).toBe("Unauthorized");
+
+    const lifecycleBody = JSON.stringify({
+      event: "agent.provisioned",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+    });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        lifecycleBody,
+        signAgentPhoneWebhook(lifecycleBody, "agent.provisioned"),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+
+    const unsupportedChannelBody = JSON.stringify({
+      event: "agent.message",
+      channel: "voice",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "hello",
+      },
+    });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        unsupportedChannelBody,
+        signAgentPhoneWebhook(unsupportedChannelBody),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+
+    const missingMessageIdBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "hello",
+      },
+    });
+    const missingMsgRes = await integrations.requestAgentPhoneWebhook(
+      missingMessageIdBody,
+      signAgentPhoneWebhook(missingMessageIdBody),
+      [500],
+    );
+    expect(missingMsgRes.body).toBe(
+      "AgentPhone message webhook is missing message id",
+    );
+
+    const missingAgentIdBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "hello",
+      },
+    });
+    const missingAgentRes = await integrations.requestAgentPhoneWebhook(
+      missingAgentIdBody,
+      signAgentPhoneWebhook(missingAgentIdBody),
+      [500],
+    );
+    expect(missingAgentRes.body).toBe(
+      "AgentPhone message webhook is missing agent id",
+    );
+
+    const wrongDestinationBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: "+12025550199",
+        message: "hello",
+      },
+    });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        wrongDestinationBody,
+        signAgentPhoneWebhook(wrongDestinationBody),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+
+    const invalidRecipientBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: "not-a-phone",
+        message: "hello",
+      },
+    });
+    const invalidRecipientRes = await integrations.requestAgentPhoneWebhook(
+      invalidRecipientBody,
+      signAgentPhoneWebhook(invalidRecipientBody),
+      [500],
+    );
+    expect(typeof invalidRecipientRes.body).toBe("string");
+    expect(String(invalidRecipientRes.body).toLowerCase()).toContain(
+      "recipient",
+    );
+
+    const dupWebhookId = randomUUID();
+    const dupSmsBody = JSON.stringify({
+      event: "agent.message",
+      channel: "sms",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "/connect",
+      },
+    });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        dupSmsBody,
+        signAgentPhoneWebhook(dupSmsBody, "agent.message", dupWebhookId),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        dupSmsBody,
+        signAgentPhoneWebhook(dupSmsBody, "agent.message", dupWebhookId),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+
+    const unmentionedGroupBody = JSON.stringify({
+      event: "agent.message",
+      channel: "imessage",
+      agentId: AGENTPHONE_BDD_AGENT_ID,
+      data: {
+        messageId: `msg_${randomUUID()}`,
+        from: uniquePhoneHandle(),
+        to: AGENTPHONE_BDD_PHONE_NUMBER,
+        message: "group chatter without mention",
+        conversationId: `conv-${randomUUID()}`,
+        receivedAt: "2026-06-30T10:00:00.000Z",
+        group: {
+          isGroup: true,
+          groupId: `grp_${randomUUID().slice(0, 12)}`,
+          participants: [{ identifier: uniquePhoneHandle(), name: "Alice" }],
+        },
+        senderIdentifier: uniquePhoneHandle(),
+      },
+    });
+    await expect(
+      integrations.requestAgentPhoneWebhook(
+        unmentionedGroupBody,
+        signAgentPhoneWebhook(unmentionedGroupBody),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: "OK" });
+    await flushWaitUntilForTest();
   });
 });
