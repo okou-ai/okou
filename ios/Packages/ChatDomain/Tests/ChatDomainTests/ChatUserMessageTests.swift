@@ -3,6 +3,35 @@ import Foundation
 import XCTest
 
 final class ChatUserMessageTests: XCTestCase {
+  func testMixedRecordingsKeepTheirPartBoundariesAndUploadedAudioIdentity() throws {
+    let document = try storedMessage(
+      """
+      {"type":"voice","clips":[{"fileId":"a"},{"fileId":"b"}]},
+      {"type":"text","text":" before "},{"type":"template","titleSnapshot":"Slides"},
+      {"type":"file","fileId":"a","filenameSnapshot":"Original.m4a","contentType":"audio/mp4"},
+      {"type":"voice","clips":[{"fileId":"c"}]},{"type":"text","text":" after"}
+      """)
+    let message = try XCTUnwrap(history([document]).messages.first)
+    let parts = try XCTUnwrap(message.userMessage?.transcriptBodyParts)
+    XCTAssertEqual(parts.map(\.type), ["voice", "text", "template", "voice", "text"])
+    XCTAssertEqual(parts.compactMap { $0.clips?.map(\.fileId) }, [["a", "b"], ["c"]])
+    XCTAssertEqual(
+      message.attachments.filter { !$0.isVoiceRecording }.map(\.filename), ["Original.m4a"])
+    XCTAssertEqual(message.copyText, " before Slides after")
+  }
+
+  func testVoiceWithoutAuthoredTextLeavesTheQueueOutsideTheBody() throws {
+    let voice = #"{"type":"voice","clips":[{"fileId":"b"},{"fileId":"a"}]}"#
+    let whitespace = #"{"type":"text","text":" \n "}"#
+    let template = #"{"type":"template","titleSnapshot":"Slides"}"#
+    let pure = try storedMessage([whitespace, voice].joined(separator: ","))
+    let mixed = try storedMessage([voice, template, voice].joined(separator: ","))
+    XCTAssertTrue(pure.transcriptBodyParts.isEmpty)
+    XCTAssertEqual(mixed.transcriptBodyParts.map(\.displayText), ["Slides"])
+    XCTAssertEqual(
+      try mixed.attachments().filter(\.isVoiceRecording).map(\.id), ["b", "a", "b", "a"])
+  }
+
   func testHistorySkipsUnknownPartsAndSourcesWithoutLosingMessagesOrAnnotations() throws {
     let document = try storedMessage(
       """

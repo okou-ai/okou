@@ -56,7 +56,7 @@ private struct ChatFeedbackBannerContent: View {
 
   var body: some View {
     ZStack(alignment: .bottom) {
-      if let feedback = store.threadFeedback {
+      if let feedback = store.threadFeedback, feedback.kind != .archiveUndo(showsBanner: false) {
         ChatThreadFeedbackView(store: store, feedback: feedback)
           .id(feedback.id)
           .transition(.opacity)

@@ -128,7 +128,9 @@ private struct ArtifactPreviewContent: View {
   }
 
   var body: some View {
-    MessagePreviewSheet(title: artifact.filename, dismiss: viewer.dismiss) {
+    MessagePreviewSheet(
+      title: artifact.filename, dismiss: viewer.dismiss, isImage: artifact.kind == .image
+    ) {
       VStack(spacing: 0) {
         content.frame(maxWidth: .infinity, maxHeight: .infinity)
         if let error = download.error {

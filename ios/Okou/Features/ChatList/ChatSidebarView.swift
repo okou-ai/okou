@@ -496,6 +496,10 @@ struct ChatSidebarView: View {
         .padding(.trailing, OkouSpace.md)
         .background(OkouColor.sidebar)
     )
+    .onScrollVisibilityChange { visible in
+      store.navigationActions.setRowVisible(thread.id, visible: visible)
+    }
+    .onDisappear { store.navigationActions.setRowVisible(thread.id, visible: false) }
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(selectedThreadID == thread.id ? .isSelected : [])
     .contextMenu {

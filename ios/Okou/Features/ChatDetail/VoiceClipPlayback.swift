@@ -3,12 +3,11 @@ import ChatData
 import ChatDomain
 import Foundation
 
-/// A composer's native media owner. Resolves signed storage URLs through the workspace's
-/// attachment service and allows one inline player to hold the process audio session.
+/// The composer and its transcript share one queue and the same scoped attachment resolver.
 @MainActor
-final class ComposerVoicePlayback {
+final class VoiceClipPlayback {
   private let artifacts: ChatArtifacts
-  private weak var clip: ComposerVoiceClipControl?
+  private weak var clip: VoiceClipControl?
   private var player: AVQueuePlayer?
   private var operation: Task<Void, Never>?
   private var owner: UUID?
@@ -22,7 +21,7 @@ final class ComposerVoicePlayback {
     self.artifacts = artifacts
   }
 
-  func owns(_ control: ComposerVoiceClipControl) -> Bool { clip === control }
+  func owns(_ control: VoiceClipControl) -> Bool { clip === control }
 
   func duration(_ ids: [String]) async -> TimeInterval? {
     var total: TimeInterval = 0
@@ -35,11 +34,11 @@ final class ComposerVoicePlayback {
     return total
   }
 
-  func detach(_ control: ComposerVoiceClipControl) {
+  func detach(_ control: VoiceClipControl) {
     if owns(control) { stop() }
   }
 
-  func toggle(_ control: ComposerVoiceClipControl) {
+  func toggle(_ control: VoiceClipControl) {
     if owns(control), let player, owner != nil {
       player.pause()
       releaseAudio()
@@ -61,7 +60,7 @@ final class ComposerVoicePlayback {
     }
   }
 
-  private func start(_ control: ComposerVoiceClipControl) async {
+  private func start(_ control: VoiceClipControl) async {
     let claim = UUID()
     do {
       let player: AVQueuePlayer
@@ -86,7 +85,7 @@ final class ComposerVoicePlayback {
     }
   }
 
-  private func prepare(_ control: ComposerVoiceClipControl) async throws -> AVQueuePlayer {
+  private func prepare(_ control: VoiceClipControl) async throws -> AVQueuePlayer {
     var items: [AVPlayerItem] = []
     var offsets: [ObjectIdentifier: TimeInterval] = [:]
     var total: TimeInterval = 0

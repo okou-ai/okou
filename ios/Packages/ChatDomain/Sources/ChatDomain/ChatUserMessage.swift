@@ -23,9 +23,22 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     parts.first { ["source", "automation"].contains($0.type) || $0.isForwardedChat }
   }
 
-  public var bodyParts: [Part] {
+  public var bodyParts: [Part] { bodyParts(includingVoice: false) }
+
+  /// In a written message each recording occupies its original position. A voice-only
+  /// message uses a separate player and does not need a whitespace bubble.
+  public var transcriptBodyParts: [Part] {
+    guard parts.contains(where: { $0.type == "voice" && $0.clips?.isEmpty == false }) else {
+      return bodyParts
+    }
+    let body = bodyParts(includingVoice: parts.contains(where: \.hasWrittenText))
+    return body.allSatisfy { $0.type == "text" && !$0.hasWrittenText } ? [] : body
+  }
+
+  private func bodyParts(includingVoice: Bool) -> [Part] {
     let visible = parts.filter {
-      !$0.isForwardedChat
+      if $0.type == "voice" { return includingVoice && $0.clips?.isEmpty == false }
+      return !$0.isForwardedChat
         && ["text", "chat_thread", "project", "template", "feedback"].contains($0.type)
     }
     if annotation?.type == "automation",
@@ -83,6 +96,9 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
   public struct Part: Decodable, Equatable, Sendable {
     public let type: String
     public let text: String?
+    fileprivate var hasWrittenText: Bool {
+      type == "text" && !displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     public let titleSnapshot: String?
     public let nameSnapshot: String?
     public let fileId: String?
@@ -112,8 +128,11 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     }
     public let clips: [VoiceClip]?
     public var voiceAttachments: [ChatMessageAttachment] {
-      (clips ?? []).map {
-        ChatMessageAttachment(id: $0.fileId, filename: "Voice recording", contentType: "audio/*")
+      guard type == "voice", let clips else { return [] }
+      return clips.map {
+        ChatMessageAttachment(
+          id: $0.fileId, filename: "Voice recording", contentType: "audio/*", isVoiceRecording: true
+        )
       }
     }
 
