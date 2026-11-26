@@ -132,10 +132,14 @@ internal data class WorkspaceSearchResults(
     val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
 
-internal enum class ArtifactSearchPaging {
+internal enum class ArtifactSearchPaging(
+    val isLoading: Boolean = false,
+    val hasFailure: Boolean = false,
+) {
     Idle,
-    Loading,
-    Failed,
+    Loading(isLoading = true),
+    Failed(hasFailure = true),
+    Retrying(isLoading = true, hasFailure = true),
 }
 
 class WorkspaceSearchModel
@@ -204,16 +208,23 @@ internal constructor(
                 state.copy(messages = state.messages.updated(read))
             }
         }
-        if (
-            artifactsAvailable &&
-                type.includes(WorkspaceSearchType.Artifacts) &&
-                artifactPageJob?.isActive != true
-        ) {
-            // A preview return must retain any pages needed to restore the selected result.
-            val refresh =
+        if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
+            if (
+                type == WorkspaceSearchType.Artifacts &&
+                    previousType != type &&
+                    mutable.value.artifactPaging == ArtifactSearchPaging.Failed
+            ) {
+                // The failed page was already requested. Retry even if the list skipped that state.
+                val page = mutable.value.artifacts as? SearchRead.Ready
+                page?.nextCursor?.let {
+                    readMoreArtifacts(keyword, it, ArtifactSearchPaging.Retrying)
+                }
+            }
+            // A type change or preview return still uses the same query and its loaded pages.
+            val retry =
                 previousType?.includes(WorkspaceSearchType.Artifacts) != true &&
-                    (previousType != null || mutable.value.artifacts.hasFailure)
-            request(WorkspaceSearchType.Artifacts, refresh, { artifactPage(keyword, null) }) {
+                    mutable.value.artifacts.hasFailure
+            request(WorkspaceSearchType.Artifacts, retry, { artifactPage(keyword, null) }) {
                 state,
                 read ->
                 state.copy(
@@ -232,6 +243,11 @@ internal constructor(
     }
 
     internal fun nextArtifacts(keyword: String, cursor: String) {
+        if (mutable.value.artifactPaging == ArtifactSearchPaging.Failed) return
+        readMoreArtifacts(keyword, cursor, ArtifactSearchPaging.Loading)
+    }
+
+    private fun readMoreArtifacts(keyword: String, cursor: String, paging: ArtifactSearchPaging) {
         val current = mutable.value
         val loaded = current.artifacts as? SearchRead.Ready ?: return
         if (
@@ -239,15 +255,15 @@ internal constructor(
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
                 loaded.refreshFailed ||
-                current.artifactPaging == ArtifactSearchPaging.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
         artifactPageJob = viewModelScope.launch {
             searches[WorkspaceSearchType.Artifacts]?.join()
-            val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
+            val state = mutable.value
+            val currentPage = state.artifacts as? SearchRead.Ready ?: return@launch
             if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-            mutable.value = mutable.value.copy(artifactPaging = ArtifactSearchPaging.Loading)
+            mutable.value = state.copy(artifactPaging = paging)
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },

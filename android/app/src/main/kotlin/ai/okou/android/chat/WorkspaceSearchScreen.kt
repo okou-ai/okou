@@ -413,21 +413,20 @@ private fun SearchResults(
     val artifacts = artifactPage?.rows.orEmpty()
     val artifactCursor = artifactPage?.nextCursor
     val artifactPaging = currentRemote?.artifactPaging
-    val moreArtifactsFailed =
-        type.includes(WorkspaceSearchType.Artifacts) &&
-            artifactPaging == ArtifactSearchPaging.Failed
+    val artifactPageFailed =
+        type == WorkspaceSearchType.Artifacts && artifactPaging?.hasFailure == true
+    val showArtifactPageFailure = artifactPageFailed && artifacts.isNotEmpty()
     val nextArtifactPage =
         artifactPage
             ?.takeIf {
                 type == WorkspaceSearchType.Artifacts &&
-                    !moreArtifactsFailed &&
+                    artifactPaging != ArtifactSearchPaging.Failed &&
                     !it.refreshing &&
                     !it.refreshFailed
             }
             ?.nextCursor
     val waitingForArtifactPage =
-        nextArtifactPage != null &&
-            (artifactPaging == ArtifactSearchPaging.Loading || artifacts.isEmpty())
+        nextArtifactPage != null && (artifactPaging?.isLoading == true || artifacts.isEmpty())
     val items =
         remember(
             grouped,
@@ -513,7 +512,7 @@ private fun SearchResults(
     val readFailed =
         chatRefreshFailed ||
             messageChatsUnavailable ||
-            moreArtifactsFailed ||
+            artifactPageFailed && artifacts.isEmpty() ||
             sourceUnavailable ||
             reads.any { it.hasFailure }
     val showEmpty =
@@ -521,7 +520,7 @@ private fun SearchResults(
             (!needsChatList || confirmedChats) &&
             !needsMessageChats &&
             !waitingForArtifactPage &&
-            !moreArtifactsFailed &&
+            !artifactPageFailed &&
             !sourceUnavailable &&
             reads.all { it == null || it is SearchRead.Ready }
     val showPending =
@@ -708,10 +707,18 @@ private fun SearchResults(
                     }
                 }
             }
-            if (nextArtifactPage != null) {
+            if (nextArtifactPage != null || showArtifactPageFailure) {
                 item(key = "search_more_artifacts") {
-                    LaunchedEffect(keyword, nextArtifactPage) {
-                        onMoreArtifacts(keyword, nextArtifactPage)
+                    if (nextArtifactPage != null) {
+                        LaunchedEffect(keyword, nextArtifactPage) {
+                            onMoreArtifacts(keyword, nextArtifactPage)
+                        }
+                    }
+                    if (showArtifactPageFailure) {
+                        ContentReadFeedback(
+                            R.string.artifact_catalog_page_failed,
+                            Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp),
+                        )
                     }
                 }
             }

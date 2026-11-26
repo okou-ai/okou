@@ -483,11 +483,14 @@ class SavedUiStateTest {
         compose.runOnIdle { remote = remote.copy(artifactPaging = ArtifactSearchPaging.Failed) }
         progress.assertDoesNotExist()
         row.assertIsDisplayed()
-        compose
-            .onNodeWithText("Some search results are temporarily unavailable")
-            .assertIsDisplayed()
+        val failure = compose.onNodeWithText("Temporarily unable to load more")
+        failure.assertIsDisplayed()
+        compose.runOnIdle { search.selectType(WorkspaceSearchType.All) }
+        row.assertIsDisplayed()
+        failure.assertDoesNotExist()
 
         compose.runOnIdle {
+            search.selectType(WorkspaceSearchType.Artifacts)
             remote =
                 remote.copy(
                     artifacts = SearchRead.Ready(emptyList(), "next"),
