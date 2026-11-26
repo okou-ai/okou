@@ -93,6 +93,7 @@ import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.workflows.WorkflowModel
+import ai.okou.android.workflows.WorkflowReadAnnouncements
 import ai.okou.android.workflows.WorkflowScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -192,6 +193,7 @@ internal fun OkouApp(
     workspaceReady: Boolean = composer != null,
     connectors: ConnectorModel? = null,
     workflows: WorkflowModel? = null,
+    workflowReadAnnouncements: WorkflowReadAnnouncements? = null,
     workflowTimezone: String = TimeZone.getDefault().id,
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
@@ -237,6 +239,8 @@ internal fun OkouApp(
             WorkflowTab.entries.map { tab -> key(tab) { rememberLazyListState() } }
         }
     val workflowState = workflows?.state?.collectAsStateWithLifecycle()?.value
+    val readAnnouncements =
+        workflowReadAnnouncements ?: remember(workflows) { WorkflowReadAnnouncements() }
     val showWorkflows =
         workflows != null && !showingConnectors && workflowRoute.mode == WorkflowsMode.Directory
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
@@ -1193,7 +1197,8 @@ internal fun OkouApp(
                 createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
                 useError =
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
-                feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
+                readAnnouncements = readAnnouncements,
+                actionSnackbar = snackbar,
                 onClose = ::closeWorkflows,
                 directEntry =
                     workflowOrigin.search.isOpen || workflowRoute.resourceReturnRow != null,
