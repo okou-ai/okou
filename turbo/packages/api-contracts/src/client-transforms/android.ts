@@ -1,3 +1,4 @@
+import { androidChatContextTransforms } from "./native-chat-context";
 import { androidAntigravitySubscriptionTransforms } from "./antigravity-subscription";
 import { androidVoiceDraftTransforms } from "./voice-draft";
 import { androidChatUltrafastTransforms } from "./chat-ultrafast";
@@ -7,5 +8,6 @@ import type { ClientResponseTransform } from "./types";
 export const androidResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(androidVoiceDraftTransforms),
   ...Object.values(androidChatUltrafastTransforms),
+  ...Object.values(androidChatContextTransforms),
   ...Object.values(androidAntigravitySubscriptionTransforms),
 ];

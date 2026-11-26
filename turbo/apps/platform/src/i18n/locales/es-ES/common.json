@@ -6187,32 +6187,6 @@
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
         },
-        "learning": {
-          "description": "Revisa la actividad reciente y actualiza tu memoria personal una vez. La programación nocturna no cambia.",
-          "notInstalled": "Activa el aprendizaje en Preferencias antes de ejecutarlo aquí.",
-          "openChat": "Abrir conversación",
-          "queued": "Aprendizaje en cola.",
-          "requestFailed": "No se pudo confirmar la solicitud.",
-          "run": "Ejecutar aprendizaje",
-          "starting": "Iniciando…",
-          "title": "Aprendizaje",
-          "unavailable": "El aprendizaje no está disponible en este momento."
-        },
-        "morningBrief": {
-          "description": "Ejecuta una vez el flujo activado de tu cuenta. Puede actualizar sugerencias y enviar un correo real. Tu horario diario no cambia.",
-          "openChat": "Abrir conversación",
-          "requestFailed": "No se pudo confirmar la solicitud.",
-          "run": "Ejecutar resumen",
-          "runAgain": "Ejecutar otro resumen",
-          "starting": "Iniciando…",
-          "status": {
-            "completed": "El resumen ha finalizado.",
-            "failed": "El resumen ha fallado. Abre la conversación para ver los detalles.",
-            "queued": "En cola. Abre la conversación para seguir el resumen.",
-            "running": "El resumen se está ejecutando."
-          },
-          "title": "Resumen matinal"
-        },
         "openrouterPreset": {
           "description": "Se aplica a las nuevas ejecuciones de Auto y Okou 1.0 integrado de toda la organización. Las ejecuciones existentes no cambian.",
           "loading": "Cargando…",

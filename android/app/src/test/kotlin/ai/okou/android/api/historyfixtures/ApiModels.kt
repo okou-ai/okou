@@ -145,6 +145,7 @@ enum class HistoryRowsRowsItemVariant1ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 
@@ -214,6 +215,7 @@ enum class HistoryRowsRowsItemVariant2ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 
@@ -261,6 +263,7 @@ enum class HistoryRowsRowsItemVariant3ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 
@@ -466,6 +469,7 @@ enum class RawHistoryRowVariant1ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 
@@ -511,6 +515,7 @@ enum class RawHistoryRowVariant2ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 
@@ -558,6 +563,7 @@ enum class RawHistoryRowVariant3ContextType {
     @SerialName("agentphone") AGENTPHONE,
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
+    @SerialName("proactive") PROACTIVE,
     @SerialName("agent_run") AGENT_RUN,
 }
 

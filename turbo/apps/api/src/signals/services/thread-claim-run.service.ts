@@ -1644,10 +1644,11 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionReady$))) {
       return null;
     }
-    const [model, automationContinuation, assembly] = await Promise.all([
+    const [model, automationContinuation, assembly, head] = await Promise.all([
       get(threadContext.subscriptionSelection$),
       get(automationContinuation$),
       get(assembly$),
+      get(head$),
     ]);
     if (assembly.kind !== "assembled") {
       return null;
@@ -1666,6 +1667,7 @@ export function createThreadClaimRunObjects(
     }
     const args = buildThreadRunArgs(
       {
+        contextType: head.contextType,
         modelSelection: model.pin,
         command: assembly.run,
         threadContinuation: resolution,
@@ -3484,6 +3486,7 @@ function enforceCaptureNetworkBodiesGate(
 }
 
 interface ThreadRunArgsInput {
+  readonly contextType: string | null;
   readonly command: ThreadRunCommand;
   readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
@@ -3521,7 +3524,9 @@ function buildThreadRunArgs(
   const command = args.command;
   const origin = command.agentRunMetadata.workflowAutomationId
     ? "workflow_automation"
-    : "direct";
+    : command.triggerSource === "proactive"
+      ? "proactive"
+      : "direct";
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
@@ -3543,6 +3548,7 @@ function buildThreadRunArgs(
     timingDimensions: {
       agent_run_origin: origin,
       api_start_source: "queue_event",
+      ...(args.contextType ? { context_type: args.contextType } : {}),
     },
   };
 }

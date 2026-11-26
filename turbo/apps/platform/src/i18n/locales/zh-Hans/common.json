@@ -6092,32 +6092,6 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
-        "learning": {
-          "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
-          "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
-          "openChat": "打开对话",
-          "queued": "学习已加入队列。",
-          "requestFailed": "无法确认请求结果。",
-          "run": "运行学习",
-          "starting": "正在启动…",
-          "title": "学习",
-          "unavailable": "学习暂时不可用。"
-        },
-        "morningBrief": {
-          "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
-          "openChat": "打开对话",
-          "requestFailed": "无法确认请求结果。",
-          "run": "运行晨间简报",
-          "runAgain": "再次运行晨间简报",
-          "starting": "正在启动…",
-          "status": {
-            "completed": "晨间简报已完成。",
-            "failed": "晨间简报运行失败，请打开对话查看详情。",
-            "queued": "已加入队列，可打开对话查看进度。",
-            "running": "晨间简报正在运行。"
-          },
-          "title": "晨间简报"
-        },
         "openrouterPreset": {
           "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",
           "loading": "加载中…",

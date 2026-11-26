@@ -47,3 +47,9 @@ ALTER TABLE "chat_events" ADD CONSTRAINT "chat_events_context_type_check" CHECK 
         )) NOT VALID;
 --> statement-breakpoint
 INSERT INTO proactive_dispatch_handoff (phase) VALUES ('automation');
+--> statement-breakpoint
+-- Price the member-facing identity separately from the captured upstream model's actual costs.
+INSERT INTO usage_pricing (kind, provider, category, unit_price, unit_size)
+SELECT 'model', 'okou/proactive', category, 0, 1000000
+FROM unnest(ARRAY['tokens.input', 'tokens.output', 'tokens.cache_read', 'tokens.cache_creation', '__fallback__']) AS categories(category)
+ON CONFLICT (kind, provider, category) DO NOTHING;
