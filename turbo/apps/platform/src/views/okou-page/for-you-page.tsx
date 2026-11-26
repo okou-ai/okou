@@ -482,7 +482,7 @@ function ForYouHeader({
   readonly position: number;
 }) {
   const { t } = useTranslation();
-  // Keep the progress window centered around the current card, even for a large feed.
+  // Keep a seven-step window around the current card, even for a large feed.
   const total = ids?.length;
   const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
   const steps = ids?.slice(firstStep, firstStep + 7);

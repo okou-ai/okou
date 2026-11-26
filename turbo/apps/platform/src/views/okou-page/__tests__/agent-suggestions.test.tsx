@@ -15,7 +15,12 @@ import {
   fireEvent,
 } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
+import {
+  setupPage,
+  click,
+  fill,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
   testContext,
@@ -562,7 +567,6 @@ test("agent-suggestions-025 a withdrawn second choice refreshes the pool and pre
   click(await findFastControl("button", "Try again", alert));
   await expect(activeCard(offer)).resolves.toBeVisible();
   expect(screen.getByText("1 to go")).toBeInTheDocument();
-  expect(queryFastControl("link", "Next suggestion")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText(staleMessage)).toBeNull();
   click(await findFastControl("button", "Undo"));
@@ -1434,7 +1438,6 @@ test("Opening For you shows the summary card and keeps its draft and read receip
     expect(listReads).toBe(1);
     expect(screen.queryByText(/\d+ to go/u)).toBeNull();
     expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
-    expect(queryFastControl("link", "Next suggestion")).toBeNull();
     expect(
       document.querySelector('[data-slot="suggestion-stack-layer"]'),
     ).toBeNull();
@@ -1524,55 +1527,76 @@ test("Retrying a failed list preserves feedback and Undo from the preview", asyn
   expect(attempts).toBe(2);
 });
 
-test("A direct link reads its card on the next page without displaying the summary card", async () => {
-  const preview = proposal("Review the eastern breakwater");
-  const target = proposal("Review the western breakwater", 1);
-  const firstPage = [
-    preview,
-    ...Array.from({ length: 9 }, (_, index) => {
-      return proposal("Review berth " + String(index + 1), 5);
-    }),
-  ];
-  const release = context.mocks.deferred<void>();
-  const nextPage = context.mocks.deferred<void>();
-  const reads: string[] = [];
-  context.mocks.api(feedContract.summary, ({ respond }) => {
-    return respond(200, { hasUnread: true, firstItem: preview });
-  });
-  context.mocks.api(feedContract.list, async ({ query, respond }) => {
-    if (!query.cursor) {
-      return respond(200, { items: firstPage, nextCursor: "second-page" });
+test.each([true, false])(
+  "A direct link reads its card on the next page without displaying the summary card (simplified deck: %s)",
+  async (simplified) => {
+    const preview = proposal("Review the eastern breakwater");
+    const target = proposal("Review the western breakwater", 1);
+    const firstPage = [
+      preview,
+      ...Array.from({ length: 9 }, (_, index) => {
+        return proposal("Review berth " + String(index + 1), 5);
+      }),
+    ];
+    const release = context.mocks.deferred<void>();
+    const nextPage = context.mocks.deferred<void>();
+    const reads: string[] = [];
+    context.mocks.api(feedContract.summary, ({ respond }) => {
+      return respond(200, { hasUnread: true, firstItem: preview });
+    });
+    context.mocks.api(feedContract.list, async ({ query, respond }) => {
+      if (!query.cursor) {
+        return respond(200, { items: firstPage, nextCursor: "second-page" });
+      }
+      nextPage.resolve();
+      await release.promise;
+      return respond(200, { items: [target] });
+    });
+    context.mocks.api(feedContract.markRead, ({ params, respond }) => {
+      reads.push(params.id);
+      return respond(200, { readAt: nowDate().toISOString() });
+    });
+    try {
+      await openDeck("/for-you?suggestion=" + target.id, simplified);
+      await nextPage.promise;
+      expect(reads).toHaveLength(0);
+      expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
+      expect(queryFastControl("link", /Show suggestion/u)).toBeNull();
+      expect(
+        screen.queryByRole("article", { name: preview.content.title }),
+      ).toBeNull();
+    } finally {
+      release.resolve();
     }
-    nextPage.resolve();
-    await release.promise;
-    return respond(200, { items: [target] });
-  });
-  context.mocks.api(feedContract.markRead, ({ params, respond }) => {
-    reads.push(params.id);
-    return respond(200, { readAt: nowDate().toISOString() });
-  });
-  try {
-    await openDeck("/for-you?suggestion=" + target.id);
-    await nextPage.promise;
-    expect(reads).toHaveLength(0);
-    expect(screen.queryByRole("progressbar", { name: "For you" })).toBeNull();
+    await expect(activeCard(target)).resolves.toBeVisible();
+    if (simplified) {
+      const progress = await screen.findByRole("progressbar", {
+        name: "For you",
+      });
+      expect(progress).toHaveAttribute("aria-valuenow", "11");
+      expect(progress).toHaveAttribute("aria-valuemax", "11");
+      // The bar draws the same seven-step window as the linked steps.
+      expect(progress.children).toHaveLength(7);
+    } else {
+      await expect(
+        findFastControl("link", "Show suggestion 11 of 11"),
+      ).resolves.toHaveAttribute("aria-current", "step");
+      expect(
+        queryAllByRoleFast("link").filter((link) => {
+          return link
+            .getAttribute("aria-label")
+            ?.startsWith("Show suggestion ");
+        }),
+      ).toHaveLength(7);
+    }
     expect(
-      screen.queryByRole("article", { name: preview.content.title }),
-    ).toBeNull();
-  } finally {
-    release.resolve();
-  }
-  await expect(activeCard(target)).resolves.toBeVisible();
-  const progress = await screen.findByRole("progressbar", { name: "For you" });
-  expect(progress).toHaveAttribute("aria-valuenow", "11");
-  expect(progress).toHaveAttribute("aria-valuemax", "11");
-  expect(
-    document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
-  ).toHaveLength(2);
-  await waitFor(() => {
-    expect(reads).toStrictEqual([target.id]);
-  });
-});
+      document.querySelectorAll('[data-slot="suggestion-stack-layer"]'),
+    ).toHaveLength(2);
+    await waitFor(() => {
+      expect(reads).toStrictEqual([target.id]);
+    });
+  },
+);
 
 test("Arrow keys page the deck without arrow controls, except while a direction is written", async () => {
   const one = proposal("Supply forecast");
@@ -1643,6 +1667,14 @@ test("Without the simplified deck, the arrows and progress steps page the deck",
   await expect(
     findFastControl("link", "Previous suggestion"),
   ).resolves.toHaveAttribute("aria-keyshortcuts", "ArrowLeft");
+  expect(queryFastControl("link", "Previous suggestion")).toHaveAttribute(
+    "href",
+    "/for-you?suggestion=" + two.id,
+  );
+  expect(queryFastControl("link", "Next suggestion")).toHaveAttribute(
+    "href",
+    "/for-you?suggestion=" + one.id,
+  );
   click(await findFastControl("link", "Next suggestion"));
   await activeCard(one);
   click(await findFastControl("link", "Show suggestion 3 of 3"));
