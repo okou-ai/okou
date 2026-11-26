@@ -167,19 +167,11 @@ test("production release keeps Worker deployment non-blocking and verifies its d
   const migrations = byId("production-migrations");
   assert.match(
     field(migrations, "run", 8),
-    /^pnpm -F @okouai\/db db:migrate --before-api-promotion$/m,
+    /^pnpm -F @okouai\/db db:migrate$/m,
   );
   assert.ok(
     productionSteps.indexOf(migrations) <
       productionSteps.indexOf(byId("deploy")),
-  );
-  const retireTables = byId("retire-official-workflow-tables");
-  assert.ok(
-    productionSteps.indexOf(retireTables) > productionSteps.indexOf(verify),
-  );
-  assert.match(
-    field(retireTables, "if", 8),
-    /steps\.api-worker-verify\.outcome == 'success'/,
   );
   // Official Runs routed by the promoted API require their managed key.
   const proactiveKey = byId("proactive-model-key");
