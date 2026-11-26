@@ -301,9 +301,8 @@ async function prepareMultipartReport(api: Api) {
   return prepared.body;
 }
 
-const privateUrlPattern = (extension: string) => {
-  return new RegExp(`/artifacts/[A-Za-z0-9_-]{10}\\.${extension}$`);
-};
+const privateHtmlUrl = /\/artifacts\/[A-Za-z0-9_-]{10}\.html$/;
+const privatePngUrl = /\/artifacts\/[A-Za-z0-9_-]{10}\.png$/;
 
 describe("private artifact uploads", () => {
   it("private-artifact-uploads-002 keeps one downloadable catalog artifact after concurrent completion and replay", async () => {
@@ -423,7 +422,7 @@ describe("private artifact uploads", () => {
       [200],
     );
 
-    expect(prepared.body.url).toMatch(privateUrlPattern("html"));
+    expect(prepared.body.url).toMatch(privateHtmlUrl);
     expect(completed.body.url).toBe(prepared.body.url);
     expect(fileUrl.body.publicUrl).toBeNull();
   });
@@ -455,8 +454,8 @@ describe("private artifact uploads", () => {
       [200],
     );
 
-    expect(attachment.body.url).toMatch(privateUrlPattern("png"));
-    expect(output.body.url).toMatch(privateUrlPattern("html"));
+    expect(attachment.body.url).toMatch(privatePngUrl);
+    expect(output.body.url).toMatch(privateHtmlUrl);
     for (const url of [attachment.body.url, output.body.url]) {
       expect(new URL(url).origin).toBe(new URL(env("APP_URL")).origin);
     }
