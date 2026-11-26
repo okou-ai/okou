@@ -783,6 +783,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const thread = await chat.createThread(actor, {
       title: "Existing sort touch thread",
     });
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    const eventsAtRefresh: Awaited<ReturnType<typeof allThreadEvents>>[] = [];
+    context.mocks.ably.publish.mockImplementation(async (topic) => {
+      if (topic === "threadListChanged") {
+        eventsAtRefresh.push(await allThreadEvents(actor));
+      }
+    });
 
     const run = await sendChatRun(actor, {
       threadId: thread.id,
@@ -797,6 +805,20 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       });
     });
     await flushWaitUntilForTest();
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === `chatThreadMessageCreated:${thread.id}`;
+      }),
+    ).toHaveLength(1);
+    expect(eventsAtRefresh).toHaveLength(1);
+    expect(eventsAtRefresh[0]).toContainEqual(
+      expect.objectContaining({
+        id: directSendSortEventId,
+        chatThreadId: thread.id,
+        kind: "sort_touched",
+      }),
+    );
+    context.mocks.ably.publish.mockResolvedValue(undefined);
 
     let sortTouches = (await allThreadEvents(actor)).filter((event) => {
       return (
