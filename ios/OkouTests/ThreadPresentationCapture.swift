@@ -9,7 +9,6 @@ import XCTest
 @MainActor
 final class ThreadPresentationCapture: XCTestCase {
   func testCaptureThread() async throws {
-    guard Locale.preferredLanguages.first?.hasPrefix("zh") == true else { return }
     let calendar = Calendar.current
     let today = calendar.startOfDay(for: .now)
     let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
@@ -61,10 +60,18 @@ final class ThreadPresentationCapture: XCTestCase {
     .appendingPathComponent("thread-parity-51170")
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     try Data("ready".utf8).write(to: destination.appendingPathComponent("ready"))
-    // Keep the real screen presented while simctl takes consecutive full-device frames.
-    try await eventually(timeout: .seconds(38)) {
-      FileManager.default.fileExists(atPath: destination.appendingPathComponent("captured").path)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scene.screen.scale
+    let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
+    // Native window frames are also retained when simctl output is unavailable.
+    for index in 0..<9 {
+      let data = renderer.pngData { _ in
+        window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+      }
+      try data.write(to: destination.appendingPathComponent(String(format: "ui-%02d.png", index)))
+      try await Task.sleep(for: .milliseconds(600))
     }
+
   }
 
   private func event(_ sequence: Int, _ type: String, _ text: String, _ run: String, _ date: Date)
