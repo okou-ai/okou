@@ -2269,17 +2269,17 @@ account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.tes
 account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-003	planned				
 account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-004	planned				
 account-org	src/signals/routes/__tests__/me-model-providers-delete.test.ts	me-model-providers-delete-006	planned				
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-003	rewritten	82.7	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-004	rewritten	44.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-006	planned		unfinished: out of time		B01
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-009	rewritten	41.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-011	rewritten	44.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-012	rewritten	45.9	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-013	rewritten	48.6	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-015	rewritten	49.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-019	rewritten	40.1	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-020	rewritten	10.1	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
-account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-021	rewritten	9.4	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-003	rewritten	86.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-004	rewritten	40.5	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-006	rewritten	47.9	unfinished: out of time	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	B01
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-009	rewritten	46.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-011	rewritten	34.2	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-012	rewritten	46.2	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-013	rewritten	54.3	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-015	rewritten	55.4	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-019	rewritten	44.6	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-020	rewritten	11.0	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
+account-org	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	me-model-providers-upsert-021	rewritten	10.3	extension after sandbox reset	src/signals/routes/__tests__/me-model-providers-upsert.test.ts	pilot
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-003	planned				
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-005	planned				
 account-org	src/signals/routes/__tests__/member-memory-initialization.test.ts	member-memory-initialization-007	planned				

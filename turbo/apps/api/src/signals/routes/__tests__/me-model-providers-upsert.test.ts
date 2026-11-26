@@ -8,7 +8,7 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
@@ -234,6 +234,81 @@ test("me-model-providers-upsert-004 shows a Claude Max 5x account as plan max", 
   expect(created.body.provider.planType).toBe("max");
   expect(listed.body.modelProviders).toHaveLength(1);
   expect(listed.body.modelProviders[0]?.planType).toBe("max");
+});
+
+test("me-model-providers-upsert-006 reuses a legacy Claude account after recovering its uuid identity", async () => {
+  const legacySecret = `sk-ant-oat01-${randomUUID()}`;
+  const replacementSecret = `sk-ant-oat01-${randomUUID()}`;
+  const accountUuid = randomUUID();
+  const organizationUuid = randomUUID();
+  let profileAvailable = false;
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+      if (!profileAvailable) {
+        return HttpResponse.json({ error: "unavailable" }, { status: 503 });
+      }
+      const legacy =
+        request.headers.get("authorization") === `Bearer ${legacySecret}`;
+      return HttpResponse.json({
+        account: {
+          uuid: accountUuid,
+          email: legacy ? "old-name@example.com" : "claude@example.com",
+          has_claude_pro: true,
+        },
+        organization: {
+          uuid: organizationUuid,
+          name: legacy ? "Old Workspace" : "Recovered Workspace",
+          organization_type: "claude_pro",
+        },
+      });
+    }),
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  const client = member();
+  mockNow(Date.parse("2026-03-01T00:00:00.000Z"));
+  const legacy = await accept(
+    client.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: legacySecret },
+    }),
+    [201],
+  );
+  expect(legacy.body.provider).toMatchObject({
+    accountEmail: null,
+    workspaceName: null,
+  });
+
+  profileAvailable = true;
+  mockNow(Date.parse("2026-03-02T00:00:00.000Z"));
+  const replaced = await accept(
+    client.upsert({
+      headers,
+      body: { type: "claude-code-oauth-token", secret: replacementSecret },
+    }),
+    [200],
+  );
+  const listed = await accept(client.list({ headers }), [200]);
+
+  expect(replaced.body.created).toBeFalsy();
+  expect(replaced.body.provider).toMatchObject({
+    id: legacy.body.provider.id,
+    modelProviderId: legacy.body.provider.modelProviderId,
+    createdAt: legacy.body.provider.createdAt,
+    updatedAt: "2026-03-02T00:00:00.000Z",
+    accountEmail: "claude@example.com",
+    workspaceName: "Recovered Workspace",
+    planType: "pro",
+    isActive: true,
+  });
+  expect(
+    listed.body.modelProviders.map(({ id, accountEmail }) => {
+      return { id, accountEmail };
+    }),
+  ).toStrictEqual([
+    { id: legacy.body.provider.id, accountEmail: "claude@example.com" },
+  ]);
 });
 
 test("me-model-providers-upsert-009 imports Codex auth.json with ID-token account, plan, credits and usage", async () => {
