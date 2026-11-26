@@ -8,7 +8,9 @@ import ai.okou.android.resolvePalette
 import ai.okou.android.state.ChatSearchState
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -39,6 +42,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
@@ -305,6 +309,46 @@ class WorkspaceSearchScreenTest {
         emptyMessages.assertIsDisplayed()
         partial.assertIsDisplayed()
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w320dp-h400dp")
+    fun unavailableStatusCanWrapAndScrollInAShortViewportAtLargeFontScale() {
+        val search = ChatSearchState(TextFieldValue("Launch"), type = WorkspaceSearchType.Messages)
+        var height by mutableStateOf(360.dp)
+        compose.setContent {
+            OkouTheme(false) {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f),
+                ) {
+                    Box(Modifier.height(height)) {
+                        WorkspaceSearchScreen(
+                            state = ChatListUiState(),
+                            search = search,
+                            widthDp = 320,
+                            listWidth = null,
+                            focusOnEntry = false,
+                            onFocused = {},
+                            onClose = {},
+                            onOpen = {},
+                            remote = WorkspaceSearchResults("Launch", messages = SearchRead.Failed),
+                        )
+                    }
+                }
+            }
+        }
+
+        val label = compose.onNodeWithText("Temporarily unable to load").assertIsDisplayed()
+        val fullLabelHeight = label.getUnclippedBoundsInRoot().let { it.bottom - it.top }
+        compose.runOnIdle { height = 180.dp }
+
+        val results = compose.onNodeWithTag("chat_search_results")
+        val shortLabel = label.getUnclippedBoundsInRoot()
+        assertEquals(fullLabelHeight, shortLabel.bottom - shortLabel.top)
+        val viewportBottom = results.getUnclippedBoundsInRoot().bottom
+        assertTrue(shortLabel.bottom > viewportBottom)
+        results.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 160f) }
+        assertTrue(label.getUnclippedBoundsInRoot().bottom < viewportBottom)
     }
 
     @Test

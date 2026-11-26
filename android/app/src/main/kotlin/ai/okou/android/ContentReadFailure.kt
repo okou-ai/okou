@@ -58,7 +58,7 @@ internal fun ContentReadFailure(
             )
         },
     ) { (text, image), constraints ->
-        // A lazy item supplies its viewport with fillParentMaxSize using a minimum height.
+        // A scrollable parent can supply the viewport as a minimum height.
         val viewport =
             if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
         val label = text.measure(constraints.copy(minWidth = 0, minHeight = 0))
