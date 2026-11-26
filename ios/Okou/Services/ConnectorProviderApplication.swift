@@ -92,7 +92,7 @@ enum ConnectorProviderAuthorization {
       "dropbox": "https://www.dropbox.com/oauth2/authorize",
       "spotify": "https://accounts.spotify.com/authorize"
     ]
-    guard "https://\(webURL.host ?? "")\(webURL.path)" == endpoints[provider],
+    guard "https://\(webURL.host ?? "")\(components.percentEncodedPath)" == endpoints[provider],
       value("state") != nil, value("response_type") == "code"
     else { throw APIClientError.invalidResponse }
     let callback = authorization.callbackUrl

@@ -228,8 +228,9 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
       XCTAssertEqual(provider.request?.provider, slug)
       XCTAssertFalse(continued.withLock { $0 })
       if slug == "tiktok" {
-        XCTAssertEqual(provider.openedURL?.host, "www.tiktok.com")
-        XCTAssertEqual(provider.openedURL?.path, "/opensdk/oauth/")
+        XCTAssertEqual(
+          provider.openedURL?.absoluteString.components(separatedBy: "?").first,
+          "https://www.tiktok.com/opensdk/oauth/")
       } else if slug == "dropbox" {
         XCTAssertEqual(
           provider.openedURL?.absoluteString.components(separatedBy: "?").first,
