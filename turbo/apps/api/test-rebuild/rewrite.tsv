@@ -298,26 +298,26 @@ account-org	src/signals/routes/__tests__/banking.test.ts	banking-008	rewritten	1
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-010	rewritten	170.8		src/signals/routes/__tests__/banking.test.ts	pilot	
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-013	rewritten	129.0		src/signals/routes/__tests__/banking.test.ts	pilot	
 account-org	src/signals/routes/__tests__/banking.test.ts	banking-014	rewritten	24.0		src/signals/routes/__tests__/banking.test.ts	pilot	
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-001	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-002	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-003	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-004	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-008	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-009	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-010	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-011	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-014	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-015	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-017	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-019	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-021	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-031	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-032	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-033	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-035	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-037	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-038	planned				B09	d-other
-billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-039	planned				B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-001	rewritten	66.9		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-002	rewritten	59.2		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-003	rewritten	65.3		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-004	rewritten	70.5		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-008	rewritten	80.2		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-009	rewritten	53.5		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-010	rewritten	63.5		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-011	rewritten	59.7		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-014	rewritten	85.1		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-015	rewritten	63.1		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-017	rewritten	63.1		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-019	rewritten	60.3		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-021	rewritten	67.1		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-031	rewritten	128.3		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-032	rewritten	125.5		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-033	rewritten	116.3		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-035	rewritten	130.7		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-037	rewritten	69.3		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-038	rewritten	127.6		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	billing-archived-stripe-events-039	rewritten	147.6		src/signals/routes/__tests__/billing-archived-stripe-events.test.ts	B09	d-other
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-004	rewritten	73.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-007	rewritten	128.8	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot	
 billing	src/signals/routes/__tests__/billing-auto-recharge.test.ts	billing-auto-recharge-008	rewritten	77.1	extension after sandbox reset	src/signals/routes/__tests__/billing-auto-recharge.test.ts	pilot	
