@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.885.2](https://github.com/okou-ai/okou/compare/core-v8.885.1...core-v8.885.2) (2026-11-26)
+
+
+### Refactoring
+
+* **ios:** remove connector management feature switch ([#51077](https://github.com/okou-ai/okou/issues/51077)) ([79c9d56](https://github.com/okou-ai/okou/commit/79c9d5630289c1fc7058fa7984c18593943ce31a))
+
 ## [8.885.1](https://github.com/okou-ai/okou/compare/core-v8.885.0...core-v8.885.1) (2026-11-26)
 
 

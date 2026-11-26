@@ -490,20 +490,22 @@ internal fun WorkspaceToolbarActions(
     if (update == null) {
         if (showFilter) {
             Box {
-                IconButton(
-                    onClick = { menu = WorkspaceMenuPage.Filter },
-                    enabled = selectFilter != null,
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
-                    modifier =
-                        Modifier.size(48.dp)
-                            .focusRequester(filterFocus)
-                            .then(filterTreatment)
-                            .semantics { stateDescription = currentFilter },
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_filter_list),
-                        stringResource(R.string.chat_filter),
-                    )
+                WithButtonFocusOutline(filterTint) {
+                    IconButton(
+                        onClick = { menu = WorkspaceMenuPage.Filter },
+                        enabled = selectFilter != null,
+                        colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
+                        modifier =
+                            Modifier.size(48.dp)
+                                .focusRequester(filterFocus)
+                                .then(filterTreatment)
+                                .semantics { stateDescription = currentFilter },
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_filter_list),
+                            stringResource(R.string.chat_filter),
+                        )
+                    }
                 }
                 if (menu == WorkspaceMenuPage.Filter) menuContent()
             }
@@ -513,22 +515,27 @@ internal fun WorkspaceToolbarActions(
     }
     if (showFilter || hasUpdate) {
         Box {
-            IconButton(
-                modifier =
-                    settingsAnchor.then(if (hasUpdate) filterTreatment else Modifier).semantics {
-                        if (hasUpdate && showFilter) stateDescription = currentFilter
+            val overflowTint = if (hasUpdate) filterTint else colors.onSurface
+            WithButtonFocusOutline(overflowTint) {
+                IconButton(
+                    modifier =
+                        settingsAnchor
+                            .then(if (hasUpdate) filterTreatment else Modifier)
+                            .semantics {
+                                if (hasUpdate && showFilter) stateDescription = currentFilter
+                            },
+                    enabled = hasUpdate || openSettings != null || openProjectCreation != null,
+                    onClick = {
+                        restoreSettingsAnchor = anchorFocused
+                        menu = WorkspaceMenuPage.Overflow
                     },
-                enabled = hasUpdate || openSettings != null || openProjectCreation != null,
-                onClick = {
-                    restoreSettingsAnchor = anchorFocused
-                    menu = WorkspaceMenuPage.Overflow
-                },
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_more_horiz),
-                    stringResource(R.string.chat_more_actions),
-                    tint = if (hasUpdate) filterTint else colors.onSurface,
-                )
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_more_horiz),
+                        stringResource(R.string.chat_more_actions),
+                        tint = overflowTint,
+                    )
+                }
             }
             if (hasUpdate || menu == WorkspaceMenuPage.Overflow) menuContent()
         }

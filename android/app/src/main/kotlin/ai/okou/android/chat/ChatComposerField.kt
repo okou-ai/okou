@@ -386,16 +386,16 @@ private fun ComposerFeedback(
 ) {
     val actionColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onBackground)
-    if (state.persistence == ComposerPersistence.Failed) {
+    if (state.journal == null && state.persistence == ComposerPersistence.Failed) {
         Text(stringResource(R.string.composer_local_failed))
         TextButton(
-            onClick = { if (state.journal == null) model.open(target) else model.retryLocal() },
+            onClick = { model.open(target) },
             colors = actionColors,
         ) {
             Text(stringResource(R.string.retry))
         }
     }
-    state.journal?.retainedDrafts?.forEach { (key, text) ->
+    state.journal?.manualDrafts(target)?.forEach { (key, text) ->
         val files = state.journal.retainedDraftAttachments[key].orEmpty()
         Text(
             listOf(text)

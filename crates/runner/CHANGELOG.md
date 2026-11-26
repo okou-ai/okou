@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.19...runner-rs-v0.251.20) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** give guarded idle evidence identity checks shared owners ([#51103](https://github.com/okou-ai/okou/issues/51103)) ([372051d](https://github.com/okou-ai/okou/commit/372051dc59c3d943f4620a254772b58a9bcbfc92))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.18...runner-rs-v0.251.19) (2026-11-26)
 
 ### Release Dependencies

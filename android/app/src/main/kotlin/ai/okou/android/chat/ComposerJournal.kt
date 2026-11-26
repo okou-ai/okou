@@ -256,7 +256,6 @@ data class ComposerState(
         val draftKey = draftKey(target)
         val attachments = journal?.drafts?.get(draftKey)?.attachments.orEmpty()
         return journal != null &&
-            persistence != ComposerPersistence.Failed &&
             (target.key !in busy || target.key in checking) &&
             entry.pending == null &&
             target.threadId?.let(::pendingNewChat) == null &&

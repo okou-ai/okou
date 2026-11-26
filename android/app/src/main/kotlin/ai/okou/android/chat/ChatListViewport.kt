@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
+import ai.okou.android.WithButtonFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -166,16 +167,18 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
     }
     val title = stringResource(R.string.composer_new)
     val label: @Composable () -> Unit = { Text(title) }
+    val colors = MaterialTheme.colorScheme
     if (enabled) {
-        ExtendedFloatingActionButton(
-            text = label,
-            icon = icon,
-            onClick = onClick,
-            modifier = Modifier.semantics { text = AnnotatedString(title) },
-        )
+        WithButtonFocusOutline(colors.onPrimaryContainer) {
+            ExtendedFloatingActionButton(
+                text = label,
+                icon = icon,
+                onClick = onClick,
+                modifier = Modifier.semantics { text = AnnotatedString(title) },
+            )
+        }
         return
     }
-    val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
         enabled = false,
