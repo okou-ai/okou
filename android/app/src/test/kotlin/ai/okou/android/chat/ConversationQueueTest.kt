@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -49,6 +50,25 @@ class ConversationQueueTest {
                 assertEquals(13, position.firstVisibleItemScrollOffset)
             }
         }
+    }
+
+    @Test
+    fun restoredPanelUsesTheLoadedQueueToChooseItsHeight() {
+        val pendingEntries = mutableStateOf<List<ConversationMessage>>(emptyList())
+        show(pendingEntries)
+        compose.onNodeWithText("No queued items").assertIsDisplayed()
+
+        compose.runOnIdle {
+            position.requestScrollToItem(16, scrollOffset = 13)
+            pendingEntries.value = entries(40)
+        }
+        item(16).assertIsDisplayed()
+        item(19).assertIsDisplayed()
+        val openedTop = compose.onNodeWithText("Queue (40)").getUnclippedBoundsInRoot().top
+
+        compose.runOnIdle { pendingEntries.value = emptyList() }
+        compose.onNodeWithText("No queued items").assertIsDisplayed()
+        assertEquals(openedTop, compose.onNodeWithText("Queue (0)").getUnclippedBoundsInRoot().top)
     }
 
     @Test

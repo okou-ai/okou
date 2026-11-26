@@ -203,13 +203,15 @@ internal fun ConversationQueueModal(
     val fullScreen = window.height < 480
     val density = LocalDensity.current
     val titleFocus = remember { FocusRequester() }
-    // Keep the first displayed height when the server changes the queue. Reflow on window changes.
+    // Restoration can show an empty queue before history loads. Hold the first populated height.
     var openedHeight by remember(window, density) { mutableIntStateOf(0) }
     val panelHeight =
         when {
             fullScreen -> Modifier.fillMaxHeight()
             openedHeight > 0 -> Modifier.height(with(density) { openedHeight.toDp() })
-            else -> Modifier.onSizeChanged { if (openedHeight == 0) openedHeight = it.height }
+            entries.isNotEmpty() ->
+                Modifier.onSizeChanged { if (openedHeight == 0) openedHeight = it.height }
+            else -> Modifier
         }
     SettingsModal(onDismiss, fullScreen = fullScreen) {
         Box(Modifier.fillMaxWidth().then(panelHeight)) {
