@@ -441,6 +441,8 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
                 stringResource(R.string.settings_day_quota, (seconds / 86_400).toInt())
             seconds != null && seconds >= 3_600 && seconds % 3_600 == 0.0 ->
                 stringResource(R.string.settings_hour_quota, (seconds / 3_600).toInt())
+            seconds != null && seconds >= 60 && seconds % 60 == 0.0 ->
+                stringResource(R.string.settings_minute_quota, (seconds / 60).toInt())
             seconds == null && quota.period == QuotaPeriod.Short ->
                 stringResource(R.string.settings_hour_quota, 5)
             else -> stringResource(R.string.settings_quota)

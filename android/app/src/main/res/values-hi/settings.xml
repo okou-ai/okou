@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">मॉडल खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>
+    <string name="settings_minute_quota">%1$d मिनट का कोटा</string>
     <string name="settings_day_quota">%1$d दिन का कोटा</string>
     <string name="settings_weekly_quota">साप्ताहिक कोटा</string>
     <string name="settings_quota_unavailable">कोटा अभी उपलब्ध नहीं है</string>

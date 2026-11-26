@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Impossibile cambiare account del modello.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">Quota di %1$d ore</string>
+    <string name="settings_minute_quota">Quota di %1$d min</string>
     <string name="settings_day_quota">Quota di %1$d giorni</string>
     <string name="settings_weekly_quota">Quota settimanale</string>
     <string name="settings_quota_unavailable">Quota temporaneamente non disponibile</string>

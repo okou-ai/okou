@@ -31,7 +31,7 @@ internal fun RecoverySubscriptionsSubscriptionsItem.quotas(): List<ModelAccountQ
     val quotas = buildList {
         if (short != null) {
             val remaining = remaining(short.remainingPercent, short.usedPercent)
-            val reset = parseReset(short.resetAt) ?: weekReset
+            val reset = parseReset(short.resetAt)
             if (remaining != null || reset != null || weekRemaining == 0.0) {
                 add(
                     ModelAccountQuota(

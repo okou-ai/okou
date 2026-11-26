@@ -51,6 +51,7 @@
     <string name="settings_account_switch_failed">Gagal mengganti akun model.</string>
     <string name="settings_quota">Kuota</string>
     <string name="settings_hour_quota">Kuota %1$d jam</string>
+    <string name="settings_minute_quota">Kuota %1$d menit</string>
     <string name="settings_day_quota">Kuota %1$d hari</string>
     <string name="settings_weekly_quota">Kuota mingguan</string>
     <string name="settings_quota_unavailable">Kuota untuk sementara tidak tersedia</string>
