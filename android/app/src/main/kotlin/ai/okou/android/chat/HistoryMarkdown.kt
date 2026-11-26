@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -105,6 +106,7 @@ internal data class ChatArtifactActions(
 
 internal val MessageArtifactCardSpacing = 8.dp
 internal val HistoryMarkdownBlockSpacing = 12.dp
+private val MarkdownTableCellPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 internal fun imageFocusReply(focusKey: String?): String? =
     focusKey?.takeIf { it.startsWith("image/") }?.substringAfter('/')?.substringBefore('/')
@@ -967,9 +969,11 @@ private fun HistoryMarkdownTable(
                                 else cellStyle,
                                 "$focusPrefix/$index/$column",
                                 links,
+                                // Reveal the entire cell, including space for the highlight
+                                // outline.
                                 Modifier.width(widths[column])
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    .conversationFindHighlight(selected),
+                                    .conversationFindHighlight(selected, MarkdownTableCellPadding)
+                                    .padding(MarkdownTableCellPadding),
                                 artifacts,
                                 alignment = cell.alignment,
                                 imageScope =

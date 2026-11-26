@@ -2180,8 +2180,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         val focused = hasTestTag("conversation_find_hit") and isFocused() and hasText(text)
         compose.waitUntilExactlyOneExists(focused, 5_000)
         val cell = compose.onNode(focused).assertIsDisplayed().assertTextEquals(text)
+        val bounds = cell.getUnclippedBoundsInRoot()
         val conversation = compose.onNodeWithTag("conversation").getUnclippedBoundsInRoot()
-        assertTrue(cell.getUnclippedBoundsInRoot().right <= conversation.right - 24.dp)
+        assertEquals(112.dp, bounds.right - bounds.left)
+        assertTrue(bounds.right <= conversation.right - 24.dp)
     }
 
     @Test

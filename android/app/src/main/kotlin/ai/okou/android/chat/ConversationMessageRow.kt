@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -566,7 +567,10 @@ internal data class ConversationFindHighlight(
 )
 
 @Composable
-internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighlight?): Modifier {
+internal fun Modifier.conversationFindHighlight(
+    highlight: ConversationFindHighlight?,
+    contentPadding: PaddingValues? = null,
+): Modifier {
     if (highlight == null) return this
     val colors = MaterialTheme.colorScheme
     val focus = remember { FocusRequester() }
@@ -586,10 +590,18 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
     return drawBehind {
             if (highlight.target.highlighted) {
                 val edge = 2.dp.toPx()
+                val left = contentPadding?.calculateLeftPadding(layoutDirection)?.roundToPx() ?: 0
+                val right = contentPadding?.calculateRightPadding(layoutDirection)?.roundToPx() ?: 0
+                val top = contentPadding?.calculateTopPadding()?.roundToPx() ?: 0
+                val bottom = contentPadding?.calculateBottomPadding()?.roundToPx() ?: 0
                 drawRoundRect(
                     colors.secondaryContainer,
-                    topLeft = Offset(-edge, -edge),
-                    size = Size(size.width + 2 * edge, size.height + 2 * edge),
+                    topLeft = Offset(left - edge, top - edge),
+                    size =
+                        Size(
+                            size.width - left - right + 2 * edge,
+                            size.height - top - bottom + 2 * edge,
+                        ),
                     cornerRadius = CornerRadius(4.dp.toPx() + edge),
                 )
             }
