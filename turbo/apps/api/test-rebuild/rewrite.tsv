@@ -788,10 +788,10 @@ chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-event
 chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-005	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-model-overrides.test.ts	chat-events-model-overrides-009	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-002	planned					a-run
-chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-003	planned					d-other
+chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-003	rewritten	15.2		src/signals/routes/__tests__/chat-events-model-routing.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-005	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-007	planned					d-other
-chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-008	planned					d-other
+chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-008	rewritten	192.8		src/signals/routes/__tests__/chat-events-model-routing.test.ts		d-other
 chat	src/signals/routes/__tests__/chat-events-model-routing.test.ts	chat-events-model-routing-012	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-model-snapshot.test.ts	chat-events-model-snapshot-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-events-model-source-context.test.ts	chat-events-model-source-context-002	planned					d-other
