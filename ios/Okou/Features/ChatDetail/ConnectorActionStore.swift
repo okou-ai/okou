@@ -82,7 +82,7 @@ final class ConnectorActionStore {
     var notices: [String: String] = [:]
     var activationError: String?
 
-    func isAuthorizing(target: ChatConnectorTarget) -> Bool {
+    @MainActor func isAuthorizing(target: ChatConnectorTarget) -> Bool {
       guard let flow = active, flow.status.target == target else { return false }
       return flow.busy || flow.waiting || flow.checking
     }
