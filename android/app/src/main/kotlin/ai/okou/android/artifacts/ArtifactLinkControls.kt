@@ -331,10 +331,18 @@ private fun ArtifactLinkPanel(
             }
         },
     ) {
+        val version =
+            when (val selected = confirmed?.version) {
+                ArtifactLinkVersion.CurrentSite ->
+                    stringResource(R.string.artifact_link_current_version)
+                is ArtifactLinkVersion.Deployment ->
+                    selected.number?.let { stringResource(R.string.artifact_link_version, it) }
+                        ?: stringResource(R.string.artifact_link_selected_version)
+                null -> null
+            }
         ArtifactLinkNote(
-            confirmed?.version?.let {
-                stringResource(R.string.artifact_link_version, artifactTitle, it)
-            } ?: artifactTitle,
+            if (version == null) artifactTitle
+            else stringResource(R.string.artifact_metadata, artifactTitle, version),
         )
         if (confirmed != null) {
             ArtifactLinkNote(

@@ -87,9 +87,11 @@
     <string name="artifact_link_workspace">Membri dello spazio di lavoro</string>
     <string name="artifact_link_public">Chiunque abbia il link</string>
     <string name="artifact_link_copied">Link copiato</string>
-    <string name="artifact_private_link_copied">Link copiato. Solo tu puoi aprirlo.</string>
-    <string name="artifact_private_link_hint">Solo tu puoi aprire questo link.</string>
-    <string name="artifact_link_version">%1$s · Versione %2$d</string>
+    <string name="artifact_private_link_copied">Link copiato. Solo tu e le persone invitate potete aprirlo.</string>
+    <string name="artifact_private_link_hint">Solo tu e le persone invitate potete aprire questo link.</string>
+    <string name="artifact_link_version">Versione %1$d</string>
+    <string name="artifact_link_current_version">Versione attuale</string>
+    <string name="artifact_link_selected_version">Versione selezionata</string>
     <string name="artifact_link_loading">Verifica dell’accesso…</string>
     <string name="artifact_link_unavailable">L’accesso al link non è disponibile</string>
     <string name="artifact_link_load_failed">Impossibile verificare l’accesso al link</string>

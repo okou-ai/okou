@@ -87,9 +87,11 @@
     <string name="artifact_link_workspace">वर्कस्पेस के सदस्य</string>
     <string name="artifact_link_public">लिंक वाला कोई भी व्यक्ति</string>
     <string name="artifact_link_copied">लिंक कॉपी हो गया</string>
-    <string name="artifact_private_link_copied">लिंक कॉपी हो गया। इसे सिर्फ़ आप खोल सकते हैं।</string>
-    <string name="artifact_private_link_hint">सिर्फ़ आप यह लिंक खोल सकते हैं।</string>
-    <string name="artifact_link_version">%1$s · वर्शन %2$d</string>
+    <string name="artifact_private_link_copied">लिंक कॉपी हो गया। इसे सिर्फ़ आप और आमंत्रित लोग खोल सकते हैं।</string>
+    <string name="artifact_private_link_hint">सिर्फ़ आप और आमंत्रित लोग यह लिंक खोल सकते हैं।</string>
+    <string name="artifact_link_version">वर्शन %1$d</string>
+    <string name="artifact_link_current_version">मौजूदा वर्शन</string>
+    <string name="artifact_link_selected_version">चुना गया वर्शन</string>
     <string name="artifact_link_loading">ऐक्सेस की जाँच हो रही है…</string>
     <string name="artifact_link_unavailable">लिंक का ऐक्सेस उपलब्ध नहीं है</string>
     <string name="artifact_link_load_failed">लिंक के ऐक्सेस की जाँच नहीं हो सकी</string>

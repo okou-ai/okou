@@ -87,9 +87,11 @@
     <string name="artifact_link_workspace">ワークスペースのメンバー</string>
     <string name="artifact_link_public">リンクを知っている全員</string>
     <string name="artifact_link_copied">リンクをコピーしました</string>
-    <string name="artifact_private_link_copied">リンクをコピーしました。開けるのは自分だけです。</string>
-    <string name="artifact_private_link_hint">このリンクを開けるのは自分だけです。</string>
-    <string name="artifact_link_version">%1$s · バージョン %2$d</string>
+    <string name="artifact_private_link_copied">リンクをコピーしました。自分と招待した人のみ開けます。</string>
+    <string name="artifact_private_link_hint">このリンクを開けるのは自分と招待した人のみです。</string>
+    <string name="artifact_link_version">バージョン %1$d</string>
+    <string name="artifact_link_current_version">現在のバージョン</string>
+    <string name="artifact_link_selected_version">選択したバージョン</string>
     <string name="artifact_link_loading">アクセス権を確認しています…</string>
     <string name="artifact_link_unavailable">リンクのアクセス権を利用できません</string>
     <string name="artifact_link_load_failed">リンクのアクセス権を確認できませんでした</string>

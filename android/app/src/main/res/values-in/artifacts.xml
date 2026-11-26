@@ -87,9 +87,11 @@
     <string name="artifact_link_workspace">Anggota ruang kerja</string>
     <string name="artifact_link_public">Siapa pun yang memiliki tautan</string>
     <string name="artifact_link_copied">Tautan disalin</string>
-    <string name="artifact_private_link_copied">Tautan disalin. Hanya Anda yang dapat membukanya.</string>
-    <string name="artifact_private_link_hint">Hanya Anda yang dapat membuka tautan ini.</string>
-    <string name="artifact_link_version">%1$s · Versi %2$d</string>
+    <string name="artifact_private_link_copied">Tautan disalin. Hanya Anda dan orang yang diundang yang dapat membukanya.</string>
+    <string name="artifact_private_link_hint">Hanya Anda dan orang yang diundang yang dapat membuka tautan ini.</string>
+    <string name="artifact_link_version">Versi %1$d</string>
+    <string name="artifact_link_current_version">Versi saat ini</string>
+    <string name="artifact_link_selected_version">Versi yang dipilih</string>
     <string name="artifact_link_loading">Memeriksa akses…</string>
     <string name="artifact_link_unavailable">Akses tautan tidak tersedia</string>
     <string name="artifact_link_load_failed">Tidak dapat memeriksa akses tautan</string>

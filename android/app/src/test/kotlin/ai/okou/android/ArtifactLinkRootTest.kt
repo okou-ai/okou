@@ -2,6 +2,7 @@ package ai.okou.android
 
 import android.content.ClipboardManager
 import android.content.Intent
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -10,14 +11,19 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.core.content.IntentCompat
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
@@ -32,38 +38,56 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
     @Test
-    fun previewOnlyImageCopiesTheOwnerLinkAndOffersNoShare() {
+    fun previewOnlyImageCopiesTheOwnerLinkWhileAnotherArtifactsPolicyIsPending() {
         val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = false)
         fixture.install()
         val previous = app.fixture.commandResponse
         val reads = CopyOnWriteArrayList<String>()
+        val releaseChecklist = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             if (request.path == "/api/artifact-shares/status") {
                 assertEquals("POST", request.method)
-                reads += request.body.readUtf8()
-                policy(fixture.image.id)
+                val body = request.body.readUtf8()
+                reads += body
+                val id = parse(body).jsonObject.getValue("id").jsonPrimitive.content
+                if (id == fixture.checklist.id) check(releaseChecklist.await(15, TimeUnit.SECONDS))
+                policy(id)
             } else previous(request)
         }
 
-        openArtifact(fixture, fixture.image.title)
-        compose.waitUntilExactlyOneExists(
-            androidx.compose.ui.test.hasContentDescription("Image actions"),
-            10_000,
-        )
+        openArtifact(fixture, fixture.checklist.title)
+        awaitText("Save file")
         assertEquals(emptyList<String>(), reads)
-        compose.onNodeWithContentDescription("Image actions").performClick()
-        awaitText("Copy link")
-        compose.onNodeWithText("Save image").assertDoesNotExist()
-        compose.onNodeWithText("Share link").assertDoesNotExist()
-        compose.onNodeWithText("Copy link").performClick()
+        try {
+            compose.onNodeWithContentDescription("More actions").performClick()
+            compose.waitUntil(5_000) { reads.isNotEmpty() }
+            compose.onNodeWithTag("workspace_popup").performKeyInput { pressKey(Key.Escape) }
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+            awaitText(fixture.image.title)
+            compose.onNodeWithText(fixture.image.title).performClick()
+            compose.waitUntilExactlyOneExists(
+                androidx.compose.ui.test.hasContentDescription("Image actions"),
+                10_000,
+            )
+            compose.onNodeWithContentDescription("Image actions").performClick()
+            awaitText("Copy link")
+            compose.onNodeWithText("Save image").assertDoesNotExist()
+            compose.onNodeWithText("Share link").assertDoesNotExist()
+            compose.onNodeWithText("Copy link").performClick()
+            awaitText("Link copied. Only you and invited people can open it.")
+        } finally {
+            releaseChecklist.countDown()
+        }
 
         val clipboard =
             checkNotNull(compose.activity.getSystemService(ClipboardManager::class.java))
         compose.waitUntil(5_000) { clipboard.primaryClip != null }
         assertEquals(ownerLink, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
         assertEquals(
-            parse("""{"kind":"file","id":"${fixture.image.id}"}"""),
-            parse(reads.single()),
+            listOf(fixture.checklist.id, fixture.image.id).map { id ->
+                parse("""{"kind":"file","id":"$id"}""")
+            },
+            reads.map(::parse),
         )
         assertNull(shadowOf(compose.activity).nextStartedActivity)
     }
@@ -207,7 +231,8 @@ internal class ArtifactLinkRootTest : ArtifactCatalogRootTestFixture() {
         }
         openWebsite(fixture)
         compose.onNodeWithText("Share link").performClick()
-        awaitText("${fixture.site.title} · Version 1")
+        awaitText("${fixture.site.title} · Current version")
+        compose.onNodeWithText("${fixture.site.title} · Version 1").assertDoesNotExist()
         awaitText("Current access · Anyone with the link")
         awaitText(siteAddress)
         shareFromPanel()

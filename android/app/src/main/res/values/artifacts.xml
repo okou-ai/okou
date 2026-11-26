@@ -87,9 +87,11 @@
     <string name="artifact_link_workspace">Workspace members</string>
     <string name="artifact_link_public">Anyone with the link</string>
     <string name="artifact_link_copied">Link copied</string>
-    <string name="artifact_private_link_copied">Link copied. Only you can open it.</string>
-    <string name="artifact_private_link_hint">Only you can open this link.</string>
-    <string name="artifact_link_version">%1$s · Version %2$d</string>
+    <string name="artifact_private_link_copied">Link copied. Only you and invited people can open it.</string>
+    <string name="artifact_private_link_hint">Only you and invited people can open this link.</string>
+    <string name="artifact_link_version">Version %1$d</string>
+    <string name="artifact_link_current_version">Current version</string>
+    <string name="artifact_link_selected_version">Selected version</string>
     <string name="artifact_link_loading">Checking access…</string>
     <string name="artifact_link_unavailable">Link access is unavailable</string>
     <string name="artifact_link_load_failed">Couldn’t check link access</string>
