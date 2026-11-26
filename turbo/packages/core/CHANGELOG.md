@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.883.0](https://github.com/okou-ai/okou/compare/core-v8.882.0...core-v8.883.0) (2026-11-26)
+
+
+### Features
+
+* **core:** enable artifact timing for everyone ([#50973](https://github.com/okou-ai/okou/issues/50973)) ([3d737bf](https://github.com/okou-ai/okou/commit/3d737bf1c93875478f6c5f70c6df2a106edbdf92))
+
 ## [8.882.0](https://github.com/okou-ai/okou/compare/core-v8.881.4...core-v8.882.0) (2026-11-26)
 
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.57.4](https://github.com/okou-ai/okou/compare/android-v0.57.3...android-v0.57.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** align chat list action controls with design ([#50953](https://github.com/okou-ai/okou/issues/50953)) ([5d8eb5c](https://github.com/okou-ai/okou/commit/5d8eb5c70fae4e998e1f6d59376af3e02a2afe23))
+* **android:** align settings feedback and native controls ([#50958](https://github.com/okou-ai/okou/issues/50958)) ([986b9fe](https://github.com/okou-ai/okou/commit/986b9fe0c60aa7f1af40b26d4948f62afe0bd839))
+* **android:** align workflow tabs and outlined form controls ([#50965](https://github.com/okou-ai/okou/issues/50965)) ([ce66edb](https://github.com/okou-ai/okou/commit/ce66edbc01afe82fcdf41e3953d96f061872fe39))
+* **android:** align workspace search read feedback with design ([#50966](https://github.com/okou-ai/okou/issues/50966)) ([3b1592a](https://github.com/okou-ai/okou/commit/3b1592a3aa4123a520abd87a5674fef48cfe1710))
+
 ## [0.57.3](https://github.com/okou-ai/okou/compare/android-v0.57.2...android-v0.57.3) (2026-11-26)
 
 
