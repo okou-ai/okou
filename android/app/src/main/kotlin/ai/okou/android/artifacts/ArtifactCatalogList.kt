@@ -110,7 +110,7 @@ internal fun ArtifactCatalogList(
     position: LazyListState,
     selectedId: String?,
     restoreRow: String?,
-    onFocusRestored: () -> Unit,
+    onReturnFocusFinished: () -> Unit,
     onSelect: (ArtifactItem) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -166,7 +166,7 @@ internal fun ArtifactCatalogList(
                 position,
                 rowFocus,
                 searchFocus,
-                onFocusRestored,
+                onReturnFocusFinished,
                 rowEnabled = restoreRow != null && page?.items?.any { it.id == restoreRow } == true,
             )
             .testTag("artifact_catalog"),
