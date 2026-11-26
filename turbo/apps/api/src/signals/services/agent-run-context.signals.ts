@@ -1,11 +1,6 @@
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { secrets } from "@okouai/db/schema/secret";
@@ -134,7 +129,6 @@ export interface AgentRunContextSignals {
   readonly managedModelKeys$: ReturnType<typeof createManagedModelKeys>;
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
-  readonly selectedImageModel$: Computed<Promise<ImageModel>>;
   readonly threadConnectorSources$: Computed<
     Promise<BootstrapEnvironmentSnapshot["threadSources"]>
   >;
@@ -429,15 +423,6 @@ function createOrgContext(
   };
 }
 
-function createSelectedImageModel(
-  memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>,
-) {
-  return computed(async (get) => {
-    const stored = (await get(memberMetadata$)).preferences?.selectedImageModel;
-    return isImageModelId(stored) ? stored : DEFAULT_IMAGE_MODEL;
-  });
-}
-
 function createRequestInputSources(
   scope: ConnectorMember,
   requestInputs: RunContextRequestInputs | undefined,
@@ -542,9 +527,6 @@ function createIdentityContext(
     executionPackageSources$:
       sharedMember?.executionPackageSources$ ??
       createExecutionPackageSources(scope),
-    selectedImageModel$:
-      sharedMember?.selectedImageModel$ ??
-      createSelectedImageModel(memberMetadata$),
     ...connectorContext,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
@@ -576,7 +558,6 @@ export const preloadAgentRunContext$ = command(
       signals.memberModels$,
       signals.memberRoutes$,
       signals.memberMetadata$,
-      signals.selectedImageModel$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.managedModelKeys$,
