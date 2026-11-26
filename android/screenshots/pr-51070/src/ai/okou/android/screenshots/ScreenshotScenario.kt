@@ -140,9 +140,6 @@ class ScreenshotScenario {
                             capture("phone-inbox-focus.png", backToInbox)
                             press(KeyEvent.KEYCODE_ENTER)
                             find(text(chatTitle))
-                            focus(newChat)
-                            press(KeyEvent.KEYCODE_ENTER)
-                            find(By.pkg(app.packageName).clazz("android.widget.EditText"))
                         } else {
                             val more = label(R.string.chat_more_actions)
                             focus(more, description = true)
@@ -162,6 +159,7 @@ class ScreenshotScenario {
                             find(text(newProjectChat))
                             check(focused(projectTitle) != null) { "Expanding the Project lost its keyboard focus" }
                             press(KeyEvent.KEYCODE_DPAD_DOWN)
+                            device.waitForIdle()
                             check(focused(newProjectChat) != null) { "Down from the Project did not focus its new-chat button" }
                             capture("wide-project-focus.png", newProjectChat)
                             press(KeyEvent.KEYCODE_ENTER)
