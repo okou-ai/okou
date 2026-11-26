@@ -26,8 +26,7 @@ struct ChatAttachmentChips: View {
     .scrollIndicators(.hidden)
     .quickLookPreview($previewURL)
     .sheet(item: $previewImage) { item in
-      MessagePreviewSheet(title: item.file.filename, dismiss: { previewImage = nil }, isImage: true)
-      {
+      MessagePreviewSheet(title: item.file.filename, dismiss: closeImagePreview, isImage: true) {
         MessageFileQuickLook(file: item.file)
       } actions: {
         ShareLink(item: item.file.url) { OkouToolbarIcon("share") }
@@ -35,6 +34,8 @@ struct ChatAttachmentChips: View {
       }
     }
   }
+
+  private func closeImagePreview() { previewImage = nil }
 
   private func chip<Content: View>(@ViewBuilder _ body: () -> Content) -> some View {
     body()

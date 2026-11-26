@@ -5,18 +5,18 @@ struct ImagePreviewSwipeDismiss<Content: View>: View {
   let dismiss: () -> Void
   @ViewBuilder let content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var offset: CGFloat = 0
+  @State private var dragOffset: CGFloat = 0
   @State private var isLeaving = false
 
   var body: some View {
     GeometryReader { geometry in
       content()
         .background(OkouColor.background)
-        .offset(y: reduceMotion ? 0 : offset)
+        .offset(y: reduceMotion ? 0 : dragOffset)
         .opacity(reduceMotion && isLeaving ? 0 : 1)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
-        .simultaneousGesture(
+        .gesture(
           ImagePreviewPan { pan in handle(pan, height: geometry.size.height) }
         )
         .allowsHitTesting(!isLeaving)
@@ -32,13 +32,13 @@ struct ImagePreviewSwipeDismiss<Content: View>: View {
     let translation = pan.translation(in: window)
     switch pan.state {
     case .began, .changed:
-      offset = translation.y
+      dragOffset = translation.y
     case .ended:
-      if ImagePreviewPan.shouldDismiss(translation: translation, velocity: pan.velocity(in: window))
-      {
+      let velocity = pan.velocity(in: window)
+      if ImagePreviewPan.shouldDismiss(translation: translation, velocity: velocity) {
         withAnimation(OkouMotion.press) {
           isLeaving = true
-          offset = translation.y < 0 ? -height : height
+          dragOffset = translation.y < 0 ? -height : height
         } completion: {
           dismiss()
         }
@@ -53,7 +53,7 @@ struct ImagePreviewSwipeDismiss<Content: View>: View {
   }
 
   private func settle() {
-    withAnimation(reduceMotion ? nil : OkouMotion.transition) { offset = 0 }
+    withAnimation(reduceMotion ? nil : OkouMotion.transition) { dragOffset = 0 }
   }
 }
 
@@ -86,6 +86,13 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
       guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
       let direction = pan.velocity(in: pan.view)
       return abs(direction.y) > abs(direction.x)
+    }
+
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer,
+      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+      otherGestureRecognizer is UIPanGestureRecognizer
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
