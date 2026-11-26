@@ -59,18 +59,34 @@ private struct ModelEntryComposer: View {
   let workspace: WorkspaceStore
   let didLoadModels: () -> Void
   var body: some View {
-    let composer = workspace.newComposer
+    StoreProvider(workspace.graph) {
+      ModelEntryContent(workspace: workspace, didLoadModels: didLoadModels)
+    }
+  }
+}
+
+/// Renders the composer and reports when the model configuration it resolves has loaded.
+private struct ModelEntryContent: View {
+  let workspace: WorkspaceStore
+  let didLoadModels: () -> Void
+  @ResolvedValue private var models: ChatModelStore.Snapshot?
+
+  init(workspace: WorkspaceStore, didLoadModels: @escaping () -> Void) {
+    self.workspace = workspace
+    self.didLoadModels = didLoadModels
+    _models = ResolvedValue(workspace.modelStore.snapshotValue)
+  }
+
+  var body: some View {
     VStack {
       Spacer()
-      StoreProvider(workspace.graph) {
-        ChatComposerView(
-          isBusy: false, showsProgress: false, canStop: false,
-          needsUpgrade: false, error: nil, attachmentURL: workspace.webURL,
-          draftState: composer,
-          submit: {}, refresh: nil, modelSelection: workspace.newModelSelection)
-      }
+      ChatComposerView(
+        isBusy: false, showsProgress: false, canStop: false,
+        needsUpgrade: false, error: nil, attachmentURL: workspace.webURL,
+        draftState: workspace.newComposer,
+        submit: {}, refresh: nil, modelSelection: workspace.newModelSelection)
     }
-    .onChange(of: workspace.modelStore.configuration?.defaultSelection.model) { _, model in
+    .onChange(of: models?.configuration?.defaultSelection.model) { _, model in
       if model != nil { didLoadModels() }
     }
   }
