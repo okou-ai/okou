@@ -784,13 +784,13 @@ internal fun <T> SettingsChoiceSheet(
     choice: @Composable (T, Modifier) -> Unit,
 ) {
     val initialIndex = remember { if (selectedIndex in options.indices) selectedIndex else 0 }
-    val position =
-        rememberSettingsChoicePosition(options.getOrNull(initialIndex)?.let(optionKey)) { key ->
-            options.any { optionKey(it) == key }
-        }
-    // Retain the list and its focus with the settings visit when the modal window is recreated.
     val scroll = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+    SettingsChoicePanel(
+        title,
+        dismiss,
+        initialKey = options.getOrNull(initialIndex)?.let(optionKey),
+        isAvailable = { key -> options.any { optionKey(it) == key } },
+    ) { position ->
         LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = scroll) {
             items(options, key = optionKey) { option ->
                 choice(option, position(optionKey(option)))
@@ -800,29 +800,35 @@ internal fun <T> SettingsChoiceSheet(
 }
 
 @Composable
-internal fun rememberSettingsChoicePosition(
+internal fun SettingsChoicePanel(
+    title: String,
+    dismiss: () -> Unit,
     initialKey: String?,
     isAvailable: (String) -> Boolean,
-): (String) -> Modifier {
+    content: @Composable ((String) -> Modifier) -> Unit,
+) {
     var focusedKey by rememberSettingsChoiceFocus()
-    val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
-    val focus = remember { FocusRequester() }
     val inputMode = LocalInputModeManager.current
-    var positioned by remember { mutableStateOf(false) }
-    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    LaunchedEffect(coordinates) {
-        if (!positioned && coordinates?.isAttached == true) {
-            positioned = true
-            if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+        // Reattach focus when resizing replaces the bottom sheet with a dialog or vice versa.
+        val openingKey = remember { focusedKey?.takeIf(isAvailable) ?: initialKey }
+        val focus = remember { FocusRequester() }
+        var positioned by remember { mutableStateOf(false) }
+        var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+        LaunchedEffect(coordinates) {
+            if (!positioned && coordinates?.isAttached == true) {
+                positioned = true
+                if (inputMode.inputMode == InputMode.Keyboard) focus.requestFocus()
+            }
         }
-    }
-    val anchor =
-        Modifier.focusRequester(focus).onGloballyPositioned {
-            if (!positioned && coordinates?.isAttached != true) coordinates = it
-        }
-    return { key ->
-        (if (key == openingKey) anchor else Modifier).onFocusChanged {
-            if (it.isFocused) focusedKey = key
+        val anchor =
+            Modifier.focusRequester(focus).onGloballyPositioned {
+                if (!positioned && coordinates?.isAttached != true) coordinates = it
+            }
+        content { key ->
+            (if (key == openingKey) anchor else Modifier).onFocusChanged {
+                if (it.isFocused) focusedKey = key
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.R
+import ai.okou.android.SettingsChoicePanel
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.SettingsChoiceSheet
 import ai.okou.android.SettingsGroup
@@ -8,12 +9,9 @@ import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioSheet
 import ai.okou.android.SettingsSection
-import ai.okou.android.SettingsSheet
-import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
-import ai.okou.android.rememberSettingsChoicePosition
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
 import androidx.compose.foundation.background
@@ -270,12 +268,13 @@ private fun PaletteSelectionSheet(
     onSelect: (UserPreferencesColorTheme) -> Unit,
 ) {
     val palettes = UserPreferencesColorTheme.entries
-    val position =
-        rememberSettingsChoicePosition(selected.name) { name ->
-            palettes.any { it.name == name }
-        }
     val scroll = rememberLazyGridState(initialFirstVisibleItemIndex = selected.ordinal)
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+    SettingsChoicePanel(
+        title,
+        dismiss,
+        initialKey = selected.name,
+        isAvailable = { name -> palettes.any { it.name == name } },
+    ) { position ->
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
             LazyVerticalGrid(
