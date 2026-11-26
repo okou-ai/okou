@@ -8,19 +8,35 @@ import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-sugges
 // outline. The fades below paint the same color.
 export const FOR_YOU_CARD_GROUND = "bg-muted dark:bg-background";
 
-// Content scrolling past the meta row or into the actions fades out over the
-// card's ground instead of being cut at an edge.
-const META_FADE =
-  "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-3 after:bg-linear-to-b after:from-muted after:to-transparent dark:after:from-background";
-const ACTIONS_FADE =
-  "bg-[linear-gradient(transparent,var(--color-muted)_1.5rem)] dark:bg-[linear-gradient(transparent,var(--color-background)_1.5rem)]";
+// The heading scrolls on its own between the meta row and the actions, which
+// stay put, so a long reason never moves the controls. Its ends fade into the
+// card's ground only while more lies beyond them: each fade runs on the
+// heading's own scroll, over its first and last stretch, and a heading that
+// fits has no scroll to run on, so neither shows.
+const HEADING_SCROLL = "[scroll-timeline:--for-you-heading_y]";
+// When the card scrolls as one, its foot fades the same way above the
+// feedback, which stands on the card's ground without a rule.
+const CARD_SCROLL = "[scroll-timeline:--for-you-card_y]";
+const CARD_FOOT_FADE = cn(
+  "[timeline-scope:--for-you-card]",
+  "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-20 after:h-6 after:bg-linear-to-t after:from-muted after:to-transparent after:opacity-0 dark:after:from-background",
+  "after:[animation-name:for-you-edge-below] after:[animation-fill-mode:both] after:[animation-timing-function:linear] after:[animation-timeline:--for-you-card] after:[animation-range:calc(100%-1.5rem)_100%]",
+);
+const EDGE_FADES = cn(
+  "[timeline-scope:--for-you-heading]",
+  "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-4 before:bg-linear-to-b before:from-muted before:to-transparent before:opacity-0 dark:before:from-background",
+  "before:[animation-name:for-you-edge-above] before:[animation-fill-mode:both] before:[animation-timing-function:linear] before:[animation-timeline:--for-you-heading] before:[animation-range:0_1rem]",
+  "after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-6 after:bg-linear-to-t after:from-muted after:to-transparent after:opacity-0 dark:after:from-background",
+  "after:[animation-name:for-you-edge-below] after:[animation-fill-mode:both] after:[animation-timing-function:linear] after:[animation-timeline:--for-you-heading] after:[animation-range:calc(100%-1.5rem)_100%]",
+);
 
 /**
  * Every For you card keeps one shape: a meta row with where the card came
- * from and its dismissal, a heading that scrolls when it runs long, the
- * actions held at the bottom, and a footer band. The scroll area spans the
- * card, so its scrollbar sits on the card's edge, and the meta row and the
- * actions stay in place as the heading scrolls under them.
+ * from and its dismissal, a heading that scrolls in place when it runs long,
+ * the actions held at the bottom, and the feedback below them. The heading's
+ * scrollbar runs along the card's edge, between the meta row and the actions.
+ * When the actions leave the heading less than its least room, as with a long
+ * direction on a short window, the card scrolls as one instead.
  */
 export function ForYouCardLayout({
   id,
@@ -46,47 +62,59 @@ export function ForYouCardLayout({
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-8 @max-[30rem]/suggestion:px-5">
+      <div
+        className={cn("relative flex min-h-0 flex-1 flex-col", CARD_FOOT_FADE)}
+      >
         <div
           className={cn(
-            "sticky top-0 z-10 -mx-8 flex h-13 shrink-0 items-end justify-between gap-4 px-8 @max-[30rem]/suggestion:-mx-5 @max-[30rem]/suggestion:h-11 @max-[30rem]/suggestion:px-5",
-            FOR_YOU_CARD_GROUND,
-            META_FADE,
+            "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain",
+            CARD_SCROLL,
           )}
         >
-          <div className="flex h-7 min-w-0 items-center">{source}</div>
-          {dismiss && (
-            <div className="-mr-1.5 flex h-7 shrink-0 items-center">
-              {dismiss}
+          <div className="flex h-13 shrink-0 items-end justify-between gap-4 px-8 @max-[30rem]/suggestion:h-11 @max-[30rem]/suggestion:px-5">
+            <div className="flex h-7 min-w-0 items-center">{source}</div>
+            {dismiss && (
+              <div className="-mr-1.5 flex h-7 shrink-0 items-center">
+                {dismiss}
+              </div>
+            )}
+          </div>
+          <div
+            className={cn("relative flex min-h-24 flex-1 flex-col", EDGE_FADES)}
+          >
+            <div
+              data-slot="for-you-card-heading"
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 pt-3 pb-6 [scrollbar-width:thin] @max-[30rem]/suggestion:px-5",
+                HEADING_SCROLL,
+              )}
+            >
+              <h3
+                id={`suggestion-title-${id}`}
+                ref={active ? focusTitle : undefined}
+                tabIndex={-1}
+                className="text-xl leading-7 font-semibold tracking-[-0.012em] text-pretty text-foreground wrap-break-word focus:outline-none"
+              >
+                {title}
+              </h3>
+              {description && (
+                <p className="mt-2 text-sm leading-[1.375rem] text-pretty text-muted-foreground wrap-break-word">
+                  {description}
+                </p>
+              )}
+              {details}
+            </div>
+          </div>
+          {actions && (
+            <div className="shrink-0 px-8 pb-1 @max-[30rem]/suggestion:px-5">
+              {actions}
             </div>
           )}
         </div>
-        <div className="mt-3 flex-1">
-          <h3
-            id={`suggestion-title-${id}`}
-            ref={active ? focusTitle : undefined}
-            tabIndex={-1}
-            className="text-xl leading-7 font-semibold tracking-[-0.012em] text-pretty text-foreground wrap-break-word focus:outline-none"
-          >
-            {title}
-          </h3>
-          {description && (
-            <p className="mt-2 text-sm leading-[1.375rem] text-pretty text-muted-foreground wrap-break-word">
-              {description}
-            </p>
-          )}
-          {details}
-        </div>
-        <div
-          className={cn(
-            "sticky bottom-0 z-10 -mx-8 shrink-0 px-8 pt-6 @max-[30rem]/suggestion:-mx-5 @max-[30rem]/suggestion:px-5",
-            ACTIONS_FADE,
-          )}
-        >
-          {actions}
-        </div>
       </div>
-      <footer className="shrink-0 border-t border-border px-6 py-3 @max-[30rem]/suggestion:px-3">
+      {/* Spacing alone sets the feedback apart from the actions: 8px between
+          directions, 16px from the last one to the feedback. */}
+      <footer className="shrink-0 px-6 pt-3 pb-3 @max-[30rem]/suggestion:px-3">
         {footer}
       </footer>
     </>

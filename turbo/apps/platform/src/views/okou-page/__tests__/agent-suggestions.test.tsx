@@ -1496,18 +1496,26 @@ test("Folding the inline direction keeps what was written until it opens again",
     queryFastControl("button", "Prepare Supply forecast", card),
   ).not.toBeInTheDocument();
 
-  click(await findFastControl("button", "Collapse", region));
+  click(await findFastControl("button", "Collapse", card));
 
+  // Folded, the editor lies under its entry, out of sight and out of reach.
   await waitFor(() => {
-    expect(region).not.toBeVisible();
+    expect(
+      screen.queryByRole("region", { name: "What do you have in mind?" }),
+    ).not.toBeInTheDocument();
   });
+  expect(region).toHaveAttribute("inert");
   await expect(
     findFastControl("button", "Prepare Supply forecast", card),
   ).resolves.toBeInTheDocument();
   click(await findFastControl("button", "What do you have in mind?", card));
-  await waitFor(() => {
-    expect(region).toBeVisible();
-  });
+  await expect(
+    screen.findByRole("region", { name: "What do you have in mind?" }),
+  ).resolves.toBe(region);
+  expect(region).not.toHaveAttribute("inert");
+  expect(
+    queryFastControl("button", "Prepare Supply forecast", card),
+  ).not.toBeInTheDocument();
   expect(edit).toHaveTextContent("Expedite shipping");
 });
 
@@ -1526,7 +1534,7 @@ test("Escape folds the inline direction and returns focus to its entry", async (
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
 
   await waitFor(() => {
-    expect(region).not.toBeVisible();
+    expect(region).toHaveAttribute("inert");
   });
   const entry = await findFastControl(
     "button",
@@ -1569,4 +1577,42 @@ test("Each direction says whether it sends now or drafts in its chat", async () 
   );
   expect(send).toHaveTextContent("Send to a new chat");
   expect(draft).toHaveTextContent("Draft in Ledger");
+});
+
+test("Arrow keys page the deck like its arrows, except while a direction is written", async () => {
+  const one = proposal("Supply forecast");
+  const two = proposal("Packing list", 1);
+  const three = proposal("Freight quote", 0);
+  feed([one, two, three]);
+  await openDeck();
+  await activeCard(one);
+  const user = userEvent.setup({ delay: null });
+
+  await user.keyboard("{ArrowRight}");
+  await activeCard(two);
+  await user.keyboard("{ArrowLeft}");
+  await activeCard(one);
+  // Paging wraps round at either end, as the arrows do.
+  await user.keyboard("{ArrowLeft}");
+  const card = await activeCard(three);
+  await expect(
+    findFastControl("link", "Previous suggestion"),
+  ).resolves.toHaveAttribute("aria-keyshortcuts", "ArrowLeft");
+
+  click(await findFastControl("button", "What do you have in mind?", card));
+  const region = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const edit = await within(region).findByRole("textbox", { name: /message/i });
+  await appendDirection(edit, "Expedite shipping");
+  await user.keyboard("{ArrowLeft}");
+  // Focus on another control keeps the direction open, so the keys still wait.
+  act(() => {
+    queryFastControl("button", "Collapse", card)?.focus();
+  });
+  expect(queryFastControl("button", "Collapse", card)).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+
+  await expect(activeCard(three)).resolves.toBe(card);
+  expect(edit).toHaveTextContent("Expedite shipping");
 });
