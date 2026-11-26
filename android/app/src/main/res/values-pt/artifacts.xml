@@ -64,6 +64,7 @@
     <string name="chat_resources_messages">Mensagens</string>
     <string name="artifact_preview_loading">A carregar pré-visualização…</string>
     <string name="artifact_image_unavailable">Imagem indisponível</string>
+    <string name="artifact_image_original_unavailable">Imagem original indisponível</string>
     <string name="artifact_image_actions">Ações da imagem</string>
     <string name="artifact_image_expand">Expandir visualizador de imagens</string>
     <string name="artifact_image_collapse">Recolher visualizador de imagens</string>

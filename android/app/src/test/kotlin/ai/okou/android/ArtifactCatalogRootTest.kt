@@ -12,6 +12,8 @@ import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ConversationHistorySync
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Looper
@@ -22,6 +24,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.VideoView
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -37,6 +40,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyDescendant
@@ -83,6 +87,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -1711,7 +1716,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun wideImageKeepsItsZoomWhenExpandedAndCollapsed() {
-        val fixture = ArtifactApiFixture(app.fixture)
+        val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
         fixture.install()
         app.responseGate.countDown()
         awaitText(fixture.sourceTitle)
@@ -1722,20 +1727,122 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
 
         val viewport = compose.onNodeWithTag("artifact_preview_surface")
         val paneWidth = viewport.getUnclippedBoundsInRoot().width
+        val expand = compose.onNodeWithContentDescription("Expand image viewer")
+        val menu = compose.onNodeWithContentDescription("Image actions")
+        compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+        assertEquals(
+            4.dp,
+            menu.getUnclippedBoundsInRoot().left - expand.getUnclippedBoundsInRoot().right,
+        )
         val image = compose.onNodeWithTag("artifact_image_transform")
         fun actions() = image.fetchSemanticsNode().config[SemanticsActions.CustomActions]
         val zoom = actions().single { it.label == "Zoom in" }
         compose.runOnIdle { assertTrue(zoom.action()) }
-        assertTrue(actions().any { it.label == "Fit image" })
+        compose.waitUntil(5_000) { actions().any { it.label == "Fit image" } }
 
-        compose.onNodeWithContentDescription("Expand image viewer").performClick()
+        expand.performClick()
         assertTrue(viewport.getUnclippedBoundsInRoot().width > paneWidth)
         assertTrue(actions().any { it.label == "Fit image" })
         compose.onNodeWithContentDescription("Collapse image viewer").performClick()
         assertEquals(paneWidth, viewport.getUnclippedBoundsInRoot().width)
         assertTrue(actions().any { it.label == "Fit image" })
+        image.performKeyInput { pressKey(Key.Zero) }
+        compose.waitUntil(5_000) { actions().none { it.label == "Fit image" } }
         image.performTouchInput { doubleClick() }
-        assertTrue(actions().none { it.label == "Fit image" })
+        compose.waitUntil(5_000) { actions().any { it.label == "Fit image" } }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun decodedOriginalReplacesAuthorizedThumbnailWithoutResettingZoom() {
+        val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
+        val original = Bitmap.createBitmap(512, 256, Bitmap.Config.ARGB_8888)
+        val bytes = ByteArrayOutputStream()
+        try {
+            original.eraseColor(Color.rgb(20, 70, 220))
+            assertTrue(original.compress(Bitmap.CompressFormat.PNG, 100, bytes))
+        } finally {
+            original.recycle()
+        }
+        val releaseOriginal = CountDownLatch(1)
+        fixture.imageResponse = {
+            releaseOriginal.await()
+            MockResponse().setBody(Buffer().write(bytes.toByteArray()))
+        }
+        fixture.install()
+        try {
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.image.title)
+            compose.onNodeWithText(fixture.image.title).performClick()
+            compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
+            val image = compose.onNodeWithTag("artifact_image_transform")
+            fun actions() = image.fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            fun centerIsBlue(): Boolean {
+                val frame = image.captureToImage()
+                val center = frame.toPixelMap()[frame.width / 2, frame.height / 2]
+                return center.blue > 0.75f && center.red < 0.2f
+            }
+            assertTrue(!centerIsBlue())
+            image.performTouchInput { doubleClick() }
+            compose.waitUntil(5_000) { actions().any { it.label == "Fit image" } }
+            releaseOriginal.countDown()
+
+            compose.waitUntil(10_000) { centerIsBlue() }
+            assertTrue(actions().any { it.label == "Fit image" })
+            assertTrue(fixture.requestedDownloads.isEmpty())
+        } finally {
+            releaseOriginal.countDown()
+        }
+    }
+
+    @Test
+    fun missingOriginalKeepsAnAuthorizedThumbnailAndRemovesOriginalActions() {
+        val fixture = ArtifactApiFixture(app.fixture, imageDownloadAllowed = true)
+        val releaseOriginal = CountDownLatch(1)
+        val authorityRead = CountDownLatch(1)
+        val releaseAuthority = CountDownLatch(1)
+        val originalMissing = AtomicBoolean()
+        fixture.imageResponse = {
+            releaseOriginal.await()
+            originalMissing.set(true)
+            MockResponse().setResponseCode(404)
+        }
+        fixture.install()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath == "/artifact-bytes/image" && originalMissing.get()
+            ) {
+                authorityRead.countDown()
+                releaseAuthority.await()
+            }
+            respond(request)
+        }
+        try {
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            awaitText(fixture.image.title)
+            compose.onNodeWithText(fixture.image.title).performClick()
+            val actions = compose.onNodeWithContentDescription("Image actions")
+            compose.waitUntilExactlyOneExists(hasContentDescription("Image actions"), 10_000)
+            compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
+
+            releaseOriginal.countDown()
+            compose.waitUntilDoesNotExist(hasContentDescription("Image actions"), 10_000)
+            releaseAuthority.countDown()
+            awaitText("Original image unavailable")
+            assertEquals(0L, authorityRead.count)
+            compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
+            actions.assertDoesNotExist()
+            compose.onNodeWithText("Image unavailable").assertDoesNotExist()
+            assertTrue(fixture.requestedDownloads.isEmpty())
+        } finally {
+            releaseOriginal.countDown()
+            releaseAuthority.countDown()
+        }
     }
 
     @Test

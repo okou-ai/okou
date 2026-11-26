@@ -64,6 +64,7 @@
     <string name="chat_resources_messages">訊息</string>
     <string name="artifact_preview_loading">正在載入預覽</string>
     <string name="artifact_image_unavailable">圖片無法使用</string>
+    <string name="artifact_image_original_unavailable">原圖無法使用</string>
     <string name="artifact_image_actions">圖片操作</string>
     <string name="artifact_image_expand">展開圖片檢視器</string>
     <string name="artifact_image_collapse">收合圖片檢視器</string>

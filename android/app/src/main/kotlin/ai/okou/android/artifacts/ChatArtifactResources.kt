@@ -54,7 +54,7 @@ internal fun ChatArtifactLinkPreview(
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     LifecycleStartEffect(model, link) {
-        model.select(link)
+        model.select(link, showImageViewer = !inlineImage)
         model.setActive(true, showCatalog = false)
         onStopOrDispose { model.setActive(false) }
     }

@@ -513,6 +513,7 @@ private fun ArtifactProblem.previewLabel(): Int =
     when (this) {
         ArtifactProblem.Denied -> R.string.artifact_access_denied
         ArtifactProblem.Missing -> R.string.artifact_preview_source_unavailable
+        ArtifactProblem.OriginalUnavailable -> R.string.artifact_image_original_unavailable
         ArtifactProblem.Unsupported -> R.string.artifact_preview_unsupported
         ArtifactProblem.Temporary,
         ArtifactProblem.Unavailable -> R.string.artifact_preview_unavailable

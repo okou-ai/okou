@@ -6,6 +6,7 @@ activity = "1.13.0"
 lifecycle = "2.11.1"
 clerk = "1.5.0"
 coil = "3.6.3"
+zoomimage = "1.7.0"
 appcompat = "1.8.0"
 browser = "1.10.0"
 coroutines = "1.11.0"
@@ -40,6 +41,7 @@ clerk-ui = { module = "com.clerk:clerk-android-ui", version.ref = "clerk" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
+zoomimage-compose = { module = "io.github.panpf.zoomimage:zoomimage-compose", version.ref = "zoomimage" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material3 = { module = "androidx.compose.material3:material3" }

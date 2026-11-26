@@ -64,6 +64,7 @@
     <string name="chat_resources_messages">메시지</string>
     <string name="artifact_preview_loading">미리보기 로드 중…</string>
     <string name="artifact_image_unavailable">이미지를 사용할 수 없음</string>
+    <string name="artifact_image_original_unavailable">원본 이미지를 사용할 수 없음</string>
     <string name="artifact_image_actions">이미지 작업</string>
     <string name="artifact_image_expand">이미지 뷰어 펼치기</string>
     <string name="artifact_image_collapse">이미지 뷰어 접기</string>
