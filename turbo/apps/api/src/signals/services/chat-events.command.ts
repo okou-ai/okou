@@ -84,6 +84,7 @@ import {
   type NormalChatInputWrite,
 } from "./normal-chat-input-publication-sql";
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { remoteDeviceMode } from "./remote-device-access";
 import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { now, nowDate } from "../../lib/time";
@@ -1056,6 +1057,7 @@ const requestedThreadComputerAccess$ = command(
       .where(
         and(
           eq(computerUseHosts.id, requestedHostId),
+          sql`NOT ${remoteDeviceMode(params)}`,
           eq(computerUseHosts.orgId, params.orgId),
           eq(computerUseHosts.userId, params.userId),
           isNull(computerUseHosts.revokedAt),

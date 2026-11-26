@@ -21,6 +21,7 @@ import { settle } from "../utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
 import { commitThreadSshOverride$ } from "./chat-ssh-override.service";
+import { remoteDeviceMode } from "./remote-device-access";
 
 const L = logger("ChatRemoteAccess");
 
@@ -81,7 +82,8 @@ export function initialRemoteAccessOwnershipPredicate(
         eq(vncConnections.userId, owner.userId),
       ),
     );
-  return sql`(${ssh}) = ${sshIds.length} AND (${vnc}) = ${vncIds.length}`;
+  return sql`(${ssh}) = ${sshIds.length} AND (${vnc}) = ${vncIds.length}
+    ${overrides.length === 0 ? sql.empty() : sql`AND NOT ${remoteDeviceMode(owner)}`}`;
 }
 
 /** Plain INSERT values; no handles, execution or escaping closures. */

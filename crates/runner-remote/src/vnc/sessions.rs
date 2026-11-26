@@ -112,6 +112,8 @@ impl Drop for NativeWork {
 
 pub(super) struct Session {
     pub(super) info: Info,
+    device_policy: bool,
+    generation: i64,
     // Authority follows this Run-owned transport's native lifetime, as with SSH.
     pub(super) expires: Instant,
     pub(super) transport: Transport,
@@ -566,9 +568,9 @@ impl Run {
             ..StartEvidence::default()
         };
         evidence.begin(Stage::Admission);
-        let result = self
-            .start_inner(request, scope, operation, &mut evidence)
-            .await;
+        // Startup can nest SSH forwarding and native authentication. Keep its
+        // state off the RPC dispatch stack for both direct and tunneled VNC.
+        let result = Box::pin(self.start_inner(request, scope, operation, &mut evidence)).await;
         let report = if let Err(failure) = &result {
             evidence.capture_failure();
             if let Some(snapshot) = &mut evidence.vnc {
@@ -653,7 +655,7 @@ impl Run {
         });
         let native_owner: Arc<dyn kerberos_worker::WorkOwner> = native_work.clone();
         evidence.begin(Stage::Credential);
-        let mut credential = scope
+        let (mut credential, device_policy) = scope
             .wait(self.runtime.authority.resolve(
                 self.id,
                 request.connection_id,
@@ -779,6 +781,7 @@ impl Run {
                             credential.generation,
                             transport,
                             observation.kerberos,
+                            device_policy.then_some(credential.created_at),
                         ))
                         .await??;
                     Carrier::Native(Box::new(stream))
@@ -957,6 +960,7 @@ impl Run {
                     credential.generation,
                     transport,
                     kerberos,
+                    device_policy.then_some(credential.created_at),
                 ))
                 .await??;
             authority_scope.check()?;
@@ -996,6 +1000,8 @@ impl Run {
                     mode: request.mode,
                 },
                 expires,
+                device_policy,
+                generation: credential.generation,
                 transport,
                 kerberos,
                 cancel: session_cancel,
@@ -1046,7 +1052,7 @@ impl Run {
         result
     }
 
-    pub(super) fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
+    pub(super) async fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
         scope.check()?;
         if self.cancel.is_cancelled() || session.cancel.is_cancelled() {
             return Err(Failure::Cancelled);
@@ -1056,9 +1062,19 @@ impl Run {
             session.retire();
             return Err(Failure::TimedOut);
         }
-        // Notifications only cancel this exact authority. Subscription outages
-        // neither restore it nor retire it; missed delivery can delay revocation
-        // until the original Run/session/credential lifetime ends, as with SSH.
+        if session.device_policy {
+            scope
+                .wait(Box::pin(self.runtime.authority.check(
+                    self.id,
+                    session.info.connection_id,
+                    session.generation,
+                    session.transport,
+                    session.kerberos,
+                    session.identity.created_at,
+                )))
+                .await??;
+            scope.check()?;
+        }
         Ok(())
     }
 

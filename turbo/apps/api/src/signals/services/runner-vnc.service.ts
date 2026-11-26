@@ -20,6 +20,7 @@ import { settle, safeSync } from "../utils";
 import {
   currentRunnerVncAuthority$,
   type CurrentVncAuthority,
+  type RunnerVncContext,
 } from "./runner-vnc-authority.service";
 import {
   storedVncSecurity,
@@ -138,6 +139,7 @@ function isSameCurrentHandoff(
   const currentTransport = storedTransportSnapshot(current);
   return (
     currentTransport !== null &&
+    current.remoteDeviceMode === initial.remoteDeviceMode &&
     hasTransportAuthority(current, currentTransport) &&
     hasKdcAuthority(current) &&
     sameKdc(current, initial) &&
@@ -153,13 +155,14 @@ function isSameCurrentHandoff(
 export const checkRunnerVnc$ = command(
   async (
     { set },
-    input: RunnerVncCheckRequest & { readonly runId: string },
+    input: RunnerVncCheckRequest & RunnerVncContext,
     signal: AbortSignal,
   ): Promise<
     | Exclude<RunnerVncCheckResponse, { outcome: "valid" }>
     | {
         readonly outcome: "valid";
         readonly owner: { readonly orgId: string; readonly userId: string };
+        readonly createdAt: string;
       }
   > => {
     const row = await set(currentRunnerVncAuthority$, input, signal);
@@ -195,6 +198,7 @@ export const checkRunnerVnc$ = command(
       ? {
           outcome: "valid" as const,
           owner: { orgId: row.orgId, userId: row.userId },
+          createdAt: row.createdAt,
         }
       : { outcome: "configuration_changed" as const };
   },
@@ -568,11 +572,12 @@ function resolvedRunnerResponse(
 export const resolveRunnerVnc$ = command(
   async (
     { set },
-    input: RunnerVncResolveRequest & { readonly runId: string },
+    input: RunnerVncResolveRequest & RunnerVncContext,
     signal: AbortSignal,
   ): Promise<{
     readonly response: RunnerVncResolveResponse;
     readonly createdAt: string | null;
+    readonly remoteDeviceMode?: boolean;
   }> => {
     const row = await set(currentRunnerVncAuthority$, input, signal);
     if (!row) {
@@ -630,6 +635,7 @@ export const resolveRunnerVnc$ = command(
         authentication,
       ),
       createdAt: row.createdAt,
+      remoteDeviceMode: row.remoteDeviceMode,
     };
   },
 );

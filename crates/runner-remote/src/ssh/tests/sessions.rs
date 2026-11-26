@@ -13,6 +13,67 @@ use super::{
 };
 
 #[tokio::test]
+async fn retained_session_checks_device_policy_and_refreshes_changed_configuration() {
+    let mut h = Harness::new(Reply::Hold).await;
+    let resolve = |generation| {
+        let mut credential = h.credential(true);
+        credential["generation"] = json!(generation);
+        h.api.mock_async(move |when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/ssh/resolve", h.run))
+                .header("X-Okou-Remote-Device-Policy", "1");
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", harness::CREATED_AT)
+                .header("X-Okou-Remote-Device-Policy", "1")
+                .json_body(credential);
+        })
+    };
+    let policy = |generation, outcome| {
+        h.api.mock_async(move |when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/ssh/check", h.run))
+                .json_body(json!({
+                    "connectionId": CONNECTION,
+                    "runnerIdentity": {"runnerId": h.identity.runner_id(), "heartbeatGeneration": h.identity.heartbeat_generation()},
+                    "expectedGeneration": generation,
+                    "expectedCreatedAt": harness::CREATED_AT,
+                }));
+            then.status(200).json_body(json!({"outcome":outcome}));
+        })
+    };
+    let original = resolve(7).await;
+    let valid = policy(7, "valid").await;
+    let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
+    state(&h, &id, "running").await;
+    valid.delete_async().await;
+    let denied = policy(7, "unavailable").await;
+    let result = rpc(&h, "write", json!({"sessionId":id,"dataBase64":"eA=="})).await;
+    assert_eq!(result["failure_reason"], "unavailable");
+    assert_eq!(result["effects"], "not_started");
+    assert!(h.observed.input.lock().unwrap().is_empty());
+    denied.assert_calls_async(1).await;
+    denied.delete_async().await;
+    let valid_again = policy(7, "valid").await;
+    state(&h, &id, "running").await;
+    valid_again.assert_calls_async(1).await;
+    original.assert_calls_async(1).await;
+    valid_again.delete_async().await;
+    original.delete_async().await;
+
+    let changed = policy(7, "configuration_changed").await;
+    let sessions = rpc(&h, "list", json!({})).await;
+    assert_eq!(sessions["sessions"], json!([]));
+    changed.assert_calls_async(1).await;
+
+    let refreshed = resolve(8).await;
+    let _current = policy(8, "valid").await;
+    let replacement = start(&h, json!({"type":"exec","command":"hold"}), false).await;
+    state(&h, &replacement, "running").await;
+    refreshed.assert_calls_async(1).await;
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn lost_start_and_read_replies_do_not_kill_the_session_or_hold_guest_park() {
     use tokio::io::AsyncWriteExt;
     let mut h = Harness::new(Reply::Hold).await;
