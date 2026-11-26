@@ -40,7 +40,8 @@ struct ChatAttachmentChips: View {
     let status: Text? =
       switch item.state {
       case .waiting: Text("Waiting to upload…")
-      case .uploading(let fraction): Text("Uploading \(fraction, format: .percent)")
+      case .uploading(let fraction):
+        Text("Uploading \(fraction, format: .percent.precision(.fractionLength(0)))")
       case .checking: Text("Checking uploaded file…")
       case .ready, .failed: nil
       }
