@@ -1,4 +1,4 @@
-import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
+import { connectorCallbackResultUrl } from "../services/connector-native-return";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { command } from "ccstate";
@@ -1335,7 +1335,10 @@ const callbackBuiltinConnectorInner$ = command(
       const nativeReturn = nativeConnectorReturn(response);
       if (nativeReturn) {
         const nativeResponse = connectorOAuthRedirectResponse(
-          connectorNativeAppReturnUrl(nativeReturn),
+          connectorCallbackResultUrl(
+            connectorSlug,
+            callbackResultFromRedirect(response),
+          ),
         );
         nativeResponse.headers.set("Cache-Control", "no-store");
         nativeResponse.headers.set("Referrer-Policy", "no-referrer");

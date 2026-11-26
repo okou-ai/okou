@@ -3075,6 +3075,9 @@
       "mercuryDisclosure": "Mercury 是一家金融科技公司，不是受 FDIC 承保的銀行。銀行服務由 Choice Financial Group 和 Column N.A. 提供，兩者均為 FDIC 成員。",
       "mercuryDisclosureLabel": "Mercury 銀行服務披露",
       "mercuryLabel": "Mercury",
+      "nativeConnectedAs": "已連接為 {{username}}。正在返回 Okou…",
+      "nativeConnectedDescription": "帳號已連接。正在返回 Okou…",
+      "nativeErrorDescription": "{{error}} 返回 Okou 後重試。",
       "success": "已連線"
     },
     "card": {
