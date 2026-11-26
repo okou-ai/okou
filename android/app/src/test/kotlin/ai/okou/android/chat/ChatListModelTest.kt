@@ -47,6 +47,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -5126,9 +5127,9 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun listRetryKeepsTheServerDeadlineAfterHidingAndReturning() = runTest {
+    fun endingTheListScopeDiscardsBothServerRetryDeadlines() = runTest {
         var attempts = 0
-        var indicatorsAvailable = false
+        var indicatorAttempts = 0
         val service =
             object : Service() {
                 override suspend fun chatSnapshot() =
@@ -5141,7 +5142,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 }
 
                 override suspend fun indicators(): Indicators {
-                    if (!indicatorsAvailable) throw ApiFailure.Http(503, null, null, null)
+                    if (++indicatorAttempts == 1) throw ApiFailure.Http(503, null, null, 18)
                     return super.indicators()
                 }
             }
@@ -5149,35 +5150,31 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             model.refresh()
             runCurrent()
             assertEquals(1, attempts)
+            assertEquals(1, indicatorAttempts)
             assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
-            model.listVisibilityChanged(false)
-            runCurrent()
-            advanceTimeBy(15_000)
-            runCurrent()
-            assertEquals(1, attempts)
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-
-            model.listVisibilityChanged(true)
-            val searchHit = setOf(CHAT_PERSONAL)
-            assertEquals(searchHit, model.resolveSearchChats(searchHit))
-            model.refreshList()
-            advanceTimeBy(4_999)
-            runCurrent()
-            assertEquals(1, attempts)
-
-            indicatorsAvailable = true
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(2, attempts)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertTrue(model.resolveSearchChats(searchHit).isEmpty())
-            assertEquals(2, attempts)
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             advanceTimeBy(1_000)
+            model.selectFilter(ChatListFilter.Archived)
+            model.selectFilter(ChatListFilter.Unread)
             runCurrent()
+            assertEquals(1, attempts)
+            assertEquals(1, indicatorAttempts)
+            model.listVisibilityChanged(false)
+            assertNull(model.uiState.value.listReadFailure)
+            assertEquals(ChatReadPhase.Idle, model.uiState.value.indicatorsPhase)
+
+            advanceTimeBy(4_000)
+            model.listVisibilityChanged(true)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(2, indicatorAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            advanceTimeBy(20_000)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(2, indicatorAttempts)
         }
     }
 
@@ -5308,37 +5305,146 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun continuousIndicatorReadStopsWhenListDemandEndsAndRefreshesOnReturn() = runTest {
-        var attempts = 0
-        var recovered = false
+    fun reopeningTheListRestartsBackoffAndKeepsConfirmedUnread() = runTest {
+        var listAttempts = 0
+        var indicatorAttempts = 0
+        var failing = false
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val service =
             Service().apply {
+                listRead = {
+                    if (failing) {
+                        listAttempts++
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                    page()
+                }
                 statusRead = {
-                    attempts++
-                    if (!recovered) throw ApiFailure.Http(503, null, null, null)
-                    Indicators(emptyMap(), emptyMap())
+                    if (failing) {
+                        indicatorAttempts++
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                    Indicators(emptyMap(), unread)
                 }
             }
         withCatchUpModel(service) { model ->
-            model.refreshIndicators()
+            model.refresh()
+            runCurrent()
+            failing = true
+            model.refresh()
             runCurrent()
             advanceTimeBy(6_000)
             runCurrent()
-            assertEquals(3, attempts)
+            assertEquals(3, listAttempts)
+            assertEquals(3, indicatorAttempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
             model.listVisibilityChanged(false)
             advanceTimeBy(60_000)
             runCurrent()
-            assertEquals(3, attempts)
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-            assertFalse(model.uiState.value.indicatorsNonRetryableFailure)
+            assertEquals(3, listAttempts)
+            assertEquals(3, indicatorAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
             assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
 
-            recovered = true
             model.listVisibilityChanged(true)
             runCurrent()
-            assertEquals(4, attempts)
+            assertEquals(4, listAttempts)
+            assertEquals(4, indicatorAttempts)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+            assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+            failing = false
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+        }
+    }
+
+    @Test
+    fun backgroundingCancelsBothInFlightRequestsAndResumesWithConfirmedContent() = runTest {
+        val service = Service()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            val cached = model.uiState.value
+            assertFalse(cached.threads.isEmpty())
+            val cancelled = mutableSetOf<String>()
+            val releaseCancelledIndicator = CompletableDeferred<Unit>()
+
+            service.listRead = {
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled.add("list")
+                }
+            }
+            service.statusRead = {
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled.add("indicators")
+                    withContext(NonCancellable) { releaseCancelledIndicator.await() }
+                }
+            }
+            model.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+
+            model.activityForegroundChanged(false)
+            runCurrent()
+            val returnedUnread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+            try {
+                assertEquals(setOf("list", "indicators"), cancelled)
+                assertEquals(cached.threads, model.uiState.value.threads)
+                assertEquals(cached.indicators, model.uiState.value.indicators)
+
+                service.listRead = { page(emptyList()) }
+                service.statusRead = { Indicators(emptyMap(), returnedUnread) }
+                model.activityForegroundChanged(true)
+                runCurrent()
+                assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+                assertEquals(cached.indicators, model.uiState.value.indicators)
+            } finally {
+                releaseCancelledIndicator.complete(Unit)
+            }
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            assertEquals(cached.threads, model.uiState.value.threads)
+            assertEquals(returnedUnread, model.uiState.value.displayUnreadAt)
+        }
+    }
+
+    @Test
+    fun explicitCatchUpCanReadWhileTheAutomaticListScopeIsClosed() = runTest {
+        val service = Service()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            model.listVisibilityChanged(false)
+            var reads = 0
+            service.listRead = {
+                reads++
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = "77777777-7777-4777-8777-777777777777",
+                            seq = 18,
+                            thread = CHAT_IN_PROJECT,
+                        ),
+                    ),
+                )
+            }
+            model.refreshList()
+            runCurrent()
+            assertEquals(0, reads)
+            assertTrue(model.resolveSearchChats(setOf(CHAT_IN_PROJECT)).isEmpty())
+            assertEquals(1, reads)
         }
     }
 

@@ -998,6 +998,7 @@ internal fun OkouApp(
         showWorkflows &&
             workflowRoute.tab == WorkflowTab.History &&
             workflowState?.history?.runs?.any { it.chatThreadId != null } == true
+    // An open conversation uses the live list projection for its title and chat actions.
     val needsChatList =
         needsWorkflowSourceChats ||
             (settings == null &&
@@ -1006,7 +1007,7 @@ internal fun OkouApp(
                 (showArtifacts ||
                     showList ||
                     (provisionalId != null && provisionalChat == null) ||
-                    (target is WorkspaceTarget.Chat && thread == null)))
+                    target is WorkspaceTarget.Chat))
     DisposableEffect(chats, needsChatList) {
         chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
