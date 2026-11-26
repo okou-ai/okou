@@ -2002,9 +2002,9 @@ messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	int
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-015	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-016	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-017	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-001	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-004	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-006	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-001	rewritten	42.4		src/signals/routes/__tests__/integrations-telegram-post.test.ts		d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-004	rewritten	33.3		src/signals/routes/__tests__/integrations-telegram-post.test.ts		d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-006	rewritten	15.2		src/signals/routes/__tests__/integrations-telegram-post.test.ts		d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-009	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-010	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-011	planned					a-run
@@ -2018,7 +2018,7 @@ messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integr
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-024	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-026	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-030	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-033	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-post.test.ts	integrations-telegram-post-033	rewritten	25.2		src/signals/routes/__tests__/integrations-telegram-post.test.ts		d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-001	rewritten	8.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	B07	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-002	rewritten	10.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	B07	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	integrations-telegram-readiness-005	rewritten	14.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	B07	d-other
