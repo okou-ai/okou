@@ -8,11 +8,29 @@ import { createAuthDeviceSupportApi } from "./api-bdd-auth-device-support";
 import { createAuthOrgBddApi } from "./api-bdd-auth-org";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
+import { deliverOrganizationCreated } from "./api-bdd-webhooks";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 
+export interface RunExecutionCredentialOptions {
+  /**
+   * How the workspace becomes able to run. `pro` funds it through the Pro
+   * invoice webhook (default). `limited-free` uses the public
+   * `organization.created` bootstrap: an active limited free entitlement with
+   * onboarding credits, for cases whose Given requires no paid plan.
+   */
+  readonly plan?: "pro" | "limited-free";
+  /** Initialize the caller's preferences before the Run (default true). */
+  readonly preferences?: boolean;
+}
+
 /** Reuse one real, owned Runner execution per caller within the current case. */
-export function createRunExecutionCredentials(context: TestContext) {
+export function createRunExecutionCredentials(
+  context: TestContext,
+  options: RunExecutionCredentialOptions = {},
+) {
+  const plan = options.plan ?? "pro";
+  const preferences = options.preferences ?? true;
   const credentials = new Map<
     string,
     {
@@ -83,11 +101,19 @@ export function createRunExecutionCredentials(context: TestContext) {
           actor.orgRole === "org:member"
             ? bdd.user({ orgId: actor.orgId, orgRole: "org:admin" })
             : actor;
-        await runs.grantProEntitlement(admin);
+        if (plan === "pro") {
+          await runs.grantProEntitlement(admin);
+        } else {
+          await deliverOrganizationCreated(context, admin);
+        }
         if (admin.userId !== actor.userId) {
           await bdd.completeOnboarding(actor);
         }
-        await createAuthDeviceSupportApi(context).initializePreferences(actor);
+        if (preferences) {
+          await createAuthDeviceSupportApi(context).initializePreferences(
+            actor,
+          );
+        }
 
         const thread = await createChatFilesBddApi(context).createThread(
           actor,

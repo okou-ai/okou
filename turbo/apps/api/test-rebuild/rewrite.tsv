@@ -8,24 +8,24 @@ non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	skip
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-011	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-014	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
-non-route	src/__tests__/app-factory.test.ts	app-factory-001	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-005	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-007	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-013	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-019	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-022	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-023	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-024	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-034	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-039	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-042	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-047	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-049	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-052	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-056	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-057	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-060	planned					d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-064	planned					d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-001	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-005	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-007	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-013	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-019	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-022	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-023	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-024	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-034	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-039	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-042	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-047	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-049	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-052	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-056	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-057	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-060	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-064	planned				B08	d-other
 non-route	src/__tests__/node-server.test.ts	node-server-003	planned					c-timer
 non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	skipped		adapter-runtime: the case runs the production Vite build with @hono/vite-build/vercel (vite.config.ts) to generate the Node request listener, a full bundler run per case that cannot fit 200 ms		B07	d-other
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	rewritten	76.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/__tests__/worker-lifecycle.test.ts	B07	d-other
@@ -76,17 +76,17 @@ messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-005	rewritten	47.1		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04	
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-007	rewritten	30.0		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04	
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-006	rewritten	53.2		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B05	
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-001	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-007	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-008	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-009	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-010	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-011	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-012	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-013	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-014	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-019	planned					d-other
-messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-020	planned					d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-001	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-007	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-008	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-009	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-010	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-011	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-012	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-013	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-014	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-019	planned				B08	d-other
+messaging	src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	agentphone-groups.bdd-020	planned				B08	d-other
 messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-002	rewritten	165.8		src/signals/routes/__tests__/agentphone-verification.test.ts	B04	
 messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-004	rewritten	19.7		src/signals/routes/__tests__/agentphone-verification.test.ts	B04	
 messaging	src/signals/routes/__tests__/agentphone-verification.test.ts	agentphone-verification-005	rewritten	24.3		src/signals/routes/__tests__/agentphone-verification.test.ts	B04	
@@ -1878,71 +1878,71 @@ messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integra
 messaging	src/signals/routes/__tests__/integrations-github-files.test.ts	integrations-github-files-005	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup)		B01	
 messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-001	revisit		revisit: Given+first When/Then is borderline and was measured only while other writers loaded the 2-CPU machine; evidence: Given+first When/Then 243 ms and 219 ms (Given + the created webhook, before the two status reads, measured 178/243/219 ms in one run; the row with created+suspend and their reads measured 193 ms and 220 ms; dominant Given step: two sequential GitHub App installs through the public install redirect/setup/OAuth routes, 172/240/216 ms; each installation webhook + flush costs 2-7 ms; the installs cannot run concurrently because the install fixture shares one MSW provider double); resume: re-measure row (1/n) on an idle machine and split if it is at most 200 ms		B02	
 messaging	src/signals/routes/__tests__/integrations-github-status.test.ts	integrations-github-status-003	revisit		revisit: shuffled 3-run median over 200 ms in this small file (provisional cold-start rule); evidence: integrations-github-status-003 (1/3) median 162.4 ms (runs 190/162/118); integrations-github-status-003 (2/3) median 141.7 ms (runs 142/165/108); integrations-github-status-003 (3/3) median 205.9 ms (runs 279/206/181); draft /home/user/pilot-env/wip/r13/integrations-github-status.test.ts; resume: split the failing rows or record slow-setup		B02	
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-001	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-002	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-003	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-004	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-005	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-006	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-007	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-008	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-013	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-018	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-022	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-023	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-026	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-027	planned					a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-001	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-002	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-003	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-004	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-005	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-006	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-007	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-008	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-013	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-018	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-022	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-023	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-026	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-027	planned				B08	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-message.test.ts	integrations-slack-message-028	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("started a thread run \"send slack message\", which a Runner claimed"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-001	planned					b-install
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-002	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-004	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-005	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-006	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-007	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-008	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-009	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-010	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-011	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-013	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-014	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-015	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-016	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-018	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-020	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-021	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-022	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-023	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-027	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-028	planned					a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-001	planned				B08	b-install
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-002	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-004	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-005	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-006	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-007	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-008	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-009	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-010	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-011	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-013	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-014	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-015	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-016	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-018	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-020	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-021	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-022	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-023	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-027	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-read.test.ts	integrations-slack-read-028	planned				B08	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-001	rewritten	13.5		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-002	rewritten	163.9		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-004	rewritten	101.6		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-005	rewritten	24.4		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-008	rewritten	80.7		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
 messaging	src/signals/routes/__tests__/integrations-slack-status.test.ts	integrations-slack-status-011	rewritten	118.4		src/signals/routes/__tests__/integrations-slack-status.test.ts	pilot	
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-001	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-003	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-008	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-014	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-016	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-019	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-020	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-021	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-022	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-023	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-025	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-029	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-030	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-031	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-032	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-033	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-034	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-035	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-037	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-038	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-039	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-043	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-045	planned					a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-001	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-003	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-008	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-014	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-016	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-019	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-020	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-021	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-022	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-023	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-025	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-029	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-030	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-031	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-032	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-033	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-034	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-035	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-037	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-038	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-039	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-043	planned				B08	a-run
+messaging	src/signals/routes/__tests__/integrations-slack-upload-complete.test.ts	integrations-slack-upload-complete-045	planned				B08	a-run
 messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-001	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup); route requires a run-scoped Okou agent token with slack:write capability		B02	
 messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-004	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup); route requires a run-scoped Okou agent token with slack:write capability		B02	
 messaging	src/signals/routes/__tests__/integrations-slack-upload-init.test.ts	integrations-slack-upload-init-005	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup); route requires a run-scoped Okou agent token with slack:write capability		B02	
@@ -1974,20 +1974,20 @@ messaging	src/signals/routes/__tests__/integrations-teams.test.ts	integrations-t
 messaging	src/signals/routes/__tests__/integrations-teams.test.ts	integrations-teams-010	rewritten	143.8	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-teams.test.ts	B04	
 messaging	src/signals/routes/__tests__/integrations-teams.test.ts	integrations-teams-015	rewritten	125.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-teams.test.ts	B04	
 messaging	src/signals/routes/__tests__/integrations-teams.test.ts	integrations-teams-016	rewritten	197.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-teams.test.ts	B04	
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-003	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-004	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-006	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-008	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-009	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-010	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-011	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-012	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-013	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-019	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-023	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-024	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-025	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-026	planned					d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-003	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-004	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-006	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-008	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-009	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-010	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-011	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-012	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-013	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-019	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-023	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-024	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-025	planned				B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-026	planned				B08	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-002	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-004	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("runs a Standard thread ... the Runner receives `ANTHROPIC_MODEL` ... and an `OKOU_TOKEN`"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-007	planned					d-other
@@ -3256,7 +3256,7 @@ webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth-google-analyt
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth-google-analytics.test.ts	webhooks-agent-firewall-auth-google-analytics-003	skipped		slow-setup: Given+first When/Then 577.5 ms and 617.0 ms (two runs of one probe: the dispatched chat Run carrying the firewall token - Pro entitlement, runner group, thread + Run creation, Runner heartbeat dispatch, execution input - took 412.7 ms and 441.1 ms alone; Google Analytics OAuth start+callback 60.2/61.9 ms; the first forced firewall auth request 12.5/12.6 ms. The probe connected the account after the Run was created, so the request answered 424 CONNECTOR_NOT_CONFIGURED instead of the scenario 502; the dispatched Run alone already exceeds 200 ms)		B04	
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth-google-analytics.test.ts	webhooks-agent-firewall-auth-google-analytics-005	skipped		slow-setup: Given+first When/Then 577.5 ms and 617.0 ms (two runs of one probe: the dispatched chat Run carrying the firewall token - Pro entitlement, runner group, thread + Run creation, Runner heartbeat dispatch, execution input - took 412.7 ms and 441.1 ms alone; Google Analytics OAuth start+callback 60.2/61.9 ms; the first forced firewall auth request 12.5/12.6 ms. The probe connected the account after the Run was created, so the request answered 424 CONNECTOR_NOT_CONFIGURED instead of the scenario 502; the dispatched Run alone already exceeds 200 ms)		B04	
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth-static-headers.test.ts	webhooks-agent-firewall-auth-static-headers-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("sent a chat whose Run is dispatched with that builtin firewall"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-001	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-001	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-002	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run whose firewall token is presented"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-003	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run whose firewall token is presented"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-004	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run whose firewall token is presented"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
@@ -3265,33 +3265,33 @@ webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	w
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-008	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-012	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-013	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-021	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-021	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-022	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-023	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-024	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-025	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-026	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-025	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-026	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-028	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-029	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-032	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-033	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-034	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-039	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-042	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-049	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-032	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-033	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-034	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-039	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-042	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-049	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-051	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-052	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-053	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-055	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-052	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-053	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-055	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-056	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-057	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-058	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-057	planned				B08	a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-058	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-059	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-060	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-062	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-066	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-067	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-069	planned					a-run
+webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-069	planned				B08	a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-firewall-auth.bdd.test.ts	webhooks-agent-firewall-auth.bdd-072	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running thread Run whose firewall token is presented"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts	webhooks-agent-health-usage-telemetry-001	planned					a-run
 webhooks	src/signals/routes/__tests__/webhooks-agent-health-usage-telemetry.test.ts	webhooks-agent-health-usage-telemetry-002	planned					a-run
