@@ -21,6 +21,7 @@ import android.os.LocaleList
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
@@ -99,7 +100,8 @@ class ScreenshotScenario {
                     if (!wide) {
                         device.find(chat).longClick()
                         device.find(label(R.string.chat_rename)).click()
-                        device.find(By.pkg(app.packageName).desc(labels.getString(R.string.chat_title_field)).focused(true))
+                        val editor = By.pkg(app.packageName).clazz("android.widget.EditText").text("制定下周计划")
+                        device.find(editor)
                         ScreenshotCapture.capture("phone-rename.png")
                     } else {
                         device.find(project).longClick()
@@ -119,6 +121,11 @@ class ScreenshotScenario {
                     }
                 }
             }
+        } catch (failure: Throwable) {
+            runCatching {
+                TestStorage().openOutputFile("diagnostic-hierarchy.xml").use(device::dumpWindowHierarchy)
+            }
+            throw failure
         } finally {
             release.countDown()
             fixture.close()
