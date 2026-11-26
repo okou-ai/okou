@@ -97,7 +97,7 @@ src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	5	3	3	none
 src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	58	29	29	none	
 src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	4	2	2	none	
 src/signals/routes/__tests__/browser-admission.test.ts	2	1	1	none	
-src/signals/routes/__tests__/browser-body-policy.test.ts	6	3	3	none	
+src/signals/routes/__tests__/browser-body-policy.test.ts	6	3	1	fewer	Rewrite review removed browser-body-policy-005 and -006: malformed-JSON and schema-validation input only, which the rewrite rules exclude
 src/signals/routes/__tests__/browser-context.test.ts	8	4	4	none	
 src/signals/routes/__tests__/browser-display.test.ts	8	4	4	none	
 src/signals/routes/__tests__/browser-expiry.test.ts	12	6	6	none	

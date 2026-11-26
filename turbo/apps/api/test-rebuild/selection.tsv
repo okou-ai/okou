@@ -1409,8 +1409,8 @@ src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-001
 src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-002	not-selected	
 src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-003	not-selected	
 src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-004	not-selected	
-src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-005	selected	visible-result
-src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-006	selected	visible-result
+src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-005	not-selected	
+src/signals/routes/__tests__/browser-body-policy.test.ts	browser-body-policy-006	not-selected	
 src/signals/routes/__tests__/browser-context.test.ts	browser-context-001	selected	core-path
 src/signals/routes/__tests__/browser-context.test.ts	browser-context-002	selected	business-rule
 src/signals/routes/__tests__/browser-context.test.ts	browser-context-003	selected	access-isolation

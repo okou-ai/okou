@@ -476,3 +476,22 @@ The first case of a file took 1,171 ms. Dispatch itself took 5 ms. In the normal
 **Timer.** `credit-low-balance-alert-002` waits on `retryClerkRead`. That is three attempts with a 1000 ms `signal-timers` delay plus jitter, so the case is recorded as `timer`.
 
 **VNC fixture.** Cleanup in `helpers/vnc-execution.ts` now skips cancellation for a Run that has already finished. A probe confirmed it across a completed Run, a running Run and a following fixture.
+
+### Round 14: pre-classification, fixture floors and B07
+
+**Pre-classification.** The `precheck` column classes every planned case by its Given and first When. `a-run` needs a dispatched or executing Run or a Run-issued token. `b-install` needs a multistep install flow. `c-timer` may reach a business timer. `d-other` is everything else. The first pass prioritises `d-other`. The classes are keyword-based and therefore approximate. In B07 many `d-other` chat cases still needed a dispatched Run, because a chat send only becomes a visible message once it is bound to a Run.
+
+**Fixture floors (idle machine, 12 runs each).** Each figure is the minimum warm in-test time, with the minimum Vitest row duration after the slash.
+
+| Fixture                                                                                                                           | In-test / row minimum (ms)                 |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Run dispatch via `run-execution-credentials` (Pro, Runner group, dispatched chat Run with Okou and sandbox tokens, plus teardown) | 163.5 / 213.5                              |
+| VNC Run (`vnc-execution` paid owner + runtime)                                                                                    | 171.5 / 223.1                              |
+| Workflow automation Run (`setupWorkflowOrg` + `publicRuns.start`)                                                                 | 199.9 / 244.3                              |
+| Slack install / GitHub App install / Teams install + link / Feishu install                                                        | 46.2 / 59.6 / 34.9 / 115.7 (all below 200) |
+
+A case whose Given requires a paid member with a dispatched Run includes at least the Run dispatch fixture and its teardown. Its row is therefore at least 213.5 ms, so 183 such cases were recorded as slow-setup by this lower bound without their own probes. Their Givens were each confirmed by reading the BDD text. The install fixtures prove nothing alone.
+
+**Run fixture experiment (not adopted).** In a loaded, interleaved comparison, the median Run-class row dropped from 196.8 ms to about 145–147 ms, with 16 of 16 rows at or under 200 ms. Two changes did this: granting the Run's admission through the public `organization.created` webhook (active `limited_free` entitlement plus onboarding credits, 13–16 ms) instead of the Pro invoice webhook (48–66 ms), and skipping `initializePreferences`. Cleanup cannot leave the row without deferring teardown past the case. Completing a Run is not cheaper than cancel plus acknowledgement (about 40 ms). This only fits cases that do not need Pro-gated behaviour, and the change is waiting for a decision.
+
+**Shuffled rule, five seeds.** A row whose three-seed median exceeds 200 ms after running first in at least two orders gets two more seeds and is judged on the five-run median. `connector-oauth-completion-002` and `webhooks-google-calendar-005`/`-006` were split under this rule.

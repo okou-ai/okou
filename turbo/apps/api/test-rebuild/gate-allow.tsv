@@ -28,3 +28,5 @@ voice-google-auth-029	Google Cloud LLM authentication rejected	Given: service-ac
 image-io-responses-013	OpenAI image response request rejected	Given: OpenAI rejects the submission with HTTP 400 moderation_blocked
 connector-device-auth-claim-awaiting-001	Unhandled request error: \[	Given: the provider answers the due poll with a malformed success; Then: HTTP 500
 connector-external-code-claim-completion-001	Unhandled request error: AWS Sign-In token exchange failed	Given: transient provider HTTP 429 and 503 responses; Then: the two transient failures return HTTP 500
+codex-reset-credit-expiry-invalidation-001	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
+codex-reset-credit-expiry-invalidation-002	Unhandled request error: Failed to fetch	Given: the ChatGPT consume endpoint fails with a network error; Then: HTTP 500
