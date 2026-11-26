@@ -345,14 +345,16 @@ function ForYouCover() {
   const markPainted = useSet(markForYouCoverPainted$);
   if (!cover) {
     return (
-      <Skeleton className="-mx-4 aspect-[5/2] max-h-75 shrink-0 rounded-none sm:-mx-8" />
+      <Skeleton className="-mx-4 h-(--for-you-cover) shrink-0 rounded-none sm:-mx-8" />
     );
   }
   return (
     // At most 300px of the picture shows, anchored to its foot, so the sky gives
     // way first and the scene's ground always stays; the page continues below
-    // in the cover's own ground color.
-    <div className="group/cover relative -mx-4 aspect-[5/2] max-h-75 shrink-0 sm:-mx-8">
+    // in the cover's own ground color. The height is set outright rather than
+    // by an aspect ratio, which would carry the 300px cap over to the width
+    // and leave the picture short of the page's right edge.
+    <div className="group/cover relative -mx-4 h-(--for-you-cover) shrink-0 sm:-mx-8">
       <img
         data-slot="for-you-cover"
         src={cover.src}
@@ -626,10 +628,15 @@ function ForYouHeader({
 // 60% of the page, so a short window may cover that foreground. The cover
 // shows the picture at its own proportions up to 300px and the card is at most
 // 680px tall. Container units read the page, which is a size container.
-const FOR_YOU_STAGE = [
-  "relative mx-auto w-full max-w-176 [--for-you-pad:1rem] sm:[--for-you-pad:2rem]",
+// The page declares the scene's width and cover height for both the cover and
+// the stage.
+const FOR_YOU_SCENE = [
+  "[--for-you-pad:1rem] sm:[--for-you-pad:2rem]",
   "[--for-you-width:calc(100cqw_+_2_*_var(--for-you-pad))]",
   "[--for-you-cover:min(calc(var(--for-you-width)_*_0.4),300px)]",
+].join(" ");
+const FOR_YOU_STAGE = [
+  "relative mx-auto w-full max-w-176",
   "[--for-you-top:max(4.5rem,min(calc(var(--for-you-cover)_-_var(--for-you-width)_*_0.12),calc(40cqh_-_1rem)))]",
   "[--for-you-card:max(20rem,min(calc(100cqh_-_var(--for-you-top)_-_1rem),680px))]",
   "mt-[calc(var(--for-you-top)_-_var(--for-you-cover))]",
@@ -660,7 +667,10 @@ export function ForYouPage() {
             "--for-you-ground": cover?.ground ?? DEFAULT_GROUND,
           } as CSSProperties
         }
-        className="relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[rgb(var(--for-you-ground))] px-4 pb-safe-offset-8 transition-[background-color] duration-500 [container-name:for-you] [container-type:size] sm:px-8 dark:bg-[color-mix(in_srgb,rgb(var(--for-you-ground))_66%,black)]"
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[rgb(var(--for-you-ground))] px-4 pb-safe-offset-8 transition-[background-color] duration-500 [container-name:for-you] [container-type:size] sm:px-8 dark:bg-[color-mix(in_srgb,rgb(var(--for-you-ground))_66%,black)]",
+          FOR_YOU_SCENE,
+        )}
       >
         {/* The header sits on the banner and scrolls away with it. */}
         <ForYouHeader ids={remaining} position={position} pager={pager} />
