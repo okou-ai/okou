@@ -11,7 +11,6 @@ import {
   surfaceVariants,
   Badge,
   Button,
-  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -268,11 +267,12 @@ function WorkflowListPanel({
 }
 
 /**
- * Toolbar menu triggers are quiet chrome beside the search field: muted at
- * rest, filled only on hover or while their menu is open, so they never
- * compete with the page actions in the header.
+ * Toolbar menu triggers share the search field's frame: the `outline` variant
+ * draws the same height, radius, hairline and fill as `Input`, so the toolbar
+ * reads as one row of controls and stays lighter than the header's page
+ * actions.
  */
-const TOOLBAR_TRIGGER_CLASS = "h-9 shrink-0 gap-1.5 px-2.5";
+const TOOLBAR_TRIGGER_CLASS = "shrink-0 gap-1.5 px-3";
 
 function MenuRadioSection<T extends string>({
   label,
@@ -332,13 +332,9 @@ function FilterDropdown() {
         render={
           <Button
             type="button"
-            variant="quiet"
-            size="sm"
+            variant="outline"
             highlightWhenOpen
-            className={cn(
-              TOOLBAR_TRIGGER_CLASS,
-              count > 0 && "text-foreground",
-            )}
+            className={TOOLBAR_TRIGGER_CLASS}
             aria-label={t(($) => {
               return $.workflows.list.filter;
             })}
@@ -472,8 +468,7 @@ function SortDropdown({
         render={
           <Button
             type="button"
-            variant="quiet"
-            size="sm"
+            variant="outline"
             highlightWhenOpen
             className={TOOLBAR_TRIGGER_CLASS}
             aria-label={i18n.t(($) => {
@@ -576,7 +571,7 @@ function WorkflowFilterBar({
           className="pl-9"
         />
       </div>
-      <div className="ml-auto flex max-w-full flex-wrap items-center gap-1">
+      <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
         <FilterDropdown />
         <SortDropdown value={sortMode} onChange={setSortMode} />
       </div>
