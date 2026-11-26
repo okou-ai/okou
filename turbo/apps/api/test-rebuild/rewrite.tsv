@@ -3154,25 +3154,25 @@ artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-0
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-012	rewritten	124.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-013	rewritten	19.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
 artifacts	src/signals/routes/__tests__/voice-io-polish.test.ts	voice-io-polish-014	rewritten	6.0	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/voice-io-polish.test.ts	B09	d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-001	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-002	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-003	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-006	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-008	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-010	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-011	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-012	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-014	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-015	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-019	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-020	planned					d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-001	skipped		slow-setup: Given+first When/Then 1075.5 ms and 1592.4 ms (single 25 MiB WAV upload + base64-expanded JSON payload over 33.5 MB through multipart FormData and Vertex mock)			d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-002	skipped		slow-setup: Given+first When/Then 453.9 ms and 587.9 ms (single 25 MiB + 1 byte upload through multipart FormData serialization and Hono raw.formData() parsing)			d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-003	rewritten	125.1		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-006	rewritten	142.5		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-008	rewritten	94.7		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-010	rewritten	142.6		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-011	rewritten	138.8		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-012	rewritten	133.1		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-014	rewritten	116.9		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-015	rewritten	102.1		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-019	rewritten	88.0		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-020	rewritten	103.1		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-021	skipped		timer: waits on a production timer on the case's path (Polish (services/voice-io-polish.service.ts:67 generateVertexVoice, no singleAttempt) -> requestVoiceProvider; 503 is retryable and wait=max(1000*2^n, Retry-After 60s) then delay(wait) at external/voice-provider-request.)			c-timer
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-022	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-023	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-024	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-025	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-028	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-031	planned					d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-022	skipped		slow-setup: Given+first When/Then 1389.9 ms (sequential) and 433.4 ms (40 segments in parallel) (exhausting limited-free-1 daily limit requires 40 POST /api/voice-io/transcribe/segment requests plus cancelled Pro subscription setup)			d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-023	rewritten	183.2		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-024	rewritten	98.0		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-025	rewritten	195.9		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-028	rewritten	114.1		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
+artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-031	rewritten	67.7		src/signals/routes/__tests__/voice-io-transcribe.test.ts		d-other
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-033	skipped		timer: waits on a production timer on the case's path (transcribeVoice (external/voice-completion.ts:81, no singleAttempt) -> requestVoiceProvider; first 429 is retryable -> delay(1000ms) at external/voice-provider-request.ts:102, second identical request succeeds)			c-timer
 artifacts	src/signals/routes/__tests__/voice-io-transcribe.test.ts	voice-io-transcribe-035	skipped		timer: waits on a production timer on the case's path (requestVoiceProvider: 429 x3 with MAX_ATTEMPTS=3 -> two backoff waits delay(1000), delay(2000) at external/voice-provider-request.ts:102 before VoiceProviderUnavailableError -> 503 PROVIDER_UNAVAILABLE after 3 calls)			c-timer
 account-org	src/signals/routes/__tests__/wallet.test.ts	wallet-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has an interactive chat Run dispatched to a Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
