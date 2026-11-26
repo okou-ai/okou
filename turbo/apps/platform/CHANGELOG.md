@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1189.4](https://github.com/okou-ai/okou/compare/app-v0.1189.3...app-v0.1189.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* copy canonical artifact links from chat resources ([#51107](https://github.com/okou-ai/okou/issues/51107)) ([efdb0d7](https://github.com/okou-ai/okou/commit/efdb0d71bc53873fad7531040fe3ebc5126c21b8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/ui bumped to 1.22.35
+
 ## [0.1189.3](https://github.com/okou-ai/okou/compare/app-v0.1189.2...app-v0.1189.3) (2026-11-26)
 
 
