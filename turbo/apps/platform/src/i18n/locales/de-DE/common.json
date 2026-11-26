@@ -1585,6 +1585,8 @@
       "doneRecorded": "Noted — this is already done",
       "dontNudge": "Nicht mehr erinnern",
       "dontNudgeRecorded": "Notiert — bitte nicht mehr daran erinnern",
+      "draftIn": "Entwurf in {{title}}",
+      "draftInChat": "Entwurf im bestehenden Chat",
       "editDraft": "Entwurf im bestehenden Chat vorbereiten",
       "editReason": "Edit reason",
       "feedbackPrompt": "Wie findest du diesen Vorschlag?",

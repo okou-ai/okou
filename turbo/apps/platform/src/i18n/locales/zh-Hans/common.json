@@ -1581,6 +1581,8 @@
       "doneRecorded": "已记下，这件事已经处理了",
       "dontNudge": "别催了",
       "dontNudgeRecorded": "已记录，请不要再催这件事",
+      "draftIn": "在「{{title}}」中起草",
+      "draftInChat": "在原对话中起草",
       "editDraft": "在原对话中准备草稿",
       "editReason": "修改原因",
       "feedbackPrompt": "这条建议怎么样？",

@@ -1581,6 +1581,8 @@
       "doneRecorded": "Noted — this is already done",
       "dontNudge": "재촉하지 마세요",
       "dontNudgeRecorded": "이 일은 더 이상 재촉하지 않도록 기록했어요",
+      "draftIn": "'{{title}}'에서 초안 작성",
+      "draftInChat": "기존 채팅에서 초안 작성",
       "editDraft": "기존 채팅에 초안 준비",
       "editReason": "Edit reason",
       "feedbackPrompt": "이 제안은 어떤가요?",
