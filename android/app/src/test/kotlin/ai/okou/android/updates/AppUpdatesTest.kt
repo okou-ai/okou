@@ -54,6 +54,7 @@ internal class ControlledUpdates : UpdateService {
     var recoverFailure: UpdateProblem? = null
     var heldRecovery: CompletableDeferred<Unit>? = null
     val downloadedReleases = mutableListOf<AndroidUpdatesRelease>()
+    val recoveredReleases = mutableListOf<AndroidUpdatesRelease>()
 
     override suspend fun check(): AndroidUpdates {
         checks++
@@ -65,6 +66,7 @@ internal class ControlledUpdates : UpdateService {
     }
 
     override suspend fun recover(release: AndroidUpdatesRelease): File? {
+        recoveredReleases += release
         heldRecovery?.await()
         recoverFailure?.let { throw UpdateException(it) }
         return downloaded
