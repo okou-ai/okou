@@ -1,0 +1,197 @@
+import { randomUUID } from "node:crypto";
+import { antigravityDeviceAuthContract } from "@okouai/api-contracts/contracts/antigravity-device-auth";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { HttpResponse, http } from "msw";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { antigravityDeviceAuthRoutes } from "../antigravity-device-auth";
+import { meModelProvidersListRoutes } from "../me-model-providers-list";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
+
+const context = testContext();
+const mocks = createRouteMocks(context);
+const CLOUD_CODE = "https://daily-cloudcode-pa.googleapis.com/v1internal";
+
+interface GoogleQuota {
+  readonly tier: { readonly id: string; readonly name: string };
+  readonly models: Record<
+    string,
+    { readonly quotaInfo: { remainingFraction: number; resetTime: string } }
+  >;
+}
+
+/** Google signs in once, then serves the plan and quota per Settings read. */
+function mockGoogle(quota: GoogleQuota) {
+  const quotaRequests: unknown[] = [];
+  server.use(
+    http.post("https://oauth2.googleapis.com/token", async ({ request }) => {
+      const form = new URLSearchParams(await request.text());
+      if (form.get("grant_type") === "refresh_token") {
+        return HttpResponse.json({
+          access_token: "test-google-usage-access",
+          expires_in: 3599,
+          token_type: "Bearer",
+        });
+      }
+      return HttpResponse.json({
+        access_token: "test-google-sign-in-access",
+        refresh_token: "test-google-refresh",
+        expires_in: 3599,
+      });
+    }),
+    http.get("https://www.googleapis.com/oauth2/v1/userinfo", () => {
+      return HttpResponse.json({ id: "4242", email: "pilot@gmail.com" });
+    }),
+    http.post(`${CLOUD_CODE}:loadCodeAssist`, ({ request }) => {
+      if (
+        request.headers.get("authorization") !==
+        "Bearer test-google-usage-access"
+      ) {
+        return new HttpResponse(null, { status: 401 });
+      }
+      return HttpResponse.json({
+        cloudaicompanionProject: "agy-project-1",
+        currentTier: { id: "standard-tier", name: "Standard" },
+        paidTier: quota.tier,
+      });
+    }),
+    http.post(`${CLOUD_CODE}:fetchAvailableModels`, async ({ request }) => {
+      quotaRequests.push(await request.json());
+      return HttpResponse.json({ models: quota.models });
+    }),
+  );
+  return quotaRequests;
+}
+
+function authHeaders() {
+  return { authorization: "Bearer clerk-session" };
+}
+
+async function connectGoogleAccount(): Promise<{
+  readonly orgId: string;
+  readonly userId: string;
+}> {
+  const actor = {
+    orgId: createUniqueStaffOrgIdFixture(),
+    userId: `user_agy_usage_${randomUUID().slice(0, 8)}`,
+  };
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.GeminiAntigravity]: true,
+  });
+  mocks.clerk.session(actor.userId, actor.orgId);
+  const client = setupApp({ context, routes: antigravityDeviceAuthRoutes })(
+    antigravityDeviceAuthContract,
+  );
+  const started = await accept(
+    client.start({ headers: authHeaders(), body: {} }),
+    [200],
+  );
+  const redirect = new URL("http://localhost:51121/oauth-callback");
+  redirect.searchParams.set(
+    "state",
+    new URL(started.body.browserUrl).searchParams.get("state") ?? "",
+  );
+  redirect.searchParams.set("code", "4/0AeaYSHB-code");
+  await accept(
+    client.complete({
+      headers: authHeaders(),
+      body: {
+        sessionToken: started.body.sessionToken,
+        authorizationCode: redirect.toString(),
+      },
+    }),
+    [200],
+  );
+  return actor;
+}
+
+async function listGoogleAccount() {
+  const client = setupApp({ context, routes: meModelProvidersListRoutes })(
+    personalModelProvidersMainContract,
+  );
+  const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+  return listed.body.modelProviders.find((provider) => {
+    return provider.type === "antigravity";
+  });
+}
+
+function inHours(hours: number): string {
+  return new Date(now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+describe("Google AI subscription usage", () => {
+  beforeEach(() => {
+    mockSecretKmsHttp();
+    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_ID", "agy-client.example");
+    mockOptionalEnv("ANTIGRAVITY_OAUTH_CLIENT_SECRET", "agy-client-secret");
+  });
+
+  it("shows the Google AI plan and the tightest Gemini 4 quota", async () => {
+    const carbonReset = inHours(3);
+    const quotaRequests = mockGoogle({
+      tier: { id: "g1-pro-tier", name: "Google AI Pro" },
+      models: {
+        "gemini-4-neon": {
+          quotaInfo: { remainingFraction: 0.75, resetTime: inHours(2) },
+        },
+        "gemini-4-carbon": {
+          quotaInfo: { remainingFraction: 0.4, resetTime: carbonReset },
+        },
+        // Other models in the response do not describe Gemini 4 quota.
+        "claude-sonnet-4-6": {
+          quotaInfo: { remainingFraction: 0, resetTime: inHours(1) },
+        },
+      },
+    });
+    await connectGoogleAccount();
+
+    await expect(listGoogleAccount()).resolves.toMatchObject({
+      planType: "pro",
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 60,
+          remainingPercent: 40,
+          resetAt: carbonReset,
+          windowSeconds: 18_000,
+        },
+        weekly: null,
+      },
+    });
+    expect(quotaRequests).toStrictEqual([{ project: "agy-project-1" }]);
+  });
+
+  it("places a quota that resets after five hours in the weekly window", async () => {
+    const weeklyReset = inHours(72);
+    mockGoogle({
+      tier: { id: "free-tier", name: "Antigravity Free" },
+      models: {
+        "gemini-4-hydrogen": {
+          quotaInfo: { remainingFraction: 0.9, resetTime: weeklyReset },
+        },
+      },
+    });
+    await connectGoogleAccount();
+
+    await expect(listGoogleAccount()).resolves.toMatchObject({
+      planType: "free",
+      subscriptionUsage: {
+        fiveHour: null,
+        weekly: {
+          usedPercent: 10,
+          remainingPercent: 90,
+          resetAt: weeklyReset,
+          windowSeconds: 604_800,
+        },
+      },
+    });
+  });
+});
