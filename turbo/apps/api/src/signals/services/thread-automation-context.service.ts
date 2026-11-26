@@ -17,7 +17,6 @@ import {
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   executionPackageSourcesSchema,
   executionPackageSourcesSql,
@@ -27,8 +26,28 @@ import { resolveOrdinaryAutomationWorkflowName } from "./execution-workflow-sele
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { restoredWorkflowAutomationEventPayload } from "./workflow-automation-context.service";
 
+const launchAutomationColumns = Object.freeze({
+  id: workflowAutomations.id,
+  orgId: workflowAutomations.orgId,
+  workflowId: workflowAutomations.workflowId,
+  ownerUserId: workflowAutomations.ownerUserId,
+  kind: workflowAutomations.kind,
+  scheduleType: workflowAutomations.scheduleType,
+  cronExpression: workflowAutomations.cronExpression,
+  timezone: workflowAutomations.timezone,
+  enabled: workflowAutomations.enabled,
+  autonomyBudget: workflowAutomations.autonomyBudget,
+  officialBlueprintKey: workflowAutomations.officialBlueprintKey,
+  officialAppliedFingerprint: workflowAutomations.officialAppliedFingerprint,
+  officialReconciliationStatus:
+    workflowAutomations.officialReconciliationStatus,
+});
+
 export interface ThreadAutomationTarget {
-  readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly automation: Pick<
+    typeof workflowAutomations.$inferSelect,
+    keyof typeof launchAutomationColumns
+  >;
   readonly packageSources: ExecutionPackageSources;
   /** Authorized ordinary package winner for this picked Automation. */
   readonly ordinaryWorkflowName: string | null;
@@ -116,7 +135,7 @@ export function createThreadAutomationSnapshot(
         },
         sourceRunIdType,
         sourceAutonomyBudget: agentRuns.autonomyBudget,
-        automation: workflowAutomationColumns(),
+        automation: launchAutomationColumns,
         packageSources: sql`CASE WHEN ${workflows.id} IS NOT NULL
           THEN ${executionPackageSourcesSql(bootstrap)}
         END`.mapWith(
