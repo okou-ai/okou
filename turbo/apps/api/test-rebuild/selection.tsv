@@ -2776,7 +2776,7 @@ src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-0
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-030	not-selected	
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-031	not-selected	
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-032	selected	business-rule
-src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-033	not-selected	
+src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-033	selected	business-rule
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-034	selected	access-isolation
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-035	selected	core-path
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-036	selected	visible-result
@@ -2802,7 +2802,7 @@ src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-0
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-056	not-selected	
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-057	not-selected	
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-058	not-selected	
-src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-059	not-selected	
+src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-059	selected	business-rule
 src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	selected	business-rule
 src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-001	selected	core-path
 src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-002	not-selected	
@@ -3680,7 +3680,7 @@ src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitat
 src/signals/routes/__tests__/get-started.test.ts	get-started-001	selected	business-rule
 src/signals/routes/__tests__/get-started.test.ts	get-started-002	not-selected	
 src/signals/routes/__tests__/get-started.test.ts	get-started-003	selected	visible-result
-src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-001	not-selected	
+src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-001	selected	access-isolation
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-002	selected	access-isolation
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-003	selected	access-isolation
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-004	selected	access-isolation
@@ -3699,7 +3699,7 @@ src/signals/routes/__tests__/github-install-authorization.test.ts	github-install
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-017	not-selected	
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-018	selected	core-path
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-019	not-selected	
-src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-020	not-selected	
+src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-020	selected	access-isolation
 src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-021	not-selected	
 src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-001	selected	access-isolation
 src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-002	not-selected	
@@ -6403,7 +6403,7 @@ src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pac
 src/signals/routes/__tests__/usage-record.test.ts	usage-record-001	not-selected	
 src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	selected	access-isolation
 src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	selected	visible-result
-src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-001	not-selected	
+src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-001	selected	visible-result
 src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	selected	core-path
 src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-003	not-selected	
 src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	selected	core-path

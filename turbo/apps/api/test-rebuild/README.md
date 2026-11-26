@@ -517,3 +517,11 @@ A case whose Given requires a paid member with a dispatched Run includes at leas
 **Timer reclassification.** The 63 planned `c-timer` cases were traced through production code. Four wait on a production timer and are recorded as `timer`: the Clerk read retry and the voice provider backoff. One is unsure, because the S3 client's internal retry depends on how the failure is injected. The other 58 are `d-other`.
 
 **`a-run`.** These cases stay planned until Ethan decides whether to relax the rule for them.
+
+### Round 17: copy review of #51084, selections and B12–B13
+
+**Copy review of #51084.** The 105 lines that #51084 (`4a272ad1`) added to `connectors-automatic`, `connectors-https-return` and `custom-connectors-oauth2` were compared with this branch's rewritten files. Against `connectors-automatic`, the overlap is one distinct line, the shared helper call `mockAutomaticMcpOAuthProvider(context, {`. The other two files share nothing. Against main's full files, the branch files share 17% (`connectors-automatic`), 21% (`custom-connectors-oauth2`) and 9% (`connectors-https-return`) of their non-trivial lines. All of these are shared-helper calls, environment setup or values quoted in the BDD (`automatic-user-123`, `userinfo-user@example.test`, `https://foreign-mcp.example.test/`), plus helper-provided client IDs. Two identity values in `connectors-automatic` were not in the BDD or the helpers, so they were renamed to neutral values. No structure, local helper names or new #51084 cases were carried over.
+
+**Discord command registration.** `register-discord-commands.test.mjs` asserts the text that the operator command prints to stdout, which is its user-facing output, not logger diagnostics. Each case restores `process.stdout.write` with `onTestFinished`. A child process cannot be used, because the Discord API is simulated in-process with MSW.
+
+**Timing.** `billing-usage-pack-subscriptions-036` (2/2) passed in round 16 but measured a non-first median of 203.4 ms on this round's slower machine, so it was moved out of the committed file. A file whose only row is first in every order passes when the median of all its runs is at most 200 ms, which is stricter than the non-first rule; `computer-use-screenshot-completion-001` passes at 138.9 ms.

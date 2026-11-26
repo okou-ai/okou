@@ -47,3 +47,7 @@ billing-usage-pack-subscriptions-052	organizationInvitation.accepted activation 
 connectors-oauth-start-091	Connector runtime capability is unavailable	Given: no GitHub OAuth client ID is configured
 cron-connector-catalog-v4-006	Connector catalog candidate rejected	Given: the catalog source has no objects (source-unavailable)
 computer-use-host-presence-004	Unable to publish computer-use command wakeup	Given: every realtime publication fails
+computer-use-screenshot-completion-001	Unhandled request error: Object storage is unavailable	Given: object storage fails the first upload; Then: completion returns HTTP 500
+discord-ingress-022	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+discord-ingress-023	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input
+discord-ingress-031	Discord ingress processing deferred to recovery	Given: the sender or bot lost the permission to create public threads; Then: no canonical input

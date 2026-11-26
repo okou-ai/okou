@@ -251,7 +251,7 @@ src/signals/routes/__tests__/connector-runtime-placeholders.test.ts	1	1	1	none
 src/signals/routes/__tests__/connector-runtime-wakeups.test.ts	5	3	2	fewer	Remaining 3 are Ably provider-rejection/missing-result response variants (channel 429, HTTP 429, empty result) with the same deletion outcome already covered by 001
 src/signals/routes/__tests__/connector-skill-bundles.test.ts	4	2	2	none	
 src/signals/routes/__tests__/connectors-automatic-security.test.ts	7	4	4	none	
-src/signals/routes/__tests__/connectors-automatic.test.ts	60	30	30	none	
+src/signals/routes/__tests__/connectors-automatic.test.ts	60	30	32	more	Rewrite review added connectors-automatic-033 (two simultaneous no-auth adds must end with exactly one default account; no selected case checks the default flag on this path); Rewrite review added connectors-automatic-059 (an account deleted by the user must not return when an earlier reconnect completes; no selected case covers deleting during a reconnect)
 src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	9	5	5	none	
 src/signals/routes/__tests__/connectors-https-return.test.ts	17	9	9	none	
 src/signals/routes/__tests__/connectors-list.test.ts	7	4	4	none	
@@ -342,7 +342,7 @@ src/signals/routes/__tests__/friend-referrals.test.ts	5	3	3	none
 src/signals/routes/__tests__/generation-template-prompt.test.ts	11	6	0	fewer	All 11 are Intent: review unit checks of the prompt-builder library asserting internal prompt text, with no user-observable API outcome
 src/signals/routes/__tests__/get-started-invitations.test.ts	6	3	3	none	
 src/signals/routes/__tests__/get-started.test.ts	3	2	2	none	
-src/signals/routes/__tests__/github-install-authorization.test.ts	21	11	11	none	
+src/signals/routes/__tests__/github-install-authorization.test.ts	21	11	13	more	Rewrite review added github-install-authorization-001 (a signed-out install request that names an admin's identifiers must go to sign-in and create nothing; selected cases cover only signed-in mismatches); Rewrite review added github-install-authorization-020 (GitHub's stateless update callback after an edit on github.com must only navigate without binding an installation; no selected case covers it)
 src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	6	3	3	none	
 src/signals/routes/__tests__/global-sweep-contracts.test.ts	16	8	2	fewer	Remaining 14 are cron-secret 401 checks on internal scheduler endpoints that no user or integration calls (one representative kept)
 src/signals/routes/__tests__/hooks-ops.bdd.test.ts	5	3	3	none	
@@ -545,7 +545,7 @@ src/signals/routes/__tests__/uploads-multipart.test.ts	10	5	5	none
 src/signals/routes/__tests__/uploads-prepare.test.ts	23	12	12	none	
 src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	27	14	14	none	
 src/signals/routes/__tests__/usage-record.test.ts	3	2	2	none	
-src/signals/routes/__tests__/user-config.bdd.test.ts	12	6	6	none	
+src/signals/routes/__tests__/user-config.bdd.test.ts	12	6	7	more	Rewrite review added user-config.bdd-001 (the defaults a brand-new user sees are not checked by any selected case)
 src/signals/routes/__tests__/user-export-publication.test.ts	6	3	3	none	
 src/signals/routes/__tests__/user-model-image-preference.test.ts	4	2	2	none	
 src/signals/routes/__tests__/user-preferences.test.ts	12	6	6	none	
