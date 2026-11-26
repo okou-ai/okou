@@ -1996,6 +1996,7 @@
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides"
       },
+      "followupAcceptLabel": "Aceitar",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Pesquise conversas ou projetos…",

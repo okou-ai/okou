@@ -1960,6 +1960,7 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
+      "followupAcceptLabel": "적용",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "채팅 또는 프로젝트 검색…",

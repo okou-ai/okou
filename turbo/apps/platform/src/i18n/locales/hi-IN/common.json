@@ -1966,6 +1966,7 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
+      "followupAcceptLabel": "स्वीकारें",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "चैट या प्रोजेक्ट खोजें…",

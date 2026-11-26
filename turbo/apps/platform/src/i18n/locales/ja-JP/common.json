@@ -1960,6 +1960,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
+      "followupAcceptLabel": "採用",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "チャットやプロジェクトを検索…",

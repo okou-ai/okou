@@ -1960,6 +1960,7 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
+      "followupAcceptLabel": "採用",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "搜尋聊天或專案…",

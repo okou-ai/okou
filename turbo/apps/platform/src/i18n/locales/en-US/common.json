@@ -1966,6 +1966,7 @@
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
+      "followupAcceptLabel": "Accept",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Search chats or projects…",
