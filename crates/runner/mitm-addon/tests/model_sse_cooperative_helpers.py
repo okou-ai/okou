@@ -4,6 +4,7 @@ import gzip
 import json
 import zlib
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 
 import brotli
@@ -50,25 +51,36 @@ def make_model_sse_pipeline_flow(
     return flow
 
 
-def model_sse_update(protocol: str, output: int) -> bytes:
+def _model_sse_update_template(protocol: str) -> bytes:
     if protocol == "anthropic":
-        event = "message_delta"
-        data = {"type": event, "usage": {"output_tokens": output}}
+        event = b"message_delta"
     elif protocol == "responses":
         # Unknown compatible-provider events may legitimately contain usage.
-        event = "gateway.usage"
-        data = {"type": event, "usage": {"output_tokens": output}}
+        event = b"gateway.usage"
     else:
-        event = None
-        data = {"usage": {"completion_tokens": output}}
-    prefix = f"event: {event}\n".encode() if event else b""
-    return prefix + b"data: " + _SSE_JSON_ENCODER.encode(data).encode() + b"\n\n"
+        return b'data: {"usage":{"completion_tokens":%s}}\n\n'
+    return (
+        b"event: " + event + b'\ndata: {"type":"' + event + b'","usage":{"output_tokens":%s}}\n\n'
+    )
+
+
+def model_sse_update(protocol: str, output: int) -> bytes:
+    return _model_sse_update_template(protocol) % _SSE_JSON_ENCODER.encode(output).encode()
+
+
+def build_model_sse_updates(protocol: str, outputs: range) -> bytes:
+    """Render integer ranges without retaining each frame until the body is complete."""
+    template = _model_sse_update_template(protocol)
+    body = BytesIO()
+    for output in outputs:
+        body.write(template % str(output).encode("ascii"))
+    return body.getvalue()
 
 
 @lru_cache(maxsize=6)
 def model_sse_updates(protocol: str, count: int) -> bytes:
     """Reuse the three protocols' 40/10,000-event inputs, never per-flow state."""
-    return b"".join(model_sse_update(protocol, index) for index in range(1, count + 1))
+    return build_model_sse_updates(protocol, range(1, count + 1))
 
 
 def model_sse_terminal(protocol: str, output: int) -> bytes:
