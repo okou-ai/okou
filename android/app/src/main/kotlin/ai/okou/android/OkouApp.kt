@@ -1168,7 +1168,7 @@ internal fun OkouApp(
                 createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
                 useError =
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
-                feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
+                actionSnackbar = snackbar,
                 onClose = ::closeWorkflows,
                 directEntry =
                     workflowOrigin.search.isOpen || workflowRoute.resourceReturnRow != null,

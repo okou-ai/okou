@@ -43,7 +43,6 @@
     <string name="workflow_instructions">Instructions</string>
     <string name="workflow_instructions_heading">Instructions du workflow</string>
     <string name="workflow_keep_editing">Continuer la modification</string>
-    <string name="workflow_load_failed">Impossible de charger les workflows</string>
     <string name="workflow_rules_load_failed">Impossible de charger les règles de déclenchement.</string>
     <string name="workflow_mail_from_contains">L’expéditeur contient %1$s</string>
     <string name="workflow_mail_labeled">Libellé Gmail appliqué</string>
@@ -110,7 +109,6 @@
     <string name="workflow_write_conflict">Ce workflow a changé pendant l’enregistrement. Vos modifications sont conservées.</string>
     <string name="workflow_history_earlier">Afficher les exécutions précédentes</string>
     <string name="workflow_history_event">Événement</string>
-    <string name="workflow_history_failed">Impossible de charger l’historique des exécutions</string>
     <string name="workflow_history_loading">Chargement de l’historique des exécutions…</string>
     <string name="workflow_history_open_chat">Ouvrir la conversation d’origine</string>
     <string name="workflow_history_unavailable">Historique des exécutions indisponible</string>

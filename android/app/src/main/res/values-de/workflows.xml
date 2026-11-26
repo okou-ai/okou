@@ -43,7 +43,6 @@
     <string name="workflow_instructions">Anweisungen</string>
     <string name="workflow_instructions_heading">Workflow-Anweisungen</string>
     <string name="workflow_keep_editing">Weiter bearbeiten</string>
-    <string name="workflow_load_failed">Workflows konnten nicht geladen werden</string>
     <string name="workflow_rules_load_failed">Auslöseregeln konnten nicht geladen werden.</string>
     <string name="workflow_mail_from_contains">Absender enthält %1$s</string>
     <string name="workflow_mail_labeled">Gmail-Label hinzugefügt</string>
@@ -109,7 +108,6 @@
     <string name="workflow_write_conflict">Dieser Workflow wurde während des Speicherns geändert. Deine Änderungen bleiben erhalten.</string>
     <string name="workflow_history_earlier">Frühere Ausführungen anzeigen</string>
     <string name="workflow_history_event">Ereignis</string>
-    <string name="workflow_history_failed">Verlauf konnte nicht geladen werden</string>
     <string name="workflow_history_loading">Verlauf wird geladen…</string>
     <string name="workflow_history_open_chat">Zugehörigen Chat öffnen</string>
     <string name="workflow_history_unavailable">Verlauf nicht verfügbar</string>

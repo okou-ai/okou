@@ -25,7 +25,6 @@ import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -33,12 +32,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarData
+import androidx.compose.material3.SnackbarDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -58,7 +58,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
@@ -67,17 +66,13 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
-private val feedbackActionShape = RoundedCornerShape(8.dp)
 
 private data class ChatFeedbackContent(
     val message: String,
@@ -605,7 +600,7 @@ internal fun WorkspaceFeedbackHost(
     }
     SnackbarHost(state) { data ->
         val visuals = data.visuals
-        val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
+        val style = MaterialTheme.typography.bodyMedium
         Surface(
             modifier =
                 modifier
@@ -613,21 +608,25 @@ internal fun WorkspaceFeedbackHost(
                     .widthIn(max = 480.dp)
                     .fillMaxWidth()
                     .then(surfaceModifier),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            shadowElevation = 4.dp,
+            shape = SnackbarDefaults.shape,
+            color = SnackbarDefaults.color,
+            contentColor = SnackbarDefaults.contentColor,
+            shadowElevation = 6.dp,
         ) {
             FeedbackLayout(
-                modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
+                modifier =
+                    Modifier.animateContentSize(alignment = Alignment.BottomCenter)
+                        .padding(
+                            start = 16.dp,
+                            end = if (visuals.withDismissAction) 0.dp else 8.dp,
+                        ),
                 textSize = style.fontSize,
                 message = {
-                    Text(visuals.message, Modifier.padding(vertical = 12.dp), style = style)
+                    Text(visuals.message, Modifier.padding(vertical = 14.dp), style = style)
                 },
                 actions = {
                     FeedbackActions(
                         data,
-                        style,
                         Modifier.onFocusChanged {
                             if (it.hasFocus) focused.value = data
                             else if (focused.value === data) focused.value = null
@@ -640,13 +639,13 @@ internal fun WorkspaceFeedbackHost(
 }
 
 @Composable
-private fun FeedbackActions(data: SnackbarData, style: TextStyle, modifier: Modifier) {
+private fun FeedbackActions(data: SnackbarData, modifier: Modifier) {
     val visuals = data.visuals
     val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
     val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
-    val accent = MaterialTheme.colorScheme.inversePrimary
+    val accent = SnackbarDefaults.actionColor
     Row(
         modifier = modifier.focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(feedbackActionGap),
@@ -658,10 +657,8 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle, modifier: Modi
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget)
-                        .updateFocusOutline(feedbackActionShape, accent),
+                        .updateFocusOutline(CircleShape, accent),
                 enabled = action?.content?.value?.enabled ?: true,
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                shape = feedbackActionShape,
                 colors =
                     ButtonDefaults.textButtonColors(
                         contentColor = accent,
@@ -669,20 +666,18 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle, modifier: Modi
                             MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.38f),
                     ),
             ) {
-                Text(label, style = style.copy(fontWeight = FontWeight.SemiBold))
+                Text(label)
             }
         }
         if (dismissible) {
             IconButton(
                 data::dismiss,
-                Modifier.size(feedbackTouchTarget)
-                    .clip(feedbackActionShape)
-                    .updateFocusOutline(feedbackActionShape, accent),
+                Modifier.size(feedbackTouchTarget).updateFocusOutline(CircleShape, accent),
             ) {
                 Icon(
                     painterResource(R.drawable.ic_close),
                     stringResource(R.string.chat_feedback_dismiss),
-                    Modifier.size(20.dp),
+                    Modifier.size(24.dp),
                 )
             }
         }
@@ -701,7 +696,7 @@ private fun FeedbackLayout(
             message()
             actions()
         },
-        modifier = modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        modifier = modifier.heightIn(min = 48.dp),
     ) { children, bounds ->
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val buttons = children.getOrNull(1)?.measure(loose)
