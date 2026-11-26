@@ -1511,27 +1511,27 @@ messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-inte
 messaging	src/signals/routes/__tests__/discord-interactions.test.ts	discord-interactions-005	rewritten	11.3		src/signals/routes/__tests__/discord-interactions.test.ts	B04	
 messaging	src/signals/routes/__tests__/discord-lifecycle.test.ts	discord-lifecycle-001	skipped		slow-setup: Given+first When/Then (three real Discord OAuth bindings, DM selection, verified organizationMembership.deleted webhook with its pending cleanup) measured 334.3 ms and 316.7 ms in two runs, the Given alone 265.1 ms and 246.3 ms; dominant Given steps are the three bindings via helpers/discord createPublicDiscordBinding (first 138.9/131.5 ms including the file cold start, then 60.5/55.6 ms and 57.3/50.4 ms), the webhook plus cleanup took 69.2/70.4 ms; the complete test passed at 349-387 ms (draft kept at /tmp/b06-2-drafts/discord-lifecycle.test.ts)		B06	
 messaging	src/signals/routes/__tests__/discord-oauth-export.test.ts	discord-oauth-export-001	skipped		slow-setup: Given+first When/Then (installer install binding plus pending connect attempt, peer connect binding plus pending attempt, another workspace install, then POST /api/user/export returning 202) measured 256.5 ms and 342.9 ms in two runs; dominant Given steps are the three real Discord OAuth bindings via helpers/discord createPublicDiscordBinding (installer 132.0/207.6 ms including the file cold start, peer 55.7/62.5 ms, other workspace 53.1/55.6 ms); settling the export job before the status read added 293.9/204.7 ms, so the whole draft ran 563-566 ms (draft at /tmp/b06-2-drafts/discord-oauth-export.measure.test.ts)		B06	
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-001	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-002	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-003	planned				B12	b-install
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-004	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-005	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-006	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-009	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-013	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-023	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-026	planned				B12	b-install
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-029	planned				B12	b-install
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-030	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-031	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-032	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-036	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-043	planned				B12	b-install
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-045	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-046	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-047	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-048	planned				B12	d-other
-messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-055	planned				B12	b-install
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-001	rewritten	79.3		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-002	rewritten	48.7		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-003	rewritten	98.3	split n=2: 1/2=56.8; 2/2=98.3	src/signals/routes/__tests__/discord-oauth.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-004	rewritten	44.6		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-005	rewritten	83.8		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-006	rewritten	14.5		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-009	rewritten	53.1		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-013	rewritten	60.7		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-023	rewritten	22.7		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-026	rewritten	22.5		src/signals/routes/__tests__/discord-oauth.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-029	rewritten	113.6		src/signals/routes/__tests__/discord-oauth.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-030	rewritten	105.6		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-031	rewritten	108.4		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-032	rewritten	113.8		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-036	rewritten	87.6		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-043	rewritten	52.4		src/signals/routes/__tests__/discord-oauth.test.ts	B12	b-install
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-045	rewritten	56.9		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-046	rewritten	32.4		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-047	rewritten	41.0		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-048	rewritten	20.4		src/signals/routes/__tests__/discord-oauth.test.ts	B12	d-other
+messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-055	rewritten	28.9		src/signals/routes/__tests__/discord-oauth.test.ts	B12	b-install
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-001	rewritten	57.4		src/signals/routes/__tests__/email-subscription.test.ts	B04	
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-002	revisit		revisit: the draft hand-signed the one-click unsubscribe token with the production derivation (self-signed credential, not allowed); evidence: the token is only delivered in an optional email's unsubscribe link; draft /home/user/pilot-env/wip/r11/email-subscription.test.ts; resume: capture the link from a real optional email sent through the email provider double		B04	
 messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-003	rewritten	19.7		src/signals/routes/__tests__/email-subscription.test.ts	B04	
