@@ -2980,7 +2980,7 @@ artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	tem
 artifacts	src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-027	planned				
 messaging	src/signals/routes/__tests__/test-teams-state.test.ts	test-teams-state-001	planned				
 messaging	src/signals/routes/__tests__/test-teams-state.test.ts	test-teams-state-003	planned				
-account-org	src/signals/routes/__tests__/transcribe.test.ts	transcribe-001	planned				B06
+account-org	src/signals/routes/__tests__/transcribe.test.ts	transcribe-001	skipped		slow-setup: the Given alone, measured only up to the Run token (before the MCP credentials, the two private recording uploads and the first When), took 472 ms and 465 ms in two runs (rows 483 ms and 474 ms). Given steps: onboarding with workspace provisioning 80/80 ms; Pro entitlement, personal subscription model, Runner group heartbeat and chat send through dispatch to the execution envelope carrying the Run token 392/385 ms.		B06
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-001	planned				
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-004	planned				
 artifacts	src/signals/routes/__tests__/uploads-complete.test.ts	uploads-complete-005	planned				
