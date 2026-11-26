@@ -847,11 +847,11 @@ chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	cha
 chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-005	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-006	planned					d-other
 chat	src/signals/routes/__tests__/chat-events-subscription-authority.test.ts	chat-events-subscription-authority-007	planned					a-run
-chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-001	planned				B09	d-other
-chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-002	planned				B09	d-other
-chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-004	planned				B09	a-run
-chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-009	planned				B09	d-other
-chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-010	planned				B09	d-other
+chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-001	rewritten	123.9	split n=2: 1/2=48.1; 2/2=123.9	src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-002	rewritten	52.6		src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-004	revisit		revisit: over 200 ms by shuffled 3-run median (chat-files.bdd-004 (1/5) 94.5 ms (185/95/90); chat-files.bdd-004 (2/5) 147.5 ms (157/121/148); chat-files.bdd-004 (3/5) 156.7 ms (128/157/257); chat-files.bdd-004 (4/5) 109.4 ms (110/106/109); chat-files.bdd-004 (5/5) 217.5 ms (148/217/280)); draft /home/user/pilot-env/wip/r15/chat-files.bdd.test.ts; resume: split further or record slow-setup with Given+first When/Then		B09	a-run
+chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-009	rewritten	29.4		src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
+chat	src/signals/routes/__tests__/chat-files.bdd.test.ts	chat-files.bdd-010	rewritten	69.6		src/signals/routes/__tests__/chat-files.bdd.test.ts	B09	d-other
 chat	src/signals/routes/__tests__/chat-indicators-realtime.test.ts	chat-indicators-realtime-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-003	planned					a-run
 chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-004	planned					a-run
