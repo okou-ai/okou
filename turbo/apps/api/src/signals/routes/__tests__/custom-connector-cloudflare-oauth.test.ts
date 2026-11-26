@@ -279,6 +279,56 @@ function connectedOutcome(registrations: number, tokenAccess: boolean) {
 }
 
 describe("custom connector Cloudflare Access OAuth setup", () => {
+  it("custom-connector-cloudflare-oauth-003 (1/2) starts S256 authorization without exposing the Access secret", async () => {
+    const setup = await accessWorkspace();
+    const id = randomUUID();
+    const connector = await connectors.createCustomConnector(setup.admin, {
+      displayName: "Internal Orders",
+      prefixTemplates: [`https://api-${id}.example.test/v1/`],
+      authMode: "oauth",
+      fields: [],
+      headerInjections: [
+        {
+          name: "Authorization",
+          valueTemplate: "Bearer {{oauth.access_token}}",
+        },
+      ],
+      queryInjections: [],
+      oauthConfig: {
+        providerAdapter: "standard",
+        clientId: `app-client-${id}`,
+        clientSecret: `app-secret-${id}`,
+        authorizationUrl: `https://auth-${id}.example.test/authorize`,
+        tokenUrl: `https://auth-${id}.example.test/oauth/token`,
+        tokenEndpointAuthMethod: "client_secret_post",
+        pkceMethod: "S256",
+        scopes: ["read"],
+        authorizationParams: {},
+      },
+      networkBinding: { type: "cloudflare_access", configId: setup.configId },
+    });
+
+    const authorizationUrl = await connectors.startCustomConnectorOAuth2(
+      setup.admin,
+      connector.id,
+    );
+
+    expect(authorizationUrl).not.toContain(setup.accessSecret);
+    expect(
+      new URL(authorizationUrl).searchParams.get("code_challenge_method"),
+    ).toBe("S256");
+  });
+
+  it("custom-connector-cloudflare-oauth-003 (2/2) exchanges the code outside the prefix with the app secret and no Access headers", async () => {
+    const { exchange, clientSecret } = await staticHttpOAuthCase({
+      tokenInsidePrefix: false,
+      tokenEndpointAuthMethod: "client_secret_post",
+    });
+    expect(exchange.body.get("client_secret")).toBe(clientSecret);
+    expect(exchange.headers.get("cf-access-client-id")).toBeNull();
+    expect(exchange.headers.get("cf-access-client-secret")).toBeNull();
+  });
+
   it("custom-connector-cloudflare-oauth-001 sends Basic app auth and Access headers to a token endpoint inside the prefix", async () => {
     const { setup, exchange, clientId, clientSecret } =
       await staticHttpOAuthCase({
