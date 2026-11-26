@@ -13,6 +13,7 @@ import ai.okou.android.state.rememberUpdateDetailsOpen
 import ai.okou.android.updates.AppUpdateSettings
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateHost
+import ai.okou.android.updates.UpdateUiState
 import ai.okou.android.updates.updateToolbarAction
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -47,6 +48,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.File
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -149,13 +152,7 @@ class MainActivity : AppCompatActivity() {
                 val updateDetails = rememberUpdateDetailsOpen()
                 val attempt = updateInstall.attempt
                 val pending = updateInstall.automaticRelease
-                val installProgress =
-                    updateInstall.progressLabel
-                        ?: R.string.updates_waiting_to_install.takeIf {
-                            pending != null &&
-                                updateState.canInstall &&
-                                updateState.selectedRelease == pending
-                        }
+                val installProgress = updateInstall.progressLabel(updateState)
                 LaunchedEffect(
                     attempt,
                     pending,
@@ -163,7 +160,6 @@ class MainActivity : AppCompatActivity() {
                     updateState.canInstall,
                     lifecycleState,
                 ) {
-                    updateInstall.discardObsoleteDownload()
                     if (lifecycle.currentState != Lifecycle.State.RESUMED) return@LaunchedEffect
                     when (attempt) {
                         UpdateInstallAttempt.Idle -> {
@@ -219,25 +215,20 @@ class MainActivity : AppCompatActivity() {
                                 ?.copy(detailsOpen = updateDetails.value),
                     )
                 }
-                val explanation = updateInstall.attempt as? UpdateInstallAttempt.Explain
-                if (explanation != null) {
-                    if (
-                        updateState.canInstall && updateState.selectedRelease == explanation.release
+                if (
+                    attempt is UpdateInstallAttempt.Explain &&
+                        updateState.canInstall &&
+                        updateState.selectedRelease == attempt.release
+                ) {
+                    OkouConfirmationDialog(
+                        title = stringResource(R.string.updates_allow_install),
+                        confirm = stringResource(R.string.updates_open_settings),
+                        onDismiss = { updateInstall.dismissExplanation(attempt) },
+                        onConfirm = { authorizeUpdate(attempt) },
+                        dismissLabel = stringResource(R.string.updates_later),
+                        keepActionsVisible = true,
                     ) {
-                        OkouConfirmationDialog(
-                            title = stringResource(R.string.updates_allow_install),
-                            confirm = stringResource(R.string.updates_open_settings),
-                            onDismiss = { updateInstall.dismissExplanation(explanation) },
-                            onConfirm = { authorizeUpdate(explanation) },
-                            dismissLabel = stringResource(R.string.updates_later),
-                            keepActionsVisible = true,
-                        ) {
-                            Text(stringResource(R.string.updates_permission))
-                        }
-                    } else {
-                        LaunchedEffect(explanation) {
-                            updateInstall.dismissExplanation(explanation)
-                        }
+                        Text(stringResource(R.string.updates_permission))
                     }
                 }
             }
@@ -329,21 +320,32 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
     var automaticRelease by mutableStateOf<AndroidUpdatesRelease?>(null)
         private set
 
-    @get:StringRes
-    val progressLabel: Int?
-        get() =
-            when (attempt) {
-                UpdateInstallAttempt.Idle -> null
-                is UpdateInstallAttempt.Installer -> R.string.updates_installing
-                else -> R.string.updates_preparing
+    init {
+        viewModelScope.launch {
+            updates.state.collect { state ->
+                if (automaticRelease != state.selectedRelease) automaticRelease = null
+                val localAttempt = attempt as? UpdateInstallAttempt.PreHandoff ?: return@collect
+                if (!state.canInstall || state.selectedRelease != localAttempt.release) {
+                    attempt = UpdateInstallAttempt.Idle
+                    if (localAttempt is UpdateInstallAttempt.Verifying) localAttempt.work.cancel()
+                }
             }
+        }
+    }
+
+    @StringRes
+    fun progressLabel(state: UpdateUiState): Int? {
+        if (!state.canInstall) return null
+        val current = attempt
+        if (current is UpdateInstallAttempt.Installer && current.release == state.selectedRelease)
+            return R.string.updates_installing
+        return R.string.updates_waiting_to_install.takeIf {
+            current != UpdateInstallAttempt.Idle || automaticRelease == state.selectedRelease
+        }
+    }
 
     fun download(release: AndroidUpdatesRelease, advanceRetry: Boolean = false) {
         if (updates.download(release, advanceRetry)) automaticRelease = release
-    }
-
-    fun discardObsoleteDownload() {
-        if (automaticRelease != updates.state.value.selectedRelease) automaticRelease = null
     }
 
     fun install(release: AndroidUpdatesRelease, authorized: Boolean) {
@@ -382,15 +384,20 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
     }
 
     private fun verify(release: AndroidUpdatesRelease) {
-        attempt = UpdateInstallAttempt.Verifying
-        viewModelScope.launch {
-            try {
-                val file = updates.installationFile(release) ?: return@launch
-                attempt = UpdateInstallAttempt.Verified(release, file)
-            } finally {
-                if (attempt == UpdateInstallAttempt.Verifying) attempt = UpdateInstallAttempt.Idle
+        val verification = UpdateInstallAttempt.Verifying(release)
+        verification.work =
+            viewModelScope.launch(start = CoroutineStart.LAZY) {
+                try {
+                    val file = updates.installationFile(release) ?: return@launch
+                    if (attempt === verification) {
+                        attempt = UpdateInstallAttempt.Verified(release, file)
+                    }
+                } finally {
+                    if (attempt === verification) attempt = UpdateInstallAttempt.Idle
+                }
             }
-        }
+        attempt = verification
+        verification.work.start()
     }
 
     fun takeVerifiedFile(verified: UpdateInstallAttempt.Verified, authorized: Boolean): File? {
@@ -428,13 +435,19 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
 private sealed interface UpdateInstallAttempt {
     data object Idle : UpdateInstallAttempt
 
-    data class Explain(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
+    sealed interface PreHandoff : UpdateInstallAttempt {
+        val release: AndroidUpdatesRelease
+    }
+
+    data class Explain(override val release: AndroidUpdatesRelease) : PreHandoff
 
     data class Authorizing(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 
-    data object Verifying : UpdateInstallAttempt
+    class Verifying(override val release: AndroidUpdatesRelease) : PreHandoff {
+        lateinit var work: Job
+    }
 
-    data class Verified(val release: AndroidUpdatesRelease, val file: File) : UpdateInstallAttempt
+    data class Verified(override val release: AndroidUpdatesRelease, val file: File) : PreHandoff
 
     data class Installer(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 }
