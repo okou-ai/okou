@@ -1,19 +1,23 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
 /// User-authored text stays literal; structured parts retain their order and identity.
-struct UserMessageView: View {
+struct UserMessageView<SendingIndicator: View>: View {
   let message: ChatMessage
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
   var sendTransition: ConversationSendTransition?
+  @ViewBuilder let sendingIndicator: () -> SendingIndicator
 
   private var document: ChatUserMessage {
     message.userMessage ?? ChatUserMessage(parts: [.init(type: "text", text: message.text)])
   }
 
   var body: some View {
+    let hasBody = !document.bodyParts.isEmpty || message.inputError != nil
+    let bubbleInset: CGFloat = 14
     VStack(alignment: .trailing, spacing: OkouSpace.sm) {
       if let annotation = document.annotation {
         UserMessageAnnotation(part: annotation, webURL: webURL)
@@ -26,9 +30,12 @@ struct UserMessageView: View {
                 attachment: attachment, viewer: viewer, loadsThumbnail: loadsAttachments)
             }
           }
+          .overlay(alignment: .topLeading) {
+            if !hasBody { leadingIndicator() }
+          }
         }
       }
-      if !document.bodyParts.isEmpty || message.inputError != nil {
+      if hasBody {
         UserMessageBubbleLayout {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
@@ -45,16 +52,60 @@ struct UserMessageView: View {
                 .enabled)
             }
           }
-          .padding(14)
+          .padding(bubbleInset)
           .background(OkouColor.gray200, in: RoundedRectangle(cornerRadius: OkouRadius.chat))
           .background {
             SendMotionBubbleAnchor(messageID: message.id, transition: sendTransition)
           }
           .opacity(sendTransition?.hidesBubbleID == message.id ? 0 : 1)
+          .overlay(alignment: .topLeading) { leadingIndicator(topInset: bubbleInset) }
         }
       }
     }
     .frame(maxWidth: .infinity, alignment: .trailing)
+  }
+
+  private func leadingIndicator(topInset: CGFloat = 0) -> some View {
+    sendingIndicator()
+      .fixedSize()
+      .padding(.top, topInset)
+      .alignmentGuide(.leading) { $0[.trailing] + OkouSpace.sm }
+      .allowsHitTesting(false)
+  }
+}
+
+struct UserMessageSendingIndicator: View {
+  let sentAt: Date
+  @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 20
+
+  var body: some View {
+    let deadline = sentAt.addingTimeInterval(2)
+    TimelineView(.explicit([deadline])) { _ in
+      if Date.now >= deadline {
+        ProgressView()
+          .controlSize(.mini)
+          .tint(OkouColor.mutedForeground)
+          .frame(height: lineHeight)
+          .accessibilityLabel("Sending…")
+      }
+    }
+  }
+}
+
+/// The mounted indicator observes confirmation even while scrolling defers a new row snapshot.
+struct ConversationSendingIndicator: View {
+  let messageID: String
+  @ResolvedValue private var transcript: ConversationProjection.Value?
+
+  init(messageID: String, conversation: ConversationStore) {
+    self.messageID = messageID
+    _transcript = ResolvedValue(conversation.transcript)
+  }
+
+  var body: some View {
+    if let pending = transcript?.pending.first(where: { $0.id == messageID }), !pending.needsRetry {
+      UserMessageSendingIndicator(sentAt: pending.createdAt)
+    }
   }
 }
 

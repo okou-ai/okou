@@ -272,9 +272,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       source.sendTransition?.hidesBubbleID != nil
       && missing.allSatisfy { row in
         switch row {
-        case .message(let message, _, _, _, _, _, _):
+        case .message(let message, _, _, let pendingRetry, _, _, _):
           message.id == source.sendTransition?.messageID
-            && message.role == .user && message.attachments.isEmpty && message.modelChange == nil
+            && pendingRetry != true && message.role == .user && message.attachments.isEmpty
+            && message.modelChange == nil
             && message.inputError == nil
             && message.userMessage?.parts.allSatisfy { $0.type == "text" } == true
         case .footer(_, let showsAvatar): !showsAvatar
