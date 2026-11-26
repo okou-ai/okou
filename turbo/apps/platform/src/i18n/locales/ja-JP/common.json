@@ -1581,6 +1581,8 @@
       "doneRecorded": "Noted — this is already done",
       "dontNudge": "急かさないで",
       "dontNudgeRecorded": "この件を急かさないように記録しました",
+      "draftIn": "「{{title}}」で下書き",
+      "draftInChat": "既存のチャットで下書き",
       "editDraft": "既存のチャットに下書きを作成",
       "editReason": "Edit reason",
       "feedbackPrompt": "この提案はいかがですか？",

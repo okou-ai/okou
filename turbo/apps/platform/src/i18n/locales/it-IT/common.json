@@ -1610,6 +1610,8 @@
       "doneRecorded": "Noted — this is already done",
       "dontNudge": "Non insistere",
       "dontNudgeRecorded": "Annotato: non insistere più su questo",
+      "draftIn": "Bozza in {{title}}",
+      "draftInChat": "Bozza nella chat esistente",
       "editDraft": "Prepara una bozza nella chat esistente",
       "editReason": "Edit reason",
       "feedbackPrompt": "Cosa pensi di questo suggerimento?",

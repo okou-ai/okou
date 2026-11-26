@@ -188,6 +188,115 @@ test("agent-suggestions-001 a removed feed item sends the choice with its origin
   expect(location.pathname).toBe("/for-you");
 });
 
+test("agent-suggestions-042 dragging across an option's text selects it instead of choosing it", async () => {
+  const base = proposal("Vendor renewals");
+  const [prepare] = base.content.options;
+  if (!prepare) {
+    throw new Error("The proposal fixture has an option");
+  }
+  const item: SuggestionCard = {
+    ...base,
+    content: {
+      ...base.content,
+      options: [
+        prepare,
+        { ...prepare, id: "summarize", label: "Summarize Vendor renewals" },
+      ],
+    },
+  };
+  feed([item]);
+  createChatRunFixtures(context).installRunChat();
+  const choice = context.mocks.deferred<string | null>();
+  context.mocks.api(feedContract.consume, ({ body, respond }) => {
+    choice.resolve(body.optionId);
+    return respond(200, item);
+  });
+  await openDeck();
+  const card = await activeCard(item);
+  const selected = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    card,
+  );
+  act(() => {
+    document
+      .getSelection()
+      ?.selectAllChildren(
+        within(selected).getByText("Prepare Vendor renewals"),
+      );
+  });
+  fireEvent.pointerDown(selected, { button: 0 });
+  fireEvent.click(selected, { detail: 1 });
+  act(() => {
+    document.getSelection()?.removeAllRanges();
+  });
+  click(await findFastControl("button", "Summarize Vendor renewals", card));
+
+  await expect(choice.promise).resolves.toBe("summarize");
+});
+
+test("agent-suggestions-043 each option says whether it sends to a new chat or drafts in its chat", async () => {
+  const base = proposal("Vendor renewals");
+  const [prepare] = base.content.options;
+  if (!prepare) {
+    throw new Error("The proposal fixture has an option");
+  }
+  const threadId = crypto.randomUUID();
+  const item: SuggestionCard = {
+    ...base,
+    content: {
+      ...base.content,
+      options: [
+        prepare,
+        {
+          ...prepare,
+          id: "continue",
+          label: "Continue Vendor renewals",
+          threadId,
+          draft: {
+            draftAttachments: null,
+            draftUserMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "chat_thread",
+                  threadId,
+                  titleSnapshot: "Renewals chat",
+                },
+                { type: "text", text: "Continue" },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  };
+  feed([item]);
+  await openDeck();
+  const card = await activeCard(item);
+
+  await expect(
+    findFastControl("button", "Prepare Vendor renewals", card),
+  ).resolves.toHaveTextContent(/^Send to a new chat/);
+  await expect(
+    findFastControl("button", "Continue Vendor renewals", card),
+  ).resolves.toHaveTextContent(/^Draft in Renewals chat/);
+});
+
+test("agent-suggestions-044 without the simplified deck, options keep their label alone", async () => {
+  const item = proposal("Vendor renewals");
+  feed([item]);
+  await openDeck("/for-you", false);
+  const option = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    await activeCard(item),
+  );
+
+  expect(option).toHaveTextContent(/^Prepare Vendor renewals/);
+  expect(option).not.toHaveTextContent("Send to a new chat");
+});
+
 test("agent-suggestions-020 changing cards discards the first inline direction", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);

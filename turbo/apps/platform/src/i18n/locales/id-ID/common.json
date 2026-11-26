@@ -1581,6 +1581,8 @@
       "doneRecorded": "Noted — this is already done",
       "dontNudge": "Jangan desak saya",
       "dontNudgeRecorded": "Dicatat: jangan desak saya lagi soal ini",
+      "draftIn": "Draf di {{title}}",
+      "draftInChat": "Draf di chat yang ada",
       "editDraft": "Siapkan draf di chat yang ada",
       "editReason": "Edit reason",
       "feedbackPrompt": "Bagaimana saran ini?",
