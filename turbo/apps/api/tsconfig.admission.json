@@ -234,7 +234,6 @@
     "src/signals/services/chat-thread-queue-drain.service.ts",
     "src/signals/services/execution-runtime-context.ts",
     "src/signals/services/execution-content-bundle.ts",
-    "src/signals/services/content-bundle-presigned-url-cache.ts",
     "src/signals/services/data-router-billing.service.ts",
     "src/signals/services/data-router-request.ts",
     "src/signals/services/data-router-usage.service.ts",
