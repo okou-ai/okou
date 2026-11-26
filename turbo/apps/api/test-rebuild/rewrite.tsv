@@ -1416,17 +1416,17 @@ connectors	src/signals/routes/__tests__/custom-connector-hostnames.test.ts	custo
 connectors	src/signals/routes/__tests__/custom-connector-network-execution.test.ts	custom-connector-network-execution-001	planned				
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-001	revisit		revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 326.2 ms (runs [397, 326, 316]); draft at /home/user/pilot-env/wip/r7/custom-connectors-automatic-dcr.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept		B02
 connectors	src/signals/routes/__tests__/custom-connectors-automatic-dcr.test.ts	custom-connectors-automatic-dcr-002	revisit		revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 400.0 ms (runs [376, 400, 406]); draft at /home/user/pilot-env/wip/r7/custom-connectors-automatic-dcr.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept		B02
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-001	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-002	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-003	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-006	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-011	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-012	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-013	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-014	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-018	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-019	planned				B03
-connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-021	planned				B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-001	rewritten	106.2		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-002	rewritten	88.3		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-003	rewritten	120.3		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-006	rewritten	36.6		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-011	rewritten	70.3		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-012	rewritten	169.7		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-013	rewritten	169.4		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-014	rewritten	118.1		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-018	rewritten	45.6		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-019	rewritten	45.4		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
+connectors	src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	custom-connectors-automatic-preflight-021	rewritten	126.9		src/signals/routes/__tests__/custom-connectors-automatic-preflight.test.ts	B03
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-001	planned				
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-003	planned				
 connectors	src/signals/routes/__tests__/custom-connectors-oauth2.test.ts	custom-connectors-oauth2-004	planned				
