@@ -55,7 +55,7 @@ async function refreshAccessToken(refreshToken: string, signal: AbortSignal) {
 
 /**
  * The official `agy` CLI validates a local Google login before any request, so
- * a run receives its native `oauth2.Token` JSON instead of a firewall
+ * a run receives its native stored-token JSON instead of a firewall
  * placeholder. Lancy approved this staff-pilot deviation from the credential
  * trust boundary; firewall-side replacement is the follow-up. The value lives
  * only in process-local admission facts and the dispatched platform
@@ -107,11 +107,21 @@ export const mintAntigravityRunCredential$ = command(
     const startedAt = nowDate().getTime();
     const refreshed = await refreshAccessToken(refreshToken, signal);
     signal.throwIfAborted();
-    return JSON.stringify({
+    const token = {
       access_token: refreshed.access_token,
       token_type: "Bearer",
       refresh_token: refreshToken,
       expiry: new Date(startedAt + refreshed.expires_in * 1000).toISOString(),
+    };
+    // agy 1.5.15 file token storage reads `{ token, auth_method }`; without
+    // `auth_method` it reports "You are not logged into Antigravity".
+    // `consumer` selects its personal Google account sign-in, whose OAuth
+    // client issued this refresh token. The guest validates and writes the
+    // payload verbatim, and currently requires the top-level token fields.
+    return JSON.stringify({
+      ...token,
+      token,
+      auth_method: "consumer",
     });
   },
 );
