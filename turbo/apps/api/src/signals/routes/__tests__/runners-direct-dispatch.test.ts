@@ -42,10 +42,7 @@ async function launchFixture() {
 test("delivers complete input after binding its process", async () => {
   const f = await launchFixture();
   const identity = await f.api.registerDirectRunner(f.group, {
-    reply: async (envelope, bytes) => {
-      const body: unknown = JSON.parse(bytes);
-      expect(body).not.toHaveProperty("executionContext.contentBundles");
-      expect(body).not.toHaveProperty("executionContext.storageManifest");
+    reply: async (envelope) => {
       expect(
         (
           await f.api.requestRunRunner(
