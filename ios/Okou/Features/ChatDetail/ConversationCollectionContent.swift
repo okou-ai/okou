@@ -268,7 +268,7 @@ final class ConversationCollectionContent<Content: View> {
         let source = input.source
         let displayedRows = input.rows
         let measurements = input.measurements
-        guard prefetchedContent[id] == nil, let row = displayedRows[id]?.content,
+        guard prefetchedContent[id] == nil, let row = displayedRows[id],
           let measurement = measurements[id]
         else { continue }
         let observation = CellHeightObservation()

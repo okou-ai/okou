@@ -409,7 +409,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         let indexPath = messageID.flatMap { dataSource.indexPath(for: $0) }
         let cell = indexPath.flatMap { collection.cellForItem(at: $0) }
         var messageFrame = indexPath.flatMap { collection.layoutAttributesForItem(at: $0)?.frame }
-        if let id = messageID, let spacing = displayedRows[id]?.content?.readingContentTopSpacing {
+        if let id = messageID, let spacing = displayedRows[id]?.readingContentTopSpacing {
           messageFrame?.origin.y += spacing
           messageFrame?.size.height -= spacing
         }
