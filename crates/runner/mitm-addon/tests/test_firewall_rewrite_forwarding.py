@@ -11,6 +11,7 @@ import pytest
 import auth
 import auth_base_forwarder as forwarder
 import flow_metadata_keys as metadata_keys
+from tests.auth_base_client_header_helpers import connection_nominations
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.firewall_auth_helpers import handle_firewall_request_without_upstream_admission
 from tests.firewall_rewrite_helpers import make_forwarding_rewrite_inputs
@@ -695,7 +696,7 @@ class TestAuthBaseUrlRewriteForwarding:
         self, headers, real_flow, mitm_ctx, tmp_path
     ):
         request_body = b"\x1f\x8b\x08\x00coded-body"
-        irrelevant = ",".join(f"x{i:06x}" for i in range(8_192))
+        irrelevant = connection_nominations(8_192)
         flow, allow, sandbox_info, token_meta = make_forwarding_rewrite_inputs(
             real_flow,
             tmp_path,
