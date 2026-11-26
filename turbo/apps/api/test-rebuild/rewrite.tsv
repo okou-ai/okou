@@ -578,7 +578,7 @@ browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-007	pla
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-008	planned					a-run
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-009	planned					a-run
 browser	src/signals/routes/__tests__/browser-reuse.test.ts	browser-reuse-010	planned					a-run
-browser	src/signals/routes/__tests__/browser-screenshot-publication.test.ts	browser-screenshot-publication-001	planned				B07	d-other
+browser	src/signals/routes/__tests__/browser-screenshot-publication.test.ts	browser-screenshot-publication-001	revisit		revisit: after closing (screenshot published) and retiring the provider session in the external fake, GET /api/chat-threads/:threadId/browser returns HTTP 500 with no business log line; evidence: draft (seeded admin + organization.created webhook, no-Run chat open via POST /api/chat-threads/:threadId/browser/open, createBrowserFixtures profileProvider, installBrowserWindowContentCommands, in-memory R2 Put/Get/Head) reached the failing read at 244-360 ms; the close and the first view read return 200 and the lease returns 409; resume: find which provider or storage read fails for the inactive view after retirement (likely GET /browsers/:id or the profile lookup in the fake) and model retirement as Browser Use reports it, then split per BRIEF7		B07	d-other
 browser	src/signals/routes/__tests__/browser-viewer-acquisition.test.ts	browser-viewer-acquisition-001	planned					a-run
 browser	src/signals/routes/__tests__/browser-viewer-acquisition.test.ts	browser-viewer-acquisition-002	planned					a-run
 browser	src/signals/routes/__tests__/browser-viewer-acquisition.test.ts	browser-viewer-acquisition-003	planned					a-run
