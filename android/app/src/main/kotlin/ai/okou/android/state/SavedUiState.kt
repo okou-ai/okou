@@ -279,6 +279,14 @@ internal class ChatSearchState(
     var pendingFocus by mutableStateOf(focusedResult)
         private set
 
+    private var announcedReadFailure = false
+
+    fun shouldAnnounceReadFailure(failed: Boolean): Boolean {
+        val announce = failed && !announcedReadFailure
+        announcedReadFailure = failed
+        return announce
+    }
+
     fun edit(value: TextFieldValue) {
         query = value
         if (value.composition != null) return
@@ -318,6 +326,7 @@ internal class ChatSearchState(
     private fun resetPosition() {
         pendingAnchor = null
         pendingFocus = null
+        announcedReadFailure = false
         position.requestScrollToItem(0)
     }
 
