@@ -7,58 +7,32 @@ import {
   requestVercelInstallationToken,
 } from "./oauth";
 
-export const vercelProvider: AuthCodeConnectorAuthProvider<"vercel", "oauth"> =
-  {
-    grant: {
-      kind: "auth-code",
-      buildAuthUrl: (args) => {
-        const { clientId } = args.authClient;
-        return buildVercelAuthorizationUrl(
-          clientId,
-          args.redirectUri,
-          args.state,
-        );
-      },
-      exchangeCode: async (args) => {
-        const { clientId, clientSecret } = args.authClient;
-        const code = args.code;
-        const redirectUri = args.redirectUri;
-        const result = await exchangeVercelCode(
-          clientId,
-          clientSecret,
-          code,
-          redirectUri,
-        );
-        return {
-          outputs: {
-            accessToken: result.accessToken,
-          },
-          scopes: [],
-          userInfo: await fetchVercelUserInfo(result.accessToken),
-        };
-      },
-    },
-    access: {
-      kind: "none",
-    },
-    revoke: { kind: "none" },
-  };
-
-export const vercelInstallationProvider: AuthCodeConnectorAuthProvider<
-  "vercel",
-  "oauth-installation"
-> = {
+export const vercelProvider: AuthCodeConnectorAuthProvider<"vercel"> = {
   grant: {
     kind: "auth-code",
-    buildAuthUrl: vercelProvider.grant.buildAuthUrl,
+    buildAuthUrl: (args) => {
+      return buildVercelAuthorizationUrl(
+        args.authClient.clientId,
+        args.redirectUri,
+        args.state,
+      );
+    },
     exchangeCode: async (args) => {
       const { clientId, clientSecret } = args.authClient;
-      const { installationId } = await exchangeVercelCode(
+      const codeExchange = await exchangeVercelCode(
         clientId,
         clientSecret,
         args.code,
         args.redirectUri,
       );
+      if (!Object.hasOwn(args.authCodeGrant.outputs, "installationId")) {
+        return {
+          outputs: { accessToken: codeExchange.accessToken },
+          scopes: [],
+          userInfo: await fetchVercelUserInfo(codeExchange.accessToken),
+        };
+      }
+      const { installationId } = codeExchange;
       if (!installationId) {
         throw new Error("No installation ID in Vercel authorization response");
       }

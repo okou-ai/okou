@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   CONNECTOR_GENERIC_AUTH_CAPABILITY_VERSIONS,
   getConnectorAuthProviderRegistrationCapabilities,
+  matchesConnectorAuthProviderContract,
   type ConnectorAuthProviderMethodContract,
   type ConnectorAuthProviderRegistrationCapability,
 } from "../auth-providers/connector-auth";
@@ -235,7 +236,7 @@ function evaluateMethod(args: {
   const contractMatches =
     args.registration === undefined
       ? !hasUnapprovedConfigurationIdentity(contract)
-      : JSON.stringify(args.registration.contract) === JSON.stringify(contract);
+      : matchesConnectorAuthProviderContract(args.registration, contract);
   if (!contractMatches) {
     reasons.add("provider-contract-mismatch");
   } else if (

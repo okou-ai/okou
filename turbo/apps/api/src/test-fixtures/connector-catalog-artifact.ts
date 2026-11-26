@@ -2313,16 +2313,35 @@ const connectors = [
     connectorSlug: "vercel",
     label: "Vercel",
     authMethods: [
-      providerMethod({
-        connectorSlug: "vercel",
-        authMethodId: "oauth",
-        values: {
-          accessToken: secret("VERCEL_ACCESS_TOKEN"),
+      // Keep the production v1 shape while the API learns to accept v2.
+      {
+        id: "oauth",
+        label: "Connect",
+        description: "Test connector authorization.",
+        visible: true,
+        client: {
+          clientRegistration: "static",
+          clientType: "confidential",
+          clientIdEnv: "VERCEL_OAUTH_CLIENT_ID",
+          clientSecretEnv: "VERCEL_OAUTH_CLIENT_SECRET",
         },
-        envBindings: {
-          VERCEL_TOKEN: secret("VERCEL_ACCESS_TOKEN"),
+        storage: {
+          version: 1,
+          secrets: ["VERCEL_ACCESS_TOKEN"],
+          variables: [],
         },
-      }),
+        grant: {
+          kind: "auth-code",
+          scopes: [],
+          callbackOrigin: "web",
+          outputs: { accessToken: secret("VERCEL_ACCESS_TOKEN") },
+        },
+        access: {
+          kind: "static",
+          envBindings: { VERCEL_TOKEN: secret("VERCEL_ACCESS_TOKEN") },
+        },
+        revoke: { kind: "none" },
+      },
     ],
   }),
   connector({

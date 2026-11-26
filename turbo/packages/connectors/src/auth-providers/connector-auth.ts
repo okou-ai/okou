@@ -112,10 +112,7 @@ import {
   stripeProvider,
 } from "./connectors/stripe/provider";
 import { todoistProvider } from "./connectors/todoist/provider";
-import {
-  vercelInstallationProvider,
-  vercelProvider,
-} from "./connectors/vercel/provider";
+import { vercelProvider } from "./connectors/vercel/provider";
 import { webflowProvider } from "./connectors/webflow/provider";
 import { metaAdsProvider } from "./connectors/meta-ads/provider";
 import { posthogProvider } from "./connectors/posthog/provider";
@@ -259,7 +256,20 @@ export interface ConnectorAuthProviderRegistrationCapability {
   readonly authMethodId: string;
   readonly handlers: ConnectorAuthProviderRegistryCapability;
   readonly contract: ConnectorAuthProviderMethodContract;
+  readonly legacyContract?: ConnectorAuthProviderMethodContract;
   readonly requiredConfigurationNames: readonly string[];
+}
+
+export function matchesConnectorAuthProviderContract(
+  capability: ConnectorAuthProviderRegistrationCapability,
+  contract: ConnectorAuthProviderMethodContract,
+): boolean {
+  const serialized = JSON.stringify(contract);
+  return (
+    serialized === JSON.stringify(capability.contract) ||
+    (capability.legacyContract !== undefined &&
+      serialized === JSON.stringify(capability.legacyContract))
+  );
 }
 
 function compareCapabilityStrings(left: string, right: string): number {
@@ -388,14 +398,22 @@ function connectorAuthProviderRegistryCapability(
 function connectorAuthProviderRegistrationCapability(
   registration: RuntimeAuthProviderRegistration,
   contract: ConnectorAuthProviderMethodContract,
+  legacyContract: ConnectorAuthProviderMethodContract | undefined,
 ): ConnectorAuthProviderRegistrationCapability {
   return {
     connectorSlug: registration.connectorSlug,
     authMethodId: registration.authMethodId,
     handlers: connectorAuthProviderRegistryCapability(registration.entry),
     contract,
-    requiredConfigurationNames:
-      connectorAuthProviderRequiredConfigurationNames(contract),
+    ...(legacyContract === undefined ? {} : { legacyContract }),
+    requiredConfigurationNames: [
+      ...new Set([
+        ...connectorAuthProviderRequiredConfigurationNames(contract),
+        ...(legacyContract === undefined
+          ? []
+          : connectorAuthProviderRequiredConfigurationNames(legacyContract)),
+      ]),
+    ].sort(compareCapabilityStrings),
   };
 }
 
@@ -469,7 +487,13 @@ function assertConnectorAuthProviderEntryMatchesContract(
 function buildRuntimeProviderRegistry(
   registrations: readonly RuntimeAuthProviderRegistration[],
 ): RuntimeAuthProviderRegistry {
-  const contracts = new Map<string, ConnectorAuthProviderMethodContract>();
+  const contracts = new Map<
+    string,
+    {
+      readonly contract: ConnectorAuthProviderMethodContract;
+      readonly legacyContract?: ConnectorAuthProviderMethodContract;
+    }
+  >();
   for (const registration of CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS) {
     const key = connectorAuthProviderRegistrationKey(
       registration.connectorSlug,
@@ -480,7 +504,7 @@ function buildRuntimeProviderRegistry(
         `Duplicate auth provider contract for ${registration.connectorSlug}:${registration.authMethodId}`,
       );
     }
-    contracts.set(key, registration.contract);
+    contracts.set(key, registration);
   }
 
   const registry = new Map<string, PreparedRuntimeAuthProviderRegistration>();
@@ -494,18 +518,20 @@ function buildRuntimeProviderRegistry(
         `Duplicate auth provider registration for ${registration.connectorSlug}:${registration.authMethodId}`,
       );
     }
-    const contract = contracts.get(key);
-    if (contract === undefined) {
+    const registeredContracts = contracts.get(key);
+    if (registeredContracts === undefined) {
       throw new Error(
         `Missing auth provider contract for ${registration.connectorSlug}:${registration.authMethodId}`,
       );
     }
+    const { contract, legacyContract } = registeredContracts;
     assertConnectorAuthProviderEntryMatchesContract(registration, contract);
     registry.set(key, {
       ...registration,
       capability: connectorAuthProviderRegistrationCapability(
         registration,
         contract,
+        legacyContract,
       ),
     });
     contracts.delete(key);
@@ -774,8 +800,10 @@ function assertConnectorAuthProviderMethodContract(
   registration: PreparedRuntimeAuthProviderRegistration,
 ): void {
   if (
-    JSON.stringify(connectorAuthProviderMethodContract(selection.method)) !==
-    JSON.stringify(registration.capability.contract)
+    !matchesConnectorAuthProviderContract(
+      registration.capability,
+      connectorAuthProviderMethodContract(selection.method),
+    )
   ) {
     throw new Error(
       `Auth provider contract mismatch for ${selection.connectorSlug}:${selection.authMethodId}`,
@@ -1104,12 +1132,7 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
     testOauthDeviceApiProvider,
   ),
   authCodeProviderEntry("todoist", "oauth", todoistProvider),
-  authCodeProviderEntry("vercel", "oauth", vercelProvider),
-  authCodeRefreshProviderEntry(
-    "vercel",
-    "oauth-installation",
-    vercelInstallationProvider,
-  ),
+  authCodeRefreshProviderEntry("vercel", "oauth", vercelProvider),
   authCodeProviderEntry("webflow", "oauth", webflowProvider),
   authCodeRefreshProviderEntry("meta-ads", "oauth", metaAdsProvider),
   authCodeRefreshTokenRevokeProviderEntry("tiktok", "oauth", tiktokProvider),

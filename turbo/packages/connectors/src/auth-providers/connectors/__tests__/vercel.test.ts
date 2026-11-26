@@ -66,7 +66,7 @@ const installationMethod = {
 } as const satisfies ConnectorAuthMethodRuntimeConfig;
 const installationSelection = {
   connectorSlug: "vercel",
-  authMethodId: "oauth-installation",
+  authMethodId: "oauth",
   method: installationMethod,
 };
 const shortToken = {
@@ -106,7 +106,10 @@ function renew() {
 }
 
 describe("Vercel OAuth provider", () => {
-  it("accepts the legacy and installation methods in the same catalog", () => {
+  it.each([
+    { name: "legacy", method: legacyMethod },
+    { name: "installation", method: installationMethod },
+  ])("accepts the $name catalog with a single OAuth method", ({ method }) => {
     expect(
       evaluateConnectorCatalogCompatibility({
         artifact: {
@@ -115,15 +118,8 @@ describe("Vercel OAuth provider", () => {
               slug: "vercel",
               authMethods: [
                 connectorCatalogAuthMethodSchema.parse({
-                  ...legacyMethod,
+                  ...method,
                   id: "oauth",
-                  label: "OAuth",
-                  description: null,
-                  visible: false,
-                }),
-                connectorCatalogAuthMethodSchema.parse({
-                  ...installationMethod,
-                  id: "oauth-installation",
                   label: "OAuth",
                   description: null,
                   visible: true,

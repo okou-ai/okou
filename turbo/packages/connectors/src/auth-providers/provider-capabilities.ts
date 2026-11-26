@@ -43,6 +43,7 @@ interface ConnectorAuthProviderMethodRegistration {
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly contract: ConnectorAuthProviderMethodContract;
+  readonly legacyContract?: ConnectorAuthProviderMethodContract;
 }
 
 // This is Okou's executable compatibility contract, not connector catalog data.
@@ -2060,7 +2061,7 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
   {
     connectorSlug: "vercel",
     authMethodId: "oauth",
-    contract: {
+    legacyContract: {
       client: {
         kind: "static-confidential-env",
         clientIdEnv: "VERCEL_OAUTH_CLIENT_ID",
@@ -2083,10 +2084,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
         inputNames: [],
       },
     },
-  },
-  {
-    connectorSlug: "vercel",
-    authMethodId: "oauth-installation",
     contract: {
       client: {
         kind: "static-confidential-env",
@@ -2443,17 +2440,33 @@ export type ConnectorAuthProviderClientIdentityFor<
   ConnectorAuthProviderClientConfigFor<ConnectorSlug, AuthMethodId>
 >;
 
+type ProviderGrantOutputValues<Contract> =
+  Contract extends ConnectorAuthProviderMethodContract
+    ? Readonly<
+        Record<
+          Contract["grant"]["outputNames"][number],
+          string | null | undefined
+        >
+      >
+    : never;
+
+type LegacyProviderContract<Registration> = Registration extends {
+  readonly legacyContract: infer Contract;
+}
+  ? Contract
+  : never;
+
 export type ConnectorAuthProviderGrantOutputValuesFor<
   ConnectorSlug extends ConnectorAuthProviderConnectorSlug,
   AuthMethodId extends ConnectorAuthProviderAuthMethodId<ConnectorSlug>,
-> = Readonly<
-  Record<
-    ConnectorAuthProviderMethodRegistrationFor<
+> = ProviderGrantOutputValues<
+  | ConnectorAuthProviderMethodRegistrationFor<
       ConnectorSlug,
       AuthMethodId
-    >["contract"]["grant"]["outputNames"][number],
-    string | null | undefined
-  >
+    >["contract"]
+  | LegacyProviderContract<
+      ConnectorAuthProviderMethodRegistrationFor<ConnectorSlug, AuthMethodId>
+    >
 >;
 
 export type ConnectorAuthProviderRefreshInputValuesFor<
