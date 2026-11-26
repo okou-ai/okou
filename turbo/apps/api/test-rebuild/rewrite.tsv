@@ -2026,14 +2026,14 @@ messaging	src/signals/routes/__tests__/integrations-telegram-readiness.test.ts	i
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-001	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 493.8 ms and 475.4 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (366.7 ms and 355.2 ms); onboarding 77.2/75.5 ms, Telegram link 39.3/33.3 ms, upload init 10.6/11.4 ms		B06	
 messaging	src/signals/routes/__tests__/integrations-telegram-upload-complete.test.ts	integrations-telegram-upload-complete-004	skipped		slow-setup: the Given alone (onboarding, official-bot Telegram link, running chat Run with its Okou token, upload init), before the byte upload and the complete call, measured 494.0 ms and 486.3 ms in two runs; dominant step is the running chat Run with its Okou token via helpers/run-execution-credentials forActor (368.8 ms and 359.7 ms); onboarding 78.1/81.1 ms, Telegram link 36.4/35.5 ms, upload init 10.7/10.0 ms		B06	
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-001	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-008	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-009	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-010	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	planned				B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-006	rewritten	15.0		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-007	rewritten	19.7		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-008	rewritten	19.0		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-009	rewritten	17.2		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-010	rewritten	5.4		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	rewritten	12.2		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	rewritten	37.0		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	rewritten	10.7		src/signals/routes/__tests__/integrations-telegram.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-017	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-019	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-021	planned					a-run
