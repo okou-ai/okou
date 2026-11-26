@@ -4,7 +4,7 @@
     "disableSourceOfProjectReferenceRedirect": true,
     "tsBuildInfoFile": "./.typecheck/bootstrap-wiring.tsbuildinfo"
   },
-  "include": ["src/__tests__/vercel-crons.test.ts"],
+  "include": [],
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "./tsconfig.gateways.json" },

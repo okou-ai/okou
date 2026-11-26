@@ -88,13 +88,6 @@ function fixture(t) {
   }
   write(root, "src/production-bootstrap.ts", 'import "./signals/route";\n');
   write(root, "src/signals/route.ts", "export {};\n");
-  for (const file of ["route-registration", "vercel-crons"]) {
-    write(
-      root,
-      `src/__tests__/${file}.test.ts`,
-      'import "../signals/route";\n',
-    );
-  }
   write(root, "src/lib/db.ts", "export {};\n");
   write(
     root,
