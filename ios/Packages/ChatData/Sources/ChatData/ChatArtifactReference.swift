@@ -121,9 +121,9 @@ public enum ChatArtifactReference {
     guard let domain = domains.first(where: { host.hasSuffix("." + $0) }) else { return nil }
     let slug = String(host.dropLast(domain.count + 1))
     guard slug.wholeMatch(of: #/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/#) != nil else { return nil }
-    if domain == "sites.vm0.io" || ["pv-", "ps-", "sh-"].contains(where: slug.hasPrefix) {
+    if ["pv-", "ps-", "sh-"].contains(where: slug.hasPrefix) {
       return .published(url)
     }
-    return .hostedSite(url)
+    return domain == "sites.vm0.io" ? .legacyHostedSite(url) : .hostedSite(url)
   }
 }

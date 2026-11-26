@@ -71,7 +71,7 @@ public struct ChatArtifacts: Sendable {
       return ChatArtifactResolution(
         artifact: artifact, contentURL: contentURL, downloadURL: contentURL,
         previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
-    case .published(let url):
+    case .legacyHostedSite(let url), .published(let url):
       return ChatArtifactResolution(
         artifact: artifact, contentURL: url, downloadURL: url, previewImageURL: nil, expiresAt: nil)
     }
@@ -237,7 +237,7 @@ extension ChatArtifact.Source {
   fileprivate var requiresAuthorization: Bool {
     switch self {
     case .reference, .file, .hostedSite: true
-    case .published: false
+    case .legacyHostedSite, .published: false
     }
   }
 }
