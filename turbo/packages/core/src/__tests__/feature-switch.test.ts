@@ -22,6 +22,18 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("limits the All chat filter rollout and its Lab overrides to staff workspaces", () => {
+    const key = FeatureSwitchKey.ChatListAllFilter;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    const customer = { orgId: "external-org", overrides: { [key]: true } };
+    expect(isFeatureSwitchAvailable(key, staff)).toBe(true);
+    expect(isFeatureEnabled(key, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(key, { ...staff, overrides: { [key]: false } }),
+    ).toBe(false);
+    expect(isFeatureSwitchAvailable(key, customer)).toBe(false);
+    expect(isFeatureEnabled(key, customer)).toBe(false);
+  });
   it("keeps native connector authorization opt-in for staff until provider registration is verified", () => {
     const key = FeatureSwitchKey.IosConnectorAppAuthorization;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };

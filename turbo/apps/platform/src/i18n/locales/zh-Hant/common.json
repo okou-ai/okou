@@ -2583,6 +2583,7 @@
       "number": "數字"
     },
     "sidebar": {
+      "all": "全部",
       "archive": "歸檔",
       "archived": "已歸檔",
       "chatsWith": "與{{assistantName}}的聊天",
@@ -2602,6 +2603,7 @@
       "newChatWith": "與{{assistantName}}新建聊天",
       "noArchived": "沒有已歸檔的聊天",
       "noMuted": "沒有已靜音的聊天",
+      "noUnarchived": "沒有未歸檔的聊天",
       "noUnread": "沒有未讀聊天",
       "openChatMenu": "開啟聊天選單",
       "openListMenu": "開啟聊天列表選單",
@@ -2613,6 +2615,7 @@
       "showArchivedChats": "顯示已歸檔的聊天",
       "titlePlaceholder": "聊天標題",
       "unarchive": "取消歸檔",
+      "unarchived": "未歸檔",
       "unmute": "取消靜音",
       "unpin": "取消置頂",
       "unread": "未讀",
@@ -2875,6 +2878,7 @@
     "toasts": {
       "archived": "聊天已歸檔",
       "archivedMuted": "聊天已歸檔，已靜音的聊天有新回覆也不會回來",
+      "chatUnarchived": "已取消聊天歸檔",
       "copied": "已複製",
       "deleted": "聊天已刪除",
       "muted": "聊天已靜音，有新回覆也不會顯示未讀或傳送推播通知",

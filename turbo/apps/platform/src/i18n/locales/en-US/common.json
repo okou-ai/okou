@@ -2596,6 +2596,7 @@
       "number": "number"
     },
     "sidebar": {
+      "all": "All",
       "archive": "Archive",
       "archived": "Archived",
       "chatsWith": "Chats with {{assistantName}}",
@@ -2615,6 +2616,7 @@
       "newChatWith": "New chat with {{assistantName}}",
       "noArchived": "No archived chats",
       "noMuted": "No muted chats",
+      "noUnarchived": "No unarchived chats",
       "noUnread": "No unread chats",
       "openChatMenu": "Open chat menu",
       "openListMenu": "Open chat list menu",
@@ -2626,6 +2628,7 @@
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive",
+      "unarchived": "Unarchived",
       "unmute": "Unmute",
       "unpin": "Unpin",
       "unread": "Unread",
@@ -2890,6 +2893,7 @@
     "toasts": {
       "archived": "Chat archived.",
       "archivedMuted": "Chat archived. It's muted, so new replies won't bring it back.",
+      "chatUnarchived": "Chat unarchived",
       "copied": "Copied",
       "deleted": "Chat deleted",
       "muted": "Chat muted. New replies won't show as unread or send push notifications.",
