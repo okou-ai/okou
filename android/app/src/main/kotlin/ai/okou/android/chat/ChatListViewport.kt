@@ -37,6 +37,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -162,9 +164,15 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
     val icon: @Composable () -> Unit = {
         Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(24.dp))
     }
-    val label: @Composable () -> Unit = { Text(stringResource(R.string.composer_new)) }
+    val title = stringResource(R.string.composer_new)
+    val label: @Composable () -> Unit = { Text(title) }
     if (enabled) {
-        ExtendedFloatingActionButton(text = label, icon = icon, onClick = onClick)
+        ExtendedFloatingActionButton(
+            text = label,
+            icon = icon,
+            onClick = onClick,
+            modifier = Modifier.semantics { text = AnnotatedString(title) },
+        )
         return
     }
     val colors = MaterialTheme.colorScheme
