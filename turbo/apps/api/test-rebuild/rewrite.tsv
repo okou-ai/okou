@@ -2692,8 +2692,8 @@ runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-
 runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-binding-002	planned				
 runs	src/signals/routes/__tests__/runners-thread-binding.test.ts	runners-thread-binding-005	planned				
 runs	src/signals/routes/__tests__/runners-unavailable-execution.test.ts	runners-unavailable-execution-001	planned				
-billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-001	planned				B05
-billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-002	planned				B05
+billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-001	skipped		slow-setup: Given+first When/Then over 200 ms in two runs: the active Run alone (createRunExecutionCredentials dispatch) 488/428 ms plus one sandbox usage-event settlement 30/16 ms = 518/444 ms in-test, 675/580 ms Vitest, first row of the file; the free-plan funding to exactly 0 credits and the firewall/image requests not yet included		B05
+billing	src/signals/routes/__tests__/runtime-credit-balance.test.ts	runtime-credit-balance-002	skipped		slow-setup: Given+first When/Then over 200 ms in two runs: the active Run alone (warm, second row) 228/195 ms plus one sandbox usage-event settlement 8/8 ms = 236/202 ms in-test, 361/311 ms Vitest; the free-plan funding to -1 credits and the firewall/image requests not yet included		B05
 chat	src/signals/routes/__tests__/shared-thread-artifacts.test.ts	shared-thread-artifacts-001	planned				
 chat	src/signals/routes/__tests__/shared-thread-artifacts.test.ts	shared-thread-artifacts-002	planned				
 chat	src/signals/routes/__tests__/shared-thread-artifacts.test.ts	shared-thread-artifacts-004	planned				
