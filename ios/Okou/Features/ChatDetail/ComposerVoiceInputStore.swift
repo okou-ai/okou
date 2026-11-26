@@ -409,7 +409,8 @@ final class ComposerVoiceInputStore {
       await transcriptionTask?.value
       _ = await preparationTask?.result
       if uploadsAudio {
-        try await finishAudio(session: session, id: id, composer: composer, owner: owner, send: send)
+        try await finishAudio(
+          session: session, id: id, composer: composer, owner: owner, send: send)
         return
       }
       let hasPreparedText = await session.hasPreparedText
