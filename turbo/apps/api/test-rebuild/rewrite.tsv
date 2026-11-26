@@ -2246,20 +2246,20 @@ connectors	src/signals/routes/__tests__/mcp-server-reads.test.ts	mcp-server-read
 connectors	src/signals/routes/__tests__/mcp-server-reads.test.ts	mcp-server-reads-016	planned				
 connectors	src/signals/routes/__tests__/mcp-server-reads.test.ts	mcp-server-reads-017	planned				
 connectors	src/signals/routes/__tests__/mcp-server-reads.test.ts	mcp-server-reads-019	planned				
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-001	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-002	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-007	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-008	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-010	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-012	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-013	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-014	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-015	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-017	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-020	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-022	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-026	planned				B03
-connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-028	planned		draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD		B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-001	rewritten	7.5	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-002	rewritten	33.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-007	rewritten	7.9	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-008	rewritten	6.9	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-010	rewritten	5.5	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-012	rewritten	6.7	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-013	rewritten	12.3	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-014	rewritten	5.7	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-015	rewritten	18.1	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-017	rewritten	60.9	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-020	rewritten	11.7	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-022	rewritten	14.6	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-026	skipped		not-reproducible: current /mcp CORS (src/lib/cors.ts mcpCors origin "*") accepts any well-formed https origin without cookies; preflight from https://client.example.test returned 204, 403 Forbidden Origin now only for malformed origins or cookie-bearing requests (upstream mcp-server.test.ts modified per test-rebuild/upstream-changes.tsv)		B03
+connectors	src/signals/routes/__tests__/mcp-server.test.ts	mcp-server-028	rewritten	33.7	draft lost: a coordinator lint cleanup deleted its shared helper; rewrite from the BDD	src/signals/routes/__tests__/mcp-server.test.ts	B03
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-001	rewritten	129.6		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-002	rewritten	165.1		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
 account-org	src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	me-model-provider-accounts-activate-004	rewritten	141.4		src/signals/routes/__tests__/me-model-provider-accounts-activate.test.ts	B03
