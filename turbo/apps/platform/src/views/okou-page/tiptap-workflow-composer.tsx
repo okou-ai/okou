@@ -189,9 +189,7 @@ function WorkflowComposerPlaceholder({
             ? composerCreatePlaceholder(createMode, presentationFormat)
             : workflowComposerPlaceholder(sending))}
       </span>
-      {followup && (
-        <FollowupAcceptButton onAccept={acceptFollowup} />
-      )}
+      {followup && <FollowupAcceptButton onAccept={acceptFollowup} />}
     </div>
   );
 }
