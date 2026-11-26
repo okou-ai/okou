@@ -405,6 +405,9 @@ export const enterRemoteSetup$ = command(
     const params = new URLSearchParams(get(searchParams$));
     clearRemoteSetupParams(params);
     params.set("setup", "add");
+    if (sourceNetwork || fromComputer) {
+      params.delete("remoteDevice");
+    }
     if (sourceNetwork) {
       params.set("setupNetwork", `${sourceNetwork.route}:${sourceNetwork.id}`);
     }

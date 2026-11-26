@@ -1,6 +1,7 @@
 import {
   remoteDeviceDirectory$,
   remoteDevicesEnabled$,
+  selectedRemoteDeviceId$,
 } from "../../signals/remote-devices.ts";
 import {
   BuiltinConnectorAccountDialogs,
@@ -121,6 +122,7 @@ import {
   PrivateNetworkPanel,
   RemoteControlPanel,
 } from "./connectors-remote-panels.tsx";
+import { AddRemoteDeviceButton } from "./remote-device-directory.tsx";
 import { WorkspaceCanvasBackdrop } from "./workspace-inset.tsx";
 
 function ConnectorFilterSectionLabel({
@@ -313,6 +315,7 @@ function ConnectorsScopeSegment() {
  * built.
  */
 function ConnectorsDirectoryToolbar() {
+  const scope = useGet(connectorsScope$);
   return (
     // The controls outlive the header: the title scrolls away and the scope and
     // the search stay reachable. The negative margins hand back the page's own
@@ -333,8 +336,11 @@ function ConnectorsDirectoryToolbar() {
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
       <div className="relative isolate flex flex-col gap-3 pt-6">
         <WorkspaceCanvasBackdrop />
-        <div className="flex items-center overflow-x-auto">
-          <ConnectorsScopeSegment />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 overflow-x-auto">
+            <ConnectorsScopeSegment />
+          </div>
+          {scope === "remote-control" && <RemoteDeviceDirectoryAction />}
         </div>
         <DirectoryControlsPresence />
       </div>
@@ -343,6 +349,13 @@ function ConnectorsDirectoryToolbar() {
       </div>
     </div>
   );
+}
+
+function RemoteDeviceDirectoryAction() {
+  const enabled = useLastResolved(remoteDevicesEnabled$);
+  const setup = useGet(remoteSetup$);
+  const selected = useGet(selectedRemoteDeviceId$);
+  return enabled && !setup && !selected ? <AddRemoteDeviceButton /> : null;
 }
 
 function DirectoryControlsPresence() {

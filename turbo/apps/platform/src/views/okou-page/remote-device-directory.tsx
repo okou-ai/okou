@@ -5,6 +5,7 @@ import type {
   RemoteDeviceDirectoryItem,
 } from "@okouai/api-contracts/contracts/remote-devices";
 import {
+  Badge,
   Button,
   Card,
   Dialog,
@@ -21,13 +22,29 @@ import {
   DropdownMenuTrigger,
   Input,
   Skeleton,
+  cn,
+  surfaceVariants,
 } from "@okouai/ui";
 import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronDown, KeyRound, Laptop, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  Ban,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  KeyRound,
+  Laptop,
+  Monitor,
+  Plus,
+  Smartphone,
+  Terminal,
+} from "lucide-react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { formatRelativeTimestamp } from "../../i18n/format.ts";
 import { now } from "../../lib/time.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { permissionGrantExpiryText } from "../../signals/permission-allow/permission-grant-expiration.ts";
@@ -88,28 +105,72 @@ function ChannelKind({ kind }: { readonly kind: RemoteDeviceChannelKind }) {
   }
 }
 
-function RemoteDevicePolicyControl({
+const channelIcons = {
+  desktop: Laptop,
+  ios: Smartphone,
+  ssh: Terminal,
+  vnc: Monitor,
+} as const;
+
+function DeviceChannels({
   device,
 }: {
   readonly device: RemoteDeviceDirectoryItem;
 }) {
   const { t } = useTranslation();
-  const signal = useGet(pageSignal$);
-  const [saving, save] = useLoadableSet(updateRemoteDeviceAccess$);
-  const expiresAt = device.accessExpiresAt;
-  const time = now();
-  const allowed =
+  const kinds = new Set(
+    device.channels.map(({ kind }) => {
+      return kind;
+    }),
+  );
+  if (kinds.size === 0) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.remoteDevices.noChannels;
+        })}
+      </span>
+    );
+  }
+  return (
+    <ul className="flex flex-wrap items-center gap-1.5">
+      {[...kinds].map((kind) => {
+        return (
+          <li key={kind} className="leading-none">
+            <Badge className="text-xs text-muted-foreground">
+              <ChannelKind kind={kind} />
+            </Badge>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function deviceAccessAllowed(device: RemoteDeviceDirectoryItem, time: number) {
+  return (
     device.accessAllowed &&
-    (expiresAt === null || Date.parse(expiresAt) > time);
-  const status = !allowed
-    ? t(($) => {
-        return $.remoteDevices.off;
-      })
-    : expiresAt === null
-      ? t(($) => {
-          return $.connectors.permissions.always;
-        })
-      : permissionGrantExpiryText(expiresAt, time, "compact");
+    (device.accessExpiresAt === null ||
+      Date.parse(device.accessExpiresAt) > time)
+  );
+}
+
+function RemoteDeviceAllowMenu({
+  compact,
+  accessLabel,
+  duration,
+  status,
+  pending,
+  update,
+}: {
+  readonly compact: boolean;
+  readonly accessLabel: string;
+  readonly duration: string | null;
+  readonly status: string;
+  readonly pending: boolean;
+  readonly update: (policy: RemoteDeviceAccess) => void;
+}) {
+  const { t } = useTranslation();
   const choices: readonly (readonly [RemoteDeviceAccess, string])[] = [
     [
       { mode: "always" },
@@ -136,57 +197,148 @@ function RemoteDevicePolicyControl({
       }),
     ],
   ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={compact ? accessLabel : undefined}
+        disabled={pending}
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant={compact ? "neutral" : "quiet"}
+            pending={pending}
+            className={cn(
+              "min-w-0 gap-1.5 text-xs [&_svg]:size-3",
+              !compact && "rounded-r-none focus-visible:ring-inset",
+              !compact &&
+                duration &&
+                "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-400",
+            )}
+          />
+        }
+      >
+        {!compact && duration && <Check size={12} aria-hidden />}
+        {compact && duration && <Clock size={12} aria-hidden />}
+        <span className="truncate">
+          {compact
+            ? status
+            : t(($) => {
+                return $.connectors.permissions.actions.allow;
+              })}
+        </span>
+        {!compact && duration && (
+          <span className="truncate text-[11px]">{duration}</span>
+        )}
+        <ChevronDown size={12} aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {choices.map(([choice, label]) => {
+          return (
+            <DropdownMenuItem
+              key={label}
+              onClick={() => {
+                update(choice);
+              }}
+            >
+              {label}
+            </DropdownMenuItem>
+          );
+        })}
+        {compact && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => {
+                update({ mode: "denied" });
+              }}
+            >
+              {t(($) => {
+                return $.connectors.permissions.actions.deny;
+              })}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RemoteDevicePolicyControl({
+  device,
+  compact = false,
+}: {
+  readonly device: RemoteDeviceDirectoryItem;
+  readonly compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const [saving, save] = useLoadableSet(updateRemoteDeviceAccess$);
+  const time = now();
+  const allowed = deviceAccessAllowed(device, time);
+  const duration = allowed
+    ? (permissionGrantExpiryText(device.accessExpiresAt, time, "compact") ??
+      t(($) => {
+        return $.connectors.permissions.always;
+      }))
+    : null;
+  const status =
+    duration ??
+    t(($) => {
+      return $.remoteDevices.off;
+    });
+  const accessLabel = t(
+    ($) => {
+      return $.remoteDevices.policy;
+    },
+    { device: device.displayName, status },
+  );
   const update = (policy: RemoteDeviceAccess) => {
     detach(save(device.id, policy, signal), Reason.DomCallback);
   };
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label={t(
-            ($) => {
-              return $.remoteDevices.policy;
-            },
-            { device: device.displayName, status },
-          )}
-          disabled={saving.state === "loading"}
-          render={
-            <Button
-              type="button"
-              size="xs"
-              variant="neutral"
-              pending={saving.state === "loading"}
-            />
-          }
-        >
-          {status}
-          <ChevronDown size={14} aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {choices.map(([choice, label]) => {
-            return (
-              <DropdownMenuItem
-                key={label}
-                onClick={() => {
-                  update(choice);
-                }}
-              >
-                {label}
-              </DropdownMenuItem>
-            );
-          })}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
+    <div className="flex min-w-0 flex-col items-end gap-1">
+      <div
+        role={compact ? undefined : "group"}
+        aria-label={compact ? undefined : accessLabel}
+        className={cn(
+          "flex max-w-full items-center",
+          !compact && "rounded-md border border-surface-border",
+        )}
+      >
+        <RemoteDeviceAllowMenu
+          compact={compact}
+          status={status}
+          duration={duration}
+          accessLabel={accessLabel}
+          pending={saving.state === "loading"}
+          update={update}
+        />
+        {!compact && (
+          <Button
+            type="button"
+            size="xs"
+            variant="quiet"
+            aria-pressed={!allowed}
+            disabled={saving.state === "loading"}
             onClick={() => {
-              update({ mode: "denied" });
+              if (allowed) {
+                update({ mode: "denied" });
+              }
             }}
+            className={cn(
+              "shrink-0 gap-1.5 rounded-l-none border-l border-surface-border text-xs focus-visible:ring-inset [&_svg]:size-3",
+              !allowed &&
+                "bg-rose-500/10 text-rose-700 hover:bg-rose-500/15 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-400",
+            )}
           >
+            <Ban size={12} aria-hidden />
             {t(($) => {
               return $.connectors.permissions.actions.deny;
             })}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </Button>
+        )}
+      </div>
       {saving.state === "hasError" && (
         <span role="alert" className="text-xs text-destructive">
           {t(($) => {
@@ -243,38 +395,59 @@ export function ComposerRemoteDevices() {
         <Skeleton className="h-8 w-full" />
       )}
       {devices?.map((device) => {
+        const Icon = channelIcons[device.channels[0]?.kind ?? "desktop"];
         return (
           <div
             key={device.id}
-            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1.5"
           >
-            <Laptop
-              size={16}
-              aria-hidden
-              className="shrink-0 text-muted-foreground"
-            />
-            <Link
-              pathname="/connectors"
-              options={deviceLink(device.id)}
-              className="min-w-0 flex-1 truncate text-sm hover:underline"
-            >
-              {device.displayName}
-            </Link>
-            <RemoteDevicePolicyControl device={device} />
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              <Link
+                pathname="/connectors"
+                options={deviceLink(device.id)}
+                className="flex min-w-0 items-center gap-2 text-sm hover:underline"
+              >
+                <Icon
+                  size={16}
+                  aria-hidden
+                  className="shrink-0 text-muted-foreground"
+                />
+                <span className="min-w-0 truncate">{device.displayName}</span>
+              </Link>
+              {device.channels.length > 0 && <DeviceChannels device={device} />}
+            </div>
+            <RemoteDevicePolicyControl device={device} compact />
           </div>
         );
       })}
-      {devices?.length === 0 && (
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 border-t border-divider px-1 pt-1">
         <Link
           pathname="/connectors"
-          options={deviceLink()}
-          className="px-1 text-sm hover:underline"
+          options={{
+            searchParams: new URLSearchParams({
+              ...directoryParams,
+              setup: "add",
+            }),
+          }}
+          className="inline-flex items-center gap-1.5 py-1 text-sm hover:underline"
         >
+          <Plus size={14} aria-hidden />
           {t(($) => {
             return $.remoteDevices.add;
           })}
         </Link>
-      )}
+        {devices && devices.length > 0 && (
+          <Link
+            pathname="/connectors"
+            options={deviceLink()}
+            className="py-1 text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            {t(($) => {
+              return $.remoteDevices.manage;
+            })}
+          </Link>
+        )}
+      </div>
     </section>
   );
 }
@@ -341,7 +514,7 @@ function AddRemoteDeviceForm() {
   );
 }
 
-function AddRemoteDeviceDialog() {
+export function AddEmptyRemoteDeviceDialog() {
   const { t } = useTranslation();
   const draft = useGet(remoteDeviceCreation$);
   const setOpen = useSet(setRemoteDeviceCreationOpen$);
@@ -350,18 +523,17 @@ function AddRemoteDeviceDialog() {
     <Dialog open={draft !== null} onOpenChange={setOpen}>
       <DialogTrigger
         ref={mount}
-        render={<Button size="sm" variant="outline" />}
+        render={<Button size="sm" variant="neutral" />}
       >
-        <Plus size={16} aria-hidden />
         {t(($) => {
-          return $.remoteDevices.add;
+          return $.remoteDevices.createEmpty;
         })}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
-              return $.remoteDevices.add;
+              return $.remoteDevices.createEmpty;
             })}
           </DialogTitle>
           <DialogDescription>
@@ -378,6 +550,104 @@ function AddRemoteDeviceDialog() {
   );
 }
 
+export function AddRemoteDeviceButton() {
+  const { t } = useTranslation();
+  const startSetup = useSet(enterRemoteSetup$);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="ml-auto shrink-0"
+      onClick={() => {
+        startSetup();
+      }}
+    >
+      <Plus size={14} aria-hidden />
+      {t(($) => {
+        return $.remoteDevices.add;
+      })}
+    </Button>
+  );
+}
+
+function RemoteDeviceMoveMenu({
+  channel,
+  destinations,
+}: {
+  readonly channel: RemoteDeviceChannel;
+  readonly destinations: readonly RemoteDeviceDirectoryItem[];
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const [moving, move] = useLoadableSet(moveRemoteDeviceChannel$);
+  const time = now();
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              size="sm"
+              variant="neutral"
+              pending={moving.state === "loading"}
+            />
+          }
+          aria-label={t(
+            ($) => {
+              return $.remoteDevices.moveChannel;
+            },
+            { channel: channel.displayName },
+          )}
+        >
+          {t(($) => {
+            return $.remoteDevices.move;
+          })}
+          <ChevronDown size={14} aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-52">
+          {destinations.map((device) => {
+            const allowed = deviceAccessAllowed(device, time);
+            return (
+              <DropdownMenuItem
+                key={device.id}
+                className="flex justify-between gap-3"
+                onClick={() => {
+                  detach(move(channel, device.id, signal), Reason.DomCallback);
+                }}
+              >
+                <span className="min-w-0 truncate" title={device.displayName}>
+                  {device.displayName}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {allowed
+                    ? (permissionGrantExpiryText(
+                        device.accessExpiresAt,
+                        time,
+                        "compact",
+                      ) ??
+                      t(($) => {
+                        return $.connectors.permissions.always;
+                      }))
+                    : t(($) => {
+                        return $.remoteDevices.off;
+                      })}
+                </span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {moving.state === "hasError" && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(($) => {
+            return $.remoteDevices.saveFailed;
+          })}
+        </p>
+      )}
+    </>
+  );
+}
+
 function RemoteDeviceChannelRow({
   channel,
   destinations,
@@ -385,37 +655,35 @@ function RemoteDeviceChannelRow({
   readonly channel: RemoteDeviceChannel;
   readonly destinations: readonly RemoteDeviceDirectoryItem[];
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const parameters = useGet(searchParams$);
-  const signal = useGet(pageSignal$);
-  const [moving, move] = useLoadableSet(moveRemoteDeviceChannel$);
-  const lastSeen =
-    channel.lastSeenAt === null
-      ? null
-      : new Intl.DateTimeFormat(i18n.language, {
-          dateStyle: "medium",
-          timeStyle: "short",
-        }).format(new Date(channel.lastSeenAt));
+  const Icon = channelIcons[channel.kind];
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0">
-        <div className="break-words text-sm font-medium">
-          {channel.displayName}
-        </div>
-        <div className="text-xs text-muted-foreground">
-          <ChannelKind kind={channel.kind} />
-          {lastSeen && (
-            <>
-              {" "}
-              ·{" "}
-              {t(
-                ($) => {
-                  return $.remoteDevices.lastSeen;
-                },
-                { time: lastSeen },
-              )}
-            </>
-          )}
+      <div className="flex min-w-0 flex-[1_1_10rem] items-center gap-3">
+        <Icon
+          size={18}
+          aria-hidden
+          className="shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0">
+          <div className="break-words text-sm font-medium">
+            {channel.displayName}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            <ChannelKind kind={channel.kind} />
+            {channel.lastSeenAt && (
+              <>
+                {" · "}
+                {t(
+                  ($) => {
+                    return $.remoteDevices.lastSeen;
+                  },
+                  { time: formatRelativeTimestamp(channel.lastSeenAt) },
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -429,7 +697,7 @@ function RemoteDeviceChannelRow({
                 channel.id,
               ),
             }}
-            className={buttonVariants({ size: "sm", variant: "outline" })}
+            className={buttonVariants({ size: "sm", variant: "neutral" })}
           >
             {t(($) => {
               return $.remoteNetworkScope.manage;
@@ -437,52 +705,7 @@ function RemoteDeviceChannelRow({
           </Link>
         )}
         {destinations.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  pending={moving.state === "loading"}
-                />
-              }
-              aria-label={t(
-                ($) => {
-                  return $.remoteDevices.moveChannel;
-                },
-                { channel: channel.displayName },
-              )}
-            >
-              {t(($) => {
-                return $.remoteDevices.move;
-              })}
-              <ChevronDown size={14} aria-hidden />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {destinations.map((device) => {
-                return (
-                  <DropdownMenuItem
-                    key={device.id}
-                    onClick={() => {
-                      detach(
-                        move(channel, device.id, signal),
-                        Reason.DomCallback,
-                      );
-                    }}
-                  >
-                    {device.displayName}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        {moving.state === "hasError" && (
-          <p role="alert" className="text-sm text-destructive">
-            {t(($) => {
-              return $.remoteDevices.saveFailed;
-            })}
-          </p>
+          <RemoteDeviceMoveMenu channel={channel} destinations={destinations} />
         )}
       </div>
     </li>
@@ -502,21 +725,24 @@ function RemoteDeviceDetails({
     return id !== device.id;
   });
   return (
-    <section className="grid gap-4">
+    <section className="grid gap-5">
       <Link
         pathname="/connectors"
         options={deviceLink()}
-        className="justify-self-start text-sm text-muted-foreground hover:underline"
+        className="inline-flex items-center gap-1.5 justify-self-start text-sm text-muted-foreground hover:text-foreground hover:underline"
       >
+        <ArrowLeft size={14} aria-hidden />
         {t(($) => {
           return $.remoteDevices.title;
         })}
       </Link>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">{device.displayName}</h2>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-divider pb-4">
+        <h2 className="min-w-0 break-words text-lg font-semibold">
+          {device.displayName}
+        </h2>
         <RemoteDevicePolicyControl device={device} />
-      </div>
-      <div className="flex justify-between gap-3">
+      </header>
+      <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">
           {t(($) => {
             return $.remoteDevices.channels;
@@ -529,7 +755,7 @@ function RemoteDeviceDetails({
             startSetup();
           }}
         >
-          <Plus size={16} aria-hidden />
+          <Plus size={14} aria-hidden />
           {t(($) => {
             return $.remoteDevices.addChannel;
           })}
@@ -565,18 +791,20 @@ export function RemoteDeviceDirectory() {
   const activeId = useGet(selectedRemoteDeviceId$);
   const load = useLoadable(remoteDeviceDirectory$);
   const devices = useLastResolved(remoteDeviceDirectory$);
-  if (!devices && load.state === "loading") {
+  const activeDevice = activeId
+    ? devices?.find(({ id }) => {
+        return id === activeId;
+      })
+    : undefined;
+  if (load.state === "loading" && (!devices || (activeId && !activeDevice))) {
     return <Skeleton className="h-32 w-full" />;
   }
   if (!devices || load.state === "hasError") {
     return <RemoteDeviceLoadError />;
   }
   if (activeId) {
-    const device = devices.find(({ id }) => {
-      return id === activeId;
-    });
-    return device ? (
-      <RemoteDeviceDetails device={device} devices={devices} />
+    return activeDevice ? (
+      <RemoteDeviceDetails device={activeDevice} devices={devices} />
     ) : (
       <div className="grid gap-2">
         <Link
@@ -605,7 +833,6 @@ function RemoteDeviceOverview({
   readonly devices: readonly RemoteDeviceDirectoryItem[];
 }) {
   const { t } = useTranslation();
-  const startSetup = useSet(enterRemoteSetup$);
   return (
     <section
       className="grid gap-4"
@@ -613,66 +840,64 @@ function RemoteDeviceOverview({
         return $.remoteDevices.title;
       })}
     >
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            startSetup();
-          }}
-        >
-          {t(($) => {
-            return $.remoteDevices.addChannel;
-          })}
-        </Button>
-        <AddRemoteDeviceDialog />
-      </div>
       {devices.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-3">
           {devices.map((device) => {
+            const Icon = channelIcons[device.channels[0]?.kind ?? "desktop"];
+            const lastSeenAt = device.channels.reduce<string | null>(
+              (latest, channel) => {
+                const seen = channel.lastSeenAt;
+                return seen && (latest === null || seen > latest)
+                  ? seen
+                  : latest;
+              },
+              null,
+            );
             return (
-              <Card
+              <article
                 key={device.id}
-                className="min-w-0 gap-4 border-divider p-4"
+                className={cn(surfaceVariants(), "flex min-w-0 flex-col")}
               >
                 <Link
                   pathname="/connectors"
                   options={deviceLink(device.id)}
-                  className="flex min-w-0 items-center gap-3 text-sm font-semibold hover:underline"
+                  aria-label={device.displayName}
+                  className="flex min-w-0 flex-1 flex-col gap-3 rounded-t-[inherit] px-4 py-3.5 hover:bg-state-hover"
                 >
-                  <Laptop
-                    size={20}
-                    aria-hidden
-                    className="shrink-0 text-muted-foreground"
-                  />
-                  <span className="min-w-0 truncate">{device.displayName}</span>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <Icon
+                      size={18}
+                      aria-hidden
+                      className="shrink-0 text-muted-foreground"
+                    />
+                    <h2
+                      className="min-w-0 flex-1 truncate text-sm font-semibold"
+                      title={device.displayName}
+                    >
+                      {device.displayName}
+                    </h2>
+                    <ChevronRight
+                      size={16}
+                      aria-hidden
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  </div>
+                  <DeviceChannels device={device} />
                 </Link>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <ul className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {[
-                      ...new Set(
-                        device.channels.map(({ kind }) => {
-                          return kind;
-                        }),
-                      ),
-                    ].map((kind) => {
-                      return (
-                        <li key={kind}>
-                          <ChannelKind kind={kind} />
-                        </li>
-                      );
-                    })}
-                    {device.channels.length === 0 && (
-                      <li>
-                        {t(($) => {
-                          return $.remoteDevices.noChannels;
-                        })}
-                      </li>
-                    )}
-                  </ul>
+                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-divider px-3 py-2.5">
+                  {lastSeenAt && (
+                    <span className="mr-auto text-xs text-muted-foreground">
+                      {t(
+                        ($) => {
+                          return $.remoteDevices.lastSeen;
+                        },
+                        { time: formatRelativeTimestamp(lastSeenAt) },
+                      )}
+                    </span>
+                  )}
                   <RemoteDevicePolicyControl device={device} />
                 </div>
-              </Card>
+              </article>
             );
           })}
         </div>

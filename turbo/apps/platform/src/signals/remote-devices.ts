@@ -3,6 +3,7 @@ import type {
   RemoteDeviceAccess,
   RemoteDeviceChannel,
 } from "@okouai/api-contracts/contracts/remote-devices";
+import { phoneUseDevicesChangedEvent } from "@okouai/api-contracts/validators/phone-use";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { uuid } from "zod";
@@ -11,7 +12,7 @@ import { apiClient$ } from "./api-client.ts";
 import { authenticatedSessionKey$ } from "./auth.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "./realtime.ts";
-import { searchParams$ } from "./route.ts";
+import { searchParams$, updateSearchParams$ } from "./route.ts";
 import { onRef } from "./utils.ts";
 
 const revision$ = state(0);
@@ -65,16 +66,22 @@ export const invalidateRemoteDeviceDirectory$ = command(({ set }) => {
 
 export const mountRemoteDeviceDirectory$ = onRef(
   command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-    set(
-      setAblyInvalidationLoop$,
-      {
-        scope: "credential",
-        topic: "remoteDevicesChanged",
-        invalidations: [invalidateRemoteDeviceDirectory$],
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
+    for (const [scope, topic] of [
+      ["credential", "remoteDevicesChanged"],
+      ["credential", phoneUseDevicesChangedEvent],
+      ["user", "computerUseHostsChanged"],
+    ] as const) {
+      set(
+        setAblyInvalidationLoop$,
+        {
+          scope,
+          topic,
+          invalidations: [invalidateRemoteDeviceDirectory$],
+          options: { runOnSubscribe: topic === "remoteDevicesChanged" },
+        },
+        signal,
+      );
+    }
   }),
 );
 
@@ -108,6 +115,10 @@ export const createRemoteDevice$ = command(
     set(invalidateRemoteDeviceDirectory$);
     if (get(creation$)?.id === draft.id) {
       set(creation$, null);
+      const params = new URLSearchParams(get(searchParams$));
+      params.delete("setup");
+      params.set("remoteDevice", draft.id);
+      set(updateSearchParams$, params);
     }
   },
 );

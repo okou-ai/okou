@@ -1,10 +1,11 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createMessageExperienceHelpers,
@@ -134,24 +135,131 @@ test("creates an empty device and moves an existing channel from the directory",
   await setupPage({ context, path: "/connectors?scope=remote-control" });
   const user = userEvent.setup({ delay: null });
   click(await findFastControl("button", "Add device"));
+  await screen.findByText("Computer use");
+  click(await findFastControl("button", "Create empty device"));
   const createDialog = await screen.findByRole("dialog", {
-    name: "Add device",
+    name: "Create empty device",
   });
   await user.type(
     within(createDialog).getByRole("textbox", { name: "Device name" }),
     "Personal Mac",
   );
   click(await findFastControl("button", "Create device", createDialog));
-  await findFastControl("link", "Personal Mac");
+  await screen.findByRole("heading", { name: "Personal Mac" });
+  click(await findFastControl("button", "Add channel"));
+  await screen.findByRole("heading", { name: "Add a channel to Personal Mac" });
+  expect(screen.getByText("SSH")).toBeInTheDocument();
+  expect(screen.getByText("VNC")).toBeInTheDocument();
+  expect(screen.queryByText("Computer use")).not.toBeInTheDocument();
+  click(await findFastControl("button", "Back"));
+  await screen.findByRole("heading", { name: "Personal Mac" });
+  click(await findFastControl("link", "Remote devices"));
   click(await findFastControl("link", "Build Mac"));
   click(await findFastControl("button", "Move Build login to another device"));
-  click(
-    await screen.findByText("Personal Mac", { selector: "[role=menuitem]" }),
-  );
+  const destinations = await screen.findByRole("menu");
+  expect(within(destinations).getByText("Off")).toBeInTheDocument();
+  click(within(destinations).getByText("Personal Mac"));
   await screen.findByText("No channels");
   expect(moves).toStrictEqual([
     { channelId, deviceId: createdIds[0], kind: "ssh" },
   ]);
+  click(await findFastControl("radio", "Connected"));
+  click(await findFastControl("radio", /^Remote control/));
+  await findFastControl("button", "Add device");
+  expect(
+    screen.queryByRole("heading", { name: "Channels" }),
+  ).not.toBeInTheDocument();
+});
+
+test("device access changes after choosing a duration and can be denied from the card", async () => {
+  enableRemoteDevices();
+  let device = {
+    id: deviceId,
+    displayName: "Build Mac",
+    accessAllowed: false,
+    accessExpiresAt: null as string | null,
+    channels: [],
+  };
+  const policies: unknown[] = [];
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, { devices: [device] });
+  });
+  context.mocks.api(
+    remoteDevicesContract.setAccess,
+    ({ params, body, respond }) => {
+      policies.push({ deviceId: params.deviceId, body });
+      const expiresAt =
+        body.mode === "for"
+          ? new Date(now() + body.hours * 3_600_000).toISOString()
+          : null;
+      device = {
+        ...device,
+        accessAllowed: body.mode !== "denied",
+        accessExpiresAt: expiresAt,
+      };
+      return respond(200, device);
+    },
+  );
+
+  await setupPage({ context, path: "/connectors?scope=remote-control" });
+  const denied = await screen.findByRole("group", {
+    name: "Access for Build Mac, Off",
+  });
+  const allow = await findFastControl("button", "Allow", denied);
+  const user = userEvent.setup({ delay: null });
+  click(allow);
+  await screen.findByRole("menu");
+  expect(policies).toStrictEqual([]);
+  await user.keyboard("{Escape}");
+  expect(allow).toHaveFocus();
+  click(allow);
+  click(
+    await within(await screen.findByRole("menu")).findByText("Allow for 1h"),
+  );
+
+  const allowed = await screen.findByRole("group", {
+    name: "Access for Build Mac, 1h",
+  });
+  click(await findFastControl("button", "Deny", allowed));
+  await screen.findByRole("group", { name: "Access for Build Mac, Off" });
+  expect(policies).toStrictEqual([
+    { deviceId, body: { mode: "for", hours: 1 } },
+    { deviceId, body: { mode: "denied" } },
+  ]);
+});
+
+test("the visible directory refreshes when a Desktop installation pairs", async () => {
+  enableRemoteDevices();
+  let paired = false;
+  const device = {
+    id: deviceId,
+    displayName: "Studio Mac",
+    accessAllowed: false,
+    accessExpiresAt: null,
+    channels: [
+      {
+        id: "d0000000-0000-4000-8000-000000000002",
+        kind: "desktop" as const,
+        displayName: "Studio Mac",
+        lastSeenAt: new Date(now()).toISOString(),
+        sshDependencyIds: [],
+      },
+    ],
+  };
+  context.mocks.api(remoteDevicesContract.list, ({ respond }) => {
+    return respond(200, { devices: paired ? [device] : [] });
+  });
+
+  await setupPage({ context, path: "/connectors?scope=remote-control" });
+  await screen.findByText("No remote devices yet.");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("computerUseHostsChanged"),
+    ).toBeTruthy();
+  });
+  paired = true;
+  context.mocks.ably.trigger("computerUseHostsChanged");
+  await findFastControl("link", "Studio Mac");
 });
 
 test("the exact approval link opens an owner confirmation without a transcript card", async () => {
@@ -178,9 +286,13 @@ test("the exact approval link opens an owner confirmation without a transcript c
   );
   await setupPage({ context, path: `${url.pathname}${url.search}` });
   const dialog = await screen.findByRole("dialog", {
-    name: "Remote device access",
+    name: "Allow access to Build Mac?",
   });
-  await within(dialog).findByText("Allow access to Build Mac?");
+  expect(
+    within(dialog).getByText(
+      "Access covers all channels on this device across your chats.",
+    ),
+  ).toBeInTheDocument();
   click(await findFastControl("button", "Cancel", dialog));
   expect(dialog).not.toBeInTheDocument();
   expect(window.location.search).toBe("");
