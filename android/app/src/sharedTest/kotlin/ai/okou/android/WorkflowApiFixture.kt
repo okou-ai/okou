@@ -40,6 +40,7 @@ internal class WorkflowApiFixture(
     @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeReleaseDetailRead: () -> Unit = {}
+    @Volatile var beforeWeekdayToggle: () -> Unit = {}
     @Volatile var beforeSharedScheduleCreate: () -> Unit = {}
     @Volatile var beforeHistoryRead: () -> Unit = {}
     @Volatile
@@ -172,10 +173,12 @@ internal class WorkflowApiFixture(
                 jsonResponse(rules.joinToString(prefix = "[", postfix = "]"))
             }
             "/api/workflow-automations/weekday/enable" -> {
+                beforeWeekdayToggle()
                 active.set(true)
                 jsonResponse(schedule())
             }
             "/api/workflow-automations/weekday/disable" -> {
+                beforeWeekdayToggle()
                 active.set(false)
                 jsonResponse(schedule())
             }

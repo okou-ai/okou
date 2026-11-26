@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +65,7 @@ internal fun <T : Any> WorkspaceFilterRow(
     var focused by remember { mutableStateOf<T?>(null) }
     val fade = with(LocalDensity.current) { 16.dp.toPx() }
     val defaultSpec = LocalBringIntoViewSpec.current
+    val revealEnabled by rememberUpdatedState(enabled)
     val revealSpec =
         remember(defaultSpec, scroll, fade) {
             object : BringIntoViewSpec by defaultSpec {
@@ -72,7 +74,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                     size: Float,
                     containerSize: Float,
                 ): Float {
-                    if (scroll.maxValue == 0) return 0f
+                    if (!revealEnabled || scroll.maxValue == 0) return 0f
                     val margin = ((containerSize - size) / 2).coerceIn(0f, fade)
                     return defaultSpec.calculateScrollDistance(
                         offset - margin,
@@ -83,8 +85,9 @@ internal fun <T : Any> WorkspaceFilterRow(
             }
         }
     val visibleOption = focused ?: selected
+    // Keep the user's offset when an adjacent pane toggles whether the filters are available.
     LaunchedEffect(visibleOption, scroll.maxValue) {
-        reveal.getValue(visibleOption).bringIntoView()
+        if (revealEnabled) reveal.getValue(visibleOption).bringIntoView()
     }
     CompositionLocalProvider(LocalBringIntoViewSpec provides revealSpec) {
         Row(
@@ -109,7 +112,7 @@ internal fun <T : Any> WorkspaceFilterRow(
                         )
                     }
                 }
-                .horizontalScroll(scroll)
+                .horizontalScroll(scroll, enabled = enabled)
                 .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {

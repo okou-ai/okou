@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,12 +41,14 @@ internal fun WorkspaceSearchInput(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     clearLabel: String = stringResource(R.string.chat_search_clear),
+    enabled: Boolean = true,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val style = workspaceSearchTextStyle().copy(color = MaterialTheme.colorScheme.onSurface)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         modifier = modifier.semantics { contentDescription = label },
         textStyle = style,
         singleLine = true,
@@ -60,6 +63,7 @@ internal fun WorkspaceSearchInput(
                 style,
                 onClear,
                 input,
+                enabled = enabled,
             )
         },
     )
@@ -105,6 +109,7 @@ private fun SearchInputDecoration(
     style: TextStyle,
     onClear: () -> Unit,
     input: @Composable () -> Unit,
+    enabled: Boolean = true,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     WorkspaceSearchField(
@@ -124,12 +129,12 @@ private fun SearchInputDecoration(
             input()
         }
         if (hasText) {
-            IconButton(onClick = onClear) {
+            IconButton(onClick = onClear, enabled = enabled) {
                 Icon(
                     painterResource(R.drawable.ic_close),
                     clearLabel,
                     modifier = Modifier.size(20.dp),
-                    tint = secondary,
+                    tint = if (enabled) secondary else LocalContentColor.current,
                 )
             }
         }
