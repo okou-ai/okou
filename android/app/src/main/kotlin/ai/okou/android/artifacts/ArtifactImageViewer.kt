@@ -3,9 +3,11 @@ package ai.okou.android.artifacts
 import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.R
+import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.ArtifactImageViewerState
 import ai.okou.android.state.rememberArtifactImageViewerState
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -39,6 +41,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -204,35 +207,41 @@ private fun ImageViewerToolbar(
                     { menu = true },
                     Modifier.focusRequester(actionsFocus),
                 )
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                val menuWidth = (currentWindowSizeDp().width - 24).coerceIn(0, 244).dp
+                DropdownMenu(
+                    expanded = menu,
+                    onDismissRequest = { menu = false },
+                    modifier = Modifier.width(menuWidth),
+                    offset = DpOffset(0.dp, 4.dp),
+                ) {
                     if (onShare != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.artifact_share_image)) },
+                        ImageViewerMenuItem(
+                            R.string.artifact_share_image,
+                            R.drawable.ic_share,
                             enabled = saveEnabled,
-                            onClick = {
-                                menu = false
-                                onShare()
-                            },
-                        )
+                        ) {
+                            menu = false
+                            onShare()
+                        }
                     }
                     if (onSave != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.artifact_save_image)) },
+                        ImageViewerMenuItem(
+                            R.string.artifact_save_image,
+                            R.drawable.ic_download,
                             enabled = saveEnabled,
-                            onClick = {
-                                menu = false
-                                onSave()
-                            },
-                        )
+                        ) {
+                            menu = false
+                            onSave()
+                        }
                     }
                     if (onSource != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.artifact_view_source)) },
-                            onClick = {
-                                menu = false
-                                onSource()
-                            },
-                        )
+                        ImageViewerMenuItem(
+                            R.string.artifact_view_source,
+                            R.drawable.ic_chevron_right,
+                        ) {
+                            menu = false
+                            onSource()
+                        }
                     }
                 }
             } else {
@@ -243,8 +252,23 @@ private fun ImageViewerToolbar(
 }
 
 @Composable
+private fun ImageViewerMenuItem(
+    @StringRes label: Int,
+    @DrawableRes icon: Int,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(stringResource(label), style = MaterialTheme.typography.labelLarge) },
+        leadingIcon = { Icon(painterResource(icon), null, Modifier.size(24.dp)) },
+        enabled = enabled,
+        onClick = onClick,
+    )
+}
+
+@Composable
 private fun ImageViewerButton(
-    @androidx.annotation.DrawableRes icon: Int,
+    @DrawableRes icon: Int,
     @StringRes label: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
