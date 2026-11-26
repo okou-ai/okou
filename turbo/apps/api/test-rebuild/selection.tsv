@@ -3991,7 +3991,7 @@ src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-di
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-005	selected	business-rule
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-006	selected	business-rule
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-007	not-selected	
-src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-008	not-selected	
+src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-008	selected	business-rule
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-009	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-010	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-011	not-selected	
@@ -4031,13 +4031,13 @@ src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-di
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	selected	access-isolation
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-046	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-047	not-selected	
-src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-048	not-selected	
+src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-048	selected	access-isolation
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-049	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-050	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-051	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-052	not-selected	
 src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	selected	visible-result
-src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-054	not-selected	
+src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-054	selected	business-rule
 src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-001	selected	core-path
 src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-002	selected	core-path
 src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-003	selected	core-path
@@ -4480,7 +4480,7 @@ src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-011	not-selected	
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-012	selected	business-rule
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-013	not-selected	
-src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-014	not-selected	
+src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-014	selected	visible-result
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-015	selected	access-isolation
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-016	selected	visible-result
 src/signals/routes/__tests__/integrations-telegram.test.ts	integrations-telegram-017	selected	visible-result
@@ -4707,7 +4707,7 @@ src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registratio
 src/signals/routes/__tests__/ios-push-registrations.test.ts	ios-push-registrations-004	not-selected	
 src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-001	selected	visible-result
 src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-002	not-selected	
-src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-003	not-selected	
+src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-003	selected	business-rule
 src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-004	selected	core-path
 src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-005	not-selected	
 src/signals/routes/__tests__/lark-integration.test.ts	lark-integration-006	selected	business-rule
@@ -4751,7 +4751,7 @@ src/signals/routes/__tests__/mail.test.ts	mail-026	selected	access-isolation
 src/signals/routes/__tests__/mail.test.ts	mail-027	selected	core-path
 src/signals/routes/__tests__/mail.test.ts	mail-028	selected	visible-result
 src/signals/routes/__tests__/mail.test.ts	mail-029	selected	visible-result
-src/signals/routes/__tests__/mail.test.ts	mail-030	not-selected	
+src/signals/routes/__tests__/mail.test.ts	mail-030	selected	business-rule
 src/signals/routes/__tests__/mail.test.ts	mail-031	selected	business-rule
 src/signals/routes/__tests__/mail.test.ts	mail-032	selected	business-rule
 src/signals/routes/__tests__/mail.test.ts	mail-033	selected	visible-result
@@ -5867,7 +5867,7 @@ src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifa
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-002	selected	core-path
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-003	selected	visible-result
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-004	selected	business-rule
-src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-005	not-selected	
+src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-005	selected	business-rule
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-006	selected	visible-result
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-007	not-selected	
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-008	selected	access-isolation
@@ -5885,7 +5885,7 @@ src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifa
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-020	selected	core-path
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-021	not-selected	
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-022	selected	core-path
-src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-023	not-selected	
+src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-023	selected	business-rule
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-024	selected	core-path
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-025	selected	business-rule
 src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	slack-artifact-channel-sharing-026	not-selected	
@@ -6217,7 +6217,7 @@ src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-014	not-selected
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-015	selected	business-rule
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-016	not-selected	
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-017	not-selected	
-src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-018	not-selected	
+src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-018	selected	visible-result
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-019	selected	core-path
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-020	selected	visible-result
 src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-021	not-selected	
@@ -6290,7 +6290,7 @@ src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-id
 src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-013	not-selected	
 src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-014	selected	business-rule
 src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-015	not-selected	
-src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-016	not-selected	
+src/signals/routes/__tests__/teams-workspace-identity.test.ts	teams-workspace-identity-016	selected	business-rule
 src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-001	selected	core-path
 src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-002	selected	core-path
 src/signals/routes/__tests__/template-guidance-publication.test.ts	template-guidance-publication-003	not-selected	
