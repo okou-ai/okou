@@ -317,14 +317,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SlackArtifactChannelSharing]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Slack artifact sharing",
-    description:
-      "Privately prompt artifact owners to share restricted links with the current Slack channel members.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.FeishuArtifactChannelSharing]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feishu and Lark artifact sharing",
