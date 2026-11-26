@@ -2939,7 +2939,7 @@ messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	r
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-006	rewritten	83.5	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-007	rewritten	67.8	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-008	rewritten	66.1	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	pilot
-messaging	src/signals/routes/__tests__/teams-identity-refresh.test.ts	teams-identity-refresh-001	planned				B05
+messaging	src/signals/routes/__tests__/teams-identity-refresh.test.ts	teams-identity-refresh-001	rewritten	183.8		src/signals/routes/__tests__/teams-identity-refresh.test.ts	B05
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-001	rewritten	23.0	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-002	rewritten	7.5	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
 messaging	src/signals/routes/__tests__/teams-oauth.test.ts	teams-oauth-003	rewritten	57.0	extension after sandbox reset	src/signals/routes/__tests__/teams-oauth.test.ts	pilot
