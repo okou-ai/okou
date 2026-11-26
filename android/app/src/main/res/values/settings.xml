@@ -17,7 +17,6 @@
     <string name="settings_email_receive">Receive emails</string>
     <string name="settings_email_unavailable">Email unavailable</string>
     <string name="settings_email_check_address">Check your account email</string>
-    <string name="settings_email_load_failed">Email settings are temporarily unavailable.</string>
     <string name="settings_email_refresh_failed">Could not sync. Showing the last saved subscription.</string>
     <string name="settings_email_refreshing">Updating email subscription</string>
     <string name="settings_email_saving">Updating email subscription…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">Choose the subscription accounts you use in “%1$s”.</string>
     <string name="settings_accounts_scope_empty">Model accounts in “%1$s”</string>
     <string name="settings_workspace_status">“%1$s” · %2$s</string>
-    <string name="settings_accounts_unavailable">Unable to view model accounts right now.</string>
     <string name="settings_accounts_update_failed">Unable to refresh model accounts. Showing last known information.</string>
     <string name="settings_accounts_empty">No model accounts connected</string>
     <string name="settings_accounts_empty_help">Connect ChatGPT or Claude to view quotas and choose an account.</string>

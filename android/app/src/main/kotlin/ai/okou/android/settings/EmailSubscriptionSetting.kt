@@ -89,11 +89,7 @@ private fun EmailSubscriptionSheet(
         SettingsDetailStatus(stringResource(R.string.settings_email_scope), indentation)
         val confirmed = state.read.value
         when {
-            state.read.initialFailure ->
-                SettingsDetailStatus(
-                    stringResource(R.string.settings_email_load_failed),
-                    indentation,
-                )
+            state.read.initialFailure -> SettingsReadError()
             confirmed == null ->
                 SettingsPlaceholder(stringResource(R.string.settings_email_refreshing))
             else -> {

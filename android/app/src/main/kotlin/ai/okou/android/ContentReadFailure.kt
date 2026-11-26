@@ -33,6 +33,7 @@ import kotlin.math.roundToInt
 internal fun ContentReadFailure(
     @StringRes message: Int,
     modifier: Modifier = Modifier,
+    fillViewport: Boolean = true,
 ) {
     val compact = currentWindowSizeDp().height < 480
     val maxArtWidth = if (compact) 112.dp else 160.dp
@@ -63,19 +64,18 @@ internal fun ContentReadFailure(
             if (constraints.hasBoundedHeight) constraints.maxHeight else constraints.minHeight
         val label = text.measure(constraints.copy(minWidth = 0, minHeight = 0))
         val gapPx = gap.roundToPx()
-        val artHeightLimit = (viewport - label.height - gapPx).coerceAtLeast(0)
-        val artWidth =
-            minOf(
-                maxArtWidth.roundToPx(),
-                constraints.maxWidth,
-                (artHeightLimit * aspectRatio).toInt(),
-            )
+        val artWidthLimit =
+            if (!fillViewport && !constraints.hasBoundedHeight) maxArtWidth.roundToPx()
+            else ((viewport - label.height - gapPx).coerceAtLeast(0) * aspectRatio).toInt()
+        val artWidth = minOf(maxArtWidth.roundToPx(), constraints.maxWidth, artWidthLimit)
         val art =
             if (artWidth == 0) null
             else image.measure(Constraints.fixed(artWidth, (artWidth / aspectRatio).roundToInt()))
         val labelOffset = if (art == null) 0 else art.height + gapPx
         val groupHeight = label.height + labelOffset
-        val height = maxOf(viewport, groupHeight)
+        val height =
+            if (fillViewport) maxOf(viewport, groupHeight)
+            else groupHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
         val top = (height - groupHeight) * 2 / 5
         layout(constraints.maxWidth, height) {
             art?.placeRelative((constraints.maxWidth - art.width) / 2, top)

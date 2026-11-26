@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
@@ -194,10 +195,11 @@ internal fun SettingsDetailStatus(
 }
 
 @Composable
-private fun SettingsReadError(@StringRes label: Int) {
-    SettingsDetailStatus(
-        stringResource(label),
-        Modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp, bottom = 12.dp),
+internal fun SettingsReadError() {
+    ContentReadFailure(
+        R.string.chat_list_first_load_failed,
+        Modifier.fillMaxWidth(),
+        fillViewport = false,
     )
 }
 
@@ -252,8 +254,7 @@ private fun ModelAccounts(
         else R.string.settings_accounts_scope
     SettingsPageIntro(workspace, scope, status)
     when {
-        accounts == null && state.accounts.unavailable ->
-            SettingsReadError(R.string.settings_accounts_unavailable)
+        accounts == null && state.accounts.unavailable -> SettingsReadError()
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
                 SettingsSection(provider.name) { SettingsPlaceholder() }
@@ -543,7 +544,7 @@ private fun CreditBalance(
 @Composable
 private fun CreditReadState(state: SettingsRead<*>) {
     if (state.initialFailure) {
-        SettingsReadError(R.string.settings_credit_unavailable)
+        SettingsReadError()
     } else SettingsPlaceholder()
 }
 

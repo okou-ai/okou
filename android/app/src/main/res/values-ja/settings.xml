@@ -17,7 +17,6 @@
     <string name="settings_email_receive">メールを受け取る</string>
     <string name="settings_email_unavailable">メールを利用できません</string>
     <string name="settings_email_check_address">アカウントのメールアドレスを確認</string>
-    <string name="settings_email_load_failed">現在、メール設定を読み込めません。</string>
     <string name="settings_email_refresh_failed">同期できませんでした。最後に保存した購読設定を表示しています。</string>
     <string name="settings_email_refreshing">メール購読設定を同期中</string>
     <string name="settings_email_saving">メール購読設定を更新中…</string>
@@ -37,7 +36,6 @@
     <string name="settings_accounts_scope">「%1$s」で使用するサブスクリプションアカウントを選択します。</string>
     <string name="settings_accounts_scope_empty">「%1$s」のモデルアカウント</string>
     <string name="settings_workspace_status">「%1$s」 · %2$s</string>
-    <string name="settings_accounts_unavailable">現在、モデルアカウントを表示できません。</string>
     <string name="settings_accounts_update_failed">モデルアカウントを更新できませんでした。前回取得した情報を表示しています。</string>
     <string name="settings_accounts_empty">モデルアカウントが連携されていません</string>
     <string name="settings_accounts_empty_help">ChatGPT または Claude を連携すると、使用枠の確認やアカウントの選択ができます。</string>
