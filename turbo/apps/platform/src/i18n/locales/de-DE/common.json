@@ -1966,6 +1966,7 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
+      "followupAcceptLabel": "Übernehmen",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Chats oder Projekte suchen…",

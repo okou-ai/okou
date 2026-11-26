@@ -1960,6 +1960,7 @@
         "slideCountAuto": "自动",
         "slideCountRange": "{{range}} 页"
       },
+      "followupAcceptLabel": "采用",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "搜索聊天或项目…",

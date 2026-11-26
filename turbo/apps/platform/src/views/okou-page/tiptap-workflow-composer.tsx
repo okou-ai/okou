@@ -15,6 +15,7 @@ import { useEditorState } from "@tiptap/react";
 import {
   Button,
   InlineReferenceContent,
+  Kbd,
   cn,
   Popover,
   useMediaQuery,
@@ -151,7 +152,6 @@ function WorkflowComposerPlaceholder({
   followup: string | undefined;
   acceptFollowup: () => boolean;
 }) {
-  const { t } = useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
   const presentationFormatLoadable = useLastLoadable(presentationOutputFormat$);
@@ -190,26 +190,59 @@ function WorkflowComposerPlaceholder({
             : workflowComposerPlaceholder(sending))}
       </span>
       {followup && (
-        <Button
-          type="button"
-          variant="neutral"
-          size="xs"
-          className="pointer-events-auto shrink-0"
-          aria-label={t(($) => {
-            return $.chat.composer.useSuggestion;
-          })}
-          onClick={acceptFollowup}
-        >
-          {isMobileTextInputDevice()
-            ? t(($) => {
-                return $.chat.composer.followupTouchLabel;
-              })
-            : t(($) => {
-                return $.chat.composer.followupTabLabel;
-              })}
-        </Button>
+        <FollowupAcceptButton onAccept={acceptFollowup} />
       )}
     </div>
+  );
+}
+
+/**
+ * The follow-up placeholder's accept action. It sits inline after the
+ * suggestion text, so it takes the inline reference chip's 13px label and
+ * `rounded-md` radius on the `xs` neutral button's 28px height. On keyboard
+ * devices the label is followed by the shared `Kbd`, inset evenly by `pr-1`;
+ * the Kbd takes `bg-gray-200` because `bg-muted` (gray-100) does not read on
+ * the gray-50 control surface. Touch devices have no Tab key, so they keep the
+ * plain label.
+ */
+function FollowupAcceptButton({
+  onAccept,
+}: {
+  readonly onAccept: () => boolean;
+}) {
+  const { t } = useTranslation();
+  const touch = isMobileTextInputDevice();
+  return (
+    <Button
+      type="button"
+      variant="neutral"
+      size="xs"
+      className={cn(
+        "pointer-events-auto shrink-0 rounded-md text-[13px]",
+        !touch && "pr-1",
+      )}
+      aria-label={t(($) => {
+        return $.chat.composer.useSuggestion;
+      })}
+      onClick={onAccept}
+    >
+      {touch ? (
+        t(($) => {
+          return $.chat.composer.followupTouchLabel;
+        })
+      ) : (
+        <>
+          {t(($) => {
+            return $.chat.composer.followupAcceptLabel;
+          })}
+          <Kbd aria-hidden="true" className="bg-gray-200">
+            {t(($) => {
+              return $.chat.composer.followupTabLabel;
+            })}
+          </Kbd>
+        </>
+      )}
+    </Button>
   );
 }
 

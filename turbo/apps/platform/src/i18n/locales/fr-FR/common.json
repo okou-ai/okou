@@ -1996,6 +1996,7 @@
         "slideCountAuto": "Automatique",
         "slideCountRange": "{{range}} diapositives"
       },
+      "followupAcceptLabel": "Accepter",
       "followupTabLabel": "Tab",
       "followupTouchLabel": "OK",
       "mentionHint": "Rechercher des chats ou des projets…",
