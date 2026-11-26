@@ -41,21 +41,24 @@ struct ChatThreadFeedback: Identifiable {
 struct ChatThreadFeedbackView: View {
   let store: WorkspaceStore
   let feedback: ChatThreadFeedback
-  /// The chat list's and the workspace's status, kept in the workspace session's Store, so a
-  /// mark-all-read, an update requirement or a new chat being created updates whether the
-  /// action applies.
+  /// The chat list's status and row mutations and the workspace's status, kept in the workspace
+  /// session's Store, so a mark-all-read, a chat write, an update requirement or a new chat
+  /// being created updates whether the action applies.
   @ResolvedValue private var listStatus: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
   @ResolvedValue private var shell: WorkspaceStore.Shell?
 
   init(store: WorkspaceStore, feedback: ChatThreadFeedback) {
     self.store = store
     self.feedback = feedback
     _listStatus = ResolvedValue(store.list.statusValue)
+    _mutations = ResolvedValue(store.list.mutationsValue)
     _shell = ResolvedValue(store.shellValue)
   }
 
   var body: some View {
     let markingAllRead = (listStatus ?? store.list.status).markingAllRead
+    let activity = mutations ?? store.list.mutations
     let workspace = shell ?? store.shell
     ChatFeedbackSurface(
       message: feedback.message,
@@ -64,7 +67,8 @@ struct ChatThreadFeedbackView: View {
       actionTitle: feedback.actionTitle,
       actionEnabled: !markingAllRead
         && (feedback.actsOnHiddenChat
-          ? store.list.canWrite(feedback.threadID) : store.list.canUpdate(feedback.threadID))
+          ? store.list.canWrite(feedback.threadID, mutations: activity)
+          : store.list.canUpdate(feedback.threadID, mutations: activity))
         && !workspace.needsUpgrade
         && (!feedback.requiresNavigation || !workspace.isCreating),
       actionHint: feedback.actionHint,

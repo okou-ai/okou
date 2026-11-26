@@ -40,19 +40,21 @@ private struct ChatSearchListReadStatusContent: View {
   @LoadableValue private var read: Loadable<Void>
   @ResolvedValue private var threads: [ChatThread]?
   @ResolvedValue private var status: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
 
   init(list: ThreadListStore) {
     self.list = list
     _read = LoadableValue(task: list.listValue)
     _threads = ResolvedValue(list.threadsValue)
     _status = ResolvedValue(list.statusValue)
+    _mutations = ResolvedValue(list.mutationsValue)
   }
 
   var body: some View {
     if read.state == .loading && (threads ?? list.threads).isEmpty {
       OkouLoadingRow("Loading chats…")
-    } else if let error = read.error?.localizedDescription ?? list.actionError
-      ?? (status ?? list.status).syncError
+    } else if let error = read.error?.localizedDescription
+      ?? (mutations ?? list.mutations).actionError ?? (status ?? list.status).syncError
     {
       OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
         await list.refresh()

@@ -7,10 +7,11 @@ struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
   @State private var membershipThread: ChatThread?
-  /// The confirmed chats, the list status and the workspace's status, kept in the workspace
-  /// session's Store.
+  /// The confirmed chats, the list status and row mutations, and the workspace's status, kept in
+  /// the workspace session's Store.
   @ResolvedValue private var threads: [ChatThread]?
   @ResolvedValue private var status: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
   @ResolvedValue private var shell: WorkspaceStore.Shell?
 
   init(store: WorkspaceStore, threadID: String) {
@@ -18,16 +19,18 @@ struct ChatThreadMoreButton: View {
     self.threadID = threadID
     _threads = ResolvedValue(store.list.threadsValue)
     _status = ResolvedValue(store.list.statusValue)
+    _mutations = ResolvedValue(store.list.mutationsValue)
     _shell = ResolvedValue(store.shellValue)
   }
 
   var body: some View {
     if let thread = (threads ?? store.list.threads).first(where: { $0.id == threadID }) {
-      // A changed chat, list status or workspace status rebuilds the menu, since the control
-      // receives them as values.
+      // A changed chat, list status, chat write or workspace status rebuilds the menu, since the
+      // control receives them as values.
       let workspace = shell ?? store.shell
       ChatThreadMoreControl(
         store: store, thread: thread, status: status ?? store.list.status,
+        isUpdating: (mutations ?? store.list.mutations).updatingThreads.contains(thread.id),
         needsUpgrade: workspace.needsUpgrade, isCreating: workspace.isCreating,
         moveToProject: { membershipThread = $0 }
       )
@@ -40,8 +43,10 @@ struct ChatThreadMoreButton: View {
 private struct ChatThreadMoreControl: UIViewRepresentable {
   let store: WorkspaceStore
   let thread: ChatThread
-  /// The menu's items depend on mark-all-read and rename saving; the menu reads them when built.
+  /// The menu's items depend on mark-all-read, rename saving and a write in flight on this chat;
+  /// the menu reads them when built.
   let status: ThreadListStore.Status
+  let isUpdating: Bool
   /// The entry and the menu's items depend on the update requirement and a new chat being
   /// created; the menu reads them when built.
   let needsUpgrade: Bool

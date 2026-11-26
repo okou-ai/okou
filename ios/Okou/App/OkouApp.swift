@@ -503,20 +503,23 @@ private struct WorkspaceWidgetPublisher: View {
   }
 }
 
-/// Reports a failed chat action once no rename editor is open or saving. The rename state is
-/// read from the workspace session's graph, so this applies under the workspace's Store provider.
+/// Reports a failed chat action once no rename editor is open or saving. The failure and the
+/// rename state are read from the workspace session's graph, so this applies under the
+/// workspace's Store provider.
 private struct ChatListActionAlert: ViewModifier {
   let list: ThreadListStore
   @ResolvedValue private var status: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
 
   init(list: ThreadListStore) {
     self.list = list
     _status = ResolvedValue(list.statusValue)
+    _mutations = ResolvedValue(list.mutationsValue)
   }
 
   func body(content: Content) -> some View {
     let current = status ?? list.status
-    let error = list.actionError
+    let error = (mutations ?? list.mutations).actionError
     content.alert(
       "Unable to update chats",
       isPresented: Binding(

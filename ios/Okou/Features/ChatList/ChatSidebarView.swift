@@ -30,6 +30,8 @@ struct ChatSidebarView: View {
   @ResolvedValue private var resolvedSelection: String??
   /// Mark-all-read and the indicators failure, kept in the workspace session's Store.
   @ResolvedValue private var resolvedListStatus: ThreadListStore.Status?
+  /// Chats with a write in flight and the last chat action's failure, kept in the same Store.
+  @ResolvedValue private var resolvedMutations: ThreadListMutations.Activity?
   /// The update requirement, a new chat being created and the workspace's last failure, kept in
   /// the workspace session's Store.
   @ResolvedValue private var resolvedShell: WorkspaceStore.Shell?
@@ -58,6 +60,7 @@ struct ChatSidebarView: View {
     _resolvedUnread = ResolvedValue(store.list.unreadThreadIDsValue)
     _resolvedSelection = ResolvedValue(store.selectedThreadValue)
     _resolvedListStatus = ResolvedValue(store.list.statusValue)
+    _resolvedMutations = ResolvedValue(store.list.mutationsValue)
     _resolvedShell = ResolvedValue(store.shellValue)
   }
 
@@ -96,10 +99,14 @@ struct ChatSidebarView: View {
 
   private var listStatus: ThreadListStore.Status { resolvedListStatus ?? store.list.status }
 
+  private var mutations: ThreadListMutations.Activity {
+    resolvedMutations ?? store.list.mutations
+  }
+
   private var shell: WorkspaceStore.Shell { resolvedShell ?? store.shell }
 
   private var listError: String? {
-    listRead.error?.localizedDescription ?? store.list.actionError ?? listStatus.syncError
+    listRead.error?.localizedDescription ?? mutations.actionError ?? listStatus.syncError
   }
 
   /// Animate membership changes from the same presentation the list renders, without
@@ -259,7 +266,8 @@ struct ChatSidebarView: View {
       hasUnreadChats: !(resolvedUnread ?? store.list.unreadThreadIDs).isEmpty
         || (resolvedThreads ?? store.list.threads).contains {
           !$0.isMuted && $0.indicator == .unread
-        }, markingAllRead: listStatus.markingAllRead, needsUpgrade: shell.needsUpgrade,
+        }, markingAllRead: listStatus.markingAllRead,
+      updatingChats: !mutations.updatingThreads.isEmpty, needsUpgrade: shell.needsUpgrade,
       close: close, newProject: { showEditor(creationEditor) })
   }
 
@@ -517,11 +525,11 @@ struct ChatSidebarView: View {
       }
       .labelStyle(.iconOnly)
       .tint(OkouSwipeTint.neutral)
-      .disabled(!store.list.canUpdate(thread.id) || shell.needsUpgrade)
+      .disabled(!store.list.canUpdate(thread.id, mutations: mutations) || shell.needsUpgrade)
       Button("Delete chat", okouSymbol: "trash-2") { deletingThreadID = thread.id }
         .labelStyle(.iconOnly)
         .tint(OkouSwipeTint.destructive)
-        .disabled(!store.list.canUpdate(thread.id) || shell.needsUpgrade)
+        .disabled(!store.list.canUpdate(thread.id, mutations: mutations) || shell.needsUpgrade)
     }
   }
 
@@ -545,7 +553,7 @@ struct ChatSidebarView: View {
       okouSymbol: read ? "message-square-check" : "message-square-dot"
     ) { Task { await store.setRead(thread, read: read) } }
     .labelStyle(.iconOnly)
-    .disabled(store.list.updatingThreads.contains(thread.id) || listStatus.markingAllRead)
+    .disabled(mutations.updatingThreads.contains(thread.id) || listStatus.markingAllRead)
   }
   private var footer: some View {
     ChatSidebarFooter(
