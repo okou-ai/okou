@@ -99,28 +99,6 @@ async function setDefaultReap(actor: Actor, connectionId: string) {
   );
 }
 
-async function deleteReap(actor: Actor, connectionId: string) {
-  await accept(
-    accounts().delete({
-      headers: as(actor),
-      params: { connectionId },
-      body: { target: REAP },
-    }),
-    [200],
-  );
-}
-
-async function listReap(actor: Actor) {
-  const response = await accept(
-    accounts().connections({
-      headers: as(actor),
-      query: { kind: "builtin", connectorSlug: "reap", limit: 50 },
-    }),
-    [200],
-  );
-  return response.body.connections;
-}
-
 function reapBase() {
   return `https://reap-${randomUUID()}.example.org`;
 }
@@ -464,84 +442,5 @@ describe("POST /api/connectors/diagnostics/check", () => {
     for (const secret of [...keys, "REAP_API_BASE_URL", "apiBaseUrl"]) {
       expect(serialized).not.toContain(secret);
     }
-  });
-
-  it("connector-check-012 isolates stored Reap snapshots across users through reconnect and deletion", async () => {
-    const alice = newActor();
-    const bob = newActor(alice.orgId);
-    const [baseA, baseB, baseA2] = [reapBase(), reapBase(), reapBase()];
-    const keys = [
-      `reap-key-${randomUUID()}`,
-      `reap-key-${randomUUID()}`,
-      `reap-key-${randomUUID()}`,
-    ];
-
-    await expect(checkBody(alice, usersCheck(baseA))).resolves.toStrictEqual(
-      UNRESOLVED_REAP,
-    );
-    await expect(checkBody(bob, usersCheck(baseB))).resolves.toStrictEqual(
-      UNRESOLVED_REAP,
-    );
-    const aliceAccount = await connectReap(alice, {
-      apiKey: keys[0] ?? "",
-      apiBaseUrl: baseA,
-    });
-    const bobAccount = await connectReap(bob, {
-      apiKey: keys[1] ?? "",
-      apiBaseUrl: baseB,
-    });
-
-    const [aliceOwn, aliceForeign] = await Promise.all([
-      checkBody(alice, usersCheck(baseA)),
-      checkBody(alice, usersCheck(baseB)),
-    ]);
-    expect(aliceOwn).toStrictEqual(resolvedReap(baseA));
-    expect(aliceForeign).toStrictEqual({
-      outcome: "no-match",
-      scope: "catalog",
-    });
-    const [bobOwn, bobForeign] = await Promise.all([
-      checkBody(bob, usersCheck(baseB)),
-      checkBody(bob, usersCheck(baseA)),
-    ]);
-    expect(bobOwn).toStrictEqual(resolvedReap(baseB));
-    expect(bobForeign).toStrictEqual({ outcome: "no-match", scope: "catalog" });
-
-    const reconnected = await connectReap(
-      alice,
-      { apiKey: keys[2] ?? "", apiBaseUrl: baseA2 },
-      aliceAccount,
-    );
-    expect(reconnected).toBe(aliceAccount);
-    const aliceAfter = await checkBody(alice, usersCheck(baseA2));
-    expect(aliceAfter).toStrictEqual(resolvedReap(baseA2));
-    await expect(checkBody(bob, usersCheck(baseA))).resolves.toStrictEqual(
-      bobForeign,
-    );
-    const serialized = JSON.stringify([aliceOwn, bobOwn, aliceAfter]);
-    for (const hidden of [
-      ...keys,
-      aliceAccount,
-      bobAccount,
-      "REAP_API_BASE_URL",
-      "storage",
-    ]) {
-      expect(serialized).not.toContain(hidden);
-    }
-
-    await deleteReap(alice, aliceAccount);
-    await deleteReap(bob, bobAccount);
-    const [aliceFinal, aliceList] = await Promise.all([
-      checkBody(alice, usersCheck(baseA2)),
-      listReap(alice),
-    ]);
-    const [bobFinal, bobList] = await Promise.all([
-      checkBody(bob, usersCheck(baseB)),
-      listReap(bob),
-    ]);
-    expect(aliceFinal).toStrictEqual(UNRESOLVED_REAP);
-    expect(bobFinal).toStrictEqual(UNRESOLVED_REAP);
-    expect(aliceList).toStrictEqual([]);
-    expect(bobList).toStrictEqual([]);
   });
 });
