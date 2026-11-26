@@ -3029,8 +3029,8 @@ account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd
 account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-002	planned				
 account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-003	planned				
 account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-004	planned				
-account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-001	planned				B05
-account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-003	planned				B05
+account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-001	rewritten	56.0		src/signals/routes/__tests__/user-model-image-preference.test.ts	B05
+account-org	src/signals/routes/__tests__/user-model-image-preference.test.ts	user-model-image-preference-003	rewritten	32.2		src/signals/routes/__tests__/user-model-image-preference.test.ts	B05
 account-org	src/signals/routes/__tests__/user-preferences.test.ts	user-preferences-001	rewritten	115.1	extension after sandbox reset	src/signals/routes/__tests__/user-preferences.test.ts	pilot
 account-org	src/signals/routes/__tests__/user-preferences.test.ts	user-preferences-004	rewritten	24.7	extension after sandbox reset	src/signals/routes/__tests__/user-preferences.test.ts	pilot
 account-org	src/signals/routes/__tests__/user-preferences.test.ts	user-preferences-005	rewritten	107.9	extension after sandbox reset	src/signals/routes/__tests__/user-preferences.test.ts	pilot
