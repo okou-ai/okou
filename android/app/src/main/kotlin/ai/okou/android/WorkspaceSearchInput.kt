@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ internal fun WorkspaceSearchInput(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     clearLabel: String = stringResource(R.string.chat_search_clear),
+    enabled: Boolean = true,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     var focused by remember { mutableStateOf(false) }
@@ -51,6 +53,7 @@ internal fun WorkspaceSearchInput(
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         modifier =
             modifier
                 .onFocusChanged { focused = it.isFocused }
@@ -71,6 +74,7 @@ internal fun WorkspaceSearchInput(
                 focused,
                 onClear,
                 input,
+                enabled = enabled,
             )
         },
     )
@@ -124,6 +128,7 @@ private fun SearchInputDecoration(
     focused: Boolean,
     onClear: () -> Unit,
     input: @Composable () -> Unit,
+    enabled: Boolean = true,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     var clearFocused by remember { mutableStateOf(false) }
@@ -148,12 +153,13 @@ private fun SearchInputDecoration(
             IconButton(
                 onClick = onClear,
                 modifier = Modifier.onFocusChanged { clearFocused = it.isFocused },
+                enabled = enabled,
             ) {
                 Icon(
                     painterResource(R.drawable.ic_close),
                     clearLabel,
                     modifier = Modifier.size(20.dp),
-                    tint = secondary,
+                    tint = if (enabled) secondary else LocalContentColor.current,
                 )
             }
         }
