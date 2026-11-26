@@ -964,7 +964,6 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
 @Composable
 private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val accent = MaterialTheme.colorScheme.primary
     val tabs = WorkflowTab.entries
     val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
@@ -978,7 +977,7 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                     width = Dp.Unspecified,
                     height = 3.dp,
                     shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
-                    color = accent,
+                    color = colors.primary,
                 )
             },
             divider = { WorkflowDivider() },
@@ -1009,7 +1008,7 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                                 true
                             }
                             .testTag("workflow_tab_${tab.name.lowercase()}"),
-                    selectedContentColor = colors.onBackground,
+                    selectedContentColor = colors.primary,
                     unselectedContentColor = colors.onSurfaceVariant,
                 ) {
                     Text(

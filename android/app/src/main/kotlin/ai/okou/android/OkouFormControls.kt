@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -49,7 +50,7 @@ internal object OkouFormLayout {
 internal fun okouFormInputStyle() = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
 
 // Compose Material 3 adds 4 dp below and on either side of an above-field label.
-private val NativeAboveLabelPadding = 4.dp
+internal val NativeAboveLabelPadding = 4.dp
 
 @Composable
 internal fun OkouFormLabel(label: String) {
@@ -61,8 +62,12 @@ internal fun OkouFormLabel(label: String) {
 }
 
 @Composable
-internal fun okouFormLabelHeight(label: String, fieldWidth: Int): Dp {
-    val style = MaterialTheme.typography.bodyMedium
+internal fun okouFormLabelHeight(
+    label: String,
+    fieldWidth: Int,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    gap: Dp = OkouFormLayout.LabelGap,
+): Dp {
     val measurer = rememberTextMeasurer()
     return with(LocalDensity.current) {
         val textWidth = (fieldWidth - NativeAboveLabelPadding.roundToPx() * 2).coerceAtLeast(1)
@@ -70,7 +75,7 @@ internal fun okouFormLabelHeight(label: String, fieldWidth: Int): Dp {
             .measure(label, style, constraints = Constraints(maxWidth = textWidth))
             .size
             .height
-            .toDp() + OkouFormLayout.LabelGap
+            .toDp() + gap
     }
 }
 
