@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { describe, expect, it } from "vitest";
 
@@ -31,6 +33,39 @@ describe("GET /api/mcp-connectors", () => {
     );
     const session = await accept(
       api().list({ headers: { authorization: "Bearer clerk-session" } }),
+      [403],
+    );
+
+    expect(anonymous.status).toBe(401);
+    expect(session.status).toBe(403);
+  });
+});
+
+describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
+  it("mcp-connectors-011 requires an agent token to reauthorize connector scopes", async () => {
+    const admin = bdd.user();
+    const body = {
+      target: { kind: "custom" as const, customConnectorId: randomUUID() },
+      scopes: ["admin"],
+    };
+
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const anonymous = await accept(
+      api().reauthorizeOAuth({ headers: {}, body }),
+      [401],
+    );
+    createRouteMocks(context).clerk.session(
+      admin.userId,
+      admin.orgId,
+      admin.orgRole,
+    );
+    const session = await accept(
+      api().reauthorizeOAuth({
+        headers: { authorization: "Bearer clerk-session" },
+        body,
+      }),
       [403],
     );
 
