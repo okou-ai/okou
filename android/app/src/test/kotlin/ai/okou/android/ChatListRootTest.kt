@@ -4251,10 +4251,13 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         assertEquals(0, deletes.get())
         val confirm = compose.onNodeWithText("Delete Project")
         val confirmBounds = confirm.getUnclippedBoundsInRoot()
+        val politeStatus =
+            SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)
         try {
             confirm.assertIsEnabled().performClick()
             compose.waitUntil(10_000) { deletes.get() == 1 }
-            val pending = compose.onNodeWithText("Deleting…").assertIsNotEnabled()
+            val pending =
+                compose.onNodeWithText("Deleting…").assertIsNotEnabled().assert(politeStatus)
             assertEquals(confirmBounds, pending.getUnclippedBoundsInRoot())
             compose.onNodeWithText("Cancel").assertIsEnabled()
         } finally {
@@ -4267,6 +4270,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                 .isNotEmpty()
         }
         compose.onNodeWithText("Delete Project?").assertIsDisplayed()
+        val failure = compose.onNodeWithText("Could not delete the Project.").assert(politeStatus)
+        assertTrue(failure.getUnclippedBoundsInRoot().bottom < confirmBounds.top)
         confirm.assertIsEnabled()
         assertEquals(confirmBounds, confirm.getUnclippedBoundsInRoot())
         assertEquals(1, deletes.get())

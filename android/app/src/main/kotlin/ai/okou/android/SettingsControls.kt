@@ -78,10 +78,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -636,7 +638,12 @@ internal fun OkouConfirmationDialog(
                                     }
                                     TextButton(
                                         onClick = onConfirm,
-                                        modifier = Modifier.heightIn(min = 48.dp),
+                                        modifier =
+                                            Modifier.heightIn(min = 48.dp).semantics {
+                                                if (confirmPending) {
+                                                    liveRegion = LiveRegionMode.Polite
+                                                }
+                                            },
                                         enabled = confirmEnabled && !confirmPending,
                                         contentPadding = buttonPadding,
                                         colors =
