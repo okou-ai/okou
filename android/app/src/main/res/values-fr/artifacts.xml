@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Tout afficher</string>
     <string name="artifact_catalog_load_failed">Chargement des artefacts temporairement indisponible</string>
     <string name="artifact_catalog_refresh_failed">Mise à jour temporairement indisponible. Les artefacts déjà chargés restent visibles.</string>
-    <string name="artifact_catalog_page_failed">Chargement des artefacts suivants temporairement indisponible</string>
+    <string name="artifact_catalog_page_failed">Impossible de charger davantage pour le moment</string>
     <string name="chat_resources_load_failed">Chargement des ressources de la conversation temporairement indisponible</string>
     <string name="chat_resources_syncing">Synchronisation des ressources de la conversation</string>
     <string name="artifact_access_denied">Vous n’avez pas accès à cet artefact</string>

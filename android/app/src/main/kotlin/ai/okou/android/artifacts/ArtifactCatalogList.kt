@@ -146,7 +146,6 @@ internal fun ArtifactCatalogList(
     val clearQuery = searchClearAction(searchFocus) { input.clearText() }
     val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
-    val noticePadding = Modifier.padding(16.dp)
 
     LaunchedEffect(model, page, failure, reading) {
         if (page?.nextCursor != null && failure == null && reading == null) {
@@ -268,12 +267,15 @@ internal fun ArtifactCatalogList(
                         }
                     }
                 }
-                if (failure != null && failure != ArtifactCatalogFailure.Refresh) {
-                    item(key = "catalog-read-failure") {
-                        ArtifactReadNotice(failure.label(), noticePadding)
+                if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
+                    item(key = "catalog-page-feedback") {
+                        if (failure == ArtifactCatalogFailure.More) {
+                            ArtifactPageFailureNotice(Modifier.padding(horizontal = 16.dp))
+                        } else {
+                            ArtifactRowSkeleton()
+                        }
                     }
                 }
-                if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
             ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }
@@ -455,6 +457,11 @@ internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
         ArtifactCatalogFailure.Missing -> R.string.artifact_catalog_missing
         ArtifactCatalogFailure.ChatUnavailable -> R.string.history_missing
     }
+
+@Composable
+internal fun ArtifactPageFailureNotice(modifier: Modifier = Modifier) {
+    ArtifactReadNotice(R.string.artifact_catalog_page_failed, modifier.padding(top = 12.dp))
+}
 
 @Composable
 internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {

@@ -32,7 +32,7 @@
     <string name="artifact_show_all">すべて表示</string>
     <string name="artifact_catalog_load_failed">現在は成果物を読み込めません</string>
     <string name="artifact_catalog_refresh_failed">現在は更新できません。読み込み済みの成果物を表示しています。</string>
-    <string name="artifact_catalog_page_failed">現在はこれ以上成果物を読み込めません</string>
+    <string name="artifact_catalog_page_failed">現在はこれ以上読み込めません</string>
     <string name="chat_resources_load_failed">現在はチャットの資料を読み込めません</string>
     <string name="chat_resources_syncing">チャットの資料を同期中</string>
     <string name="artifact_access_denied">この成果物へのアクセス権がありません</string>

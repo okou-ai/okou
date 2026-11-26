@@ -32,7 +32,7 @@
     <string name="artifact_show_all">查看全部</string>
     <string name="artifact_catalog_load_failed">暂时无法加载成果</string>
     <string name="artifact_catalog_refresh_failed">暂时无法更新，显示已加载的成果</string>
-    <string name="artifact_catalog_page_failed">暂时无法加载更多成果</string>
+    <string name="artifact_catalog_page_failed">暂时无法加载更多</string>
     <string name="chat_resources_load_failed">暂时无法加载对话资料</string>
     <string name="chat_resources_syncing">正在同步对话资料</string>
     <string name="artifact_access_denied">你无权访问此成果</string>

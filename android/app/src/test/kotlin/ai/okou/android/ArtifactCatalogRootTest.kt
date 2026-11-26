@@ -433,17 +433,23 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         }
         app.responseGate.countDown()
         openChatResources(fixture.sourceTitle)
-        val notice = "Temporarily unable to load more artifacts"
+        val notice = "Temporarily unable to load more"
         awaitText(notice)
         val previousRow = compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot()
-        assertTrue(
-            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top > previousRow.bottom,
+        assertEquals(
+            12.dp,
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - previousRow.bottom,
         )
         assertEquals(1, appendRequests.get())
         refuseAppend.set(false)
         resumeArtifactRoute()
         awaitText(fixture.slides.title)
         assertEquals(2, appendRequests.get())
+        assertEquals(
+            previousRow,
+            compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot(),
+        )
+        compose.onNodeWithText(notice).assertDoesNotExist()
 
         deny.set(true)
         realtime.invalidate(ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)))
@@ -455,6 +461,51 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntil(10_000) {
             runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL) == null }
         }
+    }
+
+    @Test
+    fun workspaceKeepsTheRetainedPageAndResumesItsFailedCursor() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.pageSize = 2
+        fixture.install()
+        val appendRequests = AtomicInteger()
+        val releaseFailure = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            val url = request.requestUrl
+            if (
+                url?.encodedPath == "/api/artifacts/catalog" &&
+                    url.queryParameter("cursor") == "2" &&
+                    appendRequests.incrementAndGet() == 1
+            ) {
+                releaseFailure.await()
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        val retained = compose.onNodeWithText(fixture.summary.title)
+        val before =
+            try {
+                awaitText(fixture.summary.title)
+                retained.getUnclippedBoundsInRoot()
+            } finally {
+                releaseFailure.countDown()
+            }
+        val notice = "Temporarily unable to load more"
+        awaitText(notice)
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        assertEquals(
+            12.dp,
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top - before.bottom,
+        )
+        assertEquals(1, appendRequests.get())
+        resumeArtifactRoute()
+        awaitText(fixture.site.title)
+        assertEquals(2, appendRequests.get())
+        assertEquals(before, retained.getUnclippedBoundsInRoot())
+        compose.onNodeWithText(notice).assertDoesNotExist()
     }
 
     @Test

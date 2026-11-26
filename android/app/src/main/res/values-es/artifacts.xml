@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Mostrar todo</string>
     <string name="artifact_catalog_load_failed">No se pueden cargar los artefactos en este momento</string>
     <string name="artifact_catalog_refresh_failed">No se puede actualizar en este momento. Se muestran los artefactos cargados.</string>
-    <string name="artifact_catalog_page_failed">No se pueden cargar más artefactos en este momento</string>
+    <string name="artifact_catalog_page_failed">No se puede cargar más en este momento</string>
     <string name="chat_resources_load_failed">No se pueden cargar los recursos del chat en este momento</string>
     <string name="chat_resources_syncing">Sincronizando recursos del chat</string>
     <string name="artifact_access_denied">No tienes acceso a este artefacto</string>
