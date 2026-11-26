@@ -8,24 +8,24 @@ non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-003	skip
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-006	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-011	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
 non-route	src/__tests__/app-factory-android.test.ts	app-factory-android-014	skipped		adapter-runtime: deployment-configuration check (Android version floor) deferred this round; the draft mutated shared config at runtime		pilot	
-non-route	src/__tests__/app-factory.test.ts	app-factory-001	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-005	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-007	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-013	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-019	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-022	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-023	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-024	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-034	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-039	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-042	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-047	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-049	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-052	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-056	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-057	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-060	planned				B08	d-other
-non-route	src/__tests__/app-factory.test.ts	app-factory-064	planned				B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-001	rewritten	3.6		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-005	rewritten	3.4		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-007	rewritten	3.9		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-013	rewritten	4.7		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-019	rewritten	3.7		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-022	rewritten	3.9		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-023	rewritten	3.9		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-024	rewritten	4.8		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-034	rewritten	5.5		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-039	rewritten	11.5		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-042	rewritten	4.8		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-047	rewritten	3.7		src/__tests__/app-factory.test.ts	B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-049	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; a 0.8.0 TestFlight floor needs a module mock (forbidden) or a configurable floor seam		B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-052	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; an unset TestFlight floor needs a module mock (forbidden) or a configurable floor seam		B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-056	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-057	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-060	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
+non-route	src/__tests__/app-factory.test.ts	app-factory-064	skipped		production-change: the iOS floors are the build-time JSON import lib/ios-client-compatibility.json (App Store null, TestFlight 0.51.12) with no runtime configuration; App Store floor 1.0.0 with TestFlight floor 1.2.0 needs a module mock (forbidden) or a configurable floor seam		B08	d-other
 non-route	src/__tests__/node-server.test.ts	node-server-003	planned					c-timer
 non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	skipped		adapter-runtime: the case runs the production Vite build with @hono/vite-build/vercel (vite.config.ts) to generate the Node request listener, a full bundler run per case that cannot fit 200 ms		B07	d-other
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	rewritten	76.5	accepted by shuffled 3-run median (provisional cold-start rule)	src/__tests__/worker-lifecycle.test.ts	B07	d-other
