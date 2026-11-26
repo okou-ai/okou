@@ -183,7 +183,12 @@ function receiptConnection(
   return completion.body.connectionId;
 }
 
-const POLICY_SCOPES = ["openid", "read", "write", "offline_access"];
+const POLICY_SCOPES = Object.freeze([
+  "openid",
+  "read",
+  "write",
+  "offline_access",
+]);
 
 type PolicyVariant = "declared-scopes" | "provider-prompt" | "explicit-prompt";
 
@@ -260,10 +265,11 @@ function expectPolicyAuthorization(
     expect(url.searchParams.get("code_challenge")).toHaveLength(43);
     expect(url.searchParams.get("state")).toBeTruthy();
   }
-  expect(flow.callbacks.map((result) => result.status)).toStrictEqual([
-    "success",
-    "success",
-  ]);
+  expect(
+    flow.callbacks.map((result) => {
+      return result.status;
+    }),
+  ).toStrictEqual(["success", "success"]);
 }
 
 type DcrRow = "public-only" | "basic" | "post" | "unspecified";
@@ -1140,11 +1146,19 @@ describe("builtin MCP automatic authentication", () => {
     expect(first.connectionId).toBeTruthy();
     expect(second.connectionId).toBeTruthy();
     expect(first.connectionId).not.toBe(second.connectionId);
-    expect(new Set(listed.map((account) => account.id))).toStrictEqual(
-      new Set([first.connectionId, second.connectionId]),
-    );
+    expect(
+      new Set(
+        listed.map((account) => {
+          return account.id;
+        }),
+      ),
+    ).toStrictEqual(new Set([first.connectionId, second.connectionId]));
     expect(listed).toHaveLength(2);
-    expect(listed.filter((account) => account.isDefault)).toHaveLength(1);
+    expect(
+      listed.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
     for (const account of listed) {
       expect(account).toMatchObject({
         authMethod: "smart-connect",

@@ -16,9 +16,10 @@ import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { workflowsRoutes } from "../workflows";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Member {
   readonly orgId: string;
@@ -60,7 +61,7 @@ async function deliverOrganizationCreated(member: Member) {
       body: JSON.stringify({ type: "organization.created", data }),
       extraHeaders: {
         "svix-id": `msg_${randomUUID()}`,
-        "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+        "svix-timestamp": String(Math.floor(now() / 1000)),
         "svix-signature": "v1,signed-by-clerk",
       },
     }),

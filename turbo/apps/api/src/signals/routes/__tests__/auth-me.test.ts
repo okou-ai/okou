@@ -8,7 +8,7 @@ import { mockClerkUsers } from "./helpers/clerk-users";
 
 const context = testContext();
 const app = setupApp({ context, routes: authMeRoutes });
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function signIn(userId: string, orgId: string, sessionId?: string) {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({

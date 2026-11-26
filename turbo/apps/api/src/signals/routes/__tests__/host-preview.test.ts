@@ -16,7 +16,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const COVER = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
   0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,

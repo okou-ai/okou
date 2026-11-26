@@ -15,7 +15,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
-const memberHeaders = { authorization: "Bearer clerk-session" };
+const memberHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 // Members are unique per case; the staff organization identity only selects
 // the production staff gate, so one hash-colliding org serves the file.
 const staffOrgId = createUniqueStaffOrgIdFixture();
@@ -85,7 +85,12 @@ function clerkAs(member: Member): void {
                 };
               },
             }
-          : { isAuthenticated: false, toAuth: () => null },
+          : {
+              isAuthenticated: false,
+              toAuth: () => {
+                return null;
+              },
+            },
       );
     },
   );

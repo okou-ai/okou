@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { teamsConnectRoutes } from "../teams-connect";
 import { teamsOauthRoutes } from "../teams-oauth";
@@ -27,7 +27,7 @@ const memberships = createStore();
 
 const APP_URL = "https://app.okou.test";
 const SETTINGS_URL = `${APP_URL}/settings/teams`;
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const INVALID_STATE = "Invalid connect state.";
 
 interface MicrosoftProfile {
@@ -260,7 +260,7 @@ describe("Teams OAuth API routes", () => {
     const fixture = teamsConnectFixture();
     await seedMember(fixture.orgId, fixture.userId);
     serveMicrosoft(profileOf(fixture));
-    const startedAt = Date.now();
+    const startedAt = now();
     mockNow(startedAt);
     const state = await startConnect(fixture.userId, fixture.orgId);
 

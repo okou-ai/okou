@@ -33,7 +33,7 @@ const memberships = createStore();
 
 const TEAMS_TOKEN_URL = "https://teams-auth.test/token";
 const BOT_TOKEN = "teams-bot-token";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface TeamsDelivery {
   readonly path: string;

@@ -20,11 +20,15 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const STRAVA: ConnectorAccountTarget = {
+const STRAVA: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "strava",
-};
-const STRAVA_SCOPES = ["read", "activity:read_all", "profile:read_all"];
+});
+const STRAVA_SCOPES = Object.freeze([
+  "read",
+  "activity:read_all",
+  "profile:read_all",
+]);
 
 interface Member {
   readonly userId: string;

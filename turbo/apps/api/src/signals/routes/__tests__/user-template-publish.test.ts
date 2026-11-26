@@ -28,10 +28,10 @@ const CHANGED = "presentationTemplatesChanged";
 
 type PackageFiles = readonly { path: string; content: string | Buffer }[];
 
-const DECK_PACKAGE: PackageFiles = [
+const DECK_PACKAGE: PackageFiles = Object.freeze([
   { path: "SKILL.md", content: "# Brand system" },
   { path: "design-system.md", content: "Use the brand palette." },
-];
+]);
 
 function templatesApi() {
   return setupApp({ context, routes: userTemplatesRoutes })(

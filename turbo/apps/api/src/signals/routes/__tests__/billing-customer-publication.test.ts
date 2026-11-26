@@ -20,7 +20,7 @@ const context = testContext();
 
 const APP_URL = "http://app.localhost:3002";
 const RETURN_URL = `${APP_URL}/settings/billing`;
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PORTAL_CONFIGURATION = "bpc_payment_methods";
 
 function setup() {
@@ -192,10 +192,11 @@ describe("billing customer publication", () => {
     const opened = await Promise.all([openPortal(), openPortal()]);
     const status = await readStatus();
 
-    expect(opened.map((response) => response.body)).toStrictEqual([
-      { url },
-      { url },
-    ]);
+    expect(
+      opened.map((response) => {
+        return response.body;
+      }),
+    ).toStrictEqual([{ url }, { url }]);
     const sessionCustomers =
       context.mocks.stripe.billingPortal.sessions.create.mock.calls.map(
         ([params]) => {

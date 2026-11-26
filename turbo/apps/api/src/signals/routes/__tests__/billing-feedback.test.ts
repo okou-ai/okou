@@ -21,8 +21,10 @@ import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 const context = testContext();
 
 const DESTINATION_SECRET = "posthog-survey-destination-secret-0123456789";
-const sessionHeaders = { authorization: "Bearer clerk-session" };
-const destinationHeaders = { authorization: `Bearer ${DESTINATION_SECRET}` };
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
+const destinationHeaders = Object.freeze({
+  authorization: `Bearer ${DESTINATION_SECRET}`,
+});
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface Person {
@@ -219,7 +221,11 @@ describe("billing feedback rewards", () => {
       ),
     ]);
 
-    expect([...rewards].sort((a, b) => a - b)).toStrictEqual([0, 200]);
+    expect(
+      [...rewards].sort((a, b) => {
+        return a - b;
+      }),
+    ).toStrictEqual([0, 200]);
     await expect(api.settled(api.surveyEvent(first, firstToken))).resolves.toBe(
       0,
     );

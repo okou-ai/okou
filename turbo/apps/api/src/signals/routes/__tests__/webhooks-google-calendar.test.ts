@@ -16,6 +16,7 @@ import {
   mockGoogleCalendarConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 
@@ -86,7 +87,7 @@ function mockCalendarProvider(baseline: CalendarEvent[]): CalendarProvider {
           id: body.id,
           resourceId: `resource-${body.id}`,
           resourceUri: `${CALENDAR_API}/calendars/primary/events`,
-          expiration: String(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          expiration: String(now() + 7 * 24 * 60 * 60 * 1000),
         });
       },
     ),

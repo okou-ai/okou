@@ -20,7 +20,7 @@ import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { jwt } from "./helpers/codex-reset-credit-expiry";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const CLOCK = "2026-10-09T14:00:00.000Z";
 
 type Kind = "codex" | "claude";

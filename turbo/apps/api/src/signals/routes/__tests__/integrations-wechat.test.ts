@@ -33,7 +33,7 @@ const directory = createStore();
 const TENCENT = "https://ilinkai.weixin.qq.com";
 const GATEWAY = "https://wechat-gateway.okou.test";
 const WORKSPACE_NAME = "WeChat test workspace";
-const AUTH = { authorization: "Bearer clerk-session" };
+const AUTH = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;

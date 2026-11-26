@@ -12,7 +12,7 @@ import { now } from "../time";
 const context = testContext();
 
 const PREVIEW_APP_URL = "https://app.vm7.ai:8443";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 /** A preview deployment whose app origin is PREVIEW_APP_URL; an org admin opens billing. */
 function previewAdmin() {

@@ -18,7 +18,7 @@ import {
 } from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const app = setupApp({
   context,
   routes: [...billingRestoreRoutes, ...billingStatusRoutes],
@@ -26,12 +26,12 @@ const app = setupApp({
 const restore = app(billingRestoreContract);
 const status = app(billingStatusContract);
 
-const noScheduledChange = {
+const noScheduledChange = Object.freeze({
   error: {
     message: "Subscription has no scheduled billing change",
     code: "CONFLICT",
   },
-};
+});
 
 interface Subscriber {
   readonly orgId: string;
@@ -205,7 +205,11 @@ describe("POST /api/billing/restore", () => {
       subscriptionId: subscriber.subscriptionId,
     };
     const sessions = context.mocks.stripe.checkout.sessions.create.mock.calls;
-    expect(sessions.map(([params]) => params)).toStrictEqual([
+    expect(
+      sessions.map(([params]) => {
+        return params;
+      }),
+    ).toStrictEqual([
       {
         mode: "setup",
         customer: subscriber.customerId,

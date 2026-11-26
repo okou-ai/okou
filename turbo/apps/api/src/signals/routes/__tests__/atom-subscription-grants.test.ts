@@ -14,12 +14,15 @@ import { atomSubscriptionGrantRoutes } from "../atom-subscription-grants";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 
 const ATOM_M2M_TOKEN = "atom-m2m-token";
-const atomHeaders = { authorization: `Bearer ${ATOM_M2M_TOKEN}` };
-const sessionHeaders = { authorization: "Bearer clerk-session" };
+const atomHeaders = Object.freeze({
+  authorization: `Bearer ${ATOM_M2M_TOKEN}`,
+});
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Recipient {
   readonly userId: string;
@@ -263,7 +266,7 @@ describe("Atom subscription grants", () => {
         return HttpResponse.json({}, { status: 503 });
       }),
     );
-    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const exp = Math.floor(now() / 1000) + 3600;
     const accessToken = unsignedJwt({ exp, sub: "codex-access" });
     const grantId = randomUUID();
     const grant = {

@@ -31,7 +31,7 @@ class UntracedSpan implements Span {
 }
 
 /** The Workers tracing SDK of a host that traces nothing. */
-const untraced: Tracing = {
+const untraced: Readonly<Tracing> = {
   enterSpan(_name, callback, ...args) {
     return callback(new UntracedSpan(), ...args);
   },

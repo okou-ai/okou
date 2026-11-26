@@ -18,7 +18,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const APP_CALLBACK = "https://app.okou.ai/connectors/custom/callback";
 
 type Provider = ReturnType<typeof mockCustomConnectorOAuth2Provider>;

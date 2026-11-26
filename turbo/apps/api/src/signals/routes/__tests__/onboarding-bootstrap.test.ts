@@ -16,7 +16,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const app = setupApp({
   context,
   routes: [...billingStatusRoutes, ...billingUsagePackCreditsRoutes],

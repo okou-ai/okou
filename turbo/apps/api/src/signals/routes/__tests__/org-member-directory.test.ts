@@ -16,7 +16,7 @@ import {
 } from "./helpers/org-membership";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const CREATED_AT = "2026-01-01T00:00:00.000Z";
 // One store so every seeded Clerk membership stays visible across workspaces.
 const store = createStore();
@@ -83,25 +83,22 @@ function clerkProfiles(userIds: readonly string[]) {
   });
 }
 
-const workspaceNames = new Map<string, string>();
-
-/** Clerk reports each workspace with its name and creation time. */
+/**
+ * Clerk also reports each workspace's creation time. The membership seed owns
+ * the organization names, so this extends its current organization lookup.
+ */
 function clerkOrganizations() {
+  const seeded =
+    context.mocks.clerk.organizations.getOrganization.getMockImplementation();
   context.mocks.clerk.organizations.getOrganization.mockImplementation(
-    (args: unknown) => {
-      const organizationId =
-        typeof args === "object" &&
-        args !== null &&
-        "organizationId" in args &&
-        typeof args.organizationId === "string"
-          ? args.organizationId
-          : "";
-      return Promise.resolve({
-        id: organizationId,
-        name: workspaceNames.get(organizationId) ?? "",
-        slug: `org-${organizationId.slice(-8)}`,
+    async (args: unknown) => {
+      const organization: unknown = seeded ? await seeded(args) : null;
+      return {
+        ...(typeof organization === "object" && organization !== null
+          ? organization
+          : {}),
         createdAt: Date.parse(CREATED_AT),
-      });
+      };
     },
   );
 }
@@ -109,7 +106,6 @@ function clerkOrganizations() {
 /** A Clerk workspace with its members, their profiles and its creation time. */
 async function workspace(name: string, members: readonly Person[]) {
   const orgId = `org_${randomUUID()}`;
-  workspaceNames.set(orgId, name);
   for (const member of members) {
     await store.set(
       seedOrgMembership$,

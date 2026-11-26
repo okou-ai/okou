@@ -27,7 +27,7 @@ const PARTNER_ID = "finicity-partner";
 
 type ProviderAccount = Readonly<Record<string, unknown>>;
 
-const everydayChecking: ProviderAccount = {
+const everydayChecking: ProviderAccount = Object.freeze({
   id: "acct-checking",
   name: "Everyday Checking",
   institutionName: "Example Bank",
@@ -37,9 +37,9 @@ const everydayChecking: ProviderAccount = {
   status: "active",
   currency: "USD",
   aggregationStatusCode: 0,
-};
+});
 
-const oldSavings: ProviderAccount = {
+const oldSavings: ProviderAccount = Object.freeze({
   id: "acct-savings",
   name: "Old Savings",
   institutionName: "Example Bank",
@@ -49,7 +49,7 @@ const oldSavings: ProviderAccount = {
   status: "active",
   currency: "USD",
   aggregationStatusCode: 0,
-};
+});
 
 function finicityProvider(
   connectLink: (customerId: string) => string = (customerId) => {

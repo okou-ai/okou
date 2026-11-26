@@ -7,7 +7,7 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const preferences = setupApp({ context, routes: userModelPreferenceRoutes })(
   userModelPreferenceContract,
 );

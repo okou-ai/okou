@@ -20,7 +20,7 @@ const context = testContext();
 const CREDIT_UNIT_PRICE = "price_auto_recharge_credit_unit";
 const SUCCESS_URL = "http://localhost:3002/settings/billing?credits=success";
 const CANCEL_URL = "http://localhost:3002/settings/billing?credits=cancel";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function creditCheckoutApi() {
   return setupApp({ context, routes: billingCreditCheckoutRoutes })(

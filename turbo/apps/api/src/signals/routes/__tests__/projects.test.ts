@@ -25,7 +25,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 /** Project operation identities are fresh UUIDv7 values. */
 function operationId(msecs = now()) {

@@ -94,7 +94,7 @@ async function installedTeamsMember() {
   return { fixture, deliveries };
 }
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function messageClient() {
   return setupApp({ context, routes: integrationsTeamsMessageRoutes })(
@@ -140,11 +140,11 @@ function resolveTeamsMember(
   );
 }
 
-const CARD = {
+const CARD = Object.freeze({
   type: "AdaptiveCard" as const,
   version: "1.5",
   body: [{ type: "TextBlock", text: "Card body" }],
-};
+});
 
 describe("Teams messages through the organization installation", () => {
   it("integrations-teams-installation-owner-003 reports a missing installation to a message sender", async () => {

@@ -19,13 +19,13 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 const APP_ORIGIN = new URL(apiTestEnvironment.APP_URL).origin;
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PRO_PRICE = apiTestEnvironment.OKOU_PRICE_PRO;
 const TEAM_PRICE = apiTestEnvironment.OKOU_PRICE_TEAM;
-const redirects = {
+const redirects = Object.freeze({
   successUrl: `${APP_ORIGIN}/billing?billing=success`,
   cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-};
+});
 
 function setup(role: "org:admin" | "org:member" = "org:admin") {
   const admin = {

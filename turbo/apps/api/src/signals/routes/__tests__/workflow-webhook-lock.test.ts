@@ -21,20 +21,20 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
-const routes = [
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const routes = Object.freeze([
   ...workflowsRoutes,
   ...workflowAutomationsRoutes,
   ...chatThreadRoutes,
   ...chatThreadCreateRoutes,
   ...chatThreadDeleteRoutes,
-];
+]);
 const app = setupApp({ context, routes });
 const rethrowingApp = setupApp({ context, routes, rethrowErrors: true });
-const webhook = {
+const webhook = Object.freeze({
   kind: "event" as const,
   eventType: "webhook-received" as const,
-};
+});
 
 async function teamMember(options: { unrelatedThread: boolean }) {
   const actor = bdd.user();

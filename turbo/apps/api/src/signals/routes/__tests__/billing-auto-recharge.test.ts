@@ -18,7 +18,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function autoRechargeApi() {
   return setupApp({ context, routes: billingAutoRechargeRoutes })(
@@ -326,7 +326,9 @@ describe("PUT /api/billing/auto-recharge", () => {
     const status = await readStatus();
     expect(status.credits).toBe(credits + amount);
     expect(
-      status.creditGrants.filter((grant) => grant.source === "auto_recharge"),
+      status.creditGrants.filter((grant) => {
+        return grant.source === "auto_recharge";
+      }),
     ).toStrictEqual([expect.objectContaining({ amount, remaining: amount })]);
 
     await enable(credits + amount + 1000, credits + amount + 6000);
@@ -364,7 +366,9 @@ describe("PUT /api/billing/auto-recharge", () => {
     const status = await readStatus();
     expect(status.credits).toBe(credits + amount);
     expect(
-      status.creditGrants.filter((grant) => grant.source === "auto_recharge"),
+      status.creditGrants.filter((grant) => {
+        return grant.source === "auto_recharge";
+      }),
     ).toStrictEqual([expect.objectContaining({ amount, remaining: amount })]);
 
     await enable(credits + amount + 1000, credits + amount + 6000);

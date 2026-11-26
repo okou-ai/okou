@@ -5,7 +5,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { describe, expect, it } from "vitest";
 
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -17,7 +17,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { inlineSshKey } from "./helpers/ssh-credential";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;
@@ -124,7 +124,7 @@ async function deleteClerkUser(userId: string) {
       body: JSON.stringify({ type: "user.deleted", data: { id: userId } }),
       extraHeaders: {
         "svix-id": `msg_${randomUUID()}`,
-        "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+        "svix-timestamp": String(Math.floor(now() / 1000)),
         "svix-signature": "v1,signed-by-clerk",
       },
     }),

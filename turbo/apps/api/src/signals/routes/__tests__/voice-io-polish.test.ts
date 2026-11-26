@@ -17,7 +17,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function api() {
   return setupApp({ context, routes: voiceIoPolishRoutes })(
@@ -58,7 +58,10 @@ function googleReplies(...replies: (() => Response)[]) {
   return requests;
 }
 
-const segments = ["um ship the nebula release Friday", "no Monday"];
+const segments = Object.freeze([
+  "um ship the nebula release Friday",
+  "no Monday",
+]);
 
 function expectMergedRequest(requests: { url: string; body: unknown }[]) {
   expect(requests).toHaveLength(1);
@@ -213,7 +216,7 @@ describe("POST /api/voice-io/polish/segments", () => {
     });
 
     const response = await accept(
-      signIn(admin).post({ headers, body: { segments } }),
+      signIn(admin).post({ headers, body: { segments: [...segments] } }),
       [200],
     );
 
@@ -238,7 +241,7 @@ describe("POST /api/voice-io/polish/segments", () => {
     const response = await accept(
       api().post({
         headers: { authorization: `Bearer ${token}` },
-        body: { segments },
+        body: { segments: [...segments] },
       }),
       [200],
     );

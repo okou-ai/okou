@@ -19,6 +19,7 @@ import {
   countPublishedTo,
 } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 
@@ -44,11 +45,13 @@ function deferred(): {
   readonly promise: Promise<void>;
   readonly resolve: () => void;
 } {
-  let release = () => {};
-  const promise = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  return { promise, resolve: release };
+  const deferred = createDeferredPromise<void>(context.signal);
+  const release = () => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
+  };
+  return { promise: deferred.promise, resolve: release };
 }
 
 function finicityAccount(account: ListedAccount) {
@@ -64,13 +67,13 @@ function finicityAccount(account: ListedAccount) {
   };
 }
 
-const checking: ListedAccount = {
+const checking: ListedAccount = Object.freeze({
   id: "acct-checking",
   name: "Everyday checking",
   institutionLoginId: "bank",
   type: "checking",
   healthy: true,
-};
+});
 
 async function bankingMember() {
   const userId = `user_${randomUUID()}`;

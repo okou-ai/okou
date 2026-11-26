@@ -8,19 +8,26 @@ import {
   createConnectorBddApi,
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 
 /** Holds Slack's token exchange until the case releases it. */
 function holdSlackTokenExchange() {
-  let release = (): void => {};
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let markStarted = (): void => {};
-  const started = new Promise<void>((resolve) => {
-    markStarted = resolve;
-  });
+  const releasedDeferred = createDeferredPromise<void>(context.signal);
+  const startedDeferred = createDeferredPromise<void>(context.signal);
+  const released = releasedDeferred.promise;
+  const started = startedDeferred.promise;
+  const release = (): void => {
+    if (!releasedDeferred.settled()) {
+      releasedDeferred.resolve();
+    }
+  };
+  const markStarted = (): void => {
+    if (!startedDeferred.settled()) {
+      startedDeferred.resolve();
+    }
+  };
   server.use(
     http.post("https://slack.com/api/oauth.v2.access", async () => {
       markStarted();

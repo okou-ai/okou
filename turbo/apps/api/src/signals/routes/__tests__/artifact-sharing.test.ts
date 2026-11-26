@@ -25,7 +25,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const store = createStore();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const REPORT = Buffer.from("%PDF-1.7 quarterly report");
 
 interface Person {

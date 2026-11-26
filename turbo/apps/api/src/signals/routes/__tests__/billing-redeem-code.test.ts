@@ -19,7 +19,7 @@ import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 
 const context = testContext();
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const ATOM_CONSUME_URL = new URL(
   "/api/redeem-codes/consume",
   apiTestEnvironment.ATOM_URL,

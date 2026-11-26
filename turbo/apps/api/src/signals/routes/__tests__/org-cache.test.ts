@@ -10,9 +10,10 @@ import { describe, expect, it } from "vitest";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { orgReadRoutes } from "../org-read";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Workspace {
   readonly orgId: string;
@@ -40,7 +41,7 @@ function webhook() {
 function svixHeaders() {
   return {
     "svix-id": `msg_${randomUUID()}`,
-    "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+    "svix-timestamp": String(Math.floor(now() / 1000)),
     "svix-signature": "v1,signed-by-clerk",
   };
 }

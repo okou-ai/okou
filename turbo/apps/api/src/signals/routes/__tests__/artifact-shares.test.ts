@@ -30,7 +30,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const directory = createStore();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const APP_URL = "https://app.okou.ai";
 const shortReportUrl =
   /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u;

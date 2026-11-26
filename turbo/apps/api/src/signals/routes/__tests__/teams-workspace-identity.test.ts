@@ -27,11 +27,12 @@ import {
   teamsConnectFixture,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 const memberships = createStore();
 
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const BOT_APP_TENANT_ID = "11111111-1111-1111-1111-111111111111";
 const ACCOUNT_CHANGE_ERROR =
   "Disconnect your current Teams account before connecting another identity or organization.";
@@ -541,7 +542,7 @@ describe("Teams workspace identity", () => {
         body: JSON.stringify(event),
         extraHeaders: {
           "svix-id": `msg_${randomUUID()}`,
-          "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+          "svix-timestamp": String(Math.floor(now() / 1000)),
           "svix-signature": "v1,signed-by-clerk",
         },
       }),

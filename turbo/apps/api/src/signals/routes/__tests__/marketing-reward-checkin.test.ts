@@ -11,7 +11,7 @@ import { marketingCheckinCampaign } from "./helpers/marketing-reward-consumer";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const getStarted = setupApp({ context, routes: getStartedRoutes })(
   getStartedContract,
 );
@@ -49,7 +49,13 @@ test("marketing-reward-checkin-001 records one first-day check-in snapshot acros
   const receipts = clicks.map((click) => {
     return click.body;
   });
-  expect(new Set(receipts.map((receipt) => receipt.id)).size).toBe(1);
+  expect(
+    new Set(
+      receipts.map((receipt) => {
+        return receipt.id;
+      }),
+    ).size,
+  ).toBe(1);
   expect(switched.body).toStrictEqual(receipts[0]);
   expect(consumer.received).toStrictEqual([
     {

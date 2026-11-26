@@ -10,7 +10,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const sessionHeaders = { authorization: "Bearer clerk-session" };
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
 /** A signed-in workspace admin (the URL resolver reads no installation). */
 function signedInAdmin(): void {

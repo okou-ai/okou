@@ -14,7 +14,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const OPENAI = { kind: "builtin", connectorSlug: "openai" } as const;
 
 interface Member {
@@ -147,7 +147,11 @@ describe("Chat connector account configuration", () => {
       rejected.map((response) => {
         return response.status;
       }),
-    ).toStrictEqual(Array.from({ length: 8 }, () => 404));
+    ).toStrictEqual(
+      Array.from({ length: 8 }, () => {
+        return 404;
+      }),
+    );
 
     const ownAccess = await accept(
       accessApi().getThread({

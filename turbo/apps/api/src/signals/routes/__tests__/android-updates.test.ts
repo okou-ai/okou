@@ -31,10 +31,10 @@ const rawRequest = setupRawAppRequest({
   context,
   routes: [...androidUpdateRoutes, ...orgReadRoutes],
 });
-const androidClient = {
+const androidClient = Object.freeze({
   [CLIENT_TYPE_HEADER]: CLIENT_TYPE_ANDROID,
   [CLIENT_VERSION_HEADER]: "0.1.0",
-};
+});
 
 function release(version: string, sha: string): AndroidRelease {
   const sha256 = sha.repeat(64);

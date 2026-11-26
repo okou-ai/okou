@@ -20,7 +20,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const memberships = createStore();
 
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const OFFICIAL_BOT_ID = "9876543210";
 const LINKED_TEXT =
   "✅ Account linked.\nSend me a message to start chatting with Okou.";

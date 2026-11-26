@@ -22,7 +22,7 @@ import { mockGitHubConnectorOAuth } from "./helpers/api-bdd-connectors";
 const context = testContext();
 const bdd = createBddApi(context);
 const APP_ORIGIN = "https://app.okou.ai";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 type NativeSlug =
   | "gmail"

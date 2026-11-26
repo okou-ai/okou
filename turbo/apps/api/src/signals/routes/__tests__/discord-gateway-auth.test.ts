@@ -71,11 +71,11 @@ async function submitMessage(overrides: Readonly<Record<string, unknown>>) {
   return response.body;
 }
 
-const UNSUPPORTED_MESSAGE = {
+const UNSUPPORTED_MESSAGE = Object.freeze({
   ok: true,
   outcome: "ignored",
   reason: "unsupported-message",
-};
+});
 
 describe("Discord Gateway authentication and ignored transport events", () => {
   it("discord-gateway-auth-003 rejects a signed event whose bytes changed after signing", async () => {

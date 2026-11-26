@@ -25,7 +25,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const fileBytes = "private file";
 
 /** Links the member to the official bot with a Telegram Login Widget payload. */

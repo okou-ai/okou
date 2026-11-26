@@ -621,7 +621,9 @@ describe("hosted site access", () => {
           return response.status;
         })
         .slice()
-        .sort((left, right) => left - right),
+        .sort((left, right) => {
+          return left - right;
+        }),
     ).toStrictEqual([200, 401]);
     await accept(exchange(correct), [401]);
   });

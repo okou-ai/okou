@@ -29,7 +29,7 @@ const GITHUB_APP_PRIVATE_KEY = Buffer.from(
     format: "pem",
   }),
 ).toString("base64");
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
 type CallbackQuery = ReturnType<typeof githubAppSetupCallbackQuerySchema.parse>;
 

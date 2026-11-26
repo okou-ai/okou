@@ -23,7 +23,9 @@ interface AuthHeaders {
   readonly authorization: string;
 }
 
-const session: AuthHeaders = { authorization: "Bearer clerk-session" };
+const session: AuthHeaders = Object.freeze({
+  authorization: "Bearer clerk-session",
+});
 const presentation = FeatureSwitchKey.PresentationOutputFormat;
 
 const app = setupApp({

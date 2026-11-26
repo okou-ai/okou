@@ -66,7 +66,7 @@ function codexProviders(member: ApiTestUser) {
   })(personalModelProvidersMainContract);
 }
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("AUTH-02: CLI device authorization", () => {
   it("cli-auth.bdd-001 expires unexchanged device codes for polling and approval", async () => {

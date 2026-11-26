@@ -18,7 +18,7 @@ import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const reportBytes = Buffer.from("<p>report</p>");
 
 interface Actor {

@@ -37,7 +37,7 @@ import { countPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const APP_URL = "https://app.okou.ai";
 
 type Platform = "feishu" | "lark";

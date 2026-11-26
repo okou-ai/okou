@@ -24,7 +24,7 @@ const APP_URL = "http://app.localhost:3002";
 const RETURN_URL = `${APP_URL}/settings/billing`;
 const PRICE_CONCURRENCY = "price_metadata_binding_concurrency";
 const PORTAL_CONFIGURATION = "bpc_metadata_binding";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function setup() {
   mockEnv("APP_URL", APP_URL);

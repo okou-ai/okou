@@ -945,9 +945,11 @@ describe("connectors BDD", () => {
     ]);
 
     const listed = await connectors.listCustomConnectors(admin);
-    expect(listed.map((connector) => connector.id)).toStrictEqual([
-      saved.connector.id,
-    ]);
+    expect(
+      listed.map((connector) => {
+        return connector.id;
+      }),
+    ).toStrictEqual([saved.connector.id]);
     expect(JSON.stringify(listed)).not.toContain("proposal-secret-value");
     expect(JSON.stringify(accounts)).not.toContain("proposal-secret-value");
   });
@@ -1084,9 +1086,11 @@ describe("connectors BDD", () => {
       connectors.listCustomConnectorAccounts(admin, saved.connector.id),
     ).resolves.toStrictEqual([]);
     const listed = await connectors.listCustomConnectors(admin);
-    expect(listed.map((connector) => connector.id)).toStrictEqual([
-      saved.connector.id,
-    ]);
+    expect(
+      listed.map((connector) => {
+        return connector.id;
+      }),
+    ).toStrictEqual([saved.connector.id]);
   });
 
   it("connectors.bdd-080 derives distinct host-based slugs for manual HTTP prefixes", async () => {

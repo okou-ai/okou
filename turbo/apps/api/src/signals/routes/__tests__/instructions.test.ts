@@ -14,9 +14,10 @@ import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { countPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Member {
   readonly userId: string;
@@ -193,7 +194,7 @@ describe("Personal Instructions", () => {
         body: JSON.stringify({ type: "organizationMembership.deleted" }),
         extraHeaders: {
           "svix-id": `msg_${randomUUID()}`,
-          "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+          "svix-timestamp": String(Math.floor(now() / 1000)),
           "svix-signature": "v1,signed-by-clerk",
         },
       }),

@@ -18,7 +18,10 @@ import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const REAP: ConnectorAccountTarget = { kind: "builtin", connectorSlug: "reap" };
+const REAP: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "reap",
+});
 
 interface Admin {
   readonly userId: string;

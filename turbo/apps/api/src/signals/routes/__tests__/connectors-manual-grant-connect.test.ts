@@ -18,7 +18,7 @@ import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Member {
   readonly userId: string;

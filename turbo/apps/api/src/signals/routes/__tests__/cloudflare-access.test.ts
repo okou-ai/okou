@@ -14,7 +14,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { sshCredentialId } from "./helpers/ssh-credential";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;
@@ -259,8 +259,18 @@ describe("Cloudflare Access owner configuration", () => {
     const bound = [first.body, second.body];
     const listed = await listConfigs(member);
     expect(listed).toMatchObject([{ id: config.id }]);
-    expect(listed[0]?.sshHosts.map((host) => host.id).sort()).toStrictEqual(
-      bound.map((host) => host.id).sort(),
+    expect(
+      listed[0]?.sshHosts
+        .map((host) => {
+          return host.id;
+        })
+        .sort(),
+    ).toStrictEqual(
+      bound
+        .map((host) => {
+          return host.id;
+        })
+        .sort(),
     );
     const publicBodies = JSON.stringify([
       config,
@@ -435,13 +445,19 @@ describe("inline SSH resource creation", () => {
       const login = loginsAfter.find((entry) => {
         return entry.id === loginId;
       });
-      expect(login?.hosts.map((host) => host.id)).toContain(created.body.id);
+      expect(
+        login?.hosts.map((host) => {
+          return host.id;
+        }),
+      ).toContain(created.body.id);
       const config = configsAfter.find((entry) => {
         return entry.id === configId;
       });
-      expect(config?.sshHosts.map((host) => host.id)).toContain(
-        created.body.id,
-      );
+      expect(
+        config?.sshHosts.map((host) => {
+          return host.id;
+        }),
+      ).toContain(created.body.id);
       for (const secret of secrets) {
         expect(
           JSON.stringify([hostsAfter, loginsAfter, configsAfter]),
@@ -632,7 +648,11 @@ describe("organization Cloudflare Access", () => {
       [200],
     );
     expect(
-      adminList.body.configs.map((config) => config.id).sort(),
+      adminList.body.configs
+        .map((config) => {
+          return config.id;
+        })
+        .sort(),
     ).toStrictEqual([shared.id, personal.id].sort());
     for (const config of [shared, personal]) {
       const renamed = await accept(

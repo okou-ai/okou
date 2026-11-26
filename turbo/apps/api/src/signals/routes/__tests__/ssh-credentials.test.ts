@@ -11,9 +11,10 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { credentialBackedSshHost } from "./helpers/ssh-credential";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;
@@ -106,13 +107,13 @@ function byId<T extends { readonly id: string }>(items: readonly T[]) {
 }
 
 function gate() {
-  let open = () => {};
-  const opened = new Promise<void>((resolve) => {
-    open = () => {
-      resolve();
-    };
-  });
-  return { open, opened };
+  const deferred = createDeferredPromise<void>(context.signal);
+  const open = () => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
+  };
+  return { open, opened: deferred.promise };
 }
 
 function expectNoSecret(value: unknown, secret: string) {
@@ -249,8 +250,12 @@ describe("reusable SSH credential owner routes", () => {
 
     const listedHosts = (await listHosts()).map(credentialBackedSshHost);
     expect(listedHosts).toHaveLength(2);
-    const existingAfter = listedHosts.find((h) => h.id === existing.body.id);
-    const addedAfter = listedHosts.find((h) => h.id === added.body.id);
+    const existingAfter = listedHosts.find((h) => {
+      return h.id === existing.body.id;
+    });
+    const addedAfter = listedHosts.find((h) => {
+      return h.id === added.body.id;
+    });
     for (const host of [existingAfter, addedAfter]) {
       expect(host).toMatchObject({
         credentialId: login.id,

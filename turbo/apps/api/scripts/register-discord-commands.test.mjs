@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import process from "node:process";
 import { HttpResponse, http } from "msw";
 import { expect, onTestFinished, test, vi } from "vitest";
 
@@ -105,7 +106,7 @@ function discordCommands({ global = [], guild = [], rejectPost } = {}) {
 }
 
 async function readCommands(url, token) {
-  const response = await fetch(url, {
+  const response = await globalThis.fetch(url, {
     headers: { Authorization: `Bot ${token}` },
   });
   expect(response.status).toBe(200);

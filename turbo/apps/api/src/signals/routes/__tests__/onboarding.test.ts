@@ -10,7 +10,7 @@ import {
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { describe, expect, it } from "vitest";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { billingStatusRoutes } from "../billing-status";
@@ -25,7 +25,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 type Role = "org:admin" | "org:member";
 
@@ -140,7 +140,7 @@ function registerNewAccounts(...userIds: string[]) {
   mockClerkUsers(
     context,
     userIds.map((id) => {
-      return { id, createdAt: Date.now() };
+      return { id, createdAt: now() };
     }),
   );
 }

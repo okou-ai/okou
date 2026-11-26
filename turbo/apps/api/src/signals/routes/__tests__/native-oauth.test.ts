@@ -44,7 +44,7 @@ const voiceQuota = setupRawAppRequest({ context, routes: voiceIoQuotaRoutes });
 
 const ISSUER = "https://clerk.mcp.example.test";
 const RESOURCE = "https://api.mcp.example.test/mcp";
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
 const issuerKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const issuerKeyId = randomUUID();

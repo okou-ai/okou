@@ -22,10 +22,10 @@ interface Member {
   readonly orgId: string;
 }
 
-const GITLAB: ConnectorAccountTarget = {
+const GITLAB: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "gitlab",
-};
+});
 
 function newMember(): Member {
   return { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };

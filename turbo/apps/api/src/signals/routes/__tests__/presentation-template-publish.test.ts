@@ -189,9 +189,11 @@ describe("presentation template publish", () => {
     );
     expect(list.body).toHaveLength(1);
     const [entry] = list.body;
-    expect(entry?.previewAssets.map((asset) => asset.url)).toStrictEqual(
-      detail.body.pageUrls,
-    );
+    expect(
+      entry?.previewAssets.map((asset) => {
+        return asset.url;
+      }),
+    ).toStrictEqual(detail.body.pageUrls);
     expect(detail.body.pageUrls).toHaveLength(2);
     expect(entry?.coverUrl).toBe(detail.body.pageUrls[0]);
 
@@ -220,7 +222,9 @@ describe("presentation template publish", () => {
       [200],
     );
     expect(
-      renewed.body.assets.map((asset) => asset.previewAssetId),
+      renewed.body.assets.map((asset) => {
+        return asset.previewAssetId;
+      }),
     ).toStrictEqual(previewAssetIds);
     for (const [index, asset] of renewed.body.assets.entries()) {
       const previous = first.body.assets[index];
@@ -295,7 +299,11 @@ describe("presentation template publish", () => {
     const previewAssetIds = detail.body.previewAssets.map((asset) => {
       return asset.previewAssetId;
     });
-    expect(previewAssetIds.every((id) => id.startsWith("ptp:"))).toBeTruthy();
+    expect(
+      previewAssetIds.every((id) => {
+        return id.startsWith("ptp:");
+      }),
+    ).toBeTruthy();
     const resolved = await accept(
       api.resolvePreviewUrls({
         headers: memberHeaders,

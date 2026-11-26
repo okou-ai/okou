@@ -17,7 +17,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const app = setupApp({
   context,
   routes: [
@@ -76,9 +76,9 @@ function deleteClaude(actor: Member) {
   });
 }
 
-const notFound = {
+const notFound = Object.freeze({
   error: { code: "NOT_FOUND", message: "Resource not found" },
-};
+});
 
 describe("DELETE /api/me/model-providers/:type", () => {
   it("me-model-providers-delete-003 deletes the member's personal Claude provider once", async () => {

@@ -11,6 +11,7 @@ import {
 } from "./helpers/api-bdd-chat-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { nowDate } from "../../../lib/time";
 
 const context = testContext();
 
@@ -50,7 +51,7 @@ describe("uploads, storage and host APIs", () => {
 
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 12,
-      LastModified: new Date(),
+      LastModified: nowDate(),
     });
     await expect(
       chat.completeUpload(member, { id: prepared.id }),

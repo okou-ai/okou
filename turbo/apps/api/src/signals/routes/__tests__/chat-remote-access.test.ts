@@ -5,7 +5,7 @@ import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-thread
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { createStore } from "ccstate";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -19,7 +19,7 @@ import { inlineSshKey } from "./helpers/ssh-credential";
 import { vncConnectionBody } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;
@@ -60,15 +60,9 @@ function createClients() {
   };
 }
 
-/** One app per test; each request authenticates as the last signed-in actor. */
-let clients: ReturnType<typeof createClients> | undefined;
-beforeEach(() => {
-  clients = undefined;
-});
-
+/** Each request authenticates as the last signed-in actor. */
 function api() {
-  clients ??= createClients();
-  return clients;
+  return createClients();
 }
 
 function accessApi() {
@@ -391,12 +385,16 @@ describe("chat remote access", () => {
 
     const peerDefaults = await hostDefaults();
     const peerAccess = await threadAccess(peerThread);
-    expect(peerDefaults.ssh.map((host) => host.connectionId)).toStrictEqual([
-      peerHost.id,
-    ]);
-    expect(peerAccess.ssh.map((host) => host.connectionId)).toStrictEqual([
-      peerHost.id,
-    ]);
+    expect(
+      peerDefaults.ssh.map((host) => {
+        return host.connectionId;
+      }),
+    ).toStrictEqual([peerHost.id]);
+    expect(
+      peerAccess.ssh.map((host) => {
+        return host.connectionId;
+      }),
+    ).toStrictEqual([peerHost.id]);
 
     const unknownHost = randomUUID();
     const [

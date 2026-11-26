@@ -12,7 +12,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("model identity new writes", () => {
   it("model-identity-writes-003 resolves an omitted creation model from the member's personal preference", async () => {

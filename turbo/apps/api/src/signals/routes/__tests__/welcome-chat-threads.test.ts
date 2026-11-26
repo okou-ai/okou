@@ -29,7 +29,7 @@ import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const appUrl = "https://pr-33252-app.omby.ai";
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);

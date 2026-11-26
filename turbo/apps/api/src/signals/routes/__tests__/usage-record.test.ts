@@ -8,7 +8,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const app = setupApp({ context, routes: usageRecordRoutes });
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("usage-record-003 returns an empty null period for a free user's billing period", async () => {
   createRouteMocks(context).clerk.session(

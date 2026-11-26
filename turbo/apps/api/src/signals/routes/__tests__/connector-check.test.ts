@@ -51,7 +51,10 @@ async function checkBody(actor: Actor, body: ConnectorCheckRequestBody) {
   return (await check(actor, body)).body;
 }
 
-const REAP: ConnectorAccountTarget = { kind: "builtin", connectorSlug: "reap" };
+const REAP: ConnectorAccountTarget = Object.freeze({
+  kind: "builtin",
+  connectorSlug: "reap",
+});
 
 function accounts() {
   return setupApp({ context, routes: connectorAccountRoutes })(
@@ -131,12 +134,12 @@ function usersCheck(base: string): ConnectorCheckRequestBody {
   };
 }
 
-const REAP_IDENTITY = {
+const REAP_IDENTITY = Object.freeze({
   target: REAP,
   label: "Reap",
   visibility: "available",
   credentialResolution: "network-boundary",
-};
+});
 
 function resolvedReap(base: string) {
   return {
@@ -160,10 +163,10 @@ function resolvedReap(base: string) {
   };
 }
 
-const UNRESOLVED_REAP = {
+const UNRESOLVED_REAP = Object.freeze({
   outcome: "unresolved-dynamic-base",
   connector: REAP_IDENTITY,
-};
+});
 
 describe("POST /api/connectors/diagnostics/check", () => {
   it("connector-check-005 reports AWS STS selectors outside a Run", async () => {

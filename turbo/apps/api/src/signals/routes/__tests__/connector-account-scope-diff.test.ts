@@ -29,7 +29,7 @@ function connectionIdOf(
   return body.connectionId;
 }
 
-const GITHUB_SCOPES = ["repo", "project", "workflow"];
+const GITHUB_SCOPES = Object.freeze(["repo", "project", "workflow"]);
 
 function scopeDiffFor(
   actor: ApiTestUser,
@@ -266,7 +266,9 @@ async function deleteGithubAccount(owner: ApiTestUser, connectionId: string) {
   server.use(
     http.delete(
       "https://api.github.com/applications/github-client-id/grant",
-      () => new HttpResponse(null, { status: 204 }),
+      () => {
+        return new HttpResponse(null, { status: 204 });
+      },
     ),
   );
   createRouteMocks(context).clerk.session(

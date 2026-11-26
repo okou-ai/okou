@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -17,15 +17,15 @@ import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connec
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
-const INTERNAL_CONNECTOR_SLUGS = [
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const INTERNAL_CONNECTOR_SLUGS = Object.freeze([
   "maskdb",
   "db9",
   "drive9",
   "slock",
   "runtime",
-];
-const ONE_CLICK_GRANT_KINDS = new Set([
+]);
+const ONE_CLICK_GRANT_KINDS: readonly string[] = Object.freeze([
   "auth-code",
   "external-code",
   "device-auth",
@@ -329,7 +329,7 @@ describe("GET /api/connector-catalog", () => {
       status.body.connectors
         .filter((connector) => {
           return connector.authMethods.some((method) => {
-            return ONE_CLICK_GRANT_KINDS.has(method.grantKind);
+            return ONE_CLICK_GRANT_KINDS.includes(method.grantKind);
           });
         })
         .map((connector) => {
@@ -431,7 +431,7 @@ describe("GET /api/connector-catalog", () => {
     const member = createBddApi(context).user();
     const connectors = createConnectorBddApi(context);
     mockStripeCliDashboardAuth();
-    const startedAt = Date.now();
+    const startedAt = now();
     mockNow(startedAt);
     const started = await connectors.startDeviceAuth(member, "stripe", "cli", {
       mode: "test",

@@ -14,15 +14,15 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 const APP_URL = "http://app.localhost:3002";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PORTAL_CONFIGURATION = "bpc_payment_methods";
-const PORTAL_FEATURES = {
+const PORTAL_FEATURES = Object.freeze({
   customer_update: { enabled: false },
   invoice_history: { enabled: false },
   payment_method_update: { enabled: true },
   subscription_cancel: { enabled: false },
   subscription_update: { enabled: false },
-};
+});
 
 function setup(role: "org:admin" | "org:member" = "org:admin") {
   mockEnv("APP_URL", APP_URL);

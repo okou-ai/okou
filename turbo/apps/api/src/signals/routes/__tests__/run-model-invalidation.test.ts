@@ -18,7 +18,7 @@ import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("run-model-invalidation-001 notifies only the owner about personal account changes without account details", async () => {
   server.use(

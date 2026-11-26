@@ -8,7 +8,6 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { DiscordPermission } from "../../services/discord-permissions";
 import { createAuthOrgBddApi } from "./helpers/api-bdd-auth-org";
 import { threadEventCursor } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
@@ -29,6 +28,15 @@ import {
 } from "./helpers/discord-fixture";
 
 const context = testContext();
+
+/** Discord permission bits, as documented for the Discord API bitfield. */
+const DiscordPermission = Object.freeze({
+  Administrator: 1n << 3n,
+  ViewChannel: 1n << 10n,
+  SendMessages: 1n << 11n,
+  ReadMessageHistory: 1n << 16n,
+  CreatePublicThreads: 1n << 35n,
+});
 
 const DISCORD_API = "https://discord.com/api/v10";
 const MESSAGE_ACCESS =

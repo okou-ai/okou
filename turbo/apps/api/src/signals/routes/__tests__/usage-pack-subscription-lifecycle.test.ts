@@ -28,7 +28,7 @@ import { purchaseUsagePacks } from "./helpers/public-usage-pack-checkout";
 
 const context = testContext();
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PLAN_PRICE = "price_public_usage_plan";
 const PACK_20 = "price_public_usage_20";
 const PRO_PRICE = apiTestEnvironment.OKOU_PRICE_PRO;

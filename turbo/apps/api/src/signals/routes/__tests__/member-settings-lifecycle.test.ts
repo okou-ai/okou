@@ -33,40 +33,57 @@ interface Identity {
   readonly role: "admin" | "member";
 }
 
-const sessions = new Map<string, Identity>();
-
 function headersFor(identity: Identity) {
   return { authorization: `Bearer ${identity.userId}:${identity.orgId}` };
 }
 
-/** Clerk resolves each bearer session to the identity it was issued for. */
+/** Clerk has issued no bearer sessions when a scenario starts. */
 function installSessions() {
+  context.mocks.clerk.authenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+    toAuth: () => {
+      return null;
+    },
+  });
+}
+
+/** Clerk resolves the identity's bearer session, in addition to earlier ones. */
+function issueSession(identity: Identity) {
+  const authorization = headersFor(identity).authorization;
+  const issued =
+    context.mocks.clerk.authenticateRequest.getMockImplementation();
   context.mocks.clerk.authenticateRequest.mockImplementation(
     (request: unknown) => {
       const header =
         request instanceof Request
           ? (request.headers.get("authorization") ?? "")
           : "";
-      const identity = sessions.get(header);
-      if (!identity) {
-        return Promise.resolve({ isAuthenticated: false, toAuth: () => null });
+      if (header === authorization) {
+        return Promise.resolve({
+          isAuthenticated: true,
+          toAuth: () => {
+            return {
+              userId: identity.userId,
+              orgId: identity.orgId,
+              orgRole: identity.role === "admin" ? "org:admin" : "org:member",
+            };
+          },
+        });
       }
-      return Promise.resolve({
-        isAuthenticated: true,
-        toAuth: () => {
-          return {
-            userId: identity.userId,
-            orgId: identity.orgId,
-            orgRole: identity.role === "admin" ? "org:admin" : "org:member",
-          };
-        },
-      });
+      return issued
+        ? issued(request)
+        : Promise.resolve({
+            isAuthenticated: false,
+            toAuth: () => {
+              return null;
+            },
+          });
     },
   );
 }
 
 async function join(identity: Identity) {
-  sessions.set(headersFor(identity).authorization, identity);
+  issueSession(identity);
   await store.set(
     seedOrgMembership$,
     { orgId: identity.orgId, userId: identity.userId, role: identity.role },

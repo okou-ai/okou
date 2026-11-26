@@ -306,10 +306,10 @@ async function deleteAccount(actor: ApiTestUser, connectionId: string) {
   );
 }
 
-const GMAIL_TARGET = {
+const GMAIL_TARGET = Object.freeze({
   kind: "builtin" as const,
   connectorSlug: "gmail" as const,
-};
+});
 
 async function selectAccount(
   actor: ApiTestUser,

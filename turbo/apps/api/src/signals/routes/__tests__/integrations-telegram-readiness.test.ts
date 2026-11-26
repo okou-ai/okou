@@ -69,11 +69,11 @@ function probeQuery(probes: readonly URL[]) {
   });
 }
 
-const installation = {
+const installation = Object.freeze({
   id: "official",
   botUsername: "test_okou_bot",
   loginBotId: BOT_ID,
-};
+});
 
 describe("Telegram connection readiness diagnostics", () => {
   it("integrations-telegram-readiness-001 reports a verified domain for a 200 probe with length 5000", async () => {

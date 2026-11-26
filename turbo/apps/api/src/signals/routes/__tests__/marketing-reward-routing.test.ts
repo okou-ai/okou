@@ -22,7 +22,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("marketing-reward-routing-002 a Marketing acknowledgement cannot fabricate money and a retained pending request can be funded later exactly once", async () => {
   mockEnv("ENV", "development");

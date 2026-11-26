@@ -21,7 +21,7 @@ const context = testContext();
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo";
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 // Members are unique per case; the staff organization identity only selects
 // the production staff gate, so one hash-colliding org serves the file.
 const staffOrgId = createUniqueStaffOrgIdFixture();

@@ -27,7 +27,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const TOPIC = "discord:changed";
 const WORKSPACE_NAME = "Discord test workspace";
 const GUILD_ID = "1559819014036000790";
@@ -172,7 +172,7 @@ async function resolveInstallLink(invite: string) {
   };
 }
 
-const RESOLVED_INSTALL_LINK = {
+const RESOLVED_INSTALL_LINK = Object.freeze({
   body: {
     url: `https://preview-app.example/settings/discord/install?guild_id=${GUILD_ID}`,
     guildId: GUILD_ID,
@@ -187,7 +187,7 @@ const RESOLVED_INSTALL_LINK = {
     },
   ],
   published: 0,
-};
+});
 
 async function installLinkStatus(respond: () => Response): Promise<number> {
   const admin = await workspace().member("admin");

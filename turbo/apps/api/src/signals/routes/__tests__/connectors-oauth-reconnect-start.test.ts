@@ -98,7 +98,9 @@ async function deleteDuringReconnectConsent(owner: ApiTestUser) {
   server.use(
     http.delete(
       "https://api.github.com/applications/github-client-id/grant",
-      () => new HttpResponse(null, { status: 204 }),
+      () => {
+        return new HttpResponse(null, { status: 204 });
+      },
     ),
   );
   const account = await connectGithub(owner);

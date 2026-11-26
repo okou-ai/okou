@@ -15,6 +15,7 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { skillImportRoutes } from "../skill-import";
 import { workflowsRoutes } from "../workflows";
 import { createRouteMocks } from "./helpers/route-test";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 
@@ -297,7 +298,7 @@ describe("POST /api/skill-import/sessions", () => {
 
   it("skill-import.bdd-003 issues an upload session for the workspace member", async () => {
     const member = newMember();
-    const before = Date.now();
+    const before = now();
     const session = await openSession(member);
 
     expect(session.uploadUrl).toBe(

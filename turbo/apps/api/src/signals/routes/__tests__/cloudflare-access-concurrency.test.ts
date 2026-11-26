@@ -19,42 +19,49 @@ interface Actor {
   readonly role: "org:admin" | "org:member";
 }
 
-const sessions = new Map<string, Actor>();
+function headersOf(actor: Actor) {
+  return { authorization: `Bearer clerk-session-${actor.userId}` };
+}
 
-/** Clerk resolves each bearer session to the identity it was issued for. */
-function installSessions() {
+/**
+ * Clerk resolves each bearer session to the identity it was issued for. Each
+ * sign-in adds its session in front of the ones the case already issued; the
+ * shared mocks are reset between cases.
+ */
+function signedIn(role: Actor["role"], orgId = `org_${randomUUID()}`): Actor {
+  const actor = { userId: `user_${randomUUID()}`, orgId, role };
+  const authorization = headersOf(actor).authorization;
+  const issued =
+    context.mocks.clerk.authenticateRequest.getMockImplementation();
   context.mocks.clerk.authenticateRequest.mockImplementation(
     (request: unknown) => {
       const header =
         request instanceof Request
           ? (request.headers.get("authorization") ?? "")
           : "";
-      const actor = sessions.get(header);
-      if (!actor) {
-        return Promise.resolve({ isAuthenticated: false, toAuth: () => null });
+      if (header === authorization) {
+        return Promise.resolve({
+          isAuthenticated: true,
+          toAuth: () => {
+            return {
+              userId: actor.userId,
+              orgId: actor.orgId,
+              orgRole: actor.role,
+            };
+          },
+        });
+      }
+      if (issued) {
+        return issued(request);
       }
       return Promise.resolve({
-        isAuthenticated: true,
+        isAuthenticated: false,
         toAuth: () => {
-          return {
-            userId: actor.userId,
-            orgId: actor.orgId,
-            orgRole: actor.role,
-          };
+          return null;
         },
       });
     },
   );
-}
-
-function headersOf(actor: Actor) {
-  return { authorization: `Bearer clerk-session-${actor.userId}` };
-}
-
-function signedIn(role: Actor["role"], orgId = `org_${randomUUID()}`): Actor {
-  const actor = { userId: `user_${randomUUID()}`, orgId, role };
-  sessions.set(headersOf(actor).authorization, actor);
-  installSessions();
   return actor;
 }
 

@@ -17,7 +17,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 const APP_ORIGIN = new URL(apiTestEnvironment.APP_URL).origin;
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PLAN_PRO = apiTestEnvironment.OKOU_PRICE_USAGE_PACK_PLAN_PRO;
 const PLAN_TEAM = apiTestEnvironment.OKOU_PRICE_USAGE_PACK_PLAN_TEAM;
 const PACK_PRICE = {
@@ -28,10 +28,10 @@ const PACK_PRICE = {
 } as const;
 const PACK_BONUS = { 20: 400, 50: 2600, 100: 8700, 200: 22_200 } as const;
 const SAVED_CARD = "pm_usage_pack_saved_card";
-const redirects = {
+const redirects = Object.freeze({
   successUrl: `${APP_ORIGIN}/billing?usage=success`,
   cancelUrl: `${APP_ORIGIN}/billing?usage=canceled`,
-};
+});
 
 type PackUsd = 0 | 20 | 50 | 100 | 200;
 

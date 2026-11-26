@@ -14,7 +14,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const app = setupApp({
   context,
   routes: [...workflowsRoutes, ...workflowAutomationsRoutes],

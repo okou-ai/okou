@@ -24,7 +24,7 @@ const DAY_SECONDS = 86_400;
 const PERIOD_SECONDS = 100 * DAY_SECONDS;
 // Keeps each proration just above its whole-cent value while the request runs.
 const SLACK_SECONDS = 3600;
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function stripeId(prefix: string): string {
   return `${prefix}_${randomUUID().slice(0, 12)}`;

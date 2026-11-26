@@ -7,7 +7,7 @@ import { iosPushRegistrationsRoutes } from "../ios-push-registrations";
 import { authenticateIosSession } from "./helpers/ios-push";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const push = () => {
   return setupApp({ context, routes: iosPushRegistrationsRoutes })(
     iosPushRegistrationsContract,

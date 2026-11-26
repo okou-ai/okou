@@ -23,7 +23,7 @@ import {
 
 const context = testContext();
 
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface TeamsDelivery {
   readonly type: unknown;

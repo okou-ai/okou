@@ -14,8 +14,8 @@ import { marketingRewardConsumer } from "./helpers/marketing-reward-consumer";
 
 const context = testContext();
 const api = createAuthOrgBddApi(context);
-const invitedAt = new Date("2026-10-05T09:30:00.000Z");
-const expiresAt = new Date(invitedAt.getTime() + 24 * 60 * 60 * 1000);
+const invitedAt = Date.parse("2026-10-05T09:30:00.000Z");
+const expiresAt = invitedAt + 24 * 60 * 60 * 1000;
 
 type ClerkInvitationAuthority =
   { readonly status: "pending" | "accepted" } | { readonly status: "missing" };
@@ -61,12 +61,12 @@ async function inviteWithClerkAuthority(authority: ClerkInvitationAuthority) {
           email_address: inviteeEmail,
           role: "org:member",
           status: authority.status,
-          expires_at: expiresAt.getTime(),
+          expires_at: expiresAt,
           private_metadata: { note: privateNote },
           public_metadata: {},
           url: ticketUrl,
-          created_at: invitedAt.getTime(),
-          updated_at: invitedAt.getTime(),
+          created_at: invitedAt,
+          updated_at: invitedAt,
         });
       },
     ),
@@ -101,11 +101,11 @@ async function inviteWithClerkAuthority(authority: ClerkInvitationAuthority) {
       id: expect.any(String),
       environment: "development",
       type: "invitation.status-observed",
-      occurredAt: invitedAt.toISOString(),
+      occurredAt: new Date(invitedAt).toISOString(),
       orgId,
       userId: member.userId,
       claimId: attributed.claimId,
-      claimCreatedAt: invitedAt.toISOString(),
+      claimCreatedAt: new Date(invitedAt).toISOString(),
       sourceKey: attributed.sourceKey,
       invitationId,
     },
@@ -124,7 +124,7 @@ describe("Marketing invitation authority observation", () => {
         observation: {
           kind: "invitation",
           status: "pending",
-          expiresAt: expiresAt.toISOString(),
+          expiresAt: new Date(expiresAt).toISOString(),
         },
       },
     ]);
@@ -141,7 +141,7 @@ describe("Marketing invitation authority observation", () => {
         observation: {
           kind: "invitation",
           status: "accepted",
-          expiresAt: expiresAt.toISOString(),
+          expiresAt: new Date(expiresAt).toISOString(),
         },
       },
     ]);

@@ -35,7 +35,7 @@ async function issueCliToken(actor: ApiTestUser): Promise<string> {
   return issued.body.access_token;
 }
 
-const sessionHeaders = { authorization: "Bearer clerk-session" };
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
 /** Given of 002: an onboarded Pro admin with a native Codex subscription model. */
 async function onboardProAdminWithCodexSubscription(): Promise<void> {
@@ -99,8 +99,11 @@ async function switchToLunaWithoutSettings() {
   );
 }
 
-const astraHigh = { "gpt-6-astra": { effort: "high" } };
-const bothSettings = { ...astraHigh, "gpt-6-luna": { effort: "low" } };
+const astraHigh = Object.freeze({ "gpt-6-astra": { effort: "high" } });
+const bothSettings = Object.freeze({
+  ...astraHigh,
+  "gpt-6-luna": { effort: "low" },
+});
 
 function identity(actor: ApiTestUser) {
   return {

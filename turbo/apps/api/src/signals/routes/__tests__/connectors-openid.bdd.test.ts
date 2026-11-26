@@ -22,7 +22,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const STEAM_ID = "76561198000000000";
 const STEAM_ENDPOINT = "https://steamcommunity.com/openid/login";
 const STEAM_TARGET = { kind: "builtin", connectorSlug: "steam" } as const;

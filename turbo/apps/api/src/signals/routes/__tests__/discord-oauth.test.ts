@@ -21,9 +21,14 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const API = "https://discord.com/api/v10";
-const INSTALL_SCOPES = ["identify", "guilds", "bot", "applications.commands"];
+const INSTALL_SCOPES = Object.freeze([
+  "identify",
+  "guilds",
+  "bot",
+  "applications.commands",
+]);
 const PROVIDER_DETAIL = "provider-private-detail-7f3a";
 
 interface Member {

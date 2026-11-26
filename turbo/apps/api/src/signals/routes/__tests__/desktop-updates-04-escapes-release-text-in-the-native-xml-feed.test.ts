@@ -5,10 +5,10 @@ import { createDesktopUpdatePublicApi } from "./helpers/desktop-update-public";
 
 const context = testContext();
 const desktop = createDesktopUpdatePublicApi(context);
-const releaseText = {
+const releaseText = Object.freeze({
   name: "Okou & <native>",
   notes: 'Text "quoted" <script>',
-};
+});
 
 test("desktop-updates-04-escapes-release-text-in-the-native-xml-feed-001 escapes the release title and notes in the Sparkle feed", async () => {
   desktop.mockDesktopUpdateManifest(

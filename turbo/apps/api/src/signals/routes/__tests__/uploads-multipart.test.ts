@@ -9,7 +9,7 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const MiB = 1024 * 1024;
 
 interface Actor {

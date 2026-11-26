@@ -23,7 +23,7 @@ import { inlineSshKey } from "./helpers/ssh-credential";
 import { vncConnectionBody } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;

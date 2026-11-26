@@ -14,7 +14,7 @@ import { webhooksStripeRoutes } from "../webhooks-stripe";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("webhooks-stripe-credit-purchase-001 grants a paid credit invoice once across distinct webhook events", async () => {
   mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_credit_purchase");

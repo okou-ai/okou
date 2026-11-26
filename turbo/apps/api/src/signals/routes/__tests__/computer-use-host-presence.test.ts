@@ -12,7 +12,7 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 
 const context = testContext();
 const computerUse = createComputerUseBddApi(context);
-const sessionHeaders = { authorization: "Bearer clerk-session" };
+const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface PresenceHost {
   readonly actor: ApiTestUser;

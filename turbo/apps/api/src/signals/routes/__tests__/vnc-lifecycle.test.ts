@@ -14,9 +14,10 @@ import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Owner {
   readonly orgId: string;
@@ -111,7 +112,7 @@ async function deliverClerkEvent(type: string, data: Record<string, unknown>) {
       body: JSON.stringify({ type, data }),
       extraHeaders: {
         "svix-id": `msg_${randomUUID()}`,
-        "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+        "svix-timestamp": String(Math.floor(now() / 1000)),
         "svix-signature": "v1,signed-by-clerk",
       },
     }),
@@ -124,10 +125,10 @@ async function deliverClerkEvent(type: string, data: Record<string, unknown>) {
 const passwordAuthentication = (password: string) => {
   return { method: "vnc_password" as const, password };
 };
-const x509Vnc = {
+const x509Vnc = Object.freeze({
   type: "x509_vnc" as const,
   trust: { mode: "system" as const },
-};
+});
 
 async function createSavedCredential(owner: Owner, name: string) {
   signIn(owner);

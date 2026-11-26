@@ -18,7 +18,7 @@ import { assertPublicConnectorCatalogHasNoPrivateFields } from "./helpers/connec
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("onboarding-sources-002 lists the visible onboarding sources in recommendation order", async () => {
   mockGitHubConnectorOAuth();

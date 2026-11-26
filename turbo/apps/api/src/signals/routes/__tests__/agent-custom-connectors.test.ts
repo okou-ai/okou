@@ -42,6 +42,10 @@ test("agent-custom-connectors-001 returns the permission bundle of a custom conn
   );
 
   expect(response.body.ref).toBe("builtin:slack@1");
-  expect(response.body.permissions.map((p) => p.name)).toContain("chat:write");
+  expect(
+    response.body.permissions.map((p) => {
+      return p.name;
+    }),
+  ).toContain("chat:write");
   expect(response.body.defaultPolicies["chat:write"]).toBe("deny");
 });

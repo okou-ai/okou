@@ -12,6 +12,7 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 const api = createAuthDeviceApiActions(context);
@@ -317,7 +318,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       workspaceName: "Active Account",
     });
     const requestedAccountId = `acct_requested_${randomUUID()}`;
-    const nowSeconds = Math.floor(Date.now() / 1000);
+    const nowSeconds = Math.floor(now() / 1000);
     const requested = await connectCodex(user, {
       accountId: requestedAccountId,
       workspaceName: "Requested Account",
@@ -377,7 +378,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const a = await connectCodex(user, {
       accountId: accountA,
       workspaceName: "Account A",
-      accessTokenExpiresAt: Math.floor(Date.now() / 1000) - 60,
+      accessTokenExpiresAt: Math.floor(now() / 1000) - 60,
     });
     const b = await connectCodex(user, {
       accountId: accountB,

@@ -26,7 +26,10 @@ import {
 const context = testContext();
 const mocks = createRouteMocks(context);
 const codexFixture = createCodexExpiryFixture(context);
-const routes = [...meModelProvidersListRoutes, ...meModelProvidersUpsertRoutes];
+const routes = Object.freeze([
+  ...meModelProvidersListRoutes,
+  ...meModelProvidersUpsertRoutes,
+]);
 
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const CODEX_CONSUME_URL =

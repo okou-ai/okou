@@ -10,7 +10,7 @@ import { tailscaleRoutes } from "../tailscale";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function tailscale(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(

@@ -12,7 +12,7 @@ import {
   type VncAuthentication,
   vncCredentialsContract,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { createStore, type Store } from "ccstate";
+import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import type { input as zInput } from "zod";
 
@@ -58,7 +58,7 @@ if (!leafMatch) {
   throw new Error("OpenSSL did not produce a disposable leaf certificate");
 }
 const leafCertificate = leafMatch[0];
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 type CreateHostBody = zInput<typeof createVncConnectionRequestSchema>;
 type UpdateHostBody = zInput<typeof updateVncConnectionRequestSchema>;
@@ -102,35 +102,44 @@ async function sshGateway(displayName: string) {
   return created.body;
 }
 
-async function member(
-  store: Store,
-  orgId = `org_${randomUUID()}`,
-  userId = `user_${randomUUID()}`,
-): Promise<Actor> {
-  await store.set(
-    seedOrgMembership$,
-    { orgId, userId, role: "admin" },
-    context.signal,
-  );
-  return { orgId, userId };
+/** A Clerk directory the case seeds with workspace admins. */
+function clerkDirectory() {
+  const store = createStore();
+  return async (
+    orgId = `org_${randomUUID()}`,
+    userId = `user_${randomUUID()}`,
+  ): Promise<Actor> => {
+    await store.set(
+      seedOrgMembership$,
+      { orgId, userId, role: "admin" },
+      context.signal,
+    );
+    return { orgId, userId };
+  };
 }
 
 /** A signed-in workspace admin whose secrets are sealed by the KMS double. */
-async function signedInAdmin(): Promise<Actor & { readonly store: Store }> {
+async function signedInAdmin() {
   useSecretKmsProbe();
-  const store = createStore();
-  const admin = await member(store);
+  const join = clerkDirectory();
+  const admin = await join();
   signIn(admin);
-  return { ...admin, store };
+  return { ...admin, join };
 }
 
 function signIn(actor: Actor) {
   createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
 }
 
-const systemTrust = { mode: "system" as const };
-const x509Vnc = { type: "x509_vnc" as const, trust: systemTrust };
-const x509None = { type: "x509_none" as const, trust: systemTrust };
+const systemTrust = Object.freeze({ mode: "system" as const });
+const x509Vnc = Object.freeze({
+  type: "x509_vnc" as const,
+  trust: systemTrust,
+});
+const x509None = Object.freeze({
+  type: "x509_none" as const,
+  trust: systemTrust,
+});
 const vncPassword = (password: string) => {
   return { method: "vnc_password" as const, password };
 };
@@ -500,8 +509,8 @@ async function probeAsOtherIdentity(kind: "peer" | "elsewhere") {
   });
   const other =
     kind === "peer"
-      ? await member(admin.store, admin.orgId)
-      : await member(admin.store, `org_${randomUUID()}`, admin.userId);
+      ? await admin.join(admin.orgId)
+      : await admin.join(`org_${randomUUID()}`, admin.userId);
   signIn(other);
   return {
     credentials: await listCredentials(),
@@ -557,7 +566,7 @@ async function probeAsOtherIdentity(kind: "peer" | "elsewhere") {
   };
 }
 
-const expectedProbe = {
+const expectedProbe = Object.freeze({
   credentials: [],
   hosts: [],
   reusedCredentialId: 409,
@@ -565,12 +574,12 @@ const expectedProbe = {
   foreignReference: 404,
   credentialUpdate: 404,
   hostDeletion: 404,
-};
+});
 
 describe("VNC owner configuration", () => {
   it("vnc-configuration-023 hides configuration from signed-out callers and non-members", async () => {
     useSecretKmsProbe();
-    const workspace = await member(createStore());
+    const workspace = await clerkDirectory()();
     const signedOut = await credentials().list({ headers: {} });
     signIn({ orgId: workspace.orgId, userId: `user_${randomUUID()}` });
     const nonMemberList = await credentials().list({ headers });
@@ -955,7 +964,7 @@ describe("VNC owner configuration", () => {
     const host = await inlinePasswordHost("Own desk", "own.example.com");
     const hostsBefore = await listHosts();
     const credentialsBefore = await listCredentials();
-    const peer = await member(admin.store, admin.orgId);
+    const peer = await admin.join(admin.orgId);
     signIn(peer);
     const foreign = await savedPasswordCredential("Foreign credential");
 
@@ -993,7 +1002,7 @@ describe("VNC owner configuration", () => {
     const host = await inlinePasswordHost("Own desk", "own.example.com");
     const hostsBefore = await listHosts();
     const credentialsBefore = await listCredentials();
-    const peer = await member(admin.store, admin.orgId);
+    const peer = await admin.join(admin.orgId);
     signIn(peer);
     const foreignGateway = await sshGateway("Foreign gateway");
     const peerSshBefore = await accept(
@@ -1699,7 +1708,7 @@ describe("VNC owner configuration (endpoints and routes)", () => {
   it("vnc-configuration-028 (1/2) refuses private direct hosts and keeps a tunneled host on the owner's SSH route", async () => {
     const admin = await signedInAdmin();
     const gateway = await sshGateway("VNC gateway");
-    const other = await member(admin.store, admin.orgId);
+    const other = await admin.join(admin.orgId);
 
     const directOutcomes = [];
     for (const host of ["127.0.0.1", "0:0:0:0:0:0:0:1", "::ffff:192.168.1.8"]) {

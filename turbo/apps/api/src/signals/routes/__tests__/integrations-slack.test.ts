@@ -116,14 +116,14 @@ function asRole(
   return { ...actor, orgRole };
 }
 
-const PNG_FILE: SlackFileServed = {
+const PNG_FILE: SlackFileServed = Object.freeze({
   id: "F-OK",
   name: "pic.png",
   mimetype: "image/png",
   size: 18,
   channels: ["C123"],
   bytes: "real file contents",
-};
+});
 
 describe("GET /api/integrations/slack", () => {
   it("integrations-slack-003 offers install and connect links to an unconnected admin", async () => {

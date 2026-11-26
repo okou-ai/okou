@@ -22,7 +22,7 @@ import { webhooksStripeRoutes } from "../webhooks-stripe";
 
 const context = testContext();
 
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PRO_PRICE = apiTestEnvironment.OKOU_PRICE_PRO;
 const TEAM_PRICE = apiTestEnvironment.OKOU_PRICE_TEAM;
 const CONCURRENCY_PRICE = apiTestEnvironment.OKOU_PRICE_CONCURRENCY;

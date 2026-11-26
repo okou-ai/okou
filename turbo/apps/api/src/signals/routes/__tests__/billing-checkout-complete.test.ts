@@ -22,7 +22,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 const APP_ORIGIN = "http://localhost:3002";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const PRO_PRICE = apiTestEnvironment.OKOU_PRICE_PRO;
 const TEAM_PRICE = apiTestEnvironment.OKOU_PRICE_TEAM;
 const USAGE_PACK_PLAN_PRO_PRICE =

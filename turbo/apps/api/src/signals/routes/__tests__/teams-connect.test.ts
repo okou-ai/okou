@@ -17,7 +17,7 @@ import {
 const context = testContext();
 const memberships = createStore();
 
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function client() {
   return setupApp({ context, routes: teamsConnectRoutes })(

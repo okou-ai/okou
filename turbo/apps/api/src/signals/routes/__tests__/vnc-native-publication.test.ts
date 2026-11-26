@@ -24,7 +24,7 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { certificateChain } from "./helpers/vnc-synthetic-client";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;

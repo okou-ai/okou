@@ -6,6 +6,7 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { uniquePhoneHandle } from "./helpers/api-bdd-agentphone";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createDeferredPromise } from "../../utils";
 
 const context = testContext();
 const integrations = createBddIntegrationApi(context);
@@ -16,11 +17,13 @@ interface Latch {
 }
 
 function latch(): Latch {
-  let open = (): void => {};
-  const promise = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return { promise, open };
+  const deferred = createDeferredPromise<void>(context.signal);
+  const open = (): void => {
+    if (!deferred.settled()) {
+      deferred.resolve();
+    }
+  };
+  return { promise: deferred.promise, open };
 }
 
 /** AgentPhone holds the first verification text until released. */

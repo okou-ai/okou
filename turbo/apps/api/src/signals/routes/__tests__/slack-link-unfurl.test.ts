@@ -18,6 +18,7 @@ import {
   createPublicSlackOrgApi,
   uniqueSlackUserId,
 } from "./helpers/slack-public-install";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 
@@ -244,7 +245,7 @@ describe("Slack link previews", () => {
     await integrations.requestSlackEvent(
       body,
       {
-        "x-slack-request-timestamp": String(Math.floor(Date.now() / 1000)),
+        "x-slack-request-timestamp": String(Math.floor(now() / 1000)),
         "x-slack-signature": "v0=invalid",
       },
       [401],

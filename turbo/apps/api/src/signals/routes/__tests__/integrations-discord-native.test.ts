@@ -30,7 +30,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 const DISCORD_API = "https://discord.com/api/v10";
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 

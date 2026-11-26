@@ -10,7 +10,6 @@ import type { IosCompatibilityPolicy } from "@okouai/api-contracts/contracts/ios
 import { createStore } from "ccstate";
 
 import { healthContract } from "@okouai/api-contracts/contracts/health";
-import { sql } from "drizzle-orm";
 import { closeDbPool, db } from "../lib/db";
 import desktopCompatibilityConfig from "../lib/desktop-compatibility.json";
 import { clearMockedEnv } from "../lib/env";
@@ -89,13 +88,15 @@ export function testContext(): TestContext {
   // of inside the first case. The health route has no business side effects.
   beforeAll(async () => {
     const closeDatabase = beginCaseDatabase();
-    try {
+    const warmed = await settleIncludingAbort(async () => {
       await setupApp({ context, routes: healthRoutes })(healthContract).check(
         {},
       );
-      await db().execute(sql`select 1`);
-    } finally {
-      await closeDatabase();
+      await db().execute("select 1");
+    });
+    await closeDatabase();
+    if (!warmed.ok) {
+      throw warmed.error;
     }
   });
 

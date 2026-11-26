@@ -13,7 +13,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const memberships = createStore();
 
-const SESSION = { authorization: "Bearer clerk-session" };
+const SESSION = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("Feishu browser connection", () => {
   it("feishu-browser-connect-001 rejects a link with an invalid signature for connection and status", async () => {

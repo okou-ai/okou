@@ -12,7 +12,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { credentials } from "./helpers/codex-reset-credit-expiry";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const providers = setupApp({ context, routes: meModelProvidersUpsertRoutes });
 const preferences = setupApp({ context, routes: userModelPreferenceRoutes });
 

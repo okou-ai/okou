@@ -16,15 +16,15 @@ import { webhooksStripeRoutes } from "../webhooks-stripe";
 const context = testContext();
 
 const APP_ORIGIN = new URL(apiTestEnvironment.APP_URL).origin;
-const headers = { authorization: "Bearer clerk-session" };
-const CAMPAIGN = {
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const CAMPAIGN = Object.freeze({
   priceId: "price_redeem_zero100",
   couponId: "coupon_redeem_zero100",
-};
-const redirects = {
+});
+const redirects = Object.freeze({
   successUrl: `${APP_ORIGIN}/redeem/ZERO100?stripe=success`,
   cancelUrl: `${APP_ORIGIN}/redeem/ZERO100?stripe=cancel`,
-};
+});
 
 function sessionId(prefix: string): string {
   return `${prefix}_${randomUUID().slice(0, 8)}`;

@@ -64,18 +64,18 @@ function accounts() {
   );
 }
 
-const OPENAI: ConnectorAccountTarget = {
+const OPENAI: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "openai",
-};
-const GITHUB: ConnectorAccountTarget = {
+});
+const GITHUB: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "github",
-};
-const PUBLIC_MCP: ConnectorAccountTarget = {
+});
+const PUBLIC_MCP: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "public-mcp",
-};
+});
 
 function custom(customConnectorId: string): ConnectorAccountTarget {
   return { kind: "custom", customConnectorId };
@@ -285,9 +285,9 @@ function ids(connections: readonly ConnectorAccountConnection[]) {
   });
 }
 
-const NOT_FOUND = {
+const NOT_FOUND = Object.freeze({
   error: { code: "NOT_FOUND", message: "Connector account not found" },
-};
+});
 
 describe("connector account lifecycle routes", () => {
   it("connector-accounts-022 projects a no-auth custom HTTP account as connected", async () => {

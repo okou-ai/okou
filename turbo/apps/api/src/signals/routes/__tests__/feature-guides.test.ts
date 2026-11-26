@@ -17,7 +17,7 @@ import { featureGuidesRoutes } from "../feature-guides";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const BASE = Date.parse("2026-10-28T00:00:00Z");
 
 interface Actor {

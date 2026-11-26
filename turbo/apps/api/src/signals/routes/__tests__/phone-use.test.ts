@@ -15,7 +15,7 @@ const context = testContext();
 
 // This test tenant shares a staff-org identity hash, so staff-only gates run for real.
 const STAFF_ORG_ID = "org_usage_pack_checkout_test_lgD7Q3";
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface PhoneUser {
   readonly userId: string;

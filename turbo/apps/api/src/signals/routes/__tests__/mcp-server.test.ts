@@ -152,7 +152,10 @@ async function listToolsOutcome(token: string) {
   return { status: response.status, body: response.body };
 }
 
-const invalidToken = { status: 401, body: { error: "invalid_token" } };
+const invalidToken = Object.freeze({
+  status: 401,
+  body: { error: "invalid_token" },
+});
 
 describe("external MCP authentication and transport", () => {
   it("mcp-server-002 rejects a token issued for another resource", async () => {

@@ -30,10 +30,10 @@ const chats = createChatFilesBddApi(context);
 const access = createChatConnectorAccessApi(context);
 
 const FALLBACK = "__unknown__";
-const openaiTarget: ConnectorAccountTarget = {
+const openaiTarget: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "openai",
-};
+});
 
 function permissionsClient() {
   return setupApp({ context, routes: connectorPermissionsRoutes })(
@@ -300,23 +300,23 @@ describe("member connector permissions", () => {
   });
 });
 
-const slackTarget: ConnectorAccountTarget = {
+const slackTarget: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "slack",
-};
+});
 const HOUR = 60 * 60 * 1000;
 const SLACK_RULES_START = Date.parse("2026-06-01T08:00:00.000Z");
 const PATCHED_AT = SLACK_RULES_START + 10 * 60 * 1000;
-const READ_ALLOW = {
+const READ_ALLOW = Object.freeze({
   permission: "conversations:read",
   action: "allow",
   expiresAt: new Date(SLACK_RULES_START + HOUR).toISOString(),
-};
-const LATER_CHAT_WRITE = {
+});
+const LATER_CHAT_WRITE = Object.freeze({
   permission: "chat:write",
   action: "allow",
   expiresAt: new Date(PATCHED_AT + HOUR).toISOString(),
-};
+});
 const INITIAL_SLACK_GRANTS = byPermission([
   { permission: FALLBACK, action: "deny", expiresAt: null },
   { permission: "chat:write", action: "deny", expiresAt: null },

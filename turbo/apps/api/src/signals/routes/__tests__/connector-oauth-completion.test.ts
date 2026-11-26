@@ -21,10 +21,10 @@ const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 
-const githubTarget: ConnectorAccountTarget = {
+const githubTarget: ConnectorAccountTarget = Object.freeze({
   kind: "builtin",
   connectorSlug: "github",
-};
+});
 
 async function readReceipt(
   actor: ApiTestUser | null,

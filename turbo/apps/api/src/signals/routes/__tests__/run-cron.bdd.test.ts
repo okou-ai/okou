@@ -7,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { runnersRoutes } from "../runners";
+import { nowDate } from "../../../lib/time";
 
 const context = testContext();
 
@@ -43,7 +44,7 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
           heldSandboxStates: [
             {
               reuseKey: `thread:${randomUUID()}`,
-              lastCompletedAt: new Date().toISOString(),
+              lastCompletedAt: nowDate().toISOString(),
               reusableSandbox: {
                 profile: "vm0/default",
                 sourceRunId: randomUUID(),

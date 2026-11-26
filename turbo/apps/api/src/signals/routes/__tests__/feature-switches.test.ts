@@ -14,7 +14,7 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function signIn(
   userId: string,

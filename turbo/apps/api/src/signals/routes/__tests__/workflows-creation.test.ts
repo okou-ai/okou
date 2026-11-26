@@ -12,14 +12,14 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const app = setupApp({ context, routes: workflowsRoutes });
 const rethrowingApp = setupApp({
   context,
   routes: workflowsRoutes,
   rethrowErrors: true,
 });
-const files = [{ path: "reference.md", content: "附件" }];
+const files = Object.freeze([{ path: "reference.md", content: "附件" }]);
 
 function signIn() {
   createRouteMocks(context).clerk.session(
@@ -68,7 +68,7 @@ test("workflows-creation-005 does not reserve a name when attachment files confl
   ).rejects.toThrow("Workflow attachment file conflicts with a directory");
   expect(storage.writes).toHaveLength(0);
 
-  await accept(create(name, { files }), [201]);
+  await accept(create(name, { files: [...files] }), [201]);
 });
 
 test("workflows-creation-001 keeps a Workflow unlisted until its attachment is stored", async () => {
@@ -82,7 +82,7 @@ test("workflows-creation-001 keeps a Workflow unlisted until its attachment is s
     await release.promise;
   });
 
-  const creating = create(name, { files });
+  const creating = create(name, { files: [...files] });
   await writing.promise;
   const listed = await accept(
     app(workflowsCollectionContract).list({ headers, query: {} }),
@@ -112,9 +112,9 @@ test("workflows-creation-002 publishes one readable Workflow for duplicate creat
     await release.promise;
   });
 
-  const first = create(name, { files });
+  const first = create(name, { files: [...files] });
   await writing.promise;
-  const second = await accept(create(name, { files }), [201]);
+  const second = await accept(create(name, { files: [...files] }), [201]);
   release.resolve();
   await accept(first, [409]);
   const read = await readWorkflow(second.body.id);

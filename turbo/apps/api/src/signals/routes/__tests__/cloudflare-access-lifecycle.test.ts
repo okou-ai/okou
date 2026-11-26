@@ -12,9 +12,10 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { createRouteMocks } from "./helpers/route-test";
 import { inlineSshKey } from "./helpers/ssh-credential";
+import { now } from "../../../lib/time";
 
 const context = testContext();
-const headers = { authorization: "Bearer clerk-session" };
+const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 interface Actor {
   readonly userId: string;
@@ -121,7 +122,7 @@ async function deleteClerkUser(userId: string) {
       body: JSON.stringify({ type: "user.deleted", data: { id: userId } }),
       extraHeaders: {
         "svix-id": `msg_${randomUUID()}`,
-        "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+        "svix-timestamp": String(Math.floor(now() / 1000)),
         "svix-signature": "v1,signed-by-clerk",
       },
     }),
@@ -214,7 +215,13 @@ describe("Cloudflare Access lifecycle", () => {
     const memberConfigs = await listConfigs(member);
     expect(
       memberConfigs.map(({ id, scope, sshHosts }) => {
-        return { id, scope, sshHosts: sshHosts.map((host) => host.id) };
+        return {
+          id,
+          scope,
+          sshHosts: sshHosts.map((host) => {
+            return host.id;
+          }),
+        };
       }),
     ).toStrictEqual(
       expect.arrayContaining([
@@ -224,7 +231,11 @@ describe("Cloudflare Access lifecycle", () => {
     );
     expect(memberConfigs).toHaveLength(2);
     const memberHosts = await listHosts(member);
-    expect(memberHosts.map(({ id }) => id)).toStrictEqual([memberHost.id]);
+    expect(
+      memberHosts.map(({ id }) => {
+        return id;
+      }),
+    ).toStrictEqual([memberHost.id]);
   });
 
   it("cloudflare-access-lifecycle-004 converting shared Access to personal keeps the admin's host and asks members to rebind", async () => {
@@ -332,6 +343,10 @@ describe("Cloudflare Access lifecycle", () => {
 
     await deleteClerkUser(admin.userId);
     const remaining = await listHosts(member);
-    expect(remaining.map(({ id }) => id)).toStrictEqual([memberHost.id]);
+    expect(
+      remaining.map(({ id }) => {
+        return id;
+      }),
+    ).toStrictEqual([memberHost.id]);
   });
 });
