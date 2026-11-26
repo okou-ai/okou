@@ -97,9 +97,8 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
         "size",
         "url",
         "mount",
-        "skill-framework",
-        "memory-framework",
         "duplicate",
+        "memory-conflict",
         "storage-conflict",
         "instruction-conflict",
     ] {
@@ -124,19 +123,19 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
             }
             "mount" => {
                 body["contentBundles"]["skills"][0]["mountPath"] =
-                    serde_json::json!("/home/user/.codex")
+                    serde_json::json!("/home/user/.codex/skills/")
             }
-            "skill-framework" => {
-                body["contentBundles"]["skills"][0]["mountPath"] =
-                    serde_json::json!("/home/user/.claude/skills/fixture-skill");
-            }
-            "memory-framework" => {
-                let memory = &mut body["storageManifest"]["storageMounts"][1];
-                memory["name"] = serde_json::json!("memory");
-                memory["mountPath"] = serde_json::json!("/home/user/.pi/agent/memory");
+            "memory-conflict" => {
+                let mounts = body["storageManifest"]["storageMounts"]
+                    .as_array_mut()
+                    .unwrap();
+                mounts[0]["mountPath"] = serde_json::json!("/home/user/.codex/memories");
+                mounts[1]["name"] = serde_json::json!("memory");
             }
             "duplicate" => {
-                let duplicate = body["contentBundles"]["skills"][0].clone();
+                let mut duplicate = body["contentBundles"]["skills"][0].clone();
+                duplicate["mountPath"] =
+                    serde_json::json!("/home/user/.claude/skills/fixture-skill");
                 body["contentBundles"]["skills"]
                     .as_array_mut()
                     .unwrap()
@@ -181,12 +180,13 @@ fn publication_binds_member_memory_and_skill_to_the_admitted_framework() {
         let skill_path = format!("{skill_root}/fixture-skill");
         let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         body["cliAgentType"] = serde_json::json!(framework);
-        body["contentBundles"]["skills"][0]["mountPath"] = serde_json::json!(skill_path);
+        body["contentBundles"]["skills"][0]["mountPath"] =
+            serde_json::json!("/previous/framework/skills/fixture-skill");
         body["storageManifest"]["storageMounts"] = serde_json::json!([{
             "name": "memory",
             "storageId": "member-memory-id",
             "versionId": "accepted-memory-version",
-            "mountPath": memory_path,
+            "mountPath": "/previous/framework/memory",
             "writeback": true,
             "missingRootPolicy": "preserveParentVersion",
             "empty": true,

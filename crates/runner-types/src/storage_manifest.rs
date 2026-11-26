@@ -22,12 +22,11 @@ pub struct StorageManifest {
     pub artifacts: Vec<ArtifactEntry>,
 }
 
-/// Validate the legacy path encoding against the selected framework's skill directory.
-pub fn validate_workflow_mount(mount_path: &str, config_dir: &str) -> Result<(), String> {
-    let name = mount_path
-        .strip_prefix(config_dir)
-        .and_then(|suffix| suffix.strip_prefix("/skills/"))
-        .ok_or("Workflow skill path does not match the selected framework")?;
+/// Derive a skill destination from its name in the legacy wire field.
+pub fn workflow_mount_path(mut mount_path: String, skill_prefix: &str) -> Result<String, String> {
+    let (directory, name) = mount_path
+        .rsplit_once('/')
+        .ok_or("Missing Workflow skill name")?;
     if name.is_empty()
         || name.len() > 64
         || !name
@@ -38,7 +37,9 @@ pub fn validate_workflow_mount(mount_path: &str, config_dir: &str) -> Result<(),
     {
         return Err("Invalid Workflow skill name".into());
     }
-    Ok(())
+    let name_offset = directory.len() + 1;
+    mount_path.replace_range(..name_offset, skill_prefix);
+    Ok(mount_path)
 }
 
 #[derive(Clone, Debug, PartialEq)]

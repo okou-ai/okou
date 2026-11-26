@@ -12,7 +12,7 @@ use guest_contracts::{
 use runner_types::{
     storage_manifest::{
         INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
-        WORKFLOW_STORAGE_NAME, validate_workflow_mount,
+        WORKFLOW_STORAGE_NAME, workflow_mount_path,
     },
     types::ExecutionContext,
 };
@@ -175,31 +175,31 @@ fn normalize(
         CliFramework::Codex => (CANONICAL_CODEX_HOME_DIR, CANONICAL_CODEX_MEMORY_MOUNT_PATH),
         CliFramework::Pi => (PI_AGENT_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH),
     };
-    // The API still encodes paths for older Runners. Keep the decoded paths
-    // only when they agree with this Runner's framework layout.
-    if let Some(manifest) = &context.storage_manifest
-        && manifest
-            .artifacts
-            .iter()
-            .any(|entry| entry.vas_storage_name == "memory" && entry.mount_path != memory_path)
-    {
-        return Err("Member Memory path does not match the selected framework".into());
-    }
-    let mut paths: HashSet<String> = context
+    let manifest = context
         .storage_manifest
+        .get_or_insert_with(StorageManifest::default);
+    for entry in &mut manifest.artifacts {
+        if entry.vas_storage_name == "memory" {
+            entry.mount_path.clear();
+            entry.mount_path.push_str(memory_path);
+        }
+    }
+    let mut paths = HashSet::new();
+    for mount in manifest
+        .storages
         .iter()
-        .flat_map(|manifest| {
-            manifest
-                .storages
-                .iter()
-                .map(|s| s.mount_path.clone())
-                .chain(manifest.artifacts.iter().map(|a| a.mount_path.clone()))
-        })
-        .collect();
+        .map(|entry| &entry.mount_path)
+        .chain(manifest.artifacts.iter().map(|entry| &entry.mount_path))
+    {
+        if !paths.insert(mount.clone()) {
+            return Err("Conflicting storage mount".into());
+        }
+    }
     let mut entries = Vec::with_capacity(packages.skills.len() + 1);
+    let skill_prefix = format!("{config_dir}/skills/");
     for skill in packages.skills {
-        validate_workflow_mount(&skill.mount_path, config_dir)?;
-        if !paths.insert(skill.mount_path.clone()) {
+        let mount_path = workflow_mount_path(skill.mount_path, &skill_prefix)?;
+        if !paths.insert(mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
         entries.push(
@@ -208,7 +208,7 @@ fn normalize(
                 archive_bytes: skill.archive_bytes,
                 download_url: skill.download_url,
             }
-            .storage(WORKFLOW_STORAGE_NAME, skill.mount_path)?,
+            .storage(WORKFLOW_STORAGE_NAME, mount_path)?,
         );
     }
     let instruction_file = if let Some(reference) = packages.instructions {
@@ -230,12 +230,6 @@ fn normalize(
     } else {
         None
     };
-    let manifest = context
-        .storage_manifest
-        .get_or_insert_with(|| StorageManifest {
-            storages: Vec::new(),
-            artifacts: Vec::new(),
-        });
     manifest.storages.extend(entries);
     for template in packages.templates {
         let mount_path = template.mount_path()?;
