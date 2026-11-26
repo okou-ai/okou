@@ -237,7 +237,7 @@ artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	rewritten	78.1		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	rewritten	73.8		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-005	rewritten	155.5		src/signals/routes/__tests__/artifact-sharing.test.ts	B04
-artifacts	src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-002	planned				B06
+artifacts	src/signals/routes/__tests__/artifacts.bdd.test.ts	artifacts.bdd-002	skipped		slow-setup: Given alone 396 ms and 212 ms (cold and warm rows of one measurement run), before any host deployment request: Pro member entitlement via Stripe invoice webhook + personal model 201/123 ms, Runner group + chat prompt launching the Run to the dispatched execution with its sandbox token 196/88 ms		B06
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-001	rewritten	25.4		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-008	rewritten	33.5		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
 billing	src/signals/routes/__tests__/atom-subscription-grants.test.ts	atom-subscription-grants-009	rewritten	71.1		src/signals/routes/__tests__/atom-subscription-grants.test.ts	pilot
