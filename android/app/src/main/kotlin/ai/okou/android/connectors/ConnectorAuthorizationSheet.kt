@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
@@ -76,6 +77,7 @@ internal fun ConnectorRenameSheet(
     action: ConnectorAction?,
     save: (String) -> Unit,
     cancel: () -> Unit,
+    readFeedback: SnackbarHostState,
 ) {
     val currentLabel = account.label()
     val draft = remember(account.id) { RenameDraft(currentLabel) }
@@ -107,6 +109,7 @@ internal fun ConnectorRenameSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
+        feedback = readFeedback,
         actions = {
             OkouFormActions(
                 cancelLabel = stringResource(R.string.settings_cancel),
@@ -148,6 +151,7 @@ internal fun ConnectorAuthorizationSheet(
     canModify: Boolean,
     action: ConnectorAction?,
     cancel: () -> Unit,
+    readFeedback: SnackbarHostState,
 ) {
     val actionLabel =
         remember(account?.id) {
@@ -249,6 +253,7 @@ internal fun ConnectorAuthorizationSheet(
         cancel,
         dismissible = canDismiss,
         expandInShortWindow = true,
+        feedback = readFeedback,
         actions = {
             OkouFormActions(
                 cancelLabel = stringResource(R.string.settings_cancel),

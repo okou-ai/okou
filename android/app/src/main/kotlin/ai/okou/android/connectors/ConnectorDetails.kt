@@ -8,6 +8,7 @@ import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.isShortSettingsPanelWindow
@@ -42,6 +43,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -106,9 +108,9 @@ internal fun ConnectorDetails(
         }
         return
     }
-    val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
-    val hasAccountContent =
-        state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
+    val accountContent = state.selectedAccountContent
+    val accounts = accountContent.orEmpty()
+    val hasAccountContent = accountContent != null
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
@@ -174,6 +176,16 @@ internal fun ConnectorDetails(
     }
 
     val confirmingDisconnect = disconnectImpact != null
+    val accountNotice = state.accounts.notice().takeIf { hasAccountContent }
+    val detailNotice =
+        state.detail
+            .notice(
+                if (detail == null) R.string.connector_load_failed
+                else R.string.connector_refresh_failed,
+            )
+            .takeUnless { detailUnavailable }
+    val serviceNotice =
+        listOfNotNull(detailNotice, accountNotice).maxByOrNull(ConnectorReadNotice::round)
 
     val authorization = action?.authorization
     LaunchedEffect(authorization) {
@@ -357,13 +369,6 @@ internal fun ConnectorDetails(
                         model.showPermissions()
                     }
                 }
-                if (
-                    !detailUnavailable &&
-                        hasAccountContent &&
-                        state.accounts.failure == ConnectorReadFailure.Unavailable
-                ) {
-                    ContentReadFeedback(R.string.connector_accounts_failed)
-                }
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (rememberContentReadSkeleton()) {
                 val label = stringResource(R.string.connector_loading)
@@ -376,18 +381,9 @@ internal fun ConnectorDetails(
                 }
             }
         }
-        if (panel == null && entry != null && !detailUnavailable) {
-            val notice =
-                listOfNotNull(
-                        state.detail.notice(
-                            if (detail == null) R.string.connector_load_failed
-                            else R.string.connector_refresh_failed,
-                        ),
-                        state.accounts.notice().takeIf { hasAccountContent },
-                    )
-                    .maxByOrNull(ConnectorReadNotice::round)
+        if (panel == null && entry != null) {
             ConnectorReadFeedbackHost(
-                notice,
+                serviceNotice,
                 announcements,
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
             )
@@ -421,6 +417,11 @@ internal fun ConnectorDetails(
                             ::dismissPanel,
                             dismissible = !busy,
                             back = if (account.id == initialAccountId) ::dismissPanel else null,
+                            feedback =
+                                rememberConnectorReadFeedback(
+                                    accountNotice.takeUnless { confirmingDisconnect },
+                                    announcements,
+                                ),
                         ) {
                             ConnectorAccountActions(
                                 account,
@@ -468,6 +469,8 @@ internal fun ConnectorDetails(
                             action,
                             save = { model.rename(account.id, it) },
                             cancel = ::dismissPanel,
+                            readFeedback =
+                                rememberConnectorReadFeedback(accountNotice, announcements),
                         )
                     }
                 ConnectorPanel.Authorize ->
@@ -480,6 +483,11 @@ internal fun ConnectorDetails(
                         canModify = canModify,
                         action = action,
                         cancel = ::dismissPanel,
+                        readFeedback =
+                            rememberConnectorReadFeedback(
+                                if (detail == null) accountNotice else serviceNotice,
+                                announcements,
+                            ),
                     )
                 null -> Unit
             }
@@ -571,7 +579,7 @@ internal fun ConnectorSheet(
     expandInShortWindow: Boolean = false,
     back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
-    feedback: (@Composable () -> Unit)? = null,
+    feedback: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shortWindow = isShortSettingsPanelWindow()
@@ -581,7 +589,12 @@ internal fun ConnectorSheet(
         if (fullScreen)
             MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
         else MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp)
-    SettingsModal(dismiss, dismissible, fullScreen) { centered ->
+    SettingsModal(
+        dismiss,
+        dismissible,
+        fullScreen,
+        snackbar = feedback.takeUnless { fullScreen },
+    ) { centered ->
         val frame =
             if (fullScreen) Modifier.fillMaxSize()
             else
@@ -636,12 +649,12 @@ internal fun ConnectorSheet(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         content = content,
                     )
-                    if (feedback != null) {
+                    if (fullScreen && feedback != null) {
                         Box(
                             Modifier.matchParentSize().padding(bottom = 8.dp),
                             contentAlignment = Alignment.BottomCenter,
                         ) {
-                            feedback()
+                            WorkspaceFeedbackHost(feedback, Modifier)
                         }
                     }
                 }
@@ -664,12 +677,11 @@ private fun ConnectorPermissionSheet(
         stringResource(R.string.connector_permissions_title, service),
         close,
         actions = { ConnectorCloseAction(close) },
-        feedback = {
-            ConnectorReadFeedbackHost(
+        feedback =
+            rememberConnectorReadFeedback(
                 permissions.notice().takeIf { permissions.data != null },
                 announcements,
-            )
-        },
+            ),
     ) {
         Text(stringResource(R.string.connector_permissions_copy), style = connectorBodyType())
         when {

@@ -81,6 +81,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -98,10 +99,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 
 @Composable
 internal fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
@@ -376,6 +383,7 @@ internal fun SettingsModal(
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     reserveTopInset: Boolean = false,
+    snackbar: SnackbarHostState? = null,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -396,9 +404,19 @@ internal fun SettingsModal(
                 shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                if (fitContentInsets) {
-                    Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content(true) }
-                } else content(true)
+                val body: @Composable () -> Unit = {
+                    if (fitContentInsets) {
+                        Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
+                            content(true)
+                        }
+                    } else content(true)
+                }
+                if (snackbar == null) body()
+                else
+                    BoxWithConstraints(propagateMinConstraints = true) {
+                        body()
+                        SettingsModalSnackbar(snackbar, maxWidth, above = false)
+                    }
             }
         }
     } else {
@@ -421,7 +439,17 @@ internal fun SettingsModal(
                     },
                 ),
             sheetGesturesEnabled = dismissible,
-            dragHandle = if (showDragHandle) ({ BottomSheetDefaults.DragHandle() }) else null,
+            dragHandle =
+                if (showDragHandle) {
+                    {
+                        if (snackbar == null) BottomSheetDefaults.DragHandle()
+                        else
+                            BoxWithConstraints {
+                                BottomSheetDefaults.DragHandle()
+                                SettingsModalSnackbar(snackbar, maxWidth, above = true)
+                            }
+                    }
+                } else null,
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible && confirmDismiss == null,
@@ -437,6 +465,36 @@ internal fun SettingsModal(
             }
             content(false)
         }
+    }
+}
+
+@Composable
+private fun SettingsModalSnackbar(state: SnackbarHostState, width: Dp, above: Boolean) {
+    var hasContent by remember(state) { mutableStateOf(false) }
+    if (state.currentSnackbarData == null && !hasContent) return
+
+    // The host can finish its exit animation while the popup remains measured.
+    Popup(popupPositionProvider = remember(above) { SettingsModalSnackbarPosition(above) }) {
+        Box(Modifier.onSizeChanged { hasContent = it.height > 0 }) {
+            WorkspaceFeedbackHost(state, Modifier.widthIn(max = width).padding(vertical = 8.dp))
+        }
+    }
+}
+
+private class SettingsModalSnackbarPosition(private val above: Boolean) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+        val x = (anchorBounds.left + anchorBounds.right - popupContentSize.width) / 2
+        val y =
+            if (above || anchorBounds.bottom > maxY) anchorBounds.top - popupContentSize.height
+            else anchorBounds.bottom
+        return IntOffset(x.coerceIn(0, maxX), y.coerceIn(0, maxY))
     }
 }
 
