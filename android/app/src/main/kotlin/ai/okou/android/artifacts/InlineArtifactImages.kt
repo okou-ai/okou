@@ -37,6 +37,7 @@ internal data class InlineImageState(
     val status: InlineImageStatus,
     val grant: InlineImageGrant? = null,
     val bitmap: Bitmap? = null,
+    val newlyLoaded: Boolean = false,
 )
 
 /** The workspace owns in-flight reads and retains offscreen results within a memory budget. */
@@ -124,6 +125,7 @@ internal class InlineArtifactImages(
                             else InlineImageStatus.Ready,
                             grant,
                             bitmap,
+                            newlyLoaded = bitmap != null && bitmap !== cached?.bitmap,
                         ),
                     )
                     val confirmed = grant
