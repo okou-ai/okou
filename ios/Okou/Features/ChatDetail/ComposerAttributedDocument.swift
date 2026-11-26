@@ -169,7 +169,6 @@ enum ComposerAttributedDocument {
 
 /// TextKit provides atomic selection, deletion and native editing geometry.
 final class ComposerReferenceAttachment: NSTextAttachment {
-  private static let voiceType = "ai.okou.composer.recording"
   let part: MessageJSON
 
   var voiceFileIDs: [String] {
@@ -193,7 +192,6 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     self.part = part
     referenceFont = font
     super.init(data: nil, ofType: nil)
-    configureVoiceView()
   }
 
   override var accessibilityLabel: String? {
@@ -211,15 +209,6 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     else { return nil }
     self.part = part
     super.init(coder: coder)
-    configureVoiceView()
-  }
-
-  private func configureVoiceView() {
-    guard !voiceFileIDs.isEmpty else { return }
-    NSTextAttachment.registerViewProviderClass(
-      ComposerVoiceAttachmentProvider.self, forFileType: Self.voiceType)
-    fileType = Self.voiceType
-    allowsTextAttachmentView = true
   }
 
   func voiceBounds(availableWidth: CGFloat) -> CGRect {
@@ -241,7 +230,9 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect,
     glyphPosition position: CGPoint, characterIndex charIndex: Int
   ) -> CGRect {
-    if !voiceFileIDs.isEmpty { return voiceBounds(availableWidth: lineFrag.width) }
+    if !voiceFileIDs.isEmpty {
+      return voiceBounds(availableWidth: textContainer?.size.width ?? lineFrag.width)
+    }
     let font = referenceFont
     let height = ceil(font.lineHeight + 4)
     let width = min(
@@ -253,6 +244,10 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   override func image(
     forBounds imageBounds: CGRect, textContainer: NSTextContainer?, characterIndex charIndex: Int
   ) -> UIImage? {
+    if !voiceFileIDs.isEmpty {
+      // The native editor overlays the interactive control on this atomic glyph.
+      return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+    }
     let font = referenceFont
     return UIGraphicsImageRenderer(size: imageBounds.size).image { _ in
       UIColor(OkouColor.muted).setFill()

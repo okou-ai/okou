@@ -123,6 +123,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     container.expandsOnTap = isEnabled && !isFocused && !expanded
     view.prepareFocus(isFocused)
     view.notifyInputReady()
+    container.setNeedsLayout()
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerInputContainer, context: Context)
@@ -282,6 +283,7 @@ final class ComposerTextView: UITextView {
   var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
   weak var voicePlayback: ComposerVoicePlayback?
+  var layoutVoiceClips: (() -> Void)?
   /// The workspace chats this input was last rendered with, for keyboard mention activation.
   var mentionSource: ComposerMentionSource?
   private(set) var isSettlingComposition = false
@@ -541,6 +543,7 @@ final class ComposerTextView: UITextView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    layoutVoiceClips?()
     // Long placeholders truncate inside the field instead of running under the controls.
     let fitted = placeholder.sizeThatFits(bounds.size)
     placeholder.frame = CGRect(

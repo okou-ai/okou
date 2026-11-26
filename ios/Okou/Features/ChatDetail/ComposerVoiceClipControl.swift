@@ -1,30 +1,7 @@
 import SwiftUI
 import UIKit
 
-final class ComposerVoiceAttachmentProvider: NSTextAttachmentViewProvider {
-  override func loadView() {
-    guard let attachment = textAttachment as? ComposerReferenceAttachment else { return }
-    let fileIDs = attachment.voiceFileIDs
-    let fontSize = attachment.referenceFont.pointSize
-    // TextKit measures attachments separately and creates their UIKit views on main.
-    view = MainActor.assumeIsolated {
-      ComposerVoiceClipControl(fileIDs: fileIDs, fontSize: fontSize)
-    }
-  }
-
-  override func attachmentBounds(
-    for attributes: [NSAttributedString.Key: Any], location: any NSTextLocation,
-    textContainer: NSTextContainer?, proposedLineFragment: CGRect, position: CGPoint
-  ) -> CGRect {
-    guard let attachment = textAttachment as? ComposerReferenceAttachment else { return .zero }
-    // A clip measures against the container's width, so TextKit moves the entire clip
-    // to the next line when the space following the preceding text is too small.
-    return attachment.voiceBounds(
-      availableWidth: textContainer?.size.width ?? proposedLineFragment.width)
-  }
-}
-
-/// TextKit owns the clip's position and selection as one document character. The attached
+/// TextKit owns the clip's position and selection as one document character. The overlay
 /// control owns only its native rendering and forwards playback to the containing composer.
 final class ComposerVoiceClipControl: UIControl {
   static let visualHeight: CGFloat = 28
@@ -34,7 +11,7 @@ final class ComposerVoiceClipControl: UIControl {
   private let time = UILabel()
   private let bars = ComposerVoiceClipControl.barHeights.map { _ in UIView() }
   let fileIDs: [String]
-  private weak var playback: ComposerVoicePlayback?
+  private weak var editor: ComposerTextView?
   private var metadata: Task<Void, Never>?
   var duration: TimeInterval?
   private var progress = 0.0
@@ -43,8 +20,9 @@ final class ComposerVoiceClipControl: UIControl {
     max(104, ceil(font.pointSize * 6))
   }
 
-  init(fileIDs: [String], fontSize: CGFloat) {
+  init(fileIDs: [String], editor: ComposerTextView, fontSize: CGFloat) {
     self.fileIDs = fileIDs
+    self.editor = editor
     super.init(frame: .zero)
     isAccessibilityElement = true
     accessibilityTraits = .button
@@ -76,13 +54,11 @@ final class ComposerVoiceClipControl: UIControl {
     if window == nil {
       metadata?.cancel()
       metadata = nil
-      playback?.detach(self)
-      playback = nil
+      editor?.voicePlayback?.detach(self)
       return
     }
 
-    playback = editor?.voicePlayback
-    guard let playback, duration == nil, metadata == nil else { return }
+    guard let playback = editor?.voicePlayback, duration == nil, metadata == nil else { return }
     metadata = Task { [weak self, weak playback] in
       guard let playback, let fileIDs = self?.fileIDs else { return }
       let duration = await playback.duration(fileIDs)
@@ -96,11 +72,12 @@ final class ComposerVoiceClipControl: UIControl {
   override func layoutSubviews() {
     super.layoutSubviews()
     let height = min(bounds.height, Self.visualHeight)
-    chip.frame = CGRect(x: 0, y: (bounds.height - height) / 2, width: bounds.width, height: height)
+    let width = max(0, bounds.width - OkouSpace.xs)
+    chip.frame = CGRect(x: 0, y: (bounds.height - height) / 2, width: width, height: height)
     glyph.frame = CGRect(x: OkouSpace.xs, y: (height - 20) / 2, width: 20, height: 20)
-    let timeWidth = min(max(38, bounds.width * 0.39), max(0, bounds.width - 32))
+    let timeWidth = min(max(38, width * 0.39), max(0, width - 32))
     time.frame = CGRect(
-      x: bounds.width - timeWidth - OkouSpace.sm, y: 0, width: timeWidth, height: height)
+      x: width - timeWidth - OkouSpace.sm, y: 0, width: timeWidth, height: height)
     let room = max(0, time.frame.minX - glyph.frame.maxX - 2 * OkouSpace.xs)
     for (index, bar) in bars.enumerated() {
       let barHeight = Self.barHeights[index]
@@ -116,17 +93,15 @@ final class ComposerVoiceClipControl: UIControl {
     toggle()
   }
 
-  private var editor: ComposerTextView? {
-    var ancestor = superview
-    while let candidate = ancestor {
-      if let editor = candidate as? ComposerTextView { return editor }
-      ancestor = candidate.superview
+  func updateFontSize(_ fontSize: CGFloat) {
+    let size = max(12, fontSize * 0.71)
+    if time.font?.pointSize != size {
+      time.font = UIFont.monospacedDigitSystemFont(ofSize: size, weight: .regular)
     }
-    return nil
   }
 
   @discardableResult private func toggle() -> Bool {
-    guard editor?.isCurrent() == true, let playback else { return false }
+    guard editor?.isCurrent() == true, let playback = editor?.voicePlayback else { return false }
     playback.toggle(self)
     return true
   }
