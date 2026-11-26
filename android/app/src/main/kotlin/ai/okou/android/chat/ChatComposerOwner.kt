@@ -375,36 +375,46 @@ internal class ChatComposerOwner(
         uris: List<Uri>,
         replacing: String? = null,
     ) {
-        if (!connection.current() || connection.service.attachmentService == null || uris.isEmpty())
-            return
-        connection.scope.launch {
-            restoreJournal()
-            restoring?.join()
-            if (!connection.current()) return@launch
-            val selected =
-                withContext(Dispatchers.IO) {
-                    uris
-                        .filter { it.scheme == "content" }
-                        .map { it to store.contentResolver.attachmentMetadata(it) }
+        if (!connection.current() || connection.service.attachmentService == null) return
+        val contentUris = uris.filter { it.scheme == "content" }
+        if (contentUris.isEmpty()) return
+        val target = AttachmentSelectionTarget(draftKey, source)
+        connection.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val initial = mutable.value
+            mutable.value =
+                initial.copy(
+                    readingAttachmentSelections = initial.readingAttachmentSelections + target,
+                )
+            try {
+                restoreJournal()
+                restoring?.join()
+                if (!connection.current()) return@launch
+                val selected = store.readAttachmentMetadata(contentUris)
+                if (!connection.current()) return@launch
+                val journal = mutable.value.journal ?: return@launch
+                val key = target.destination(journal)
+                val draft = journal.drafts[key] ?: EditableComposerDraft()
+                val old = draft.attachments
+                val fresh = selected.map { it.second }
+                val attachments =
+                    if (replacing == null) old + fresh
+                    else {
+                        val index = old.indexOfFirst { it.key == replacing }
+                        if (index < 0) return@launch
+                        old.take(index) + fresh + old.drop(index + 1)
+                    }
+                putAttachments(connection, key, draft.copy(source = source), attachments)
+                replacing?.let(::discardAttachment)
+                selected.forEach { (uri, attachment) ->
+                    startAttachment(connection, attachment, uri)
                 }
-            if (!connection.current() || selected.isEmpty()) return@launch
-            val journal = mutable.value.journal ?: return@launch
-            // A new-chat send can move an editable draft while Android owns the picker.
-            val redirect = journal.entries[source]?.createdThreadId
-            val key = if (draftKey == "new:" && redirect != null) "thread:$redirect" else draftKey
-            val draft = journal.drafts[key] ?: EditableComposerDraft()
-            val old = draft.attachments
-            val fresh = selected.map { it.second }
-            val attachments =
-                if (replacing == null) old + fresh
-                else {
-                    val index = old.indexOfFirst { it.key == replacing }
-                    if (index < 0) return@launch
-                    old.take(index) + fresh + old.drop(index + 1)
-                }
-            putAttachments(connection, key, draft.copy(source = source), attachments)
-            replacing?.let(::discardAttachment)
-            selected.forEach { (uri, attachment) -> startAttachment(connection, attachment, uri) }
+            } finally {
+                val state = mutable.value
+                mutable.value =
+                    state.copy(
+                        readingAttachmentSelections = state.readingAttachmentSelections - target,
+                    )
+            }
         }
     }
 

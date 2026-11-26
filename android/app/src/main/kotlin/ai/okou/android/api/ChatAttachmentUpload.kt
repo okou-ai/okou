@@ -11,11 +11,12 @@ import ai.okou.android.chat.ChatAttachmentReference
 import java.io.EOFException
 import java.io.File
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.io.RandomAccessFile
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -162,7 +163,9 @@ private suspend fun File.uploadBody(
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var written = 0L
                 while (written < length) {
-                    context.ensureActive()
+                    // OkHttp runs RequestBody on its executor and expects an IO failure.
+                    if (!context.isActive)
+                        throw InterruptedIOException("Attachment upload cancelled")
                     val count =
                         input.read(buffer, 0, minOf(buffer.size.toLong(), length - written).toInt())
                     if (count < 0) throw EOFException("Chat attachment staging ended early")

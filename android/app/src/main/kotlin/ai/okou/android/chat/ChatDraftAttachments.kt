@@ -38,7 +38,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -93,12 +95,7 @@ internal fun ChatDraftAttachments(
                 expanded,
                 remoteImages,
                 threadId,
-                open = {
-                    val reference = attachment.reference
-                    if (local == null && reference != null && openUploaded != null)
-                        openUploaded(reference)
-                    else previewKey = attachment.key
-                },
+                open = { previewKey = attachment.key },
                 recover = {
                     when (attachment.failure) {
                         AttachmentFailure.SourceUnavailable -> reselect(attachment)
@@ -112,8 +109,26 @@ internal fun ChatDraftAttachments(
             )
         }
     }
-    if (preview != null)
-        DraftAttachmentPreview(preview, model.attachmentFile(preview.key)) { previewKey = null }
+    if (preview != null) {
+        key(preview.key) {
+            val file = model.attachmentFile(preview.key)
+            val cached by
+                produceState<Boolean?>(null, file, preview.staged) {
+                    value = preview.staged && withContext(Dispatchers.IO) { file.isFile }
+                }
+            val reference = preview.reference
+            if (cached == false && reference != null && openUploaded != null) {
+                LaunchedEffect(reference, openUploaded) {
+                    previewKey = null
+                    openUploaded(reference)
+                }
+            } else {
+                cached?.let { available ->
+                    DraftAttachmentPreview(preview, file, available) { previewKey = null }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -358,15 +373,16 @@ internal fun attachmentIcon(type: String) =
 private fun DraftAttachmentPreview(
     attachment: DraftChatAttachment,
     file: File,
+    cached: Boolean,
     close: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var unavailable by remember(attachment.staged) { mutableStateOf(!attachment.staged) }
+    var unavailable by remember(cached) { mutableStateOf(!cached) }
     val text by
-        produceState<String?>(null, file, attachment.staged) {
+        produceState<String?>(null, file, cached) {
             if (
-                attachment.staged &&
+                cached &&
                     (attachment.contentType.startsWith("text/", ignoreCase = true) ||
                         attachment.contentType == "application/json")
             )
@@ -435,7 +451,7 @@ private fun DraftAttachmentPreview(
             TextButton(onClick = close) { Text(stringResource(R.string.updates_close)) }
         },
         dismissButton = {
-            if (attachment.staged)
+            if (cached)
                 Row {
                     TextButton(onClick = { save.launch(attachment.filename) }) {
                         Text(stringResource(R.string.chat_attachment_save))

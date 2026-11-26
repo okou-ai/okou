@@ -136,6 +136,14 @@ data class ComposerTarget(val threadId: String? = null, val projectId: String? =
         get() = threadId?.let { "thread:$it" } ?: "new:${projectId.orEmpty()}"
 }
 
+data class AttachmentSelectionTarget(val draftKey: String, val source: String) {
+    internal fun destination(journal: ComposerJournal?): String {
+        // A new-chat send can move an editable draft while Android owns the picker.
+        val created = journal?.entries?.get(source)?.createdThreadId
+        return if (draftKey == "new:" && created != null) "thread:$created" else draftKey
+    }
+}
+
 enum class ComposerPersistence {
     Loading,
     Pending,
@@ -170,6 +178,7 @@ data class ComposerState(
     val synchronization: Map<String, ComposerSync> = emptyMap(),
     internal val receiptMessages: Map<String, ComposerMessagePreview> = emptyMap(),
     internal val attachmentProgress: Map<String, Int> = emptyMap(),
+    internal val readingAttachmentSelections: List<AttachmentSelectionTarget> = emptyList(),
 ) {
     fun draftKey(target: ComposerTarget): String {
         val redirected = journal?.entries?.get(target.key)?.createdThreadId
@@ -244,13 +253,15 @@ data class ComposerState(
 
     fun canSend(target: ComposerTarget): Boolean {
         val entry = entry(target)
-        val attachments = attachments(target)
+        val draftKey = draftKey(target)
+        val attachments = journal?.drafts?.get(draftKey)?.attachments.orEmpty()
         return journal != null &&
             persistence != ComposerPersistence.Failed &&
             (target.key !in busy || target.key in checking) &&
             entry.pending == null &&
             target.threadId?.let(::pendingNewChat) == null &&
             entry.createdThreadId == null &&
+            readingAttachmentSelections.none { it.destination(journal) == draftKey } &&
             attachments.all { it.reference != null } &&
             (!entry.text.isBlankWebDraft() || attachments.isNotEmpty())
     }

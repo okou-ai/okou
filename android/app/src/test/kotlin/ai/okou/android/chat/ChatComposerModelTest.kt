@@ -21,6 +21,7 @@ import ai.okou.android.settings.DefaultModelOptions
 import ai.okou.android.settings.DefaultModelRecord
 import ai.okou.android.settings.DefaultModelState
 import ai.okou.android.settings.ModelEffort
+import android.net.Uri
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -28,6 +29,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.ConnectException
 import kotlin.time.Duration.Companion.days
 import kotlin.time.TestTimeSource
@@ -35,6 +37,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -50,6 +53,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -506,6 +510,58 @@ internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun aPickerResultBlocksOnlyItsDraftUntilTheSelectionCanBeSentOrRemoved() =
+        check { service, store, create ->
+            service.attachmentService =
+                object : ChatAttachmentService {
+                    override suspend fun uploadChatAttachment(
+                        file: File,
+                        attachment: DraftChatAttachment,
+                        progress: (Long) -> Unit,
+                    ): ChatAttachmentReference = error("An unreadable selection cannot upload")
+
+                    override suspend fun saveAttachmentDraft(
+                        target: ServerDraftTarget,
+                        text: String,
+                        attachments: List<ChatAttachmentReference>,
+                    ) = error("An unreadable selection cannot sync")
+                }
+            val model = create(false, identity)
+            val other = ComposerTarget(threadId = CHAT_PROJECT)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "Include the selected file")
+            model.edit(other, "Another draft")
+            assertTrue(model.uiState.value.canSend(existing))
+
+            val selection = Uri.parse("content://unavailable-test-document/file.txt")
+            shadowOf(store.contentResolver)
+                .registerInputStream(
+                    selection,
+                    object : InputStream() {
+                        override fun read(): Int = throw IOException("The file is unreadable")
+                    },
+                )
+            model.addAttachments(existing.key, existing.key, listOf(selection))
+            assertFalse(model.uiState.value.canSend(existing))
+            assertTrue(model.uiState.value.canSend(other))
+            model.send(existing)
+            assertTrue(service.requests.isEmpty())
+
+            val unavailable =
+                model.uiState.first { state ->
+                    state.attachments(existing).singleOrNull()?.failure != null
+                }
+            val file = unavailable.attachments(existing).single()
+            assertEquals(AttachmentFailure.SourceUnavailable, file.failure)
+            assertFalse(unavailable.canSend(existing))
+            model.removeAttachment(file.key)
+            model.send(existing)
+            runCurrent()
+            assertEquals("Include the selected file", service.requests.single().prompt)
+        }
+
     @Test
     fun removingAnUploadingAttachmentKeepsTheSuccessfulSiblingAndRejectsTheLateResult() =
         check { service, store, create ->

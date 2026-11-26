@@ -50,12 +50,13 @@ class SignedTransferClient(
         }
 
     suspend fun upload(url: HttpUrl, bytes: ByteArray, headers: Map<String, String> = emptyMap()) =
-        upload(url, bytes.toRequestBody(), headers)
+        upload(url, bytes.toRequestBody(), headers, streamingBody = false)
 
     internal suspend fun upload(
         url: HttpUrl,
         body: RequestBody,
         headers: Map<String, String> = emptyMap(),
+        streamingBody: Boolean = true,
     ) =
         withContext(dispatcher) {
             val request = Request.Builder().url(url).put(body)
@@ -71,16 +72,23 @@ class SignedTransferClient(
                 }
                 request.header(name, value)
             }
-            execute(request.build(), 64 * 1024)
+            execute(request.build(), 64 * 1024, streamingBody)
             Unit
         }
 
-    private suspend fun execute(request: Request, maximumBytes: Long): ByteArray {
+    private suspend fun execute(
+        request: Request,
+        maximumBytes: Long,
+        streamingBody: Boolean = false,
+    ): ByteArray {
         check(!closed.get()) { "Transfer owner has closed" }
         validateTransportUrl(request.url)
         currentCoroutineContext().ensureActive()
         return try {
-            http.newCall(request).awaitBytes(maximumBytes)
+            val call = http.newCall(request)
+            // A file body can make steady progress past the small-request deadline.
+            if (streamingBody) call.timeout().clearTimeout()
+            call.awaitBytes(maximumBytes)
         } catch (error: IOException) {
             currentCoroutineContext().ensureActive()
             error.httpRejection()?.let {

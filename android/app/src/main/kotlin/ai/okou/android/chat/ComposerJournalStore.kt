@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
+import android.net.Uri
 import android.os.SystemClock
 import android.util.AtomicFile
 import java.io.File
@@ -48,6 +49,9 @@ class ComposerJournalStore(
 
     internal fun attachmentDirectory(identity: WorkspaceIdentity) =
         attachmentCache.resolve(identity.workspaceStorageKey())
+
+    internal suspend fun readAttachmentMetadata(uris: List<Uri>) =
+        withContext(dispatcher) { uris.map { it to contentResolver.attachmentMetadata(it) } }
 
     internal suspend fun pruneAttachmentCache(identity: WorkspaceIdentity, retained: Set<String>) =
         withContext(dispatcher) {
