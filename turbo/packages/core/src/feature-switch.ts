@@ -67,14 +67,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Browse workflows with search, separate visibility and automation filters, and a flat list sorted by creation date.",
     enabled: false,
   },
-  [FeatureSwitchKey.IosConnectorManagement]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS connector management",
-    description:
-      "Manage connector accounts and permissions in native iOS Settings.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.IosConnectorAppAuthorization]: {
     maintainer: "yuma@okou.ai",
     displayName: "iOS connector app authorization",

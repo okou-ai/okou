@@ -4,27 +4,19 @@ import SwiftUI
 
 struct SettingsConnectorsSection: View {
   let open: () -> Void
-  @ResolvedValue private var switches: SidebarFeatureSwitches?
-
-  init(workspace: WorkspaceStore, open: @escaping () -> Void) {
-    self.open = open
-    _switches = ResolvedValue(task: workspace.settingsResources.featureSwitches, keepLast: true)
-  }
 
   var body: some View {
-    if switches?.canManageConnectors == true {
-      Section {
-        Button(action: open) {
-          HStack {
-            OkouRowLabel("Connectors", okouSymbol: "plug")
-            Spacer(minLength: 0)
-            OkouIcon("chevron-right", size: OkouIconSize.inline)
-              .foregroundStyle(OkouColor.mutedForeground)
-          }
+    Section {
+      Button(action: open) {
+        HStack {
+          OkouRowLabel("Connectors", okouSymbol: "plug")
+          Spacer(minLength: 0)
+          OkouIcon("chevron-right", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
-      } header: {
-        Text("Connections").okouSectionHeader()
       }
+    } header: {
+      Text("Connections").okouSectionHeader()
     }
   }
 }

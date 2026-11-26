@@ -321,9 +321,6 @@ final class ChatModelSelectionStore {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: models.webURL, graph: models.stateStore, threadID: threadID,
-      management: Computed { get in
-        try get(snapshot).configuration?.switches["iosConnectorManagement"] == true
-      },
       memberAccessEnabled: { [weak models] in
         models?.lastKnownFeatureSwitches?.usesMemberConnectorAccess == true
       }, readRetrySleep: models.readRetrySleep,
