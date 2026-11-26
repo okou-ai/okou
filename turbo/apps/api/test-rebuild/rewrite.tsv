@@ -1529,13 +1529,13 @@ messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-046	p
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-047	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-048	planned				
 messaging	src/signals/routes/__tests__/discord-oauth.test.ts	discord-oauth-055	planned				
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-001	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-002	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-003	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-006	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-007	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	planned				B04
-messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	planned				B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-001	rewritten	57.4		src/signals/routes/__tests__/email-subscription.test.ts	B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-002	revisit		revisit: the draft hand-signed the one-click unsubscribe token with the production derivation (self-signed credential, not allowed); evidence: the token is only delivered in an optional email's unsubscribe link; draft /home/user/pilot-env/wip/r11/email-subscription.test.ts; resume: capture the link from a real optional email sent through the email provider double		B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-003	rewritten	19.7		src/signals/routes/__tests__/email-subscription.test.ts	B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-006	rewritten	23.3		src/signals/routes/__tests__/email-subscription.test.ts	B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-007	rewritten	6.1		src/signals/routes/__tests__/email-subscription.test.ts	B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-008	rewritten	17.2		src/signals/routes/__tests__/email-subscription.test.ts	B04
+messaging	src/signals/routes/__tests__/email-subscription.test.ts	email-subscription-014	skipped		slow-setup: the run-credential row needs a Run execution token; that Given alone (one executing Run via helpers/run-execution-credentials forActor) measured 438.5 ms and 432.5 ms in two runs (webhooks-x-resource-usage probe), so the 403 FORBIDDEN half cannot be a row under 200 ms; the unauthenticated 401 half alone would be cheap		B04
 messaging	src/signals/routes/__tests__/email.test.ts	email-001	planned				
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-001	rewritten	54.2		src/signals/routes/__tests__/feature-guides.test.ts	B03
 account-org	src/signals/routes/__tests__/feature-guides.test.ts	feature-guides-002	rewritten	82.9		src/signals/routes/__tests__/feature-guides.test.ts	B03
