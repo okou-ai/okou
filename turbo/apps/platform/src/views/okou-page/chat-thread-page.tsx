@@ -6437,7 +6437,7 @@ function ShareGroupSelectionColumn({
           // Once the link exists the selection is the record of what was
           // shared: read-only, at full strength rather than faded as disabled.
           readOnly={!selecting}
-          className="h-5 w-5 border-1 border-muted-foreground"
+          className="h-5 w-5 border-1"
           onCheckedChange={onToggle}
         />
       </span>
