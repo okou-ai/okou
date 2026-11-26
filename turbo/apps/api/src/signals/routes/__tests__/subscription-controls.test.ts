@@ -83,6 +83,40 @@ function chatgptUsage(fiveHourUsed: number, weeklyUsed: number): void {
   );
 }
 
+function chatgptUsageWithResetCredits(available: number): void {
+  const resetAt = Math.floor(now() / 1000) + 3600;
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({
+        plan_type: "pro",
+        rate_limit: {
+          primary_window: {
+            used_percent: 75,
+            limit_window_seconds: FIVE_HOURS,
+            reset_at: resetAt,
+          },
+          secondary_window: {
+            used_percent: 40,
+            limit_window_seconds: WEEK,
+            reset_at: resetAt + 2 * 86_400,
+          },
+        },
+        rate_limit_reset_credits: { available_count: available },
+      });
+    }),
+    http.get(
+      "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+      () => {
+        return HttpResponse.json({
+          credits: Array.from({ length: available }, () => {
+            return { status: "available", expires_at: null };
+          }),
+        });
+      },
+    ),
+  );
+}
+
 function anthropic(usage: () => Response): void {
   server.use(
     http.get("https://api.anthropic.com/api/oauth/profile", () => {
@@ -289,5 +323,61 @@ describe("personal subscription controls", () => {
       needsReconnect: false,
     });
     expect(unavailable?.subscriptionUsage ?? null).toBeNull();
+  });
+
+  it("subscription-controls-007 rejects resets of foreign, logical-provider and disconnected IDs without changing the remaining account", async () => {
+    chatgptUsageWithResetCredits(3);
+    const owner = user();
+    const kept = await connectCodex(owner, `acct_${randomUUID()}`);
+    const removed = await connectCodex(owner, `acct_${randomUUID()}`);
+    const original = (await listSubscriptions(owner)).find((entry) => {
+      return entry.id === kept.id;
+    });
+    if (!original?.modelProviderId) {
+      throw new Error("Expected the kept account's logical provider ID");
+    }
+    signIn(owner);
+    await accept(
+      accounts.delete({ headers, params: { id: removed.id } }),
+      [204],
+    );
+
+    const reset = async (actor: ApiTestUser, id: string) => {
+      signIn(actor);
+      const response = await accept(
+        accounts.resetSubscriptionUsage({
+          headers,
+          params: { id },
+          body: { idempotencyKey: randomUUID() },
+        }),
+        [404],
+      );
+      return response.body;
+    };
+    const notFound = {
+      error: { message: "Resource not found", code: "NOT_FOUND" },
+    };
+    await expect(reset(owner, randomUUID())).resolves.toStrictEqual(notFound);
+    await expect(reset(owner, original.modelProviderId)).resolves.toStrictEqual(
+      notFound,
+    );
+    await expect(reset(owner, removed.id)).resolves.toStrictEqual(notFound);
+    await expect(
+      reset(user({ orgId: owner.orgId }), kept.id),
+    ).resolves.toStrictEqual(notFound);
+    await expect(
+      reset(user({ userId: owner.userId }), kept.id),
+    ).resolves.toStrictEqual(notFound);
+
+    const remaining = await listSubscriptions(owner);
+    expect(remaining).toHaveLength(1);
+    expect(original.subscriptionResetCredits).toBe(3);
+    expect(remaining[0]).toMatchObject({
+      id: kept.id,
+      isActive: true,
+      modelProviderId: original.modelProviderId,
+      subscriptionResetCredits: original.subscriptionResetCredits,
+      subscriptionUsage: original.subscriptionUsage,
+    });
   });
 });
