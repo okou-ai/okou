@@ -90,12 +90,7 @@ const enabled$ = command(
       resource.userId,
       signal,
     );
-    return (
-      isFeatureEnabled(
-        FeatureSwitchKey.FeishuArtifactChannelSharing,
-        context,
-      ) && isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context)
-    );
+    return isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context);
   },
 );
 
