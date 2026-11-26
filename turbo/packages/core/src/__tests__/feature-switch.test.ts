@@ -40,6 +40,7 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.MemberConnectorAccountAccess,
     FeatureSwitchKey.IosConnectorManagement,
     FeatureSwitchKey.ComposerVoiceMessages,
+    FeatureSwitchKey.HideEmptyForYou,
     FeatureSwitchKey.MarkdownArtifactQuote,
     FeatureSwitchKey.ArtifactLibrary,
     FeatureSwitchKey.ZipArtifactPreview,
