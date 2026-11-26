@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ExecutionContext, Hyperdrive } from "@cloudflare/workers-types";
+import type {
+  ExecutionContext,
+  Hyperdrive,
+  Socket,
+  Span,
+  Tracing,
+} from "@cloudflare/workers-types";
 import { expect, test } from "vitest";
 
 import { env } from "../lib/env";
@@ -9,21 +15,70 @@ import { testContext } from "./test-context";
 
 const context = testContext();
 
+/** A span of the Workers tracing SDK that records nothing. */
+class UntracedSpan implements Span {
+  get isTraced(): boolean {
+    return false;
+  }
+  setAttribute(): this {
+    return this;
+  }
+  setAttributes(): this {
+    return this;
+  }
+  recordException(): void {}
+  end(): void {}
+}
+
+/** The Workers tracing SDK of a host that traces nothing. */
+const untraced: Tracing = {
+  enterSpan(_name, callback, ...args) {
+    return callback(new UntracedSpan(), ...args);
+  },
+  startActiveSpan(_name, callback, ...args) {
+    return callback(new UntracedSpan(), ...args);
+  },
+  startSpan() {
+    return new UntracedSpan();
+  },
+  getActiveSpan() {
+    return undefined;
+  },
+  Span: UntracedSpan,
+};
+
+/** The Hyperdrive binding for the local database; the pg pool connects over TCP itself. */
+function localHyperdrive(): Hyperdrive {
+  const connectionString = env("DATABASE_URL");
+  const url = new URL(connectionString);
+  return {
+    connectionString,
+    host: url.hostname,
+    ip: url.hostname,
+    port: Number(url.port || 5432),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.slice(1),
+    connect(): Socket {
+      throw new Error("Hyperdrive sockets are not used by the pg pool");
+    },
+  };
+}
+
 /** A Cloudflare Worker host whose registered background work is observed. */
 function workerHost() {
   const background: Promise<unknown>[] = [];
-  const executionContext = {
+  const executionContext: ExecutionContext = {
     waitUntil(work: Promise<unknown>) {
       background.push(work);
     },
     passThroughOnException() {},
+    exports: {},
     props: {},
-  } as unknown as ExecutionContext;
-  const bindings = {
-    HYPERDRIVE: {
-      connectionString: env("DATABASE_URL"),
-    } as unknown as Hyperdrive,
+    tracing: untraced,
+    abort() {},
   };
+  const bindings = { HYPERDRIVE: localHyperdrive() };
   return {
     background,
     async request(path: string, init: RequestInit): Promise<Response> {
