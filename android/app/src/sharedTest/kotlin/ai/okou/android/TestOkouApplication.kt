@@ -28,6 +28,7 @@ import ai.okou.android.chat.RunControlService
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.settings.BuiltInToolsService
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
@@ -100,6 +101,7 @@ open class TestOkouApplication : OkouApplication() {
         }
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
+    var screenshotBuiltInTools: BuiltInToolsService? = null
     var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
@@ -149,6 +151,7 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
             override val connectors = connectorService
+            override val builtInTools = screenshotBuiltInTools
             override val proactivePreferences = proactivePreferencesService
 
             override suspend fun usagePackCredits() =
