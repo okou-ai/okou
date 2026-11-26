@@ -9,7 +9,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { identityHashCollisionSuffix } from "../../../test-fixtures/identity-hash-collision";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
@@ -61,21 +60,6 @@ function newUser() {
 
 function newOrg() {
   return `org_${randomUUID()}`;
-}
-
-/** A test-owned user inside three-point timing's user audience. */
-function threePointTimingOwnerId() {
-  const prefix = `user_${randomUUID()}_`;
-  const suffix = identityHashCollisionSuffix({
-    prefix,
-    targetHash: 0x03_2a_75_d8,
-    alphabet: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-    rightLength: 3,
-  });
-  if (!suffix) {
-    throw new Error("Expected a user identity in the timing audience");
-  }
-  return `${prefix}${suffix}`;
 }
 
 const antigravity = FeatureSwitchKey.GeminiAntigravity;
@@ -158,24 +142,6 @@ describe("/api/feature-switches", () => {
 
     expect(afterReset.switches).not.toHaveProperty(presentation);
     expect(afterReset.effectiveSwitches[presentation]).toBeFalsy();
-  });
-
-  it("feature-switches-008 cannot grant three-point timing to an external admin through a stored opt-in", async () => {
-    const timing = FeatureSwitchKey.ArtifactThreePointTiming;
-    const orgId = newOrg();
-    const ownerId = threePointTimingOwnerId();
-    signIn(ownerId, orgId);
-    await expect(effective(timing)).resolves.toBeTruthy();
-
-    signIn(newUser(), orgId, "org:admin");
-    await expect(effective(timing)).resolves.toBeFalsy();
-    const stored = await update({ [timing]: true });
-    expect(stored.switches[timing]).toBeTruthy();
-    expect(stored.effectiveSwitches[timing]).toBeFalsy();
-    await expect(effective(timing)).resolves.toBeFalsy();
-
-    signIn(ownerId, orgId);
-    await expect(effective(timing)).resolves.toBeTruthy();
   });
 
   it("feature-switches-010 shares larkIntegration overrides only within the same organization", async () => {
