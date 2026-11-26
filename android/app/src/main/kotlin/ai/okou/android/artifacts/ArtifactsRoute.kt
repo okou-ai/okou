@@ -261,10 +261,7 @@ internal fun ArtifactSelectionPreview(
         val shareSnackbar = remember { SnackbarHostState() }
         var sharing by remember { mutableStateOf(false) }
         val original = preview?.access?.save
-        val generated =
-            showArtifactImageViewer &&
-                !id.startsWith(ExternalImagePreviewPrefix) &&
-                chatAttachment(id) == null
+        val generated = showArtifactImageViewer && isGeneratedArtifactPreview(id)
         val source =
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
