@@ -27,7 +27,8 @@ struct ChatAttachmentChips: View {
     .quickLookPreview($previewURL)
     .sheet(item: $previewImage) { item in
       MessagePreviewSheet(title: item.file.filename, dismiss: closeImagePreview, isImage: true) {
-        MessageFileQuickLook(file: item.file)
+        MessageImagePreview(
+          file: item.file, thumbnail: item.file.thumbnail.flatMap(UIImage.init(data:)))
       } actions: {
         ShareLink(item: item.file.url) { OkouToolbarIcon("share") }
           .accessibilityLabel("Share or save to Files")

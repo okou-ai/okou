@@ -98,8 +98,7 @@ struct ImagePreviewPan: UIGestureRecognizerRepresentable {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch)
       -> Bool
     {
-      // Both Quick Look and the chat image viewer own zoom through UIKit scroll views.
-      // Leave a touch on a zoomed image with its scroll view, including at a scroll edge.
+      // A zoomed image keeps its pan even at a scroll edge.
       var ancestor = touch.view
       while let view = ancestor {
         if view is UIControl { return false }

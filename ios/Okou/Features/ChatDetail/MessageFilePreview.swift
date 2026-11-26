@@ -81,10 +81,10 @@ struct MessageFilePreview: View {
   }
 }
 
-private struct MessageImagePreview: View {
-  let file: ChatAttachmentFile
+struct MessageImagePreview<File: QuickLookPreviewFile>: View {
+  let file: File
   let thumbnail: UIImage?
-  let imageNavigation: MessageImageNavigation?
+  var imageNavigation: MessageImageNavigation?
   private struct Prepared {
     let url: URL
     let image: UIImage?
@@ -101,7 +101,7 @@ private struct MessageImagePreview: View {
             MessageZoomableImage(image: image).id(file.url)
           }
         } else if QLPreviewController.canPreview(file.url as NSURL) {
-          MessageFileQuickLook(file: file)
+          MessageFileQuickLook(file: file, wrapsImageForZoom: true).id(file.url)
         } else {
           OkouEmptyState(
             "Preview unavailable", icon: "image",
@@ -130,19 +130,31 @@ extension ImportedAttachmentFile: QuickLookPreviewFile {}
 
 struct MessageFileQuickLook<File: QuickLookPreviewFile>: UIViewControllerRepresentable {
   let file: File
+  var wrapsImageForZoom = false
 
   func makeCoordinator() -> Coordinator { Coordinator(file) }
-  func makeUIViewController(context: Context) -> QLPreviewController {
-    let controller = QLPreviewController()
-    controller.dataSource = context.coordinator
-    return controller
+  func makeUIViewController(context: Context) -> UIViewController {
+    let preview = context.coordinator.preview
+    preview.dataSource = context.coordinator
+    guard wrapsImageForZoom else { return preview }
+
+    // Quick Look draws large or animated images out of process. Keep the touches in the
+    // same local zoom surface that owns pinch, pan and swipe for a decoded image.
+    let container = UIViewController()
+    container.addChild(preview)
+    container.view = MessageImageScrollView(
+      content: preview.view,
+      accessibilityLabel: String(localized: "Image. Pinch to zoom, or double tap."))
+    preview.didMove(toParent: container)
+    return container
   }
-  func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+  func updateUIViewController(_ controller: UIViewController, context: Context) {
     guard context.coordinator.file.url != file.url else { return }
     context.coordinator.file = file
-    controller.reloadData()
+    context.coordinator.preview.reloadData()
   }
   final class Coordinator: NSObject, QLPreviewControllerDataSource {
+    let preview = QLPreviewController()
     var file: File
     init(_ file: File) { self.file = file }
     func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
