@@ -1,15 +1,47 @@
-import { useGet, useLastResolved } from "ccstate-react";
+import { useGet, useLastResolved, useResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { BellOff, Pencil } from "lucide-react";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OkouAvatar, RunningIndicator } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
+import { archiveListFilter$ } from "../../signals/okou-page/chat-thread-filter.ts";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { SidebarChatThreadIndicatorState } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
 import { assistantName$ } from "../../signals/branding.ts";
+
+export function useChatListFilterOptions() {
+  const { t } = useTranslation();
+  const all = useResolved(archiveListFilter$) === "all";
+  const showAllChats = t(($) => {
+    return $.chat.sidebar.showAllChats;
+  });
+  return {
+    unarchivedLabel: t(($) => {
+      return all ? $.chat.sidebar.unarchived : $.chat.sidebar.inbox;
+    }),
+    withArchivedLabel: t(($) => {
+      return all ? $.chat.sidebar.all : $.chat.sidebar.archived;
+    }),
+    emptyUnarchivedLabel: t(($) => {
+      return all ? $.chat.sidebar.noUnarchived : $.chat.sidebar.inboxEmpty;
+    }),
+    showWithArchived: {
+      filter: "withArchived",
+      label: all
+        ? showAllChats
+        : t(($) => {
+            return $.chat.sidebar.showArchivedChats;
+          }),
+    },
+    showAll: {
+      filter: all ? "withArchived" : "unarchived",
+      label: showAllChats,
+    },
+  } as const;
+}
 
 /**
  * Returns labels for the current agent-scoped chat thread list.

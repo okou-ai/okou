@@ -2583,6 +2583,7 @@
       "number": "번호"
     },
     "sidebar": {
+      "all": "전체",
       "archive": "보관",
       "archived": "보관됨",
       "chatsWith": "{{assistantName}}와의 채팅",
@@ -2602,6 +2603,7 @@
       "newChatWith": "{{assistantName}}와 새 채팅",
       "noArchived": "보관된 채팅 없음",
       "noMuted": "음소거된 채팅 없음",
+      "noUnarchived": "보관되지 않은 채팅이 없습니다",
       "noUnread": "읽지 않은 채팅 없음",
       "openChatMenu": "채팅 메뉴 열기",
       "openListMenu": "채팅 목록 메뉴 열기",
@@ -2613,6 +2615,7 @@
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
       "unarchive": "보관 해제",
+      "unarchived": "보관되지 않음",
       "unmute": "알림 켜기",
       "unpin": "고정 해제",
       "unread": "읽지 않음",
@@ -2875,6 +2878,7 @@
     "toasts": {
       "archived": "채팅을 보관했습니다.",
       "archivedMuted": "채팅을 보관했습니다. 알림이 꺼져 있어 새 답장이 와도 돌아오지 않습니다.",
+      "chatUnarchived": "채팅 보관이 해제되었습니다",
       "copied": "복사됨",
       "deleted": "채팅 삭제됨",
       "muted": "채팅 알림을 껐습니다. 새 답장이 와도 읽지 않음으로 표시되지 않고 푸시 알림도 보내지 않습니다.",

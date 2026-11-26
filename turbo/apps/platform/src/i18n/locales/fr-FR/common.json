@@ -2644,6 +2644,7 @@
       "number": "numéro"
     },
     "sidebar": {
+      "all": "Toutes",
       "archive": "Archiver",
       "archived": "Archivées",
       "chatsWith": "Discussions avec {{assistantName}}",
@@ -2663,6 +2664,7 @@
       "newChatWith": "Nouvelle discussion avec {{assistantName}}",
       "noArchived": "Aucune discussion archivée",
       "noMuted": "Aucune discussion en sourdine",
+      "noUnarchived": "Aucune discussion non archivée",
       "noUnread": "Aucune discussion non lue",
       "openChatMenu": "Ouvrir le menu de discussion",
       "openListMenu": "Ouvrir le menu de la liste de discussion",
@@ -2674,6 +2676,7 @@
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
       "unarchive": "Désarchiver",
+      "unarchived": "Non archivées",
       "unmute": "Réactiver les notifications",
       "unpin": "Détacher",
       "unread": "Non lu",
@@ -2940,6 +2943,7 @@
     "toasts": {
       "archived": "Discussion archivée.",
       "archivedMuted": "Discussion archivée. Elle est en sourdine, les nouvelles réponses ne la ramèneront pas.",
+      "chatUnarchived": "Discussion désarchivée",
       "copied": "Copié",
       "deleted": "Chat supprimé",
       "muted": "Discussion en sourdine. Les nouvelles réponses n'apparaîtront pas comme non lues et n'enverront pas de notifications push.",

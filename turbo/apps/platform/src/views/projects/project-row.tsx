@@ -69,6 +69,7 @@ import { Link } from "../router/link.tsx";
 import { ProjectFolderIcon, projectNameParts } from "./project-icon.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
+  useChatListFilterOptions,
   ChatThreadStateIndicator,
   ChatThreadStateText,
 } from "../okou-page/sidebar-shared.tsx";
@@ -520,6 +521,7 @@ export function ProjectStatusRow({
   readonly layout: ProjectRowLayout;
 }) {
   const { t } = useTranslation();
+  const { showWithArchived } = useChatListFilterOptions();
   const selectFilter = useSet(selectChatThreadFilter$);
   const signal = useGet(pageSignal$);
   if (row.kind === "project-empty") {
@@ -545,12 +547,13 @@ export function ProjectStatusRow({
         layout === "list" ? "h-14 px-3" : "h-8 px-2",
       )}
       onClick={() => {
-        detach(selectFilter("archived", signal), Reason.DomCallback);
+        detach(
+          selectFilter(showWithArchived.filter, signal),
+          Reason.DomCallback,
+        );
       }}
     >
-      {t(($) => {
-        return $.chat.sidebar.showArchivedChats;
-      })}
+      {showWithArchived.label}
     </Button>
   );
 }

@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import { archiveListFilter$ } from "../okou-page/chat-thread-filter.ts";
 import { navigateToChat$ } from "../okou-page/nav.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
@@ -11,10 +12,16 @@ import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 
 // One line says what happened and when the chat comes back. The API brings an
 // archived chat back on a new reply unless it is muted.
-function archiveToastMessage(archived: boolean, muted: boolean) {
+function archiveToastMessage(
+  archived: boolean,
+  muted: boolean,
+  allFilter: boolean,
+) {
   if (!archived) {
     return i18n.t(($) => {
-      return $.chat.toasts.unarchived;
+      return allFilter
+        ? $.chat.toasts.chatUnarchived
+        : $.chat.toasts.unarchived;
     });
   }
   return muted
@@ -26,8 +33,7 @@ function archiveToastMessage(archived: boolean, muted: boolean) {
       });
 }
 
-// Every archive entry point shares this feedback: the row leaves the list, so
-// the toast says where it went and offers the inverse action.
+// Every archive entry point offers the inverse action in its confirmation toast.
 export const setChatThreadArchivedWithFeedback$ = command(
   async (
     { get, set },
@@ -59,8 +65,15 @@ export const setChatThreadArchivedWithFeedback$ = command(
       leaving ? set(navigateTo$, ROUTES.home, undefined, signal) : undefined,
     ]);
     signal.throwIfAborted();
+    const allFilter = !archived && (await get(archiveListFilter$)) === "all";
+    signal.throwIfAborted();
 
-    toast.success(archiveToastMessage(archived, meta?.muted === true), {
+    const message = archiveToastMessage(
+      archived,
+      meta?.muted === true,
+      allFilter,
+    );
+    toast.success(message, {
       ...TEXT_TOAST_ACTION,
       action: {
         label: i18n.t(($) => {

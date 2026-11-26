@@ -17,6 +17,7 @@ export enum FeatureSwitchKey {
   MarkdownArtifactQuote = "markdownArtifactQuote",
   ChatThreadFork = "chatThreadFork",
   HideEmptyForYou = "hideEmptyForYou",
+  ChatListAllFilter = "chatListAllFilter",
   ProjectArchive = "projectArchive",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",

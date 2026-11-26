@@ -225,10 +225,10 @@ function chatListProject(name: string, sortOrder: string): Project {
 async function open(
   projects: Project[],
   threads: ChatThreadSnapshotProjection[],
-  current?: string,
-  archiveMenuEnabled?: boolean,
+  page: Partial<
+    Pick<Parameters<typeof setupPage>[0], "auth" | "path" | "featureSwitches">
+  > = {},
 ) {
-  const auth = chatListAuth(848);
   context.mocks.api(projectsContract.snapshot, ({ respond }) => {
     return respond(200, {
       projects,
@@ -261,15 +261,9 @@ async function open(
   );
   await setupPage({
     context,
-    path: current ? "/chats/" + current : "/",
-    auth,
-    ...(archiveMenuEnabled === undefined
-      ? {}
-      : {
-          featureSwitches: {
-            [FeatureSwitchKey.ProjectArchive]: archiveMenuEnabled,
-          },
-        }),
+    path: "/",
+    auth: chatListAuth(848),
+    ...page,
     sharedWorkerTestTransport: "message-port",
     cachedChatThreadEvents: cachedChatListEvents(848, threads),
   });
@@ -335,7 +329,9 @@ test("project-chat-list-007 an empty project's archive reveals its own chat and 
       archived: true,
       projectId: launch.id,
     });
-  await open([launch, research], [active, old], active.id);
+  await open([launch, research], [active, old], {
+    path: "/chats/" + active.id,
+  });
   click(await handle("Research"));
   await waitFor(() => {
     expect(
@@ -404,7 +400,7 @@ test("project-chat-list-011 folding Launch twice preserves the selected outside 
   const launch = chatListProject("Launch", "a0"),
     inside = chatListThread(21, "Launch planning", { projectId: launch.id }),
     outside = chatListThread(22, "Current notes");
-  await open([launch], [inside, outside], outside.id);
+  await open([launch], [inside, outside], { path: "/chats/" + outside.id });
   const current = await findFastControl("link", /Current notes/);
   expect(current).toHaveAttribute("aria-current", "page");
   const trigger = await handle("Launch");
@@ -462,7 +458,9 @@ test.each([true, false])(
   "Project archive action follows the workspace switch (%s)",
   async (enabled) => {
     const client = chatListProject("Seaside research", "a0");
-    await open([client], [], undefined, enabled);
+    await open([client], [], {
+      featureSwitches: { [FeatureSwitchKey.ProjectArchive]: enabled },
+    });
     click(await findFastControl("button", "Options for Seaside research"));
     await screen.findByRole("menu");
     const rename = menuItemByText("Rename");
@@ -488,6 +486,81 @@ function threadLink(threadId: string) {
     `[data-sidebar-chat-thread-id="${threadId}"]`,
   );
 }
+
+function staffAuth() {
+  const staffOrg = { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" };
+  return {
+    ...chatListAuth(848),
+    organization: { activeOrg: staffOrg, memberships: [staffOrg] },
+  };
+}
+
+test("All shows active and archived chats both inside and outside Projects", async () => {
+  const current = chatListProject("Current work", "a0");
+  const previous = { ...chatListProject("Past work", "a1"), archived: true };
+  const notes = chatListThread(11, "Notes");
+  const oldNotes = chatListThread(12, "Old notes", {
+    archived: true,
+    muted: true,
+  });
+  const planning = chatListThread(13, "Planning", { projectId: current.id });
+  const history = chatListThread(14, "History", {
+    projectId: current.id,
+    archived: true,
+  });
+  const handoff = chatListThread(15, "Handoff", { projectId: previous.id });
+  await open(
+    [current, previous],
+    [notes, oldNotes, planning, history, handoff],
+    { path: "/chats/" + planning.id, auth: staffAuth() },
+  );
+
+  await waitFor(() => {
+    expect(threadLink(planning.id)).toBeVisible();
+    expect(threadLink(notes.id)).toBeVisible();
+  });
+  expect(threadLink(oldNotes.id)).toBeNull();
+  expect(threadLink(history.id)).toBeNull();
+  expect(projectRows(previous.id)).toHaveLength(0);
+
+  click(await findFastControl("button", "Open chat list menu"));
+  const menu = await screen.findByRole("menu");
+  expect(within(menu).getByText("Unarchived")).toBeVisible();
+  click(within(menu).getByText("All"));
+  click(await handle(previous.name));
+  await waitFor(() => {
+    for (const thread of [notes, oldNotes, planning, history, handoff]) {
+      expect(threadLink(thread.id)).toBeVisible();
+    }
+  });
+  expect(location.pathname).toBe("/chats/" + planning.id);
+
+  click(await findFastControl("button", "Open chat list menu"));
+  click(within(await screen.findByRole("menu")).getByText("Unarchived"));
+  await waitFor(() => {
+    expect(threadLink(notes.id)).toBeVisible();
+    expect(threadLink(oldNotes.id)).toBeNull();
+    expect(projectRows(previous.id)).toHaveLength(0);
+  });
+});
+
+test("Show all chats in the empty mobile list reveals an archived Project's unarchived chat", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === "(pointer: coarse)" || query === "(display-mode: standalone)"
+    );
+  });
+  const previous = { ...chatListProject("Past work", "a0"), archived: true };
+  const handoff = chatListThread(15, "Handoff", { projectId: previous.id });
+  await open([previous], [handoff], { auth: staffAuth() });
+  await screen.findByText("No unarchived chats");
+  click(await findFastControl("button", "Show all chats"));
+  click(await handle(previous.name));
+  await waitFor(() => {
+    expect(threadLink(handoff.id)).toBeVisible();
+  });
+  expect(location.pathname).toBe("/");
+});
 
 async function openProjectForArchiveShortcut(
   current: Project,
