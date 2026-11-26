@@ -54,3 +54,4 @@ discord-ingress-031	Discord ingress processing deferred to recovery	Given: the s
 feishu-branding-connection-013	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
 feishu-branding-connection-026	Failed to send Feishu connect welcome	Given: Feishu rejects the first connect welcome message
 integrations-telegram-007	Failed to send Telegram connect success message	Given: Telegram rejects the welcome DM with HTTP 403 "Bot was blocked"
+mail-039	Unhandled request error: Gmail rejected the draft send \(HTTP 400; reason: unrecognized\)	Given: Gmail rejects the send with HTTP 400 and an unknown reason; the Then expects HTTP 500
