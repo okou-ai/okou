@@ -605,8 +605,8 @@ internal fun OkouConfirmationDialog(
             val compact = with(LocalDensity.current) { maxHeight < 16.sp.toDp() * 12 }
             val margin = if (compact) 12.dp else 24.dp
             val inset = if (compact) 16.dp else 24.dp
-            val titleGap = if (compact) 8.dp else 12.dp
-            val actionGap = if (compact) 12.dp else 16.dp
+            val titleGap = if (compact) 8.dp else 16.dp
+            val actionGap = if (compact) 12.dp else 24.dp
             val titleStyle =
                 if (compact)
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
@@ -629,7 +629,6 @@ internal fun OkouConfirmationDialog(
                             title,
                             Modifier.semantics { heading() },
                             style = titleStyle,
-                            fontWeight = FontWeight.SemiBold,
                         )
                         Surface(
                             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),

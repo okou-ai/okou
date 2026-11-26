@@ -18,6 +18,7 @@ export const FEISHU_TENANT_SCOPES = [
   "docx:document:write_only",
   "drive:drive.metadata:readonly",
   "im:chat.members:bot_access",
+  "im:chat.members:read",
   "im:chat:create",
   "im:chat:read",
   "im:chat:update",
@@ -36,6 +37,7 @@ export const FEISHU_TENANT_SCOPES = [
   "im:message:send_sys_msg",
   "im:message:update",
   "im:resource",
+  "im:url_preview.update",
   "wiki:node:read",
 ] as const;
 

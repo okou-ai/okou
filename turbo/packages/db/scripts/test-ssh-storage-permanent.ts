@@ -215,11 +215,17 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
       );
       assert.equal(observations.rowCount, 0);
     }
+    const [identityDevice] = await db
+      .insert(remoteDevices)
+      .values({ ...owner, displayName: "Tailscale identity" })
+      .returning({ id: remoteDevices.id });
+    assert.ok(identityDevice);
     const [identity] = await db
       .insert(sshConnections)
       .values({
         ...owner,
         displayName: "Tailscale identity",
+        remoteDeviceId: identityDevice.id,
         host: "100.64.0.2",
         port: 22,
         connectionMode: "tailscale_ssh",

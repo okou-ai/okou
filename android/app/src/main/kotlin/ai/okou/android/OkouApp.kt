@@ -30,6 +30,7 @@ import ai.okou.android.chat.ConversationFindVisit
 import ai.okou.android.chat.ConversationLink
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.ConversationModelControls
 import ai.okou.android.chat.ConversationQueueButton
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ConversationStopButton
@@ -1739,7 +1740,7 @@ internal fun OkouApp(
                                     focusOnEntry = focusSearch,
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
-                                    refreshChats = chats::refreshList,
+                                    resolveMessageChats = chats::resolveSearchChats,
                                     onOpen = {
                                         leaveWorkflowChat()
                                         openChat(it, fromSearch = true)
@@ -2069,11 +2070,26 @@ internal fun OkouApp(
                                                         },
                                                     )
                                                 if (hasComposer) {
+                                                    val modelEdits by
+                                                        remember(listState, actionableThread.id) {
+                                                            derivedStateOf {
+                                                                listState.value
+                                                                    .conversationModelEdits[
+                                                                        actionableThread.id]
+                                                            }
+                                                        }
                                                     ChatComposerField(
                                                         composer,
                                                         composerTarget,
                                                         followup = followup,
                                                         onFollowupInserted = { followup = null },
+                                                        defaultModel = defaultModel,
+                                                        conversationModel =
+                                                            ConversationModelControls(
+                                                                chats,
+                                                                actionableThread,
+                                                                modelEdits,
+                                                            ),
                                                         connectorOptions =
                                                             connectors?.chatOptions.takeIf {
                                                                 canOpenConnectors

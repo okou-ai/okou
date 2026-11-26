@@ -5,11 +5,13 @@ import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
+import { remoteDevicesContract } from "@okouai/api-contracts/contracts/remote-devices";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { now } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import {
   generateSandboxToken,
@@ -19,12 +21,14 @@ import { sshAccessRoutes } from "../ssh-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { remoteDevicesRoutes } from "../remote-devices";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
@@ -292,6 +296,197 @@ describe("live chat SSH Run inventory", () => {
       [200],
     );
   }
+
+  it("admits a running SSH client on approval and distinguishes changed configuration from expiry", async () => {
+    const f = await publicInventoryRun();
+    const host = await createHost();
+    await enableChatDefault(host.body.id);
+    const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    expect(
+      (await accept(policy.list({ headers }), [200])).body.devices,
+    ).toStrictEqual([]);
+
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(f);
+    const [device] = (await accept(policy.list({ headers }), [200])).body
+      .devices;
+    expect(device).toMatchObject({
+      displayName: "Deployment",
+      accessAllowed: false,
+      accessExpiresAt: null,
+    });
+    if (!device) {
+      throw new Error("Expected one device for the SSH channel");
+    }
+    const denied = await accept(
+      inventory().list({ headers: f.token() }),
+      [200],
+    );
+    expect(denied.body.hosts).toStrictEqual([]);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: host.body.id },
+        body: { enabled: true },
+      }),
+      [404],
+    );
+    await accept(
+      policy.approve({
+        headers: f.token(),
+        params: { threadId: f.threadId },
+        body: { deviceId: device.id },
+      }),
+      [403],
+    );
+    await accept(
+      policy.approve({
+        headers,
+        params: { threadId: randomUUID() },
+        body: { deviceId: device.id },
+      }),
+      [404],
+    );
+
+    await withMockNowForTest(now(), async () => {
+      const approval = {
+        headers,
+        params: { threadId: f.threadId },
+        body: { deviceId: device.id },
+      };
+      const expiresAt = new Date(now() + 3_600_000).toISOString();
+      const approved = await accept(policy.approve(approval), [200]);
+      expect(approved.body).toMatchObject({
+        accessAllowed: true,
+        accessExpiresAt: expiresAt,
+      });
+      const admitted = await accept(
+        inventory().list({ headers: f.token() }),
+        [200],
+      );
+      const [identity] = admitted.body.identities;
+      expect(identity?.id).toBe(host.body.id);
+      if (!identity) {
+        throw new Error(
+          "Expected current SSH inventory identity after approval",
+        );
+      }
+
+      const runner = setupApp({ context, routes: runnerSshRoutes })(
+        runnerSshContract,
+      );
+      const request = {
+        headers: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
+        params: { runId: f.runId },
+        body: { connectionId: host.body.id, runnerIdentity: f.runnerIdentity },
+      };
+      expect((await accept(runner.resolve(request), [200])).body.outcome).toBe(
+        "unavailable",
+      );
+      const compatible = {
+        ...request,
+        headers: { ...request.headers, "X-Okou-Remote-Device-Policy": "1" },
+      };
+      expect(
+        (await accept(runner.resolve(compatible), [200])).body.outcome,
+      ).toBe("resolved");
+      const check = {
+        ...compatible,
+        body: {
+          ...compatible.body,
+          expectedGeneration: identity.generation,
+          expectedCreatedAt: identity.createdAt,
+        },
+      };
+      expect((await accept(runner.check(check), [200])).body.outcome).toBe(
+        "valid",
+      );
+      const edited = await accept(
+        config().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: {
+            expectedGeneration: identity.generation,
+            host: "updated.example.com",
+          },
+        }),
+        [200],
+      );
+      expect((await accept(runner.check(check), [200])).body.outcome).toBe(
+        "configuration_changed",
+      );
+      const current = {
+        ...check,
+        body: { ...check.body, expectedGeneration: edited.body.generation },
+      };
+      expect((await accept(runner.check(current), [200])).body.outcome).toBe(
+        "valid",
+      );
+      mockNow(new Date(expiresAt));
+      expect((await accept(runner.check(current), [200])).body.outcome).toBe(
+        "unavailable",
+      );
+
+      const later = new Date(now() + 7_200_000).toISOString();
+      const settings = { headers, params: { deviceId: device.id } };
+      await Promise.all([
+        accept(policy.approve(approval), [200]),
+        accept(
+          policy.setAccess({
+            ...settings,
+            body: { mode: "until", expiresAt: later },
+          }),
+          [200],
+        ),
+      ]);
+      expect(
+        (await accept(policy.approve(approval), [200])).body.accessExpiresAt,
+      ).toBe(later);
+      await accept(
+        policy.setAccess({ ...settings, body: { mode: "always" } }),
+        [200],
+      );
+      expect(
+        (await accept(policy.approve(approval), [200])).body.accessExpiresAt,
+      ).toBeNull();
+      await accept(
+        policy.setAccess({ ...settings, body: { mode: "denied" } }),
+        [200],
+      );
+      expect((await accept(runner.check(current), [200])).body.outcome).toBe(
+        "unavailable",
+      );
+    });
+    const otherMember = { orgId: f.orgId, userId: `user_ssh_${randomUUID()}` };
+    await updateFeatureSwitchesForUser(context, otherMember, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    expect(
+      (await accept(policy.list({ headers }), [200])).body.devices,
+    ).toStrictEqual([]);
+    await accept(
+      policy.setAccess({
+        headers,
+        params: { deviceId: device.id },
+        body: { mode: "always" },
+      }),
+      [404],
+    );
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.RemoteDevices]: false,
+    });
+    expect(
+      (await accept(inventory().list({ headers: f.token() }), [200])).body
+        .hosts,
+    ).toHaveLength(1);
+  });
 
   it("keeps first-host and recreated-host chat access default off", async () => {
     const f = await executionFixture();

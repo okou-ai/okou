@@ -213,14 +213,9 @@ private struct ChatComposerContent: View {
             Button("Sync draft") { Task { await draftState.synchronize() } }
           }
         }
-        if !current.attachments.items.isEmpty {
+        if current.attachments.hasAttachments {
           ChatAttachmentChips(
-            draft: attachments, items: current.attachments.items,
-            isDisabled: isBusy || needsUpgrade)
-        }
-        if current.attachments.importingCount > 0 {
-          OkouLoadingRow("Preparing attachments…")
-            .padding(.horizontal, OkouSpace.md)
+            draft: attachments, content: current.attachments, isDisabled: isBusy || needsUpgrade)
         }
         if let importError = current.attachments.error {
           OkouBanner(

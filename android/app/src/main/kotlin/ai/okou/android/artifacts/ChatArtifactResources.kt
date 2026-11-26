@@ -128,7 +128,7 @@ internal fun ChatArtifactResources(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
-            ArtifactInitialReadFailure(unavailable.label(), Modifier.widthIn(max = 768.dp))
+            ArtifactInitialReadFailure(unavailable, Modifier.widthIn(max = 768.dp).weight(1f))
         }
         return
     }
@@ -226,8 +226,8 @@ internal fun ChatArtifactResources(
                 !showRelatedSkeleton
         ) {
             ArtifactInitialReadFailure(
-                failure.label(chatResources = true),
-                Modifier.widthIn(max = 768.dp),
+                failure,
+                Modifier.widthIn(max = 768.dp).weight(1f),
             )
             return@Column
         }

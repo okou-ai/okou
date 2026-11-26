@@ -80,7 +80,6 @@
     <string name="composer_check">Vérifier la remise</string>
     <string name="composer_retry">Réessayer le même message</string>
     <string name="composer_not_observed">Le message est encore introuvable. Sa remise reste non confirmée.</string>
-    <string name="composer_request_failed">La demande a échoué. Le brouillon et le message en attente sont conservés.</string>
     <string name="updates_title">Mises à jour de l’application</string>
     <string name="updates_installed">Version actuelle\u00A0: %1$s</string>
     <string name="updates_current">Vous utilisez la dernière version</string>

@@ -603,6 +603,13 @@ internal interface CanonicalApi {
         @Body body: RenameThreadRequest,
     ): Response<Unit>
 
+    @POST("/api/chat-threads/{id}/model-selection")
+    suspend fun `setThreadModel`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: SetThreadModelRequest,
+    ): Response<Unit>
+
     @POST("/api/projects")
     suspend fun `createProject`(
         @Header("Authorization") token: String,

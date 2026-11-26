@@ -30,9 +30,9 @@ export function hostedDomainProgress(domain: HostedSiteDomain) {
       const status = domainRecordCheck(domain, record)?.status;
       return status === "pending" || status === "failed";
     });
-  const currentStage: DomainSetupStage = domain.ready ? 2 : needsDns ? 0 : 1;
+  const initialStage: DomainSetupStage = domain.ready ? 2 : needsDns ? 0 : 1;
   return {
-    currentStage,
+    initialStage,
     matchedRecords,
     remainingRecords,
     dnsMatched: domain.records.length > 0 && remainingRecords.length === 0,

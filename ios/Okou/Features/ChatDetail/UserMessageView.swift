@@ -1,19 +1,23 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
 /// User-authored text stays literal; structured parts retain their order and identity.
-struct UserMessageView: View {
+struct UserMessageView<SendingIndicator: View>: View {
   let message: ChatMessage
   let webURL: URL
   let viewer: MessageAttachmentStore
   let loadsAttachments: Bool
   var sendTransition: ConversationSendTransition?
+  @ViewBuilder let sendingIndicator: () -> SendingIndicator
 
   private var document: ChatUserMessage {
     message.userMessage ?? ChatUserMessage(parts: [.init(type: "text", text: message.text)])
   }
 
   var body: some View {
+    let hasBody = !document.bodyParts.isEmpty || message.inputError != nil
+    let bubbleInset: CGFloat = 14
     VStack(alignment: .trailing, spacing: OkouSpace.sm) {
       if let annotation = document.annotation {
         UserMessageAnnotation(part: annotation, webURL: webURL)
@@ -26,9 +30,10 @@ struct UserMessageView: View {
                 attachment: attachment, viewer: viewer, loadsThumbnail: loadsAttachments)
             }
           }
+          if !hasBody { sendingIndicator() }
         }
       }
-      if !document.bodyParts.isEmpty || message.inputError != nil {
+      if hasBody {
         UserMessageBubbleLayout {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
             UserMessageBody(
@@ -45,16 +50,60 @@ struct UserMessageView: View {
                 .enabled)
             }
           }
-          .padding(14)
+          .padding(bubbleInset)
           .background(OkouColor.gray200, in: RoundedRectangle(cornerRadius: OkouRadius.chat))
           .background {
             SendMotionBubbleAnchor(messageID: message.id, transition: sendTransition)
           }
           .opacity(sendTransition?.hidesBubbleID == message.id ? 0 : 1)
+          sendingIndicator().padding(.top, bubbleInset)
         }
       }
     }
     .frame(maxWidth: .infinity, alignment: .trailing)
+  }
+
+}
+
+struct UserMessageSendingIndicator: View {
+  let sentAt: Date
+  @ScaledMetric(relativeTo: .body) private var lineHeight: CGFloat = 20
+  @State private var isVisible = false
+
+  var body: some View {
+    ProgressView()
+      .controlSize(.mini)
+      .tint(OkouColor.mutedForeground)
+      .frame(height: lineHeight)
+      .opacity(isVisible ? 1 : 0)
+      .accessibilityLabel("Sending…")
+      .accessibilityHidden(!isVisible)
+      .task {
+        let remaining = sentAt.addingTimeInterval(2).timeIntervalSinceNow
+        if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
+        if !Task.isCancelled { isVisible = true }
+      }
+  }
+}
+
+/// The mounted indicator observes confirmation even while scrolling defers a new row snapshot.
+struct ConversationSendingIndicator: View {
+  let messageID: String
+  let conversation: ConversationStore
+  @ResolvedValue private var pending: [ConversationStore.PendingMessage]?
+
+  init(messageID: String, conversation: ConversationStore) {
+    self.messageID = messageID
+    self.conversation = conversation
+    _pending = ResolvedValue(conversation.pendingMessages)
+  }
+
+  var body: some View {
+    if let message = (pending ?? conversation.pending).first(where: { $0.id == messageID }),
+      !message.needsRetry
+    {
+      UserMessageSendingIndicator(sentAt: message.createdAt)
+    }
   }
 }
 

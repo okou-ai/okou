@@ -26,7 +26,7 @@ import {
 import { getHostedSiteVisibility$ } from "./hosted-site-access.service";
 import type { ArtifactSharingResource } from "./artifact-sharing-resource.service";
 
-export interface SlackSharingResource extends ArtifactSharingResource {
+export interface ChannelSharingResource extends ArtifactSharingResource {
   readonly title: string;
   readonly audience: "private" | "organization" | "public";
   readonly revision: string | null;
@@ -36,22 +36,22 @@ export interface SlackSharingResource extends ArtifactSharingResource {
   }[];
 }
 
-/** Reload ownership and the live audience, including when an old button is clicked. */
-export const ownedSlackSharingResource$ = command(
+/** Read the current audience and grants, optionally requiring a matching owner. Callers authorize viewers before exposing this metadata. */
+export const channelSharingResource$ = command(
   async (
     { get, set },
     args: {
       readonly kind: "file" | "site";
       readonly id: string;
-      readonly userId: string;
+      readonly userId?: string;
     },
     signal: AbortSignal,
-  ): Promise<SlackSharingResource | null> => {
+  ): Promise<ChannelSharingResource | null> => {
     if (args.kind === "file") {
       const file = await set(privateArtifactRecord$, args.id, signal);
       if (
         !file ||
-        file.userId !== args.userId ||
+        (args.userId !== undefined && file.userId !== args.userId) ||
         file.materializationStatus !== "ready"
       ) {
         return null;
@@ -97,7 +97,9 @@ export const ownedSlackSharingResource$ = command(
       .where(
         and(
           eq(hostedSites.id, args.id),
-          eq(hostedSites.userId, args.userId),
+          args.userId === undefined
+            ? undefined
+            : eq(hostedSites.userId, args.userId),
           eq(hostedSites.linkLayoutSegment, "okou"),
           isNull(hostedSites.deletedAt),
         ),
@@ -110,7 +112,7 @@ export const ownedSlackSharingResource$ = command(
     const membership = await settle(
       get(clerk$).organizations.getOrganizationMembershipList({
         organizationId: site.orgId,
-        userId: [args.userId],
+        userId: [site.userId],
         limit: 1,
       }),
       signal,
@@ -125,7 +127,7 @@ export const ownedSlackSharingResource$ = command(
       !membership.value.data.some((member) => {
         return (
           member.organization.id === site.orgId &&
-          member.publicUserData?.userId === args.userId
+          member.publicUserData?.userId === site.userId
         );
       })
     ) {
@@ -161,12 +163,12 @@ export const ownedSlackSharingResource$ = command(
   },
 );
 
-const resolveAppSlackArtifact$ = command(
+const resolveAppChannelArtifact$ = command(
   async (
     { get, set },
-    args: { readonly path: string; readonly userId: string },
+    args: { readonly path: string; readonly userId?: string },
     signal: AbortSignal,
-  ): Promise<SlackSharingResource | null> => {
+  ): Promise<ChannelSharingResource | null> => {
     const parsed = parseArtifactReference(args.path);
     if (!parsed) {
       return null;
@@ -183,7 +185,7 @@ const resolveAppSlackArtifact$ = command(
     }
     if (kind === undefined || kind === "file") {
       const file = await set(
-        ownedSlackSharingResource$,
+        channelSharingResource$,
         { kind: "file", id, userId: args.userId },
         signal,
       );
@@ -196,25 +198,33 @@ const resolveAppSlackArtifact$ = command(
       { id, kind },
       signal,
     );
-    if (identity?.userId === args.userId) {
+    if (
+      identity &&
+      (args.userId === undefined || identity.userId === args.userId)
+    ) {
       return set(
-        ownedSlackSharingResource$,
+        channelSharingResource$,
         {
           kind: identity.targetKind === "file" ? "file" : "site",
           id: identity.targetId,
-          userId: args.userId,
+          userId: identity.userId,
         },
         signal,
       );
     }
     if (kind === "html" || kind === undefined) {
       const [deployment] = await get(db$)
-        .select({ siteId: privateHostedDeployments.siteId })
+        .select({
+          siteId: privateHostedDeployments.siteId,
+          userId: privateHostedDeployments.userId,
+        })
         .from(privateHostedDeployments)
         .where(
           and(
             eq(privateHostedDeployments.id, id),
-            eq(privateHostedDeployments.userId, args.userId),
+            args.userId === undefined
+              ? undefined
+              : eq(privateHostedDeployments.userId, args.userId),
             eq(privateHostedDeployments.status, "ready"),
           ),
         )
@@ -222,8 +232,8 @@ const resolveAppSlackArtifact$ = command(
       signal.throwIfAborted();
       if (deployment) {
         return set(
-          ownedSlackSharingResource$,
-          { kind: "site", id: deployment.siteId, userId: args.userId },
+          channelSharingResource$,
+          { kind: "site", id: deployment.siteId, userId: deployment.userId },
           signal,
         );
       }
@@ -233,12 +243,12 @@ const resolveAppSlackArtifact$ = command(
 );
 
 /** Resolve only first-party artifact identities; never fetch a user-provided URL. */
-export const resolveSlackSharingResource$ = command(
+export const resolveChannelSharingResource$ = command(
   async (
     { get, set },
-    args: { readonly url: string; readonly userId: string },
+    args: { readonly url: string; readonly userId?: string },
     signal: AbortSignal,
-  ): Promise<SlackSharingResource | null> => {
+  ): Promise<ChannelSharingResource | null> => {
     if (!URL.canParse(args.url)) {
       return null;
     }
@@ -252,7 +262,7 @@ export const resolveSlackSharingResource$ = command(
     }
     if (url.origin === new URL(env("APP_URL")).origin) {
       return set(
-        resolveAppSlackArtifact$,
+        resolveAppChannelArtifact$,
         { path: url.pathname, userId: args.userId },
         signal,
       );
@@ -276,7 +286,7 @@ export const resolveSlackSharingResource$ = command(
       return null;
     }
     const [row] = await get(db$)
-      .select({ siteId: hostedSites.id })
+      .select({ siteId: hostedSites.id, userId: hostedSites.userId })
       .from(hostedSites)
       .innerJoin(
         hostedDeployments,
@@ -284,7 +294,9 @@ export const resolveSlackSharingResource$ = command(
       )
       .where(
         and(
-          eq(hostedSites.userId, args.userId),
+          args.userId === undefined
+            ? undefined
+            : eq(hostedSites.userId, args.userId),
           eq(hostedDeployments.status, "ready"),
           isNull(hostedSites.deletedAt),
           deploymentId?.success
@@ -299,8 +311,8 @@ export const resolveSlackSharingResource$ = command(
     signal.throwIfAborted();
     return row
       ? set(
-          ownedSlackSharingResource$,
-          { kind: "site", id: row.siteId, userId: args.userId },
+          channelSharingResource$,
+          { kind: "site", id: row.siteId, userId: row.userId },
           signal,
         )
       : null;

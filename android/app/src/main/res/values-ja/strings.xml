@@ -80,7 +80,6 @@
     <string name="composer_check">送信結果を確認</string>
     <string name="composer_retry">同じメッセージを再送</string>
     <string name="composer_not_observed">まだメッセージを確認できません。送信結果は未確定です。</string>
-    <string name="composer_request_failed">リクエストに失敗しました。下書きと未確認のメッセージは保持されています。</string>
     <string name="updates_title">アプリの更新</string>
     <string name="updates_installed">現在のバージョン %1$s</string>
     <string name="updates_current">最新バージョンです</string>

@@ -79,6 +79,11 @@ export const rustRouteBindings = [
     rustConstName: "PIN",
   },
   {
+    route: runnerSshContract.check,
+    rustModulePath: ["runners", "runs", "by_run_id", "ssh", "check"],
+    rustConstName: "CHECK",
+  },
+  {
     route: runnersSteerContract.next,
     rustModulePath: [
       "runners",

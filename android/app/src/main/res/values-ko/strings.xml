@@ -80,7 +80,6 @@
     <string name="composer_check">전송 결과 확인</string>
     <string name="composer_retry">같은 메시지 다시 보내기</string>
     <string name="composer_not_observed">아직 메시지를 확인할 수 없어 전송 결과는 미확인 상태입니다.</string>
-    <string name="composer_request_failed">요청에 실패했습니다. 초안과 확인 대기 메시지는 보관됩니다.</string>
     <string name="updates_title">앱 업데이트</string>
     <string name="updates_installed">현재 버전: %1$s</string>
     <string name="updates_current">최신 버전입니다</string>

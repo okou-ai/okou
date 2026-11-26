@@ -213,6 +213,7 @@ function isAgentCapabilityEnabled(
 function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
+  featureEnabled: FeatureEnabled,
 ): boolean {
   if (
     capability === "instructions:read" ||
@@ -235,10 +236,16 @@ function isCapabilityAvailableToAgent(
     capability === "computer-use:write" ||
     capability === "computer-use:shell:write"
   ) {
-    return options?.computerUseHostId !== undefined;
+    return (
+      options?.computerUseHostId !== undefined ||
+      featureEnabled(FeatureSwitchKey.RemoteDevices)
+    );
   }
   if (capability === "phone-use:write") {
-    return Boolean(options?.phoneUseDeviceId && options.phoneUseGrantId);
+    return (
+      Boolean(options?.phoneUseDeviceId && options.phoneUseGrantId) ||
+      featureEnabled(FeatureSwitchKey.RemoteDevices)
+    );
   }
   if (capability === "browser:read" || capability === "browser:write") {
     return options?.cloudBrowserEnabled === true;
@@ -468,7 +475,7 @@ function buildOkouTokenClaims(
   const nowSeconds = Math.floor(now() / 1000);
   const capabilities: Capability[] = [];
   for (const capability of CAPABILITIES) {
-    if (!isCapabilityAvailableToAgent(capability, options)) {
+    if (!isCapabilityAvailableToAgent(capability, options, featureEnabled)) {
       continue;
     }
     if (isAgentCapabilityEnabled(capability, featureEnabled)) {

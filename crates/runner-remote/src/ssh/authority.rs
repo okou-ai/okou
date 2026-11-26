@@ -22,6 +22,7 @@ pub(super) struct Authority {
 
 pub(super) struct Credential {
     pub(super) created_at: chrono::DateTime<chrono::Utc>,
+    pub(super) device_policy: bool,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) username: String,
@@ -61,6 +62,7 @@ pub(super) enum CredentialAuth {
 
 pub(super) struct PreparedCredential {
     pub(super) created_at: chrono::DateTime<chrono::Utc>,
+    pub(super) device_policy: bool,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) username: String,
@@ -103,7 +105,7 @@ impl Authority {
             failure_reason: observation.failure,
         };
         let report = async {
-            let request = self
+            let mut request = self
                 .http
                 .json_request(
                     routes::observations::route(routes::observations::Params {
@@ -113,6 +115,7 @@ impl Authority {
                     &serde_json::to_value(&body).ok()?,
                 )
                 .ok()?;
+            crate::authority_response::advertise_device_policy(&mut request);
             let response = self.transport.execute(request).await.ok()?;
             response.status().is_success().then_some(())
         };
@@ -147,19 +150,22 @@ impl Authority {
         &self,
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
-    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>), FailureReason> {
+    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>, bool), FailureReason> {
         let body = serde_json::to_value(body).map_err(|_| FailureReason::AuthorityFailure)?;
-        let request = self
+        let mut request = self
             .http
             .json_request(route, &self.token, &body)
             .map_err(|_| FailureReason::AuthorityFailure)?;
+        crate::authority_response::advertise_device_policy(&mut request);
         let response = self
             .transport
             .execute(request)
             .await
             .map_err(|_| FailureReason::AuthorityFailure)?;
+        let device_policy = crate::authority_response::uses_device_policy(&response);
         crate::authority_response::decode(response, "x-ssh-connection-created-at")
             .await
+            .map(|(body, created_at)| (body, created_at, device_policy))
             .map_err(|_| FailureReason::AuthorityFailure)
     }
 
@@ -175,7 +181,7 @@ impl Authority {
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
         };
-        let (response, created_at) = self
+        let (response, created_at, device_policy) = self
             .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
@@ -328,6 +334,7 @@ impl Authority {
         let created_at = created_at.ok_or(FailureReason::AuthorityFailure)?;
         Ok(Credential {
             created_at,
+            device_policy,
             host,
             port,
             username,
@@ -336,6 +343,37 @@ impl Authority {
             auth,
             transport,
         })
+    }
+
+    pub(super) async fn check(
+        &self,
+        run: RunId,
+        connection: uuid::Uuid,
+        created_at: chrono::DateTime<chrono::Utc>,
+        generation: i64,
+    ) -> Result<(), FailureReason> {
+        let body = CheckRequest {
+            connection_id: connection.to_string(),
+            runner_identity: CheckRequestRunnerIdentity {
+                runner_id: self.identity.runner_id().to_string(),
+                heartbeat_generation: self.identity.heartbeat_generation() as i64,
+            },
+            expected_created_at: created_at.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            expected_generation: generation,
+        };
+        let (response, _, _) = self
+            .call::<CheckResponse>(
+                routes::check::route(routes::check::Params {
+                    run_id: &run.to_string(),
+                }),
+                &body,
+            )
+            .await?;
+        match response.outcome {
+            CheckResponseOutcome::Valid => Ok(()),
+            CheckResponseOutcome::Unavailable => Err(FailureReason::Unavailable),
+            CheckResponseOutcome::ConfigurationChanged => Err(FailureReason::ConfigurationChanged),
+        }
     }
 
     pub(super) async fn pin(

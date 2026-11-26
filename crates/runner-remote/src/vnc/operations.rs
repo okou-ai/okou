@@ -192,7 +192,7 @@ impl Run {
                                 .list_observer
                                 .locking(session.info.session_id, engine);
                             let _engine = engine.await?;
-                            self.authorize(&session, &operation)
+                            self.authorize(&session, &operation).await
                         }
                         .await;
                         // Closing a snapshot member must not cancel the list,
@@ -214,6 +214,7 @@ impl Run {
                                 self.runtime.list_observer.admitted(session.info.session_id);
                             }
                             // A revoked or expired member cannot hide siblings.
+                            Err(Failure::Unavailable | Failure::ConfigurationChanged) => {}
                             Err(Failure::Cancelled | Failure::Disconnected | Failure::TimedOut)
                                 if session.cancel.is_cancelled() => {}
                             Err(error) => {
@@ -274,7 +275,7 @@ impl Run {
                             &mut report,
                         )
                         .await?;
-                        self.authorize(&session, &scope)?;
+                        self.authorize(&session, &scope).await?;
                         Ok(json!({"outcome":"status","session":session.info}))
                     }
                 }
@@ -319,7 +320,7 @@ impl Run {
             let mut engine = lock(
                 &session, &operation, crate::diagnostics::Operation::Capture, started, &mut report
             ).await?;
-            self.authorize(&session, &operation)?;
+            self.authorize(&session, &operation).await?;
             let result = async {
                 let capture = operation
                     .wait(engine.capture(operation.deadline))
@@ -413,7 +414,7 @@ impl Run {
                 &mut report,
             )
             .await?;
-            self.authorize(&session, &operation)?;
+            self.authorize(&session, &operation).await?;
             let result = operation
                 .wait(engine.input(
                     params.input.as_input(&keys),

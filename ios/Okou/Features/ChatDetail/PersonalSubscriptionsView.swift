@@ -12,18 +12,21 @@ struct PersonalSubscriptionsView: View {
 }
 
 private struct PersonalSubscriptionsContent: View {
-  @Bindable var store: PersonalSubscriptionStore
+  let store: PersonalSubscriptionStore
   @ResolvedValue private var groups: [PersonalSubscriptionResources.Group]?
   @LoadableStatus<[PersonalSubscriptionResources.Group]> private var status: LoadableState
-  /// The confirmed accounts, kept in the workspace session's Store.
+  /// The confirmed accounts and the write phase, kept in the workspace session's Store.
   @ResolvedValue private var confirmed: PersonalSubscriptionResources.Confirmed?
+  @ResolvedValue private var resolvedMutation: PersonalSubscriptionStore.Mutation?
 
   init(store: PersonalSubscriptionStore) {
     self.store = store
     _groups = ResolvedValue(task: store.resources.groups, keepLast: true)
     _status = LoadableStatus(task: store.resources.groups)
     _confirmed = ResolvedValue(store.resources.confirmed)
+    _resolvedMutation = ResolvedValue(store.mutationValue)
   }
+  private var mutation: PersonalSubscriptionStore.Mutation { resolvedMutation ?? store.mutation }
   private var accounts: [PersonalSubscription] { confirmed?.accounts ?? store.accounts }
   private var accountGroups: [PersonalSubscriptionResources.Group] {
     groups ?? PersonalSubscriptionResources.group(accounts)
@@ -40,7 +43,7 @@ private struct PersonalSubscriptionsContent: View {
       if status == .loading && accounts.isEmpty {
         OkouLoadingRow("Loading accounts…")
       }
-      if let error = readError ?? store.error {
+      if let error = readError ?? mutation.error {
         Section {
           OkouLoadErrorRow(message: error) { _ = await store.refresh(force: true) }
         }
@@ -69,7 +72,7 @@ private struct PersonalSubscriptionsContent: View {
         Text("Add account").okouSectionHeader()
       } footer: {
         Group {
-          if let notice = store.notice {
+          if let notice = mutation.notice {
             Text(notice)
           } else {
             Text("Runs use the active account of each provider. Pull down to refresh usage.")
@@ -78,7 +81,7 @@ private struct PersonalSubscriptionsContent: View {
         .okouSectionNote()
       }
     }
-    .disabled(store.isMutating)
+    .disabled(mutation.isMutating)
     .okouGroupedBackground()
     .refreshable { await store.refresh(force: true) }
     .navigationTitle("Subscriptions")

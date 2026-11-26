@@ -2,7 +2,76 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{closed, harness::Harness, mode};
+use super::{
+    closed,
+    harness::{CREATED_AT, Harness},
+    mode,
+};
+
+#[tokio::test]
+async fn retained_session_rechecks_device_policy_and_creation_identity() {
+    let mut h = Harness::new().await;
+    let resolve = h
+        .api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
+                .header("X-Okou-Remote-Device-Policy", "1");
+            then.status(200)
+            .header("X-VNC-Connection-Created-At", CREATED_AT)
+            .header("X-Okou-Remote-Device-Policy", "1")
+            .json_body(json!({
+                "outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
+                "serverName":"vnc.example.test","transport":{"type":"direct"},
+                "authentication":{"method":"vnc_password","password":" secret "},
+                "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":h.peer.ca}}
+            }));
+        })
+        .await;
+    let policy = |outcome, created_at| {
+        h.api.mock_async(move |when, then| {
+            when.method("POST")
+                .path_matches(r"^/api/runners/runs/[^/]+/vnc/check$");
+            then.status(200)
+                .header("X-VNC-Connection-Created-At", created_at)
+                .json_body(json!({"outcome":outcome}));
+        })
+    };
+    let valid = policy("valid", CREATED_AT).await;
+    let session = h.start("shared").await.session();
+    mode(&h, 1).await;
+    valid.delete_async().await;
+    let old = policy("valid", "2026-09-01T00:00:01.123456Z").await;
+    let params = json!({"sessionId":session});
+    assert_eq!(
+        h.run
+            .request("vnc.session.status", params.clone())
+            .await
+            .result()["reason"],
+        "configuration_changed"
+    );
+    old.assert_calls_async(1).await;
+    old.delete_async().await;
+    let denied = policy("unavailable", CREATED_AT).await;
+    assert_eq!(
+        h.run
+            .request("vnc.session.status", params.clone())
+            .await
+            .result()["reason"],
+        "unavailable"
+    );
+    denied.assert_calls_async(1).await;
+    denied.delete_async().await;
+    let valid_again = policy("valid", CREATED_AT).await;
+    assert_eq!(
+        h.run.request("vnc.session.status", params).await.result()["outcome"],
+        "status"
+    );
+    valid_again.assert_calls_async(1).await;
+    resolve.assert_calls_async(1).await;
+    h.run.shutdown().await;
+    closed(&h).await;
+}
 
 #[tokio::test]
 async fn malformed_or_failed_admission_cannot_admit_authority() {

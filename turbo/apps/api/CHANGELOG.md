@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.133.1](https://github.com/okou-ai/okou/compare/api-v2.133.0...api-v2.133.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **api:** bind phone use operations to the registration generation ([#50976](https://github.com/okou-ai/okou/issues/50976)) ([5180e1d](https://github.com/okou-ai/okou/commit/5180e1dcf8a16b958edeb7d721882ca22b1eb56c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.130.0
+    * @okouai/core bumped to 8.883.1
+    * @okouai/db bumped to 2.69.8
+    * @okouai/pi-agent-runtime bumped to 1.52.85
+
 ## [2.133.0](https://github.com/okou-ai/okou/compare/api-v2.132.1...api-v2.133.0) (2026-11-26)
 
 

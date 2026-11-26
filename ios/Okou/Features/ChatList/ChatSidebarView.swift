@@ -28,6 +28,8 @@ struct ChatSidebarView: View {
   @ResolvedValue private var resolvedUnread: Set<String>?
   /// The selected chat, kept in the workspace session's Store.
   @ResolvedValue private var resolvedSelection: String??
+  /// Mark-all-read and the indicators failure, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedListStatus: ThreadListStore.Status?
 
   init(
     store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
@@ -52,6 +54,7 @@ struct ChatSidebarView: View {
     _resolvedLoaded = ResolvedValue(store.list.hasLoadedThreadsValue)
     _resolvedUnread = ResolvedValue(store.list.unreadThreadIDsValue)
     _resolvedSelection = ResolvedValue(store.selectedThreadValue)
+    _resolvedListStatus = ResolvedValue(store.list.statusValue)
   }
 
   private struct ProjectEditor {
@@ -65,12 +68,6 @@ struct ChatSidebarView: View {
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
   @State private var deletingThreadID: String?
-  @State private var showsForYou = false
-  private func openForYou() { showsForYou = true }
-  private func showForYouChat() {
-    showsForYou = false
-    close()
-  }
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -93,8 +90,10 @@ struct ChatSidebarView: View {
 
   private var hasLoadedThreads: Bool { resolvedLoaded ?? store.list.hasLoadedThreads }
 
+  private var listStatus: ThreadListStore.Status { resolvedListStatus ?? store.list.status }
+
   private var listError: String? {
-    listRead.error?.localizedDescription ?? store.list.error
+    listRead.error?.localizedDescription ?? store.list.actionError ?? listStatus.syncError
   }
 
   /// Animate membership changes from the same presentation the list renders, without
@@ -227,11 +226,6 @@ struct ChatSidebarView: View {
       )
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
-    .fullScreenCover(isPresented: $showsForYou) {
-      ForYouView(workspace: store) {
-        showForYouChat()
-      }
-    }
     .sheet(
       isPresented: Binding(
         get: { searchPresented ?? store.search.isPresented },
@@ -259,12 +253,14 @@ struct ChatSidebarView: View {
       hasUnreadChats: !(resolvedUnread ?? store.list.unreadThreadIDs).isEmpty
         || (resolvedThreads ?? store.list.threads).contains {
           !$0.isMuted && $0.indicator == .unread
-        }, close: close, newProject: { showEditor(creationEditor) })
+        }, markingAllRead: listStatus.markingAllRead, close: close,
+      newProject: { showEditor(creationEditor) })
   }
 
   /// For you is always the list's first row, whatever the chats below it are doing.
   private var forYouRow: some View {
-    ForYouSidebarRow(summary: forYouSummary, rowInset: rowInset, open: openForYou)
+    ForYouSidebarRow(
+      summary: forYouSummary, rowInset: rowInset, open: store.sidebarInteraction.openForYou)
   }
 
   /// For you, then the projects, oldest first, then the chats outside them. Each list leads
@@ -542,7 +538,7 @@ struct ChatSidebarView: View {
       okouSymbol: read ? "message-square-check" : "message-square-dot"
     ) { Task { await store.setRead(thread, read: read) } }
     .labelStyle(.iconOnly)
-    .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAllRead)
+    .disabled(store.list.updatingThreads.contains(thread.id) || listStatus.markingAllRead)
   }
   private var footer: some View {
     ChatSidebarFooter(

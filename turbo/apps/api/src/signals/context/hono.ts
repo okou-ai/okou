@@ -38,6 +38,7 @@ function header(name: string) {
 export const userAgent$ = header("User-Agent");
 export const authorization$ = header("authorization");
 export const cookie$ = header("cookie");
+export const runnerRemoteDevicePolicy$ = header("X-Okou-Remote-Device-Policy");
 
 function resHeader(name: string) {
   return computed((get) => {

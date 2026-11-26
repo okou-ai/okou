@@ -81,7 +81,6 @@
     <string name="composer_check">Check delivery</string>
     <string name="composer_retry">Retry this same message</string>
     <string name="composer_not_observed">The message is not yet observable. Its delivery remains unconfirmed.</string>
-    <string name="composer_request_failed">The request failed. Your draft and pending message are retained.</string>
     <string name="updates_title">App updates</string>
     <string name="updates_installed">Current version: %1$s</string>
     <string name="updates_current">You are up to date</string>

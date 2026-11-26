@@ -62,6 +62,7 @@ import { desktopShellAuthorizationRoutes } from "./routes/desktop-shell-authoriz
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { chatConnectorAccessRoutes } from "./routes/chat-connector-access";
 import { runConnectorAccountRoutes } from "./routes/run-connector-accounts";
+import { remoteDevicesRoutes } from "./routes/remote-devices";
 import { connectorPermissionsRoutes } from "./routes/connector-permissions";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
@@ -373,6 +374,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...connectorAccountRoutes,
   ...chatConnectorAccessRoutes,
   ...runConnectorAccountRoutes,
+  ...remoteDevicesRoutes,
   ...connectorPermissionsRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
