@@ -483,7 +483,9 @@ final class ConnectorActionStore {
   }
 
   func authorizationSceneChanged(isActive: Bool, isBackground: Bool) {
-    guard !closed, let flow = active, flow.session != nil else { return }
+    guard !closed, let flow = active, flow.session != nil, !flow.providerCallbackInFlight else {
+      return
+    }
     if flow.usesProviderApplication {
       if isActive {
         if task == nil { startPolling(flow) }

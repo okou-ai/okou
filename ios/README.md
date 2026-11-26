@@ -357,7 +357,7 @@ Strava retains its existing mobile authorization independently of this switch.
 | Spotify          | Register the `ai.okou.ios` bundle and `ai.okou.ios://connector-provider/spotify` redirect on the API's existing Spotify client. The pinned official SDK selects the installed app or system browser. Its code delegate uses the API exchange; the app does not request tokens or start playback. |
 
 These changes need a new iOS build as well as the API and App worker deployment.
-An OS launch failure for TikTok/Dropbox/Strava uses the same attempt in the system
+An OS launch failure for TikTok/Dropbox/Strava uses the same attempt in the default
 browser; denial and cancellation allow a retry instead of starting a second
 authorization. Verify installed/missing provider apps, denial, cancellation,
 Add account and reconnect on a signed device before enabling the switch.
