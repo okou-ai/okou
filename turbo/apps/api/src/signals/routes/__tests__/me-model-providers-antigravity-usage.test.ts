@@ -19,7 +19,12 @@ import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const CLOUD_CODE = "https://daily-cloudcode-pa.googleapis.com/v1internal";
+// MSW reads ":name" in a path string as a parameter, so match the exact
+// Cloud Code method URLs with regular expressions.
+const LOAD_CODE_ASSIST =
+  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:loadCodeAssist$/;
+const FETCH_AVAILABLE_MODELS =
+  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:fetchAvailableModels$/;
 
 interface GoogleQuota {
   readonly tier: { readonly id: string; readonly name: string };
@@ -51,7 +56,7 @@ function mockGoogle(quota: GoogleQuota) {
     http.get("https://www.googleapis.com/oauth2/v1/userinfo", () => {
       return HttpResponse.json({ id: "4242", email: "pilot@gmail.com" });
     }),
-    http.post(`${CLOUD_CODE}:loadCodeAssist`, ({ request }) => {
+    http.post(LOAD_CODE_ASSIST, ({ request }) => {
       if (
         request.headers.get("authorization") !==
         "Bearer test-google-usage-access"
@@ -64,7 +69,7 @@ function mockGoogle(quota: GoogleQuota) {
         paidTier: quota.tier,
       });
     }),
-    http.post(`${CLOUD_CODE}:fetchAvailableModels`, async ({ request }) => {
+    http.post(FETCH_AVAILABLE_MODELS, async ({ request }) => {
       quotaRequests.push(await request.json());
       return HttpResponse.json({ models: quota.models });
     }),

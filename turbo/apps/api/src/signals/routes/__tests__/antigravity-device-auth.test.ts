@@ -22,7 +22,9 @@ const clerk = createRouteMocks(context).clerk;
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo";
-const CLOUD_CODE_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal";
+// MSW reads ":name" in a path string as a parameter; match by expression.
+const CLOUD_CODE_METHOD =
+  /^https:\/\/daily-cloudcode-pa\.googleapis\.com\/v1internal:(loadCodeAssist|fetchAvailableModels)$/;
 
 function app() {
   return setupApp({
@@ -70,10 +72,7 @@ function mockGoogle(
       return HttpResponse.json({ id: "1234567890", email: "Member@Gmail.com" });
     }),
     // Listing a connected account reads its live plan and quota.
-    http.post(`${CLOUD_CODE_URL}:loadCodeAssist`, () => {
-      return HttpResponse.json({});
-    }),
-    http.post(`${CLOUD_CODE_URL}:fetchAvailableModels`, () => {
+    http.post(CLOUD_CODE_METHOD, () => {
       return HttpResponse.json({});
     }),
   );
