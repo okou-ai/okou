@@ -201,24 +201,12 @@ class ScreenshotScenario {
 
                 tab("自动化").click()
                 action("添加自动化").click()
-                val frequency =
-                    checkNotNull(
-                        device.wait(
-                            Until.findObject(By.pkg(app.packageName).desc("执行频率").clickable(true)),
-                            10_000,
-                        ),
-                    )
+                val frequency = action("工作日")
                 assertTrue(frequency.visibleBounds.height() >= 56)
                 frequency.click()
                 action("每天").click()
                 text("每天")
-                val time =
-                    checkNotNull(
-                        device.wait(
-                            Until.findObject(By.pkg(app.packageName).desc("时间").clickable(true)),
-                            10_000,
-                        ),
-                    )
+                val time = action("09:00")
                 assertTrue(time.visibleBounds.height() >= 56)
                 ScreenshotCapture.capture("wide-schedule-editor.png")
                 time.click()
@@ -227,7 +215,7 @@ class ScreenshotScenario {
                     device.wait(Until.hasObject(By.res("android", "button1")), 10_000),
                 )
                 ScreenshotCapture.capture("wide-native-time-picker.png")
-                assertTrue(device.pressBack())
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             }
 
             verifyWindow(240, 892, UserPreferencesTheme.LIGHT, fontScale = 2f) {
