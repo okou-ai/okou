@@ -115,7 +115,10 @@ function assignWorkers(workers: readonly Worker[]): void {
   mockOptionalEnv("ANTIGRAVITY_SUBSCRIPTION_WORKERS", JSON.stringify(workers));
 }
 
-function workerFor(member: Member, name: string): Worker {
+function workerFor(
+  member: Member,
+  name: string,
+): Worker & { readonly loginHost: string } {
   return {
     ...member,
     machineId: `mch_${randomUUID()}`,

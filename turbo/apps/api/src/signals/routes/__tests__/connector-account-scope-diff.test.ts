@@ -12,6 +12,17 @@ import {
 
 const context = testContext();
 
+function connectionIdOf(
+  body: { readonly connectionId: string } | { readonly error: unknown },
+): string {
+  if (!("connectionId" in body)) {
+    throw new Error(
+      `Expected a connected account, received ${JSON.stringify(body)}`,
+    );
+  }
+  return body.connectionId;
+}
+
 const GITHUB_SCOPES = ["repo", "project", "workflow"];
 
 function scopeDiffFor(
@@ -82,7 +93,7 @@ describe("GET /api/connector-accounts/:connectionId/scope-diff", () => {
     ).resolves.toStrictEqual(empty);
     const exact = await scopeDiffFor(
       owner,
-      granted.body.connectionId,
+      connectionIdOf(granted.body),
       "openai",
     );
     expect(exact.status).toBe(200);

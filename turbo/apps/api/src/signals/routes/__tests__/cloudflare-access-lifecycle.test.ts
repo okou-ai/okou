@@ -324,7 +324,9 @@ describe("Cloudflare Access lifecycle", () => {
         generation: host.generation + 1,
         transport: { type: "cloudflare_access", needsRebind: true },
       });
-      expect(after?.transport).not.toHaveProperty("configId");
+      expect(
+        after && "transport" in after ? after.transport : undefined,
+      ).not.toHaveProperty("configId");
       expect(ownerConfigs).toStrictEqual([]);
     }
 

@@ -293,7 +293,7 @@ describe("multipart user artifact uploads", () => {
       [200],
     );
 
-    expect(Object.keys(completed.body).toSorted()).toStrictEqual(["id", "url"]);
+    expect(Object.keys(completed.body).sort()).toStrictEqual(["id", "url"]);
     expect(completed.body.id).toBe(id);
     expect(completed.body.url).toMatch(publicArtifactUrl);
     const completion = storage.operations.filter((operation) => {

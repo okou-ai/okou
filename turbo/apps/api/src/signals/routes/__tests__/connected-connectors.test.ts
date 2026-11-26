@@ -15,6 +15,17 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
+function connectionIdOf(
+  body: { readonly connectionId: string } | { readonly error: unknown },
+): string {
+  if (!("connectionId" in body)) {
+    throw new Error(
+      `Expected a connected account, received ${JSON.stringify(body)}`,
+    );
+  }
+  return body.connectionId;
+}
+
 function headersFor(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
     actor.userId,
@@ -165,7 +176,7 @@ test("connected-connectors-005 lists one brief per saved connector, independent 
   await accept(
     accounts.rename({
       headers: headersFor(owner),
-      params: { connectionId: secondGitlab.body.connectionId },
+      params: { connectionId: connectionIdOf(secondGitlab.body) },
       body: { target: gitlabTarget, displayName: "Work GitLab" },
     }),
     [200],
@@ -173,7 +184,7 @@ test("connected-connectors-005 lists one brief per saved connector, independent 
   await connectors.setDefaultBuiltinConnectorAccount(
     owner,
     "gitlab",
-    secondGitlab.body.connectionId,
+    connectionIdOf(secondGitlab.body),
   );
 
   const sameOrgMember = bdd.user({
@@ -188,7 +199,7 @@ test("connected-connectors-005 lists one brief per saved connector, independent 
   await connectors.deleteBuiltinConnectorAccount(
     owner,
     "gitlab",
-    secondGitlab.body.connectionId,
+    connectionIdOf(secondGitlab.body),
   );
   // Rename, default switch and deleting one of two accounts leave the briefs.
   expect((await readDirectory(owner)).body).toStrictEqual(saved.body);
@@ -196,7 +207,7 @@ test("connected-connectors-005 lists one brief per saved connector, independent 
   await connectors.deleteBuiltinConnectorAccount(
     owner,
     "gitlab",
-    firstGitlab.body.connectionId,
+    connectionIdOf(firstGitlab.body),
   );
   const afterLast = await readDirectory(owner);
   expect(afterLast.body.builtinConnectors).toStrictEqual([]);

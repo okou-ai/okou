@@ -65,7 +65,7 @@ async function connectCodex(
     started.body.sessionToken,
     [200],
   );
-  if (completed.body.status !== "complete") {
+  if (!("status" in completed.body) || completed.body.status !== "complete") {
     throw new Error("Expected a completed Codex sign-in");
   }
   return { ...completed.body, openai };
@@ -458,7 +458,10 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
         `auth_code_test#${stateOf(started.body.browserUrl)}`,
         [200],
       );
-      if (completed.body.status !== "complete") {
+      if (
+        !("status" in completed.body) ||
+        completed.body.status !== "complete"
+      ) {
         throw new Error("Expected a completed Claude Code sign-in");
       }
       return completed.body;

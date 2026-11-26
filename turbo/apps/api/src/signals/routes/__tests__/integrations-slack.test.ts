@@ -207,7 +207,9 @@ describe("GET /api/integrations/slack", () => {
     );
 
     expect(status.body).toMatchObject({ isConnected: true, isInstalled: true });
-    expect(status.body.workspaceName).toMatch(/\S/);
+    expect("workspaceName" in status.body && status.body.workspaceName).toMatch(
+      /\S/,
+    );
   });
 });
 
@@ -335,12 +337,13 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
       [404],
     );
 
-    expect(repeatedUninstall.body.error.message).toBe(
-      "No Slack installation found",
-    );
-    expect(repeatedDisconnect.body.error.message).toBe(
-      "No Slack connection found",
-    );
+    expect(
+      "error" in repeatedUninstall.body && repeatedUninstall.body.error.message,
+    ).toBe("No Slack installation found");
+    expect(
+      "error" in repeatedDisconnect.body &&
+        repeatedDisconnect.body.error.message,
+    ).toBe("No Slack connection found");
     expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(
       homesBeforeRepeat,
     );

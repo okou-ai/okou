@@ -1,0 +1,11 @@
+status	baseline_path	main_path	resolution
+modified	src/__tests__/vercel-crons.test.ts	src/__tests__/vercel-crons.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+renamed	src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts	src/signals/routes/__tests__/builtin-workflow-automations.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/mcp-server-reads.test.ts	src/signals/routes/__tests__/mcp-server-reads.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/mcp-server.test.ts	src/signals/routes/__tests__/mcp-server.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/official-workflows.test.ts	src/signals/routes/__tests__/official-workflows.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/onboarding.test.ts	src/signals/routes/__tests__/onboarding.test.ts	kept the pilot rewrite; upstream edit to the old body not merged
+modified	src/signals/routes/__tests__/proactive-preferences.test.ts	src/signals/routes/__tests__/proactive-preferences.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/suggestions.test.ts	src/signals/routes/__tests__/suggestions.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening
+modified	src/signals/routes/__tests__/workflow-execution-distribution.test.ts	src/signals/routes/__tests__/workflow-execution-distribution.test.ts	kept deleted; frozen BDD unchanged; review the upstream change at the next screening

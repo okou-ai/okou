@@ -55,7 +55,7 @@ test("hosted-upload-immutability-003 rejects an asset whose name does not carry 
     [400],
   );
 
-  expect(rejected.body.error.message).toContain(
+  expect("error" in rejected.body && rejected.body.error.message).toContain(
     "Hosted-site asset must carry a content hash in its file name: /assets/app.css",
   );
 });
@@ -93,7 +93,7 @@ test("hosted-upload-immutability-004 preserves asset hashes across retained depl
 
   expect(second.siteId).toBe(first.siteId);
   expect(second.deploymentVersion).toBe(2);
-  expect(changed.body.error.message).toContain(
+  expect("error" in changed.body && changed.body.error.message).toContain(
     "Hosted-site asset changed without a new file name: /assets/app-4f3a9c12.css",
   );
   expect(unchanged.siteId).toBe(first.siteId);

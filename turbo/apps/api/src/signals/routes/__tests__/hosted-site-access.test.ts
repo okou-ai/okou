@@ -620,7 +620,8 @@ describe("hosted site access", () => {
         .map((response) => {
           return response.status;
         })
-        .toSorted(),
+        .slice()
+        .sort((left, right) => left - right),
     ).toStrictEqual([200, 401]);
     await accept(exchange(correct), [401]);
   });

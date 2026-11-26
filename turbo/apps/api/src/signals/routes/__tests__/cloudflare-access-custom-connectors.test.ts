@@ -257,7 +257,7 @@ describe("custom connector Cloudflare Access bindings", () => {
       displayName: "Internal Orders v2",
       kind: "http",
     };
-    const [deletePreview, convertPreview] = await Promise.all(
+    const previews = await Promise.all(
       (["delete", "convert"] as const).map((operation) => {
         return accept(
           api.configs.impactPreview({
@@ -269,6 +269,10 @@ describe("custom connector Cloudflare Access bindings", () => {
         );
       }),
     );
+    const [deletePreview, convertPreview] = previews;
+    if (!deletePreview || !convertPreview) {
+      throw new Error("Expected both impact previews");
+    }
     expect(deletePreview.body.customConnectors).toStrictEqual([listed]);
     expect(convertPreview.body.customConnectors).toStrictEqual([listed]);
     const [blockedDelete, blockedConvert] = await Promise.all([
