@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
+import { escapeAttribute } from "entities/escape";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -26,7 +27,7 @@ async function installedWorkspace(): Promise<string> {
 /** An App page whose Open Graph image is the given URL. */
 function appPageWithImage(imageUrl: string): string {
   const pageUrl = `${APP_ORIGIN}/pages/${randomUUID()}`;
-  const escaped = imageUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+  const escaped = escapeAttribute(imageUrl);
   server.use(
     http.get(pageUrl, () => {
       return new HttpResponse(
