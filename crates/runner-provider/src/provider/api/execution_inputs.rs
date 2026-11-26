@@ -5,14 +5,15 @@ use api_contracts::generated::constants::runners::paths::{
     CANONICAL_CODEX_MEMORY_MOUNT_PATH, CANONICAL_GUEST_HOME_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH,
     PI_AGENT_DIR,
 };
+use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::{
     agent_instructions::instruction_paths,
     env::{CliAgentTypeSelection, CliFramework},
 };
 use runner_types::{
     storage_manifest::{
-        INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
-        WORKFLOW_STORAGE_NAME, workflow_mount_path,
+        ArtifactEntry, INSTRUCTION_STORAGE_NAME, InstructionFile, StorageEntry, StorageManifest,
+        WORKFLOW_STORAGE_NAME, validate_workflow_skill_name, workflow_mount_path,
     },
     types::ExecutionContext,
 };
@@ -23,12 +24,12 @@ mod publication;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ContentBundles {
+struct ContentBundles<S> {
     #[serde(rename = "format")]
     _format: BundleFormat,
     #[serde(default, deserialize_with = "instruction_reference")]
     instructions: Option<BundleReference>,
-    skills: Vec<SkillBundle>,
+    skills: Vec<S>,
     #[serde(default)]
     templates: Vec<TemplateBundle>,
 }
@@ -54,6 +55,49 @@ struct SkillBundle {
     archive_bytes: u64,
     download_url: String,
     mount_path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NamedSkillBundle {
+    name: String,
+    bundle: BundleReference,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StartupInputs {
+    memory: Option<MemoryInput>,
+    content_bundles: ContentBundles<NamedSkillBundle>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MemoryInput {
+    storage_id: String,
+    version_id: String,
+    archive_url: Option<String>,
+    archive_size: Option<u64>,
+    empty: Option<bool>,
+    missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
+}
+
+impl MemoryInput {
+    fn bind(self, mount_path: &str) -> Result<ArtifactEntry, String> {
+        if self.archive_url.is_none() && self.empty != Some(true) {
+            return Err("Nonempty Memory requires an archive URL".into());
+        }
+        Ok(ArtifactEntry {
+            mount_path: mount_path.into(),
+            vas_storage_name: "memory".into(),
+            vas_storage_id: self.storage_id,
+            vas_version_id: self.version_id,
+            archive_url: self.archive_url,
+            archive_size: self.archive_size,
+            empty: self.empty,
+            missing_root_policy: self.missing_root_policy,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -164,7 +208,7 @@ pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, Str
 
 fn normalize(
     mut context: ExecutionContext,
-    packages: ContentBundles,
+    packages: publication::Packages,
 ) -> Result<ExecutionContext, String> {
     let framework = CliAgentTypeSelection::parse(&context.cli_agent_type);
     let (config_dir, memory_path) = match framework.framework() {
@@ -175,15 +219,62 @@ fn normalize(
         CliFramework::Codex => (CANONICAL_CODEX_HOME_DIR, CANONICAL_CODEX_MEMORY_MOUNT_PATH),
         CliFramework::Pi => (PI_AGENT_DIR, CANONICAL_PI_MEMORY_MOUNT_PATH),
     };
+    match packages {
+        publication::Packages::Explicit(inputs) => {
+            context.storage_manifest = Some(StorageManifest {
+                storages: Vec::new(),
+                artifacts: inputs
+                    .memory
+                    .map(|memory| memory.bind(memory_path))
+                    .transpose()?
+                    .into_iter()
+                    .collect(),
+            });
+            bind_bundles(
+                context,
+                inputs.content_bundles,
+                config_dir,
+                |skill, prefix| {
+                    validate_workflow_skill_name(&skill.name)?;
+                    Ok((skill.bundle, format!("{prefix}{}", skill.name)))
+                },
+            )
+        }
+        publication::Packages::Legacy(bundles) => {
+            if let Some(manifest) = &mut context.storage_manifest {
+                for memory in manifest
+                    .artifacts
+                    .iter_mut()
+                    .filter(|entry| entry.vas_storage_name == "memory")
+                {
+                    memory.mount_path.clear();
+                    memory.mount_path.push_str(memory_path);
+                }
+            }
+            bind_bundles(context, bundles, config_dir, |skill, prefix| {
+                let path = workflow_mount_path(skill.mount_path, prefix)?;
+                Ok((
+                    BundleReference {
+                        sha256: skill.sha256,
+                        archive_bytes: skill.archive_bytes,
+                        download_url: skill.download_url,
+                    },
+                    path,
+                ))
+            })
+        }
+    }
+}
+
+fn bind_bundles<S>(
+    mut context: ExecutionContext,
+    packages: ContentBundles<S>,
+    config_dir: &str,
+    bind_skill: impl Fn(S, &str) -> Result<(BundleReference, String), String>,
+) -> Result<ExecutionContext, String> {
     let manifest = context
         .storage_manifest
         .get_or_insert_with(StorageManifest::default);
-    for entry in &mut manifest.artifacts {
-        if entry.vas_storage_name == "memory" {
-            entry.mount_path.clear();
-            entry.mount_path.push_str(memory_path);
-        }
-    }
     let mut paths = HashSet::new();
     for mount in manifest
         .storages
@@ -198,23 +289,16 @@ fn normalize(
     let mut entries = Vec::with_capacity(packages.skills.len() + 1);
     let skill_prefix = format!("{config_dir}/skills/");
     for skill in packages.skills {
-        let mount_path = workflow_mount_path(skill.mount_path, &skill_prefix)?;
+        let (bundle, mount_path) = bind_skill(skill, &skill_prefix)?;
         if !paths.insert(mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
         }
-        entries.push(
-            BundleReference {
-                sha256: skill.sha256,
-                archive_bytes: skill.archive_bytes,
-                download_url: skill.download_url,
-            }
-            .storage(WORKFLOW_STORAGE_NAME, mount_path)?,
-        );
+        entries.push(bundle.storage(WORKFLOW_STORAGE_NAME, mount_path)?);
     }
     let instruction_file = if let Some(reference) = packages.instructions {
         let mount = instruction_paths(
             Path::new(CANONICAL_GUEST_HOME_DIR),
-            framework.normalized_cli_agent_type(),
+            CliAgentTypeSelection::parse(&context.cli_agent_type).normalized_cli_agent_type(),
         )
         .ok_or("Unsupported instruction framework")?
         .staging

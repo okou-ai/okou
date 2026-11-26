@@ -27,6 +27,14 @@ pub fn workflow_mount_path(mut mount_path: String, skill_prefix: &str) -> Result
     let (directory, name) = mount_path
         .rsplit_once('/')
         .ok_or("Missing Workflow skill name")?;
+    validate_workflow_skill_name(name)?;
+    let name_offset = directory.len() + 1;
+    mount_path.replace_range(..name_offset, skill_prefix);
+    Ok(mount_path)
+}
+
+/// A Workflow or Skill name occupies exactly one directory component.
+pub fn validate_workflow_skill_name(name: &str) -> Result<(), String> {
     if name.is_empty()
         || name.len() > 64
         || !name
@@ -37,9 +45,7 @@ pub fn workflow_mount_path(mut mount_path: String, skill_prefix: &str) -> Result
     {
         return Err("Invalid Workflow skill name".into());
     }
-    let name_offset = directory.len() + 1;
-    mount_path.replace_range(..name_offset, skill_prefix);
-    Ok(mount_path)
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq)]

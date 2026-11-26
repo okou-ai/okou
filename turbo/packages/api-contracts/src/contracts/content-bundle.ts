@@ -17,6 +17,7 @@ export const contentBundleSchema = object({
     .positive()
     .max(32 * 1024 * 1024),
 }).strict();
+
 export type ContentBundle = zInfer<typeof contentBundleSchema>;
 
 const contentBundleDownloadSchema = contentBundleSchema
@@ -53,3 +54,13 @@ export const executionContentBundlesSchema = object({
       .strict(),
   ),
 }).strict();
+
+export const namedExecutionContentBundlesSchema =
+  executionContentBundlesSchema.extend({
+    skills: array(
+      object({
+        name: string().regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u),
+        bundle: contentBundleDownloadSchema,
+      }).strict(),
+    ),
+  });

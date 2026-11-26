@@ -3,6 +3,57 @@ use super::*;
 mod raw_json;
 
 #[test]
+fn explicit_startup_inputs_work_alone_and_take_precedence() {
+    let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    let mut packages = fixture["contentBundles"].clone();
+    let mut bundle = packages["skills"][0].as_object().unwrap().clone();
+    bundle.remove("mountPath").unwrap();
+    packages["skills"] = serde_json::json!([{"name": "named-skill", "bundle": bundle}]);
+    let explicit = serde_json::json!({
+        "memory": {
+            "storageId": "member-memory-id",
+            "versionId": "accepted-memory-version",
+            "empty": true,
+            "missingRootPolicy": "preserveParentVersion",
+        },
+        "contentBundles": packages,
+    });
+    for retain_legacy in [true, false] {
+        let mut body = fixture.clone();
+        body["startupInputs"] = explicit.clone();
+        if !retain_legacy {
+            let object = body.as_object_mut().unwrap();
+            object.remove("contentBundles");
+            object.remove("storageManifest");
+        }
+        let context = decode_execution_publication(body.to_string().as_bytes()).unwrap();
+        let manifest = context.storage_manifest.unwrap();
+        assert_eq!(manifest.storages.len(), 2);
+        assert_eq!(
+            manifest.storages[0].mount_path,
+            "/home/user/.codex/skills/named-skill"
+        );
+        let [memory] = manifest.artifacts.as_slice() else {
+            panic!("expected exactly one Memory mount");
+        };
+        assert_eq!(memory.mount_path, "/home/user/.codex/memories");
+        assert_eq!(memory.vas_storage_id, "member-memory-id");
+        assert_eq!(memory.vas_version_id, "accepted-memory-version");
+        assert_eq!(memory.empty, Some(true));
+    }
+}
+
+#[test]
+fn malformed_explicit_startup_inputs_do_not_use_legacy_packages() {
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    body["startupInputs"] = Value::Null;
+    assert_eq!(
+        decode_execution_publication(body.to_string().as_bytes()).unwrap_err(),
+        "Invalid content bundles",
+    );
+}
+
+#[test]
 fn complete_publication_preserves_canonical_execution_inputs() {
     let run_id: RunId = RUNNER_EXECUTION_CONTEXT_FIXTURE_RUN_ID.parse().unwrap();
     let context =
