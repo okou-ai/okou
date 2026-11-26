@@ -188,6 +188,10 @@ def validate_phase_clock(value, begin, end, message):
     return value
 
 
+def validate_batch_phase_clock(value, begin, end):
+    return validate_phase_clock(value, begin, end, "batch ABA clocks lost required ordering")
+
+
 def witness_identity(event):
     """Return the recorded sandbox and backing generation in witness order."""
     return event["sandbox_id"], event["backing_generation"]
