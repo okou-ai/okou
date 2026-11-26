@@ -299,7 +299,8 @@ describe("POST /api/billing/credit-checkout", () => {
     expect(previewRequest).not.toHaveProperty("customer");
     expect(previewRequest).not.toHaveProperty("subscription");
 
-    const tamperedToken = `${previewToken.slice(0, -1)}${previewToken.endsWith("A") ? "B" : "A"}`;
+    // The final base64url character can carry unused padding bits, so alter the first one.
+    const tamperedToken = `${previewToken.startsWith("A") ? "B" : "A"}${previewToken.slice(1)}`;
     const tampered = await accept(
       creditCheckoutApi().confirm({
         headers,
