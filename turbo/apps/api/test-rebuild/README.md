@@ -444,3 +444,15 @@ The first case of a file took 1,171 ms. Dispatch itself took 5 ms. In the normal
 **Slow-setup review.** Each reviewed case was measured as its own Given plus its first When/Then. Measurements taken while other writers loaded the two-CPU machine are kept as slow-setup only when every run exceeded about 230 ms. Borderline cases are revisits to be measured again on an idle machine.
 
 **First-test cold start.** The first case that reaches a code path in a file costs about 100–150 ms more than the same case later in the file, even with the file warm-up. Without the warm-up the same first cases took 294–309 ms instead of 243–246 ms. When a first case is removed for being slow, the next case inherits the cost. For that reason several committed first cases now measure 208–282 ms locally after their 95–185 ms acceptance. Split rows that pass but sit in such files are revisits until the handling of this cost is decided.
+
+### Round 11: Semgrep, payment signatures and first pass
+
+**Semgrep.** CI's diff-mode Semgrep found six issues in new tests: three hard-coded HMAC keys, two `replaceAll`-based HTML escapes and one `RegExp` built from a parameter. The fixes are a generated Finicity secret configured for the route, a generated wrong GitHub secret, `escapeAttribute` from `entities/escape`, and literal URL patterns. There are no Semgrep exclusions. The commit gate now runs Semgrep on every committed test file with `p/default`, `p/javascript` and `p/typescript`. Before the fixes, these rulesets reported exactly the six CI findings.
+
+**Payment signatures.** `webhooks-stripe-worker-001` (Billing) and `-002` (Connect) are the dedicated signature tests. The real Stripe SDK signs the exact body with the secret each route is configured with. A valid signature returns HTTP 200 and a tampered body returns HTTP 401. `-002` was not selected originally and was added back for this reason.
+
+**ownership-001.** The frozen test asserted HTTP 404 for foreign reads and the two account-access mutations. Production has not changed this behaviour since the baseline. It answers a foreign current-selection update with the same HTTP 400 that a missing thread gets. The BDD now states this; the thread still cannot be changed and its existence is not revealed.
+
+**Credentials.** Tests must not build Okou credentials themselves. Drafts that hand-signed agent or unsubscribe tokens with the production derivation were removed and recorded as revisits.
+
+**Cold start.** New files whose only row over 200 ms is the first row to reach a code path are held in their drafts with `revisit: cold-start pending`, like the round 10 drafts, until the timing rule is decided.
