@@ -669,14 +669,19 @@ function createPickObjects() {
       })();
       return hostChangeUserId === undefined
         ? picked
-        : picked.finally(() => {
+        : (async () => {
+            const outcome = await settleIncludingAbort(picked);
             if (hostChangeUserId !== undefined) {
               // Enqueue committed the host change even if picking failed.
-              return publishDesktopShellAuthorizationChangedSafely(
+              await publishDesktopShellAuthorizationChangedSafely(
                 hostChangeUserId,
               );
             }
-          });
+            if (!outcome.ok) {
+              throw outcome.error;
+            }
+            return outcome.value;
+          })();
     },
   );
 
