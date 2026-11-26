@@ -6,8 +6,9 @@ import Foundation
 /// The deck keeps its order for one visit. Only the visible card gets a read receipt.
 @MainActor
 final class ForYouStore {
-  /// A plain toast for an action that did something past the deck, such as a message sent. A
-  /// card turned down from the Dismiss menu has none: the menu was the confirmation.
+  /// A plain toast for an action whose effect the page does not otherwise show, such as an
+  /// automation enabled. A message sent or a card turned down has none: the card leaving the
+  /// deck is the confirmation.
   struct Notice: Equatable {
     let text: String
   }
@@ -154,7 +155,6 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if !openChat { notice = Notice(text: String(localized: "Sent to a new chat")) }
       record(card)
       remove(card)
     }
@@ -208,11 +208,8 @@ final class ForYouStore {
       try Task.checkCancellation()
       editor.models.isSending = true
       defer { editor.models.isSending = false }
-      let destination = try await send(draft, target: target, attempt: attempt)
+      _ = try await send(draft, target: target, attempt: attempt)
       workspace.composerWorkflows.recordUse(workflows)
-      notice = Notice(
-        text: destination == target
-          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"))
       record(card)
       // Accepting the annotated message consumes the card on the server.
       remove(card)

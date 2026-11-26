@@ -571,13 +571,6 @@
         }
       }
     },
-    "Sent to the chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送到该聊天" }
-        }
-      }
-    },
     "All caught up": {
       "localizations": {
         "zh-Hans": {
@@ -721,13 +714,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "反馈" }
-        }
-      }
-    },
-    "Sent to a new chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送到新聊天" }
         }
       }
     },

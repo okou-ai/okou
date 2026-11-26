@@ -497,8 +497,8 @@ single floating line, and colour is a small accent for status only.
   the content. Anchor to visible controls, not blank space reserved for hidden ones; keep
   the 8 pt gap above the visible surface. For you is the exception: its card's directions sit
   just above its dock, so it floats the surface under its header (see [For you](#for-you)). A horizontal swipe in either direction dismisses
-  it; the close button and VoiceOver escape do too. A plain toast, a message sent with nothing
-  to undo or open, has no close button and no action. Do not use a vertical dismissal gesture
+  it; the close button and VoiceOver escape do too. A plain toast, with nothing to undo or
+  open, has no close button and no action. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
   foregrounding; it stays available while VoiceOver is enabled, except a plain toast, which
@@ -987,14 +987,15 @@ feature; the catalog shows each one.
 - **The dock** is the sidebar footer's pair: "What do you have in mind?" in the placeholder grey
   on a glass capsule, as New Message is, which grows into the composer, and a round glass ✕, as
   Search is, that opens Dismiss with its reasons menu.
-- **Turning a card down says nothing.** Done, Won't do, Later, Less like this and Just dismiss
-  are chosen from the Dismiss menu, which is already the second step, so the card simply sinks
-  away: no confirmation and no Undo. Dismissing a paused automation's event is the same.
-- **A message sent is a plain toast, under the header.** "Sent to a new chat" (or "Sent to the
-  chat", "Automation enabled") drops in as `ChatFeedbackSurface` with one line, no action and no
-  ✕, since it can not be taken back. It floats over the ground so the deck never moves and the
-  card's directions are never covered, and lifts away after six idle seconds or a sideways swipe.
-  A failure floats in the same place and stays until it is dismissed.
+- **Handling a card says nothing.** A direction sent, the member's own direction, and Done,
+  Won't do, Later, Less like this or Just dismiss from the Dismiss menu (already the second
+  step) all simply move the card away: no confirmation and no Undo. Dismissing a paused
+  automation's event is the same.
+- **Only an enabled automation gets a plain toast, under the header.** "Automation enabled" drops
+  in as `ChatFeedbackSurface` with one line, no action and no ✕, since the deck alone does not
+  show it. It floats over the ground so the deck never moves and the card's directions are never
+  covered, and lifts away after six idle seconds or a sideways swipe. A failure floats in the
+  same place and stays until it is dismissed.
 - **Caught up** is the rest picture, "All caught up", one line, and Back to chats. It lists
   nothing of what the visit settled and offers no Undo.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the

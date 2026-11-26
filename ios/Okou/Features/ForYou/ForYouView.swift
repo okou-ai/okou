@@ -160,9 +160,9 @@ struct ForYouView: View {
   // MARK: Header and notices
 
   /// What the page has to say floats under the header, over the scene, so the deck never moves
-  /// and the card's directions are never covered. A failure stays until it is dismissed. A
-  /// message sent is a plain toast that lifts away after a few idle seconds or a sideways swipe;
-  /// a card turned down from the Dismiss menu says nothing, as the menu was its confirmation.
+  /// and the card's directions are never covered. A failure stays until it is dismissed. An
+  /// enabled automation is a plain toast that lifts away after a few idle seconds or a sideways
+  /// swipe; a message sent or a card turned down says nothing, as the card leaving is enough.
   /// Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {
     Group {
@@ -180,7 +180,7 @@ struct ForYouView: View {
     .padding(.horizontal, OkouSpace.lg)
   }
 
-  /// A plain toast: a message sent can not be taken back, so there is nothing to act on.
+  /// A plain toast: there is nothing to undo or open, so it holds no control.
   private func confirmation(_ notice: ForYouStore.Notice) -> some View {
     ChatFeedbackSurface(
       message: notice.text, icon: "circle-check", showsDismiss: false,
