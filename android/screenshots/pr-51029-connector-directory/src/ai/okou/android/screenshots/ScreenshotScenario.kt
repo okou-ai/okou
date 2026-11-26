@@ -51,14 +51,14 @@ class ScreenshotScenario {
             check(filterBounds.width() == 48 && filterBounds.height() == 48)
             capture("phone-connectors-discover.png")
 
-            search("Google Drive")
+            search("Drive")
             action("Google Drive")
             gone("推荐")
             selectCategory("文档与文件")
             action("Google Drive")
             action("已连接").click()
             text("没有匹配的连接器")
-            check(searchField().text == "Google Drive")
+            check(searchField().text == "Drive")
             assertCategory("文档与文件")
 
             selectCategory("会议与日程")
