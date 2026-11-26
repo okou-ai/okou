@@ -17,12 +17,44 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { ResourceAccessCard } from "../components/resource-access-card.tsx";
 
+function hostedSiteAccessDescription(
+  reason: HostedSiteAccessReason,
+  signedIn: boolean,
+  t: ReturnType<typeof useTranslation>["t"],
+): string {
+  return reason === "authenticate"
+    ? signedIn
+      ? t(($) => {
+          return $.artifacts.access.websiteAuthenticationSignedInDescription;
+        })
+      : t(($) => {
+          return $.artifacts.access.websiteAuthenticationDescription;
+        })
+    : reason === "expired"
+      ? t(($) => {
+          return $.artifacts.access.sessionExpiredDescription;
+        })
+      : reason === "unavailable"
+        ? t(($) => {
+            return $.artifacts.access.websiteUnavailableDescription;
+          })
+        : signedIn
+          ? t(($) => {
+              return $.artifacts.access.signedInDescription;
+            })
+          : t(($) => {
+              return $.artifacts.access.description;
+            });
+}
+
 export function HostedSiteAccessCard({
   target,
   reason,
+  showRetry = false,
 }: {
   readonly target: URL | null;
   readonly reason: HostedSiteAccessReason;
+  readonly showRetry?: boolean;
 }) {
   const { t } = useTranslation();
   const user = useLastResolved(currentUserInfo$);
@@ -33,35 +65,11 @@ export function HostedSiteAccessCard({
     reason === "authenticate" ||
     reason === "expired" ||
     (reason === "denied" && !user);
-  const description =
-    reason === "authenticate"
-      ? user
-        ? t(($) => {
-            return $.artifacts.access.websiteAuthenticationSignedInDescription;
-          })
-        : t(($) => {
-            return $.artifacts.access.websiteAuthenticationDescription;
-          })
-      : reason === "expired"
-        ? t(($) => {
-            return $.artifacts.access.sessionExpiredDescription;
-          })
-        : reason === "unavailable"
-          ? t(($) => {
-              return $.artifacts.access.websiteUnavailableDescription;
-            })
-          : user
-            ? t(($) => {
-                return $.artifacts.access.signedInDescription;
-              })
-            : t(($) => {
-                return $.artifacts.access.description;
-              });
   return (
     <div className="h-full overflow-y-auto">
       <ResourceAccessCard
         title={title}
-        description={description}
+        description={hostedSiteAccessDescription(reason, Boolean(user), t)}
         help={
           reason === "denied"
             ? t(($) => {
@@ -93,6 +101,16 @@ export function HostedSiteAccessCard({
               : t(($) => {
                   return $.artifacts.access.signIn;
                 })}
+          </a>
+        )}
+        {target && showRetry && !showAuthorizationLink && (
+          <a
+            href={target.href}
+            className={buttonVariants({ variant: "neutral" })}
+          >
+            {t(($) => {
+              return $.artifacts.library.retry;
+            })}
           </a>
         )}
         {user && reason !== "unavailable" && (
@@ -159,7 +177,7 @@ export function HostedSiteAccessPage({
         </a>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto bg-muted/30">
-        <HostedSiteAccessCard target={target} reason={reason} />
+        <HostedSiteAccessCard target={target} reason={reason} showRetry />
       </main>
     </div>
   );
