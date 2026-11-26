@@ -32,6 +32,7 @@ import {
   type ForYouDeck,
   forYouDeck$,
   forYouPagination$,
+  pageForYouWithKeysOnRef$,
   swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -252,6 +253,7 @@ function useForYouPager(ids: readonly string[] | undefined, position: number) {
       }),
       Icon: ChevronLeft,
       direction: "previous" as PagerDirection,
+      keys: "ArrowLeft",
     },
     {
       id: ids[(position + 1) % ids.length],
@@ -260,6 +262,7 @@ function useForYouPager(ids: readonly string[] | undefined, position: number) {
       }),
       Icon: ChevronRight,
       direction: "next" as PagerDirection,
+      keys: "ArrowRight",
     },
   ].map((item) => {
     return {
@@ -289,7 +292,7 @@ function ForYouNavigation({ pager }: { readonly pager: Pager }) {
       })}
       className="pointer-events-none absolute inset-0 hidden @min-[56rem]/for-you:block"
     >
-      {pager.map(({ id, label, Icon, direction, browse }) => {
+      {pager.map(({ id, label, Icon, direction, keys, browse }) => {
         return (
           <Link
             key={label}
@@ -298,6 +301,7 @@ function ForYouNavigation({ pager }: { readonly pager: Pager }) {
               searchParams: new URLSearchParams({ suggestion: id }),
             }}
             aria-label={label}
+            aria-keyshortcuts={keys}
             onClick={browse}
             className={cn(
               buttonVariants({ variant: "neutral", size: "icon-lg" }),
@@ -317,7 +321,7 @@ function ForYouNavigation({ pager }: { readonly pager: Pager }) {
 function ForYouHeaderPager({ pager }: { readonly pager: Pager }) {
   return (
     <span className="-ml-2 flex shrink-0 items-center gap-0.5 @min-[56rem]/for-you:hidden">
-      {pager.map(({ id, label, Icon, browse }) => {
+      {pager.map(({ id, label, Icon, keys, browse }) => {
         return (
           <Link
             key={label}
@@ -326,6 +330,7 @@ function ForYouHeaderPager({ pager }: { readonly pager: Pager }) {
               searchParams: new URLSearchParams({ suggestion: id }),
             }}
             aria-label={label}
+            aria-keyshortcuts={keys}
             onClick={browse}
             className="inline-flex size-7 items-center justify-center rounded-lg text-[rgb(var(--for-you-ink)/0.9)] outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 active:bg-[rgb(var(--for-you-ink)/0.14)]"
           >
@@ -648,12 +653,14 @@ export function ForYouPage() {
   const pager = useForYouPager(remaining, position);
   const cover = useLastResolved(forYouPaintedCover$);
   const reload = useSet(reloadSuggestionSession$);
+  const pageWithKeys = useSet(pageForYouWithKeysOnRef$);
   const signal = useGet(pageSignal$);
   const hasStack =
     deck.cards.length > 0 || deck.settled.length > 0 || remaining !== undefined;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
       <main
+        ref={pageWithKeys}
         data-slot="for-you-page"
         style={
           {
