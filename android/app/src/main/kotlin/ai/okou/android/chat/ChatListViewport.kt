@@ -14,8 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,7 +37,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -157,32 +159,31 @@ internal fun KeepLazyListEndInView(
 
 @Composable
 private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
+    val icon: @Composable () -> Unit = {
+        Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(24.dp))
+    }
+    val label: @Composable () -> Unit = { Text(stringResource(R.string.composer_new)) }
+    if (enabled) {
+        ExtendedFloatingActionButton(text = label, icon = icon, onClick = onClick)
+        return
+    }
     val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.alpha(if (enabled) 1f else 0.4f).semantics { role = Role.Button },
-        shape = RoundedCornerShape(16.dp),
+        enabled = false,
+        modifier = Modifier.alpha(0.4f).semantics { role = Role.Button },
+        shape = FloatingActionButtonDefaults.extendedFabShape,
         color = colors.primaryContainer,
         contentColor = colors.onPrimaryContainer,
         shadowElevation = 3.dp,
     ) {
         Row(
-            Modifier.heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.widthIn(min = 80.dp).heightIn(min = 56.dp).padding(start = 16.dp, end = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(R.drawable.ic_edit_square), null, Modifier.size(22.dp))
-            Text(
-                stringResource(R.string.composer_new),
-                style =
-                    MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        letterSpacing = 0.sp,
-                    ),
-                fontWeight = FontWeight(550),
-            )
+            icon()
+            androidx.compose.material3.ProvideTextStyle(MaterialTheme.typography.labelLarge, label)
         }
     }
 }
