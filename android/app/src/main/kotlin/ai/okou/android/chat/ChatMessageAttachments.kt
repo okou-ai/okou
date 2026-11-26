@@ -71,7 +71,7 @@ internal fun ChatMessageAttachments(
                 actions?.images,
                 actions?.threadId.orEmpty(),
                 localFiles[image.id],
-                attachmentAction(messageId, index, image, actions)
+                Modifier.attachmentAction(messageId, index, image, actions)
                     .fillMaxWidth()
                     .heightIn(max = 180.dp)
                     .aspectRatio(4f / 3),
@@ -88,7 +88,7 @@ internal fun ChatMessageAttachments(
                             actions?.images,
                             actions?.threadId.orEmpty(),
                             localFiles[image.id],
-                            attachmentAction(messageId, index, image, actions)
+                            Modifier.attachmentAction(messageId, index, image, actions)
                                 .weight(1f)
                                 .heightIn(max = 160.dp)
                                 .aspectRatio(4f / 3),
@@ -104,7 +104,7 @@ internal fun ChatMessageAttachments(
                     .clip(shape)
                     .background(colors.surface)
                     .border(1.dp, colors.outlineVariant, shape)
-                    .then(attachmentAction(messageId, index, file, actions))
+                    .attachmentAction(messageId, index, file, actions)
                     .heightIn(min = 48.dp)
                     .padding(horizontal = 10.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -137,13 +137,13 @@ internal fun ChatMessageAttachments(
 }
 
 @Composable
-private fun attachmentAction(
+private fun Modifier.attachmentAction(
     messageId: String,
     index: Int,
     attachment: ChatAttachmentReference,
     actions: ChatArtifactActions?,
 ): Modifier {
-    if (actions == null) return Modifier
+    if (actions == null) return this
     val key = "chat-attachment/$messageId/$index"
     val focus = remember { FocusRequester() }
     val restoration =
@@ -152,7 +152,7 @@ private fun attachmentAction(
                 if (focus.requestFocus()) actions.restored()
             }
         else Modifier
-    return restoration.clickable(role = Role.Button) {
+    return then(restoration).clickable(role = Role.Button) {
         actions.open(attachment.attachmentPreviewId(), key)
     }
 }

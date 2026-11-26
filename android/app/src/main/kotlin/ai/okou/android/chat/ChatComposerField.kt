@@ -31,8 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -298,7 +299,7 @@ internal fun ChatComposerField(
                         }
                     }
                     val canSend = state.canSend(target)
-                    IconButton(
+                    FilledIconButton(
                         onClick = {
                             focus.clearFocus()
                             beforeSend()
@@ -307,9 +308,12 @@ internal fun ChatComposerField(
                         modifier =
                             Modifier.size(48.dp).semantics { contentDescription = sendLabel },
                         enabled = canSend,
+                        shape = CircleShape,
                         colors =
-                            IconButtonDefaults.iconButtonColors(
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = Color.Transparent,
                                 contentColor = colors.onPrimary,
+                                disabledContainerColor = Color.Transparent,
                                 disabledContentColor = colors.onSurfaceVariant,
                             ),
                     ) {
