@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1187.0](https://github.com/okou-ai/okou/compare/app-v0.1186.3...app-v0.1187.0) (2026-11-26)
+
+
+### Features
+
+* **app:** grow the for you direction from its entry and scroll the heading alone ([#50923](https://github.com/okou-ai/okou/issues/50923)) ([03357b5](https://github.com/okou-ai/okou/commit/03357b50ad3b93a93830317686a660efff4df4ae))
+
 ## [0.1186.3](https://github.com/okou-ai/okou/compare/app-v0.1186.2...app-v0.1186.3) (2026-11-26)
 
 
