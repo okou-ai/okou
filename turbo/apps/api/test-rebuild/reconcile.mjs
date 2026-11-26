@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import process from "node:process";
 
 const directory = import.meta.dirname;
 const repo = resolve(directory, "../../../..");
@@ -112,8 +113,12 @@ for (const [bdd, { file, cases }] of expected) {
       const prefix = `- ${label}: `;
       const values = entries
         .get(test.id)
-        .filter((line) => line.startsWith(prefix))
-        .map((line) => line.slice(prefix.length));
+        .filter((line) => {
+          return line.startsWith(prefix);
+        })
+        .map((line) => {
+          return line.slice(prefix.length);
+        });
       if (values.length !== 1 || !values[0].trim()) {
         throw new Error(`Expected one populated ${label} field for ${test.id}`);
       }
@@ -159,8 +164,8 @@ if (missing && !partial) {
   throw new Error(`Missing ${missing} of ${ids.size} BDD scenarios`);
 }
 writeFileSync(resolve(directory, "reconciliation.tsv"), rows.join("\n") + "\n");
-console.log(
-  JSON.stringify({
+process.stdout.write(
+  `${JSON.stringify({
     baseline: baseline.baseline,
     files: expected.size,
     cases: ids.size,
@@ -171,5 +176,5 @@ console.log(
     written,
     review,
     missing,
-  }),
+  })}\n`,
 );

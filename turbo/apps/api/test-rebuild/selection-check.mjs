@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import process from "node:process";
 
 const directory = import.meta.dirname;
 const prefix = "turbo/apps/api/";
@@ -16,7 +17,11 @@ const readTsv = (name) => {
     if (values.length !== columns.length) {
       throw new Error(`${name}: expected ${columns.length} columns: ${line}`);
     }
-    return Object.fromEntries(columns.map((column, i) => [column, values[i]]));
+    return Object.fromEntries(
+      columns.map((column, i) => {
+        return [column, values[i]];
+      }),
+    );
   });
 };
 
@@ -44,7 +49,9 @@ for (const row of readTsv("selection.tsv")) {
 }
 
 const files = new Map(
-  readTsv("selection-files.tsv").map((row) => [row.test_file, row]),
+  readTsv("selection-files.tsv").map((row) => {
+    return [row.test_file, row];
+  }),
 );
 let cases = 0;
 let selected = 0;
