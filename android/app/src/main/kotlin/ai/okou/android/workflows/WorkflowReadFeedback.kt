@@ -57,6 +57,7 @@ internal fun WorkflowReadFeedbackHost(
     WorkspaceFeedbackHost(
         activeActionSnackbar ?: snackbar,
         Modifier.padding(bottom = 8.dp),
+        manageTimeout = activeActionSnackbar == null,
         surfaceModifier =
             if (activeActionSnackbar == null) Modifier.testTag("workflow_read_snackbar")
             else Modifier,
