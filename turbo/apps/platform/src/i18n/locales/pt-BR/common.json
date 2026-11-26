@@ -7562,7 +7562,7 @@
       "clearSearch": "Limpar busca",
       "createdBy": "Criado por",
       "createInChat": "Criar no chat",
-      "description": "Um fluxo de trabalho é um procedimento padrão reutilizável para uma tarefa recorrente. Escreva os passos uma vez e depois execute, edite ou automatize sempre que precisar. Em outros produtos, ele pode se chamar skill.",
+      "description": "Um procedimento reutilizável para executar ou automatizar. Em outros produtos: skills.",
       "empty": {
         "all": "Crie um fluxo de trabalho no chat ou salve um de uma execução útil.",
         "automated": "Adicione uma automação a um fluxo de trabalho para que ele apareça aqui.",

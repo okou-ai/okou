@@ -7451,7 +7451,7 @@
       "clearSearch": "Hapus pencarian",
       "createdBy": "Dibuat oleh",
       "createInChat": "Buat di chat",
-      "description": "Alur kerja adalah SOP yang dapat digunakan kembali untuk tugas berulang. Tulis langkahnya sekali, lalu jalankan, edit, atau otomatiskan kapan pun Anda perlu. Di produk lain, ini mungkin disebut skill.",
+      "description": "SOP yang bisa dijalankan, diedit, atau diotomatiskan. Di produk lain disebut skill.",
       "empty": {
         "all": "Buat alur kerja dari chat atau simpan dari eksekusi yang bermanfaat.",
         "automated": "Tambahkan otomatisasi ke alur kerja dan akan muncul di sini.",

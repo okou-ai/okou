@@ -7478,7 +7478,7 @@
       "clearSearch": "Clear search",
       "createdBy": "Created by",
       "createInChat": "Create in chat",
-      "description": "A workflow is a reusable SOP for a recurring task. Write the steps once, then run, edit, or automate it whenever you need. Other products may call these skills.",
+      "description": "A reusable SOP you can run, edit, or automate. Other products may call these skills.",
       "empty": {
         "all": "Create a workflow from chat or save one from a useful run.",
         "automated": "Add an automation to a workflow and it shows up here.",
