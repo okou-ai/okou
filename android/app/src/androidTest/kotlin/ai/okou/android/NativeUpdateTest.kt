@@ -257,14 +257,24 @@ class NativeUpdateTest {
                 ),
             )
             captureState("details-incompatible")
+            closeDetails()
+            backToChatList()
+            val incompatibleToolbar =
+                By.pkg(app.packageName).desc(app.getString(R.string.updates_android_unsupported))
+            button(incompatibleToolbar)
+            captureState("toolbar-incompatible")
+            button(incompatibleToolbar).click()
+            exists(R.string.updates_check_compatible)
+            captureState("toolbar-incompatible-details")
+
             candidate.set(release)
             click(R.string.updates_check_compatible)
             exists(R.string.updates_download)
             assertNotNull(text(updateTarget))
             device.waitForIdle()
             assertEquals(initialDetailsBounds, detailsBounds())
-            closeDetails()
-            backToChatList()
+            click(R.string.updates_close)
+            assertTrue(device.wait(Until.gone(close), 10_000))
 
             val updateAction = app.getString(R.string.updates_download)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds

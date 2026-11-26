@@ -354,6 +354,8 @@ class OkouAppTest {
 
         listOf(
                 UpdateTransfer.Idle to compose.activity.getString(R.string.updates_download),
+                UpdateTransfer.Interrupted to
+                    compose.activity.getString(R.string.updates_error_interrupted),
                 progressCase(null, 0.0),
                 progressCase(1_060_000_000L, 0.53),
                 progressCase(1_180_000_000L, 0.59),
