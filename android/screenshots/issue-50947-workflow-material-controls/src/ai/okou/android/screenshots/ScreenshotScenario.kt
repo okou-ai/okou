@@ -177,17 +177,7 @@ class ScreenshotScenario {
                 openDetail(fixture.releaseTitle)
                 val first = "说明"
                 instrumentation.setInTouchMode(false)
-                val firstTabLabel =
-                    checkNotNull(
-                        automation.rootInActiveWindow
-                            .findAccessibilityNodeInfosByText(first)
-                            .firstOrNull { it.text?.toString() == first },
-                    )
-                val focusTarget =
-                    checkNotNull(
-                        generateSequence(firstTabLabel) { it.parent }
-                            .firstOrNull { it.isFocusable },
-                    )
+                val focusTarget = tab(first).accessibilityNodeInfo
                 assertTrue(
                     focusTarget.isFocused ||
                         focusTarget.performAction(AccessibilityNodeInfo.ACTION_FOCUS),
