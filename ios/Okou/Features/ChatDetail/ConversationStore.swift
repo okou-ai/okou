@@ -423,7 +423,9 @@ final class ConversationStore {
       let runIDs = projection.currentValue.history?.activeRunIDs, !runIDs.isEmpty
     else { return }
     updateDelivery { $0.stopIssue = nil }
-    projection.interruptRuns(runIDs)
+    let events = Dictionary(
+      uniqueKeysWithValues: runIDs.map { ($0, UUID().uuidString.lowercased()) })
+    projection.interruptRuns(events)
     reconcileActivitySummary()
     reconcileProjection()
     let task = Task { [weak self] in
@@ -433,16 +435,13 @@ final class ConversationStore {
         didSettle()
       }
       do {
-        try await commands.interrupt(threadID: thread.id, runIDs: runIDs)
+        try await commands.interrupt(threadID: thread.id, events: events)
         try Task.checkCancellation()
         guard !closed else { return }
         await refresh()
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled else { return }
-        projection.restoreInterruptedRuns(runIDs)
-        reconcileActivitySummary()
-        reconcileProjection()
         updateDelivery { $0.stopIssue = String(localized: "Stopping has not been confirmed.") }
         report(error)
         await refresh()

@@ -29,6 +29,7 @@ final class ComposerVoiceOutputTests: XCTestCase {
 
   func testSendRecordingSubmitsVoiceClipWithExistingDraft() async throws {
     let fixture = VoiceComposerFixture()
+    fixture.state.value.withLock { $0.recordAsMessage = true }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let capture = VoiceCaptureFixture()

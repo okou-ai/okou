@@ -112,17 +112,19 @@ struct ComposerVoiceInputTray: View {
       .frame(height: OkouControl.waveformHeight)
 
       if state.phase != .processing {
-        Button {
-          Task { await voice.finish(asAudio: true, send: send) }
-        } label: {
-          OkouToolbarIcon("arrow-up")
+        if state.asVoiceMessage {
+          Button {
+            Task { await voice.finish(asAudio: true, send: send) }
+          } label: {
+            OkouToolbarIcon("arrow-up")
+          }
+          .buttonStyle(.borderedProminent)
+          .buttonBorderShape(.circle)
+          .tint(OkouColor.primary)
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .accessibilityLabel("Send recording")
+          .disabled(!canSend || !state.canUseRecording)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.circle)
-        .tint(OkouColor.primary)
-        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-        .accessibilityLabel("Send recording")
-        .disabled(!canSend || !state.canUseRecording)
 
         Button {
           Task { await voice.finish(asAudio: false) }

@@ -278,9 +278,11 @@ final class FailureRecoveryTests: XCTestCase {
     XCTAssertEqual(conversation.history?.canStop, true)
     await conversation.stop()
     XCTAssertNotNil(conversation.stopIssue)
+    XCTAssertEqual(conversation.currentTranscript.history?.canStop, false)
     XCTAssertNil(conversation.error)
     XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
     await conversation.refresh()
+    XCTAssertEqual(conversation.currentTranscript.history?.canStop, false)
     XCTAssertEqual(fixture.state.value.withLock { $0.stopWrites }, 1)
     fixture.state.value.withLock {
       $0.rows.append(FailureRecoveryFixture.row(3, type: "run.cancelled", payload: "null"))

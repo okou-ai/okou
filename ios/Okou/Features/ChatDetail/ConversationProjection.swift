@@ -11,9 +11,9 @@ import Foundation
 final class ConversationProjection {
   private struct Input {
     var history: ChatHistory?
-    var interruptedRuns: Set<String> = []
+    var interruptEvents: [String: String] = [:]
 
-    var presentedHistory: ChatHistory? { history?.interrupting(interruptedRuns) }
+    var presentedHistory: ChatHistory? { history?.interrupting(Set(interruptEvents.keys)) }
     var pending: [ConversationStore.PendingMessage] = []
     var expanded: Set<String> = []
     var closed = false
@@ -105,17 +105,14 @@ final class ConversationProjection {
     guard history != snapshot.history else { return }
     update {
       $0.history = history
-      $0.interruptedRuns.formIntersection(history?.activeRunIDs ?? [])
+      let persisted = Set((history?.persistedEventIDs ?? []).map { $0.lowercased() })
+      $0.interruptEvents = $0.interruptEvents.filter { !persisted.contains($0.value) }
       $0.expanded.formIntersection((history?.workSections ?? []).map(\.id))
     }
   }
 
-  func interruptRuns(_ ids: [String]) {
-    update { $0.interruptedRuns.formUnion(ids) }
-  }
-
-  func restoreInterruptedRuns(_ ids: [String]) {
-    update { $0.interruptedRuns.subtract(ids) }
+  func interruptRuns(_ events: [String: String]) {
+    update { $0.interruptEvents.merge(events) { _, newest in newest } }
   }
 
   func replacePending(_ pending: [ConversationStore.PendingMessage]) {

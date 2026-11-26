@@ -201,16 +201,22 @@ public actor ChatCommands {
       let _: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
     }
-    try await interrupt(threadID: thread.id, runIDs: current.activeRunIDs)
+    let events = Dictionary(
+      uniqueKeysWithValues: current.activeRunIDs.map { ($0, UUID().uuidString.lowercased()) })
+    try await interrupt(threadID: thread.id, events: events)
   }
 
-  public func interrupt(threadID: String, runIDs: [String]) async throws {
-    for runID in runIDs {
-      let body = InterruptBody(
-        threadId: threadID,
-        interruptsRunId: runID, clientEventId: UUID().uuidString)
-      let _: ChatSendResponse = try await client.request(
-        "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
+  public func interrupt(threadID: String, events: [String: String]) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for (runID, eventID) in events {
+        group.addTask { [client] in
+          let body = InterruptBody(
+            threadId: threadID, interruptsRunId: runID, clientEventId: eventID)
+          let _: ChatSendResponse = try await client.request(
+            "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
+        }
+      }
+      try await group.waitForAll()
     }
   }
 

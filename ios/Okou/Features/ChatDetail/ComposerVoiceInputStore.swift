@@ -393,7 +393,7 @@ final class ComposerVoiceInputStore {
       return
     }
     let owner = generation
-    let uploadsAudio = asAudio ?? asVoiceMessage
+    let uploadsAudio = asVoiceMessage && asAudio != false
     update {
       $0.phase = .processing
       $0.uploadingAudio = uploadsAudio
