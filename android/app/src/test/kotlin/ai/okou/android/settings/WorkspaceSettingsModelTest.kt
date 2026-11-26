@@ -36,7 +36,9 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -247,7 +249,17 @@ class WorkspaceSettingsModelTest {
         try {
             ChatListApiFixture().use { api ->
                 val fixture = SettingsApiFixture(api)
-                val model = settings(store, api, admin = true)
+                var pendingWorkspaceRoleCheck: CompletableDeferred<Unit>? = null
+                val model =
+                    settings(
+                        store,
+                        api,
+                        admin = true,
+                        readWorkspaceAdmin = {
+                            pendingWorkspaceRoleCheck?.await()
+                            true
+                        },
+                    )
                 model.visible(SettingsDestination.CreditBalance)
                 val confirmed =
                     model.uiState.first {
@@ -260,9 +272,18 @@ class WorkspaceSettingsModelTest {
                     assertNull(model.uiState.value.creditRefreshFailure)
                     fixture.usagePackStatus = 400
                     fixture.billingStatus = 400
+                    // Observe the personal failure before StateFlow can conflate both failures.
+                    val releaseWorkspaceRole = CompletableDeferred<Unit>()
+                    pendingWorkspaceRoleCheck = releaseWorkspaceRole
                     model.visible(SettingsDestination.CreditBalance)
-                    val first =
-                        model.uiState.first { it.creditRefreshFailure != null }.creditRefreshFailure
+                    val personalFailure =
+                        checkNotNull(
+                            model.uiState
+                                .first { it.creditRefreshFailure != null }
+                                .creditRefreshFailure,
+                        )
+                    assertNotSame(previousFailure, personalFailure)
+                    releaseWorkspaceRole.complete(Unit)
                     val failed =
                         model.uiState.first {
                             it.usagePack.unavailable && it.workspaceCredits.unavailable
@@ -270,11 +291,11 @@ class WorkspaceSettingsModelTest {
                     runCurrent()
                     assertEquals(confirmed.usagePack.value, failed.usagePack.value)
                     assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                    assertTrue(first !== previousFailure)
-                    assertEquals(first, failed.creditRefreshFailure)
-                    previousFailure = first
+                    assertSame(personalFailure, model.uiState.value.creditRefreshFailure)
+                    previousFailure = personalFailure
                     // The next visible refresh starts with successful, confirmed reads.
                     model.visible(null)
+                    pendingWorkspaceRoleCheck = null
                     fixture.usagePackStatus = 200
                     fixture.billingStatus = 200
                     model.visible(SettingsDestination.CreditBalance)
