@@ -48,9 +48,15 @@ class NativeTextSendTest {
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
         val create = CountDownLatch(1)
+        val showCreatedChat = CountDownLatch(1)
         val followup = CountDownLatch(1)
         fixture.beforeContextReturn = { held.await() }
         fixture.beforeCreateReturn = { create.await() }
+        // Keep the provisional row available until the fixture receives the first message.
+        fixture.beforeListReturn = { containsCreatedChat ->
+            if (containsCreatedChat) showCreatedChat.await()
+        }
+        fixture.beforeSendReturn = showCreatedChat::countDown
         app.chatService = fixture.service
         app.composerService = fixture.service
         app.journalStore = journal
@@ -239,6 +245,7 @@ class NativeTextSendTest {
         } finally {
             held.countDown()
             create.countDown()
+            showCreatedChat.countDown()
             followup.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
