@@ -52,7 +52,6 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -545,12 +544,11 @@ internal fun SettingsSheet(
                         with(LocalDensity.current) {
                             (panelBottom - (actionTop ?: panelBottom)).coerceAtLeast(0f).toDp()
                         }
-                    SnackbarHost(
-                        snackbar,
-                        Modifier.align(Alignment.BottomCenter)
-                            .widthIn(max = 504.dp)
-                            .padding(start = 12.dp, end = 12.dp, bottom = actionInset + 8.dp),
-                    )
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = actionInset + 8.dp),
+                    ) {
+                        WorkspaceFeedbackHost(snackbar, Modifier)
+                    }
                 }
             }
         }

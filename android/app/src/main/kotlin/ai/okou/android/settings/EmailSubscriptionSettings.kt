@@ -65,8 +65,10 @@ internal class EmailSubscriptionSettings(
 
     fun setPanelOpen(open: Boolean) {
         panelOpen = open
-        if (!open && mutable.value.updateFailed) {
-            mutable.value = mutable.value.copy(updateFailed = false)
+        if (!open) {
+            val current = mutable.value
+            mutable.value =
+                current.copy(updateFailed = false, read = current.read.copy(refreshFailure = null))
         }
     }
 
@@ -136,6 +138,7 @@ internal class EmailSubscriptionSettings(
                     before.read.copy(
                         unavailable = before.read.value != null && before.read.unavailable,
                         refreshing = before.read.isStale(nowMillis()),
+                        refreshFailure = null,
                     ),
             )
         try {
@@ -151,7 +154,17 @@ internal class EmailSubscriptionSettings(
             if (error is ApiFailure.Http && error.status == 403) {
                 clearInaccessible(writeRejected = attempted != null)
             } else if (attempted == null) {
-                mutable.value = current.copy(read = current.read.copy(unavailable = true))
+                mutable.value =
+                    current.copy(
+                        read =
+                            current.read.copy(
+                                unavailable = true,
+                                refreshFailure =
+                                    if (panelOpen && current.read.value != null)
+                                        SettingsRefreshFailure()
+                                    else null,
+                            ),
+                    )
             } else {
                 mutable.value = current.copy(unconfirmed = attempted)
                 if (current.unconfirmed == null && !panelOpen) {

@@ -35,7 +35,6 @@
     <string name="settings_model_accounts">Modellkonten</string>
     <string name="settings_accounts_scope">Wähle die Abokonten für „%1$s“.</string>
     <string name="settings_accounts_scope_empty">Modellkonten in „%1$s“</string>
-    <string name="settings_workspace_status">„%1$s“ · %2$s</string>
     <string name="settings_accounts_update_failed">Aktualisierung fehlgeschlagen. Zuletzt bekannte Informationen werden angezeigt.</string>
     <string name="settings_accounts_empty">Keine Modellkonten verbunden</string>
     <string name="settings_accounts_empty_help">Verbinde ChatGPT oder Claude, um Kontingente zu sehen und ein Konto auszuwählen.</string>

@@ -104,6 +104,14 @@ internal fun WorkspaceSettingsFeedback(
     inOverlay: Boolean,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    if (destination == SettingsDestination.ModelAccounts) {
+        val state by model.uiState.collectAsStateWithLifecycle()
+        SettingsRefreshFeedback(
+            snackbar,
+            state.accounts.refreshFailure,
+            R.string.settings_accounts_update_failed,
+        )
+    }
     val switchFailed by
         rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
     val creditRefreshFailed by
@@ -129,6 +137,18 @@ internal fun WorkspaceSettingsFeedback(
                 snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }
         }
+    }
+}
+
+@Composable
+internal fun SettingsRefreshFeedback(
+    snackbar: SnackbarHostState,
+    failure: SettingsRefreshFailure?,
+    @StringRes message: Int,
+) {
+    val text = stringResource(message)
+    LaunchedEffect(snackbar, failure, text) {
+        if (failure != null) snackbar.showSnackbar(text, duration = SnackbarDuration.Indefinite)
     }
 }
 
@@ -207,14 +227,6 @@ internal fun SettingsReadError(
 }
 
 @Composable
-private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringRes status: Int?) {
-    val text =
-        if (status == null) stringResource(scope, workspace)
-        else stringResource(R.string.settings_workspace_status, workspace, stringResource(status))
-    SettingsDetailStatus(text)
-}
-
-@Composable
 internal fun SettingsPlaceholder(loadingLabel: String? = null) {
     val visible = rememberContentReadSkeleton()
     val semantics =
@@ -246,16 +258,10 @@ private fun ModelAccounts(
     activateAccount: (String) -> Unit,
 ) {
     val accounts = state.accounts.value
-    val status =
-        when {
-            state.accounts.unavailable && accounts != null ->
-                R.string.settings_accounts_update_failed
-            else -> null
-        }
     val scope =
         if (accounts?.isEmpty() == true) R.string.settings_accounts_scope_empty
         else R.string.settings_accounts_scope
-    SettingsPageIntro(workspace, scope, status)
+    SettingsDetailStatus(stringResource(scope, workspace))
     when {
         accounts == null && state.accounts.unavailable -> SettingsReadError()
         accounts == null ->
