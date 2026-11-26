@@ -1818,13 +1818,11 @@ export function createThreadClaimRunObjects(
         });
         return usageError === null ? runtime : providerUnavailable(usageError);
       })();
-      const [route, connector, runtimeResult, selectedImageModel] =
-        await Promise.all([
-          get(authorizedRunRoute$),
-          get(connectorAdmission$),
-          settle(usage),
-          get(bootstrap.selectedImageModel$),
-        ]);
+      const [route, connector, runtimeResult] = await Promise.all([
+        get(authorizedRunRoute$),
+        get(connectorAdmission$),
+        settle(usage),
+      ]);
       // Preserve the existing rejection order when both branches reject admission.
       if (isRouteError(route)) {
         return route;
@@ -1869,7 +1867,7 @@ export function createThreadClaimRunObjects(
         persisted: {
           inputEvent: event,
           content,
-          selectedImageModel,
+          selectedImageModel: runPrompt.selectedImageModel,
           launchSnapshot,
           officialWorkflowProvenance: officialWorkflowRun?.provenance,
           modelProvider: persistedModelProvider(modelProvider),
@@ -2943,7 +2941,7 @@ interface ThreadRunPersistenceContext {
       readonly userMessage: ChatEventUserMessage;
     };
   readonly content: ThreadRunContent;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowProvenance:
     OfficialWorkflowObservation["provenance"] | undefined;
@@ -2974,7 +2972,7 @@ interface LaunchRunRowsArgs {
   readonly memoryMount: PersistedStorageMount;
   readonly modelProvider: ThreadRunPersistenceContext["modelProvider"];
   readonly modelSelection: ModelFirstPin;
-  readonly selectedImageModel: ImageModel;
+  readonly selectedImageModel: ImageModel | null;
   readonly callbacks: readonly PreparedLaunchCallback[];
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;

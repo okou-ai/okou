@@ -8,6 +8,7 @@ import { createPhoneUsePrompt } from "./phone-use";
 import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
+import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
@@ -33,6 +34,7 @@ export interface PreparedRunPrompt {
   readonly appendedSystemPrompt: string;
   readonly userPrompt: string;
   readonly userTimezone: string | undefined;
+  readonly selectedImageModel: ImageModel | null;
 }
 
 export class RunPromptError extends Error {
@@ -202,9 +204,6 @@ export function createPromptAndSkillVolumesSignals(
   const memberMetadata$ = computed((get) => {
     return get(bootstrap.memberMetadata$);
   });
-  const selectedImageModel$ = computed((get) => {
-    return get(bootstrap.selectedImageModel$);
-  });
   const shared = createSharedPromptSources(
     bootstrap,
     pickedEvent$,
@@ -241,7 +240,7 @@ export function createPromptAndSkillVolumesSignals(
   const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
   const rotatedPrompt$ = createRotatedPrompt(threadContext.incompleteContext$);
   const runtimePrompt$ = createRuntimePrompt(
-    selectedImageModel$,
+    memberMetadata$,
     disabledPaidTools$,
   );
   const prompt$ = computed(async (get): Promise<PreparedRunPrompt> => {
@@ -281,7 +280,7 @@ export function createPromptAndSkillVolumesSignals(
       computerUse,
       phoneUse,
       connectors,
-      runtime,
+      runtime.prompt,
       suggestions,
     ]);
     const prompts = renderRunPrompts(combined);
@@ -292,6 +291,7 @@ export function createPromptAndSkillVolumesSignals(
       // createUserPrompt already consumed this memoized member observation.
       userTimezone:
         (await get(memberMetadata$)).preferences?.timezone ?? undefined,
+      selectedImageModel: runtime.selectedImageModel,
     };
   });
   return { prompt$, skillVolumes$: shared.skillVolumes$, suggestionsPrompt$ };
