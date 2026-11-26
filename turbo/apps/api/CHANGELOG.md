@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.137.0](https://github.com/okou-ai/okou/compare/api-v2.136.2...api-v2.137.0) (2026-11-26)
+
+
+### Features
+
+* prepare later feedback for suggestions ([#51159](https://github.com/okou-ai/okou/issues/51159)) ([938f9b2](https://github.com/okou-ai/okou/commit/938f9b2cc1c2c188316ed17f72ce06ec4edb42b8))
+
+
+### Performance Improvements
+
+* **api:** deduplicate desktop shell authorization notifications ([#51143](https://github.com/okou-ai/okou/issues/51143)) ([9a306f4](https://github.com/okou-ai/okou/commit/9a306f4e71c700f4eb61b12dea718e4ad5f6df9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.134.0
+    * @okouai/core bumped to 8.885.4
+    * @okouai/db bumped to 2.71.3
+    * @okouai/pi-agent-runtime bumped to 1.52.92
+
 ## [2.136.2](https://github.com/okou-ai/okou/compare/api-v2.136.1...api-v2.136.2) (2026-11-26)
 
 

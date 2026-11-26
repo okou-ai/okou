@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.1](https://github.com/okou-ai/okou/compare/android-v0.61.0...android-v0.61.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **android:** keep update failures attached to their package ([#51152](https://github.com/okou-ai/okou/issues/51152)) ([e8382c8](https://github.com/okou-ai/okou/commit/e8382c8a7e30eb653e8c4de47f8d32167e6cd556))
+
 ## [0.61.0](https://github.com/okou-ai/okou/compare/android-v0.60.1...android-v0.61.0) (2026-11-26)
 
 

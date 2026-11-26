@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.4](https://github.com/okou-ai/okou/compare/ios-v0.67.3...ios-v0.67.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ci:** allow compatible ios test products across runner image revisions ([#51147](https://github.com/okou-ai/okou/issues/51147)) ([7495108](https://github.com/okou-ai/okou/commit/74951083c486ca09acf7b775d65232202e0d12a6))
+
 ## [0.67.3](https://github.com/okou-ai/okou/compare/ios-v0.67.2...ios-v0.67.3) (2026-11-26)
 
 
