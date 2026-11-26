@@ -31,11 +31,11 @@ non-route	src/__tests__/vercel-build.test.ts	vercel-build-002	planned
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-001	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-002	planned				pilot
 non-route	src/__tests__/worker-lifecycle.test.ts	worker-lifecycle-006	planned				pilot
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	planned				B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	planned				B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	planned				B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	planned				B06
-non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	planned				B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-001	rewritten	11.0		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-003	rewritten	7.7		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-004	rewritten	7.2		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-005	rewritten	6.7		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
+non-route	src/lib/__tests__/agent-notification-email-renderer.test.ts	agent-notification-email-renderer-006	rewritten	11.1		src/lib/__tests__/agent-notification-email-renderer.test.ts	B06
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-001	rewritten	35.6		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/billing-redirect.test.ts	billing-redirect-002	rewritten	27.9		src/lib/__tests__/billing-redirect.test.ts	B02
 non-route	src/lib/__tests__/log-axiom-transport.test.ts	log-axiom-transport-026	planned				
