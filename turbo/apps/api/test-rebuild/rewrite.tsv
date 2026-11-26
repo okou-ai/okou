@@ -861,10 +861,10 @@ chat	src/signals/routes/__tests__/chat-input-status.test.ts	chat-input-status-01
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-001	planned				
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-002	planned				
 chat	src/signals/routes/__tests__/chat-relations.test.ts	chat-relations-005	planned				
-chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-001	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-002	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-003	planned		extension after sandbox reset		B01
-chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-004	planned		extension after sandbox reset		B01
+chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-001	rewritten	157.0	extension after sandbox reset	src/signals/routes/__tests__/chat-remote-access.test.ts	B01
+chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-002	rewritten	79.0	extension after sandbox reset	src/signals/routes/__tests__/chat-remote-access.test.ts	B01
+chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-003	rewritten	147.9	extension after sandbox reset	src/signals/routes/__tests__/chat-remote-access.test.ts	B01
+chat	src/signals/routes/__tests__/chat-remote-access.test.ts	chat-remote-access-004	rewritten	139.2	extension after sandbox reset	src/signals/routes/__tests__/chat-remote-access.test.ts	B01
 chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-002	planned				
 chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-003	planned				
 chat	src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts	chat-run-finished-automations.bdd-004	planned				
