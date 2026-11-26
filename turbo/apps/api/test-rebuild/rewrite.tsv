@@ -2359,17 +2359,17 @@ account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-003	rewritt
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-005	rewritten	49.6		src/signals/routes/__tests__/org-cache.test.ts	B03	
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-009	rewritten	11.3		src/signals/routes/__tests__/org-cache.test.ts	B03	
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-010	rewritten	36.9		src/signals/routes/__tests__/org-cache.test.ts	B03	
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-001	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-002	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-005	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-012	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-013	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-014	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-015	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-016	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-017	planned				B09	d-other
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-019	planned				B09	b-install
-billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-022	planned				B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-001	rewritten	100.7		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-002	rewritten	83.1		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-005	rewritten	78.0		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-012	rewritten	54.3		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-013	rewritten	65.1		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-014	rewritten	87.1		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-015	rewritten	153.3		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-016	rewritten	77.6		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-017	rewritten	79.3		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-019	revisit		revisit: over 200 ms by shuffled 3-run median (org-delete-billing-019 224.8 ms (238/225/205)); draft /home/user/pilot-env/wip/r15/org-delete-billing.test.ts; resume: split further or record slow-setup with Given+first When/Then		B09	b-install
+billing	src/signals/routes/__tests__/org-delete-billing.test.ts	org-delete-billing-022	rewritten	144.0		src/signals/routes/__tests__/org-delete-billing.test.ts	B09	d-other
 account-org	src/signals/routes/__tests__/org-invitation-purchase.test.ts	org-invitation-purchase-001	revisit		revisit: needs an active paid usage-pack subscription with a Stripe subscription ID plus Stripe invitation-preview and invoice-payment doubles, no existing branch test exercises /api/org/invite/purchase/*; evidence: org-invite.ts previewPurchase requires STRIPE_SECRET_KEY, invitationPurchasePlanActive$ and usagePackSubscriptions.stripeSubscriptionId before createUsagePackInvitationPreview$ calls Stripe; resume: build the subscription through purchaseUsagePacks (helpers/public-usage-pack-checkout.ts), then stub the Stripe preview/invoice calls used by usage-pack-invitation-purchase.service.ts and Clerk createOrganizationInvitation (reject on replay)		B07	d-other
 account-org	src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	org-member-cleanup-automations.bdd-002	skipped		slow-setup: Given needs an accepted signed webhook delivery that dispatches a Run (startEventAutomationRun) for each owner plus a second workspace; measured with the smaller Given of org-member-cleanup-automations.bdd-003 (Team workspace via setupWorkflowOrg tier team, one Workflow with an hourly loop schedule, webhook-received automation plus signed delivery): 638 ms and 631 ms before the When, stopping inside the delivery Run dispatch (RUNNER_DEFAULT_GROUP unset); this case adds a peer admin pair and a second-workspace pair, so its Given is strictly larger		B07	d-other
 account-org	src/signals/routes/__tests__/org-member-cleanup-automations.bdd.test.ts	org-member-cleanup-automations.bdd-003	skipped		slow-setup: Given (setupWorkflowOrg tier team, createWorkflow, hourly loop schedule, webhook-received automation with an accepted signed delivery that dispatches a Run) measured 638 ms and 631 ms before the first When, stopping inside the delivery Run dispatch (RUNNER_DEFAULT_GROUP unset), so Given+first When/Then exceeds 200 ms		B07	d-other
