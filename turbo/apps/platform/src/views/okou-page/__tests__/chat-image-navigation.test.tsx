@@ -192,6 +192,54 @@ test("an extensionless image uses its single detail for opening and returning fr
   ).toHaveLength(1);
 });
 
+test("a relative file link and its API URL share a detail and open the signed original", async () => {
+  const path = "/api/web/file-url?file_id=file-blueprint&filename=Plan.png";
+  const apiLink = "https://api.okou.ai" + path;
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "assistant",
+        content: `Use the [floor plan](${path}) or its [original file](${apiLink}).`,
+        runId: ATTACHMENT_RUN_ID,
+        runEventId: "plan-upload-links",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+    ],
+  });
+  const queries: string[] = [];
+  mockMessageArtifactDetails(context, (url) => {
+    queries.push(url);
+    return [artifactFile("Plan.png", { url, contentType: "image/png" })];
+  });
+  const original = "https://media.example.test/authorized-plan.png";
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    expect(query.file_id).toBe("file-blueprint");
+    return respond(200, {
+      url: original,
+      downloadUrl: original,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: null,
+    });
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+  });
+  for (const label of ["floor plan", "original file"]) {
+    click(await findNamedLink(label));
+    const viewer = await screen.findByTestId("artifact-sidebar");
+    await waitFor(() => {
+      expect(
+        within(viewer).getByTestId("artifact-sidebar-body-image"),
+      ).toHaveAttribute("src", original);
+    });
+    click(await findNamedButton("Close artifact", viewer));
+  }
+  expect(queries).toHaveLength(1);
+});
+
 test("artifact-image-viewer-001 waits for decoded pixels despite knowing the first photo's size", async () => {
   twoImageChat();
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {

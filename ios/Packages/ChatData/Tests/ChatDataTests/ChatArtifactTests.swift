@@ -42,6 +42,18 @@ final class ChatArtifactTests: XCTestCase {
     ] { XCTAssertNotNil(ChatArtifactReference.parse(value, webURL: webURL, apiURL: apiURL), value) }
   }
 
+  func testFileLinksKeepTheirIdentityWithOrWithoutAnAppOrAPIHost() {
+    let apiURL = URL(string: "https://api.okou.ai")!
+    let path = "/api/web/file-url?file_id=file-blueprint&filename=Plan.png"
+    for origin in ["", webURL.absoluteString, apiURL.absoluteString] {
+      let artifact = ChatArtifactReference.parse(origin + path, webURL: webURL, apiURL: apiURL)
+      XCTAssertEqual(artifact?.source, .file("file-blueprint"))
+      XCTAssertEqual(artifact?.filename, "Plan.png")
+    }
+    XCTAssertNil(
+      ChatArtifactReference.parse("https://other.invalid" + path, webURL: webURL, apiURL: apiURL))
+  }
+
   func testHostedSiteRecognitionUsesTheConfiguredEnvironment() throws {
     let preview = URL(string: "https://app.vm7.ai")!
     let api = URL(string: "https://api.vm7.ai")!

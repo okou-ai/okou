@@ -1,3 +1,4 @@
+import { authenticatedWebFile } from "../../lib/message-url.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -174,13 +175,9 @@ export function messageArtifactKey(value: string): string {
   }
   const url = new URL(canonical, origin);
   url.hash = "";
-  const fileId = url.searchParams.get("file_id");
-  if (
-    fileId &&
-    url.pathname === "/api/web/file-url" &&
-    platformFileOrigins().has(url.origin)
-  ) {
-    return "/api/web/file-url?file_id=" + encodeURIComponent(fileId);
+  const file = authenticatedWebFile(value);
+  if (file) {
+    return "/api/web/file-url?file_id=" + encodeURIComponent(file.id);
   }
   return url.href;
 }

@@ -20,25 +20,12 @@ import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { accept } from "../lib/accept.ts";
 import { now } from "../lib/time.ts";
-import { resolveApiBase } from "./api-base.ts";
+import { authenticatedWebFile } from "../lib/message-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "./hosted-site-url-changes.ts";
-
-const AUTHENTICATED_FILE_PATH = "/api/web/file-url";
-
-export function isAuthenticatedAttachmentUrl(url: string): boolean {
-  if (!URL.canParse(url)) {
-    return false;
-  }
-  const parsed = new URL(url);
-  return (
-    parsed.origin === new URL(resolveApiBase()).origin &&
-    parsed.pathname === AUTHENTICATED_FILE_PATH
-  );
-}
 
 export interface ArtifactShareIdentity {
   readonly target: ArtifactShareTarget;
@@ -103,16 +90,11 @@ function createArtifactReferencePresignedToken$(
 }
 
 function createWebFilePresignedToken$(
-  url: string,
+  fileId: string,
   refreshVersion$: State<number>,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
   return computed(async (get) => {
     get(refreshVersion$);
-    const sourceUrl = new URL(url);
-    const fileId = sourceUrl.searchParams.get("file_id");
-    if (!fileId) {
-      throw new Error("Authenticated attachment URL is missing file_id");
-    }
     const client = get(apiClient$)(webFilesContract);
     const response = await accept(
       client.fileUrl({
@@ -146,8 +128,9 @@ function createAttachmentPresignedToken$(
   if (reference) {
     return createArtifactReferencePresignedToken$(reference, refreshVersion$);
   }
-  if (isAuthenticatedAttachmentUrl(url)) {
-    return createWebFilePresignedToken$(url, refreshVersion$);
+  const file = authenticatedWebFile(url);
+  if (file) {
+    return createWebFilePresignedToken$(file.id, refreshVersion$);
   }
   if (URL.canParse(url)) {
     const source = new URL(url);

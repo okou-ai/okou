@@ -8511,7 +8511,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       )}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
-        openArtifact(card, pageSignal);
+        detach(openArtifact(card, pageSignal), Reason.DomCallback);
       }}
     >
       <RelatedArtifactIcon kind={card.signals.kind} />
