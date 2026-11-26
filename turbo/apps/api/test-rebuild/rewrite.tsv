@@ -480,35 +480,35 @@ billing	src/signals/routes/__tests__/billing-usage-pack-checkout.test.ts	billing
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-003	rewritten	90.6		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-004	rewritten	153.7		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
 billing	src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	billing-usage-pack-credits-005	rewritten	91.1		src/signals/routes/__tests__/billing-usage-pack-credits.test.ts	B02	
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	planned					c-timer
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	planned					c-timer
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-007	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-009	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-010	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-011	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-013	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-014	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-015	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-016	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-020	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-022	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-023	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-024	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-025	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-027	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-034	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-035	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-036	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-038	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-039	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-040	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-044	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-048	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-051	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-052	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-054	planned					d-other
-billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-057	planned					d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-001	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-002	planned				B10	c-timer
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-004	planned				B10	c-timer
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-007	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-009	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-010	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-011	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-013	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-014	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-015	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-016	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-020	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-022	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-023	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-024	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-025	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-027	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-034	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-035	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-036	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-038	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-039	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-040	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-044	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-048	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-051	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-052	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-054	planned				B10	d-other
+billing	src/signals/routes/__tests__/billing-usage-pack-subscriptions.test.ts	billing-usage-pack-subscriptions-057	planned				B10	d-other
 billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-001	revisit		revisit: no public helper drives the usage pack change preview/confirm and paid upgrade invoice, and the Stripe shapes the 6.4k-line allocation change service validates exceed the first-pass time box; evidence: usage-pack-allocation-change.service.ts reads subscriptions.retrieve (validateCurrentStripeProjection, usagePackChangePreviewBlock), calls invoices.createPreview twice (recurring + immediate always_invoice at proration_date) and invoices.listLineItems for proration lines; helpers/public-usage-pack-checkout.ts only covers checkout + first invoice.paid; resume: reuse purchaseUsagePacks at 2035-01-16, mockNow 1 s before period end, mock createPreview (1500-cent proration line at the proration date) and subscriptions.update (immediate apply), then deliver the signed upgrade invoice.paid 8 times concurrently plus once and read credits/management		B06	
 billing	src/signals/routes/__tests__/billing-usage-pack-upgrade-invoice.test.ts	billing-usage-pack-upgrade-invoice-004	revisit		revisit: same blocker as billing-usage-pack-upgrade-invoice-001 plus the pending_update path (subscriptions.update returns pending_update with an open invoice, later applied before invoice.paid); evidence: usage-pack-allocation-change.service.ts confirm flow returns pending_payment and fulfils 15,000 purchased + 1,100 bonus credits from the upgrade invoice; resume: build on the 001 fixture with mockNow 1,296,000 s before period end, subscriptions.update returning pending_update + latest_invoice open, then retrieve without pending_update before the 8+1 invoice.paid deliveries		B06	
 browser	src/signals/routes/__tests__/browser-admission.test.ts	browser-admission-001	planned					a-run
@@ -1183,36 +1183,36 @@ connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	co
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-002	revisit		revisit: two DCR accounts plus a foreign account and an invalid_client callback need a split per BRIEF7; evidence: not reached within first-pass budget; resume: same flow as 001 with authorizationCodeErrors invalid_client and a second workspace owner		B04	
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-005	revisit		revisit: expiring DCR registration needs mockNow advance and the start/callback flow; evidence: not reached within first-pass budget, dcrClientSecretExpiresAt is supported by the provider mock; resume: connect with secret expiring at now+60, mockNow(+61s), reconnect, read account, complete callback		B04	
 connectors	src/signals/routes/__tests__/connectors-automatic-security.test.ts	connectors-automatic-security-006	rewritten	150.8		src/signals/routes/__tests__/connectors-automatic-security.test.ts	B04	
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-001	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-002	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-003	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-004	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-005	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-006	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-007	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-008	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-011	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-012	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-013	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-014	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-015	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-017	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-018	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-024	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-025	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-028	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-032	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-034	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-035	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-036	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-037	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-040	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-041	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-043	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-044	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-051	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-055	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	planned					d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-001	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-002	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-003	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-004	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-005	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-006	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-007	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-008	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-011	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-012	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-013	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-014	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-015	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-017	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-018	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-024	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-025	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-028	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-032	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-034	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-035	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-036	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-037	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-040	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-041	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-043	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-044	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-051	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-055	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-automatic.test.ts	connectors-automatic-060	planned				B10	d-other
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-001	rewritten	147.5	split n=2: 1/2=147.5; 2/2=147.3; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-003	rewritten	85.7	accepted by shuffled 3-run median (provisional cold-start rule); median 85.7 ms; earlier strict measurement: round 10 measured 214.3 ms (3-run median) as the first case reaching its code path, after acceptance at 94.8 ms	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
 connectors	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	connectors-external-code.bdd-004	rewritten	24.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/connectors-external-code.bdd.test.ts	B03	
@@ -1249,52 +1249,52 @@ connectors	src/signals/routes/__tests__/connectors-native-app-authorization.test
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-001	rewritten	191.5		src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-004	rewritten	124.9		src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
 connectors	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	connectors-oauth-reconnect-start-005	rewritten	110.6	split n=2: 1/2=110.6; 2/2=102.9	src/signals/routes/__tests__/connectors-oauth-reconnect-start.test.ts	B02	
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-002	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-003	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-004	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-009	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-010	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-013	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-014	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-015	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-016	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-017	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-018	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-023	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-024	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-025	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-026	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-027	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-028	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-029	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-030	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-031	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-032	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-033	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-034	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-035	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-036	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-050	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-052	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-053	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-054	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-055	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-056	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-057	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-058	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-059	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-060	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-061	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-062	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-063	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-064	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-065	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-081	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-082	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-083	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-087	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-088	planned					d-other
-connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-091	planned					d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-002	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-003	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-004	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-009	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-010	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-013	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-014	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-015	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-016	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-017	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-018	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-023	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-024	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-025	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-026	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-027	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-028	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-029	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-030	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-031	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-032	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-033	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-034	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-035	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-036	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-050	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-052	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-053	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-054	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-055	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-056	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-057	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-058	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-059	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-060	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-061	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-062	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-063	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-064	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-065	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-081	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-082	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-083	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-087	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-088	planned				B10	d-other
+connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-091	planned				B10	d-other
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-001	rewritten	129.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-003	rewritten	95.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
 connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-004	rewritten	157.5		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04	
@@ -1383,22 +1383,22 @@ workflows	src/signals/routes/__tests__/cron-snapshot-chat-events.test.ts	cron-sn
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-003	skipped		slow-setup: Given+first When/Then 533.5 ms and 289.1 ms (lower bounds measured only up to the changed-source sync, before the Run launch; 533.5 ms first in file, 289.1 ms warm as last row; Given: Pro entitlement + Claude Code subscription model claude-fable-5-1 216.3 / 104.7 ms, initial Seed sync via GET /api/cron/sync-skills 44.5 / 38.0 ms; first When so far: queue chat Run with no Runner 249.2 / 126.2 ms, changed-source sync 23.5 / 20.3 ms; the queued Run did not dispatch after registerDirectRunner + heartbeat in the probe, so the launch part was not measured)		B04	
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-005	skipped		slow-setup: Given+first When/Then 245.4 ms and 270.5 ms (both second in file; a third run first in file 423.0 ms; lightest public Given: Pro entitlement 74.2 / 81.4 ms, Codex device sign-in as the gpt-6-luna subscription 53.4 / 58.3 ms, _codexExecution off via POST /api/feature-switches 6.5 / 7.4 ms; first When chat Run gpt-6-luna + dispatch + execution input read with pi mounts 106.5 / 117.6 ms)		B04	
 workflows	src/signals/routes/__tests__/cron-sync-skills.test.ts	cron-sync-skills-006	skipped		slow-setup: Given+first When/Then 254.5 ms and 269.8 ms (reported row durations including the Run cleanup the row needs; in-process Given+When/Then without cleanup 186.8 / 195.2 ms; lightest public Given: Pro entitlement with the built-in model 69.4 / 79.8 ms, image-generation off via PATCH /api/paid-tools 5.3 / 5.8 ms; the only When chat Run + dispatch + execution input read 107.2 / 104.0 ms, failure-completion cleanup about 60 ms; the first When/Then is the whole case, so splitting cannot shorten it; with a subscription-model Given 256.9 / 222.7 ms; borderline, coordinator decision)		B04	
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-001	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-004	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-008	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-010	planned		extension after sandbox reset		pilot	c-timer
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-012	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-013	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-014	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-015	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-016	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-017	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-020	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-027	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-028	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-029	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-031	planned		extension after sandbox reset		pilot	d-other
-connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-032	planned		extension after sandbox reset		pilot	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-001	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-004	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-008	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-010	planned		extension after sandbox reset		B10	c-timer
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-012	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-013	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-014	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-015	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-016	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-017	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-020	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-027	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-028	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-029	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-031	planned		extension after sandbox reset		B10	d-other
+connectors	src/signals/routes/__tests__/custom-connector-auth-modes.test.ts	custom-connector-auth-modes-032	planned		extension after sandbox reset		B10	d-other
 connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-001	rewritten	68.2	accepted by shuffled 3-run median (provisional cold-start rule); median 68.2 ms; earlier strict measurement: round 10 measured 237.6 ms (3-run median) as the first case reaching its code path, after acceptance at 118.7 ms	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03	
 connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-002	rewritten	86.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03	
 connectors	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	custom-connector-cloudflare-oauth-003	rewritten	66.9	split n=2: 1/2=33.2; 2/2=66.9; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/custom-connector-cloudflare-oauth.test.ts	B03	
@@ -1625,17 +1625,17 @@ account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-sta
 account-org	src/signals/routes/__tests__/get-started-invitations.test.ts	get-started-invitations-004	rewritten	57.8		src/signals/routes/__tests__/get-started-invitations.test.ts	B04	
 account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-001	rewritten	164.5		src/signals/routes/__tests__/get-started.test.ts	B02	
 account-org	src/signals/routes/__tests__/get-started.test.ts	get-started-003	rewritten	138.5		src/signals/routes/__tests__/get-started.test.ts	B02	
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-002	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-003	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-004	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-005	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-006	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-007	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-008	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-010	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-012	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-014	planned					b-install
-account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-018	planned					b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-002	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-003	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-004	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-005	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-006	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-007	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-008	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-010	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-012	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-014	planned				B10	b-install
+account-org	src/signals/routes/__tests__/github-install-authorization.test.ts	github-install-authorization-018	planned				B10	b-install
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-001	revisit		revisit: over 200 ms and order-dependent installation setup; evidence: as first row 573 ms (two GitHub App installs + two connector OAuth flows + four integration reads); when run after other rows in the file, installGithubAppViaApi fails with "Expected GitHub setup callback redirect, received 500"; resume: find which earlier-row state (connector GitHub OAuth env/handlers) breaks the setup callback, then split per BRIEF7 (Given = two installs + first connection)		B04	
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-003	revisit		revisit: shuffled 3-run median over 200 ms in this small file (provisional cold-start rule); evidence: github-oauth-account-mutations-005 median 119.0 ms (runs 224/111/119); github-oauth-account-mutations-003 (1/2) median 105.9 ms (runs 114/106/98); github-oauth-account-mutations-003 (2/2) median 254.6 ms (runs 144/341/255); draft /home/user/pilot-env/wip/r13/github-oauth-account-mutations.test.ts; resume: split the failing rows or record slow-setup		B04	
 account-org	src/signals/routes/__tests__/github-oauth-account-mutations.test.ts	github-oauth-account-mutations-005	revisit		revisit: shuffled 3-run median over 200 ms in this small file (provisional cold-start rule); evidence: github-oauth-account-mutations-005 median 119.0 ms (runs 224/111/119); github-oauth-account-mutations-003 (1/2) median 105.9 ms (runs 114/106/98); github-oauth-account-mutations-003 (2/2) median 254.6 ms (runs 144/341/255); draft /home/user/pilot-env/wip/r13/github-oauth-account-mutations.test.ts; resume: split the failing rows or record slow-setup		B04	
@@ -1983,11 +1983,11 @@ messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	in
 messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-011	skipped		timer: after a non-linked result the page script keeps its listeners and a 250 ms completion setTimeout; 'no listeners or timers remain' and 'never navigates' hold only after that browser timer fires		B08	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-012	skipped		timer: after a non-linked result the page script keeps its listeners and a 250 ms completion setTimeout; 'no listeners or timers remain' and 'never navigates' hold only after that browser timer fires		B08	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-013	skipped		timer: after a non-linked result the page script keeps its listeners and a 250 ms completion setTimeout; 'no listeners or timers remain' and 'never navigates' hold only after that browser timer fires		B08	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-019	rewritten	5.4	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-023	rewritten	15.2	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-024	rewritten	6.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-019	rewritten	5.4	the callback page's inline script is what the user's browser runs after Telegram login (it scrubs the URL, notifies the opener and navigates); the test executes that script in node:vm against a recording window whose setTimeout/setInterval only record IDs and never run callbacks, so no timer is advanced; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-023	rewritten	15.2	the callback page's inline script is what the user's browser runs after Telegram login (it scrubs the URL, notifies the opener and navigates); the test executes that script in node:vm against a recording window whose setTimeout/setInterval only record IDs and never run callbacks, so no timer is advanced; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-024	rewritten	6.7	the callback page's inline script is what the user's browser runs after Telegram login (it scrubs the URL, notifies the opener and navigates); the test executes that script in node:vm against a recording window whose setTimeout/setInterval only record IDs and never run callbacks, so no timer is advanced; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-025	skipped		timer: the Then depends on the page script's 500 ms retry interval detecting the closed opener and its 120 s deadline setTimeout before the late result		B08	d-other
-messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-026	rewritten	9.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
+messaging	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	integrations-telegram-callback-026	rewritten	9.1	the callback page's inline script is what the user's browser runs after Telegram login (it scrubs the URL, notifies the opener and navigates); the test executes that script in node:vm against a recording window whose setTimeout/setInterval only record IDs and never run callbacks, so no timer is advanced; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/integrations-telegram-callback.test.ts	B08	d-other
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-002	planned					a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-004	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("runs a Standard thread ... the Runner receives `ANTHROPIC_MODEL` ... and an `OKOU_TOKEN`"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 messaging	src/signals/routes/__tests__/integrations-telegram-message.test.ts	integrations-telegram-message-007	planned					d-other
@@ -2758,16 +2758,16 @@ messaging	src/signals/routes/__tests__/slack-artifact-channel-sharing.test.ts	sl
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-001	skipped		slow-setup: two production Slack OAuth installs plus a member connect flow before six channel reads; measured 224-226 ms with the light case running first		B01	
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-003	rewritten	81.6	revisit: draft passes but not accepted: another case in the file is over 200 ms (slack-channels-004:203ms); evidence: idle 3-run median 102.0 ms (runs [102, 106, 91]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01	
 messaging	src/signals/routes/__tests__/slack-channels.test.ts	slack-channels-004	rewritten	172.2	revisit: draft passes but not accepted: its own median is over 200 ms; evidence: idle 3-run median 203.1 ms (runs [202, 205, 203]); draft at /home/user/pilot-env/wip/r7/slack-channels.test.ts; resume: lighten setup or first-case warm-up, re-measure, accept	src/signals/routes/__tests__/slack-channels.test.ts	B01	
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-002	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-003	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-004	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-005	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-006	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-010	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-013	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-015	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-016	planned					b-install
-messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-020	planned					b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-002	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-003	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-004	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-005	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-006	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-010	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-013	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-015	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-016	planned				B10	b-install
+messaging	src/signals/routes/__tests__/slack-connect.test.ts	slack-connect-020	planned				B10	b-install
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-001	rewritten	143.6		src/signals/routes/__tests__/slack-connector-oauth.test.ts	B01	
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-002	rewritten	129.0		src/signals/routes/__tests__/slack-connector-oauth.test.ts	B01	
 messaging	src/signals/routes/__tests__/slack-connector-oauth.test.ts	slack-connector-oauth-003	rewritten	140.0		src/signals/routes/__tests__/slack-connector-oauth.test.ts	B01	
@@ -2884,14 +2884,14 @@ chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-019	planned			
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-023	planned					a-run
 chat	src/signals/routes/__tests__/suggestions.test.ts	suggestions-028	planned					a-run
 remote-access	src/signals/routes/__tests__/tailscale-creation.test.ts	tailscale-creation-001	rewritten	105.2		src/signals/routes/__tests__/tailscale-creation.test.ts	B03	
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-004	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-004	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-005	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-006	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-008	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-012	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-013	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-012	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/tailscale-metadata-concurrency.test.ts	tailscale-metadata-concurrency-013	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/tailscale-parity.test.ts	tailscale-parity-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 remote-access	src/signals/routes/__tests__/tailscale-parity.test.ts	tailscale-parity-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			a-run
 remote-access	src/signals/routes/__tests__/tailscale-parity.test.ts	tailscale-parity-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
@@ -3106,26 +3106,26 @@ remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-nati
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-002	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-003	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-native-authority.test.ts	vnc-native-authority-004	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-010	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			c-timer
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-012	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-013	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-019	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-020	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-021	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-022	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-023	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-024	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-025	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-026	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-027	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-029	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-031	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-039	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-001	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	c-timer
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-002	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-003	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-010	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-011	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	c-timer
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-012	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-013	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-019	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-020	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-021	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-022	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-023	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-024	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-025	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-026	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-027	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-029	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-031	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
+remote-access	src/signals/routes/__tests__/vnc-native-publication.test.ts	vnc-native-publication-039	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission		B10	d-other
 remote-access	src/signals/routes/__tests__/vnc-needs-rebind.test.ts	vnc-needs-rebind-002	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run with a chat-enabled direct VNC host"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-needs-rebind.test.ts	vnc-needs-rebind-003	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run with a chat-enabled direct VNC host"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-001	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run on an authenticated Runner"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
@@ -3133,9 +3133,9 @@ remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-003	s
 remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-005	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a running chat Run and a chat-enabled VNC host"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-009	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
 remote-access	src/signals/routes/__tests__/vnc-rsa-aes.test.ts	vnc-rsa-aes-010	planned		affected by #50892 (live remote device access behind remoteDevices; members can opt in): rewrite against the current behaviour, including device policy at inventory, Runner operation and native command admission			d-other
-artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-001	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-016	planned					d-other
-artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-018	planned					d-other
+artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-001	planned				B10	d-other
+artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-016	planned				B10	d-other
+artifacts	src/signals/routes/__tests__/voice-google-auth-retry.test.ts	voice-google-auth-retry-018	planned				B10	d-other
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-001	skipped		timer: waits on a production timer (retryable STS failures wait on signal-timers delay between the three token attempts in signals/external/gcp-llm-auth.ts)		B04	
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-007	rewritten	90.7		src/signals/routes/__tests__/voice-google-auth.test.ts	B04	
 artifacts	src/signals/routes/__tests__/voice-google-auth.test.ts	voice-google-auth-009	rewritten	88.0		src/signals/routes/__tests__/voice-google-auth.test.ts	B04	
@@ -3352,28 +3352,28 @@ webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-018	
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-019	planned					d-other
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-021	planned					a-run
 webhooks	src/signals/routes/__tests__/webhooks-gmail.test.ts	webhooks-gmail-022	planned					a-run
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-005	rewritten	265.6	split n=2: 1/2=265.6; 2/2=162.6; cold-start review: (1/2) shuffled 3-run median 265.6 ms; the file's first-reached path pays ~150 ms, so one of its three rows misses the median whenever it runs first	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-006	revisit		revisit: final split segment over 200 ms; evidence: split n=3 (1/3 notifications 110-131 ms, 2/3 account read + disable 146-152 ms, both when not first) but row 3/3 (reconnect Calendar then delete 204) must replay the automation Given (workflow + Calendar OAuth connect + automation create ~80-90 ms), both notifications (~22 ms) and the disable (~21 ms) before its own reconnect (list ~9 ms, OAuth start ~9 ms, callback ~30 ms) and delete (~15 ms): 215, 258 and 287 ms in three shuffled seeds without running first (195 and 209 ms in sequential runs); Given + first When/Then is only 110-131 ms, so slow-setup per BRIEF7 does not apply; the previously committed single test also omitted the Then clause "after reconnecting Calendar, deleting it returns HTTP 204"; resume: coordinator decides whether the reconnect-and-delete segment may be accepted at about 200 ms or recorded as slow-setup	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-005	rewritten	168.8	split n=2: 1/2=157.0; 2/2=168.8; accepted by the non-first median rule (median over shuffled runs where the row was not first in its file: (1/2) 196.8/154.6/157.0 ms, (2/2) 262.4/209.9/160.1/168.8/148.5 ms)	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-006	revisit		revisit: a three-row split passes rows (1/3) 122.0 and (2/3) 157.3 ms but row (3/3) has a non-first median of 205.1 ms (229.1/255.5/204.9/203.3/205.1); Given plus the first When/Then is about 122 ms, so it is not slow-setup; draft /home/user/pilot-env/wip/r14/webhooks-google-calendar.test.ts; resume: lighten or further split row (3/3)	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-007	skipped		slow-setup: Given+first When/Then 514 ms and 572 ms (later 462/451/439 ms; per step: setupWorkflowOrg (Stripe invoice entitlement + onboarding + subscription model) 184 ms, runner registration 17 ms, workflow + Calendar connect + automation 122 ms, notification 72 ms, dispatch completion in waitUntil 160 ms)		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-008	skipped		slow-setup: Given+first When/Then 275 ms and 248 ms (third run 277 ms; two Calendar OAuth connects + automation ~130 ms as in 011, thread selection of the second account moving the watch, then deny first, delete second, read connector-access)		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-009	skipped		slow-setup: Given+first When/Then 274 ms and 263 ms (third run 262 ms; funded member via setupWorkflowOrg ~184 ms, runner registration ~17 ms, two Calendar OAuth connects + automation, thread selection; first When is only the old-channel 401)		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-011	revisit		revisit: Given+first When/Then is borderline and was measured only while other writers loaded the 2-CPU machine; evidence: Given+first When/Then 224 ms and 270 ms (row 1/3 = two Calendar OAuth connects, automation create, make second default; 8 probe runs 192-278 ms, never clearly under 200; per step: workflow + first OAuth connect 67 ms, second OAuth connect 39 ms, automation create with baseline sync + watch 38 ms, account list 12-24 ms, set-default moving the watch (stop + baseline + watch) 73 ms; later rows must replay the default switch/deletions so are heavier); resume: re-measure row (1/n) on an idle machine and split if it is at most 200 ms		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-016	skipped		slow-setup: Given+first When/Then 499 ms and 537 ms (third run 517 ms; per step: feature switch 7 ms, workflow + two Calendar OAuth connects 90 ms, automation create 35 ms, account list + thread selection 27 ms, allow-1h policy 16 ms, then the first When alone - the renewal cron GET /api/cron/renew-google-calendar-watches one millisecond before expiry - 338 ms, as it sweeps the renewal candidates)		B01	
-webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-017	rewritten	146.8	accepted by shuffled 3-run median (provisional cold-start rule); median 120.5 ms; earlier strict measurement: round 10 measured 274.2 ms (3-run median) as the first case reaching its code path, after acceptance at 146.8 ms	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
+webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-017	rewritten	125.9	accepted by the non-first median rule (123.5/141.7/116.0/128.4 ms when not first)	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-018	skipped		slow-setup: Given+first When/Then 264 ms and 276 ms (same funded Given as 007: setupWorkflowOrg ~184 ms + runner + Calendar connect + updated automation, then first notification dispatching a run)		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-019	skipped		slow-setup: Given+first When/Then 310 ms and 293 ms (same funded Given as 007 plus a second automation, then first notification dispatching a run)		B01	
 webhooks	src/signals/routes/__tests__/webhooks-google-calendar.test.ts	webhooks-google-calendar-021	revisit		revisit: shuffled 3-run median over 200 ms in this small file (provisional cold-start rule); evidence: webhooks-google-calendar-021 median 218.9 ms (runs 219/117/227); webhooks-google-calendar-017 median 120.5 ms (runs 141/120/113); webhooks-google-calendar-005 median 139.7 ms (runs 137/140/144); webhooks-google-calendar-006 median 279.7 ms (runs 159/303/280); draft /home/user/pilot-env/wip/r13/webhooks-google-calendar.test.ts; resume: split the failing rows or record slow-setup		B01	
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-005	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-006	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-007	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-010	planned		unfinished: out of time		B09	c-timer
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-013	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-014	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-015	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-016	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-017	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-019	planned		unfinished: out of time		B09	d-other
-webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-022	planned		unfinished: out of time		B09	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-005	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-006	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-007	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-010	planned		unfinished: out of time		B10	c-timer
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-013	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-014	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-015	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-016	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-017	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-019	planned		unfinished: out of time		B10	d-other
+webhooks	src/signals/routes/__tests__/webhooks-google-forms.test.ts	webhooks-google-forms-022	planned		unfinished: out of time		B10	d-other
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-001	revisit		revisit: the push dispatches an automation Run (dispatched: 1) and needs a workflow org with a supported model; evidence: one dispatched Run measured 432-438 ms in two runs (webhooks-x-resource-usage probe), and the Meet subscription setup alone is 135-153 ms cold; resume: build with the 010 fixture + workflows.setupWorkflowOrg, measure, likely slow-setup with data		B04	
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-003	skipped		slow-setup: cold path unique to this case (the only row reaching it, so every shuffled order pays it); shuffled 3-run webhooks-google-workspace-events-003 median 282.7 ms (runs 348/275/283); draft /home/user/pilot-env/wip/r13/webhooks-google-workspace-events.test.ts		B04	
 webhooks	src/signals/routes/__tests__/webhooks-google-workspace-events.test.ts	webhooks-google-workspace-events-005	revisit		revisit: two Meet accounts, two workflows, a thread connector selection, an online Runner and two dispatched Runs; evidence: one dispatched Run measured 432-438 ms in two runs elsewhere; resume: measure Given + first push, likely slow-setup with data		B04	
