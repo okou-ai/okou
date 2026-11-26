@@ -379,14 +379,17 @@ class DefaultModelSettingsTest {
             runCurrent()
             assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
             assertTrue(model.state.value.catalogUnavailable)
+            assertTrue(model.state.value.settingsCatalogRefreshFailure != null)
             assertEquals("gpt-test", model.state.value.selected?.id)
             advanceTimeBy(60_000)
             assertEquals(3, attempts.size)
+            model.showSettings(SettingsDestination.ModelAccounts)
+            assertNull(model.state.value.settingsCatalogRefreshFailure)
             unavailable = false
-            model.foreground(false)
-            model.foreground(true)
+            model.showSettings(SettingsDestination.Overview)
             runCurrent()
             assertFalse(model.state.value.catalogUnavailable)
+            assertNull(model.state.value.settingsCatalogRefreshFailure)
             assertEquals("gpt-test", model.state.value.selected?.id)
         }
     }
