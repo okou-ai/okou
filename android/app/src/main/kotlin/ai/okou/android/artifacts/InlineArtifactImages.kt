@@ -191,8 +191,8 @@ internal class InlineArtifactImages(
 
     fun revalidate() {
         for ((request, state) in entries.value) {
-            if (state.bitmap != null && state.grant?.fileId != null)
-                accessChecks.putIfAbsent(request.source, null)
+            // The original can be accessible even when its thumbnail is missing.
+            if (state.grant?.fileId != null) accessChecks.putIfAbsent(request.source, null)
         }
         for (request in visibleCounts.keys.toList()) revalidateVisible(request)
     }
@@ -200,7 +200,7 @@ internal class InlineArtifactImages(
     private fun revalidateVisible(request: InlineImageRequest) {
         val source = request.source
         if (source !in accessChecks || accessChecks[source] != null) return
-        if (entries.value[request]?.bitmap == null) return
+        if (entries.value[request]?.grant?.fileId == null) return
         val check =
             scope.launch(start = CoroutineStart.LAZY) {
                 val job = currentCoroutineContext()[Job]
@@ -250,18 +250,24 @@ internal class InlineArtifactImages(
 
     private fun pruneAccessChecks(images: Map<InlineImageRequest, InlineImageState>) {
         if (accessChecks.isEmpty()) return
-        val cachedSources =
-            images.filterValues { it.bitmap != null }.keys.mapTo(mutableSetOf()) { it.source }
-        for (source in accessChecks.keys - cachedSources) accessChecks.remove(source)?.cancel()
+        val grantedSources =
+            images
+                .filterValues { it.grant?.fileId != null }
+                .keys
+                .mapTo(mutableSetOf()) { it.source }
+        for (source in accessChecks.keys - grantedSources) accessChecks.remove(source)?.cancel()
     }
 
     fun revisit(threadId: String) {
-        entries.value =
-            entries.value.filterNot { (request, state) ->
-                request.threadId == threadId &&
-                    (state.status == InlineImageStatus.MissingThumbnail ||
-                        state.status == InlineImageStatus.Unavailable)
-            }
+        val unavailable =
+            entries.value
+                .filter { (request, state) ->
+                    request.threadId == threadId &&
+                        (state.status == InlineImageStatus.MissingThumbnail ||
+                            state.status == InlineImageStatus.Unavailable)
+                }
+                .keys
+        if (unavailable.isNotEmpty()) remove(unavailable)
     }
 
     private fun put(request: InlineImageRequest, result: InlineImageState) {

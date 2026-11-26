@@ -188,6 +188,40 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
     }
 
     @Test
+    fun rechecksOriginalAccessOnForegroundWhenTheThumbnailIsMissing() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.missingThumbnail = true
+        fixture.install(latest = "![](/artifacts/${fixture.readyReference})", earlier = false)
+        openConversation()
+        val missingThumbnail =
+            hasContentDescription(fixture.filename) and
+                hasClickAction() and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "No thumbnail")
+        compose.waitUntilExactlyOneExists(missingThumbnail, 8_000)
+        val frame = compose.onNode(missingThumbnail).assertIsDisplayed().getUnclippedBoundsInRoot()
+
+        fixture.readyReferenceDenied = true
+        resumeArtifactRoute()
+
+        val unavailable =
+            hasContentDescription("Image") and
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Image unavailable",
+                )
+        compose.waitUntilExactlyOneExists(unavailable, 5_000)
+        compose.onNodeWithContentDescription(fixture.filename).assertDoesNotExist()
+        compose.onNode(unavailable).assert(!hasClickAction())
+        assertEquals(frame, compose.onNode(unavailable).getUnclippedBoundsInRoot())
+        assertEquals(
+            listOf(fixture.readyReference, fixture.readyReference),
+            fixture.references.toList(),
+        )
+        assertTrue(fixture.thumbnails.isEmpty())
+        assertTrue(fixture.originals.isEmpty())
+    }
+
+    @Test
     fun withdrawsAnInlineImageAndItsSearchableFilenameWhenOriginalAccessIsDenied() {
         val fixture = InlineImageFixture(app.fixture)
         fixture.install()
