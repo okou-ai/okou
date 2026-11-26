@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.61.0](https://github.com/okou-ai/okou/compare/android-v0.60.1...android-v0.61.0) (2026-11-26)
+
+
+### Features
+
+* **android:** open image artifacts in the shared viewer ([#51124](https://github.com/okou-ai/okou/issues/51124)) ([2092614](https://github.com/okou-ai/okou/commit/209261422df27b190d0ee4239c119b5508cde42a))
+
+
+### Bug Fixes
+
+* **android:** align artifact pagination feedback with design ([#51096](https://github.com/okou-ai/okou/issues/51096)) ([f15099b](https://github.com/okou-ai/okou/commit/f15099b5aac8a4d2c667f0bf1a6f2c310aa21754))
+* **android:** align workflow actions and menus with material defaults ([#51122](https://github.com/okou-ai/okou/issues/51122)) ([9dc8e99](https://github.com/okou-ai/okou/commit/9dc8e999f49ed57d985b4dffc45d395dbd6ccd6e))
+* **android:** continue chat indicator retries across filters ([#51134](https://github.com/okou-ai/okou/issues/51134)) ([3b5ce58](https://github.com/okou-ai/okou/commit/3b5ce58793e8f34bb22525b79f0a7221448aed97))
+* **android:** include sent attachments in conversation find ([#51130](https://github.com/okou-ai/okou/issues/51130)) ([5575234](https://github.com/okou-ai/okou/commit/5575234b7e58f1368611ca67d9e331736fcc5e82))
+* **android:** restore focus and clarify update toolbar actions ([#51129](https://github.com/okou-ai/okou/issues/51129)) ([1420819](https://github.com/okou-ai/okou/commit/14208194c0d88f162079f0172875183531914334))
+* **android:** scope cached credit balance refresh feedback ([#51120](https://github.com/okou-ai/okou/issues/51120)) ([6bb106f](https://github.com/okou-ai/okou/commit/6bb106f06d39c471697108c99d41d1abc1774dba))
+* **android:** settle search metadata after skipped list snapshots ([#51118](https://github.com/okou-ai/okou/issues/51118)) ([051ac99](https://github.com/okou-ai/okou/commit/051ac9984f4cfbdcf5abceeafd7766abffc2ec4b))
+* **android:** show cold connector account errors in their section ([#51125](https://github.com/okou-ai/okou/issues/51125)) ([dbce6b5](https://github.com/okou-ai/okou/commit/dbce6b53c9ee75a42db26c70212c7dd7948f52c7))
+
+
+### Refactoring
+
+* **android:** share confirmed form adoption rules ([#51119](https://github.com/okou-ai/okou/issues/51119)) ([067eac8](https://github.com/okou-ai/okou/commit/067eac81dc0319d3041cc18cca96735c2eb01b99))
+
 ## [0.60.1](https://github.com/okou-ai/okou/compare/android-v0.60.0...android-v0.60.1) (2026-11-26)
 
 

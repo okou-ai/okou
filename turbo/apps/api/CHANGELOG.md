@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.136.2](https://github.com/okou-ai/okou/compare/api-v2.136.1...api-v2.136.2) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** generate startup storage destinations ([#51106](https://github.com/okou-ai/okou/issues/51106)) ([88e458e](https://github.com/okou-ai/okou/commit/88e458e669546d4c263cdb2d6016355806bba59c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.133.1
+    * @okouai/core bumped to 8.885.3
+    * @okouai/db bumped to 2.71.2
+    * @okouai/pi-agent-runtime bumped to 1.52.91
+
 ## [2.136.1](https://github.com/okou-ai/okou/compare/api-v2.136.0...api-v2.136.1) (2026-11-26)
 
 

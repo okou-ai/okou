@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.3](https://github.com/okou-ai/okou/compare/ios-v0.67.2...ios-v0.67.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** use skeletons while connector lists load ([#51076](https://github.com/okou-ai/okou/issues/51076)) ([d060f19](https://github.com/okou-ai/okou/commit/d060f19e17e0e66d65a6445dd28f53280ce93475))
+
 ## [0.67.2](https://github.com/okou-ai/okou/compare/ios-v0.67.1...ios-v0.67.2) (2026-11-26)
 
 
