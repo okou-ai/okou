@@ -1,3 +1,4 @@
+import { OkouMessageAvatar } from "../components/okou-message-avatar.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { SharedThreadShareMenu } from "../okou-page/shared-thread-share-menu.tsx";
@@ -12,14 +13,7 @@ import type {
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  Button,
-  Card,
-  CardContent,
-  OkouAvatar,
-  cn,
-  buttonVariants,
-} from "@okouai/ui";
+import { Button, Card, CardContent, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
@@ -148,15 +142,18 @@ function useAnimatedOkouAvatar(): boolean {
 
 function SharedAssistantAvatar({
   assistantName,
+  animated,
 }: {
   readonly assistantName: string;
+  readonly animated: boolean;
 }) {
   // The shared avatar brings its own frame, so it replaces the image frame
   // rather than sitting inside it.
   return useAnimatedOkouAvatar() ? (
-    <OkouAvatar
+    <OkouMessageAvatar
+      animated={animated}
       size={36}
-      label={assistantName}
+      alt={assistantName}
       data-shared-assistant-avatar=""
       className="size-7 @[900px]:size-9"
     />
@@ -176,8 +173,10 @@ function SharedAssistantAvatar({
 
 function SharedAssistantNameLine({
   assistantName,
+  animated,
 }: {
   readonly assistantName: string;
+  readonly animated: boolean;
 }) {
   const animatedAvatar = useAnimatedOkouAvatar();
   return (
@@ -186,7 +185,7 @@ function SharedAssistantNameLine({
       className={CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS}
     >
       {animatedAvatar ? (
-        <OkouAvatar size={28} />
+        <OkouMessageAvatar animated={animated} size={28} />
       ) : (
         <span className={CHAT_THREAD_ASSISTANT_NAME_LINE_AVATAR_FRAME_CLASS}>
           <AvatarFromUrl
@@ -303,10 +302,12 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
 
 function SharedAssistantGroup({
   assistantName,
+  animated,
   group,
   richContent,
 }: {
   readonly assistantName: string;
+  readonly animated: boolean;
   readonly group: SharedMessageGroup;
   readonly richContent?: SharedThreadRichContentSignals;
 }) {
@@ -331,9 +332,15 @@ function SharedAssistantGroup({
         }
       >
         {nameLine ? (
-          <SharedAssistantNameLine assistantName={assistantName} />
+          <SharedAssistantNameLine
+            assistantName={assistantName}
+            animated={animated}
+          />
         ) : (
-          <SharedAssistantAvatar assistantName={assistantName} />
+          <SharedAssistantAvatar
+            assistantName={assistantName}
+            animated={animated}
+          />
         )}
         <div
           className={cn(
@@ -555,6 +562,11 @@ function SharedThreadTranscript({
   readonly groups: readonly SharedMessageGroup[];
   readonly richContent?: SharedThreadRichContentSignals;
 }) {
+  const latestAssistant = groups
+    .filter((group) => {
+      return group.role === "assistant";
+    })
+    .at(-1);
   return (
     <div className="relative min-h-0 flex-1 isolate">
       <div
@@ -578,6 +590,7 @@ function SharedThreadTranscript({
                   key={group.key}
                   assistantName={assistantName}
                   group={group}
+                  animated={group === latestAssistant}
                   richContent={richContent}
                 />
               );

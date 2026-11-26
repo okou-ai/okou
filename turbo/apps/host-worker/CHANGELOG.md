@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.10.15](https://github.com/okou-ai/okou/compare/host-worker-v1.10.14...host-worker-v1.10.15) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.1
+    * @okouai/core bumped to 8.881.4
+    * @okouai/ui bumped to 1.22.26
+
+## [1.10.14](https://github.com/okou-ai/okou/compare/host-worker-v1.10.13...host-worker-v1.10.14) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.0
+    * @okouai/core bumped to 8.881.3
+    * @okouai/ui bumped to 1.22.25
+
+## [1.10.13](https://github.com/okou-ai/okou/compare/host-worker-v1.10.12...host-worker-v1.10.13) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.4
+    * @okouai/core bumped to 8.881.2
+    * @okouai/ui bumped to 1.22.24
+
+## [1.10.12](https://github.com/okou-ai/okou/compare/host-worker-v1.10.11...host-worker-v1.10.12) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.3
+    * @okouai/core bumped to 8.881.1
+    * @okouai/ui bumped to 1.22.23
+
+## [1.10.11](https://github.com/okou-ai/okou/compare/host-worker-v1.10.10...host-worker-v1.10.11) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.881.0
+    * @okouai/ui bumped to 1.22.22
+
+## [1.10.10](https://github.com/okou-ai/okou/compare/host-worker-v1.10.9...host-worker-v1.10.10) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.2
+    * @okouai/core bumped to 8.880.0
+    * @okouai/ui bumped to 1.22.21
+
 ## [1.10.9](https://github.com/okou-ai/okou/compare/host-worker-v1.10.8...host-worker-v1.10.9) (2026-11-25)
 
 

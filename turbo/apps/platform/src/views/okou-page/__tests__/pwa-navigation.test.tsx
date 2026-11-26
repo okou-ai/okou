@@ -5,6 +5,7 @@ import {
 } from "./chat-message-experience-test-helpers.ts";
 import userEvent from "@testing-library/user-event";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -77,6 +78,26 @@ async function backToList() {
   ).resolves.toBeVisible();
   expect(location.pathname).toBe("/");
 }
+
+test("Returning from a mobile chat shows a For you card delivered while the list was closed", async () => {
+  mobile(false);
+  let unread = false;
+  const firstSummary = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    if (!firstSummary.settled()) {
+      firstSummary.resolve();
+    }
+    return respond(200, { hasUnread: unread });
+  });
+  await enterMobile();
+  await firstSummary.promise;
+  await enterThread(current);
+  unread = true;
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await backToList();
+  const row = await findFastControl("link", /For you/);
+  await expect(within(row).findByText("Unread")).resolves.toBeInTheDocument();
+});
 
 test("pwa-navigation-003 Search opens from the ordered mobile toolbar and Escape restores the list", async () => {
   mobile(false);

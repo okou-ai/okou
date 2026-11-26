@@ -56,7 +56,7 @@ final class WorkspaceChatActions {
     threadPreview?.close()
     // Share serialized history reads without retaining a conversation, draft or realtime work.
     threadPreview = ChatThreadPreviewResources(
-      threadID: id, sync: sync,
+      threadID: id, graph: workspace.graph, sync: sync,
       didFinish: { [weak self, sync] in
         guard self?.isResident(id) != true else { return }
         _ = await sync.releaseHistory(threadID: id)

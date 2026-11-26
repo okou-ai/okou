@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
@@ -6,17 +7,32 @@ struct ComposerConnectorDetail: View {
   let connector: ChatCatalogConnector
   @State private var permissionDestination: ComposerConnectorPermissionResources?
   @State private var accountDestination: ComposerConnectorAccountResources?
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+
+  init(store: ComposerConnectorStore, connector: ChatCatalogConnector) {
+    self.store = store
+    self.connector = connector
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
+  }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   private var added: Bool {
-    store.connectors.contains { $0.target.connectorSlug == connector.slug }
+    snapshot.connectors.contains { $0.target.connectorSlug == connector.slug }
+  }
+
+  private var isAuthorizing: Bool {
+    store.authorization.isAuthorizing(target: .builtin(connector.slug))
   }
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
         hero
-        if let current = store.connectors.first(where: { $0.target.connectorSlug == connector.slug }
-        ) {
+        if let current = snapshot.connectors.first(where: {
+          $0.target.connectorSlug == connector.slug
+        }) {
           management(current)
         }
         facts
@@ -86,15 +102,17 @@ struct ComposerConnectorDetail: View {
           store.connect(connector)
         } label: {
           if added {
-            OkouCompactButtonLabel("Add account", icon: "plus")
+            OkouCompactButtonLabel("Add account", icon: "plus", isBusy: isAuthorizing)
           } else {
-            OkouCompactButtonLabel("Connect", icon: "plug")
+            OkouCompactButtonLabel("Connect", icon: "plug", isBusy: isAuthorizing)
           }
         }
         .buttonStyle(OkouButtonStyle(isPrimary: !added, isCompact: true))
+        .disabled(store.authorization.active != nil)
+        .accessibilityValue(isAuthorizing ? Text("Connecting…") : Text(""))
         .accessibilityIdentifier("connector-connect")
         if connector.permissionSummary.hasPermissions
-          && store.canConfigurePermissions(slug: connector.slug)
+          && store.canConfigurePermissions(slug: connector.slug, in: snapshot)
         {
           Button {
             permissionDestination = store.openPermissions(

@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.66.5](https://github.com/okou-ai/okou/compare/ios-v0.66.4...ios-v0.66.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** display chat time elements in the device locale ([#50904](https://github.com/okou-ai/okou/issues/50904)) ([377b31f](https://github.com/okou-ai/okou/commit/377b31f32803a708edefe0d55d8f7b9101a53526))
+
+## [0.66.4](https://github.com/okou-ai/okou/compare/ios-v0.66.3...ios-v0.66.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** stack filename and size in composer attachment chips ([#50903](https://github.com/okou-ai/okou/issues/50903)) ([eb3e75a](https://github.com/okou-ai/okou/commit/eb3e75a5d174504f462d93ca430ffb1e4dc2366c))
+
+## [0.66.3](https://github.com/okou-ai/okou/compare/ios-v0.66.2...ios-v0.66.3) (2026-11-25)
+
+
+### Refactoring
+
+* **ios:** keep connector action status reads in the session store ([#50878](https://github.com/okou-ai/okou/issues/50878)) ([5c8f655](https://github.com/okou-ai/okou/commit/5c8f655bc972079a32ec613ac75ccf0f8d719f6c))
+
+## [0.66.2](https://github.com/okou-ai/okou/compare/ios-v0.66.1...ios-v0.66.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **ios:** open google authorization directly and show connection progress ([#50834](https://github.com/okou-ai/okou/issues/50834)) ([1bbaf52](https://github.com/okou-ai/okou/commit/1bbaf52d0c037bf6ee54454478c15bd561dac7c9))
+
+
+### Refactoring
+
+* **ios:** keep composer connector reads and their snapshot in the session graph ([#50867](https://github.com/okou-ai/okou/issues/50867)) ([f2940d7](https://github.com/okou-ai/okou/commit/f2940d7d832b793868382a90310c15897c231024))
+
 ## [0.66.1](https://github.com/okou-ai/okou/compare/ios-v0.66.0...ios-v0.66.1) (2026-11-25)
 
 

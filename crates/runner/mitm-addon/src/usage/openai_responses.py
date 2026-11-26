@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import openai_responses_events
+from response_inspection import JSON_STEP_BYTES
 
 from .json_limits import MODEL_JSON_MAX_WORK_UNITS
 from .json_probe import TopLevelStringFieldProbeResult, probe_top_level_string_field
@@ -41,6 +42,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_CACHE_READ,
     MODEL_USAGE_CATEGORY_INPUT,
     MODEL_USAGE_CATEGORY_OUTPUT,
+    MODEL_USAGE_IDENTITY_FIELD,
     MODEL_USAGE_QUANTITY_FIELD,
     update_model_usage_quantity,
 )
@@ -72,7 +74,6 @@ _JSON_PREFILTER_MAX_STRING_BYTES = 1024
 _RESPONSES_EVENT_PREFILTER_MAX_BYTES = 4096
 # Bound dense syntax and slow scalar inspection while retaining the selective
 # parser's bulk-scan path for ordinary large content strings.
-_WEBSOCKET_INSPECTION_STEP_BYTES = 4096
 OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 
 
@@ -133,8 +134,8 @@ class OpenAIResponsesEvent:
 
 
 _RESPONSES_RESPONSE_TEXT_FIELDS = {
-    ("id",): ScalarField("string", max_bytes=1024),
-    ("model",): ScalarField("string", max_bytes=1024),
+    ("id",): MODEL_USAGE_IDENTITY_FIELD,
+    ("model",): MODEL_USAGE_IDENTITY_FIELD,
     ("service_tier",): ScalarField("string", max_bytes=1024),
 }
 _RESPONSES_USAGE_QUANTITY_PATHS = (
@@ -203,11 +204,11 @@ def _finish_inspection[Result](steps: Generator[None, None, Result]) -> Result:
 def _inspect_websocket_json_steps(
     extractor: JsonSelectiveExtractor, body: bytes
 ) -> Generator[None, None, JsonExtractionResult]:
-    for offset in range(0, len(body), _WEBSOCKET_INSPECTION_STEP_BYTES):
-        extractor.feed(body[offset : offset + _WEBSOCKET_INSPECTION_STEP_BYTES])
+    for offset in range(0, len(body), JSON_STEP_BYTES):
+        extractor.feed(body[offset : offset + JSON_STEP_BYTES])
         if not extractor.accepts_more_input():
             break
-        if offset + _WEBSOCKET_INSPECTION_STEP_BYTES < len(body):
+        if offset + JSON_STEP_BYTES < len(body):
             yield
     return extractor.finish()
 

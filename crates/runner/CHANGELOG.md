@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.251.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.11...runner-rs-v0.251.12) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** share native qualification source inventories ([#50927](https://github.com/okou-ai/okou/issues/50927)) ([e291570](https://github.com/okou-ai/okou/commit/e291570314f7d776590d8c23bd865cdd3f2836ac))
+
+## [0.251.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.10...runner-rs-v0.251.11) (2026-11-26)
+
+
+### Refactoring
+
+* **runner:** reuse validated guarded idle terminal identities ([#50913](https://github.com/okou-ai/okou/issues/50913)) ([ff0b438](https://github.com/okou-ai/okou/commit/ff0b438d5e2c2e201ea99242d73a9904b7054d83))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.9...runner-rs-v0.251.10) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.8...runner-rs-v0.251.9) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share model usage identity field bounds ([#50886](https://github.com/okou-ai/okou/issues/50886)) ([e335468](https://github.com/okou-ai/okou/commit/e335468a5ae0e5632bccd0b48a0e8bd09263b46b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.7...runner-rs-v0.251.8) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.6...runner-rs-v0.251.7) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.5...runner-rs-v0.251.6) (2026-11-25)
+
+
+### Refactoring
+
+* **runner:** share cooperative json inspection slice size ([#50874](https://github.com/okou-ai/okou/issues/50874)) ([17f51e7](https://github.com/okou-ai/okou/commit/17f51e762e0ad903829b36f63b749ec2636a913c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.251.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.4...runner-rs-v0.251.5) (2026-11-25)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.3...runner-rs-v0.251.4) (2026-11-25)
 
 ### Release Dependencies

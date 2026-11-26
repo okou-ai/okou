@@ -260,6 +260,22 @@ test("credit-usage-display-008 an unavailable settlement leaves the chat answer 
   expect(screen.queryByLabelText("Credit usage 999")).toBeNull();
 });
 
+async function wheelToTop(pane: HTMLElement) {
+  // The geometry mock stores the offset after initial pinning or a history
+  // prepend. Deliver that scroll event before the reader moves the viewport.
+  await waitFor(
+    () => {
+      expect(pane.scrollTop).toBeGreaterThan(0);
+    },
+    { container: pane },
+  );
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: -pane.scrollTop });
+  pane.scrollTop = 0;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+}
+
 test("credit-usage-display-001 scrolling to the first answer reveals its own settled receipt", async () => {
   const history: MockChatEventInput[] = [];
   const ledger: Record<string, ChatEventUsagePayload> = {};
@@ -307,14 +323,9 @@ test("credit-usage-display-001 scrolling to the first answer reveals its own set
   await within(pane).findByLabelText("Credit usage 67");
   expect(screen.queryByText("Survey answer 1")).toBeNull();
   expect(screen.queryByLabelText("Credit usage 61")).toBeNull();
-  fireEvent.wheel(pane, { deltaY: -pane.scrollHeight });
-  pane.scrollTop = 0;
-  fireEvent.scroll(pane);
-  fireEvent(pane, new Event("scrollend"));
+  await wheelToTop(pane);
   await within(pane).findByText("Survey answer 1");
-  fireEvent.wheel(pane, { deltaY: -pane.scrollHeight });
-  pane.scrollTop = 0;
-  fireEvent.scroll(pane);
+  await wheelToTop(pane);
   await waitFor(() => {
     const first = messageAnchor(
       "Survey answer 1",

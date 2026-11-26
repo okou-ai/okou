@@ -1,4 +1,11 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
@@ -42,10 +49,13 @@ function savedDefaultMessage(format: PresentationOutputFormat): string {
 }
 
 /** The first-use menu opens from the Send button that asked for it. */
-function createSetupAnchorSignals() {
+function createSetupAnchorSignals(
+  request$: State<PresentationFormatSetupRequest | null>,
+) {
   const internalAnchor$ = state<HTMLElement | null>(null);
   const anchor$ = computed((get) => {
-    return get(internalAnchor$);
+    // The first keystroke replaces the Send button even when the menu is closed.
+    return get(request$) === null ? null : get(internalAnchor$);
   });
   const setAnchor$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -84,7 +94,7 @@ export function createPresentationFormatSetupSignals({
   const request$ = state<PresentationFormatSetupRequest | null>(null);
   const selected$ = state<PresentationOutputFormat | null>(null);
   const operation$ = state<Promise<boolean> | null>(null);
-  const { anchor$, setAnchor$ } = createSetupAnchorSignals();
+  const { anchor$, setAnchor$ } = createSetupAnchorSignals(request$);
   const confirmation$ = computed((get) => {
     return get(operation$);
   });

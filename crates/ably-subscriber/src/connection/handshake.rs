@@ -191,6 +191,21 @@ pub(super) fn encode_attach_for_channel(
     encode_msg(&attach)
 }
 
+pub(super) async fn send_pending_attach(
+    transport: &mut PendingWsTransport,
+    channel: &str,
+    channel_params: Option<&HashMap<String, String>>,
+    channel_serial: Option<&str>,
+    attach_mode: AttachMode,
+) -> Result<(), Error> {
+    let encoded = encode_attach_for_channel(channel, channel_params, channel_serial, attach_mode)?;
+    transport
+        .write_mut()?
+        .send(tungstenite::Message::Binary(encoded.into()))
+        .await?;
+    Ok(())
+}
+
 pub(crate) async fn connect_and_attach(
     realtime_host: &str,
     token: TokenDetails,
@@ -204,11 +219,14 @@ pub(crate) async fn connect_and_attach(
     let mut transport = connect_pending(&ws_url, timing.close_timeout, close_tracker).await?;
     let connected_msg = wait_for_connected(&mut transport).await?;
     let mut conn_state = ConnState::from_connected(&connected_msg, token, timing);
-    let encoded = encode_attach_for_channel(channel, channel_params, None, AttachMode::Clean)?;
-    transport
-        .write_mut()?
-        .send(tungstenite::Message::Binary(encoded.into()))
-        .await?;
+    send_pending_attach(
+        &mut transport,
+        channel,
+        channel_params,
+        None,
+        AttachMode::Clean,
+    )
+    .await?;
     conn_state.channel_serial = wait_for_attached(&mut transport, channel).await?;
     Ok((transport.into_transport()?, conn_state))
 }

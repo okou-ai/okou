@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
@@ -20,7 +19,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { billingStatusRoutes } from "../billing-status";
-import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingDraftRoutes } from "../onboarding-draft";
 import { onboardingStatusRoutes } from "../onboarding-status";
@@ -343,18 +341,7 @@ describe("member source-first onboarding", () => {
 
 describe("POST /api/onboarding/complete", () => {
   it("starts Suggestions for each new account when that person finishes onboarding", async () => {
-    const catalog = await setupApp({
-      context,
-      routes: cronOfficialWorkflowCatalogRoutes,
-      isolatePg: true,
-    });
     installWorkflowVolumeS3Fixture(context);
-    await accept(
-      catalog(cronOfficialWorkflowCatalogContract).sync({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
     const admin = orgActor();
     const member = memberOf(admin);
     const people = [admin, member];

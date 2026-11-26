@@ -1,20 +1,21 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { searchParams$, updateSearchParams$ } from "../route.ts";
-import { onDomEventFn, onRef, waitForToken } from "../utils.ts";
+import { onRef, waitForToken } from "../utils.ts";
 import {
-  agentSuggestionEntries$,
   agentSuggestionListItems$,
-  platformEventEntries$,
+  forYouVisitSnapshot$,
   settledFeedOrder$,
+  suggestionDirectionItemId$,
 } from "./agent-suggestion-session.ts";
 
 /** The URL identifies the reading position; browsing never consumes a card. */
-export const forYouDeck$ = computed(async (get) => {
-  const [suggestionEntries, suggestions, events] = await Promise.all([
-    get(agentSuggestionEntries$),
-    get(agentSuggestionListItems$),
-    get(platformEventEntries$),
-  ]);
+export const forYouDeck$ = computed((get) => {
+  const snapshot = get(forYouVisitSnapshot$);
+  const entries = snapshot?.entries ?? [];
+  const suggestions = get(agentSuggestionListItems$);
+  const events = entries.filter((entry) => {
+    return "dismissed$" in entry;
+  });
   const items = [
     ...events.map((entry) => {
       return {
@@ -27,43 +28,43 @@ export const forYouDeck$ = computed(async (get) => {
       return { ...item, kind: "suggestion" as const };
     }),
   ];
-  const entries = [...events, ...suggestionEntries].sort((left, right) => {
-    return (
-      right.item.priority - left.item.priority ||
-      left.item.createdAt.localeCompare(right.item.createdAt) ||
-      left.item.id.localeCompare(right.item.id)
-    );
-  });
-  const selectedId = get(searchParams$).get("suggestion");
+  const selectedId =
+    get(searchParams$).get("suggestion") ?? get(suggestionDirectionItemId$);
   const start = Math.max(
     0,
     entries.findIndex((entry) => {
       return entry.item.id === selectedId;
     }),
   );
-  const waiting = items.filter(({ outcome }) => {
-    return outcome === null;
-  });
-  const ordered = [...entries.slice(start), ...entries.slice(0, start)];
-  const cards = ordered.flatMap((entry) => {
-    const item = waiting.find((candidate) => {
-      return candidate.entry === entry;
-    });
+  const waiting = new Map(
+    items
+      .filter(({ outcome }) => {
+        return outcome === null;
+      })
+      .map((item) => {
+        return [item.entry, item];
+      }),
+  );
+  const cardFor = (entry: (typeof entries)[number]) => {
+    const item = waiting.get(entry);
     return item ? [item] : [];
-  });
+  };
+  const cards = [...entries.slice(start), ...entries.slice(0, start)].flatMap(
+    cardFor,
+  );
   const settledOrder = get(settledFeedOrder$);
-  const progressCards = entries.flatMap((entry) => {
-    const card = waiting.find((candidate) => {
-      return candidate.entry === entry;
-    });
-    return card ? [card] : [];
-  });
   return {
     cards,
-    progressCards,
-    illustrationIds: entries.map((entry) => {
-      return entry.item.id;
-    }),
+    remainingIds:
+      snapshot?.source === "list"
+        ? entries
+            .filter((entry) => {
+              return waiting.has(entry);
+            })
+            .map((entry) => {
+              return entry.item.id;
+            })
+        : undefined,
     settled: items
       .filter(({ outcome }) => {
         return outcome !== null;
@@ -77,8 +78,8 @@ export const forYouDeck$ = computed(async (get) => {
   };
 });
 
-type ForYouDeck =
-  typeof forYouDeck$ extends Computed<infer Value> ? Awaited<Value> : never;
+export type ForYouDeck =
+  typeof forYouDeck$ extends Computed<infer Value> ? Value : never;
 type ForYouCard = ForYouDeck["cards"][number];
 type PageDirection = "previous" | "next";
 
@@ -132,13 +133,8 @@ export const setupForYouPagination$ = command(
 );
 
 export const browseForYou$ = command(
-  async (
-    { get, set },
-    id: string,
-    direction: PageDirection,
-    signal: AbortSignal,
-  ) => {
-    const { cards } = await get(forYouDeck$);
+  ({ get, set }, id: string, direction: PageDirection, signal: AbortSignal) => {
+    const { cards } = get(forYouDeck$);
     signal.throwIfAborted();
     const from = cards[0];
     if (!from || from.entry.item.id === id) {
@@ -206,7 +202,7 @@ export const swipeForYouOnRef$ = onRef<HTMLElement>(
     );
     card.addEventListener(
       "pointerup",
-      onDomEventFn(async (event: PointerEvent) => {
+      (event: PointerEvent) => {
         const start = origin;
         origin = null;
         if (!start || start.id !== event.pointerId) {
@@ -217,14 +213,115 @@ export const swipeForYouOnRef$ = onRef<HTMLElement>(
         if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) {
           return;
         }
-        const { cards } = await get(forYouDeck$);
+        const { cards } = get(forYouDeck$);
         signal.throwIfAborted();
         const direction = dx < 0 ? "next" : "previous";
         const target = direction === "next" ? cards[1] : cards.at(-1);
-        if (target) {
-          await set(browseForYou$, target.entry.item.id, direction, signal);
+        if (target && target !== cards[0]) {
+          set(browseForYou$, target.entry.item.id, direction, signal);
         }
-      }),
+      },
+      { signal },
+    );
+  }),
+);
+
+// Arrow keys already mean something inside these: moving the caret, choosing a
+// cover or a menu item, scrolling a list.
+const ARROW_KEY_OWNERS = [
+  "input",
+  "textarea",
+  "select",
+  '[contenteditable]:not([contenteditable="false"])',
+  '[role="radiogroup"]',
+  '[role="radio"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="tablist"]',
+  '[role="tab"]',
+  '[role="menu"]',
+  '[role="menubar"]',
+  '[role="menuitem"]',
+  '[role="menuitemradio"]',
+  '[role="menuitemcheckbox"]',
+  '[role="listbox"]',
+  '[role="option"]',
+  '[role="grid"]',
+  '[role="tree"]',
+  '[role="dialog"]',
+].join(",");
+
+function pagingKey(event: KeyboardEvent): PageDirection | null {
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.isComposing ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey
+  ) {
+    return null;
+  }
+  return event.key === "ArrowLeft"
+    ? "previous"
+    : event.key === "ArrowRight"
+      ? "next"
+      : null;
+}
+
+/** Keys pressed in a field, a control that uses the arrows, or elsewhere. */
+function keyBelongsElsewhere(event: KeyboardEvent, page: HTMLElement) {
+  const target = event.target;
+  return (
+    target instanceof Element &&
+    target !== page.ownerDocument.body &&
+    (!page.contains(target) || target.closest(ARROW_KEY_OWNERS) !== null)
+  );
+}
+
+/** The card the arrows lead to, wrapping round at either end. */
+function pageTarget(deck: ForYouDeck, direction: PageDirection) {
+  const { cards, remainingIds } = deck;
+  const current = cards[0]?.entry.item.id;
+  if (!remainingIds || remainingIds.length < 2 || current === undefined) {
+    return undefined;
+  }
+  const position = remainingIds.indexOf(current);
+  if (position === -1) {
+    return undefined;
+  }
+  const step = direction === "next" ? 1 : remainingIds.length - 1;
+  return remainingIds[(position + step) % remainingIds.length];
+}
+
+/**
+ * ← and → page the deck the way its arrows do, while focus rests on the page
+ * rather than in a field or a control that uses the arrows itself. A
+ * direction being written keeps its card, since paging would discard it.
+ */
+export const pageForYouWithKeysOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, page: HTMLElement, signal: AbortSignal) => {
+    page.ownerDocument.addEventListener(
+      "keydown",
+      (event) => {
+        const direction = pagingKey(event);
+        if (
+          direction === null ||
+          keyBelongsElsewhere(event, page) ||
+          get(suggestionDirectionItemId$) !== null
+        ) {
+          return;
+        }
+        const id = pageTarget(get(forYouDeck$), direction);
+        if (id === undefined) {
+          return;
+        }
+        // The key pages the deck instead of also scrolling whatever has
+        // focus sideways.
+        event.preventDefault();
+        set(browseForYou$, id, direction, signal);
+      },
       { signal },
     );
   }),

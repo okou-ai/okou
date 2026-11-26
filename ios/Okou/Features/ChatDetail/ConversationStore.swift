@@ -60,7 +60,7 @@ final class ConversationStore {
   private let draftStorage: ChatDraftStorage?
   private let draftTarget: ChatDraftTarget
   @ObservationIgnored lazy var connectorActions = ConnectorActionStore(
-    service: commands.connectorActions, commands: commands, thread: thread,
+    service: commands.connectorActions, graph: graph, commands: commands, thread: thread,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await modelSelection?.connectors.refresh()

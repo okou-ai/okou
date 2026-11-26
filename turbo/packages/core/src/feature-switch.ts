@@ -161,6 +161,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatThreadFork]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Fork a chat",
+    description:
+      "Start a new chat with a reference to a conversation from its menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
     displayName: "Project archiving",
@@ -188,15 +197,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "TikTok OAuth connector",
     description:
       "Connect a TikTok account with automatically refreshed read-only access.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.LinkedInOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "LinkedIn OAuth connector",
-    description:
-      "Connect LinkedIn for personal publishing through the official API. Other LinkedIn tasks use Cloud Browser.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,

@@ -13,6 +13,111 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1187.0](https://github.com/okou-ai/okou/compare/app-v0.1186.3...app-v0.1187.0) (2026-11-26)
+
+
+### Features
+
+* **app:** grow the for you direction from its entry and scroll the heading alone ([#50923](https://github.com/okou-ai/okou/issues/50923)) ([03357b5](https://github.com/okou-ai/okou/commit/03357b50ad3b93a93830317686a660efff4df4ae))
+
+## [0.1186.3](https://github.com/okou-ai/okou/compare/app-v0.1186.2...app-v0.1186.3) (2026-11-26)
+
+
+### Refactoring
+
+* **api:** retire official workflow catalog and automation identities ([#50902](https://github.com/okou-ai/okou/issues/50902)) ([1edc731](https://github.com/okou-ai/okou/commit/1edc731cfb612688e2c648ce00f4fd7f1da98e45))
+
+
+### Performance Improvements
+
+* **app:** narrow home and chat subscriptions ([#50915](https://github.com/okou-ai/okou/issues/50915)) ([ef09be7](https://github.com/okou-ai/okou/commit/ef09be7f9ece42d6540ec32c690417e2a216dd73))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.1
+    * @okouai/core bumped to 8.881.4
+    * @okouai/ui bumped to 1.22.26
+
+## [0.1186.2](https://github.com/okou-ai/okou/compare/app-v0.1186.1...app-v0.1186.2) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.0
+    * @okouai/core bumped to 8.881.3
+    * @okouai/ui bumped to 1.22.25
+
+## [0.1186.1](https://github.com/okou-ai/okou/compare/app-v0.1186.0...app-v0.1186.1) (2026-11-25)
+
+
+### Performance Improvements
+
+* **app:** defer feed and recent workflow requests at startup ([#50893](https://github.com/okou-ai/okou/issues/50893)) ([48a1ed1](https://github.com/okou-ai/okou/commit/48a1ed18b82cb459328118d6790dc35f67e200cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.4
+    * @okouai/core bumped to 8.881.2
+    * @okouai/ui bumped to 1.22.24
+
+## [0.1186.0](https://github.com/okou-ai/okou/compare/app-v0.1185.1...app-v0.1186.0) (2026-11-25)
+
+
+### Features
+
+* **app:** redesign the for you deck on its cover's scene ([#50844](https://github.com/okou-ai/okou/issues/50844)) ([2fa8c1c](https://github.com/okou-ai/okou/commit/2fa8c1c14a0ec63105c01520de2d466dd7194bc8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.3
+    * @okouai/core bumped to 8.881.1
+    * @okouai/ui bumped to 1.22.23
+
+## [0.1185.1](https://github.com/okou-ai/okou/compare/app-v0.1185.0...app-v0.1185.1) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.881.0
+    * @okouai/ui bumped to 1.22.22
+
+## [0.1185.0](https://github.com/okou-ai/okou/compare/app-v0.1184.1...app-v0.1185.0) (2026-11-25)
+
+
+### Features
+
+* **app:** organize workflow directory behind feature switch ([#50253](https://github.com/okou-ai/okou/issues/50253)) ([df2ee82](https://github.com/okou-ai/okou/commit/df2ee823b18568645240ab6ac095a1c1651525e5))
+* **platform:** connect google ai antigravity accounts in models settings ([#50813](https://github.com/okou-ai/okou/issues/50813)) ([b1a4381](https://github.com/okou-ai/okou/commit/b1a438147708afa39cf955f2de1e2070beef77a4))
+
+
+### Bug Fixes
+
+* link welcome threads to the current get started guide ([#50853](https://github.com/okou-ai/okou/issues/50853)) ([4002fa4](https://github.com/okou-ai/okou/commit/4002fa48bfc0862b24a800b488cbdbca72c9ba4a))
+* refresh welcome artifact addresses ([#50849](https://github.com/okou-ai/okou/issues/50849)) ([0f5ca8c](https://github.com/okou-ai/okou/commit/0f5ca8ce9028f78dd046658a5765e0758d78e44a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.2
+    * @okouai/connectors bumped to 3.25.1
+    * @okouai/core bumped to 8.880.0
+    * @okouai/ui bumped to 1.22.21
+
 ## [0.1184.1](https://github.com/okou-ai/okou/compare/app-v0.1184.0...app-v0.1184.1) (2026-11-25)
 
 

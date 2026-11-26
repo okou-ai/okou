@@ -4,7 +4,12 @@ import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { fill, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   findButton,
@@ -64,8 +69,9 @@ test("shared-database-browser-005 The indicator service requires the member to u
     path: "/workflows",
     sharedWorkerTestTransport: "message-port",
   });
-  await received.promise;
   await opening.content;
+  click(await findButton("Open chat list menu"));
+  await received.promise;
   expect(screen.queryByRole("dialog", updateDialog)).toBeNull();
   reply.resolve();
   await expect(

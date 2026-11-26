@@ -5,6 +5,7 @@ import type {
 } from "./agent-run-contracts";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
+import { now } from "../../lib/time";
 import {
   allAllowPolicyForPermissions,
   collectPermissionNames,
@@ -114,19 +115,10 @@ function baseUrlValidationAuth(
     : {};
 }
 
-function builtinFirewallEntryForMetadata(
+function validateBuiltinBaseUrlVars(
   metadata: ConnectorServerFirewallExecutionMetadata,
   vars: Record<string, string> | undefined,
-  sourceId: string,
-): ExecutionFirewallEntry {
-  if (metadata.baseUrlVarNames.length === 0) {
-    return {
-      kind: "builtin",
-      name: metadata.connectorSlug,
-      sourceId,
-    };
-  }
-
+): Record<string, string> {
   const validationFirewall: Firewall = {
     name: metadata.connectorSlug,
     apis: metadata.baseUrlTemplates.map((template) => {
@@ -140,16 +132,10 @@ function builtinFirewallEntryForMetadata(
       };
     }),
   };
-  const baseUrlVars = canonicalizeFirewallBaseUrlVarsForExecution(
+  return canonicalizeFirewallBaseUrlVarsForExecution(
     [validationFirewall],
     vars,
   );
-  return {
-    kind: "builtin",
-    name: metadata.connectorSlug,
-    baseUrlVars,
-    sourceId,
-  };
 }
 
 function customConnectorInlineFirewallEntry(
@@ -238,11 +224,17 @@ export function modelProviderPermissionManifest(
   };
 }
 
+interface BuiltinTargetTiming {
+  metadataLookupMs: number;
+  baseUrlValidationMs: number;
+}
+
 function prepareBuiltinConnectorManifest(
   selection: RunConnectorCatalogSelection,
   connectorSlugs: readonly ConnectorSlug[],
   vars: Record<string, string> | undefined,
   connectorSourceIdBySlug: Readonly<Record<string, string>>,
+  timing: BuiltinTargetTiming,
 ): Omit<PermissionManifest, "networkPolicies"> {
   const firewalls: ExecutionFirewalls = [];
   const environmentSecretPlaceholders: Record<string, string> = {};
@@ -255,29 +247,42 @@ function prepareBuiltinConnectorManifest(
     ) {
       continue;
     }
+    const metadataStartedAt = performance.now();
     const metadata = getRequiredFirewallExecutionMetadata(
       selection.selection,
       name,
     );
+    timing.metadataLookupMs += performance.now() - metadataStartedAt;
     const sourceId = connectorSourceIdBySlug[name];
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    const entry = safeSync(() => {
-      return builtinFirewallEntryForMetadata(metadata, vars, sourceId);
-    });
-    if ("error" in entry) {
-      if (!(entry.error instanceof FirewallBaseUrlResolutionError)) {
-        throw entry.error;
-      }
-      log.warn("Connector excluded from Run admission", {
-        connectorSlug: name,
-        sourceId,
-        reason: "invalid_base_url_configuration",
+    let baseUrlVars: Record<string, string> | undefined;
+    if (metadata.baseUrlVarNames.length > 0) {
+      const validationStartedAt = performance.now();
+      const validation = safeSync(() => {
+        return validateBuiltinBaseUrlVars(metadata, vars);
       });
-      continue;
+      timing.baseUrlValidationMs += performance.now() - validationStartedAt;
+      if ("error" in validation) {
+        if (!(validation.error instanceof FirewallBaseUrlResolutionError)) {
+          throw validation.error;
+        }
+        log.warn("Connector excluded from Run admission", {
+          connectorSlug: name,
+          sourceId,
+          reason: "invalid_base_url_configuration",
+        });
+        continue;
+      }
+      baseUrlVars = validation.ok;
     }
-    firewalls.push(entry.ok);
+    firewalls.push({
+      kind: "builtin",
+      name: metadata.connectorSlug,
+      sourceId,
+      ...(baseUrlVars === undefined ? {} : { baseUrlVars }),
+    });
     if (!selection.selection.serverFirewalls.isMcp(name)) {
       Object.assign(environmentSecretPlaceholders, metadata.placeholderValues);
     }
@@ -364,17 +369,51 @@ export function buildConnectorPermissionManifest(
   const connectorBaseUrlVars = mergeRecords(args.vars, args.connectorVars);
   const customConnectorFirewalls = args.customConnectorFirewalls ?? [];
 
-  const connectorManifest = args.timing.measureSync(
+  const builtinTiming: BuiltinTargetTiming = {
+    metadataLookupMs: 0,
+    baseUrlValidationMs: 0,
+  };
+  const startedAt = performance.now();
+  const builtinResult = safeSync(() => {
+    return prepareBuiltinConnectorManifest(
+      args.connectorCatalogSelection,
+      args.connectorSlugs,
+      connectorBaseUrlVars,
+      args.connectorSourceIdBySlug ?? {},
+      builtinTiming,
+    );
+  });
+  const totalMs = performance.now() - startedAt;
+  const finishedAt = now();
+  args.timing.recordDuration(
     "api_dispatch_prepare_context_select_builtin_targets",
     "nested",
-    () => {
-      return prepareBuiltinConnectorManifest(
-        args.connectorCatalogSelection,
-        args.connectorSlugs,
-        connectorBaseUrlVars,
-        args.connectorSourceIdBySlug ?? {},
-      );
-    },
+    totalMs,
+    finishedAt,
+  );
+  if ("error" in builtinResult) {
+    throw builtinResult.error;
+  }
+  const connectorManifest = builtinResult.ok;
+  args.timing.recordDuration(
+    "api_dispatch_prepare_context_builtin_metadata_lookup",
+    "nested",
+    builtinTiming.metadataLookupMs,
+    finishedAt,
+  );
+  args.timing.recordDuration(
+    "api_dispatch_prepare_context_builtin_base_url_validation",
+    "nested",
+    builtinTiming.baseUrlValidationMs,
+    finishedAt,
+  );
+  args.timing.recordDuration(
+    "api_dispatch_prepare_context_builtin_target_assembly",
+    "nested",
+    totalMs -
+      builtinTiming.metadataLookupMs -
+      builtinTiming.baseUrlValidationMs,
+    finishedAt,
   );
 
   const customConnectorManifest = args.timing.measureSync(

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.57.2](https://github.com/okou-ai/okou/compare/android-v0.57.1...android-v0.57.2) (2026-11-26)
+
+
+### Refactoring
+
+* **api:** retire official workflow catalog and automation identities ([#50902](https://github.com/okou-ai/okou/issues/50902)) ([1edc731](https://github.com/okou-ai/okou/commit/1edc731cfb612688e2c648ce00f4fd7f1da98e45))
+
+## [0.57.1](https://github.com/okou-ai/okou/compare/android-v0.57.0...android-v0.57.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **android:** align workflow text fields with the shared form ([#50815](https://github.com/okou-ai/okou/issues/50815)) ([64421aa](https://github.com/okou-ai/okou/commit/64421aa7089aa8492362d980d555ebcfb287d742))
+* **android:** render markdown before the first content layout ([#50875](https://github.com/okou-ai/okou/issues/50875)) ([0797b30](https://github.com/okou-ai/okou/commit/0797b30b16f1c2dbe0c07fd4fa17a4cd8dabd989))
+* **android:** show update progress at download start ([#50869](https://github.com/okou-ai/okou/issues/50869)) ([725ad76](https://github.com/okou-ai/okou/commit/725ad7697459c4dbd43e378f1a9d0960942b0a1f))
+
+## [0.57.0](https://github.com/okou-ai/okou/compare/android-v0.56.5...android-v0.57.0) (2026-11-25)
+
+
+### Features
+
+* **android:** choose model settings for new chat drafts ([#50818](https://github.com/okou-ai/okou/issues/50818)) ([209fadc](https://github.com/okou-ai/okou/commit/209fadcc132361e5f1b1e78a0ac5e52f620b4a13))
+
+
+### Refactoring
+
+* **android:** share native search field interactions ([#50823](https://github.com/okou-ai/okou/issues/50823)) ([a819f8f](https://github.com/okou-ai/okou/commit/a819f8feaa4e6cb1ef1b517af681f9ce2142dc2c))
+
 ## [0.56.5](https://github.com/okou-ai/okou/compare/android-v0.56.4...android-v0.56.5) (2026-11-25)
 
 

@@ -21,9 +21,6 @@ export const MCP_SUPPORTED_SCOPES = [
   "okou:voice:transcribe",
 ] as const;
 
-// Add browser clients here as exact HTTPS origins when support is needed.
-const MCP_ALLOWED_ORIGINS = Object.freeze(new Set<string>([]));
-
 function configuredUrl(value: string): URL {
   const url = new URL(value);
   if (
@@ -59,8 +56,4 @@ export function mcpServerConfig() {
       resourceUrl,
     ).href,
   };
-}
-
-export function allowedMcpOrigin(origin: string): boolean {
-  return MCP_ALLOWED_ORIGINS.has(origin);
 }

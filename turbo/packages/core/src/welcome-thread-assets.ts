@@ -23,13 +23,13 @@ export const WELCOME_THREAD_ASSETS = Object.freeze({
 
 // Versioned My Okou publications. Keep the legacy guide and screenshots above
 // intact for existing messages.
-const MY_OKOU_GUIDE_BASE = "https://welcome-my-okou-20261125.okou.app";
+const MY_OKOU_GUIDE_BASE = "https://okou-get-started.okou.app";
 
 export const MY_OKOU_WELCOME_THREAD_ASSETS = Object.freeze({
   myOkouQuickStartUrl: MY_OKOU_GUIDE_BASE,
-  personalInstructionsUrl: "https://app.okou.ai/artifacts/r4fja3y81o.png",
-  workflowInstructionsUrl: "https://app.okou.ai/artifacts/d6qnvm1jpv.png",
-  workflowSharingUrl: "https://app.okou.ai/artifacts/x9kdidlggl.png",
+  personalInstructionsUrl: "https://app.okou.ai/artifacts/j3kr8cnsqu.png",
+  workflowInstructionsUrl: "https://app.okou.ai/artifacts/2d1fokaomd.png",
+  workflowSharingUrl: "https://app.okou.ai/artifacts/jufxlq11r9.png",
 });
 
 const PREVIEW_BASE =

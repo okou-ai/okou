@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -16,6 +16,7 @@ import { Button, buttonVariants, cn } from "@okouai/ui";
 import type { SuggestionOption } from "@okouai/api-contracts/contracts/feed";
 import {
   agentSuggestionEntries$,
+  suggestionDirectionItemId$,
   type AgentSuggestionEntry,
   closeSettledSuggestion$,
   retryAgentSuggestion$,
@@ -24,7 +25,6 @@ import {
 import {
   openSuggestionDirection$,
   startAgentSuggestion$,
-  suggestionDirectionItemId$,
   suggestionDirectionComposer$,
 } from "../../signals/okou-page/agent-suggestions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -210,12 +210,9 @@ function SuggestionSaveError({
 }
 
 export function SuggestionSaveErrors() {
-  const entries = useLastLoadable(agentSuggestionEntries$);
-  return entries.state === "hasData"
-    ? entries.data.map((entry) => {
-        return <SuggestionSaveError key={entry.item.id} entry={entry} />;
-      })
-    : null;
+  return useGet(agentSuggestionEntries$).map((entry) => {
+    return <SuggestionSaveError key={entry.item.id} entry={entry} />;
+  });
 }
 
 function SuggestionDirectionEntry({
@@ -255,15 +252,21 @@ function SuggestionDirection({
 }) {
   const itemId = useGet(suggestionDirectionItemId$);
   return itemId === entry.item.id ? (
-    <SuggestionDirectionComposer />
+    <SuggestionDirectionComposer entry={entry} />
   ) : (
     <SuggestionDirectionEntry entry={entry} />
   );
 }
 
-function SuggestionDirectionComposer() {
+function SuggestionDirectionComposer({
+  entry,
+}: {
+  readonly entry: AgentSuggestionEntry;
+}) {
   const { t } = useTranslation();
   const prepared = useLoadable(suggestionDirectionComposer$);
+  const open = useSet(openSuggestionDirection$);
+  const signal = useGet(pageSignal$);
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
@@ -299,13 +302,28 @@ function SuggestionDirectionComposer() {
           )}
         >
           {prepared.state === "hasError" ? (
-            <p role="alert" className="px-3 pb-3 text-sm text-muted-foreground">
+            <div
+              role="alert"
+              className="px-3 pb-3 text-sm text-muted-foreground"
+            >
               {prepared.error instanceof Error
                 ? prepared.error.message
                 : t(($) => {
                     return $.global.errors.requestFailed;
                   })}
-            </p>
+              <Button
+                type="button"
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  detach(open(entry, signal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.chat.errors.recovery.tryAgain;
+                })}
+              </Button>
+            </div>
           ) : composer ? (
             <div className="w-full min-w-0" data-chat-composer>
               <ChatComposer

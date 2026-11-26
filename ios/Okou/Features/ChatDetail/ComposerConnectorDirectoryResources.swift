@@ -24,7 +24,8 @@ final class ComposerConnectorDirectoryResources {
     let category: String
   }
 
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps the directory's graph values.
+  let store: CCState.Store
   let selection: Computed<Selection>
   private let input = CCState.State(Selection())
   private let lifetime = CCState.State(true)
@@ -40,8 +41,12 @@ final class ComposerConnectorDirectoryResources {
   private var customTask: Task<[ChatCustomConnector], Error>?
   private var closed = false
 
-  init(service: ChatComposerAccess, didFail: @escaping @MainActor (Error) -> Void) {
+  init(
+    service: ChatComposerAccess, graph: CCState.Store,
+    didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.service = service
+    store = graph
     self.didFail = didFail
     let input = input
     let catalogRevision = catalogRevision

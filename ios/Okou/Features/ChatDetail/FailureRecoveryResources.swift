@@ -19,11 +19,12 @@ final class FailureRecoveryResources {
   private var closed = false
 
   init(
-    failure: ChatFailure, subscriptions: PersonalSubscriptionResources?, commands: ChatCommands,
-    didFail: @escaping @MainActor (Error) -> Void
+    failure: ChatFailure, subscriptions: PersonalSubscriptionResources?, graph: CCState.Store,
+    commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void
   ) {
     failureID = failure.id
-    store = subscriptions?.store ?? CCState.Store()
+    // Subscription signals are read from their own Store, the session's in production.
+    store = subscriptions?.store ?? graph
     self.subscriptions = subscriptions
     self.didFail = didFail
     let lifetime = lifetime

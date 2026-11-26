@@ -4,7 +4,7 @@ import {
   forYouCovers,
   forYouIllustrations,
 } from "../../lib/for-you-artwork.ts";
-import { forYouDeck$ } from "./for-you.ts";
+import { forYouVisitSnapshot$ } from "./agent-suggestion-session.ts";
 import {
   updateUserPreference$,
   userPreferences$,
@@ -63,13 +63,13 @@ const artwork$ = computed(() => {
   return { illustrations };
 });
 
-export const forYouIllustrations$ = computed(async (get) => {
+export const forYouIllustrations$ = computed((get) => {
   const { illustrations } = get(artwork$);
-  const { illustrationIds } = await get(forYouDeck$);
+  const entries = get(forYouVisitSnapshot$)?.entries ?? [];
   // Include handled cards so feedback and Undo cannot move another card's art.
   return Object.fromEntries(
-    illustrationIds.map((id, index) => {
-      return [id, illustrations[index % illustrations.length]];
+    entries.map((entry, index) => {
+      return [entry.item.id, illustrations[index % illustrations.length]];
     }),
   );
 });

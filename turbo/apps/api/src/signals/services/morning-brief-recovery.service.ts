@@ -4,8 +4,7 @@ import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefOwnership$ } from "./morning-brief-state.service";
-import { synchronizeMorningBriefTimezone$ } from "./morning-brief-timezone.service";
-import { reconcileOfficialMorningBriefSchedule$ } from "./official-workflow-reconciliation.service";
+import { repairMorningBriefSchedule$ } from "./morning-brief-schedule-repair.service";
 import type { WorkflowMember } from "./workflow-data.service";
 
 /** Repair an existing installation without publishing a new enable choice. */
@@ -17,7 +16,7 @@ export const reconcileExistingMorningBrief$ = command(
   ): Promise<"current" | "absent" | "ineligible" | "conflict"> => {
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
-    if (ownership.installation?.installationState !== "installed") {
+    if (!ownership.installation) {
       return "absent";
     }
     if (ownership.enrollment?.state === "departed") {
@@ -37,24 +36,16 @@ export const reconcileExistingMorningBrief$ = command(
       return "ineligible";
     }
     signal.throwIfAborted();
-    const synchronized = await set(
-      synchronizeMorningBriefTimezone$,
-      args,
-      signal,
-    );
-    if (synchronized === "conflict") {
-      return "conflict";
-    }
     const reconciled = await set(
-      reconcileOfficialMorningBriefSchedule$,
+      repairMorningBriefSchedule$,
       {
-        ...args,
+        orgId: args.orgId,
+        userId: args.member.userId,
         workflowId: ownership.installation.id,
-        activeDefinitionOnly: true,
       },
       signal,
     );
     signal.throwIfAborted();
-    return reconciled.kind === "current" ? "current" : "conflict";
+    return reconciled ? "current" : "conflict";
   },
 );

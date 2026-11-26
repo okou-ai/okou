@@ -49,9 +49,8 @@ export async function validateOfficialAutomationBindingSchema(
       `
         INSERT INTO "workflows" (
           "id", "org_id", "name", "created_by", "owner_user_id",
-          "updated_by", "official_definition_name",
-          "official_installation_state"
-        ) VALUES ($1, $2, $3, $4, $4, $4, $3, 'installed')
+          "updated_by", "official_definition_name"
+        ) VALUES ($1, $2, $3, $4, $4, $4, $3)
       `,
       [workflowId, orgId, definitionName, userId],
     );

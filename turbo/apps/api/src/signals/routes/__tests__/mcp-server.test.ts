@@ -339,7 +339,7 @@ describe("external MCP authentication and transport", () => {
     });
   });
 
-  it.each(["https://untrusted.example.test", "null", ""])(
+  it.each(["https://client.example.test/path", "null", ""])(
     "rejects Origin %s before authorization",
     async (origin) => {
       await fixture();
@@ -354,35 +354,46 @@ describe("external MCP authentication and transport", () => {
     },
   );
 
-  it("rejects an unlisted browser origin's preflight and authorized request", async () => {
-    const auth = await fixture();
-    const origin = "https://client.example.test";
-    const raw = setupRawAppRequest({ context, routes: mcpServerRoutes });
-    const preflight = await raw("/mcp", {
-      method: "OPTIONS",
-      headers: {
-        Origin: origin,
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers":
-          "authorization,mcp-protocol-version,mcp-method",
-      },
-    });
-    expect(preflight.status).toBe(403);
-    expect(preflight.body).toStrictEqual({ error: "Forbidden Origin" });
-    const result = await accept(
-      client().request({
-        extraHeaders: {
-          ...protocolHeaders(auth.token(), "tools/list"),
+  it.each(["https://client.example.test", "http://127.0.0.1:56844"])(
+    "allows bearer MCP discovery from %s and rejects cookies",
+    async (origin) => {
+      const auth = await fixture();
+      const raw = setupRawAppRequest({ context, routes: mcpServerRoutes });
+      const preflight = await raw("/mcp", {
+        method: "OPTIONS",
+        headers: {
           Origin: origin,
+          "Access-Control-Request-Method": "POST",
+          "Access-Control-Request-Headers":
+            "authorization,mcp-protocol-version,mcp-method",
         },
-        body: requestBody("tools/list"),
-      }),
-      [403],
-    );
-    expect(result.body).toStrictEqual({ error: "Forbidden Origin" });
-    expect(result.headers.get("access-control-allow-origin")).toBeNull();
-    expect(result.headers.get("access-control-allow-credentials")).toBeNull();
-  });
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+      expect(
+        preflight.headers.get("access-control-allow-credentials"),
+      ).toBeNull();
+      const headers = {
+        ...protocolHeaders(auth.token(), "tools/list"),
+        Origin: origin,
+      };
+      const discovery = await accept(
+        client().request({
+          extraHeaders: headers,
+          body: requestBody("tools/list"),
+        }),
+        [200],
+      );
+      expect(discovery.headers.get("access-control-allow-origin")).toBe("*");
+      await accept(
+        client().request({
+          extraHeaders: { ...headers, Cookie: "session=opaque" },
+          body: requestBody("tools/list"),
+        }),
+        [403],
+      );
+    },
+  );
 
   it("bounds the request body before SDK dispatch", async () => {
     const auth = await fixture();

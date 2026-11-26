@@ -511,10 +511,10 @@ test("chat-composer-workflows-010 a URL after a workflow remains literal and cre
   expect(screen.queryByTestId("slash-workflow-menu")).not.toBeInTheDocument();
 });
 
-test("chat-composer-workflows-003 a reopened pending lookup resolves and its workflow remains selectable on a later search", async () => {
+test("chat-composer-workflows-003 the first draft text loads workflows and their recent order once across searches", async () => {
   createChatRunFixtures(context).installRunChat();
-  const first = context.mocks.deferred<void>(),
-    started = context.mocks.deferred<void>();
+  const first = context.mocks.deferred<void>();
+  const requests: string[] = [];
   const entry = {
     id: crypto.randomUUID(),
     name: "pr-review",
@@ -525,18 +525,23 @@ test("chat-composer-workflows-003 a reopened pending lookup resolves and its wor
   context.mocks.api(
     workflowsCollectionContract.composer,
     async ({ respond }) => {
+      requests.push("for-composer");
       const result = available ? [entry] : [];
-      if (!started.settled()) {
-        started.resolve();
-      }
       await first.promise;
       return respond(200, result);
     },
   );
+  context.mocks.api(workflowsCollectionContract.recent, ({ respond }) => {
+    requests.push("recent");
+    return respond(200, { workflowIds: [entry.id] });
+  });
   await setupPage({ context, path: RUN_PATH });
   const editor = await screen.findByLabelText("Message");
-  await fill(editor, "/pr");
-  await started.promise;
+  expect(requests).toStrictEqual([]);
+  await fill(editor, "Draft");
+  await waitFor(() => {
+    expect([...requests].sort()).toStrictEqual(["for-composer", "recent"]);
+  });
   await fill(editor, "");
   await fill(editor, "/pr");
   first.resolve();
@@ -550,6 +555,7 @@ test("chat-composer-workflows-003 a reopened pending lookup resolves and its wor
       "/pr-review",
     );
   });
+  expect([...requests].sort()).toStrictEqual(["for-composer", "recent"]);
 });
 
 test("chat-composer-workflows-007 selecting Morning brief sends the same workflow reference shown inline", async () => {

@@ -382,6 +382,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5050505050505050505050505050505050505050" ]; then
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1638163816381638163816381638163816381638" ]; then
+      [ "${MOCK_OFFICIAL_STORAGE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5757575757575757575757575757575757575757" ]; then
@@ -490,6 +492,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SSH_CANONICAL_TRANSPORT_COMMIT-4848484848484848484848484848484848484848}"
     elif [[ "$*" == *1382_retire_official_result_email_runtime.sql* ]]; then
       printf '%s\n' '4949494949494949494949494949494949494949'
+    elif [[ "$*" == *1638_retire_official_workflow_installation_state.sql* ]]; then
+      printf '%s\n' '1638163816381638163816381638163816381638'
     elif [[ "$*" == *1386_drop_official_result_email_storage.sql* ]]; then
       printf '%s\n' '5050505050505050505050505050505050505050'
     elif [[ "$*" == *.github/rollback-floors/project-wire-contracts* ]]; then
@@ -1617,6 +1621,11 @@ grep -Fq '5050505050505050505050505050505050505050' "${tmp_dir}/failure.err" || 
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Official result-email contraction floor must fail before artifact or host access"
 fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Official Workflow storage retirement" \
+  run_resolver "${tmp_dir}/official-storage-retirement-floor.output" MOCK_OFFICIAL_STORAGE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/official-storage-retirement-floor.output" ] || fail "API that requires the retired Official tables must not publish rollback outputs"
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Cannot resolve the merged needs_rebind-independent SSH preparation" \

@@ -7,7 +7,8 @@ import Foundation
 @MainActor
 final class ChatThreadPreviewResources {
   let threadID: String
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps the preview read's graph values.
+  let store: CCState.Store
   private let lifetime = CCState.State(true)
   private let sync: ChatSync
   private let didFinish: @MainActor () async -> Void
@@ -16,11 +17,12 @@ final class ChatThreadPreviewResources {
   private var closed = false
 
   init(
-    threadID: String, sync: ChatSync,
+    threadID: String, graph: CCState.Store, sync: ChatSync,
     didFinish: @escaping @MainActor () async -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.threadID = threadID
+    store = graph
     self.sync = sync
     self.didFinish = didFinish
     self.didFail = didFail

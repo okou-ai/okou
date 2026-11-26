@@ -1,5 +1,64 @@
 # Changelog
 
+## [1.10.308](https://github.com/okou-ai/okou/compare/app-worker-v1.10.307...app-worker-v1.10.308) (2026-11-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.1
+    * @okouai/core bumped to 8.881.4
+
+## [1.10.307](https://github.com/okou-ai/okou/compare/app-worker-v1.10.306...app-worker-v1.10.307) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.0
+    * @okouai/core bumped to 8.881.3
+
+## [1.10.306](https://github.com/okou-ai/okou/compare/app-worker-v1.10.305...app-worker-v1.10.306) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.4
+    * @okouai/core bumped to 8.881.2
+
+## [1.10.305](https://github.com/okou-ai/okou/compare/app-worker-v1.10.304...app-worker-v1.10.305) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.3
+    * @okouai/core bumped to 8.881.1
+
+## [1.10.304](https://github.com/okou-ai/okou/compare/app-worker-v1.10.303...app-worker-v1.10.304) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.881.0
+
+## [1.10.303](https://github.com/okou-ai/okou/compare/app-worker-v1.10.302...app-worker-v1.10.303) (2026-11-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.128.2
+    * @okouai/core bumped to 8.880.0
+
 ## [1.10.302](https://github.com/okou-ai/okou/compare/app-worker-v1.10.301...app-worker-v1.10.302) (2026-11-25)
 
 

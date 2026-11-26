@@ -18,8 +18,6 @@ import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifec
 interface DeleteWorkflowInput {
   readonly orgId: string;
   readonly workflowId: string;
-  readonly allowOfficialInstallationDeletion?: boolean;
-  readonly requiredOfficialInstallationState?: "installing";
 }
 
 const deletionResultSchema = discriminatedUnion("deleted", [
@@ -47,9 +45,7 @@ function workflowDeletionDatabaseError(error: unknown): Error {
     "constraint" in error.cause
   ) {
     if (error.cause.constraint === "workflow_deletion_official_protected") {
-      return new Error(
-        "Uninstall Official Workflows through the Official installation endpoint",
-      );
+      return new Error("Official Workflow installations are read-only");
     }
     if (error.cause.constraint === "workflow_deletion_attachment_owner") {
       return new Error("Workflow attachment package has a foreign owner");
@@ -64,9 +60,7 @@ const deleteWorkflowRows$ = command(
   async ({ set }, args: DeleteWorkflowInput, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
     const query = sql`SELECT public.delete_workflow_rows(
-      ${args.orgId}, ${args.workflowId}::uuid,
-      ${args.allowOfficialInstallationDeletion === true},
-      ${args.requiredOfficialInstallationState ?? null}
+      ${args.orgId}, ${args.workflowId}::uuid
     ) AS result`;
     const rowSchema = deletionRowSchema;
     const result = await (async () => {

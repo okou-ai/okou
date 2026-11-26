@@ -10,6 +10,7 @@ import type { ThreadContext } from "../thread-context.signals";
 export function createAutomationThreadPrompt(
   snapshot$: ThreadContext["automationSnapshot$"],
   payload$: ThreadContext["automationPayload$"],
+  officialWorkflow$: ThreadContext["officialWorkflowObservation$"],
 ): Computed<Promise<RunPrompt | null>> {
   return computed(async (get) => {
     const snapshot = await get(snapshot$);
@@ -31,7 +32,7 @@ export function createAutomationThreadPrompt(
     if (!eventPayload) {
       return null;
     }
-    // Invoke the same ordinary Workflow name that the Runner will mount.
+    const official = await get(officialWorkflow$);
     const workflowName = target?.ordinaryWorkflowName ?? context.workflowName;
     return {
       userPromptVariables: {
@@ -42,6 +43,7 @@ export function createAutomationThreadPrompt(
               eventType,
               eventPayload,
             }),
+            official?.prompt,
           ),
           "",
           "Automation identity:",

@@ -49,6 +49,13 @@ export const platformPreviewMessagePdfFontUrls = Object.freeze({
   unicodeBoldItalic: pdfUnicodeBoldItalicFontUrl,
 });
 
+export const okouMessageAvatarStill = platformStaticAssetUrl(
+  "views/okou-page/assets/okou-avatar/still-6067a2799779.webp",
+);
+export const okouMessageAvatarAnimated = platformStaticAssetUrl(
+  "views/okou-page/assets/okou-avatar/idle-50ae6937b88f.svg",
+);
+
 export const platformOkouWordmarkDarkImg =
   "https://static.okou.io/public/okou-logo-wordmark-dark-8ac16c9eb76d.svg";
 export const platformOkouWordmarkLightImg =

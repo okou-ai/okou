@@ -42,7 +42,6 @@ import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -222,24 +221,12 @@ private fun EarlierReplyArtifacts(
     interactiveLinks: Boolean,
 ) {
     // Reuse the earlier replies' parsed results across chunks of the latest reply.
-    val candidates =
-        key(entry.earlier) {
-                produceState<List<ReplyArtifact>?>(null) {
-                    value =
-                        withContext(Dispatchers.Default) { earlierReplyArtifacts(entry.earlier) }
-                }
-            }
-            .value
-    // Keep the previous group laid out while fresh text is being parsed.
-    val group by
-        produceState(ReplyArtifactGroup(), candidates, entry.message.blocks, interactiveLinks) {
-            val earlier = candidates ?: return@produceState
-            value =
-                if (earlier.isEmpty()) ReplyArtifactGroup()
-                else
-                    withContext(Dispatchers.Default) {
-                        earlier.afterLatestReply(entry.message.blocks, interactiveLinks)
-                    }
+    val candidates = remember(entry.earlier) { earlierReplyArtifacts(entry.earlier) }
+    if (candidates.isEmpty()) return
+    val group =
+        rememberMarkdownLayout(Triple(candidates, entry.message.blocks, interactiveLinks)) {
+            (earlier, blocks, links) ->
+            earlier.afterLatestReply(blocks, links)
         }
     if (group.cards.isNotEmpty()) {
         val spacing =

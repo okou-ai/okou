@@ -172,7 +172,7 @@ const initializeRecentWorkflows$ = command(
   },
 );
 
-/** Optional root-owned bootstrap; consumers share this one initial request. */
+/** Share the initial history read with any accepted use already in flight. */
 export const setupRecentWorkflowSync$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const owner = await get(recentWorkflowOwner$);
@@ -191,7 +191,7 @@ export function createRecentWorkflowIds(
     }
     const owner = await get(recentWorkflowOwner$);
     // Optional sync errors retain the browser cache, not an invented empty
-    // server result. Bootstrap owns and reports the original rejection.
+    // server result. The initiating command owns and reports the rejection.
     await Promise.allSettled([get(owner.readiness$)]);
     owner.assertCurrent();
     // Each query owns a read-only snapshot. Fresh storage signals deliberately

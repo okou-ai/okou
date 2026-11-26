@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import {
   useGet,
-  useLastLoadable,
+  useLoadableState,
   useLastResolved,
   useLoadable,
   useSet,
@@ -23,15 +23,18 @@ import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import {
   type AgentSuggestionEntry,
+  forYouListRequest$,
   reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   browseForYou$,
   finishForYouPaginationOnRef$,
+  type ForYouDeck,
   forYouCardMinHeight$,
   forYouDeck$,
   forYouPagination$,
   measureForYouCardOnRef$,
+  pageForYouWithKeysOnRef$,
   swipeForYouOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -114,17 +117,14 @@ function SuggestionSendStatus({
   ) : null;
 }
 
-function ForYouStack() {
-  const deck = useLastResolved(forYouDeck$);
+function ForYouStack({ deck }: { readonly deck: ForYouDeck }) {
   const pagination = useGet(forYouPagination$);
   const minHeight = useGet(forYouCardMinHeight$);
   const measureCard = useSet(measureForYouCardOnRef$);
   const finishPagination = useSet(finishForYouPaginationOnRef$);
-  if (!deck) {
-    return null;
-  }
   const { cards, settled } = deck;
-  const complete = cards.length === 0;
+  const count = deck.remainingIds?.length;
+  const complete = count === 0 && cards.length === 0;
   const foreground = cards[0];
   const departure =
     foreground?.entry.item.id === pagination?.to ? pagination : null;
@@ -143,7 +143,7 @@ function ForYouStack() {
           } as CSSProperties
         }
       >
-        {STACK_LAYERS.slice(0, Math.max(0, cards.length - 1)).map((layer) => {
+        {STACK_LAYERS.slice(0, Math.max(0, (count ?? 0) - 1)).map((layer) => {
           return (
             <Card
               key={layer}
@@ -205,7 +205,7 @@ function ForYouStack() {
           );
         })}
       </div>
-      <ForYouNavigation />
+      {count !== undefined && <ForYouNavigation cards={cards} />}
     </div>
   );
 }
@@ -230,9 +230,8 @@ function ForYouCardContents({
   );
 }
 
-function ForYouNavigation() {
+function ForYouNavigation({ cards }: { readonly cards: ForYouDeck["cards"] }) {
   const { t } = useTranslation();
-  const cards = useLastResolved(forYouDeck$)?.cards ?? [];
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
@@ -258,6 +257,7 @@ function ForYouNavigation() {
               }),
               Icon: ChevronLeft,
               direction: "previous" as const,
+              keys: "ArrowLeft",
             },
             {
               card: cards[1],
@@ -266,8 +266,9 @@ function ForYouNavigation() {
               }),
               Icon: ChevronRight,
               direction: "next" as const,
+              keys: "ArrowRight",
             },
-          ].map(({ card, label, Icon, direction }) => {
+          ].map(({ card, label, Icon, direction, keys }) => {
             return card ? (
               <Link
                 key={label}
@@ -278,15 +279,13 @@ function ForYouNavigation() {
                   }),
                 }}
                 aria-label={label}
+                aria-keyshortcuts={keys}
                 onClick={(event) => {
                   if (shouldHandleLinkClick(event)) {
                     // This changes the reading position in the current
                     // visit; Router navigation would reload its snapshot.
                     event.preventDefault();
-                    detach(
-                      browse(card.entry.item.id, direction, signal),
-                      Reason.DomCallback,
-                    );
+                    browse(card.entry.item.id, direction, signal);
                   }
                 }}
                 className={cn(
@@ -456,20 +455,18 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
   } as CSSProperties;
 }
 
-function ForYouHeader() {
+function ForYouHeader({
+  ids,
+  position,
+}: {
+  readonly ids: readonly string[] | undefined;
+  readonly position: number;
+}) {
   const { t } = useTranslation();
-  const deck = useLastResolved(forYouDeck$);
-  const cards = deck?.progressCards ?? [];
-  const currentId = deck?.cards[0]?.entry.item.id;
-  const position = Math.max(
-    0,
-    cards.findIndex((card) => {
-      return card.entry.item.id === currentId;
-    }),
-  );
   // Keep a navigable window around the current card, even for a large feed.
-  const firstStep = Math.max(0, Math.min(position - 3, cards.length - 7));
-  const steps = cards.slice(firstStep, firstStep + 7);
+  const total = ids?.length;
+  const firstStep = Math.max(0, Math.min(position - 3, (total ?? 0) - 7));
+  const steps = ids?.slice(firstStep, firstStep + 7);
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   const cover = useLastResolved(forYouPaintedCover$);
@@ -495,62 +492,61 @@ function ForYouHeader() {
         </p>
       </div>
       <div className="flex min-w-0 items-center gap-2 sm:gap-5">
-        <nav
-          aria-label={t(($) => {
-            return $.chat.agentSuggestions.homeCard.navigation;
-          })}
-          className="flex min-w-0 flex-1 items-center"
-        >
-          {steps.map((card, offset) => {
-            const index = firstStep + offset;
-            return (
-              <Link
-                key={card.entry.item.id}
-                pathname={ROUTES.forYou}
-                options={{
-                  searchParams: new URLSearchParams({
-                    suggestion: card.entry.item.id,
-                  }),
-                }}
-                aria-current={index === position ? "step" : undefined}
-                aria-label={t(
-                  ($) => {
-                    return $.chat.agentSuggestions.homeCard.show;
-                  },
-                  {
-                    index: index + 1,
-                    total: cards.length,
-                  },
-                )}
-                onClick={(event) => {
-                  if (shouldHandleLinkClick(event)) {
-                    event.preventDefault();
-                    detach(
+        {steps && steps.length > 0 && (
+          <nav
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.homeCard.navigation;
+            })}
+            className="flex min-w-0 flex-1 items-center"
+          >
+            {steps.map((id, offset) => {
+              const index = firstStep + offset;
+              return (
+                <Link
+                  key={id}
+                  pathname={ROUTES.forYou}
+                  options={{
+                    searchParams: new URLSearchParams({
+                      suggestion: id,
+                    }),
+                  }}
+                  aria-current={index === position ? "step" : undefined}
+                  aria-label={t(
+                    ($) => {
+                      return $.chat.agentSuggestions.homeCard.show;
+                    },
+                    {
+                      index: index + 1,
+                      total,
+                    },
+                  )}
+                  onClick={(event) => {
+                    if (shouldHandleLinkClick(event)) {
+                      event.preventDefault();
                       browse(
-                        card.entry.item.id,
+                        id,
                         index < position ? "previous" : "next",
                         signal,
-                      ),
-                      Reason.DomCallback,
-                    );
-                  }
-                }}
-                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "h-1 w-full rounded-full transition-colors",
-                    index === position
-                      ? "bg-[rgb(var(--for-you-bar))]"
-                      : "bg-[rgb(var(--for-you-track))]",
-                  )}
-                />
-              </Link>
-            );
-          })}
-        </nav>
-        {cards.length > 0 && (
+                      );
+                    }
+                  }}
+                  className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 outline-[rgb(var(--for-you-ink)/0.85)] hover:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:bg-[rgb(var(--for-you-ink)/0.08)] focus-visible:outline-2 focus-visible:-outline-offset-2 sm:px-2"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "h-1 w-full rounded-full transition-colors",
+                      index === position
+                        ? "bg-[rgb(var(--for-you-bar))]"
+                        : "bg-[rgb(var(--for-you-track))]",
+                    )}
+                  />
+                </Link>
+              );
+            })}
+          </nav>
+        )}
+        {position >= 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.85)]">
             <span className="text-[rgb(var(--for-you-ink)/0.9)]">
               {position + 1}
@@ -561,17 +557,17 @@ function ForYouHeader() {
             >
               /
             </span>
-            {cards.length}
+            {total}
           </span>
         )}
         <span role="status" className="sr-only">
-          {deck
+          {ids
             ? t(
                 ($) => {
                   return $.chat.agentSuggestions.forYou.remaining;
                 },
                 {
-                  total: cards.length,
+                  total,
                 },
               )
             : null}
@@ -583,19 +579,47 @@ function ForYouHeader() {
 
 export function ForYouPage() {
   const { t } = useTranslation();
-  const deck = useLastLoadable(forYouDeck$);
-  const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
+  const deck = useGet(forYouDeck$);
+  const listState = useLoadableState(forYouListRequest$);
+  const remaining = deck.remainingIds;
+  const currentId = deck.cards[0]?.entry.item.id;
+  const position = remaining?.indexOf(currentId ?? "") ?? -1;
+  const reload = useSet(reloadSuggestionSession$);
+  const pageWithKeys = useSet(pageForYouWithKeysOnRef$);
   const signal = useGet(pageSignal$);
-  const cards = deck.state === "hasData" ? deck.data.cards : [];
-  const settled = deck.state === "hasData" ? deck.data.settled : [];
-  const complete = deck.state === "hasData" && cards.length === 0;
+  const hasStack =
+    deck.cards.length > 0 || deck.settled.length > 0 || remaining !== undefined;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
-      <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8">
+      <main
+        ref={pageWithKeys}
+        className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8"
+      >
         {/* The header sits on the banner and scrolls away with it. */}
-        <ForYouHeader />
+        <ForYouHeader ids={remaining} position={position} />
         <ForYouCover />
-        {deck.state === "hasError" ? (
+        {hasStack ? (
+          <>
+            {remaining?.length === 0 && deck.cards.length === 0 && (
+              <SuggestionsComplete
+                celebrate={deck.settled.length > 0}
+                className="absolute inset-x-4 top-58 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
+              />
+            )}
+            <ForYouStack deck={deck} />
+          </>
+        ) : listState !== "hasError" ? (
+          <div
+            role="status"
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.forYou.loading;
+            })}
+            className="m-auto w-full max-w-160"
+          >
+            <Skeleton className="h-125 w-full rounded-3xl" />
+          </div>
+        ) : null}
+        {listState === "hasError" && (
           <div
             role="alert"
             className="m-auto flex flex-col items-center gap-4 rounded-3xl bg-card p-6"
@@ -607,7 +631,6 @@ export function ForYouPage() {
             </p>
             <Button
               variant="neutral"
-              disabled={reloading.state === "loading"}
               onClick={() => {
                 detach(reload(signal), Reason.DomCallback);
               }}
@@ -617,30 +640,10 @@ export function ForYouPage() {
               })}
             </Button>
           </div>
-        ) : deck.state !== "hasData" ? (
-          <div
-            role="status"
-            aria-label={t(($) => {
-              return $.chat.agentSuggestions.forYou.loading;
-            })}
-            className="m-auto w-full max-w-160"
-          >
-            <Skeleton className="h-125 w-full rounded-3xl" />
-          </div>
-        ) : (
-          <>
-            {complete && (
-              <SuggestionsComplete
-                celebrate={settled.length > 0}
-                className="absolute inset-x-4 top-58 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
-              />
-            )}
-            <ForYouStack />
-          </>
         )}
         <div className="relative mx-auto w-full max-w-160 shrink-0 space-y-3">
           <SuggestionSaveErrors />
-          {settled.map((card) => {
+          {deck.settled.map((card) => {
             return card.kind === "suggestion" &&
               card.outcome?.type === "sent" ? (
               <SuggestionSendStatus

@@ -108,12 +108,12 @@ function detailClient() {
   );
 }
 
-async function readRunHistory(workflowId: string, cursor?: string) {
+async function readRunHistory(workflowId: string) {
   const response = await accept(
     detailClient().runHistory({
       headers: authHeaders(),
       params: { workflowId },
-      query: { cursor },
+      query: {},
     }),
     [200],
   );
@@ -4345,126 +4345,6 @@ describe("okou workflow automations", () => {
     expect(chatEventDisplayText(workflowMessage!)).toBe(
       "A manual run of this workflow was requested.",
     );
-  });
-
-  it("continues workflow run history across a timestamp shared by two runs", async () => {
-    let unfinishedThreadId: string | undefined;
-    const owned = await publicChatActor(context, {
-      runner: {
-        reply: ({ runnerId, heartbeatGeneration, executionContext }) => {
-          const { runId, sandboxToken } = executionContext;
-          // The next run can dispatch before the test observes it.
-          owned.rememberExecution(runId, sandboxToken);
-          return HttpResponse.json({
-            runnerId,
-            heartbeatGeneration,
-            runId,
-            disposition: "accepted",
-          });
-        },
-      },
-      beforeRuns: async () => {
-        if (!unfinishedThreadId) {
-          return;
-        }
-        // An interrupted loop can leave an input queued behind an active run.
-        await accept(
-          setupApp({ context, routes: chatThreadDeleteRoutes })(
-            chatThreadByIdContract,
-          ).delete({
-            headers: authHeaders(),
-            params: { id: unfinishedThreadId },
-          }),
-          [204],
-        );
-        await flushWaitUntilForTest();
-      },
-    });
-    await owned.run(async () => {
-      const workflowId = await wf.createWorkflow(owned.actor, {
-        name: WORKFLOW_NAME,
-      });
-      async function createRule(intervalSeconds: number) {
-        const created = await accept(
-          automationsClient().create({
-            headers: authHeaders(),
-            params: { workflowId },
-            body: { schedule: { type: "loop", intervalSeconds } },
-          }),
-          [201],
-        );
-        return created.body.id;
-      }
-
-      const primaryRule = await createRule(3600);
-      const secondRule = await createRule(7200);
-      const startedAt = now();
-      await runs.heartbeatRunner(owned.runnerGroup);
-
-      const pageSize = 30;
-      const runIds: string[] = [];
-      const automations = automationsClient();
-      async function enqueueRun(automationId: string) {
-        const response = await accept(
-          automations.run({
-            headers: authHeaders(),
-            params: { id: automationId },
-          }),
-          [201],
-        );
-        return response.body.chatThreadId;
-      }
-      mockNow(startedAt);
-      unfinishedThreadId = await enqueueRun(primaryRule);
-      for (let index = 0; index <= pageSize; index += 1) {
-        const { runId, sandboxToken } = await runs.nextReceivedExecution(
-          owned.runnerGroup,
-        );
-        if (index < pageSize) {
-          // The first two rules can run at the same instant without deduplicating.
-          // Queue the successor before completion so releasing the slot can
-          // dispatch it while the previous run's terminal callback finishes.
-          mockNow(startedAt + index);
-          await enqueueRun(index === 0 ? secondRule : primaryRule);
-        }
-        await webhookCallbacks.requestAgentComplete(
-          { runId, exitCode: 1, error: "Test run failed" },
-          { authorization: `Bearer ${sandboxToken}` },
-          [200],
-        );
-        runIds.push(runId);
-      }
-      // The completion response waits for the terminal chat callback.
-      // Observing the next dispatch already drains tracked background work.
-      await flushWaitUntilForTest();
-      unfinishedThreadId = undefined;
-
-      const tiedRunIds = runIds.slice(0, 2).sort().reverse();
-      const expected = [...runIds.slice(2).reverse(), ...tiedRunIds];
-      const firstPage = await readRunHistory(workflowId);
-      expect(
-        firstPage.runs.map(({ id }) => {
-          return id;
-        }),
-      ).toStrictEqual(expected.slice(0, pageSize));
-      if (firstPage.nextCursor === null) {
-        throw new Error("Expected a cursor for the earlier run");
-      }
-
-      const earlierPage = await readRunHistory(
-        workflowId,
-        firstPage.nextCursor,
-      );
-      expect(
-        earlierPage.runs.map(({ id }) => {
-          return id;
-        }),
-      ).toStrictEqual(expected.slice(pageSize));
-      expect(earlierPage.runs[0]?.createdAt).toBe(
-        firstPage.runs.at(-1)?.createdAt,
-      );
-      expect(earlierPage.nextCursor).toBeNull();
-    });
   });
 
   it("shares one lazy destination across concurrent and repeated Run now requests", async () => {

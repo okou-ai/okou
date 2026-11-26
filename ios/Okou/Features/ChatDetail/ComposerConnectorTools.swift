@@ -7,12 +7,17 @@ struct ComposerConnectorTools: View {
   let resources: ComposerConnectorResources
   @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
   @State private var showsDesktopSetup = false
+  /// The composer's confirmed connectors and remote access, kept in the session Store.
+  @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     self.resources = resources
     _remote = LoadableValue(task: resources.remote, keepLast: true)
+    _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
+
+  private var snapshot: ComposerConnectorStore.Snapshot { resolvedSnapshot ?? store.snapshot }
 
   var body: some View {
     Section {
@@ -25,7 +30,7 @@ struct ComposerConnectorTools: View {
       case .hasData(let value):
         Toggle(
           isOn: Binding(
-            get: { store.computerAccess.cloudBrowserEnabled },
+            get: { store.computerAccess(in: snapshot).cloudBrowserEnabled },
             set: { enabled in
               Task {
                 await store.setComputerAccess(ChatComputerAccess(cloudBrowserEnabled: enabled))

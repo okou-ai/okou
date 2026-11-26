@@ -457,6 +457,7 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     const author = bdd.user({ orgId: actor.orgId });
     const shared = await createWorkflow(author, {
       visibility: "public",
+      name: "morning-brief",
       instruction: "Shared Automation workflow",
     });
     const shadow = await createWorkflow(actor, {
@@ -511,6 +512,7 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
     await expect(launch()).resolves.toBe(threadId);
     const runId = await chatFixture.lastThreadPiAutomationRun(actor, threadId);
     const execution = await owner.executionInput(runId);
+    expect(execution.prompt.split("\n", 1)[0]).toBe("/morning-brief");
     const mounted = execution.contentBundles.skills.find((bundle) => {
       return bundle.mountPath === `/home/user/.claude/skills/${shared.name}`;
     });

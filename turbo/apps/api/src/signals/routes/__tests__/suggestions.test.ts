@@ -132,17 +132,43 @@ describe("Agent suggestions", () => {
       fixture.actor.orgId,
     );
     const api = client();
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: false,
+      firstItem: null,
+    });
     const cards = Array.from({ length: 11 }, (_, priority) => {
-      return input(priority);
+      return input(Math.max(0, priority - 1));
     });
     for (const body of cards) {
       await accept(api.create({ headers: fixture.headers, body }), [200]);
     }
-    expect(
-      (await accept(api.summary({ headers: humanHeaders }), [200])).body
-        .hasUnread,
-    ).toBeTruthy();
     const displayed = await accept(api.list({ headers: humanHeaders }), [200]);
+    expect(displayed.body.items).toHaveLength(10);
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: true,
+      firstItem: displayed.body.items[0],
+    });
+    const last = cards.find((card) => {
+      return !displayed.body.items.some((item) => {
+        return item.id === card.id;
+      });
+    });
+    if (!last) {
+      throw new Error("Expected the overflow card");
+    }
+    const next = await accept(
+      api.list({
+        headers: humanHeaders,
+        query: { cursor: displayed.body.nextCursor },
+      }),
+      [200],
+    );
+    expect(next.body.items).toMatchObject([{ id: last.id }]);
+    expect(next.body.nextCursor).toBeUndefined();
     for (const card of displayed.body.items) {
       await accept(
         api.markRead({ headers: humanHeaders, params: { id: card.id } }),
@@ -150,13 +176,11 @@ describe("Agent suggestions", () => {
       );
     }
     expect(
-      (await accept(api.summary({ headers: humanHeaders }), [200])).body
-        .hasUnread,
-    ).toBeTruthy();
-    const last = cards[0];
-    if (!last) {
-      throw new Error("Expected the overflow card");
-    }
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({
+      hasUnread: true,
+      firstItem: displayed.body.items[0],
+    });
     const receipt = await accept(
       api.markRead({ headers: humanHeaders, params: { id: last.id } }),
       [200],

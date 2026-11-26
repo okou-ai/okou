@@ -686,12 +686,7 @@ const workflowAutomationSummaryBaseSchema = object({
   official: object({
     blueprintKey: officialWorkflowBlueprintKeySchema,
     appliedFingerprint: string().regex(/^[0-9a-f]{64}$/),
-    reconciliationStatus: zEnum([
-      "current",
-      "reconciling",
-      "needs_reconfiguration",
-      "failed",
-    ]),
+    reconciliationStatus: zEnum(["current", "needs_reconfiguration", "failed"]),
     intendedEnabled: boolean(),
     parameterBindings: array(officialWorkflowParameterBindingSchema),
   })
@@ -1347,7 +1342,7 @@ export const workflowSummarySchema = object({
   canPublish: boolean(),
   official: object({
     definitionName: workflowNameSchema,
-    installationState: zEnum(["installing", "installed"]),
+    installationState: literal("installed"),
     definitionLifecycle: zEnum(["active", "retired", "unavailable"]),
     readOnly: literal(true),
   })

@@ -2,8 +2,9 @@ import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-thread
 import { expect, test } from "vitest";
 import { screen } from "@testing-library/react";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import { startPage } from "../../../__tests__/page-helper.ts";
+import { click, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findButton } from "./chat-run-test-fixtures.ts";
 const context = testContext();
 test("shared-database-browser-002 The connected workspace uses its cached Clerk session token scoped to the worker's workspace", async () => {
   const authorization = context.mocks.deferred<string | null>();
@@ -37,6 +38,8 @@ test("shared-database-browser-002 The connected workspace uses its cached Clerk 
     },
     sharedWorkerTestTransport: "message-port",
   });
+  await page.content;
+  click(await findButton("Open chat list menu"));
   await expect(authorization.promise).resolves.toBe("Bearer " + cached);
   release.resolve();
   await page.ready;

@@ -213,6 +213,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   );
   context.mocks.api(feedContract.summary, ({ respond }) => {
     return respond(200, {
+      firstItem: items[0] ?? null,
       hasUnread:
         sources.suggestions &&
         items.some((item) => {

@@ -4,13 +4,11 @@ import { describe, expect, it } from "vitest";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { proactiveSuggestionsRoutes } from "../proactive-preferences";
 import { feedRoutes } from "../feed";
-import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { createBddApi } from "./helpers/api-bdd";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
@@ -23,7 +21,6 @@ const routes = Object.freeze([
   ...morningBriefPreferenceRoutes,
   ...proactiveSuggestionsRoutes,
   ...feedRoutes,
-  ...cronOfficialWorkflowCatalogRoutes,
 ]);
 const app = setupApp({ context, routes });
 
@@ -75,17 +72,10 @@ async function preferenceRun() {
 }
 
 describe("Proactive CLI preferences", () => {
-  it("publishes the Official catalog and lets the primary Run control preferences and delivery", async () => {
-    const isolatedApp = await setupApp({ context, routes, isolatePg: true });
+  it("lets the primary Run control built-in preferences and delivery", async () => {
     const { owned, actor, headers } = await preferenceRun();
     installWorkflowVolumeS3Fixture(context);
     await owned.run(async () => {
-      await accept(
-        isolatedApp(cronOfficialWorkflowCatalogContract).sync({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
       for (const contract of [
         morningBriefPreferenceContract,
         proactiveSuggestionsContract,
