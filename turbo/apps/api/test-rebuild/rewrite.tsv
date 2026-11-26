@@ -2307,7 +2307,7 @@ account-org	src/signals/routes/__tests__/misc-routes.bdd.test.ts	misc-routes.bdd
 account-org	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	model-catalog-antigravity-001	rewritten	67.1	affected by #50982 (Gemini 4 runs with a connected Antigravity account): rewrite against the current behaviour; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/model-catalog-antigravity.test.ts	B09	d-other
 account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-002	rewritten	11.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/model-catalog-authority.test.ts	B05	
 account-org	src/signals/routes/__tests__/model-catalog-authority.test.ts	model-catalog-authority-001	rewritten	27.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/model-catalog-authority.test.ts	B06	
-account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	planned					d-other
+account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-001	rewritten	38.6		src/signals/routes/__tests__/model-catalog.test.ts		d-other
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-002	planned					a-run
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-005	planned					a-run
 account-org	src/signals/routes/__tests__/model-catalog.test.ts	model-catalog-007	planned					a-run
