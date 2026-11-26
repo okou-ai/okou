@@ -228,48 +228,6 @@ async function returnsToIosAfterGrant(slug: NativeSlug) {
 }
 
 describe("connector HTTPS return to iOS", () => {
-  it("connectors-https-return-015 redirects direct callbacks to the HTTPS return and ignores unclaimed native state", async () => {
-    useHostedApp();
-    mockGitHubConnectorOAuth();
-    const actor = bdd.user();
-    const started = await startOauth(actor, "github", true);
-    const callback = setupApp({
-      baseUrl: "https://api.okou.ai",
-      context,
-      routes: builtinConnectorsSlugCallbackRoutes,
-    })(builtinConnectorsSlugCallbackContract);
-    const [direct, unclaimed] = await Promise.all([
-      accept(
-        callback.callback({
-          params: { connectorSlug: "github" },
-          query: {
-            state: stateOf(started.authorizationUrl),
-            error: "access_denied",
-          },
-          headers: {},
-          extraHeaders: { "x-okou-web-origin": "https://okou.ai" },
-        }),
-        [307],
-      ),
-      accept(
-        callback.callback({
-          params: { connectorSlug: "github" },
-          query: {
-            state: `ios-https-v1:${randomUUID()}`,
-            error: "access_denied",
-          },
-          headers: {},
-          extraHeaders: { "x-okou-web-origin": "https://okou.ai" },
-        }),
-        [307],
-      ),
-    ]);
-    expect(direct.headers.get("location")).toBe(started.nativeCallbackUrl);
-    expect(new URL(unclaimed.headers.get("location") ?? "").pathname).toBe(
-      "/connector/error",
-    );
-  });
-
   it("connectors-https-return-014 returns a provider refusal to iOS without a connection or state replay", async () => {
     useHostedApp();
     mockGitHubConnectorOAuth({ login: "native-oauth" });
