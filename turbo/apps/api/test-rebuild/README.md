@@ -374,13 +374,13 @@ The pilot rewrites selected cases from their BDD, the production contracts and t
 
 | Status    | IDs |
 | --------- | --: |
-| Rewritten | 357 |
+| Rewritten | 355 |
 | Skipped   |  25 |
 | Planned   | 327 |
 
-- **Durations:** the accepted Vitest durations of the rewritten cases are P50 66.7 ms, P95 163.5 ms and max 196.4 ms. Acceptance batches ran locally with one Vitest worker on a two-CPU machine. In a later rerun, `cloudflare-access-lifecycle-005` (222 ms) and `connected-connectors-003` (228 ms) crossed the limit. CI per-test timings decide these borderline cases.
+- **Durations:** the accepted Vitest durations of the rewritten cases are P50 65.4 ms, P95 160.7 ms and max 196.4 ms. Acceptance batches ran locally with one Vitest worker on a two-CPU machine. `cloudflare-access-lifecycle-005` measured 222 ms in one local rerun, then came in under 200 ms in a full local batch; its CI file averages 146 ms per test, so it stays. `connected-connectors-003` and `-005` swung between 190 and 290 ms, and their CI file averaged 196 ms per test, so both are now skipped as `slow-setup`.
 - **Skip reasons:**
-  - `slow-setup` (12): dispatched Run, Runner or member-lifecycle setups measured at 240–790 ms.
+  - `slow-setup` (14): dispatched Run, Runner or member-lifecycle setups measured at 240–790 ms, plus the two connected-connectors flows that sit at the limit.
   - `adapter-runtime` (8): the Android version-floor configuration and a library predicate.
   - `isolated-db` (5): signed Notion deliveries need the plaintext verification token, which only a clean database exposes.
   - Cases left unfinished stay `planned`.
@@ -392,5 +392,7 @@ The pilot rewrites selected cases from their BDD, the production contracts and t
 - **Known gaps:**
   - The first test of a file pays a 150–250 ms warm-up on this machine. That blocks about 40 otherwise passing tests in 10 local files; they stay `planned`.
   - Two tests drafted with a test-only token signer or a tolerance for leftover state were removed.
+  - An empty `describe` left by trimming `auth-org.bdd` failed the CI shard with `No test found in suite`, and it is gone. A scan found no other empty suite.
+  - `onboarding-012` logged `Could not prepare Suggestions` because the test never configured the admin's Clerk membership list. A real admin always has one, so the test now seeds it through the shared `seedOrgMembership$` helper, and the warning is gone. This was a test-side state, not a product defect.
 
 `upstream-changes.tsv` records API tests that changed on `main` after the frozen baseline. Merging `main` at `4781feba4d` changed nine old test files and renamed `cron-official-workflow-catalog.test.ts` to `builtin-workflow-automations.test.ts`. The branch keeps those files deleted and keeps the pilot rewrite of `onboarding.test.ts`. The frozen BDDs are unchanged, and the upstream changes should be reviewed at the next screening.
