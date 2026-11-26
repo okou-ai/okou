@@ -426,16 +426,16 @@ billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-012	rewritten	33.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-013	rewritten	26.0		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
 billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-017	rewritten	27.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-001	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-002	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-005	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-006	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-010	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-013	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-014	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-015	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-017	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-019	planned				B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-001	rewritten	13.9		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-002	rewritten	10.0		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-005	rewritten	5.9		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-006	rewritten	36.6		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-010	rewritten	32.3		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-013	rewritten	23.3		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-014	rewritten	39.7		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-015	rewritten	12.6		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-017	rewritten	14.2		src/signals/routes/__tests__/billing-redeem.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-019	rewritten	5.5		src/signals/routes/__tests__/billing-redeem.test.ts	B03
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-002	planned				
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-005	planned				
 billing	src/signals/routes/__tests__/billing-restore.test.ts	billing-restore-006	planned				
