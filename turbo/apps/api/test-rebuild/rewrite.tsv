@@ -1114,22 +1114,22 @@ connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-acc
 connectors	src/signals/routes/__tests__/connector-accounts.test.ts	connector-accounts-024	rewritten	134.4		src/signals/routes/__tests__/connector-accounts.test.ts	pilot	
 connectors	src/signals/routes/__tests__/connector-catalog-immutable.test.ts	connector-catalog-immutable-002	revisit		revisit: row (4/4) is over 200 ms in all three shuffled runs; evidence: connector-catalog-immutable-002 (1/4) 114.0 ms (112/117/114); connector-catalog-immutable-002 (2/4) 139.3 ms (139/216/120); connector-catalog-immutable-002 (3/4) 130.4 ms (129/130/153); connector-catalog-immutable-002 (4/4) 291.6 ms (278/292/301); draft /home/user/pilot-env/wip/r13b/connector-catalog-immutable.test.ts; resume: split (4/4) further or record slow-setup		B06	
 connectors	src/signals/routes/__tests__/connector-catalog-status-generation.test.ts	connector-catalog-status-generation-001	skipped		isolated-db: the Given syncs a new connector catalog generation through GET /api/cron/sync-connector-catalog, which moves the shared Connector catalog active pointer and serving snapshot for every tenant; docs/api/api-testing.md reserves isolatePg for mutating the shared Connector catalog, and isolatePg is forbidden in this rebuild (same as cron-connector-catalog-003)		B06	
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-007	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-008	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-009	planned				B09	a-run
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-012	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-013	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-014	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-015	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-017	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-018	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-019	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-021	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-022	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-025	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-026	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-029	planned				B09	d-other
-connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-031	planned				B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-007	rewritten	13.1		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-008	rewritten	21.6		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-009	skipped		slow-setup: Given+first When/Then 405 ms and 393 ms (dispatching the admin-owned Run through createRunExecutionCredentials with plan limited-free and preferences false dominates: organization.created bootstrap, thread and thread Run creation, Runner heartbeat and execution claim; the single catalog list read is about 10-35 ms in other rows of this file)		B09	a-run
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-012	rewritten	23.9		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-013	rewritten	10.2		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-014	rewritten	18.8		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-015	rewritten	16.8		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-017	rewritten	99.4		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-018	rewritten	86.6		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-019	rewritten	62.8		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-021	rewritten	84.3		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-022	rewritten	8.6		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-025	rewritten	92.6	split n=6: 1/6=82.4; 2/6=85.3; 3/6=82.2; 4/6=79.3; 5/6=92.6; 6/6=61.2	src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-026	rewritten	7.8		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-029	rewritten	7.4		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
+connectors	src/signals/routes/__tests__/connector-catalog.test.ts	connector-catalog-031	rewritten	16.4		src/signals/routes/__tests__/connector-catalog.test.ts	B09	d-other
 connectors	src/signals/routes/__tests__/connector-check.stored-accounts.test.ts	connector-check.stored-accounts-002	rewritten	178.9	split n=2: 1/2=94.0; 2/2=178.9; accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/connector-check.stored-accounts.test.ts	B07	d-other
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-001	revisit		revisit: one-capability Run credentials not reachable; evidence: with the limited-free Run (plan limited-free, preferences false) Given + first When/Then (Reap manual connect + Run + missing-session 401) measured 216, 165, 164, 192, 169 and 167 ms (Reap connect 12-26 ms, Run setup 96-130 ms in the test body plus about 50 ms of Run teardown counted in the test duration); the later segments need Run credentials carrying only connector:read or only agent-run:read, but the dispatched execution token carries both and must not be constructed; resume: find a public path that issues a Run token with one diagnostic capability, then split per BRIEF7 (expect each row near 165-215 ms)		B01	
 connectors	src/signals/routes/__tests__/connector-check.test.ts	connector-check-005	rewritten	136.7		src/signals/routes/__tests__/connector-check.test.ts	pilot	
