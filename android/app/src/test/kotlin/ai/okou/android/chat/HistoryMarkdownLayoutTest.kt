@@ -60,6 +60,17 @@ class HistoryMarkdownLayoutTest {
     }
 
     @Test
+    fun workspaceSearchFocusesTheReplyWhenOnlyALinkDefinitionMatches() {
+        val keyword = "release-notes"
+        val source = "Read the [guide][docs].\n\n[docs]: https://example.com/$keyword"
+        val start = source.indexOf(keyword)
+        val message = reply(source)
+        val target = message.workspaceSearchTarget(start until start + keyword.length, false)
+        assertEquals(message.id, target.id)
+        assertNull(target.markdownBlockPath)
+    }
+
+    @Test
     fun workspaceSearchFocusesOnlyTheMatchedParagraphOfANestedListItem() {
         val sibling = "Build passed"
         val match = "Confirm the release owner."
