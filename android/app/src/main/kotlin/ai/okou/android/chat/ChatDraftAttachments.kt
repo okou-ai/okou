@@ -3,6 +3,8 @@ package ai.okou.android.chat
 import ai.okou.android.R
 import ai.okou.android.artifacts.InlineArtifactImages
 import ai.okou.android.connectors.ConnectorSheet
+import ai.okou.android.state.rememberDraftAttachmentPreview
+import ai.okou.android.state.rememberDraftAttachmentsOpen
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.text.format.Formatter
@@ -41,7 +43,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,7 +78,7 @@ internal fun ChatDraftAttachments(
     remoteImages: InlineArtifactImages?,
     threadId: String,
 ) {
-    var previewKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var previewKey by rememberDraftAttachmentPreview()
     val preview = attachments.firstOrNull { it.key == previewKey }
     LazyRow(
         Modifier.fillMaxWidth().testTag("chat-draft-attachments"),
@@ -120,7 +121,7 @@ internal fun ChatDraftAttachmentCount(
     attachments: List<DraftChatAttachment>,
     content: @Composable () -> Unit,
 ) {
-    var shown by rememberSaveable { mutableStateOf(false) }
+    var shown by rememberDraftAttachmentsOpen()
     val count = attachments.size
     if (count == 0) return
     val label = stringResource(R.string.chat_attachment_count, count)
@@ -424,7 +425,10 @@ private fun DraftAttachmentPreview(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (unavailable) Text(stringResource(R.string.chat_attachment_preview_unavailable))
+                if (attachment.failure == AttachmentFailure.TooLarge)
+                    Text(stringResource(R.string.chat_attachment_too_large))
+                else if (unavailable)
+                    Text(stringResource(R.string.chat_attachment_preview_unavailable))
             }
         },
         confirmButton = {

@@ -115,7 +115,11 @@ internal fun ChatConnectorOptionsButton(
         onDispose { if (open) defaultModel?.showComposerOptions(false) }
     }
     LaunchedEffect(page, restoreTrigger, attachmentPickerActive) {
-        if (page == ComposerOptionsPage.Closed && restoreTrigger && !attachmentPickerActive) {
+        if (
+            page == ComposerOptionsPage.Closed &&
+                (restoreTrigger || presentation.restoreEditor) &&
+                !attachmentPickerActive
+        ) {
             withFrameNanos {}
             if (presentation.restoreEditor) {
                 editorFocus.requestFocus()
@@ -346,7 +350,7 @@ internal fun ChatConnectorOptionsButton(
                             chevron = false,
                         )
                         if (showModel || options != null)
-                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     }
                     if (showModel || options != null)
                         ChatOptionsHeading(R.string.chat_options_settings)

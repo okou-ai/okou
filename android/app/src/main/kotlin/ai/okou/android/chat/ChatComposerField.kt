@@ -303,8 +303,7 @@ internal fun ChatComposerField(
                             beforeSend()
                             model.send(target, defaultModel?.state?.value?.options)
                         },
-                        modifier =
-                            Modifier.size(48.dp).semantics { contentDescription = sendLabel },
+                        modifier = Modifier.semantics { contentDescription = sendLabel },
                         enabled = state.canSend(target),
                         shape = CircleShape,
                         colors =
