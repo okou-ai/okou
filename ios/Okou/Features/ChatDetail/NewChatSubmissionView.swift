@@ -84,13 +84,6 @@ struct NewChatSubmissionView: View {
       )
       .disabled(true)
     }
-    .sheet(
-      isPresented: Binding(
-        get: { submission.viewer.preview != nil },
-        set: { if !$0 { submission.viewer.dismiss() } }
-      )
-    ) {
-      MessageAttachmentPreview(viewer: submission.viewer)
-    }
+    .messageAttachmentPreview(viewer: submission.viewer)
   }
 }
