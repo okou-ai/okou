@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.2](https://github.com/okou-ai/okou/compare/ios-v0.69.1...ios-v0.69.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ios:** play voice clips inline in the chat composer ([#51227](https://github.com/okou-ai/okou/issues/51227)) ([6e628b5](https://github.com/okou-ai/okou/commit/6e628b513de31b758330caf30e856f9133c04200))
+
 ## [0.69.1](https://github.com/okou-ai/okou/compare/ios-v0.69.0...ios-v0.69.1) (2026-11-26)
 
 
