@@ -1,5 +1,7 @@
 import Foundation
+import ImageIO
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 /// An image document lets WebKit tile large originals and play animated images without allocating
@@ -9,7 +11,10 @@ final class LocalImageDocument: Sendable {
   let page: URL
 
   nonisolated init?(image: URL) throws {
-    let ext = image.pathExtension.lowercased()
+    // A downloaded attachment keeps its display name, which may have no extension.
+    let source = CGImageSourceCreateWithURL(image as CFURL, nil)
+    let detectedType = source.flatMap { CGImageSourceGetType($0) }.flatMap { UTType($0 as String) }
+    let ext = detectedType?.preferredFilenameExtension ?? image.pathExtension.lowercased()
     let types = [
       "png", "apng", "jpg", "jpeg", "gif", "webp", "avif", "heic", "heif", "svg", "bmp", "tiff",
       "tif", "ico"
