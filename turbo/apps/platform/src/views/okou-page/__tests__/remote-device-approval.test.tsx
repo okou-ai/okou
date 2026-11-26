@@ -73,10 +73,10 @@ test("cancelling one device request leaves its policy alone and a later card app
   await within(firstCard!).findByText("Allow access to Build Mac?");
   click(await findFastControl("button", "Cancel", firstCard!));
   expect(firstCard).not.toBeInTheDocument();
-  expect(approvals).toEqual([]);
+  expect(approvals).toStrictEqual([]);
   click(await findFastControl("button", "Allow for 1 hour", secondCard!));
   await within(secondCard!).findByText("Device access granted");
-  expect(approvals).toEqual([
+  expect(approvals).toStrictEqual([
     { threadId: context.resourceId, body: { deviceId } },
   ]);
 });
@@ -149,7 +149,9 @@ test("creates an empty device and moves an existing channel from the directory",
     await screen.findByText("Personal Mac", { selector: "[role=menuitem]" }),
   );
   await screen.findByText("No channels");
-  expect(moves).toEqual([{ channelId, deviceId: createdIds[0], kind: "ssh" }]);
+  expect(moves).toStrictEqual([
+    { channelId, deviceId: createdIds[0], kind: "ssh" },
+  ]);
 });
 
 test("the exact approval link opens an owner confirmation without a transcript card", async () => {
