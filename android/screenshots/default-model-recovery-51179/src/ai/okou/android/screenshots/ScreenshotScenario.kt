@@ -103,6 +103,8 @@ class ScreenshotScenario {
                     row.click()
 
                     val auto = label(R.string.settings_auto_model)
+                    await(auto)
+                    device.waitForIdle()
                     val candidate = checkNotNull(clickableParent(await(auto)))
                     check(candidate.isCheckable && !candidate.isChecked)
                     val minimumAutoRow = (72 * app.resources.displayMetrics.density).roundToInt()
@@ -113,20 +115,27 @@ class ScreenshotScenario {
                         device.wait(
                             object : Condition<UiDevice, Boolean> {
                                 override fun apply(device: UiDevice): Boolean =
-                                    fixture.writes.size == 1 &&
-                                        runBlocking {
-                                            app.defaultModelStore.load(identity).confirmed.selectedModel ==
-                                                "auto"
-                                        } &&
-                                        device.findObject(auto)
-                                            ?.let(::clickableParent)
-                                            ?.isChecked == true
+                                    fixture.writes.isNotEmpty()
                             },
                             12_000,
-                        ) == true
-                    )
+                        ) == true,
+                    ) { "The Auto selection did not reach the fixture" }
                     check(fixture.writes.single()["selectedModel"] == JsonNull)
                     check(fixture.writes.single()["serviceTier"] == JsonNull)
+                    check(
+                        device.wait(
+                            object : Condition<UiDevice, Boolean> {
+                                override fun apply(device: UiDevice): Boolean =
+                                    runBlocking {
+                                        app.defaultModelStore.load(identity).confirmed.selectedModel ==
+                                            "auto"
+                                    }
+                            },
+                            12_000,
+                        ) == true,
+                    ) { "The Auto write did not update the confirmed preference" }
+                    device.waitForIdle()
+                    check(checkNotNull(clickableParent(await(auto))).isChecked)
                     check(checkNotNull(clickableParent(await(auto))).visibleBounds == autoBounds)
                     check(device.hasObject(entry))
                     device.waitForIdle()
