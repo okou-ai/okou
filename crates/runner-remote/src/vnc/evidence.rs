@@ -63,7 +63,7 @@ impl Step {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum Role {
+pub(crate) enum Role {
     Rfb,
     Kdc,
 }
@@ -168,7 +168,16 @@ pub(super) fn route(transport: Transport) -> &'static str {
 }
 
 impl Snapshot {
-    fn carriers_mut(&mut self) -> impl Iterator<Item = &mut Carrier> {
+    pub(crate) fn carriers(&self) -> impl DoubleEndedIterator<Item = (Role, &Carrier)> {
+        [
+            (Role::Rfb, self.rfb_carrier.as_deref()),
+            (Role::Kdc, self.kdc_carrier.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(role, carrier)| carrier.map(|carrier| (role, carrier)))
+    }
+
+    pub(crate) fn carriers_mut(&mut self) -> impl Iterator<Item = &mut Carrier> {
         [
             self.rfb_carrier.as_deref_mut(),
             self.kdc_carrier.as_deref_mut(),
