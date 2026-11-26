@@ -70,6 +70,16 @@ export function createVncExecutionApi(context: TestContext) {
       // Negative membership/KMS assertions finish before restoring cleanup prerequisites.
       api.authenticate(value);
       useSecretKmsProbe();
+      // A Run the case already finished is no longer cancellable (HTTP 400),
+      // and its completion was already reported.
+      const current = await runs.requestReadRun(actor, runId, [200, 404]);
+      if (
+        current.status === 404 ||
+        !("status" in current.body) ||
+        !["queued", "pending", "running"].includes(current.body.status)
+      ) {
+        return;
+      }
       await runs.requestCancelRun(actor, runId, [200, 404]);
       await createWebhookCallbackApi(context).requestAgentComplete(
         { runId, exitCode: 137 },
