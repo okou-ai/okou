@@ -149,6 +149,10 @@ fn check_targets(targets: &[&Path]) -> io::Result<bool> {
         return check_target_slice(targets);
     }
 
+    check_targets_in_parallel(targets)
+}
+
+fn check_targets_in_parallel(targets: &[&Path]) -> io::Result<bool> {
     let chunk_size = targets.len().div_ceil(TARGET_READERS);
     let (first, remaining) = targets.split_at(chunk_size);
     // Overlap cold inode reads, but keep inspection results in manifest order.
@@ -213,4 +217,22 @@ fn check_target_slice(targets: &[&Path]) -> io::Result<bool> {
 
 fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parallel_checks_return_the_first_unsuccessful_result_in_manifest_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("not-a-directory");
+        fs::write(&file, b"").unwrap();
+        let invalid = directory.path().join("invalid\0path");
+        let root = directory.path();
+
+        assert!(!check_targets_in_parallel(&[root, &file, root, &invalid]).unwrap());
+        let error = check_targets_in_parallel(&[root, &invalid, root, &file]).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
 }
