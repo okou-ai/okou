@@ -1,4 +1,5 @@
 import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
 import Textual
@@ -32,6 +33,8 @@ struct ChatDetailView: View {
   @ResolvedValue private var resolvedNavigation: ConversationPresentation.Navigation?
   /// History and read-mark synchronization, kept in the workspace session's Store.
   @ResolvedValue private var resolvedSync: ConversationPresentation.SyncStatus?
+  /// The model selection that failure cards and follow-ups read, kept in the same Store.
+  @ResolvedValue private var resolvedModels: ChatModelSelectionStore.Presentation??
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -57,6 +60,8 @@ struct ChatDetailView: View {
     _resolvedWindow = ResolvedValue(conversation.window)
     _resolvedNavigation = ResolvedValue(conversation.navigation)
     _resolvedSync = ResolvedValue(conversation.syncStatus)
+    _resolvedModels = ResolvedValue(
+      ChatModelSelectionStore.presentation(of: conversation.modelSelection))
   }
 
   /// This render's transcript. The synchronous read only covers a missing first resolution.
@@ -74,7 +79,7 @@ struct ChatDetailView: View {
   private var rows: [ConversationCollectionRow] {
     ConversationRowProjection(
       conversation: conversation, transcript: transcript, window: window,
-      isSending: delivery.isSending
+      isSending: delivery.isSending, models: models
     ).rows
   }
 
@@ -387,7 +392,8 @@ struct ChatDetailView: View {
       if message.role == .user {
         VStack(alignment: .trailing, spacing: OkouSpace.sm) {
           if let change = message.modelChange {
-            modelChangeLabel(change)
+            ConversationModelChangeLabel(
+              change: change, models: conversation.modelSelection?.models)
           }
           UserMessageView(
             message: message, webURL: conversation.webURL,
@@ -498,21 +504,6 @@ struct ChatDetailView: View {
       }
     }
   }
-
-  private func modelChangeLabel(_ change: ChatModelChange) -> some View {
-    let label: String
-    switch change {
-    case .model(let model):
-      let name =
-        conversation.modelSelection?.models.configuration?.catalog.name(model.id) ?? model.id
-      label = "Model: \(name)" + (model.isFast ? " · Fast" : "")
-    case .fastMode(let enabled): label = enabled ? "Fast mode on" : "Fast mode off"
-    }
-    return Label(label, okouSymbol: "sliders-horizontal", iconSize: OkouIconSize.inline)
-      .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
-      .frame(maxWidth: .infinity, alignment: .trailing)
-  }
-
 }
 
 extension ChatDetailView {
@@ -525,6 +516,9 @@ extension ChatDetailView {
   }
   private var syncStatus: ConversationPresentation.SyncStatus {
     resolvedSync ?? conversation.currentSyncStatus
+  }
+  private var models: ChatModelSelectionStore.Presentation? {
+    resolvedModels ?? conversation.modelSelection?.presentation
   }
   /// The jump-to-latest control needs a displayed message as well as the reader's position.
   private var showsBottomButton: Bool {
@@ -574,5 +568,51 @@ private struct ConversationEarlierMessagesControl: View {
     .accessibilityLabel(isLoading ? "Loading earlier messages" : "Load earlier messages")
     .accessibilityIdentifier("load-earlier-messages")
     .padding(.horizontal, OkouSpace.xl)
+  }
+}
+
+/// Names a model change with the workspace's model names once they have loaded.
+private struct ConversationModelChangeLabel: View {
+  let change: ChatModelChange
+  let models: ChatModelStore?
+
+  var body: some View {
+    if let models {
+      // Transcript cells host this label outside the workspace root, so it provides the
+      // session Store that keeps the model configuration.
+      StoreProvider(models.stateStore) { NamedModelChangeLabel(change: change, models: models) }
+    } else {
+      Self.label(change, catalog: nil)
+    }
+  }
+
+  static func label(_ change: ChatModelChange, catalog: ModelCatalog?) -> some View {
+    let label: String
+    switch change {
+    case .model(let model):
+      let name = catalog?.name(model.id) ?? model.id
+      label = "Model: \(name)" + (model.isFast ? " · Fast" : "")
+    case .fastMode(let enabled): label = enabled ? "Fast mode on" : "Fast mode off"
+    }
+    return Label(label, okouSymbol: "sliders-horizontal", iconSize: OkouIconSize.inline)
+      .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+  }
+}
+
+private struct NamedModelChangeLabel: View {
+  let change: ChatModelChange
+  let models: ChatModelStore
+  @ResolvedValue private var snapshot: ChatModelStore.Snapshot?
+
+  init(change: ChatModelChange, models: ChatModelStore) {
+    self.change = change
+    self.models = models
+    _snapshot = ResolvedValue(models.snapshotValue)
+  }
+
+  var body: some View {
+    ConversationModelChangeLabel.label(
+      change, catalog: (snapshot ?? models.snapshot).configuration?.catalog)
   }
 }

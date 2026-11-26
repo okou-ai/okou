@@ -60,7 +60,7 @@ final class WorkspaceResources {
       "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       readiness: modelReadiness, read: service.catalog)
     let featureSnapshot = WorkspaceFeatureSwitches(
-      sync: sync, service: service, lifecycleTasks: lifecycleTasks)
+      sync: sync, service: service, store: store, lifecycleTasks: lifecycleTasks)
     self.featureSnapshot = featureSnapshot
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,

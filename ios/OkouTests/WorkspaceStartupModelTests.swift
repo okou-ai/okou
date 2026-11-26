@@ -75,7 +75,9 @@ final class WorkspaceStartupModelTests: XCTestCase {
     await fulfillment(of: [indicatorsPending], timeout: 3)
     fixture.setRemoteModel("claude-model")
     workspace.requestRefresh(.modelPreference)
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      watching: workspace.newModelSelection.presentationValue, in: workspace.modelStore.stateStore
+    ) {
       workspace.newModelSelection.selection.model == "claude-model"
     }
     release.open()
