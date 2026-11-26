@@ -16,6 +16,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -179,6 +180,7 @@ class ScreenshotScenario {
                             assertEquals(160, it.resources.configuration.densityDpi)
                             assertEquals(1f, it.resources.configuration.fontScale, 0.001f)
                         }
+                        if (width == 412) awaitPhoneNavigation(height)
                         capture(fixture, failedPath)
                     } catch (failure: Throwable) {
                         runCatching {
@@ -191,6 +193,23 @@ class ScreenshotScenario {
                     }
                 }
             }
+        }
+    }
+
+    private fun awaitPhoneNavigation(height: Int) {
+        // After wm size, the Activity can report the new size before Launcher moves its buttons.
+        val backButtons =
+            listOf(By.res("com.android.launcher3", "back"), By.res("com.android.systemui", "back"))
+        val settled =
+            object : Condition<UiDevice, Boolean> {
+                override fun apply(device: UiDevice) =
+                    backButtons.any { selector ->
+                        device.findObject(selector)?.visibleBounds?.centerY()
+                            ?.let { it in (height - 56) until height } == true
+                    }
+            }
+        check(device.wait(settled, 20_000)) {
+            "The system navigation buttons have not reached the bottom edge"
         }
     }
 
