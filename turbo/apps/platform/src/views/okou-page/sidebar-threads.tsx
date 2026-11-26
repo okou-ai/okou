@@ -30,6 +30,7 @@ import {
   useLastLoadable,
   useSet,
   useLastResolved,
+  useResolved,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -48,6 +49,7 @@ import {
   BellOff,
   Bell,
   FolderInput,
+  GitFork,
 } from "lucide-react";
 import {
   ChatThreadStateIndicator,
@@ -77,6 +79,9 @@ import {
   DialogFooter,
 } from "@okouai/ui/components/ui/dialog";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+import { forkChatThread$ } from "../../signals/chat-page/chat-thread-fork.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
@@ -474,8 +479,11 @@ function ChatThreadMenuItems({
 }: Pick<ChatThreadMenuProps, "signals">) {
   const { t } = useTranslation();
   const requestDelete = useSet(signals.requestDelete$);
-
   const move = useSet(openProjectMembership$);
+  const fork = useSet(forkChatThread$);
+  const pageSignal = useGet(pageSignal$);
+  const forkEnabled =
+    useResolved(featureSwitches$)?.[FeatureSwitchKey.ChatThreadFork];
 
   return (
     <>
@@ -483,6 +491,18 @@ function ChatThreadMenuItems({
       <ChatThreadMarkUnreadMenuItem signals={signals} />
       <ChatThreadMuteMenuItem signals={signals} />
       <ChatThreadArchiveMenuSection signals={signals} />
+      {forkEnabled && (
+        <DropdownMenuItem
+          onClick={() => {
+            detach(fork(signals.threadId, pageSignal), Reason.DomCallback);
+          }}
+        >
+          <GitFork size={16} className="mr-2" />
+          {t(($) => {
+            return $.chat.fork.action;
+          })}
+        </DropdownMenuItem>
+      )}
       <ChatThreadRenameMenuItem signals={signals} />
       <DropdownMenuItem
         onClick={() => {

@@ -161,6 +161,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatThreadFork]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Fork a chat",
+    description:
+      "Start a new chat with a reference to a conversation from its menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.ProjectArchive]: {
     maintainer: "ethan@okou.ai",
     displayName: "Project archiving",
