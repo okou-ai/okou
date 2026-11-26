@@ -215,7 +215,7 @@ src/signals/routes/__tests__/computer-use-result-notifications.test.ts	8	4	4	non
 src/signals/routes/__tests__/computer-use-screenshot-completion.test.ts	2	1	1	none	
 src/signals/routes/__tests__/computer-use-session-hosts.test.ts	25	13	13	none	
 src/signals/routes/__tests__/computer-use.bdd.test.ts	30	15	15	none	
-src/signals/routes/__tests__/connected-connectors-accounts.test.ts	2	1	1	none	
+src/signals/routes/__tests__/connected-connectors-accounts.test.ts	2	1	2	more	Rewrite review added connected-connectors-accounts-002 (the connected directory and account list for a custom MCP connector are not covered; the selected case covers only a built-in connector)
 src/signals/routes/__tests__/connected-connectors.test.ts	5	3	3	none	
 src/signals/routes/__tests__/connector-account-default-wakeups.test.ts	2	1	1	none	
 src/signals/routes/__tests__/connector-account-detail.test.ts	6	3	3	none	
@@ -531,7 +531,7 @@ src/signals/routes/__tests__/tailscale-parity.test.ts	11	6	6	none
 src/signals/routes/__tests__/tailscale.test.ts	34	17	17	none	
 src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	3	2	2	none	
 src/signals/routes/__tests__/teams-bot.test.ts	38	19	19	none	
-src/signals/routes/__tests__/teams-browser-connect.test.ts	2	1	1	none	
+src/signals/routes/__tests__/teams-browser-connect.test.ts	2	1	2	more	Rewrite review added teams-browser-connect-001 (a signed-out browser opening the Teams connect link must be sent to sign-in and back; the selected case covers only a signed-in member)
 src/signals/routes/__tests__/teams-connect.test.ts	8	4	4	none	
 src/signals/routes/__tests__/teams-identity-refresh.test.ts	1	1	1	none	
 src/signals/routes/__tests__/teams-oauth.test.ts	22	11	11	none	
