@@ -57,13 +57,23 @@ internal fun ChatArtifactLinkPreview(
     }
     BackHandler(onBack = onClose)
     Column(Modifier.fillMaxSize()) {
-        ArtifactToolbar(
-            R.string.chat_search_artifact_preview,
-            R.string.back,
+        ArtifactSelectionPreview(
+            model,
+            state,
+            page,
+            link,
+            wide,
+            saveLauncher,
             onClose,
-            if (wide) 28.dp else 12.dp,
-        )
-        ArtifactSelectionPreview(model, state, page, link, wide, saveLauncher)
+            R.string.back,
+        ) {
+            ArtifactToolbar(
+                R.string.chat_search_artifact_preview,
+                R.string.back,
+                onClose,
+                if (wide) 28.dp else 12.dp,
+            )
+        }
     }
 }
 
@@ -136,13 +146,23 @@ internal fun ChatArtifactResources(
     }
     if (selected != null) {
         Column(Modifier.fillMaxSize()) {
-            ArtifactToolbar(
-                R.string.chat_search_artifact_preview,
-                R.string.chat_resources_back,
+            ArtifactSelectionPreview(
+                model,
+                state,
+                page,
+                selected,
+                wide,
+                saveLauncher,
                 ::back,
-                toolbarPadding,
-            )
-            ArtifactSelectionPreview(model, state, page, selected, wide, saveLauncher)
+                R.string.chat_resources_back,
+            ) {
+                ArtifactToolbar(
+                    R.string.chat_search_artifact_preview,
+                    R.string.chat_resources_back,
+                    ::back,
+                    toolbarPadding,
+                )
+            }
         }
         return
     }

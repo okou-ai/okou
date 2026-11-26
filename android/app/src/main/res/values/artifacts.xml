@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">Messages</string>
     <string name="artifact_preview_loading">Loading preview…</string>
     <string name="artifact_image_unavailable">Image unavailable</string>
+    <string name="artifact_image_actions">Image actions</string>
+    <string name="artifact_image_expand">Expand image viewer</string>
+    <string name="artifact_image_collapse">Collapse image viewer</string>
+    <string name="artifact_image_loading">Loading image…</string>
+    <string name="artifact_image_load_failed">Temporarily unable to load image</string>
+    <string name="artifact_image_zoom_in">Zoom in</string>
+    <string name="artifact_image_zoom_out">Zoom out</string>
+    <string name="artifact_image_fit">Fit image</string>
 </resources>

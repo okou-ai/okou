@@ -163,14 +163,9 @@ internal fun ArtifactsRoute(
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selectedId != null) {
             Column(Modifier.weight(1f)) {
-                if (!wide)
-                    ArtifactToolbar(
-                        if (searchArtifactId == null) R.string.artifact_title
-                        else R.string.chat_search_artifact_preview,
-                        if (searchArtifactId == null) R.string.artifact_return_list
-                        else R.string.chat_search_close_artifact_preview,
-                        ::back,
-                    )
+                val backLabel =
+                    if (searchArtifactId == null) R.string.artifact_return_list
+                    else R.string.chat_search_close_artifact_preview
                 ArtifactSelectionPreview(
                     model,
                     state,
@@ -178,9 +173,19 @@ internal fun ArtifactsRoute(
                     selectedId,
                     wide,
                     saveLauncher,
-                    threads,
-                    onSource,
-                )
+                    onBack = ::back,
+                    backLabel = backLabel,
+                    threads = threads,
+                    onSource = onSource,
+                ) {
+                    if (!wide)
+                        ArtifactToolbar(
+                            if (searchArtifactId == null) R.string.artifact_title
+                            else R.string.chat_search_artifact_preview,
+                            backLabel,
+                            ::back,
+                        )
+                }
             }
         } else if (wide) {
             Box(
@@ -231,8 +236,11 @@ internal fun ArtifactSelectionPreview(
     selectedId: String,
     wide: Boolean,
     saveLauncher: ActivityResultLauncher<Intent>,
+    onBack: () -> Unit,
+    @androidx.annotation.StringRes backLabel: Int,
     threads: List<ConfirmedChat> = emptyList(),
     onSource: (ConfirmedChat) -> Unit = {},
+    toolbar: @Composable () -> Unit,
 ) {
     var pickerFailed by remember(selectedId) { mutableStateOf(false) }
     key(selectedId) {
@@ -242,41 +250,67 @@ internal fun ArtifactSelectionPreview(
             preview?.info?.sourceChatId?.let { sourceId ->
                 threads.firstOrNull { it.id == sourceId && it.hidden != true }
             }
-        ArtifactPreview(
-            preview,
-            rememberScrollState(),
-            wide,
-            source,
-            restoreSourceFocus = page.restoreSource,
-            onSourceFocusRestored = { page.restoreSource = false },
-            onSource = {
-                page.restoreSource = true
-                onSource(it)
-            },
-            saveEnabled = !state.saving && page.pickerArtifactId == null,
-            onSave = { file ->
-                if (page.pickerArtifactId == null && !model.state.value.saving) {
-                    page.pickerArtifactId = id
-                    pickerFailed = false
-                    try {
-                        saveLauncher.launch(
-                            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type =
-                                    file.contentType.substringBefore(';').takeIf { '/' in it }
-                                        ?: "application/octet-stream"
-                                putExtra(Intent.EXTRA_TITLE, file.filename)
-                            },
-                        )
-                    } catch (_: ActivityNotFoundException) {
-                        page.pickerArtifactId = null
-                        pickerFailed = true
-                    }
+        val saveEnabled = !state.saving && page.pickerArtifactId == null
+        val saveResult =
+            if (pickerFailed) ArtifactSaveResult.Failed
+            else state.saveResult?.takeIf { it.first == id }?.second
+        val openSource: (ConfirmedChat) -> Unit = {
+            page.restoreSource = true
+            onSource(it)
+        }
+        val saveArtifact: (ArtifactSave) -> Unit = { file ->
+            if (page.pickerArtifactId == null && !model.state.value.saving) {
+                page.pickerArtifactId = id
+                pickerFailed = false
+                try {
+                    saveLauncher.launch(
+                        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type =
+                                file.contentType.substringBefore(';').takeIf { '/' in it }
+                                    ?: "application/octet-stream"
+                            putExtra(Intent.EXTRA_TITLE, file.filename)
+                        },
+                    )
+                } catch (_: ActivityNotFoundException) {
+                    page.pickerArtifactId = null
+                    pickerFailed = true
                 }
-            },
-            saveResult =
-                if (pickerFailed) ArtifactSaveResult.Failed
-                else state.saveResult?.takeIf { it.first == id }?.second,
-        )
+            }
+        }
+        if (
+            preview?.isImage == true &&
+                !id.startsWith(ExternalImagePreviewPrefix) &&
+                chatAttachment(id) == null
+        ) {
+            val save = preview.access?.save
+            ArtifactImageViewer(
+                preview = preview,
+                model = model,
+                wide = wide,
+                backLabel = backLabel,
+                onBack = onBack,
+                saveEnabled = saveEnabled,
+                onSave = save?.let { { saveArtifact(it) } },
+                saveResult = saveResult,
+                onSource = source?.let { { openSource(it) } },
+                restoreSourceFocus = page.restoreSource,
+                onSourceFocusRestored = { page.restoreSource = false },
+            )
+        } else {
+            toolbar()
+            ArtifactPreview(
+                preview,
+                rememberScrollState(),
+                wide,
+                source,
+                restoreSourceFocus = page.restoreSource,
+                onSourceFocusRestored = { page.restoreSource = false },
+                onSource = openSource,
+                saveEnabled = saveEnabled,
+                onSave = saveArtifact,
+                saveResult = saveResult,
+            )
+        }
     }
 }
