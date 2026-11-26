@@ -1,8 +1,8 @@
 package ai.okou.android.chat
 
+import ai.okou.android.R
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalOptional
-import ai.okou.android.api.generated.ChatArchiveChatThreadsItemServiceTier
 import ai.okou.android.api.generated.ChatEventsEventsItemVariant1
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
@@ -207,7 +207,7 @@ data class ChatListUiState(
     internal val rowActionFailures: List<ChatRowActionFailure> = emptyList(),
     internal val unconfirmedRenames: Map<String, RenameSubmission> = emptyMap(),
     internal val confirmedRenameIds: Map<String, String> = emptyMap(),
-    internal val conversationModelSaves: Map<String, ConversationModelSave> = emptyMap(),
+    internal val conversationModelEdits: Map<String, ConversationModelEdits> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
     internal val conversationUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
@@ -407,7 +407,6 @@ class ChatListModel(
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
     private val pendingRenameIds = mutableMapOf<String, String>()
-    private val pendingModelChecks = mutableMapOf<String, Pair<SetThreadModelRequest, Boolean>>()
     private val rowMutations =
         ChatRowMutationOwner(
             service,
@@ -1572,22 +1571,20 @@ class ChatListModel(
         projection.completeOutgoing(pending.send.chatThreadSortEventId)
     }
 
-    internal fun canSendWithConversationModel(threadId: String): Boolean =
-        mutable.value.conversationModelSaves[threadId]?.blocksSend != true
-
     internal fun saveConversationModel(
         threadId: String,
         model: String?,
         effort: ModelEffort?,
         fast: Boolean?,
+        selectingModel: Boolean = false,
     ) {
-        if (
-            !current() ||
-                !remoteAccessVerified() ||
-                !canSendWithConversationModel(threadId) ||
-                mutable.value.confirmedThreads.none { it.id == threadId && it.hidden != true }
-        )
-            return
+        if (!current() || !remoteAccessVerified()) return
+        val state = mutable.value
+        val chat =
+            state.confirmedThreads.firstOrNull { it.id == threadId && it.hidden != true } ?: return
+        val edits = state.conversationModelEdits[threadId] ?: ConversationModelEdits()
+        val expected =
+            if (selectingModel) null else chat.withModelEdits(edits).selectedModel ?: return
         val request =
             SetThreadModelRequest(
                 model = model,
@@ -1602,7 +1599,15 @@ class ChatListModel(
                 eventId = UUID.randomUUID().toString(),
                 serviceTierEventId = UUID.randomUUID().toString(),
             )
-        publishModelSave(threadId, ConversationModelSave.Saving)
+        val edit = ConversationModelEdit(request, expected)
+        publishModelEdits(threadId, edits.copy(pending = edits.pending + edit, failure = null))
+        if (edits.pending.isEmpty()) writeConversationModel(threadId)
+    }
+
+    private fun writeConversationModel(threadId: String) {
+        val edits = checkNotNull(mutable.value.conversationModelEdits[threadId])
+        val request = edits.pending.first().request
+        publishModelEdits(threadId, edits.copy(phase = ConversationModelSave.Saving))
         viewModelScope.launch {
             val accepted =
                 try {
@@ -1616,63 +1621,77 @@ class ChatListModel(
                     requireCurrent()
                     if (
                         error is ApiFailure.Http &&
-                            error.status in setOf(400, 401, 402, 403, 404) ||
+                            error.status in 400..499 &&
+                            error.status !in setOf(408, 425, 429) ||
                             error is ApiFailure.Network && error.connectionFailed ||
                             error is ApiFailure.Unauthenticated ||
                             error is ApiFailure.UpdateRequired
                     ) {
-                        publishModelSave(threadId, ConversationModelSave.Rejected)
+                        finishConversationModelWrite(threadId, R.string.chat_model_save_rejected)
                         return@launch
                     }
                     false
                 }
             requireCurrent()
-            pendingModelChecks[threadId] = request to accepted
-            publishModelSave(threadId, ConversationModelSave.Checking)
+            val pending = checkNotNull(mutable.value.conversationModelEdits[threadId])
+            publishModelEdits(
+                threadId,
+                pending.copy(phase = ConversationModelSave.Checking, accepted = accepted),
+            )
             checkConversationModelWrite(threadId)
         }
     }
 
     internal fun retryConversationModelCheck(threadId: String) {
-        if (
-            !current() ||
-                mutable.value.conversationModelSaves[threadId] != ConversationModelSave.NeedsCheck
-        )
-            return
-        publishModelSave(threadId, ConversationModelSave.Checking)
+        if (!current()) return
+        val edits = mutable.value.conversationModelEdits[threadId] ?: return
+        if (edits.phase != ConversationModelSave.NeedsCheck) return
+        publishModelEdits(threadId, edits.copy(phase = ConversationModelSave.Checking))
         viewModelScope.launch { checkConversationModelWrite(threadId) }
     }
 
     private suspend fun checkConversationModelWrite(threadId: String) {
         val read = readListForConfirmation { true }
         requireCurrent()
-        if (read) resolveConversationModelWrite(threadId)
-        else publishModelSave(threadId, ConversationModelSave.NeedsCheck)
+        if (read && reconcileConversationModelWrite(threadId)) return
+        val edits = checkNotNull(mutable.value.conversationModelEdits[threadId])
+        publishModelEdits(threadId, edits.copy(phase = ConversationModelSave.NeedsCheck))
     }
 
-    private fun resolveConversationModelWrite(threadId: String) {
-        val (request, accepted) = checkNotNull(pendingModelChecks.remove(threadId))
-        val seen =
-            confirmed?.checkpoint?.events?.any {
-                it is ChatEventsEventsItemVariant1 &&
-                    it.chatThreadId == threadId &&
-                    it.id == request.eventId
-            } == true
+    private fun reconcileConversationModelWrite(threadId: String): Boolean {
+        val edits = checkNotNull(mutable.value.conversationModelEdits[threadId])
+        val request = edits.pending.first().request
         val row = mutable.value.confirmedThreads.firstOrNull { it.id == threadId }
-        val confirmed = row != null && row.matchesModelWrite(request)
-        publishModelSave(
-            threadId,
-            if (accepted || seen || confirmed || row == null) null
-            else ConversationModelSave.Unconfirmed,
-        )
+        val observed =
+            edits.accepted ||
+                row == null ||
+                row.matchesModelWrite(request) ||
+                confirmed?.checkpoint?.events?.any {
+                    it is ChatEventsEventsItemVariant1 &&
+                        it.chatThreadId == threadId &&
+                        it.id == request.eventId
+                } == true
+        // After a lost response, a read may arrive before the write commits.
+        if (observed) finishConversationModelWrite(threadId, failure = null)
+        return observed
     }
 
-    private fun publishModelSave(threadId: String, phase: ConversationModelSave?) {
+    private fun finishConversationModelWrite(threadId: String, failure: Int?) {
         val state = mutable.value
-        val saves =
-            if (phase == null) state.conversationModelSaves - threadId
-            else state.conversationModelSaves + (threadId to phase)
-        mutable.value = state.copy(conversationModelSaves = saves)
+        val edits = checkNotNull(state.conversationModelEdits[threadId])
+        val chat = state.confirmedThreads.firstOrNull { it.id == threadId && it.hidden != true }
+        val remaining = chat?.let { edits.pending.drop(1).rebaseOn(it) }.orEmpty()
+        val next = ConversationModelEdits(pending = remaining, failure = failure ?: edits.failure)
+        publishModelEdits(threadId, next.takeIf { remaining.isNotEmpty() || it.failure != null })
+        if (remaining.isNotEmpty()) writeConversationModel(threadId)
+    }
+
+    private fun publishModelEdits(threadId: String, edits: ConversationModelEdits?) {
+        val state = mutable.value
+        val updates =
+            if (edits == null) state.conversationModelEdits - threadId
+            else state.conversationModelEdits + (threadId to edits)
+        mutable.value = state.copy(conversationModelEdits = updates)
     }
 
     private fun ConfirmedChat.matchesModelWrite(request: SetThreadModelRequest): Boolean {
@@ -1680,15 +1699,7 @@ class ChatListModel(
         return selectedModel.takeUnless(::isAutoDefaultModel) == request.model &&
             (request.reasoningEffort == null ||
                 modelSettings?.get(selectedModel)?.effort?.name == request.reasoningEffort.name) &&
-            (tier !is CanonicalOptional.Present ||
-                serviceTier ==
-                    when (tier.value) {
-                        SetThreadModelRequestCodexServiceTier.FAST ->
-                            ChatArchiveChatThreadsItemServiceTier.PRIORITY
-                        SetThreadModelRequestCodexServiceTier.ULTRAFAST ->
-                            ChatArchiveChatThreadsItemServiceTier.ULTRAFAST
-                        null -> null
-                    })
+            (tier !is CanonicalOptional.Present || serviceTier == tier.value.toChatServiceTier())
     }
 
     internal fun refreshAfterSendFailure(pending: PendingText, rejected: Boolean) {
@@ -1844,9 +1855,9 @@ class ChatListModel(
                 val read = readList(batch)
                 // A normal chat refresh can also settle a model write after a failed readback.
                 if (read) {
-                    mutable.value.conversationModelSaves.forEach { (threadId, save) ->
-                        if (save == ConversationModelSave.NeedsCheck)
-                            resolveConversationModelWrite(threadId)
+                    mutable.value.conversationModelEdits.forEach { (threadId, edits) ->
+                        if (edits.phase == ConversationModelSave.NeedsCheck)
+                            reconcileConversationModelWrite(threadId)
                     }
                 }
                 unconfirmed.forEach { it.done.complete(read) }

@@ -174,17 +174,6 @@ internal fun ChatComposerField(
             minOf(maximumTextHeight, textSpace).coerceAtLeast(minimumTextHeight)
         ComposerScroll(keepEditorAnchored = { inputFocused && textSpace >= minimumTextHeight }) {
             ComposerFeedback(model, target, state, entry)
-            conversationModel
-                ?.save
-                ?.takeIf { it.blocksSend || entry.text.isNotBlank() }
-                ?.let { save ->
-                    Text(
-                        stringResource(save.message),
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = connectorFeedbackType(),
-                        color = colors.onSurfaceVariant,
-                    )
-                }
             Row(
                 Modifier.fillMaxWidth()
                     .testTag("chat_input_card")
@@ -275,7 +264,7 @@ internal fun ChatComposerField(
                         model.send(target, defaultModel?.state?.value?.options)
                     },
                     modifier = Modifier.size(48.dp).semantics { contentDescription = sendLabel },
-                    enabled = state.canSend(target) && conversationModel?.save?.blocksSend != true,
+                    enabled = state.canSend(target),
                     shape = CircleShape,
                     colors =
                         IconButtonDefaults.filledIconButtonColors(
@@ -408,6 +397,4 @@ private fun ComposerFeedback(
         }
     }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-    if (target.key in state.failed && !connectorSetupFailed)
-        Text(stringResource(R.string.composer_request_failed))
 }

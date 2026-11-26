@@ -66,7 +66,6 @@
     <string name="conversation_find_attachment">Attachment</string>
     <string name="conversation_link_unavailable">This conversation link is unavailable</string>
     <string name="conversation_link_no_browser">No browser can open this link</string>
-    <string name="chat_model_check_required">Couldn’t check the saved model. Check again before sending.</string>
+    <string name="chat_model_check_required">Couldn’t check the saved model.</string>
     <string name="chat_model_save_rejected">Couldn’t save the model for this chat.</string>
-    <string name="chat_model_save_unconfirmed">Couldn’t confirm the model change. The current settings are shown.</string>
 </resources>

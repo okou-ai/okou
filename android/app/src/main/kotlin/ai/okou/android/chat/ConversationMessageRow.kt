@@ -634,7 +634,7 @@ private fun DeliveryIndicator(delivery: PendingDelivery, modifier: Modifier) {
         if (delivery == PendingDelivery.Unconfirmed) {
             Icon(painterResource(R.drawable.ic_schedule), contentDescription = null, tint = color)
         } else {
-            CircularProgressIndicator(Modifier.size(14.dp), color = color, strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
         }
     }
 }

@@ -145,9 +145,11 @@ internal fun ChatConnectorOptionsButton(
     val catalog = modelState?.options
     val override = composerState.journal?.newChatModel.takeIf { conversationModel == null }
     val confirmed = conversationModel?.confirmed
+    val edits = conversationModel?.edits
+    val shown = remember(confirmed, edits) { confirmed?.withModelEdits(edits) }
     val selection =
-        remember(override, modelState, confirmed) {
-            confirmed?.modelSelection() ?: override ?: modelState?.draftDefaults()
+        remember(override, modelState, shown) {
+            shown?.modelSelection() ?: override ?: modelState?.draftDefaults()
         }
     val selectedId = catalog?.resolve(selection?.model) ?: selection?.model
     val choice = catalog?.choices?.firstOrNull { it.id == selectedId }
@@ -198,7 +200,6 @@ internal fun ChatConnectorOptionsButton(
             selectedId = selectedId,
             effort = choice?.let { selection.effortFor(it) },
             fast = selection.fast && choice?.fastMultiplier != null,
-            updateEnabled = conversationModel?.save?.blocksSend != true,
             catalogUnavailable = catalog == null && modelState?.catalogUnavailable == true,
             select = { id ->
                 val selectedChoice = modelChoices?.firstOrNull { it.id == id && it.canSelect }
@@ -210,6 +211,7 @@ internal fun ChatConnectorOptionsButton(
                                 id,
                                 null,
                                 false,
+                                selectingModel = true,
                             )
                     } else {
                         val next =
@@ -232,7 +234,7 @@ internal fun ChatConnectorOptionsButton(
                             conversationModel.confirmed.id,
                             choice.id,
                             effort,
-                            null,
+                            fast = false.takeIf { choice.fastMultiplier == null },
                         )
                 }
             },
@@ -251,18 +253,19 @@ internal fun ChatConnectorOptionsButton(
             },
             dismiss = ::back,
             footer = {
-                conversationModel?.save?.let { save ->
-                    ConnectorOptionFeedback(save.message, Modifier.padding(top = 8.dp))
-                    if (save == ConversationModelSave.NeedsCheck)
-                        TextButton(
-                            onClick = {
-                                conversationModel.chats.retryConversationModelCheck(
-                                    conversationModel.confirmed.id,
-                                )
-                            },
-                        ) {
-                            Text(stringResource(R.string.retry))
-                        }
+                (edits?.failure ?: edits?.phase?.message)?.let { message ->
+                    ConnectorOptionFeedback(message, Modifier.padding(top = 8.dp))
+                }
+                if (edits?.phase == ConversationModelSave.NeedsCheck) {
+                    TextButton(
+                        onClick = {
+                            conversationModel.chats.retryConversationModelCheck(
+                                conversationModel.confirmed.id,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.retry))
+                    }
                 }
             },
         )

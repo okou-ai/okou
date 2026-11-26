@@ -65,7 +65,6 @@
     </plurals>
     <string name="conversation_link_unavailable">Dieser Unterhaltungslink ist nicht verfügbar</string>
     <string name="conversation_link_no_browser">Kein Browser kann diesen Link öffnen</string>
-    <string name="chat_model_check_required">Das gespeicherte Modell konnte nicht geprüft werden. Prüfe es erneut, bevor du sendest.</string>
+    <string name="chat_model_check_required">Das gespeicherte Modell konnte nicht geprüft werden.</string>
     <string name="chat_model_save_rejected">Das Modell für diesen Chat konnte nicht gespeichert werden.</string>
-    <string name="chat_model_save_unconfirmed">Die Modelländerung konnte nicht bestätigt werden. Die aktuellen Einstellungen werden angezeigt.</string>
 </resources>
