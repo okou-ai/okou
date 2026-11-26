@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ExternalLink,
   Circle,
+  CircleAlert,
 } from "lucide-react";
 import {
   Dialog,
@@ -32,6 +33,7 @@ import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts
 export interface HostedSiteDomainOperations {
   readonly creating: boolean;
   readonly verifying: boolean;
+  readonly verifyFailed: boolean;
   readonly removing: boolean;
   readonly saving: boolean;
   readonly saveFailed: boolean;
@@ -161,30 +163,34 @@ function DomainSetup({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {t(($) => {
-                  return $.artifacts.customDomain.automaticSetup;
-                })}
-                <ExternalLink size={12} />
-              </a>
-            )}
-            {setup.data.controlPanelUrl && (
-              <a
-                className={buttonVariants({ size: "sm", variant: "quiet" })}
-                href={setup.data.controlPanelUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
                 {t(
                   ($) => {
-                    return $.artifacts.customDomain.openDns;
+                    return $.artifacts.customDomain.configureProvider;
                   },
-                  {
-                    provider: setup.data.providerName,
-                  },
+                  { provider: setup.data.providerName },
                 )}
                 <ExternalLink size={12} />
               </a>
             )}
+            {setup.data.controlPanelUrl &&
+              (!setup.data.automaticUrl || certificateOnly) && (
+                <a
+                  className={buttonVariants({ size: "sm", variant: "quiet" })}
+                  href={setup.data.controlPanelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t(
+                    ($) => {
+                      return $.artifacts.customDomain.openDns;
+                    },
+                    {
+                      provider: setup.data.providerName,
+                    },
+                  )}
+                  <ExternalLink size={12} />
+                </a>
+              )}
           </div>
           <p className="mt-2 text-muted-foreground">
             {setup.data.automaticUrl && !certificateOnly
@@ -206,7 +212,54 @@ function DomainSetup({
     </div>
   );
 }
-function DomainChecks({ domain }: { readonly domain: Domain }) {
+function DomainRecordIssues({
+  domain,
+  name,
+}: {
+  readonly domain: Domain;
+  readonly name: "ownership" | "dns" | "provider" | "certificate" | "route";
+}) {
+  return domain.verification?.recordChecks
+    .filter((record) => {
+      const certificate = domain.verification?.validationRecords.some(
+        (item) => {
+          return (
+            item.type === record.type &&
+            item.name === record.name &&
+            item.value === record.value
+          );
+        },
+      );
+      const category = certificate
+        ? "certificate"
+        : record.type === "CNAME"
+          ? "dns"
+          : "ownership";
+      return (
+        category === name &&
+        record.status !== "passed" &&
+        record.status !== "not_checked"
+      );
+    })
+    .map((record) => {
+      return (
+        <p
+          key={`${record.type}-${record.name}-${record.value}`}
+          className="mt-2 break-words pl-5 leading-5"
+        >
+          <code className="break-all">{record.name}</code>
+          <span className="block">{record.message}</span>
+        </p>
+      );
+    });
+}
+function DomainChecks({
+  domain,
+  verifying = false,
+}: {
+  readonly domain: Domain;
+  readonly verifying?: boolean;
+}) {
   const { t } = useTranslation();
   const labels = {
     ownership: t(($) => {
@@ -228,7 +281,9 @@ function DomainChecks({ domain }: { readonly domain: Domain }) {
   return (
     <>
       <ul
-        className="space-y-3 text-xs text-muted-foreground"
+        className="space-y-4 text-xs text-muted-foreground"
+        aria-busy={verifying}
+        aria-live="polite"
         aria-label={t(($) => {
           return $.artifacts.customDomain.verificationChecks;
         })}
@@ -236,42 +291,60 @@ function DomainChecks({ domain }: { readonly domain: Domain }) {
         {(
           ["ownership", "dns", "provider", "certificate", "route"] as const
         ).map((name) => {
-          const check = domain.verification?.checks[name];
+          const check = verifying
+            ? undefined
+            : domain.verification?.checks[name];
           return (
             <li key={name}>
               <div className="flex items-start gap-2">
-                {check?.status === "passed" ? (
+                {verifying ? (
+                  <Loader2
+                    size={14}
+                    className="mt-0.5 shrink-0 motion-safe:animate-spin"
+                    aria-hidden
+                  />
+                ) : status === "passed" ? (
                   <Check
                     size={14}
                     className="mt-0.5 shrink-0 text-green-600"
                     aria-hidden
                   />
+                ) : status === "failed" ? (
+                  <CircleAlert
+                    size={14}
+                    className="mt-0.5 shrink-0 text-destructive"
+                    aria-hidden
+                  />
                 ) : (
-                  <Circle size={12} className="mt-0.5 shrink-0" aria-hidden />
+                  <Circle size={14} className="mt-0.5 shrink-0" aria-hidden />
                 )}
                 <span className="min-w-0 flex-1 text-foreground">
                   {labels[name]}
                 </span>
                 <span className="shrink-0">
-                  {check?.status === "passed"
+                  {verifying
                     ? t(($) => {
-                        return $.artifacts.customDomain.checkPassed;
+                        return $.artifacts.customDomain.checking;
                       })
-                    : check?.status === "unavailable"
+                    : status === "passed"
                       ? t(($) => {
-                          return $.artifacts.customDomain.checkUnavailable;
+                          return $.artifacts.customDomain.checkPassed;
                         })
-                      : check?.status === "failed"
+                      : status === "unavailable"
                         ? t(($) => {
-                            return $.artifacts.customDomain.checkFailed;
+                            return $.artifacts.customDomain.checkUnavailable;
                           })
-                        : check?.status === "pending"
+                        : status === "failed"
                           ? t(($) => {
-                              return $.artifacts.customDomain.checkPending;
+                              return $.artifacts.customDomain.checkFailed;
                             })
-                          : t(($) => {
-                              return $.artifacts.customDomain.checkNotChecked;
-                            })}
+                          : status === "pending"
+                            ? t(($) => {
+                                return $.artifacts.customDomain.checkPending;
+                              })
+                            : t(($) => {
+                                return $.artifacts.customDomain.checkNotChecked;
+                              })}
                 </span>
               </div>
               {check &&
@@ -279,12 +352,13 @@ function DomainChecks({ domain }: { readonly domain: Domain }) {
                 check.status !== "not_checked" && (
                   <p className="mt-1 pl-5 leading-5">{check.message}</p>
                 )}
+              {!verifying && <DomainRecordIssues domain={domain} name={name} />}
             </li>
           );
         })}
       </ul>
       <p className="mt-3 text-xs text-muted-foreground">
-        {domain.verification
+        {!verifying && domain.verification
           ? t(
               ($) => {
                 return $.artifacts.customDomain.lastChecked;
@@ -467,29 +541,21 @@ function DomainWizard({
                 ? t(($) => {
                     return $.artifacts.customDomain.dnsConfigured;
                   })
-                : currentStage > 0
-                  ? t(($) => {
-                      return $.artifacts.customDomain.reviewDns;
-                    })
-                  : t(($) => {
-                      return $.artifacts.customDomain.setUpDns;
-                    })}
+                : t(($) => {
+                    return $.artifacts.customDomain.setUpDns;
+                  })}
             </h4>
             <p className="text-xs leading-5 text-muted-foreground">
               {dnsMatched
                 ? t(($) => {
                     return $.artifacts.customDomain.noDnsChanges;
                   })
-                : currentStage > 0
-                  ? t(($) => {
-                      return $.artifacts.customDomain.checkBeforeEditing;
-                    })
-                  : t(($) => {
-                      return $.artifacts.customDomain.dnsHelp;
-                    })}
+                : t(($) => {
+                    return $.artifacts.customDomain.dnsHelp;
+                  })}
             </p>
           </div>
-          {!dnsMatched && currentStage === 0 && (
+          {!dnsMatched && (
             <DomainSetup session={session} certificateOnly={certificateOnly} />
           )}
           <DomainRecords
@@ -502,7 +568,6 @@ function DomainWizard({
             domain={domain}
             records={matchedRecords}
           />
-          <DomainVerificationDetails domain={domain} />
         </>
       ) : stage === 1 ? (
         <>
@@ -513,21 +578,25 @@ function DomainWizard({
               })}
             </h4>
             <p className="text-xs leading-5 text-muted-foreground">
-              {currentStage === 2
+              {operations.verifying
                 ? t(($) => {
-                    return $.artifacts.customDomain.verificationComplete;
+                    return $.artifacts.customDomain.verifyingHint;
                   })
-                : dnsMatched
+                : currentStage === 2
                   ? t(($) => {
-                      return $.artifacts.customDomain.noDnsChanges;
+                      return $.artifacts.customDomain.verificationComplete;
                     })
-                  : t(($) => {
-                      return $.artifacts.customDomain.retryVerification;
-                    })}
+                  : dnsMatched
+                    ? t(($) => {
+                        return $.artifacts.customDomain.noDnsChanges;
+                      })
+                    : t(($) => {
+                        return $.artifacts.customDomain.retryVerification;
+                      })}
             </p>
           </div>
           <div className="rounded-xl bg-gray-50 p-4">
-            <DomainChecks domain={domain} />
+            <DomainChecks domain={domain} verifying={operations.verifying} />
           </div>
         </>
       ) : (
@@ -554,20 +623,28 @@ function DomainActions({
   if (!wizard) {
     return null;
   }
-  const { stage, currentStage } = wizard;
-  const reviewing = stage < currentStage;
+  const { stage } = wizard;
+  const reviewing = domain.ready && stage < 2;
   return (
     <div className="mt-4 flex items-center justify-between gap-2">
       <Button
         variant="quiet"
         disabled={busy}
         onClick={() => {
-          cancel();
+          if (stage === 1) {
+            review(0);
+          } else {
+            cancel();
+          }
         }}
       >
-        {t(($) => {
-          return $.artifacts.siteUrl.cancel;
-        })}
+        {stage === 1
+          ? t(($) => {
+              return $.artifacts.customDomain.backToDns;
+            })
+          : t(($) => {
+              return $.artifacts.siteUrl.cancel;
+            })}
       </Button>
       <Button
         className="min-w-24"
@@ -592,9 +669,13 @@ function DomainActions({
             ? t(($) => {
                 return $.artifacts.siteUrl.save;
               })
-            : t(($) => {
-                return $.artifacts.customDomain.verify;
-              })}
+            : stage === 1 && domain.verification
+              ? t(($) => {
+                  return $.artifacts.customDomain.verifyAgain;
+                })
+              : t(($) => {
+                  return $.artifacts.customDomain.verify;
+                })}
       </Button>
     </div>
   );
@@ -711,13 +792,13 @@ export function HostedSiteDomains({ session, operations }: DomainPanelProps) {
                   return $.artifacts.siteUrl.saveFailed;
                 })
               : (notice ??
-                (domain.removing
+                (operations.verifyFailed
                   ? t(($) => {
-                      return $.artifacts.customDomain.removing;
+                      return $.artifacts.customDomain.verifyFailed;
                     })
-                  : !domain.verification && !domain.ready
+                  : domain.removing
                     ? t(($) => {
-                        return $.artifacts.customDomain.notChecked;
+                        return $.artifacts.customDomain.removing;
                       })
                     : null))}
           </p>
