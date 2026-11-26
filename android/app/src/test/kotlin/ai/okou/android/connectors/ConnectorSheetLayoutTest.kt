@@ -1,5 +1,7 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
+import ai.okou.android.CONNECTOR_CALENDAR_SECONDARY
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
 import ai.okou.android.CONNECTOR_EXAMPLE_EXTERNAL_CODE
 import ai.okou.android.ConnectorApiFixture
@@ -233,6 +235,40 @@ class ConnectorSheetLayoutTest {
         assertEquals(22.dp, panel.getUnclippedBoundsInRoot().bottom - footer.bottom)
         compose.onNodeWithText("Permission 22").performScrollTo().assertIsDisplayed()
         assertEquals(footer, actions.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun firstAccountReadFailureStaysInTheSectionUntilRecovery() {
+        ConnectorApiFixture().use { fixture ->
+            fixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+            fixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+            fixture.accountRetryAfterSeconds = 0
+            fixture.failAccountReads = true
+            withConnectors(fixture) { model ->
+                compose.waitUntilAtLeastOneExists(hasText("Google Calendar"), 10_000)
+                compose.onNodeWithText("Google Calendar").performClick()
+                val failure = "Temporarily unable to load"
+                compose.waitUntilAtLeastOneExists(hasText(failure), 10_000)
+                compose.onNodeWithText("Google Calendar").assertIsDisplayed()
+                compose.onNodeWithText("Accounts").assertIsDisplayed()
+                val permissions = compose.onNodeWithText("Permissions this service can request")
+                permissions.assertIsEnabled()
+                compose.onNodeWithText("Could not load accounts.").assertDoesNotExist()
+                compose.onNodeWithText("Connect account").assertDoesNotExist()
+
+                fixture.failAccountReads = false
+                compose.runOnIdle {
+                    model.pause()
+                    model.resume()
+                }
+                compose.waitUntilAtLeastOneExists(hasText("Connect account"), 10_000)
+                compose.onNodeWithText("Connect account").assertIsEnabled()
+                compose.onNodeWithText(failure).assertDoesNotExist()
+                permissions.assertIsEnabled()
+            }
+        }
     }
 
     @Test

@@ -42,7 +42,7 @@ describe("template guidance execution and retained context", () => {
     }
   });
 
-  it("rejects writable or arbitrary-path template bundles and credential-bearing URLs", () => {
+  it("validates stored templates and only reads recognized dispatch fields", () => {
     expect(
       storedTemplateGuidanceBundleSchema.safeParse({
         ...template,
@@ -55,22 +55,26 @@ describe("template guidance execution and retained context", () => {
         mountPath: "/home/user",
       }).success,
     ).toBe(false);
-    for (const extra of [
-      { writeback: true },
-      { downloadUrl: "http://example.test/archive" },
-      { downloadUrl: "https://secret@example.test/archive" },
+    const reference = {
+      ...template,
+      downloadUrl: "https://example.test/archive",
+    };
+    expect(
+      executionContentBundlesSchema.parse({
+        format: "tar-gzip-v1",
+        skills: [],
+        templates: [{ ...reference, writeback: true, mountPath: "/home/user" }],
+      }).templates,
+    ).toEqual([reference]);
+    for (const downloadUrl of [
+      "http://example.test/archive",
+      "https://secret@example.test/archive",
     ]) {
       expect(
         executionContentBundlesSchema.safeParse({
           format: "tar-gzip-v1",
           skills: [],
-          templates: [
-            {
-              ...template,
-              downloadUrl: "https://example.test/archive",
-              ...extra,
-            },
-          ],
+          templates: [{ ...template, downloadUrl }],
         }).success,
       ).toBe(false);
     }

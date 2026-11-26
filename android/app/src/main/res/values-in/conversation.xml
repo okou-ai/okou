@@ -52,6 +52,7 @@
     <string name="conversation_skip_failed">Otomatisasi tidak dapat dilewati</string>
     <string name="conversation_find">Cari pesan</string>
     <string name="conversation_find_turns">Jelajahi giliran percakapan</string>
+    <string name="conversation_find_loaded_scope">Hanya mencari pesan yang sudah dimuat</string>
     <string name="conversation_find_empty">Tidak ada pesan untuk dicari</string>
     <string name="conversation_find_no_match">Tidak ada pesan yang cocok</string>
     <string name="conversation_find_you">Pesan Anda</string>

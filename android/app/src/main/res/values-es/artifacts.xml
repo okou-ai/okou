@@ -32,7 +32,7 @@
     <string name="artifact_show_all">Mostrar todo</string>
     <string name="artifact_catalog_load_failed">No se pueden cargar los artefactos en este momento</string>
     <string name="artifact_catalog_refresh_failed">No se puede actualizar en este momento. Se muestran los artefactos cargados.</string>
-    <string name="artifact_catalog_page_failed">No se pueden cargar más artefactos en este momento</string>
+    <string name="artifact_catalog_page_failed">No se puede cargar más en este momento</string>
     <string name="chat_resources_load_failed">No se pueden cargar los recursos del chat en este momento</string>
     <string name="chat_resources_syncing">Sincronizando recursos del chat</string>
     <string name="artifact_access_denied">No tienes acceso a este artefacto</string>
@@ -64,4 +64,12 @@
     <string name="chat_resources_messages">Mensajes</string>
     <string name="artifact_preview_loading">Cargando vista previa…</string>
     <string name="artifact_image_unavailable">Imagen no disponible</string>
+    <string name="artifact_image_actions">Acciones de imagen</string>
+    <string name="artifact_image_expand">Ampliar el visor de imágenes</string>
+    <string name="artifact_image_collapse">Contraer el visor de imágenes</string>
+    <string name="artifact_image_loading">Cargando imagen…</string>
+    <string name="artifact_image_load_failed">No se puede cargar la imagen en este momento</string>
+    <string name="artifact_image_zoom_in">Acercar</string>
+    <string name="artifact_image_zoom_out">Alejar</string>
+    <string name="artifact_image_fit">Ajustar imagen</string>
 </resources>

@@ -2,6 +2,7 @@ import { storedTemplateGuidanceBundleSchema } from "./template-guidance-bundle";
 import {
   contentBundleSchema,
   executionContentBundlesSchema,
+  namedExecutionContentBundlesSchema,
 } from "./content-bundle";
 import {
   array,
@@ -498,6 +499,22 @@ export const storageManifestSchema = object({
   ),
 });
 
+const startupInputsSchema = object({
+  memory: object({
+    storageId: string(),
+    versionId: string(),
+    archiveUrl: string().optional(),
+    archiveSize: archiveSizeSchema.optional(),
+    empty: boolean().optional(),
+    missingRootPolicy: artifactMissingRootPolicySchema.optional(),
+  })
+    .refine((memory) => {
+      return memory.archiveUrl !== undefined || memory.empty === true;
+    })
+    .nullable(),
+  contentBundles: namedExecutionContentBundlesSchema,
+});
+
 /** Retained native files are disposable; Chat remains the recovery source. */
 export const nativeContinuationSchema = object({
   sessionId: string()
@@ -904,6 +921,7 @@ export const preparedExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = object({
+  startupInputs: startupInputsSchema.optional(),
   // Selected immutable packages, including an empty set for agentless jobs.
   contentBundles: executionContentBundlesSchema,
   // Chat execution telemetry context.

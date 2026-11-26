@@ -22,7 +22,6 @@ internal val EmailSubscription.canReceive: Boolean
 
 internal enum class SettingsNotice {
     ModelAccountSwitchFailed,
-    CreditBalanceRefreshFailed,
     EmailSubscriptionFailed,
     EmailSubscriptionUnconfirmed,
     ToolSaveFailed,

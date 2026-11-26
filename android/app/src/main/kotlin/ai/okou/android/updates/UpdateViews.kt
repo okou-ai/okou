@@ -89,6 +89,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -107,6 +108,8 @@ internal data class UpdateToolbarAction(
     val progress: String? = null,
     val installsPackage: Boolean = false,
     @DrawableRes val icon: Int = R.drawable.ic_update,
+    val opensDetails: Boolean = false,
+    val detailsOpen: Boolean = false,
 )
 
 private fun UpdateTransfer.Downloading.percent(): Int? = downloadedBytes?.let {
@@ -148,6 +151,7 @@ internal fun updateToolbarAction(
                 stringResource(R.string.updates_downloading, percent),
                 openDetails,
                 progress = percent,
+                opensDetails = true,
             )
         }
         transfer is UpdateTransfer.Ready && state.canInstall ->
@@ -158,9 +162,13 @@ internal fun updateToolbarAction(
             )
         state.interrupted || transfer is UpdateTransfer.Waiting ->
             UpdateToolbarAction(
-                stringResource(R.string.updates_download_failed),
+                stringResource(
+                    if (transfer is UpdateTransfer.Interrupted) R.string.updates_error_interrupted
+                    else R.string.updates_download_failed,
+                ),
                 openDetails,
                 icon = R.drawable.ic_download,
+                opensDetails = true,
             )
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
@@ -170,7 +178,15 @@ internal fun updateToolbarAction(
                 icon = R.drawable.ic_download,
             )
         }
-        else -> UpdateToolbarAction(stringResource(R.string.updates_toolbar), openDetails)
+        else ->
+            UpdateToolbarAction(
+                stringResource(
+                    if (state.requiresNewerAndroid) R.string.updates_android_unsupported
+                    else R.string.updates_toolbar,
+                ),
+                openDetails,
+                opensDetails = true,
+            )
     }
 }
 
@@ -178,18 +194,27 @@ internal fun updateToolbarAction(
 internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
-    val focus = rememberInstallControlFocus(inProgress = action.activate == null)
+    val focus = rememberUpdateControlFocus(away = action.activate == null || action.detailsOpen)
+    val detailsLabel = stringResource(R.string.updates_title)
+    val inputMode = LocalInputModeManager.current
     val maxTextSize = with(LocalDensity.current) { 16.dp.toSp() }
     FilledIconButton(
         onClick = {
-            if (action.installsPackage) focus.rememberTrigger()
+            if (
+                action.installsPackage ||
+                    (action.opensDetails && inputMode.inputMode == InputMode.Keyboard)
+            )
+                focus.rememberTrigger()
             action.activate?.invoke()
         },
         enabled = action.activate != null,
         modifier =
             focus.modifier
                 .updateFocusOutline(shape, colors.onBackground, keyboardOnly = true)
-                .semantics { contentDescription = action.label },
+                .semantics {
+                    contentDescription = action.label
+                    if (action.opensDetails) onClick(label = detailsLabel, action = null)
+                },
         shape = shape,
     ) {
         if (action.progress == null) {
@@ -740,7 +765,7 @@ private fun UpdateAction(
         if (state.required)
             PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
         else updateActionPadding
-    val focus = rememberInstallControlFocus(inProgress = installProgress != null)
+    val focus = rememberUpdateControlFocus(away = installProgress != null)
     val checking =
         state.check == UpdateCheck.Checking &&
             transfer !is UpdateTransfer.Downloading &&
@@ -856,7 +881,7 @@ private fun UpdateAction(
     }
 }
 
-private class InstallControlFocus {
+private class UpdateControlFocus {
     private val requester = FocusRequester()
     private var restore = false
     var isFocused = false
@@ -879,11 +904,11 @@ private class InstallControlFocus {
 }
 
 @Composable
-private fun rememberInstallControlFocus(inProgress: Boolean): InstallControlFocus {
-    val focus = remember { InstallControlFocus() }
+private fun rememberUpdateControlFocus(away: Boolean): UpdateControlFocus {
+    val focus = remember { UpdateControlFocus() }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(inProgress, windowFocused) {
-        if (!inProgress && windowFocused) focus.restoreTrigger()
+    LaunchedEffect(away, windowFocused) {
+        if (!away && windowFocused) focus.restoreTrigger()
     }
     return focus
 }

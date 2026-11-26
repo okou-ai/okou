@@ -2164,8 +2164,7 @@ class ChatListModel(
         }
     }
 
-    private fun continueUnreadRead(): Boolean =
-        listIsVisible && listInForeground && mutable.value.filter == ChatListFilter.Unread
+    private fun continueListIndicatorRead(): Boolean = listIsVisible && listInForeground
 
     private fun readIndicators(
         verifyPendingRead: ((String) -> Boolean)? = null,
@@ -2199,7 +2198,7 @@ class ChatListModel(
                 val (eligible, result) =
                     retry?.read(
                         isCurrent = ::current,
-                        continuous = ::continueUnreadRead,
+                        continuous = ::continueListIndicatorRead,
                         onRetry = { failures ->
                             val state = mutable.value
                             if (
@@ -2324,16 +2323,16 @@ class ChatListModel(
                 throw cancelled
             } catch (error: Exception) {
                 val retryable = dependencyRetryAfterMillis(error) != null
-                val resumeUnread = afterWrite && retryable && continueUnreadRead()
+                val resumeListIndicators = afterWrite && retryable && continueListIndicatorRead()
                 fail(error) {
                     it.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
                         indicatorsNonRetryableFailure = !retryable,
                         indicatorsRetryProgressVisible =
-                            resumeUnread && it.indicatorsRetryProgressVisible,
+                            resumeListIndicators && it.indicatorsRetryProgressVisible,
                     )
                 }
-                if (resumeUnread && current()) requestIndicators(immediate = true)
+                if (resumeListIndicators && current()) requestIndicators(immediate = true)
             } finally {
                 indicatorsRetry = null
                 indicatorReadReceipts.clear()

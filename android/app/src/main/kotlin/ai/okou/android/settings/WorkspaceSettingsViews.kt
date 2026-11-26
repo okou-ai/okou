@@ -104,18 +104,27 @@ internal fun WorkspaceSettingsFeedback(
     inOverlay: Boolean,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    if (destination == SettingsDestination.ModelAccounts) {
-        val state by model.uiState.collectAsStateWithLifecycle()
-        SettingsRefreshFeedback(
-            snackbar,
-            state.accounts.refreshFailure,
-            R.string.settings_accounts_update_failed,
-        )
+    when (destination) {
+        SettingsDestination.ModelAccounts -> {
+            val state by model.uiState.collectAsStateWithLifecycle()
+            SettingsRefreshFeedback(
+                snackbar,
+                state.accounts.refreshFailure,
+                R.string.settings_accounts_update_failed,
+            )
+        }
+        SettingsDestination.CreditBalance -> {
+            val state by model.uiState.collectAsStateWithLifecycle()
+            SettingsRefreshFeedback(
+                snackbar,
+                state.creditRefreshFailure,
+                R.string.settings_credit_unavailable,
+            )
+        }
+        else -> Unit
     }
     val switchFailed by
         rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
-    val creditRefreshFailed by
-        rememberUpdatedState(stringResource(R.string.settings_credit_unavailable))
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
     val emailUnconfirmed by
         rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
@@ -128,7 +137,6 @@ internal fun WorkspaceSettingsFeedback(
                 val message =
                     when (notice) {
                         SettingsNotice.ModelAccountSwitchFailed -> switchFailed
-                        SettingsNotice.CreditBalanceRefreshFailed -> creditRefreshFailed
                         SettingsNotice.EmailSubscriptionFailed -> emailFailed
                         SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
                         SettingsNotice.ToolSaveFailed -> toolFailed

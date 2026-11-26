@@ -94,6 +94,7 @@ internal data class WorkspaceSettingsState(
     val accounts: SettingsRead<List<RecoverySubscriptionsSubscriptionsItem>> = SettingsRead(),
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
+    val creditRefreshFailure: SettingsRefreshFailure? = null,
     val showWorkspaceCredits: Boolean = false,
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
 )
@@ -163,7 +164,6 @@ internal constructor(
     private var accountsRead: Job? = null
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
-    private var creditRefreshFailureReported = false
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     internal fun visible(destination: SettingsDestination?) {
@@ -176,10 +176,9 @@ internal constructor(
         )
             accountsRead?.cancel()
         if (destination != SettingsDestination.CreditBalance) {
+            mutable.update { it.copy(creditRefreshFailure = null) }
             usagePackRead?.cancel()
             workspaceCreditsRead?.cancel()
-        } else {
-            creditRefreshFailureReported = false
         }
         if (
             !restored &&
@@ -517,9 +516,12 @@ internal constructor(
     }
 
     private fun reportCreditRefreshFailure() {
-        if (creditRefreshFailureReported) return
-        creditRefreshFailureReported = true
-        messages.trySend(SettingsNotice.CreditBalanceRefreshFailed)
+        if (visible != SettingsDestination.CreditBalance) return
+        mutable.update { state ->
+            if (state.creditRefreshFailure == null)
+                state.copy(creditRefreshFailure = SettingsRefreshFailure())
+            else state
+        }
     }
 
     private fun showProgress(resource: WorkspaceSettingsResource, refreshing: Boolean) {

@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.canAdoptConfirmedForm
 import ai.okou.android.replaceTextPreservingSelection
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.derivedStateOf
@@ -48,11 +49,7 @@ internal sealed class WorkflowEditSession {
         override fun receiveConfirmed(detail: WorkflowDetail): Boolean =
             Snapshot.withMutableSnapshot {
                 val current = draft
-                val keepInput =
-                    current.changed ||
-                        title.composition != null ||
-                        purpose.composition != null ||
-                        instruction.composition != null
+                val keepInput = !canAdoptConfirmedForm(current.changed, title, purpose, instruction)
                 val latest =
                     current.updateConfirmed(detail, keepInput) as? WorkflowEdit.Instructions
                         ?: return@withMutableSnapshot false
@@ -90,8 +87,7 @@ internal sealed class WorkflowEditSession {
         override fun receiveConfirmed(detail: WorkflowDetail): Boolean =
             Snapshot.withMutableSnapshot {
                 val current = draft
-                val keepInput =
-                    current.changed || subject.composition != null || calendarId.composition != null
+                val keepInput = !canAdoptConfirmedForm(current.changed, subject, calendarId)
                 val latest =
                     current.updateConfirmed(detail, keepInput) as? WorkflowEdit.Rule
                         ?: return@withMutableSnapshot false

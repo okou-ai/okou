@@ -146,7 +146,6 @@ internal fun ArtifactCatalogList(
     val clearQuery = searchClearAction(searchFocus) { input.clearText() }
     val allFilterFocus = remember { FocusRequester() }
     val rowFocus = remember { FocusRequester() }
-    val noticePadding = Modifier.padding(16.dp)
 
     LaunchedEffect(model, page, failure, reading) {
         if (page?.nextCursor != null && failure == null && reading == null) {
@@ -268,12 +267,14 @@ internal fun ArtifactCatalogList(
                         }
                     }
                 }
-                if (failure != null && failure != ArtifactCatalogFailure.Refresh) {
-                    item(key = "catalog-read-failure") {
-                        ArtifactReadNotice(failure.label(), noticePadding)
+                if (failure == ArtifactCatalogFailure.More || reading == ArtifactCatalogRead.More) {
+                    item(key = "catalog-page-feedback") {
+                        ArtifactPageFeedback(
+                            failed = failure == ArtifactCatalogFailure.More,
+                            noticeHorizontalPadding = 16.dp,
+                        )
                     }
                 }
-                if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
             ArtifactRefreshFeedback(refreshSnackbar, Modifier.align(Alignment.BottomCenter))
         }
@@ -455,6 +456,30 @@ internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
         ArtifactCatalogFailure.Missing -> R.string.artifact_catalog_missing
         ArtifactCatalogFailure.ChatUnavailable -> R.string.history_missing
     }
+
+@Composable
+internal fun ArtifactPageFeedback(
+    failed: Boolean,
+    skeletonHeight: Dp = 80.dp,
+    skeletonHorizontalPadding: Dp = 12.dp,
+    noticeHorizontalPadding: Dp = 0.dp,
+) {
+    if (failed) {
+        // Keep the loading item's height so the list doesn't scroll back at its lower bound.
+        Box(Modifier.heightIn(min = skeletonHeight)) {
+            ArtifactReadNotice(
+                ArtifactCatalogFailure.More.label(),
+                Modifier.padding(
+                    start = noticeHorizontalPadding,
+                    end = noticeHorizontalPadding,
+                    top = 12.dp,
+                ),
+            )
+        }
+    } else {
+        ArtifactRowSkeleton(skeletonHeight, skeletonHorizontalPadding)
+    }
+}
 
 @Composable
 internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
