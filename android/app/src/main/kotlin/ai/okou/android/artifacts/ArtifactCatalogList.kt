@@ -1,6 +1,7 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.ContentReadFailure
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
@@ -109,13 +110,13 @@ internal fun ArtifactCatalogList(
     onFilter: (ArtifactFilter) -> Unit,
     position: LazyListState,
     selectedId: String?,
-    restoreRow: String?,
-    onReturnFocusFinished: () -> Unit,
+    returnFocus: DirectoryReturnFocus,
     onSelect: (ArtifactItem) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val filter = query.filter
+    val restoreRow = returnFocus.pending?.rowKey
     val current = state.takeIf { it.query == query }
     val listState = ArtifactCatalogListState(current?.page, current?.failedRead, current?.reading)
     val (page, failure, reading) =
@@ -161,12 +162,11 @@ internal fun ArtifactCatalogList(
         modifier
             .fillMaxHeight()
             .restoreDirectoryFocus(
-                restoreRow,
+                returnFocus,
                 page != null || failure != null,
                 position,
                 rowFocus,
                 searchFocus,
-                onReturnFocusFinished,
                 rowEnabled = restoreRow != null && page?.items?.any { it.id == restoreRow } == true,
             )
             .testTag("artifact_catalog"),

@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.ContentReadFailure
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
@@ -197,7 +198,7 @@ internal fun WorkflowScreen(
     }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
-    var restoreRow by remember(query, query.keyword, route.scope) { mutableStateOf<String?>(null) }
+    val returnFocus = remember(query, query.keyword, route.scope) { DirectoryReturnFocus() }
     val draftFocusAction = route.draftReturn?.action
     val canNavigate = editing == null && !state.writing
     fun exitEditor() {
@@ -210,7 +211,7 @@ internal fun WorkflowScreen(
             editing != null -> exitEditor()
             state.writing -> Unit
             route.id != null && !wide && !directEntry && !handoffPending -> {
-                restoreRow = route.id.takeIf { inputMode.inputMode == InputMode.Keyboard }
+                returnFocus.returningFrom(route.id, inputMode.inputMode)
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
             else -> onClose()
@@ -270,14 +271,13 @@ internal fun WorkflowScreen(
                     }
                 },
                 onSelect = {
-                    restoreRow = null
+                    returnFocus.cancel()
                     if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     if (it != route.id)
                         changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
                 },
-                restoreRow = restoreRow,
-                onReturnFocusFinished = { restoreRow = null },
+                returnFocus = returnFocus,
             )
         }
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -411,11 +411,11 @@ private fun WorkflowDirectory(
     onCreateFocusRestored: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
     onSelect: (String) -> Unit,
-    restoreRow: String?,
-    onReturnFocusFinished: () -> Unit,
+    returnFocus: DirectoryReturnFocus,
 ) {
     val text = query.keyword
     val inputEnabled = state.editing == null
+    val restoreRow = returnFocus.pending?.rowKey
     val searchFocus = remember { FocusRequester() }
     val clearQuery = searchClearAction(searchFocus, query::clearQuery)
     val displayedState =
@@ -480,12 +480,11 @@ private fun WorkflowDirectory(
     Column(
         modifier
             .restoreDirectoryFocus(
-                restoreRow,
+                returnFocus,
                 readyToRestoreFocus,
                 query.position,
                 rowFocus,
                 backFocus,
-                onReturnFocusFinished,
                 rowEnabled =
                     restoreRow != null &&
                         canNavigate &&
