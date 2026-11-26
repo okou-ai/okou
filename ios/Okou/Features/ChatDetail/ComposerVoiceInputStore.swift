@@ -370,6 +370,7 @@ final class ComposerVoiceInputStore {
     session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID,
     send: (@MainActor () async -> Void)?
   ) async throws {
+    _ = await preparationTask?.result
     guard generation == owner, composer.canEditVoice else { return }
     let upload = Task { try await session.uploadClip(recordingID: id) }
     preparationTask = upload
@@ -407,12 +408,12 @@ final class ComposerVoiceInputStore {
       try await captureTask?.value
       captureTask = nil
       await transcriptionTask?.value
-      _ = await preparationTask?.result
       if uploadsAudio {
         try await finishAudio(
           session: session, id: id, composer: composer, owner: owner, send: send)
         return
       }
+      _ = await preparationTask?.result
       let hasPreparedText = await session.hasPreparedText
       guard generation == owner, composer.canEditVoice else { return }
       if !hasPreparedText {
