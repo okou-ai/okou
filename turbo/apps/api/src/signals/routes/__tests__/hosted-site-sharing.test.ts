@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
 import { hostRoutes } from "../host";
 import { hostedSiteSharingRoutes } from "../hosted-site-sharing";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -485,5 +486,49 @@ describe("hosted site sharing", () => {
     await expect(lookup("external@example.com")).resolves.toStrictEqual([]);
     await expect(lookup("externalhandle")).resolves.toStrictEqual([]);
     await expect(lookup("external")).resolves.toStrictEqual([]);
+  });
+
+  it("hosted-site-sharing-008 limits sharing attempts per user before creating another invitation", async () => {
+    const startMs = Date.parse("2026-11-23T00:00:00Z");
+    mockNow(startMs);
+    acceptEmails();
+    const owner = await member();
+    clerkDirectory([{ user: owner, verified: true }]);
+    const [, site] = await Promise.all([
+      setSharing(owner, true),
+      publishPrivateSite(owner),
+    ]);
+
+    const firstTen = await Promise.all(
+      Array.from({ length: 10 }, (_, index) => {
+        return accept(
+          share(owner, site, `recipient-${index}@example.com`),
+          [200],
+        );
+      }),
+    );
+    const eleventh = await accept(
+      share(owner, site, "recipient-10@example.com"),
+      [429],
+    );
+    const listed = await accept(listShares(owner, site), [200]);
+    mockNow(startMs + 60_000);
+    const afterWindow = await accept(
+      share(owner, site, "recipient-11@example.com"),
+      [200],
+    );
+
+    expect(
+      firstTen.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 10 }, () => {
+        return 200;
+      }),
+    );
+    expect(eleventh.status).toBe(429);
+    expect(listed.body.shares).toHaveLength(10);
+    expect(afterWindow.status).toBe(200);
   });
 });
