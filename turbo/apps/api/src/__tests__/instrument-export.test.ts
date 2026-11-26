@@ -29,8 +29,12 @@ import {
 
 import { testContext } from "./test-context";
 
+const callbackId = "123456789";
+const callbackAuthDate = "1700000000";
+const callbackNumericValues: readonly string[] = [callbackId, callbackAuthDate];
+
 // Numeric callback fixtures can occur in SDK timestamps and random IDs. Keep
-// their assertions on content, preserving arbitrary nested payloads in full.
+// their assertions on content, including arbitrary nested payloads.
 const attributeContent = object({ attributes: zUnknown().optional() });
 const namedContent = attributeContent.extend({ name: string() });
 const traceContent = object({
@@ -91,10 +95,22 @@ const errorContent = object({
 });
 
 function exportedCallbackContent(traces: unknown[], errors: unknown[]): string {
-  return JSON.stringify({
-    traces: array(traceContent).parse(traces),
-    errors: array(errorContent).parse(errors),
-  });
+  return JSON.stringify(
+    {
+      traces: array(traceContent).parse(traces),
+      errors: array(errorContent).parse(errors),
+    },
+    (_key, value: unknown) => {
+      // Match complete numeric values. Keep field names and text searchable.
+      if (
+        typeof value === "number" &&
+        !callbackNumericValues.includes(String(value))
+      ) {
+        return null;
+      }
+      return value;
+    },
+  );
 }
 
 function traceExport(span: unknown): unknown[] {
@@ -144,7 +160,7 @@ describe("callback export content assertions", () => {
       },
     ];
     const content = exportedCallbackContent(traces, errors);
-    for (const secret of ["123456789", "1700000000"]) {
+    for (const secret of callbackNumericValues) {
       expect(JSON.stringify({ traces, errors })).toContain(secret);
       expect(content).not.toContain(secret);
     }
@@ -158,7 +174,22 @@ describe("callback export content assertions", () => {
     }
   });
 
-  it.each(["123456789", "1700000000"])(
+  it("ignores fixture digits in a database pool acquire duration", () => {
+    const traces = traceExport({
+      name: "database query",
+      attributes: [
+        {
+          key: "vm0.db.pool.acquire.duration_ms",
+          value: { doubleValue: 0.06617000000005646 },
+        },
+      ],
+    });
+
+    expect(JSON.stringify(traces)).toContain(callbackAuthDate);
+    expect(exportedCallbackContent(traces, [])).not.toContain(callbackAuthDate);
+  });
+
+  it.each(callbackNumericValues)(
     "retains leaked callback value %s in trace content",
     (secret) => {
       const attributes = [{ key: "callback", value: { stringValue: secret } }];
@@ -168,6 +199,10 @@ describe("callback export content assertions", () => {
         {
           name: "ordinary",
           attributes: [{ key: "id", value: { intValue: Number(secret) } }],
+        },
+        {
+          name: "ordinary",
+          attributes: [{ key: "id", value: { doubleValue: Number(secret) } }],
         },
         { name: "ordinary", traceState: `callback=${secret}` },
         { name: "ordinary", status: { message: `failure ${secret}` } },
@@ -206,7 +241,7 @@ describe("callback export content assertions", () => {
     },
   );
 
-  it.each(["123456789", "1700000000"])(
+  it.each(callbackNumericValues)(
     "retains leaked callback value %s in error content",
     (secret) => {
       for (const event of [
@@ -400,11 +435,11 @@ describe("API telemetry exports", () => {
     const proof = randomBytes(32).toString("hex");
     const identity = `telegram-person-${randomBytes(16).toString("hex")}`;
     const providerQuery = new URLSearchParams({
-      id: "123456789",
+      id: callbackId,
       first_name: identity,
       username: identity,
       photo_url: `https://photos.example/${identity}`,
-      auth_date: "1700000000",
+      auth_date: callbackAuthDate,
       hash: proof,
       targetOrigin: "https://app.okou.ai",
     });
@@ -705,7 +740,7 @@ describe("API telemetry exports", () => {
       expect(errors.join("\n")).not.toContain(secret);
     }
     const callbackContent = exportedCallbackContent(traces, errorEvents);
-    for (const secret of ["123456789", "1700000000"]) {
+    for (const secret of callbackNumericValues) {
       expect(callbackContent).not.toContain(secret);
     }
   });
