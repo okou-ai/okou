@@ -1,14 +1,12 @@
 package ai.okou.android.settings
 
 import ai.okou.android.R
-import ai.okou.android.SettingsChoiceList
 import ai.okou.android.SettingsChoiceRow
+import ai.okou.android.SettingsChoiceSheet
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsSection
-import ai.okou.android.SettingsSheet
-import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.api.generated.imageToolOptions
 import ai.okou.android.api.generated.publicImageToolOptions
@@ -149,27 +147,26 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
                 if (selected != null && selected !in publicImageToolOptions)
                     publicImageToolOptions + selected
                 else publicImageToolOptions
-            SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-                SettingsChoiceList(options, options.indexOf(selected), { it.id }) { option, position
-                    ->
-                    SettingsChoiceRow(
-                        option.title,
-                        selected = option.id == selected?.id,
-                        enabled = true,
-                        onClick = {
-                            dismiss()
-                            model.chooseImage(option.id)
-                        },
-                        modifier = position,
-                        trailing = { foreground ->
-                            Text(
-                                option.price,
-                                color = foreground,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        },
-                    )
-                }
+            SettingsChoiceSheet(title, dismiss, options, options.indexOf(selected), { it.id }) {
+                option,
+                position ->
+                SettingsChoiceRow(
+                    option.title,
+                    selected = option.id == selected?.id,
+                    enabled = true,
+                    onClick = {
+                        dismiss()
+                        model.chooseImage(option.id)
+                    },
+                    modifier = position,
+                    trailing = { foreground ->
+                        Text(
+                            option.price,
+                            color = foreground,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    },
+                )
             }
         }
     }

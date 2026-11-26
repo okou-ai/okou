@@ -53,6 +53,7 @@ class SettingsChoiceListTest {
         compose.runOnIdle { assertEquals(emptyList<Int>(), submissions) }
 
         restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Choose entry").assertIsDisplayed()
         option(18).assertIsDisplayed().assertIsFocused()
         option(2).assertDoesNotExist()
         compose.runOnIdle { assertEquals(emptyList<Int>(), submissions) }
@@ -83,23 +84,23 @@ class SettingsChoiceListTest {
             CompositionLocalProvider(LocalInputModeManager provides keyboard) {
                 OkouTheme(dark = false) {
                     SettingsPickerRow("Settings entry", null, leading = {}) { dismiss ->
-                        SettingsSheet("Choose entry", dismiss, scroll = SettingsSheetScroll.None) {
-                            SettingsChoiceList(
-                                (0..23).toList(),
-                                selected.intValue,
-                                Int::toString,
-                            ) { option, position ->
-                                SettingsChoiceRow(
-                                    "Option $option",
-                                    option == selected.intValue,
-                                    enabled = true,
-                                    onClick = {
-                                        dismiss()
-                                        onSelect(option)
-                                    },
-                                    modifier = position,
-                                )
-                            }
+                        SettingsChoiceSheet(
+                            "Choose entry",
+                            dismiss,
+                            (0..23).toList(),
+                            selected.intValue,
+                            Int::toString,
+                        ) { option, position ->
+                            SettingsChoiceRow(
+                                "Option $option",
+                                option == selected.intValue,
+                                enabled = true,
+                                onClick = {
+                                    dismiss()
+                                    onSelect(option)
+                                },
+                                modifier = position,
+                            )
                         }
                     }
                 }

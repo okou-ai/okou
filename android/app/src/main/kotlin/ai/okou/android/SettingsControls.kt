@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -374,6 +376,7 @@ internal fun SettingsModal(
     showDragHandle: Boolean = true,
     fitContentInsets: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
+    bottomSheetModifier: Modifier = Modifier,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -404,6 +407,7 @@ internal fun SettingsModal(
         val confirm by rememberUpdatedState(confirmDismiss)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            modifier = bottomSheetModifier,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -464,12 +468,18 @@ internal fun SettingsSheet(
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
+    // Give native scroll bodies stable height as the sheet opens and consumes the top inset.
+    val bottomSheetModifier =
+        if (scroll == SettingsSheetScroll.None)
+            Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+        else Modifier
     SettingsModal(
         onDismiss,
         dismissible = dismissible,
         fullScreen = compactHeight && fullScreenInShortWindow,
         fitContentInsets = compactHeight && fullScreenInShortWindow,
         confirmDismiss = confirmDismiss,
+        bottomSheetModifier = bottomSheetModifier,
     ) { centered ->
         var panelBottom by remember { mutableFloatStateOf(0f) }
         var actionTop by remember { mutableStateOf<Float?>(null) }
@@ -739,26 +749,34 @@ internal fun OkouConfirmationDialog(
 }
 
 @Composable
-internal fun <T : Enum<T>> SettingsRadioOptions(
+internal fun <T : Enum<T>> SettingsRadioSheet(
+    title: String,
+    dismiss: () -> Unit,
     options: List<T>,
     selected: T,
     label: (T) -> Int,
-    enabled: Boolean,
     onSelect: (T) -> Unit,
 ) {
-    SettingsChoiceList(options, options.indexOf(selected), { it.name }) { option, position ->
+    SettingsChoiceSheet(title, dismiss, options, options.indexOf(selected), { it.name }) {
+        option,
+        position ->
         SettingsChoiceRow(
             stringResource(label(option)),
             selected = option == selected,
-            enabled = enabled,
-            onClick = { onSelect(option) },
+            enabled = true,
+            onClick = {
+                dismiss()
+                onSelect(option)
+            },
             modifier = position,
         )
     }
 }
 
 @Composable
-internal fun <T> SettingsChoiceList(
+internal fun <T> SettingsChoiceSheet(
+    title: String,
+    dismiss: () -> Unit,
     options: List<T>,
     selectedIndex: Int,
     optionKey: (T) -> String,
@@ -769,12 +787,13 @@ internal fun <T> SettingsChoiceList(
         rememberSettingsChoicePosition(options.getOrNull(initialIndex)?.let(optionKey)) { key ->
             options.any { optionKey(it) == key }
         }
-    LazyColumn(
-        Modifier.fillMaxWidth().selectableGroup(),
-        state = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex),
-    ) {
-        items(options, key = optionKey) { option ->
-            choice(option, position(optionKey(option)))
+    // Retain the list and its focus with the settings visit when the modal window is recreated.
+    val scroll = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+        LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = scroll) {
+            items(options, key = optionKey) { option ->
+                choice(option, position(optionKey(option)))
+            }
         }
     }
 }

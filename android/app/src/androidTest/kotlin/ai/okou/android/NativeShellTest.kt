@@ -21,6 +21,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +86,7 @@ class NativeShellTest {
     @Test
     fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
+            val minChoiceHeight = (56 * app.resources.displayMetrics.density).roundToInt()
             fun button(id: Int) =
                 reveal(
                     By.pkg(app.packageName)
@@ -98,8 +100,11 @@ class NativeShellTest {
                 reveal(appearanceOption(id).enabled(true), app.getString(id), firstChoice)
             fun openPicker(row: Int, selected: Int) {
                 button(row).click()
-                await("Selected preference is visible on opening: ${app.getString(selected)}") {
-                    findCurrent(appearanceOption(selected))?.isChecked == true
+                await(
+                    "Selected preference is fully visible on opening: ${app.getString(selected)}",
+                ) {
+                    val choice = findCurrent(appearanceOption(selected))
+                    choice?.isChecked == true && choice.visibleBounds.height() >= minChoiceHeight
                 }
             }
             fun dismissPicker(selected: Int) {

@@ -1,12 +1,12 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.R
-import ai.okou.android.SettingsChoiceList
 import ai.okou.android.SettingsChoiceRow
+import ai.okou.android.SettingsChoiceSheet
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsPickerRow
-import ai.okou.android.SettingsRadioOptions
+import ai.okou.android.SettingsRadioSheet
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetScroll
@@ -89,17 +89,14 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(appearanceTitle, dismiss, scroll = SettingsSheetScroll.None) {
-                    SettingsRadioOptions(
-                        options = UserPreferencesTheme.entries,
-                        selected = state.theme,
-                        label = ::appearanceLabel,
-                        enabled = true,
-                    ) { mode ->
-                        dismiss()
-                        model.selectTheme(mode)
-                    }
-                }
+                SettingsRadioSheet(
+                    appearanceTitle,
+                    dismiss,
+                    options = UserPreferencesTheme.entries,
+                    selected = state.theme,
+                    label = ::appearanceLabel,
+                    onSelect = model::selectTheme,
+                )
             }
             HorizontalDivider()
             SettingsPickerRow(
@@ -109,12 +106,13 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(colorTitle, dismiss, scroll = SettingsSheetScroll.None) {
-                    PaletteOptions(state.colorTheme, dark) { palette ->
-                        dismiss()
-                        model.selectColorTheme(palette)
-                    }
-                }
+                PaletteSelectionSheet(
+                    colorTitle,
+                    dismiss,
+                    state.colorTheme,
+                    dark,
+                    model::selectColorTheme,
+                )
             }
         }
     }
@@ -128,17 +126,14 @@ internal fun MemberPreferencesSettings(
                 enabled = state != null && state.supportedLocales.size > 1,
             ) { dismiss ->
                 if (state == null || model == null) return@SettingsPickerRow
-                SettingsSheet(languageTitle, dismiss, scroll = SettingsSheetScroll.None) {
-                    SettingsRadioOptions(
-                        options = state.supportedLocales,
-                        selected = state.locale,
-                        label = ::languageLabel,
-                        enabled = true,
-                    ) { locale ->
-                        dismiss()
-                        model.selectLocale(locale)
-                    }
-                }
+                SettingsRadioSheet(
+                    languageTitle,
+                    dismiss,
+                    options = state.supportedLocales,
+                    selected = state.locale,
+                    label = ::languageLabel,
+                    onSelect = model::selectLocale,
+                )
             }
             HorizontalDivider()
             TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
@@ -177,28 +172,30 @@ internal fun TimezoneSelectionSheet(
     dismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
-        val locale = LocalConfiguration.current.locales[0]
-        val utcName = stringResource(R.string.settings_timezone_utc)
-        val openingTime = remember { System.currentTimeMillis() }
-        val options =
-            remember(current, locale, utcName) {
-                timezoneOptions(current, locale, utcName, atMillis = openingTime)
-            }
-        SettingsChoiceList(options, options.indexOfFirst { it.id == current }, { it.id }) {
-            zone,
-            position ->
-            SettingsChoiceRow(
-                timezoneLabel(zone),
-                selected = zone.id == current,
-                enabled = true,
-                onClick = {
-                    dismiss()
-                    onSelect(zone.id)
-                },
-                modifier = position,
-            )
+    val locale = LocalConfiguration.current.locales[0]
+    val utcName = stringResource(R.string.settings_timezone_utc)
+    val openingTime = remember { System.currentTimeMillis() }
+    val options =
+        remember(current, locale, utcName) {
+            timezoneOptions(current, locale, utcName, atMillis = openingTime)
         }
+    SettingsChoiceSheet(
+        title,
+        dismiss,
+        options,
+        options.indexOfFirst { it.id == current },
+        { it.id },
+    ) { zone, position ->
+        SettingsChoiceRow(
+            timezoneLabel(zone),
+            selected = zone.id == current,
+            enabled = true,
+            onClick = {
+                dismiss()
+                onSelect(zone.id)
+            },
+            modifier = position,
+        )
     }
 }
 
@@ -265,7 +262,9 @@ internal fun TimezoneScheduleFeedback(
 }
 
 @Composable
-private fun PaletteOptions(
+private fun PaletteSelectionSheet(
+    title: String,
+    dismiss: () -> Unit,
     selected: UserPreferencesColorTheme,
     dark: Boolean,
     onSelect: (UserPreferencesColorTheme) -> Unit,
@@ -275,24 +274,30 @@ private fun PaletteOptions(
         rememberSettingsChoicePosition(selected.name) { name ->
             palettes.any { it.name == name }
         }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(columns),
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-            state = rememberLazyGridState(initialFirstVisibleItemIndex = selected.ordinal),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(palettes, key = { it.name }) { palette ->
-                SettingsChoiceRow(
-                    stringResource(paletteLabel(palette)),
-                    selected = palette == selected,
-                    enabled = true,
-                    onClick = { onSelect(palette) },
-                    modifier = position(palette.name),
-                    leading = { PaletteSwatch(palette, dark) },
-                )
+    val scroll = rememberLazyGridState(initialFirstVisibleItemIndex = selected.ordinal)
+    SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = if (maxWidth < 312.dp || LocalDensity.current.fontScale > 1.3f) 1 else 2
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                state = scroll,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(palettes, key = { it.name }) { palette ->
+                    SettingsChoiceRow(
+                        stringResource(paletteLabel(palette)),
+                        selected = palette == selected,
+                        enabled = true,
+                        onClick = {
+                            dismiss()
+                            onSelect(palette)
+                        },
+                        modifier = position(palette.name),
+                        leading = { PaletteSwatch(palette, dark) },
+                    )
+                }
             }
         }
     }
