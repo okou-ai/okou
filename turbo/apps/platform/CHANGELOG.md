@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1191.1](https://github.com/okou-ai/okou/compare/app-v0.1191.0...app-v0.1191.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **platform:** wrap workflows description beside header actions ([#51178](https://github.com/okou-ai/okou/issues/51178)) ([ed04cbc](https://github.com/okou-ai/okou/commit/ed04cbc473d1bef46379abb361ed3e9f53808949))
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.135.0
+    * @okouai/core bumped to 8.886.1
+    * @okouai/ui bumped to 1.22.38
+
 ## [0.1191.0](https://github.com/okou-ai/okou/compare/app-v0.1190.0...app-v0.1191.0) (2026-11-26)
 
 

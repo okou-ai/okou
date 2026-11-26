@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.28](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.27...runner-storage-v0.12.28) (2026-11-26)
+
+
+### Performance Improvements
+
+* **runner:** inline warm artifact archives on blank startup ([#51172](https://github.com/okou-ai/okou/issues/51172)) ([65d01d2](https://github.com/okou-ai/okou/commit/65d01d216eeba83e5ea7687eb60c9ec5681f8ef5))
+
 ## [0.12.27](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.26...runner-storage-v0.12.27) (2026-11-26)
 
 ## [0.12.26](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.25...runner-storage-v0.12.26) (2026-11-26)

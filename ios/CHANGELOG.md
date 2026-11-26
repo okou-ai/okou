@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.0](https://github.com/okou-ai/okou/compare/ios-v0.68.0...ios-v0.69.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** reject graph state in observable owners ([#51160](https://github.com/okou-ai/okou/issues/51160)) ([efff3c2](https://github.com/okou-ai/okou/commit/efff3c205360bd4ed8334b5e6e4ecd0204110c83))
+
 ## [0.68.0](https://github.com/okou-ai/okou/compare/ios-v0.67.4...ios-v0.68.0) (2026-11-26)
 
 

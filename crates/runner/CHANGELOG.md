@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.251.24](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.23...runner-rs-v0.251.24) (2026-11-26)
+
+
+### Bug Fixes
+
+* refresh linked gmail drafts during active runs ([#51188](https://github.com/okou-ai/okou/issues/51188)) ([75d38ca](https://github.com/okou-ai/okou/commit/75d38ca957eed0354634ddd0f96797fb58d8dc14))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.251.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.251.22...runner-rs-v0.251.23) (2026-11-26)
 
 
