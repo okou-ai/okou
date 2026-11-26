@@ -163,8 +163,8 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
         enabled = enabled,
         modifier = Modifier.alpha(if (enabled) 1f else 0.4f).semantics { role = Role.Button },
         shape = RoundedCornerShape(16.dp),
-        color = colors.inverseSurface,
-        contentColor = colors.inverseOnSurface,
+        color = colors.primaryContainer,
+        contentColor = colors.onPrimaryContainer,
         shadowElevation = 3.dp,
     ) {
         Row(

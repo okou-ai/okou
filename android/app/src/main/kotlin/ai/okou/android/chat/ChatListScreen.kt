@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
@@ -83,6 +84,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.expand
@@ -826,16 +828,8 @@ internal fun DeleteProjectDialog(
         enabled = enabled,
         dismiss = dismiss,
         confirm = confirm,
-        noticeRes =
-            when {
-                pending -> R.string.chat_project_delete_pending
-                status == ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
-                status == ProjectDeleteStatus.ConnectionFailed ->
-                    R.string.chat_action_connection_failed
-                status == ProjectDeleteStatus.Unconfirmed ->
-                    R.string.chat_project_delete_unconfirmed
-                else -> null
-            },
+        pending = pending,
+        projectDeleteStatus = status,
     )
 }
 
@@ -847,8 +841,19 @@ private fun DeleteOrganizationDialog(
     enabled: Boolean,
     dismiss: () -> Unit,
     confirm: () -> Unit,
-    @StringRes noticeRes: Int? = null,
+    pending: Boolean = false,
+    projectDeleteStatus: ProjectDeleteStatus? = null,
 ) {
+    val projectDelete = confirmRes == R.string.chat_project_delete
+    val noticeRes =
+        if (pending) null
+        else
+            when (projectDeleteStatus) {
+                ProjectDeleteStatus.Rejected -> R.string.chat_project_delete_rejected
+                ProjectDeleteStatus.ConnectionFailed -> R.string.chat_action_connection_failed
+                ProjectDeleteStatus.Unconfirmed -> R.string.chat_project_delete_unconfirmed
+                else -> null
+            }
     OkouConfirmationDialog(
         title = title,
         confirm = stringResource(confirmRes),
@@ -856,20 +861,44 @@ private fun DeleteOrganizationDialog(
         onConfirm = confirm,
         confirmEnabled = enabled,
         destructive = true,
+        pendingConfirmLabel =
+            if (projectDelete) stringResource(R.string.chat_delete_pending) else null,
+        confirmPending = pending,
+        actionStatus =
+            if (projectDelete) {
+                {
+                    Box(Modifier.fillMaxWidth()) {
+                        val style = MaterialTheme.typography.bodyMedium
+                        for (message in
+                            listOf(
+                                R.string.chat_project_delete_rejected,
+                                R.string.chat_action_connection_failed,
+                                R.string.chat_project_delete_unconfirmed,
+                            )) {
+                            if (message != noticeRes) {
+                                Text(
+                                    stringResource(message),
+                                    Modifier.clearAndSetSemantics {}.alpha(0f),
+                                    style = style,
+                                )
+                            }
+                        }
+                        if (noticeRes != null) {
+                            Text(
+                                stringResource(noticeRes),
+                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                color =
+                                    if (projectDeleteStatus?.rejected == true)
+                                        MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = style,
+                            )
+                        }
+                    }
+                }
+            } else null,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(description)
-            if (noticeRes != null) {
-                Text(
-                    stringResource(noticeRes),
-                    Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    color =
-                        if (noticeRes == R.string.chat_project_delete_rejected)
-                            MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        Text(description)
     }
 }
 

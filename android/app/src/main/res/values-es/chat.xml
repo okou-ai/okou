@@ -71,7 +71,7 @@
     <string name="chat_unpin">Desfijar chat</string>
     <string name="chat_move_pin_up">Mover hacia arriba</string>
     <string name="chat_move_pin_down">Mover hacia abajo</string>
-    <string name="chat_title_field">Título del chat</string>
+    <string name="chat_title_field">Nuevo nombre</string>
     <string name="chat_rename_confirm">Renombrar</string>
     <string name="chat_rename_cancel">Cancelar</string>
     <string name="chat_delete">Eliminar chat</string>
@@ -102,6 +102,7 @@
     <string name="chat_project_delete_title">¿Eliminar proyecto?</string>
     <string name="chat_project_delete_description">Los chats de «%1$s» se moverán fuera de los proyectos. Las tareas en curso continuarán.</string>
     <string name="chat_project_delete_pending">Eliminando proyecto…</string>
+    <string name="chat_delete_pending">Eliminando…</string>
     <string name="chat_project_deleted">Se eliminó el proyecto y sus chats se movieron fuera de los proyectos.</string>
     <string name="chat_project_delete_rejected">No se pudo eliminar el proyecto.</string>
     <string name="chat_project_delete_unconfirmed">No se pudo confirmar la eliminación del proyecto.</string>

@@ -146,7 +146,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val editor = compose.onNode(hasSetTextAction() and hasContentDescription("Chat title"))
+        val editor = compose.onNode(hasSetTextAction() and hasContentDescription("New name"))
         val failure = "Could not save. Your changes are still here."
 
         fun rejectRename(proposed: String) {
@@ -226,7 +226,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
         compose.onNodeWithText("Rename chat").performClick()
-        val editor = compose.onNodeWithContentDescription("Chat title")
+        val editor = compose.onNodeWithContentDescription("New name")
         val save = compose.onNodeWithText("Save")
         val saveBounds = save.getUnclippedBoundsInRoot()
         compose.onNodeWithText("Leading and trailing spaces are removed.").assertDoesNotExist()
@@ -290,7 +290,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         row.performTouchInput { longClick() }
         compose.onNodeWithText("Rename chat").performClick()
-        val editor = compose.onNodeWithContentDescription("Chat title")
+        val editor = compose.onNodeWithContentDescription("New name")
         editor.performTextReplacement("First title")
         compose.onNodeWithText("Save").performClick()
         compose.waitUntilExactlyOneExists(
@@ -338,7 +338,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
             val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
             row.performTouchInput { longClick() }
             compose.onNodeWithText("Rename chat").performClick()
-            val editor = compose.onNodeWithContentDescription("Chat title")
+            val editor = compose.onNodeWithContentDescription("New name")
             editor.performTextReplacement("Submitted title")
             compose.onNodeWithText("Save").performClick()
             compose.waitUntil(10_000) { submittedId.get() != null }
@@ -407,7 +407,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performTouchInput { longClick() }
         compose.onNodeWithText("Rename chat").performClick()
-        val editor = compose.onNodeWithContentDescription("Chat title")
+        val editor = compose.onNodeWithContentDescription("New name")
         editor.assertWidthIsEqualTo(608.dp)
         val bounds = editor.getUnclippedBoundsInRoot()
         assertTrue(bounds.bottom - bounds.top >= 56.dp)
@@ -4250,11 +4250,12 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             .assertIsDisplayed()
         assertEquals(0, deletes.get())
         val confirm = compose.onNodeWithText("Delete Project")
+        val confirmBounds = confirm.getUnclippedBoundsInRoot()
         try {
             confirm.assertIsEnabled().performClick()
             compose.waitUntil(10_000) { deletes.get() == 1 }
-            confirm.assertIsNotEnabled()
-            compose.onNodeWithText("Deleting Project…").assertIsDisplayed()
+            val pending = compose.onNodeWithText("Deleting…").assertIsNotEnabled()
+            assertEquals(confirmBounds, pending.getUnclippedBoundsInRoot())
             compose.onNodeWithText("Cancel").assertIsEnabled()
         } finally {
             releaseDelete.countDown()
@@ -4266,7 +4267,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                 .isNotEmpty()
         }
         compose.onNodeWithText("Delete Project?").assertIsDisplayed()
-        compose.onNodeWithText("Delete Project").assertIsEnabled()
+        confirm.assertIsEnabled()
+        assertEquals(confirmBounds, confirm.getUnclippedBoundsInRoot())
         assertEquals(1, deletes.get())
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Delete Project?").assertDoesNotExist()
