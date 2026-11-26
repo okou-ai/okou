@@ -8,7 +8,6 @@ import Foundation
 final class ForYouStore {
   struct Notice: Equatable {
     let text: String
-    var threadID: String?
     var undo: Undo?
   }
   struct Undo: Equatable {
@@ -186,10 +185,7 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if !openChat {
-        let threadID = selections[card.id]?.threadID
-        notice = Notice(text: String(localized: "Sent to a new chat"), threadID: threadID)
-      }
+      if !openChat { notice = Notice(text: String(localized: "Sent to a new chat")) }
       record(card)
       remove(card)
     }
@@ -247,8 +243,7 @@ final class ForYouStore {
       workspace.composerWorkflows.recordUse(workflows)
       notice = Notice(
         text: destination == target
-          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
-        threadID: destination)
+          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"))
       record(card)
       // Accepting the annotated message consumes the card on the server.
       remove(card)

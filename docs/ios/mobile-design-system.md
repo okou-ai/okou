@@ -497,11 +497,12 @@ single floating line, and colour is a small accent for status only.
   the content. Anchor to visible controls, not blank space reserved for hidden ones; keep
   the 8 pt gap above the visible surface. For you is the exception: its card's directions sit
   just above its dock, so it floats the surface under its header (see [For you](#for-you)). A horizontal swipe in either direction dismisses
-  it; the close button and VoiceOver escape do too. Do not use a vertical dismissal gesture
+  it; the close button and VoiceOver escape do too. A plain toast, a message sent with nothing
+  to undo or open, has no close button and no action. Do not use a vertical dismissal gesture
   near the bottom-edge system gestures. Finished-action feedback expires after six idle
   seconds while visible, restarting after touch interaction, presentation handoff, or
-  foregrounding; it stays available while VoiceOver is enabled. Pending operations and
-  errors do not expire.
+  foregrounding; it stays available while VoiceOver is enabled, except a plain toast, which
+  has no control to reach and expires anyway. Pending operations and errors do not expire.
   The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
@@ -724,7 +725,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                   |
 | `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                                                                                                             |
 | `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                                                                                                          |
-| `ChatFeedbackSurface`                    | Chat feedback above the bottom controls: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕ and horizontal-swipe dismissal                                                                                                                  |
+| `ChatFeedbackSurface`                    | Chat feedback above the bottom controls: glass, Lucide glyph or spinner, one 15 pt medium line, optional action and ✕ (`showsDismiss`; a plain toast has neither), horizontal-swipe dismissal                                                                      |
 | `OkouEmptyState`                         | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                                                   |
 | `OkouUsageMeter`                         | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                                                                                                           |
 | `OkouLiveWaveform`                       | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                                                                                                  |
@@ -986,12 +987,13 @@ feature; the catalog shows each one.
 - **The dock** is the sidebar footer's pair: "What do you have in mind?" in the placeholder grey
   on a glass capsule, as New Message is, which grows into the composer, and a round glass ✕, as
   Search is, that opens Dismiss with its reasons menu.
-- **Confirmations are the chat's feedback surface, under the header.** A finished action
-  ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
-  `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the ground
-  so the deck never moves and the card's directions are never covered. It lifts away after six
-  idle seconds or a sideways swipe. A failure floats in the same place and stays until it is
-  dismissed.
+- **Confirmations are the chat's feedback surface, under the header.** Feedback on a card
+  ("Noted — you won't do this · Undo") drops in as `ChatFeedbackSurface` with Undo on the right
+  and a ✕, since it can be taken back. A sent message ("Sent to a new chat") can not, so it is a
+  plain toast: one line, no action, no ✕; so is any other notice with nothing to act on. Both
+  float over the ground so the deck never moves and the card's directions are never covered, and
+  lift away after six idle seconds or a sideways swipe. A failure floats in the same place and
+  stays until it is dismissed.
 - **Caught up** is the rest picture, "All caught up", one line, and Back to chats. It lists
   nothing of what the visit settled and offers no Undo: each card's own confirmation already did.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the

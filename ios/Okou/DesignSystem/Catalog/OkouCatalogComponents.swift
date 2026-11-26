@@ -310,6 +310,9 @@
           ChatFeedbackSurface(
             message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
             dismiss: {})
+          ChatFeedbackSurface(
+            message: "Sent to a new chat", icon: "circle-check", showsDismiss: false, action: {},
+            dismiss: {})
           NavigationLink {
             ChatSyncStatusGallery()
               .toolbar {

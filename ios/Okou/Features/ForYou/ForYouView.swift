@@ -182,13 +182,13 @@ struct ForYouView: View {
   }
 
   private func confirmation(_ notice: ForYouStore.Notice) -> some View {
+    // Feedback on a card can be taken back, so it offers Undo and a ✕. A sent message can not,
+    // so its confirmation is a plain toast, as is any other notice with nothing to act on.
     ChatFeedbackSurface(
       message: notice.text, icon: "circle-check",
-      actionTitle: notice.undo != nil
-        ? String(localized: "Undo")
-        : notice.threadID != nil ? String(localized: "Open chat") : nil,
-      actionEnabled: !visit.busy,
-      actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
+      actionTitle: notice.undo != nil ? String(localized: "Undo") : nil,
+      actionEnabled: !visit.busy, actionIdentifier: "for-you-undo",
+      showsDismiss: notice.undo != nil,
       autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
       dismiss: clearNotice
     )
@@ -197,11 +197,8 @@ struct ForYouView: View {
   }
 
   private func act(on notice: ForYouStore.Notice) {
-    if let undo = notice.undo {
-      run { await store.undo(undo) }
-    } else if let id = notice.threadID {
-      run { if await store.open(id) { showChat() } }
-    }
+    guard let undo = notice.undo else { return }
+    run { await store.undo(undo) }
   }
 
   // MARK: Cards
