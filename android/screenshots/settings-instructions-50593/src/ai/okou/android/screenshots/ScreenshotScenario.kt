@@ -93,14 +93,17 @@ class ScreenshotScenario {
                         "Missing workflow control: $selector"
                     }
                 fun text(label: String) = visible(By.pkg(app.packageName).text(label))
-                fun action(id: Int) = text(app.getString(id)).click()
+                fun control(id: Int) = visible(By.pkg(app.packageName).text(app.getString(id)).enabled(true))
+                fun action(id: Int) = control(id).click()
+                fun nameField() =
+                    By.pkg(app.packageName).clazz("android.widget.EditText")
+                        .desc(app.getString(R.string.workflow_name))
 
                 device.awaitChatList(app)
                 visible(By.pkg(app.packageName).desc(app.getString(R.string.workspace_workflows))).click()
                 text(fixture.releaseTitle).click()
                 action(R.string.workflow_edit_instructions)
-                val name = By.pkg(app.packageName).desc(app.getString(R.string.workflow_name))
-                visible(name)
+                visible(nameField())
                 ScreenshotCapture.capture("15-workflow-editor.png")
 
                 lateinit var model: WorkflowModel
@@ -108,27 +111,42 @@ class ScreenshotScenario {
                     val session = ViewModelProvider(activity)[SessionModel::class.java]
                     model = checkNotNull(session.uiState.value.ready?.workflows)
                 }
-                val draftName = "发布前核对负责人和时间"
-                val latestName = "发布清单（网页已更新）"
-                fixture.beforeInstructionSave = { fixture.releaseTitle = latestName }
-                fixture.instructionSaveConflict = true
-                visible(name).text = draftName
-                action(R.string.workflow_save)
-                assertTrue(
-                    "The editor reads the confirmed workflow after the server rejects the save",
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(unused: UiDevice): Boolean =
-                                model.state.value.detail?.displayName == latestName
-                        },
-                        10_000,
-                    ) == true,
-                )
-                assertEquals(draftName, visible(name).text)
-                val conflict = text(app.getString(R.string.workflow_write_conflict))
-                val save = text(app.getString(R.string.workflow_save))
-                assertTrue(conflict.visibleBounds.bottom <= save.visibleBounds.top)
-                ScreenshotCapture.capture("18-workflow-save-conflict.png")
+                try {
+                    val draftName = "发布前核对负责人和时间"
+                    val latestInstruction = "网页版已更新发布清单，请核对最新内容。"
+                    val submitted = CountDownLatch(1)
+                    fixture.beforeInstructionSave = {
+                        fixture.instruction = latestInstruction
+                        submitted.countDown()
+                    }
+                    fixture.instructionSaveConflict = true
+                    visible(nameField()).text = draftName
+                    visible(nameField().text(draftName))
+                    action(R.string.workflow_save)
+                    assertTrue("The enabled Save reaches the workflow PATCH", submitted.await(10, TimeUnit.SECONDS))
+                    assertTrue(
+                        "The editor reads the confirmed workflow after the server rejects the save",
+                        device.wait(
+                            object : Condition<UiDevice, Boolean> {
+                                override fun apply(unused: UiDevice): Boolean =
+                                    model.state.value.detail?.instruction == latestInstruction
+                            },
+                            10_000,
+                        ) == true,
+                    )
+                    assertEquals(draftName, visible(nameField()).text)
+                    val conflict = text(app.getString(R.string.workflow_write_conflict))
+                    val save = control(R.string.workflow_save)
+                    assertTrue(conflict.visibleBounds.bottom <= save.visibleBounds.top)
+                    ScreenshotCapture.capture("18-workflow-save-conflict.png")
+                } catch (failure: Throwable) {
+                    try {
+                        takeScreenshot().writeToTestStorage("native-workflow-conflict-failure.png")
+                    } catch (diagnostic: Throwable) {
+                        failure.addSuppressed(diagnostic)
+                    }
+                    throw failure
+                }
 
                 action(R.string.workflow_cancel)
                 action(R.string.workflow_discard)
