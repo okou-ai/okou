@@ -25,14 +25,10 @@
     <string name="chat_search_artifact_preview">Artefaktvorschau</string>
     <string name="chat_search_close_artifact_preview">Artefaktvorschau schließen</string>
     <string name="chat_search_short">Suche</string>
-    <string name="chat_search_partial_local">Einige Ergebnisse konnten nicht geladen werden. Nur gespeicherte Chats werden angezeigt.</string>
     <string name="chat_search_saved_chats">Aktualisierung fehlgeschlagen. Gespeicherte Chats werden angezeigt.</string>
-    <string name="chat_search_saved_chats_no_matches">Die Suche ist auf gespeicherte Chats beschränkt. Keine Treffer.</string>
-    <string name="chat_search_saved_results">Aktualisierung fehlgeschlagen. Vorherige Ergebnisse werden angezeigt.</string>
     <string name="chat_search_messages_failed">Nachrichten konnten nicht durchsucht werden</string>
     <string name="chat_search_workflows_failed">Workflows konnten nicht durchsucht werden</string>
-    <string name="chat_search_workflows_saved">Das Workflow-Verzeichnis konnte nicht aktualisiert werden. Die Suche verwendet das zuletzt geladene Verzeichnis.</string>
     <string name="chat_search_artifacts_failed">Artefakte konnten nicht durchsucht werden</string>
     <string name="chat_search_loading">Suche läuft…</string>
-    <string name="chat_search_failed">Suchergebnisse konnten nicht geladen werden</string>
+    <string name="chat_search_chats_failed">Chats können vorübergehend nicht geladen werden</string>
 </resources>

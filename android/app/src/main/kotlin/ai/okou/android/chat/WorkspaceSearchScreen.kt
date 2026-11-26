@@ -1,8 +1,10 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
@@ -26,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,9 +35,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -146,17 +151,19 @@ internal fun WorkspaceSearchScreen(
             widthDp,
             listWidth,
             leading = {
-                IconButton(
-                    onClick = onClose,
-                    modifier =
-                        Modifier.size(workspaceSearchControlHeight())
-                            .workspaceSearchFocusOutline(CircleShape),
+                CompositionLocalProvider(
+                    LocalMinimumInteractiveComponentSize provides workspaceSearchControlHeight(),
                 ) {
-                    Icon(
-                        painterResource(R.drawable.ic_arrow_back),
-                        stringResource(R.string.back),
-                        tint = colors.onSurface,
-                    )
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.workspaceSearchFocusOutline(CircleShape),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_back),
+                            stringResource(R.string.back),
+                            tint = colors.onSurface,
+                        )
+                    }
                 }
             },
             field = { fieldModifier ->
@@ -245,11 +252,7 @@ private val SearchRead<*>?.isPending: Boolean
 private sealed interface SearchItem {
     val key: String
     val isResult
-        get() = this !is Notice && this !is Group
-
-    data class Notice(@StringRes val message: Int) : SearchItem {
-        override val key = "search_notice"
-    }
+        get() = this !is Group
 
     data class Group(
         val type: WorkspaceSearchType,
@@ -393,7 +396,9 @@ private fun SearchResults(
     val artifacts = artifactPage?.rows.orEmpty()
     val artifactCursor = artifactPage?.nextCursor
     val artifactPaging = currentRemote?.artifactPaging
-    val moreArtifactsFailed = artifactPaging == ArtifactSearchPaging.Failed
+    val moreArtifactsFailed =
+        type.includes(WorkspaceSearchType.Artifacts) &&
+            artifactPaging == ArtifactSearchPaging.Failed
     val nextArtifactPage =
         artifactPage
             ?.takeIf {
@@ -476,73 +481,64 @@ private fun SearchResults(
             WorkspaceSearchType.All -> pending
         }
     val confirmedChats = list.confirmedAt != null
-    val chatRefreshFailed = needsChatList && (list.listRetryProgressVisible || listFailed)
+    val chatRefreshFailed = needsChatList && listFailed
     val missingMessageChats = needsMessageChats && !waitingForList
-    val messageFailure = messageRead.hasFailure || missingMessageChats
-    val workflowFailure =
-        workflowRead.hasFailure ||
+    val sourceUnavailable =
+        keyword.isNotEmpty() &&
             workspacePreparation == null &&
-                onOpenWorkflow == null &&
-                type == WorkspaceSearchType.Workflows
-    val artifactFailure =
-        artifactRead.hasFailure ||
+            when (type) {
+                WorkspaceSearchType.Workflows -> onOpenWorkflow == null
+                WorkspaceSearchType.Artifacts -> onOpenArtifact == null
+                else -> false
+            }
+    val readFailed =
+        chatRefreshFailed ||
+            missingMessageChats ||
             moreArtifactsFailed ||
-            workspacePreparation == null &&
-                onOpenArtifact == null &&
-                type == WorkspaceSearchType.Artifacts
-    val hasUsableRemoteSource =
-        messages.isNotEmpty() ||
-            (messageRead is SearchRead.Ready && !needsMessageChats) ||
-            workflowRead is SearchRead.Ready ||
-            artifactPage != null
-    val onlySavedChats = confirmedChats && !hasUsableRemoteSource
-    val readFailure =
-        when {
-            grouped &&
-                (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
-                when {
-                    onlySavedChats && items.isEmpty() -> R.string.chat_search_saved_chats_no_matches
-                    onlySavedChats -> R.string.chat_search_partial_local
-                    items.isEmpty() -> R.string.chat_search_failed
-                    else -> R.string.chat_search_unavailable
-                }
-            needsChatList && !confirmedChats && listFailed -> R.string.chat_list_first_load_failed
-            showChats && chatRefreshFailed ->
-                if (keyword.isNotEmpty() && items.isEmpty())
-                    R.string.chat_search_saved_chats_no_matches
-                else R.string.chat_search_saved_chats
-            grouped -> null
-            keyword.isEmpty() -> null
-            type == WorkspaceSearchType.Messages && messageFailure ->
-                if (messages.isNotEmpty()) R.string.chat_search_saved_results
-                else R.string.chat_search_messages_failed
-            type == WorkspaceSearchType.Workflows && workflowFailure ->
-                if (workflowRead is SearchRead.Ready) R.string.chat_search_workflows_saved
-                else R.string.chat_search_workflows_failed
-            type == WorkspaceSearchType.Artifacts && artifactFailure ->
-                if (artifacts.isNotEmpty()) R.string.chat_search_saved_results
-                else R.string.chat_search_artifacts_failed
-            else -> null
-        }
-    val status = readFailure.takeUnless { pending }
+            sourceUnavailable ||
+            reads.any { it.hasFailure }
     val showEmpty =
         items.isEmpty() &&
-            !waitingForList &&
+            (!needsChatList || confirmedChats) &&
+            !needsMessageChats &&
             !waitingForArtifactPage &&
-            readFailure == null &&
-            (!remotePending || reads.all { it == null || it is SearchRead.Ready })
+            !moreArtifactsFailed &&
+            !sourceUnavailable &&
+            reads.all { it == null || it is SearchRead.Ready }
     val showPending =
         key(keyword, type) {
             rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { pending })
         }
     val showSkeleton = showPending && items.isEmpty() && !showEmpty
-    val showProgress = showPending && items.isNotEmpty()
-    val errorTitle = status.takeIf { items.isEmpty() }
-    val inlineStatus = status.takeIf { errorTitle == null }
-    val visibleItems =
-        remember(inlineStatus, items) {
-            if (inlineStatus == null) items else listOf(SearchItem.Notice(inlineStatus)) + items
+    val showProgress =
+        items.isNotEmpty() && (showPending || needsChatList && list.listRetryProgressVisible)
+    val showFailure = readFailed && !pending && items.isEmpty() && !showEmpty
+    val failureLabel =
+        if (chatRefreshFailed && showChats && !grouped) R.string.chat_search_chats_failed
+        else R.string.chat_list_first_load_failed
+    val accessFailure =
+        when {
+            type == WorkspaceSearchType.Messages && messageRead == SearchRead.AccessLost ->
+                R.string.chat_search_messages_failed
+            type == WorkspaceSearchType.Workflows && workflowRead == SearchRead.AccessLost ->
+                R.string.chat_search_workflows_failed
+            type == WorkspaceSearchType.Artifacts && artifactRead == SearchRead.AccessLost ->
+                R.string.chat_search_artifacts_failed
+            else -> null
         }
+    val snackbar = remember(search) { SnackbarHostState() }
+    val notice =
+        if (readFailed && !pending && !showFailure) {
+            val message =
+                if (showChats && !grouped && chatRefreshFailed) R.string.chat_search_saved_chats
+                else R.string.chat_search_unavailable
+            stringResource(message)
+        } else null
+    LaunchedEffect(search, keyword, type, notice) {
+        if (search.shouldAnnounceReadFailure(notice != null) && notice != null) {
+            snackbar.showSnackbar(notice, duration = SnackbarDuration.Indefinite)
+        }
+    }
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
@@ -555,19 +551,19 @@ private fun SearchResults(
             val result = position.layoutInfo.visibleItemsInfo.firstOrNull { it.contentType == true }
             Triple(atTop, previous, result)
         }
-    LaunchedEffect(visibleItems) {
+    LaunchedEffect(items) {
         if (anchor != null || pendingFocus != null || position.isScrollInProgress) {
             return@LaunchedEffect
         }
-        if (visibleItems.isEmpty()) return@LaunchedEffect
+        if (items.isEmpty()) return@LaunchedEffect
         if (wasAtTop) {
             position.requestScrollToItem(0)
         } else if (previousPosition != null && firstResult != null) {
-            val index = visibleItems.indexOfFirst { it.key == firstResult.key }
+            val index = items.indexOfFirst { it.key == firstResult.key }
             when {
                 index < 0 ->
                     position.requestScrollToItem(
-                        previousPosition.index.coerceAtMost(visibleItems.lastIndex),
+                        previousPosition.index.coerceAtMost(items.lastIndex),
                         previousPosition.offset,
                     )
                 // LazyColumn tracks the key of its first item, which can be a group heading.
@@ -577,24 +573,24 @@ private fun SearchResults(
         }
     }
     val waitingForAnchor = anchor?.let { waitingForResult(it.key) } == true
-    LaunchedEffect(anchor, visibleItems, waitingForAnchor, pendingFocus) {
+    LaunchedEffect(anchor, items, waitingForAnchor, pendingFocus) {
         if (anchor != null) {
-            val index = visibleItems.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
+            val index = items.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
             // Use the selected result as the position if its former anchor is still loading.
             if (
                 index != null ||
                     !waitingForAnchor ||
                     pendingFocus != null && items.any { it.key == pendingFocus }
             ) {
-                val fallback = anchor.index.coerceAtMost(visibleItems.lastIndex).takeIf { it >= 0 }
+                val fallback = anchor.index.coerceAtMost(items.lastIndex).takeIf { it >= 0 }
                 search.restorePosition(index ?: fallback)
             }
         }
     }
     val waitingForFocus = pendingFocus?.let(::waitingForResult) == true
-    LaunchedEffect(pendingFocus, anchor, visibleItems, waitingForFocus) {
+    LaunchedEffect(pendingFocus, anchor, items, waitingForFocus) {
         if (pendingFocus == null) return@LaunchedEffect
-        val index = visibleItems.indexOfFirst { it.key == pendingFocus }
+        val index = items.indexOfFirst { it.key == pendingFocus }
         if (index < 0 && !waitingForFocus) {
             resultFocus.requestFocus()
             search.restoreFocus()
@@ -612,12 +608,12 @@ private fun SearchResults(
                 .focusable()
                 .testTag("chat_search_results"),
             state = search.position,
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            contentPadding =
+                if (showFailure && accessFailure == null) PaddingValues(horizontal = 16.dp)
+                else PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         ) {
-            items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
+            items(items, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
-                    is SearchItem.Notice ->
-                        ContentReadFeedback(row.message, Modifier.padding(12.dp))
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -704,12 +700,16 @@ private fun SearchResults(
                     )
                 }
             }
-            if (errorTitle != null) {
+            if (showFailure) {
                 item(key = "search_status") {
-                    ContentReadFeedback(
-                        errorTitle,
-                        Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
-                    )
+                    if (accessFailure == null) {
+                        ContentReadFailure(failureLabel, Modifier.fillParentMaxSize())
+                    } else {
+                        ContentReadFeedback(
+                            accessFailure,
+                            Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
+                        )
+                    }
                 }
             } else if (showEmpty) {
                 item(key = "search_empty") {
@@ -728,6 +728,13 @@ private fun SearchResults(
         }
         if (showProgress) {
             ContentReadProgress(R.string.chat_search_loading)
+        }
+        Box(Modifier.align(Alignment.BottomCenter)) {
+            WorkspaceFeedbackHost(
+                snackbar,
+                Modifier.padding(bottom = 8.dp),
+                surfaceModifier = Modifier.testTag("chat_search_feedback"),
+            )
         }
     }
 }
