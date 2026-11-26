@@ -387,7 +387,6 @@ describe("/api/feature-switches", () => {
               [FeatureSwitchKey.RealAgentInPreview]: false,
               unregisteredFeature: true,
               batchConnectorPermissions: false,
-              agentSuggestion: false,
             },
           },
         }),
@@ -401,13 +400,11 @@ describe("/api/feature-switches", () => {
       expect(updated.body.effectiveSwitches).toMatchObject({
         ...expected,
         batchConnectorPermissions: true,
-        agentSuggestion: true,
       });
       expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
         [
           ...Object.values(FeatureSwitchKey),
           "batchConnectorPermissions",
-          "agentSuggestion",
         ].sort(),
       );
       const current = await accept(client().get({ headers }), [200]);
