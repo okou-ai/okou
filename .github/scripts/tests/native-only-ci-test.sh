@@ -52,59 +52,88 @@ with tempfile.TemporaryDirectory() as temp:
             return
         assert result.returncode == 0, result.stderr
         return dict(line.split('=', 1) for line in result.stdout.splitlines())
-    def expect(ios_only, ts_needed, **args):
+    def expect(ios_only, ts_needed, codeql_needed, **args):
         assert detect(**args) == {'ios-only': str(ios_only).lower(),
-                                  'turbo-ts-checks-needed': str(ts_needed).lower()}
+                                  'turbo-ts-checks-needed': str(ts_needed).lower(),
+                                  'codeql-needed': str(codeql_needed).lower()}
 
-    expect(False, True)  # Empty diffs are not an exemption.
+    expect(False, True, True)  # Empty diffs are not an exemption.
     branch('ios')
     write('ios/App.swift', 'changed')
     write('ios/name\nwith-newline.swift', 'changed')
     ios_head = commit('ios')
-    expect(True, False)
-    expect(True, False, event='merge_group')
-    expect(False, True, event='push')
+    expect(True, False, False)
+    expect(True, False, False, event='merge_group')
+    expect(False, True, True, event='push')
     git('rm', '--quiet', 'ios/App.swift')
     commit('delete ios')
-    expect(True, False, ref=ios_head)
+    expect(True, False, False, ref=ios_head)
+
+    branch('ios-mjs')
+    write('ios/scripts/testflight.mjs', 'console.log(1)\n')
+    commit('ios js script')
+    expect(True, False, True)  # JS/TS files under native roots still require CodeQL.
 
     branch('crates')
     write('crates/lib.rs', 'changed')
     commit('crates')
-    expect(False, False)
-    expect(False, False, event='merge_group')
+    expect(False, False, False)
+    expect(False, False, False, event='merge_group')
     write('ios/App.swift', 'also changed')
     commit('mixed native')
-    expect(False, True)
+    expect(False, True, False)
+
+    branch('crates-mjs')
+    write('crates/runner/tests/chromium-https.mjs', 'export {}\n')
+    commit('crates js script')
+    expect(False, False, True)
+
+    branch('crates-yaml')
+    write('crates/lefthook.yml', 'pre-commit: {}\n')
+    commit('CodeQL YAML input')
+    expect(False, False, True)
+
+    branch('android-desktop-docs')
+    write('android/app/Main.kt', 'class Main\n')
+    write('desktop/Sources/App.swift', 'struct App {}\n')
+    write('docs/testing.md', '# Testing\n')
+    write('README.md', '# Repo\n')
+    commit('non-js native and docs')
+    expect(False, True, False)
+
+    branch('desktop-mjs')
+    write('desktop/scripts/update-manifest.mjs', 'export {}\n')
+    commit('desktop js script')
+    expect(False, True, True)
 
     branch('rename-out')
     git('mv', 'ios/App.swift', 'turbo/App.swift')
     commit('move out of ios')
-    expect(False, True)
+    expect(False, True, True)
     branch('rename-in')
     git('mv', 'turbo/app.ts', 'ios/app.ts')
     commit('move into ios')
-    expect(False, True)
+    expect(False, True, True)
 
     branch('mixed')
     write('turbo/app.ts', 'earlier api change')
     commit('api')
     write('ios/App.swift', 'last native change')
     commit('ios')
-    expect(False, True, event='merge_group')  # Include earlier queue entries.
+    expect(False, True, True, event='merge_group')  # Include earlier queue entries.
     branch('workflow')
     write('.github/workflows/ios.yml', 'changed')
     write('ios/App.swift', 'changed')
     commit('workflow and native')
-    expect(False, True)
+    expect(False, True, True)
 
     branch('advanced-main')
     write('turbo/app.ts', 'main advanced')
     advanced = commit('main change')
     git('merge', '--quiet', '--no-ff', ios_head, '-m', 'synthetic PR merge')
-    expect(True, False, checkout='refs/pull/1/merge')
+    expect(True, False, False, checkout='refs/pull/1/merge')
     git('switch', '--quiet', '--detach', ios_head)
-    expect(True, False, ref=advanced)  # Direct PR heads use their merge base.
+    expect(True, False, False, ref=advanced)  # Direct PR heads use their merge base.
     detect(event='merge_group', ref=advanced, reject=True)
     detect(event='merge_group', ref='missing-ref', reject=True)
     detect(event='merge_group', ref=None, reject=True)
