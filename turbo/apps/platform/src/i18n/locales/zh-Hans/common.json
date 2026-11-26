@@ -5859,6 +5859,7 @@
       "personal": {
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
+        "antigravityGroup": "你的 Google AI 套餐",
         "autoCredits": "消耗 Okou 积分",
         "autoDescription": "连接你的 ChatGPT 或 Claude 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",

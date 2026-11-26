@@ -5859,6 +5859,7 @@
       "personal": {
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
+        "antigravityGroup": "Google AIのプラン",
         "autoCredits": "Okouクレジットを使用",
         "autoDescription": "ChatGPT または Claude アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",

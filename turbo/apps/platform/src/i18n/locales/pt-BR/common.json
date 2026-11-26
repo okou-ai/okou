@@ -5950,6 +5950,7 @@
       "personal": {
         "accountFallback": "Conta {{number}}",
         "activeAccount": "Ativa",
+        "antigravityGroup": "Seu plano do Google AI",
         "autoCredits": "Usa créditos Okou",
         "autoDescription": "Conecte sua conta ChatGPT ou Claude para usar mais modelos.",
         "autoTitle": "Use mais modelos",

@@ -5882,6 +5882,7 @@
       "personal": {
         "accountFallback": "Konto {{number}}",
         "activeAccount": "Aktiv",
+        "antigravityGroup": "Dein Google AI-Plan",
         "autoCredits": "Nutzt Okou-Credits",
         "autoDescription": "Verbinde dein ChatGPT- oder Claude-Konto, um mehr Modelle zu nutzen.",
         "autoTitle": "Mehr Modelle nutzen",
