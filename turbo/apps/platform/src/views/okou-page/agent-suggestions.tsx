@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -41,19 +42,39 @@ import { ChatComposer } from "./composer.tsx";
 // their text lines up with the heading. Hover lays the state overlay over the
 // row's own fill, so the row darkens instead of losing it.
 const SUGGESTION_ROW =
-  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-3xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
+  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
 
-// An option is a raised button on the card; the direction trigger stays a
-// quiet input-like row in the muted fill, the gray ramp's Linen stop that the
-// brand's Off White sits on. The option's outline is a real hairline border on
-// a pointer-transparent layer, so it rounds to device pixels exactly like the
-// feedback buttons' border beside it, yet takes no width: the label keeps the
-// 16px inset the heading aligns to.
+// An option is a raised button on the card whose text can still be selected;
+// the direction trigger stays a quiet input-like row in the muted fill, the
+// gray ramp's Linen stop that the brand's Off White sits on. The option's
+// outline is a real hairline border on a pointer-transparent layer, so it
+// rounds to device pixels exactly like the feedback buttons' border beside it,
+// yet takes no width: the label keeps the 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
-  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-3xl after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
+  "relative select-text bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-xl after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
   "bg-muted text-muted-foreground hover:bg-muted";
+
+/**
+ * A pointer click that leaves text selected inside the option ends a drag to
+ * select that text, so it is not a choice; the next click chooses. Keyboard
+ * activation has no pointer press and always chooses.
+ */
+function selectsOptionText(event: MouseEvent<HTMLElement>) {
+  if (event.detail === 0) {
+    return false;
+  }
+  const selection = event.currentTarget.ownerDocument.getSelection();
+  return (
+    selection !== null &&
+    !selection.isCollapsed &&
+    selection.rangeCount > 0 &&
+    event.currentTarget.contains(
+      selection.getRangeAt(0).commonAncestorContainer,
+    )
+  );
+}
 
 function SuggestionOptionContent({
   option,
@@ -280,7 +301,7 @@ function SuggestionDirectionComposer({
       className="min-w-0"
     >
       {!ready && (
-        <div className="flex min-h-14 items-center justify-center rounded-3xl bg-muted">
+        <div className="flex min-h-14 items-center justify-center rounded-xl bg-muted">
           <Loader2
             size={16}
             className="animate-spin text-muted-foreground"
@@ -290,7 +311,7 @@ function SuggestionDirectionComposer({
       )}
       <div
         className={cn(
-          "grid min-w-0 rounded-3xl",
+          "grid min-w-0 rounded-xl",
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
             : "grid-rows-[0fr] overflow-clip",
@@ -447,7 +468,10 @@ export function AgentSuggestionCard({
               ]
                 .filter(Boolean)
                 .join(" ")}
-              onClick={() => {
+              onClick={(event) => {
+                if (selectsOptionText(event)) {
+                  return;
+                }
                 detach(
                   start(entry, option, index + 1, signal),
                   Reason.DomCallback,
@@ -556,7 +580,7 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-9 gap-1.5 rounded-3xl border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className="h-auto min-h-9 gap-1.5 rounded-lg border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}

@@ -188,6 +188,53 @@ test("agent-suggestions-001 a removed feed item sends the choice with its origin
   expect(location.pathname).toBe("/for-you");
 });
 
+test("agent-suggestions-042 dragging across an option's text selects it instead of choosing it", async () => {
+  const base = proposal("Vendor renewals");
+  const [prepare] = base.content.options;
+  if (!prepare) {
+    throw new Error("The proposal fixture has an option");
+  }
+  const item: Suggestion = {
+    ...base,
+    content: {
+      ...base.content,
+      options: [
+        prepare,
+        { ...prepare, id: "summarize", label: "Summarize Vendor renewals" },
+      ],
+    },
+  };
+  feed([item]);
+  createChatRunFixtures(context).installRunChat();
+  const choice = context.mocks.deferred<string | null>();
+  context.mocks.api(feedContract.consume, ({ body, respond }) => {
+    choice.resolve(body.optionId);
+    return respond(200, item);
+  });
+  await openDeck();
+  const card = await activeCard(item);
+  const selected = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    card,
+  );
+  act(() => {
+    document
+      .getSelection()
+      ?.selectAllChildren(
+        within(selected).getByText("Prepare Vendor renewals"),
+      );
+  });
+  fireEvent.pointerDown(selected, { button: 0 });
+  fireEvent.click(selected, { detail: 1 });
+  act(() => {
+    document.getSelection()?.removeAllRanges();
+  });
+  click(await findFastControl("button", "Summarize Vendor renewals", card));
+
+  await expect(choice.promise).resolves.toBe("summarize");
+});
+
 test("agent-suggestions-020 changing cards discards the first inline direction", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);
