@@ -337,7 +337,7 @@ export const prepareFeishuArtifactPreview$ = command(
       (args.config.tenantKey !== null &&
         args.config.tenantKey !== args.tenantKey)
     ) {
-      return { body: {}, prompt: null };
+      return { body: {}, resource: null, prompt: null };
     }
     const event = parsed.data;
     const actor = await set(
@@ -351,7 +351,7 @@ export const prepareFeishuArtifactPreview$ = command(
       signal,
     );
     if (!resource || !(await set(enabled$, resource, signal))) {
-      return { body: {}, prompt: null };
+      return { body: {}, resource: null, prompt: null };
     }
     const access = actor
       ? await set(
@@ -372,34 +372,9 @@ export const prepareFeishuArtifactPreview$ = command(
             title: actor ? "Access required" : "Sign in to Okou to view",
           },
         },
+        resource: null,
         prompt: null,
       };
-    }
-    const preview = await set(artifactChannelPreview$, resource, signal);
-    if (!preview) {
-      return { body: {}, prompt: null };
-    }
-    const credentials = await set(
-      feishuArtifactSharingCredentials$,
-      args.config.id,
-      signal,
-    );
-    if (!credentials) {
-      return { body: {}, prompt: null };
-    }
-    let imageKey: string | undefined;
-    if (preview.image) {
-      const bytes = await set(
-        downloadS3BufferWithMaxBytes$,
-        { ...preview.image, maxBytes: 10 * 1024 * 1024 },
-        signal,
-      );
-      imageKey = await uploadFeishuArtifactPreviewImage(
-        credentials,
-        bytes,
-        preview.image.contentType,
-        signal,
-      );
     }
     const state: FeishuArtifactShareState = {
       installationId: args.config.id,
@@ -415,19 +390,61 @@ export const prepareFeishuArtifactPreview$ = command(
       orgId: resource.orgId,
     };
     return {
-      body: {
-        inline: { title: preview.title },
-        card: {
-          type: "raw",
-          data: feishuArtifactCard({
-            title: preview.title,
-            text: preview.description ?? "Open in Okou to view this artifact.",
-            url: resource.url,
-            imageKey,
-          }),
-        },
-      },
+      body: {},
+      resource,
       prompt: actor?.userId === resource.userId ? state : null,
+    };
+  },
+);
+
+/** Render only after the callback has authorized the resource for its current reader. */
+export const renderFeishuArtifactPreview$ = command(
+  async (
+    { set },
+    args: {
+      readonly resource: ChannelSharingResource;
+      readonly installationId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const resource = args.resource;
+    const preview = await set(artifactChannelPreview$, resource, signal);
+    if (!preview) {
+      return {};
+    }
+    const credentials = await set(
+      feishuArtifactSharingCredentials$,
+      args.installationId,
+      signal,
+    );
+    if (!credentials) {
+      return {};
+    }
+    let imageKey: string | undefined;
+    if (preview.image) {
+      const bytes = await set(
+        downloadS3BufferWithMaxBytes$,
+        { ...preview.image, maxBytes: 10 * 1024 * 1024 },
+        signal,
+      );
+      imageKey = await uploadFeishuArtifactPreviewImage(
+        credentials,
+        bytes,
+        preview.image.contentType,
+        signal,
+      );
+    }
+    return {
+      inline: { title: preview.title },
+      card: {
+        type: "raw",
+        data: feishuArtifactCard({
+          title: preview.title,
+          text: preview.description ?? "Open in Okou to view this artifact.",
+          url: resource.url,
+          imageKey,
+        }),
+      },
     };
   },
 );

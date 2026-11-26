@@ -634,8 +634,9 @@ test("unsupported conversations receive no ephemeral sharing prompt", async () =
   expect(f.prompts).toHaveLength(0);
 });
 
-test("slow preview uploads respect the callback deadline and do not send an owner prompt", async () => {
+test("slow preview uploads respect the callback deadline while the owner still receives sharing controls", async () => {
   const f = await fixture();
+  f.members.push("ou_unbound");
   server.use(
     http.post(`${f.apiOrigin}/open-apis/im/v1/images`, async ({ request }) => {
       const aborted = createDeferredPromise<void>(context.signal);
@@ -655,5 +656,5 @@ test("slow preview uploads respect the callback deadline and do not send an owne
     }),
   );
   await expect(preview(f)).resolves.toStrictEqual({});
-  expect(f.prompts).toHaveLength(0);
+  expect(f.prompts).toHaveLength(1);
 });

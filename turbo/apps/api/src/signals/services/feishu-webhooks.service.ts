@@ -27,6 +27,7 @@ import { waitUntil } from "../context/wait-until";
 import { rootSignal$ } from "../context/root";
 import {
   prepareFeishuArtifactPreview$,
+  renderFeishuArtifactPreview$,
   promptFeishuArtifactSharing$,
   feishuArtifactSharingAction,
   applyFeishuArtifactSharing$,
@@ -534,7 +535,26 @@ const handleFeishuArtifactPreview$ = command(
         ),
       );
     }
-    return jsonResponse(prepared.value.body);
+    if (!prepared.value.resource) {
+      return jsonResponse(prepared.value.body);
+    }
+    const rendering = set(
+      renderFeishuArtifactPreview$,
+      { resource: prepared.value.resource, installationId: args.config.id },
+      previewSignal,
+    );
+    waitUntil(settleIncludingAbort(rendering));
+    const rendered = await settleIncludingAbort(
+      awaitWithSignal(rendering, previewSignal),
+    );
+    signal.throwIfAborted();
+    if (!rendered.ok) {
+      if (previewSignal.aborted) {
+        return jsonResponse({});
+      }
+      throw rendered.error;
+    }
+    return jsonResponse(rendered.value);
   },
 );
 
