@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { friendReferralsContract } from "@okouai/api-contracts/contracts/friend-referrals";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
+import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
+import { array, object, unknown } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { friendReferralRoutes } from "../friend-referrals";
+import { webhooksStripeRoutes } from "../webhooks-stripe";
+import { seedOrgMembership$ } from "./helpers/org-membership";
 import { purchaseUsagePacks } from "./helpers/public-usage-pack-checkout";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -57,6 +64,129 @@ async function register(actor: Person, token: string) {
     [200],
   );
   return response.body;
+}
+
+async function readCredits(actor: Person) {
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  const response = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
+    ).get({ headers }),
+    [200],
+  );
+  return response.body;
+}
+
+/** Both people are real Clerk members of their own workspaces. */
+async function joinOwnWorkspaces(...actors: readonly Person[]) {
+  const store = createStore();
+  for (const actor of actors) {
+    await store.set(
+      seedOrgMembership$,
+      { orgId: actor.orgId, userId: actor.userId, role: "admin" },
+      context.signal,
+    );
+  }
+}
+
+const stripeSubscriptionSchema = object({
+  items: object({ data: array(object({}).catchall(unknown())) }),
+}).catchall(unknown());
+
+/** Stripe advances the subscription to its next billing period. */
+async function renewStripeSubscription(
+  subscriptionId: string,
+  period: { readonly start: number; readonly end: number },
+  latestInvoice: unknown,
+) {
+  const current = stripeSubscriptionSchema.parse(
+    await context.mocks.stripe.subscriptions.retrieve(subscriptionId),
+  );
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+    ...current,
+    latest_invoice: latestInvoice,
+    items: {
+      data: current.items.data.map((item) => {
+        return {
+          ...item,
+          current_period_start: period.start,
+          current_period_end: period.end,
+        };
+      }),
+    },
+  });
+}
+
+/** Stripe delivers the same verified event `times` times concurrently. */
+async function deliverStripeEvent(event: { readonly id: string }, times = 1) {
+  for (let index = 0; index < times; index++) {
+    context.mocks.stripe.webhooks.constructEventAsync.mockReturnValueOnce(
+      event,
+    );
+  }
+  await Promise.all(
+    Array.from({ length: times }, () => {
+      return accept(
+        setupApp({ context, routes: webhooksStripeRoutes })(
+          webhookStripeContract,
+        ).post({
+          body: JSON.stringify(event),
+          extraHeaders: { "stripe-signature": "t=1,v1=friend-referral" },
+        }),
+        [200],
+      );
+    }),
+  );
+}
+
+/**
+ * Given of friend-referrals-002: an invitee registered through the referrer's
+ * link on 2026-01-31 and completed a Pro checkout with a $20 usage pack, with
+ * no paid-invoice webhook delivered yet.
+ */
+async function referredPackPurchase() {
+  const { referrer, invitee } = await referredInvitee(
+    new Date("2026-01-31T09:59:59Z"),
+  );
+  await joinOwnWorkspaces(referrer, invitee);
+  const paid = await purchaseUsagePacks(
+    context,
+    invitee,
+    [{ userId: invitee.userId, usd: 20 }],
+    { completeCheckout: true, deliveries: 0 },
+  );
+  return { referrer, invitee, paid };
+}
+
+/** Stripe renews the subscription and delivers the renewal invoice. */
+async function deliverRenewal(
+  paid: Awaited<ReturnType<typeof purchaseUsagePacks>>,
+) {
+  const invoice = paid.data.object;
+  const start = invoice.lines.data[0]?.period.end ?? 0;
+  const period = { start, end: start + 30 * 86_400 };
+  const renewal = {
+    ...invoice,
+    id: `in_${randomUUID()}`,
+    billing_reason: "subscription_cycle",
+    lines: {
+      has_more: false,
+      data: invoice.lines.data.map((line) => {
+        return { ...line, id: `il_${randomUUID()}`, period };
+      }),
+    },
+  };
+  await renewStripeSubscription(
+    invoice.parent.subscription_details.subscription,
+    period,
+    renewal,
+  );
+  const renewalPaid = {
+    ...paid,
+    id: `evt_${randomUUID()}`,
+    data: { object: renewal },
+  };
+  await deliverStripeEvent(renewalPaid);
 }
 
 /** A referrer shares a link; the invitee opens it and registers a new account. */
@@ -165,6 +295,71 @@ describe("friend referrals", () => {
       registeredCount: 1,
       rewardedCount: 0,
       earnedCredits: 0,
+    });
+  });
+
+  it("friend-referrals-002 (1/3) a paid usage pack rewards the referrer once across concurrent deliveries", async () => {
+    const { referrer, invitee, paid } = await referredPackPurchase();
+
+    await expect(readCredits(invitee)).resolves.toMatchObject({
+      purchasedCredits: 20_000,
+    });
+    await expect(readLink(referrer)).resolves.toMatchObject({
+      rewardedCount: 0,
+      earnedCredits: 0,
+    });
+
+    await deliverStripeEvent(paid, 3);
+    await expect(readLink(referrer)).resolves.toMatchObject({
+      registeredCount: 1,
+      rewardedCount: 1,
+      earnedCredits: 20_000,
+    });
+  });
+
+  it("friend-referrals-002 (2/3) a renewal credits the invitee but keeps one referrer bonus grant", async () => {
+    const { referrer, invitee, paid } = await referredPackPurchase();
+    await deliverStripeEvent(paid);
+
+    await deliverRenewal(paid);
+
+    await expect(readCredits(invitee)).resolves.toMatchObject({
+      purchasedCredits: 40_000,
+    });
+    const referrerCredits = await readCredits(referrer);
+    expect(referrerCredits).toMatchObject({ bonusCredits: 20_000 });
+    expect(
+      referrerCredits.creditGrants.map((grant) => {
+        return {
+          grantType: grant.grantType,
+          amount: grant.amount,
+          remaining: grant.remaining,
+          expiresAt: grant.expiresAt,
+        };
+      }),
+    ).toStrictEqual([
+      {
+        grantType: "bonus",
+        amount: 20_000,
+        remaining: 20_000,
+        expiresAt: "2026-02-28T10:00:01.000Z",
+      },
+    ]);
+    await expect(readLink(referrer)).resolves.toMatchObject({
+      rewardedCount: 1,
+      earnedCredits: 20_000,
+    });
+  });
+
+  it("friend-referrals-002 (3/3) the referrer bonus expires at the calendar-month boundary", async () => {
+    const { referrer, paid } = await referredPackPurchase();
+    await deliverStripeEvent(paid);
+    await deliverRenewal(paid);
+
+    mockNow(new Date("2026-02-28T10:00:01.001Z"));
+
+    await expect(readCredits(referrer)).resolves.toMatchObject({
+      bonusCredits: 0,
     });
   });
 });
