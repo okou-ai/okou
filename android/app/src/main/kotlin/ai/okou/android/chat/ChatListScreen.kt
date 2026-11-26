@@ -888,7 +888,7 @@ private fun DeleteOrganizationDialog(
                                 stringResource(noticeRes),
                                 Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                                 color =
-                                    if (projectDeleteStatus?.rejected == true)
+                                    if (projectDeleteStatus != ProjectDeleteStatus.Unconfirmed)
                                         MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = style,
