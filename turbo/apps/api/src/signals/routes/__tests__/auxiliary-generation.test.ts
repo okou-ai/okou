@@ -1,7 +1,15 @@
 import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import type { VertexVoiceRequest } from "./helpers/google-voice";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -63,11 +71,17 @@ async function prepareChatTitle() {
     });
   };
   return {
-    create: async () => {
+    actor,
+    create: async (userMessage?: UserMessageDocument) => {
       const sent = await accept(
         chat.requestSendEvent(
           actor,
-          { prompt, model: "claude-sonnet-5-5" },
+          {
+            prompt: userMessage ? "[Voice message]" : prompt,
+            model: "claude-sonnet-5-5",
+            userMessage,
+            hasTextContent: true,
+          },
           [201],
         ),
         [201],
@@ -91,6 +105,84 @@ async function prepareChatTitle() {
     },
   };
 }
+
+test("titles a voice-only conversation from its private recordings in order", async () => {
+  const chat = await prepareChatTitle();
+  installSharedThreadStorage(context);
+  const authorize = createMcpWebApi(context).authorize(chat.actor);
+  const headers = {
+    authorization: `Bearer ${authorize({ scope: "okou:chat:send" })}`,
+  };
+  const uploads = setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
+  const recordings = [
+    "first recording".repeat(4),
+    "second recording".repeat(4),
+  ];
+  const clips = [];
+  for (const recording of recordings) {
+    const { body } = await accept(
+      uploads.preparePrivate({
+        headers,
+        body: {
+          filename: "voice.wav",
+          contentType: "audio/wav",
+          size: recording.length,
+        },
+      }),
+      [200],
+    );
+    if (!("uploadUrl" in body)) {
+      throw new Error("Expected direct upload");
+    }
+    const uploaded = await fetch(body.uploadUrl, {
+      method: "PUT",
+      headers: body.uploadHeaders,
+      body: recording,
+    });
+    expect(uploaded.status).toBe(200);
+    await accept(uploads.complete({ headers, body: { id: body.id } }), [200]);
+    clips.push({ fileId: body.id });
+  }
+  mockGoogleText();
+  const titleRequests: VertexVoiceRequest[] = [];
+  const title = "Plan the next product launch";
+  server.use(
+    http.post(endpoint, async ({ request }) => {
+      const input = (await request.json()) as VertexVoiceRequest;
+      if (
+        input.systemInstruction.parts[0]?.text.includes(
+          "Generate a short, descriptive title",
+        )
+      ) {
+        titleRequests.push(input);
+        return completion(title);
+      }
+      return completion("Thinking");
+    }),
+  );
+
+  await chat.create({ version: 1, parts: [{ type: "voice", clips }] });
+  await flushWaitUntilForTest();
+
+  expect(titleRequests).toHaveLength(1);
+  const parts = titleRequests[0]?.contents[0]?.parts ?? [];
+  const audioParts = parts.flatMap((part) => {
+    return part.inlineData ?? [];
+  });
+  expect(audioParts).toStrictEqual(
+    recordings.map((recording) => {
+      return {
+        mimeType: "audio/wav",
+        data: Buffer.from(recording).toString("base64"),
+      };
+    }),
+  );
+  expect(parts[0]?.text).not.toContain("okou transcribe");
+  await expect(chat.titles()).resolves.toStrictEqual([title]);
+});
 
 type TitleCompletion =
   Response | { readonly content: string; readonly finishReason: "length" };
