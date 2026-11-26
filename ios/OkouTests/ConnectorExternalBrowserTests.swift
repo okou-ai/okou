@@ -96,7 +96,7 @@ final class ConnectorExternalBrowserTests: XCTestCase {
     XCTAssertNil(flow.browserURL)
     XCTAssertNotNil(flow.session)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertFalse(continued.withLock { $0 })
 
     store.activate(
@@ -111,7 +111,7 @@ final class ConnectorExternalBrowserTests: XCTestCase {
     connected.withLock { $0 = true }
     store.receiveProviderReturn(nextReturn)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(continued.withLock { $0 })
   }
 
@@ -167,7 +167,7 @@ final class ConnectorExternalBrowserTests: XCTestCase {
     store.browserOpenFailed(flow: flow, url: retiredURL)
     XCTAssertEqual(flow.browserURL, retryURL)
     clock.advance(.seconds(2))
-    try await waitForBusinessResult { store.active == nil }
+    try await waitForBusinessResult(watching: store) { store.active == nil }
     XCTAssertTrue(connected.withLock { $0 })
     XCTAssertTrue(continued.withLock { $0 })
   }

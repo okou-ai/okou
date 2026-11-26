@@ -57,6 +57,6 @@ struct ConnectorCardHarness: View {
   let store: ConnectorActionStore
   var body: some View {
     ConnectorActionCard(action: action, store: store, loadsState: false)
-      .connectorAuthorization(store: store)
+      .connectorAuthorization(store: store, failureTitle: "Unable to open connection")
   }
 }

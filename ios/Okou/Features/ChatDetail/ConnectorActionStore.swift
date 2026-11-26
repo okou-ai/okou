@@ -70,14 +70,35 @@ final class ConnectorAuthorizationFlow: Identifiable {
   }
 }
 
-/// Owns card reads and one cancellable authorization attempt for this conversation's scope.
-@MainActor @Observable
+/// Owns card reads and one cancellable authorization attempt for this conversation's scope. The
+/// attempt, confirmed notices and an activation failure are kept in the workspace session's Store.
+@MainActor
 final class ConnectorActionStore {
+  /// What the cards and sheets render. The attempt compares by identity; its form and phases stay
+  /// on the flow.
+  struct Presentation: Equatable {
+    var active: ConnectorAuthorizationFlow?
+    // Confirmed operation notices and continuation identities are not cached read phases.
+    var notices: [String: String] = [:]
+    var activationError: String?
+
+    func isAuthorizing(target: ChatConnectorTarget) -> Bool {
+      guard let flow = active, flow.status.target == target else { return false }
+      return flow.busy || flow.waiting || flow.checking
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+      lhs.active === rhs.active && lhs.notices == rhs.notices
+        && lhs.activationError == rhs.activationError
+    }
+  }
+
   let resources: ConnectorActionResources
-  private(set) var active: ConnectorAuthorizationFlow?
-  // Confirmed operation notices and continuation identities are not cached read phases.
-  private(set) var notices: [String: String] = [:]
-  var activationError: String?
+  /// Views resolve it; the accessors below serve actions and tests.
+  let presentationValue: Computed<Presentation>
+  private let presentationState = CCState.State(Presentation())
+  /// The workspace session's Store, which keeps the attempt and the card reads.
+  let graph: CCState.Store
   private let service: ChatConnectorService
   private let providerApplication: any ConnectorProviderApplication
   private let commands: ChatCommands?
@@ -103,6 +124,9 @@ final class ConnectorActionStore {
     self.service = service
     self.providerApplication = providerApplication
     resources = ConnectorActionResources(service: service, graph: graph, didFail: didFail)
+    self.graph = graph
+    let presentationState = presentationState
+    presentationValue = Computed { try $0(presentationState) }
     self.commands = commands
     self.thread = thread
     self.didContinue = didContinue
@@ -115,12 +139,11 @@ final class ConnectorActionStore {
   }
   func refreshKnown() async { await resources.refreshKnown() }
   func isAuthorizing(target: ChatConnectorTarget) -> Bool {
-    guard let flow = active, flow.status.target == target else { return false }
-    return flow.busy || flow.waiting || flow.checking
+    presentation.isAuthorizing(target: target)
   }
   func activate(_ action: ChatConnectorAction) {
     guard !closed, active == nil else { return }
-    activationError = nil
+    update { $0.activationError = nil }
     task?.cancel()
     let read = resources.read(action)
     task = Task { [weak self, read] in
@@ -129,14 +152,18 @@ final class ConnectorActionStore {
         let status = try await read.load(refresh: true)
         guard !closed, !Task.isCancelled else { return }
         guard let status else {
-          activationError = "This connector is no longer available. Refresh and try again."
+          update {
+            $0.activationError = "This connector is no longer available. Refresh and try again."
+          }
           return
         }
-        notices[action.id] = nil
         // The attempt pins its shared read across cache eviction and native row recycling.
         activeRead = read
         let flow = ConnectorAuthorizationFlow(action: action, status: status)
-        active = flow
+        update {
+          $0.notices[action.id] = nil
+          $0.active = flow
+        }
         if flow.startsWithoutForm, flow.canSubmit {
           flow.presentsForm = false
           flow.busy = true
@@ -144,7 +171,7 @@ final class ConnectorActionStore {
         }
       } catch {
         guard !closed, !Task.isCancelled else { return }
-        activationError = ChatRequestFailure.message(for: error)
+        update { $0.activationError = ChatRequestFailure.message(for: error) }
       }
     }
   }
@@ -389,7 +416,7 @@ final class ConnectorActionStore {
       callbackIDs[flow.action.id] = nil
     }
     activeRead?.invalidate()
-    notices[flow.action.id] =
+    let notice =
       flow.action.callbackPrompt == nil
       ? String(localized: "Account connected.")
       : String(localized: "Connected. Chat continued.")
@@ -397,7 +424,10 @@ final class ConnectorActionStore {
     flow.session = nil
     flow.values = [:]
     flow.code = ""
-    active = nil
+    update {
+      $0.notices[flow.action.id] = notice
+      $0.active = nil
+    }
     activeRead = nil
     await didContinue()
   }
@@ -455,14 +485,17 @@ final class ConnectorActionStore {
   func cancel() {
     task?.cancel()
     task = nil
-    if let flow = active {
-      notices[flow.action.id] = String(localized: "Authorization canceled.")
+    let flow = active
+    if let flow {
       flow.values = [:]
       flow.code = ""
       flow.session = nil
       flow.browserURL = nil
     }
-    active = nil
+    update {
+      if let flow { $0.notices[flow.action.id] = String(localized: "Authorization canceled.") }
+      $0.active = nil
+    }
     activeRead = nil
   }
   func close() {
@@ -470,5 +503,29 @@ final class ConnectorActionStore {
     cancel()
     resources.close()
     callbackIDs = [:]
+  }
+}
+
+extension ConnectorActionStore {
+  /// The current value of `presentationValue`.
+  var presentation: Presentation {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try graph.get(presentationValue) } catch {
+      preconditionFailure("Cannot read the connector authorization: \(error)")
+    }
+  }
+  var active: ConnectorAuthorizationFlow? { presentation.active }
+  var notices: [String: String] { presentation.notices }
+  var activationError: String? { presentation.activationError }
+
+  func dismissActivationError() { update { $0.activationError = nil } }
+
+  fileprivate func update(_ change: (inout Presentation) -> Void) {
+    var next = presentation
+    change(&next)
+    guard next != presentation else { return }
+    do { try graph.set(presentationState, next) } catch {
+      preconditionFailure("Cannot publish the connector authorization: \(error)")
+    }
   }
 }
