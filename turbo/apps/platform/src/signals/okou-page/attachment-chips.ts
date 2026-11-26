@@ -1,3 +1,8 @@
+import type { ImageArtifactNavigationItem } from "../../views/okou-page/artifact-image-navigation.ts";
+import {
+  currentLeftThread$,
+  currentRightThread$,
+} from "../chat-page/chat-thread-pane-state.ts";
 import {
   attachmentPreviewSignalsFor,
   type AttachmentPreviewSignals,
@@ -29,8 +34,8 @@ import { rootSignal$ } from "../root-signal.ts";
 import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import {
-  createChatArtifactDeletionIdentity,
-  createCrossChatArtifactPreview,
+  emptyMessageArtifact$,
+  type MessageArtifactReads,
 } from "../chat-page/chat-artifact-preview.ts";
 import { selectArtifactPreviewSessions$ } from "../artifact-preview-sessions.ts";
 
@@ -57,7 +62,6 @@ export type AttachmentArtifactMetadata = {
   readonly googleDriveMimeType?: string | undefined;
   readonly googleDriveOriginalUploaded?: boolean | undefined;
   readonly googleDriveWebViewLink?: string | null | undefined;
-  readonly runId: string;
   readonly size: number;
   readonly threadId: string;
 };
@@ -112,6 +116,8 @@ export interface AttachmentAnnotationTarget {
 }
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
+  readonly sourceEventId?: string;
+  readonly groupId?: string;
   readonly contentType?: string | undefined;
   readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
   /** Reuse the initiating surface's already resolved credential. */
@@ -167,6 +173,7 @@ export type AttachmentLightboxState = AttachmentLightboxInput &
   AttachmentPreviewSignals & {
     /** The owner passed into every subsequent preview surface. */
     readonly preview: AttachmentPreviewSignals;
+    readonly artifactReads?: MessageArtifactReads;
     readonly ownerSignal?: AbortSignal;
     readonly zipPreview?: ZipArtifactPreviewScope;
   };
@@ -238,32 +245,32 @@ export const lightboxUrl$ = computed((get) => {
   return get(internalLightboxState$);
 });
 
-export const crossChatLightboxArtifact = createCrossChatArtifactPreview(
-  computed((get) => {
-    const preview = get(internalLightboxState$);
-    return preview?.threadId && !preview.artifact
-      ? { threadId: preview.threadId, url: preview.url }
-      : undefined;
-  }),
-);
-
-const lightboxDeletionIdentity$ = createChatArtifactDeletionIdentity(
-  computed((get) => {
-    const preview = get(internalLightboxState$);
-    return preview
-      ? {
-          url: preview.url,
-          threadId: preview.threadId ?? preview.artifact?.threadId,
-          artifactId: preview.artifact?.artifactId,
-        }
-      : undefined;
-  }),
-  crossChatLightboxArtifact,
-);
+const lightboxDeletionIdentity$ = computed(async (get) => {
+  const preview = get(internalLightboxState$);
+  const id =
+    preview?.artifact?.artifactId ??
+    (await get(preview?.artifactReads?.detail$ ?? emptyMessageArtifact$))?.owner
+      ?.artifactId;
+  return id ? { artifactId: id } : null;
+});
 
 const selectLightboxSessions$ = command(({ get, set }, signal: AbortSignal) => {
   const preview = get(internalLightboxState$);
   if (preview) {
+    const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
+      (pane) => {
+        return pane?.threadId === preview.threadId;
+      },
+    );
+    if (thread && !preview.artifact) {
+      set(internalLightboxState$, {
+        ...preview,
+        artifactReads: set(
+          thread.sidebar.artifactDetails.register$,
+          preview.url,
+        ),
+      });
+    }
     set(
       selectArtifactPreviewSessions$,
       "dialog",
@@ -315,6 +322,7 @@ export const closeLightboxWithDialogExit$ = command(
  * Pending uploads and standalone previews can opt out of the thread sidebar.
  */
 type AttachmentSidebarPreviewInput = AttachmentPreviewSource & {
+  readonly groupId?: string;
   readonly threadId?: string;
   readonly artifact?: AttachmentArtifactMetadata;
   readonly filename?: string;
@@ -339,6 +347,7 @@ export function attachmentSidebarRef(
   const contentType = value.contentType ?? attachment.contentType;
   return {
     url: value.url,
+    groupId: value.groupId,
     filename: value.filename ?? attachment.filename,
     ...(contentType ? { contentType } : {}),
     // The caller's preview content rides along, so the sidebar reuses the
@@ -378,13 +387,52 @@ function imageLightboxState(
   };
 }
 
+const chatGroupForImageEvent$ = command(
+  (
+    { get, set },
+    threadId: string,
+    eventId: string,
+    item: ImageArtifactNavigationItem,
+  ) => {
+    const thread = [get(currentLeftThread$), get(currentRightThread$)].find(
+      (pane) => {
+        return pane?.threadId === threadId;
+      },
+    );
+    return thread
+      ? set(thread.imageNavigation.openGroupForImage$, eventId, item)
+      : undefined;
+  },
+);
+
 export const openImageLightbox$ = command(
   (
     { get, set },
     value: string | AttachmentImageLightboxInput,
     signal: AbortSignal,
   ) => {
-    const input = typeof value === "string" ? { url: value } : value;
+    const source = typeof value === "string" ? { url: value } : value;
+    const input = {
+      ...source,
+      groupId:
+        source.groupId ??
+        (source.sourceEventId &&
+        source.threadId &&
+        source.url &&
+        source.filename
+          ? set(
+              chatGroupForImageEvent$,
+              source.threadId,
+              source.sourceEventId,
+              {
+                url: source.url,
+                filename: source.filename,
+                contentType: source.contentType,
+                preview: source.preview,
+              },
+            )
+          : undefined),
+    };
     signal.throwIfAborted();
     if (set(routeToOpenArtifactSidebar$, input)) {
       return;
@@ -428,6 +476,7 @@ export const navigateImageLightbox$ = command(
       url: string;
       filename?: string;
       threadId?: string;
+      groupId?: string;
       preview?: AttachmentPreviewSignals;
       artifact?: AttachmentArtifactMetadata;
       shareAvailable?: boolean;

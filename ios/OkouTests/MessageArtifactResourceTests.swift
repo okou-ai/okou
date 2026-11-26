@@ -40,6 +40,35 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertNotNil(returned.file)
   }
 
+  func testRepeatedPhotoNavigatesInTheGroupThatOpenedItAndReusesItsDetail() async throws {
+    let fixture = try await ArtifactReadFixture.make(owner: self)
+    let same = fixture.artifact()
+    let next = fixture.artifact("image00003.png")
+    func group(_ id: String, _ neighbor: String) -> MessageArtifactGroup {
+      MessageArtifactGroup(
+        id: id,
+        sources: [
+          "![same](/artifacts/image00001.png) ![next](/artifacts/\(neighbor).png)"
+        ])
+    }
+    fixture.viewer.open(same, group: group("first", "image00002"))
+    let first = try await artifactPreviewTask(fixture.viewer).value
+    XCTAssertEqual(first.image(1)?.id, fixture.artifact("image00002.png").id)
+    fixture.viewer.open(same, group: group("second", "image00003"))
+    let selected = try XCTUnwrap(fixture.viewer.preview)
+    let second = try await selected.store.get(selected.value).value
+    fixture.viewer.navigateImage(1, content: second, previewID: selected.id)
+    let last = try await artifactPreviewTask(fixture.viewer).value
+    XCTAssertEqual(fixture.viewer.preview?.group?.id, "second")
+    XCTAssertEqual(last.artifact.id, next.id)
+    XCTAssertEqual(last.image(-1)?.id, same.id)
+    XCTAssertEqual(
+      fixture.state.value.withLock { $0.detailLinks },
+      [
+        "/artifacts/image00001.png", "/artifacts/image00003.png"
+      ])
+  }
+
   func testSingleImageHasNoAdjacentNavigation() async throws {
     let fixture = try await ArtifactReadFixture.make(owner: self)
     let image = fixture.artifact()
@@ -95,7 +124,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertEqual(remounted.thumbnail, card.thumbnail)
     XCTAssertEqual(fixture.state.value.withLock { $0.references.count }, 1)
     XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, 1)
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 1)
 
     fixture.viewer.open(card.artifact, thumbnail: card.thumbnail)
     XCTAssertEqual(fixture.viewer.preview?.thumbnail, card.thumbnail)
@@ -125,25 +154,27 @@ final class MessageArtifactResourceTests: XCTestCase {
       fixture.state.value.withLock { $0.references.filter { $0 == "image00001.png" }.count }, 2)
     XCTAssertEqual(
       fixture.state.value.withLock { $0.references.filter { $0 == "image00002.png" }.count }, 1)
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 1)
+    XCTAssertEqual(
+      fixture.state.value.withLock { $0.detailLinks },
+      ["/artifacts/image00001.png", "/artifacts/image00002.png"])
   }
 
   func testMetadataOnlyReadCannotSatisfyACoverRequest() async throws {
     let fixture = try await ArtifactReadFixture.make(owner: self)
     let artifact = fixture.artifact()
     let header = try await fixture.viewer.card(artifact, thumbnail: false)
-    XCTAssertEqual(header.artifact.filename, "From catalog.png")
+    XCTAssertEqual(header.artifact.filename, "From detail.png")
     XCTAssertNil(header.thumbnail)
     let cover = try await fixture.viewer.card(artifact, thumbnail: true)
     XCTAssertNotNil(cover.thumbnail.flatMap(UIImage.init(data:)))
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 1)
     XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, 1)
   }
 
   func testSupplementaryMetadataFailureCannotBypassContentAuthorization() async throws {
     let fixture = try await ArtifactReadFixture.make(owner: self)
     fixture.state.value.withLock {
-      $0.catalogStatus = 503
+      $0.detailStatus = 503
       $0.statuses["image00001.png"] = [403]
     }
     let artifact = fixture.artifact()
@@ -156,11 +187,12 @@ final class MessageArtifactResourceTests: XCTestCase {
     fixture.viewer.reads.retry(fixture.viewer.reads.card(artifact, thumbnail: true))
     let authorized = try await fixture.viewer.card(artifact, thumbnail: true)
     XCTAssertNotNil(authorized.thumbnail)
-    let catalog = await (try fixture.viewer.reads.store.get(fixture.viewer.reads.catalog)).result
+    let catalog = await
+      (try fixture.viewer.reads.store.get(fixture.viewer.reads.detail(artifact).value)).result
     XCTAssertThrowsError(try catalog.get()) { error in
       XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
     }
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 1)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 1)
     XCTAssertEqual(fixture.state.value.withLock { $0.references.count }, 2)
   }
 
@@ -176,7 +208,7 @@ final class MessageArtifactResourceTests: XCTestCase {
 
     fixture.state.value.withLock { $0.name = "Updated details.png" }
     fixture.viewer.refreshDetails()
-    _ = try await fixture.viewer.reads.store.get(fixture.viewer.reads.catalog).value
+    _ = try await fixture.viewer.reads.store.get(fixture.viewer.reads.detail(artifact).value).value
     let retained = try await artifactPreviewTask(fixture.viewer).value
     XCTAssertEqual(fixture.viewer.reads.metadata(retained.artifact).filename, "Updated details.png")
     XCTAssertEqual(retained.file?.url, originalFile.url)
@@ -184,7 +216,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertEqual(existing.thumbnail, card.thumbnail)
     XCTAssertEqual(fixture.state.value.withLock { $0.references }, references)
     XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, transfers)
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 2)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 2)
   }
 
   func testDeactivationCancelsTheOriginalCardAndReentryUsesFreshMetadata() async throws {
@@ -227,7 +259,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     let current = try await fixture.viewer.card(artifact, thumbnail: true)
     XCTAssertEqual(current.artifact.filename, "New visit.png")
     XCTAssertNotNil(current.thumbnail)
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 2)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 2)
   }
 
   func testClosingCancelsTheOriginalMetadataReadBeforeAnyContentAccess() async throws {
@@ -236,7 +268,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     let (gate, release) = AsyncStream<Void>.makeStream()
     let fixture = try await ArtifactReadFixture.make(
       owner: self,
-      beforeCatalog: {
+      beforeDetail: {
         await withTaskCancellationHandler {
           entered.fulfill()
           for await _ in gate { break }
@@ -267,7 +299,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     let first = Mutex(true)
     let fixture = try await ArtifactReadFixture.make(
       owner: self,
-      beforeCatalog: {
+      beforeDetail: {
         let holds = first.withLock { value in
           let old = value
           value = false
@@ -290,13 +322,13 @@ final class MessageArtifactResourceTests: XCTestCase {
     }
     await fulfillment(of: [entered], timeout: 3)
     fixture.state.value.withLock { $0.name = "Refreshed metadata.png" }
-    try fixture.viewer.reads.refreshCatalog()
+    try fixture.viewer.reads.refreshDetail(fixture.artifact())
     await fulfillment(of: [cancelled], timeout: 3)
     release.finish()
     let card = try await pending.value
     XCTAssertEqual(card.artifact.filename, "Refreshed metadata.png")
     XCTAssertNotNil(card.thumbnail)
-    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 2)
+    XCTAssertEqual(fixture.state.value.withLock { $0.detailLinks.count }, 2)
     XCTAssertEqual(fixture.state.value.withLock { $0.references.count }, 1)
   }
 
@@ -308,7 +340,7 @@ final class MessageArtifactResourceTests: XCTestCase {
         didFail: { error in
           reports.withLock { $0.append((error as? APIClientError)?.statusCode ?? 0) }
         })
-      fixture.state.value.withLock { $0.catalogStatus = status }
+      fixture.state.value.withLock { $0.detailStatus = status }
       let result = await Task {
         try await fixture.viewer.card(fixture.artifact(), thumbnail: true)
       }.result
@@ -376,7 +408,7 @@ final class MessageArtifactResourceTests: XCTestCase {
     let content = try await artifactPreviewTask(fixture.viewer).value
     let file = try XCTUnwrap(content.file)
     XCTAssertNotNil(UIImage(contentsOfFile: file.url.path))
-    XCTAssertEqual(content.artifact.filename, "From catalog.png")
+    XCTAssertEqual(content.artifact.filename, "From detail.png")
     XCTAssertFalse(cancelled.withLock { $0 })
     _ = await abandoned.result
   }
@@ -486,7 +518,7 @@ private struct ArtifactReadFixture {
 
   static func make(
     owner: XCTestCase, contentType: String = "image/png",
-    beforeCatalog: @escaping @Sendable () async -> Void = {},
+    beforeDetail: @escaping @Sendable () async -> Void = {},
     beforeResolve: @escaping @Sendable (URLRequest) async -> Void = { _ in },
     didFail: @escaping @MainActor (Error) -> Void = {
       XCTFail("Unexpected workspace failure: \($0)")
@@ -504,16 +536,19 @@ private struct ArtifactReadFixture {
     owner.addTeardownBlock { await server.stop() }
     let origin = try await server.start()
     let http = ChatHTTPFixture { request in
-      if request.url?.path == "/api/chat-threads/thread/artifacts" {
+      if request.url?.path == "/api/artifacts/by-url",
+        let link = request.url.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) })?
+          .queryItems?.first(where: { $0.name == "url" })?.value
+      {
         let (status, name) = state.value.withLock { value in
-          value.catalogs += 1
-          return (value.catalogStatus, value.name)
+          value.detailLinks.append(link)
+          return (value.detailStatus, value.name)
         }
-        await beforeCatalog()
+        await beforeDetail()
         if status != 200 { return failure(status) }
         return ChatHTTPResponse(
           body: """
-            {"runs":[{"runId":"run","files":[{"id":"image00001.png","url":"/artifacts/image00001.png","filename":"\(name)","contentType":"\(contentType)","size":100,"createdAt":"2026-11-09T00:00:00Z"}]}]}
+            {"filename":"\(name)","contentType":"\(contentType)","size":100,"preview":{"kind":"\(ChatArtifact(source: .reference("id", fragment: ""), filename: name, contentType: contentType).kind.rawValue)"}}
             """)
       }
       guard request.url?.path.hasPrefix("/api/artifact-references/") == true,
@@ -535,7 +570,7 @@ private struct ArtifactReadFixture {
     }
     let commands = ChatCommands(client: http.client, sync: ChatSync(client: http.client))
     let viewer = MessageArtifactStore(
-      service: commands.artifacts, threadID: "thread", webURL: http.baseURL,
+      service: commands.artifacts, webURL: http.baseURL,
       markdown: MessageMarkdownCache(baseURL: http.baseURL), graph: makeTestWorkspaceGraph(),
       didFail: didFail)
     owner.addTeardownBlock { @MainActor in
@@ -553,10 +588,10 @@ private struct ArtifactReadFixture {
 
 private final class ArtifactReadState: Sendable {
   struct Value: Sendable {
-    var name = "From catalog.png"
-    var catalogStatus = 200
+    var name = "From detail.png"
+    var detailStatus = 200
     var statuses: [String: [Int]] = [:]
-    var catalogs = 0
+    var detailLinks: [String] = []
     var references: [String] = []
     var transfers = 0
   }

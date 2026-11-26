@@ -1,3 +1,6 @@
+import { officialStaticTemplatePreview } from "@okouai/core/official-template-preview";
+import { inferMimetype } from "../../lib/mimetype";
+import { readableHostedSiteMetadata$ } from "../services/hosted-site-preview.service";
 import { resolveInvitedArtifactFile$ } from "../services/artifact-file-share-access.service";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { env } from "../../lib/env";
@@ -7,6 +10,12 @@ import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  messageArtifactAddress,
+  messageArtifactDriveStatus$,
+  messageArtifactPreview,
+  ownedMessageArtifact$,
+} from "../services/message-artifact.service";
 import { notFound } from "../../lib/error";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -193,6 +202,94 @@ const resolveReference$ = command(
   },
 );
 
+const byUrl$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  const { url } = get(queryOf(artifactReferencesContract.byUrl));
+  const address = messageArtifactAddress(url);
+  if (!address) {
+    return notFound("Artifact unavailable");
+  }
+  const template = officialStaticTemplatePreview(address.url);
+  if (template) {
+    const contentType =
+      template.contentType ?? inferMimetype(template.filename);
+    return {
+      status: 200 as const,
+      body: {
+        url,
+        filename: template.filename,
+        contentType,
+        preview: messageArtifactPreview({ ...template, url, contentType }),
+      },
+    };
+  }
+  const owner = get(organizationAuthContext$);
+  const detail = await set(ownedMessageArtifact$, owner, address, signal);
+  if (detail) {
+    return { status: 200 as const, body: detail };
+  }
+  // References shared by a different owner and conversation snapshots keep their
+  // established read authority. A grant never exposes the owner's controls.
+  if (address.reference) {
+    const result = await set(
+      resolveReference$,
+      address.reference.hash + address.reference.extension,
+      undefined,
+      signal,
+    );
+    if (result.status === 200) {
+      const { filename, contentType, previewImageUrl } = result.body;
+      return {
+        status: 200 as const,
+        body: {
+          url,
+          filename,
+          contentType,
+          preview: messageArtifactPreview({
+            url,
+            filename,
+            contentType,
+            previewImageUrl,
+            artifactKind:
+              result.body.target.kind === "html" ? "hosted-site" : undefined,
+          }),
+        },
+      };
+    }
+  }
+  if (address.siteSlug) {
+    const site = await set(
+      readableHostedSiteMetadata$,
+      {
+        publicSlug: address.siteSlug,
+        hostname: address.url.hostname,
+        userId: owner.userId,
+      },
+      signal,
+    );
+    if (site) {
+      const { filename, artifactKind } = site;
+      const contentType = "text/html";
+      return {
+        status: 200 as const,
+        body: {
+          url,
+          filename,
+          contentType,
+          ...(typeof site.size === "number" ? { size: site.size } : {}),
+          preview: messageArtifactPreview({
+            url,
+            filename,
+            contentType,
+            artifactKind,
+          }),
+        },
+      };
+    }
+  }
+  return notFound("Artifact unavailable");
+});
+
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { kind } = get(queryOf(artifactReferencesContract.resolve));
   const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
@@ -314,6 +411,46 @@ const authorizedArtifactResolve$ = authRoute(
 );
 
 export const artifactReferenceRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactReferencesContract.byUrl,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      byUrl$,
+    ),
+  },
+  {
+    route: artifactReferencesContract.driveStatus,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        set(setResHeader$, "Cache-Control", "private, no-store");
+        const { publicationId } = get(
+          pathParamsOf(artifactReferencesContract.driveStatus),
+        );
+        const { chatThreadId } = get(
+          queryOf(artifactReferencesContract.driveStatus),
+        );
+        const status = await set(
+          messageArtifactDriveStatus$,
+          get(organizationAuthContext$),
+          publicationId,
+          chatThreadId,
+          signal,
+        );
+        return status
+          ? { status: 200 as const, body: status }
+          : notFound("Artifact unavailable");
+      }),
+    ),
+  },
   {
     route: artifactReferencesContract.ownerArtifact,
     handler: authRoute(

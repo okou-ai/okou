@@ -211,32 +211,45 @@ final class ChatArtifactTests: XCTestCase {
     file = nil
   }
 
-  func testCatalogAndHTMLPreserveMetadataWithoutTreatingPPTXAsHTML() async throws {
+  func testDetailsPreserveHTMLPresentationsAndKeepPPTXAsAFile() async throws {
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path.hasSuffix("/artifacts") == true {
+      if request.url?.path == "/api/artifacts/by-url" {
+        let link = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
+          .queryItems?.first(where: { $0.name == "url" })?.value
+        if link == "/artifacts/abcdefgh12.html" {
+          return ChatHTTPResponse(
+            body: """
+              {"filename":"Quarterly review.html","contentType":"text/html","size":1200,"preview":{"kind":"presentation-html","pageUrl":"/artifacts/abcdefgh12.html","coverUrl":"/artifacts/cover00001.png"}}
+              """)
+        }
+        guard link == "/artifacts/abcdefgh13.pptx" else { throw URLError(.unsupportedURL) }
         return ChatHTTPResponse(
           body: """
-            {"runs":[{"runId":"run","files":[
-            {"id":"html","url":"/artifacts/abcdefgh12.html","filename":"Quarterly review.html",          "contentType":"text/html","size":1200,"artifactKind":"presentation-html","createdAt":"2026-10-21T00:00:00Z"},
-            {"id":"ppt","url":"/artifacts/abcdefgh13.pptx","filename":"Quarterly review.pptx",          "contentType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","size":3200,          "createdAt":"2026-10-21T00:00:00Z"}]}]}
+            {"filename":"Quarterly review.pptx","contentType":"application/vnd.openxmlformats-officedocument.presentationml.presentation","size":3200,"preview":{"kind":"file","fileUrl":"/artifacts/abcdefgh13.pptx"}}
             """)
+      }
+      guard request.url?.path == "/api/artifact-references/abcdefgh12.html" else {
+        throw URLError(.unsupportedURL)
       }
       return ChatHTTPResponse(
         body: """
-          {"url":"https://content.example.invalid/deck/index.html?signature=temporary",        "downloadUrl":"https://content.example.invalid/deck.zip?signature=temporary",        "filename":"Quarterly review.html","contentType":"text/html"}
+          {"url":"https://content.example.invalid/deck/index.html?signature=temporary","downloadUrl":"https://content.example.invalid/deck.zip?signature=temporary","filename":"Quarterly review.html","contentType":"text/html"}
           """)
     }
     let service = commands(fixture).artifacts
-    let items = try await service.list(threadID: "thread", webURL: webURL)
-    XCTAssertEqual(items.count, 2)
-    XCTAssertTrue(items[0].isHTMLPresentation)
-    XCTAssertEqual(items[1].kind, .file)
-    XCTAssertEqual(items[1].size, 3200)
-    let resolved = try await service.resolve(items[0])
+    let html = try await service.detail(
+      ChatArtifact(source: .reference("abcdefgh12.html", fragment: ""), filename: "slides"))
+    let pptx = try await service.detail(
+      ChatArtifact(source: .reference("abcdefgh13.pptx", fragment: ""), filename: "slides"))
+    XCTAssertTrue(html.isHTMLPresentation)
+    XCTAssertEqual(html.previewImageURL?.relativeString, "/artifacts/cover00001.png")
+    XCTAssertEqual(pptx.kind, .file)
+    XCTAssertEqual(pptx.size, 3200)
+    let resolved = try await service.resolve(html)
     XCTAssertTrue(resolved.artifact.isHTMLPresentation)
     XCTAssertEqual(resolved.contentURL.path, "/deck/index.html")
     XCTAssertEqual(resolved.downloadURL.path, "/deck.zip")
-    XCTAssertEqual(resolved.artifact.source, items[0].source)
+    XCTAssertEqual(resolved.artifact.source, html.source)
   }
 
   func testDeletedAndDeniedResourcesNeverAcquireFileBytes() async throws {

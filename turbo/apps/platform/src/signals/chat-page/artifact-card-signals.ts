@@ -1,3 +1,7 @@
+import type {
+  createMessageArtifactDetails,
+  MessageArtifactReads,
+} from "./chat-artifact-preview.ts";
 import { command, computed, type Command, type Computed } from "ccstate";
 import {
   createCardSignalsRegistry,
@@ -40,6 +44,7 @@ export interface ArtifactDescriptor {
 
 export interface ArtifactSignals
   extends ArtifactDescriptor, AttachmentPreviewSignals {
+  readonly artifactReads?: MessageArtifactReads;
   /** Load state of the card's presented image (the image itself, or a poster). */
   readonly previewImageLoad: ImageLoadSignals;
   readonly previewImageUrl$: Computed<Promise<string | undefined>>;
@@ -55,6 +60,7 @@ export type ArtifactCardSignalsRegistry = CardSignalsRegistry<
 
 export function createArtifactSignals(
   descriptor: ArtifactDescriptor,
+  artifactReads?: MessageArtifactReads,
 ): ArtifactSignals {
   const preview = createAttachmentPreviewSignals(descriptor.url, {
     contentType: descriptor.contentType,
@@ -65,13 +71,23 @@ export function createArtifactSignals(
     if (descriptor.kind !== "html" && descriptor.kind !== "video") {
       return undefined;
     }
-    const url = (await get(preview.presignedToken$))?.previewImageUrl;
+    let url = (await get(preview.presignedToken$))?.previewImageUrl;
+    if (!url && artifactReads) {
+      const result = await get(artifactReads.detail$);
+      const metadata = result?.preview;
+      if (metadata?.kind === "video") {
+        url = metadata.posterUrl;
+      } else if (metadata && "coverUrl" in metadata) {
+        url = metadata.coverUrl;
+      }
+    }
     return url
       ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)
       : undefined;
   });
   return {
     ...descriptor,
+    artifactReads,
     previewImageLoad,
     previewImageUrl$,
     ...preview,
@@ -86,15 +102,28 @@ export function createArtifactSignals(
   };
 }
 
-export function createArtifactCardSignalsRegistry(): ArtifactCardSignalsRegistry {
+export function createArtifactCardSignalsRegistry(
+  details: ReturnType<typeof createMessageArtifactDetails>,
+): ArtifactCardSignalsRegistry {
   const registry = createCardSignalsRegistry(
-    (descriptor: ArtifactDescriptor) => {
-      return publicAttachmentUrl(descriptor.url);
+    (entry: {
+      descriptor: ArtifactDescriptor;
+      reads: MessageArtifactReads;
+    }) => {
+      return publicAttachmentUrl(entry.descriptor.url);
     },
-    createArtifactSignals,
+    ({ descriptor, reads }) => {
+      return createArtifactSignals(descriptor, reads);
+    },
   );
   return {
     ...registry,
+    register$: command(({ set }, descriptor) => {
+      return set(registry.register$, {
+        descriptor,
+        reads: set(details.register$, descriptor.url),
+      });
+    }),
     refresh$: command(({ get, set }) => {
       for (const artifact of get(registry.values$)) {
         set(artifact.refreshOnArtifactChange$);

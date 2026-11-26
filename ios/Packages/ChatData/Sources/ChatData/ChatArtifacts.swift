@@ -19,14 +19,36 @@ public struct ChatArtifacts: Sendable {
   public var apiURL: URL { client.baseURL }
   init(client: APIClient) { self.client = client }
 
-  public func list(threadID: String, webURL: URL) async throws -> [ChatArtifact] {
-    let response: Catalog = try await client.request("/api/chat-threads/\(threadID)/artifacts")
-    return response.runs.flatMap(\.files).compactMap { file in
-      guard let parsed = ChatArtifactReference.parse(file.url, webURL: webURL, apiURL: apiURL)
-      else { return nil }
+  /// Read the resource named in the message, preserving the clicked fragment for navigation.
+  public func detail(_ artifact: ChatArtifact) async throws -> ChatArtifact {
+    let link: String
+    switch artifact.source {
+    case .reference(let reference, _): link = "/artifacts/\(reference)"
+    case .file(let id):
+      guard
+        var components = URLComponents(
+          url: apiURL.appending(path: "api/web/file-url"), resolvingAgainstBaseURL: false)
+      else { throw APIClientError.invalidURL }
+      components.queryItems = [URLQueryItem(name: "file_id", value: id)]
+      guard let url = components.string else { throw APIClientError.invalidURL }
+      link = url
+    case .hostedSite(let url), .publishedSite(let url), .published(let url):
+      link = url.absoluteString
+    }
+    do {
+      let response: Detail = try await client.request(
+        "/api/artifacts/by-url", query: [URLQueryItem(name: "url", value: link)])
+      let kind = response.preview.kind
+      let hosted = kind == "website" || kind == "presentation-html"
       return ChatArtifact(
-        source: parsed.source, filename: file.filename, contentType: file.contentType,
-        size: file.size, artifactKind: file.artifactKind)
+        source: artifact.source, filename: response.filename, contentType: response.contentType,
+        size: response.size,
+        artifactKind: kind == "website" ? "hosted-site" : (hosted ? kind : nil),
+        previewKind: hosted ? .html : ChatArtifact.Kind(rawValue: kind),
+        previewImageURL: response.preview.imageURL)
+    } catch let error as APIClientError where error.statusCode == 404 {
+      // A published link can have no owned catalog entry; its content reader still decides access.
+      return artifact
     }
   }
 
@@ -41,7 +63,8 @@ public struct ChatArtifacts: Sendable {
       return ChatArtifactResolution(
         artifact: ChatArtifact(
           source: artifact.source, filename: response.filename, contentType: response.contentType,
-          size: artifact.size, artifactKind: artifact.artifactKind),
+          size: artifact.size, artifactKind: artifact.artifactKind,
+          previewKind: artifact.previewKind, previewImageURL: artifact.previewImageURL),
         contentURL: contentURL, downloadURL: response.downloadUrl,
         previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt,
         fileID: response.target?.kind == "file" ? response.target?.id : nil)
@@ -135,7 +158,8 @@ public struct ChatArtifacts: Sendable {
         return (resolved.artifact, cached)
       }
       let url: URL
-      if let preview = resolved.previewImageURL {
+      let cover = resolved.previewImageURL ?? artifact.previewImageURL
+      if let preview = cover {
         if let source = ChatArtifactReference.parse(
           preview.absoluteString, webURL: webURL, apiURL: apiURL)
         {
@@ -150,7 +174,7 @@ public struct ChatArtifacts: Sendable {
         return (resolved.artifact, nil)
       }
       do {
-        let isOriginal = resolved.previewImageURL == nil && resolved.artifact.kind == .image
+        let isOriginal = cover == nil && resolved.artifact.kind == .image
         let file = try await download(
           url, filename: isOriginal ? resolved.artifact.filename : "thumbnail",
           maximumSize: 20 * 1024 * 1024, attachmentID: isOriginal ? resolved.fileID : nil)
@@ -218,17 +242,24 @@ public struct ChatArtifacts: Sendable {
     let expiresAt: Date?
     let previewImageUrl: URL?
   }
-  private struct Catalog: Decodable, Sendable {
-    let runs: [Run]
-    struct Run: Decodable, Sendable {
-      let files: [File]
-    }
-    struct File: Decodable, Sendable {
-      let url: String
-      let filename: String
-      let contentType: String
-      let size: Int
-      let artifactKind: String?
+  private struct Detail: Decodable, Sendable {
+    let filename: String
+    let contentType: String
+    let size: Int?
+    let preview: Preview
+    struct Preview: Decodable, Sendable {
+      let kind: String
+      let thumbnailUrl: URL?
+      let posterUrl: URL?
+      let coverUrl: URL?
+      var imageURL: URL? {
+        switch kind {
+        case "image": thumbnailUrl
+        case "video": posterUrl
+        case "website", "presentation-html", "html": coverUrl
+        default: nil
+        }
+      }
     }
   }
 }

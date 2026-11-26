@@ -127,6 +127,10 @@ export const iosClientContracts: readonly {
     route: artifactCatalogContract.list,
   },
   {
+    id: "ios.artifactReferencesContract.byUrl",
+    route: artifactReferencesContract.byUrl,
+  },
+  {
     id: "ios.artifactReferencesContract.resolve",
     route: artifactReferencesContract.resolve,
   },

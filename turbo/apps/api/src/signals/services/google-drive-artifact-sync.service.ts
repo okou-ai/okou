@@ -506,7 +506,7 @@ function resolveGoogleDriveArtifactSyncStatus(
   return synced ? { status: "synced", ...synced } : { status: "not_synced" };
 }
 
-function googleDriveArtifactStatusFields(
+export function googleDriveArtifactStatusFields(
   lookup: DriveStatusLookup,
   source: DriveArtifactStatusSource,
 ) {

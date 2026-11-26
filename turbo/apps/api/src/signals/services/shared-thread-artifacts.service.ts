@@ -62,7 +62,7 @@ interface SharedThreadHostedSnapshotArgs {
 }
 
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
-const authorizedSharedThreadHostedSnapshot$ = command(
+export const authorizedSharedThreadHostedSnapshot$ = command(
   async (
     { get, set },
     args: SharedThreadHostedSnapshotArgs,

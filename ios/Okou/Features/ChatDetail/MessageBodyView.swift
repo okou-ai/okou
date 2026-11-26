@@ -17,7 +17,7 @@ struct MessageBodyView: View, Equatable {
   let permissionActions: PermissionActionRegistry?
   let approvals: ApprovalCardRegistry?
   let artifacts: MessageArtifactStore?
-  let artifactImageSources: [String]
+  let artifactGroup: MessageArtifactGroup?
   let loadsActions: Bool
   let loadsDiagrams: Bool
   @Environment(\.openURL) private var openURL
@@ -34,7 +34,7 @@ struct MessageBodyView: View, Equatable {
     text: String, baseURL: URL, markdown: MessageMarkdownCache,
     actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
     permissionActions: PermissionActionRegistry? = nil, approvals: ApprovalCardRegistry? = nil,
-    artifacts: MessageArtifactStore? = nil, artifactImageSources: [String] = [],
+    artifacts: MessageArtifactStore? = nil, artifactGroup: MessageArtifactGroup? = nil,
     loadsActions: Bool = false, loadsDiagrams: Bool = true
   ) {
     self.text = text
@@ -45,7 +45,7 @@ struct MessageBodyView: View, Equatable {
     self.permissionActions = permissionActions
     self.approvals = approvals
     self.artifacts = artifacts
-    self.artifactImageSources = artifactImageSources
+    self.artifactGroup = artifactGroup
     self.loadsActions = loadsActions
     self.loadsDiagrams = loadsDiagrams
     let context = MessageRenderPlan.Context(
@@ -63,7 +63,7 @@ struct MessageBodyView: View, Equatable {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
       && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
       && lhs.permissionActions === rhs.permissionActions && lhs.approvals === rhs.approvals
-      && lhs.artifacts === rhs.artifacts && lhs.artifactImageSources == rhs.artifactImageSources
+      && lhs.artifacts === rhs.artifacts && lhs.artifactGroup == rhs.artifactGroup
       && lhs.loadsActions == rhs.loadsActions
       && lhs.loadsDiagrams == rhs.loadsDiagrams
   }
@@ -95,7 +95,7 @@ struct MessageBodyView: View, Equatable {
         }
         if let artifacts, let resource = artifacts.resource(url.absoluteString) {
           artifacts.open(
-            resource, images: plan?.resources ?? [], imageSources: artifactImageSources)
+            resource, images: plan?.resources ?? [], group: artifactGroup)
         } else {
           // Markdown links can retain a base URL. System dispatch needs the
           // resolved standalone destination, even when absoluteString is valid.
@@ -198,7 +198,7 @@ private struct MessageRenderUnitView: View {
       if let viewer = message.artifacts {
         MessageArtifactCard(
           resource: resource, label: label, destination: destination, images: resources,
-          imageSources: message.artifactImageSources, viewer: viewer,
+          group: message.artifactGroup, viewer: viewer,
           loadsContent: message.loadsActions)
       }
     case .diagram(let code, let original):

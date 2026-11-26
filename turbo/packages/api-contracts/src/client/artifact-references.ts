@@ -7,6 +7,28 @@ import type { ClientDescriptor } from "./types";
 export const artifactReferencesContract: ClientDescriptor<
   typeof OriginalArtifactReferencesContract
 > = {
+  byUrl: {
+    method: "GET",
+    path: "/api/artifacts/by-url",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      500: true,
+    },
+  },
+  driveStatus: {
+    method: "GET",
+    path: "/api/artifacts/files/:publicationId/drive-status",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   ownerArtifact: {
     method: "GET",
     path: "/api/artifact-references/:reference/owner-artifact",

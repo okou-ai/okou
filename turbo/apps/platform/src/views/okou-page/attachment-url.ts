@@ -1,3 +1,4 @@
+import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { rewritePlatformHostname } from "@okouai/core/platform-service-origin";
@@ -160,28 +161,28 @@ export function publicAttachmentUrl(url: string): string {
   return normalizedLegacyFileUrl(url) ?? normalizedArtifactFileUrl(url) ?? url;
 }
 
-function comparableArtifactPreviewUrl(value: string): string | null {
-  if (!URL.canParse(value)) {
-    return null;
+/** The group contains stable artifact identities, independent of presentation fragments. */
+export function messageArtifactKey(value: string): string {
+  const origin = browserOrigin() ?? undefined;
+  const ref = parseArtifactReference(value, origin);
+  if (ref) {
+    return "/artifacts/" + ref.hash;
   }
-  const url = new URL(value);
-  const pathname = url.pathname === "/" ? "" : url.pathname;
-  return `${url.protocol}//${url.host}${pathname}${url.search}${url.hash}`;
-}
-
-export function artifactPreviewUrlsMatch(
-  artifactUrl: string,
-  previewUrl: string,
-): boolean {
-  if (artifactUrl === previewUrl) {
-    return true;
+  const canonical = publicAttachmentUrl(value);
+  if (!URL.canParse(canonical, origin)) {
+    return canonical;
   }
-  const comparableArtifactUrl = comparableArtifactPreviewUrl(artifactUrl);
-  const comparablePreviewUrl = comparableArtifactPreviewUrl(previewUrl);
-  return (
-    comparableArtifactUrl !== null &&
-    comparableArtifactUrl === comparablePreviewUrl
-  );
+  const url = new URL(canonical, origin);
+  url.hash = "";
+  const fileId = url.searchParams.get("file_id");
+  if (
+    fileId &&
+    url.pathname === "/api/web/file-url" &&
+    platformFileOrigins().has(url.origin)
+  ) {
+    return "/api/web/file-url?file_id=" + encodeURIComponent(fileId);
+  }
+  return url.href;
 }
 
 function canUseDevArtifactFetchProxy(): boolean {

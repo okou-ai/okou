@@ -1,153 +1,117 @@
-import { computed, type Computed } from "ccstate";
-import { artifactCatalogContract } from "@okouai/api-contracts/client/artifact-catalog";
-import type {
-  ChatThreadArtifactFile,
-  ChatThreadArtifactRun,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { command, computed, state, type Computed, type Command } from "ccstate";
+import { artifactReferencesContract } from "@okouai/api-contracts/client/artifact-references";
+import type { MessageArtifactDetail } from "@okouai/api-contracts/contracts/message-artifact";
+import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
-import { artifactPreviewUrlsMatch } from "../../views/okou-page/attachment-url.ts";
+import { messageArtifactKey } from "../../views/okou-page/attachment-url.ts";
+import { resetSignal } from "../utils.ts";
 import { apiClient$ } from "../api-client.ts";
-import type { ArtifactDeletionIdentity } from "../artifact-deletion.ts";
-import {
-  currentLeftThread$,
-  currentRightThread$,
-} from "./chat-thread-pane-state.ts";
+import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
+import { createCardSignalsRegistry } from "./card-signal-map.ts";
+import { isPreviewableChatUrl } from "./parse-body-blocks.ts";
+
+export type MessageArtifactRead = Computed<
+  Promise<MessageArtifactDetail | null>
+>;
+export const emptyMessageArtifact$ = computed(() => {
+  return Promise.resolve(null);
+});
+export interface MessageArtifactReads {
+  readonly beginOpen$: Command<AbortSignal, AbortSignal[]>;
+  readonly detail$: MessageArtifactRead;
+  readonly item$: Computed<Promise<ChatArtifactPreviewItem | undefined>>;
+}
+export const emptyPreviewItem$ = computed(() => {
+  return Promise.resolve(undefined);
+});
+/** Cards, a sidebar and the lightbox in a chat share the same per-link read. */
+export function createMessageArtifactDetails(
+  threadId: string,
+  driveAccountRevision$: Computed<string>,
+) {
+  const revision$ = state(0);
+  const beginOpen$ = resetSignal();
+  const registry = createCardSignalsRegistry(
+    messageArtifactKey,
+    (url: string): MessageArtifactReads => {
+      const detail$: MessageArtifactRead = computed(async (get) => {
+        if (!isPreviewableChatUrl(url)) {
+          return null;
+        }
+        get(revision$);
+        get(artifactCatalogRevision$);
+        const result = await accept(
+          get(apiClient$)(artifactReferencesContract).byUrl({
+            query: { url },
+          }),
+          [200, 404],
+          undefined,
+          { showErrorToast: false },
+        );
+        return result.status === 200 ? result.body : null;
+      });
+      // Only the open preview's action bar subscribes to the viewing chat's selected Drive account.
+      const item$ = computed(async (get) => {
+        const detail = await get(detail$);
+        const item = ownedPreviewItem(detail);
+        if (!item?.file.artifactId || !detail?.owner) {
+          return item;
+        }
+        get(driveAccountRevision$);
+        const result = await accept(
+          get(apiClient$)(artifactReferencesContract).driveStatus({
+            params: { publicationId: detail.owner.publicationId },
+            query: { chatThreadId: threadId },
+          }),
+          [200, 404],
+          undefined,
+          { showErrorToast: false },
+        );
+        return result.status === 200
+          ? { file: { ...item.file, ...result.body } }
+          : item;
+      });
+      return { detail$, item$, beginOpen$ };
+    },
+  );
+  return {
+    register$: registry.register$,
+    refresh$: command(({ set }) => {
+      return set(revision$, (n) => {
+        return n + 1;
+      });
+    }),
+  };
+}
 
 export interface ChatArtifactPreviewItem {
-  readonly runId: string;
   readonly file: ChatThreadArtifactFile;
 }
 
-export function findChatArtifactForUrl(
-  runs: readonly ChatThreadArtifactRun[],
-  url: string,
+/** Only an owned publication supplies management, Drive, and quote identities. */
+export function ownedPreviewItem(
+  detail: MessageArtifactDetail | null,
 ): ChatArtifactPreviewItem | undefined {
-  for (const run of runs) {
-    const file = run.files.find((candidate) => {
-      return (
-        artifactPreviewUrlsMatch(candidate.url, url) ||
-        (candidate.aliasUrl !== undefined &&
-          artifactPreviewUrlsMatch(candidate.aliasUrl, url))
-      );
-    });
-    if (file) {
-      return { runId: run.runId, file };
-    }
+  if (!detail?.owner) {
+    return undefined;
   }
-  return undefined;
-}
-
-interface ChatArtifactPreviewView {
-  readonly threadId: string;
-  readonly url: string;
-}
-
-interface CrossChatArtifactPreview {
-  readonly view: ChatArtifactPreviewView;
-  readonly item: ChatArtifactPreviewItem;
-}
-
-export interface CrossChatArtifactPreviewSignals {
-  readonly view$: Computed<ChatArtifactPreviewView | undefined>;
-  readonly artifact$: Computed<Promise<CrossChatArtifactPreview | undefined>>;
-}
-
-/** The preview and its deletion control resolve the same current thread metadata. */
-export function createChatArtifactDeletionIdentity(
-  source$: Computed<
-    | {
-        readonly url: string;
-        readonly threadId?: string;
-        readonly artifactId?: string;
-      }
-    | undefined
-  >,
-  crossChat: CrossChatArtifactPreviewSignals,
-): Computed<Promise<ArtifactDeletionIdentity | null>> {
-  return computed(async (get) => {
-    const source = get(source$);
-    if (!source) {
-      return null;
-    }
-    const threads = [get(currentLeftThread$), get(currentRightThread$)].filter(
-      (thread) => {
-        return (
-          thread && (!source.threadId || thread.threadId === source.threadId)
-        );
-      },
-    );
-    for (const thread of threads) {
-      if (!thread) {
-        continue;
-      }
-      const item = findChatArtifactForUrl(
-        await get(thread.artifacts$),
-        source.url,
-      );
-      if (item) {
-        return item.file.artifactId
-          ? { artifactId: item.file.artifactId }
-          : null;
-      }
-    }
-    const other = await get(crossChat.artifact$);
-    const artifactId =
-      other?.view.url === source.url
-        ? other.item.file.artifactId
-        : source.artifactId;
-    return artifactId ? { artifactId } : null;
-  });
-}
-
-/** The other pane can resolve the file, while Drive status belongs to the viewing Chat. */
-export function createCrossChatArtifactPreview(
-  view$: Computed<ChatArtifactPreviewView | undefined>,
-): CrossChatArtifactPreviewSignals {
-  const artifact$ = computed(async (get) => {
-    const view = get(view$);
-    if (!view) {
-      return undefined;
-    }
-    const left = get(currentLeftThread$);
-    const right = get(currentRightThread$);
-    const viewing = left?.threadId === view.threadId ? left : right;
-    const source = viewing === left ? right : left;
-    if (viewing?.threadId !== view.threadId || !source || source === viewing) {
-      return undefined;
-    }
-
-    // The viewing thread's run list also tracks its Drive account revision.
-    const viewingRuns = await get(viewing.artifacts$);
-    if (get(view$) !== view || findChatArtifactForUrl(viewingRuns, view.url)) {
-      return undefined;
-    }
-    const sourceRuns = await get(source.artifacts$);
-    if (get(view$) !== view) {
-      return undefined;
-    }
-    const item = findChatArtifactForUrl(sourceRuns, view.url);
-    if (!item?.file.artifactId) {
-      return item && { view, item };
-    }
-    const result = await accept(
-      get(apiClient$)(artifactCatalogContract).get({
-        params: { artifactId: item.file.artifactId },
-        query: { chatThreadId: view.threadId },
-      }),
-      [200, 404],
-    );
-    const detail = result.status === 200 ? result.body : undefined;
-    return {
-      view,
-      item: {
-        ...item,
-        file: {
-          ...item.file,
-          googleDriveConnectionId: detail?.googleDriveConnectionId,
-          googleDriveSync: detail?.googleDriveSync,
-        },
-      },
-    };
-  });
-  return { view$, artifact$ };
+  const { owner, preview } = detail;
+  const hosted =
+    preview.kind === "website" || preview.kind === "presentation-html"
+      ? preview
+      : undefined;
+  return {
+    file: {
+      id: owner.fileId,
+      artifactId: owner.artifactId,
+      createdAt: owner.createdAt,
+      title: owner.title,
+      filename: detail.filename,
+      url: detail.url,
+      size: detail.size ?? 0,
+      contentType: detail.contentType,
+      aliasUrl: hosted?.aliasUrl,
+      artifactKind: hosted?.kind === "website" ? "hosted-site" : hosted?.kind,
+    },
+  };
 }

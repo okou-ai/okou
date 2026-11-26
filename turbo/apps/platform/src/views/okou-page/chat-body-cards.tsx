@@ -57,11 +57,7 @@ import { AlertCircle, Coins, Image, Loader2, Play } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type { MarkdownCardRef } from "../../signals/chat-page/markdown-card-ref.ts";
-import {
-  openFileLightbox$ as openAttachmentFileLightbox$,
-  openImageLightbox$ as openAttachmentImageLightbox$,
-  openVideoLightbox$ as openAttachmentVideoLightbox$,
-} from "../../signals/okou-page/attachment-chips.ts";
+import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
@@ -313,6 +309,7 @@ export function MarkdownCardView({
         <ArtifactCardView
           signals={card.signals}
           threadId={card.threadId}
+          eventId={card.eventId}
           label={label}
         />
       );
@@ -380,25 +377,27 @@ export function MarkdownCardView({
 }
 
 function ArtifactCardView({
+  eventId,
   signals,
   threadId,
   label,
 }: {
   signals: ArtifactSignals;
+  eventId: string;
   threadId: string;
   label?: string;
 }) {
   const pageSignal = useGet(pageSignal$);
   const { t } = useTranslation();
-  const openFileLightbox = useSet(openAttachmentFileLightbox$);
-  const openImageLightbox = useSet(openAttachmentImageLightbox$);
-  const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
-  const attachment = {
-    threadId,
-    url: signals.url,
-    filename: signals.filename,
-    contentType: signals.contentType,
-    preview: signals,
+  const openArtifact = useSet(openMarkdownArtifact$);
+  const openPreview = () => {
+    detach(
+      openArtifact(
+        { kind: "artifact", eventId, threadId, signals },
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
   };
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -421,9 +420,7 @@ function ArtifactCardView({
         )}
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
-        onPreview={() => {
-          openImageLightbox(attachment, pageSignal);
-        }}
+        onPreview={openPreview}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
         resourceUrl$={signals.linkUrl$}
@@ -446,9 +443,7 @@ function ArtifactCardView({
         )}
         buttonClassName={CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS}
         filename={signals.filename}
-        onPreview={() => {
-          openVideoLightbox(attachment, pageSignal);
-        }}
+        onPreview={openPreview}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
         previewImageUrl$={signals.previewImageUrl$}
@@ -467,9 +462,7 @@ function ArtifactCardView({
         ...(previewImagePending ? { previewImagePending: true } : {}),
         ...(previewImageUrl ? { previewImageUrl } : {}),
       }}
-      onPreviewFile={() => {
-        openFileLightbox(attachment, pageSignal);
-      }}
+      onPreviewFile={openPreview}
       previewImageLoad={signals.previewImageLoad}
       text$={signals.text$}
     />

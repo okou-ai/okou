@@ -11,8 +11,8 @@ final class HostedSitePreviewTests: XCTestCase {
   func testExpiredSitePreviewRenewsOnceAndManualRetryResolvesFreshAccess() async throws {
     let resolution = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path == "/api/chat-threads/thread/artifacts" {
-        return ChatHTTPResponse(body: "{\"runs\":[]}")
+      if request.url?.path == "/api/artifacts/by-url" {
+        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No detail\"}}")
       }
       guard request.url?.path == "/api/host/sites/court/preview" else {
         throw URLError(.unsupportedURL)
@@ -29,7 +29,7 @@ final class HostedSitePreviewTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let viewer = MessageArtifactStore(
-      service: commands.artifacts, threadID: "thread", webURL: URL(string: "https://app.okou.ai")!,
+      service: commands.artifacts, webURL: URL(string: "https://app.okou.ai")!,
       markdown: MessageMarkdownCache(baseURL: fixture.baseURL), graph: makeTestWorkspaceGraph(),
       didFail: { _ in XCTFail("Preview renewal must not expire the account") })
     defer { viewer.close() }
@@ -62,8 +62,8 @@ final class HostedSitePreviewTests: XCTestCase {
   func testSitePreviewRenewalCannotRetainAccessAfterTheAuthorityDeniesIt() async throws {
     let denied = Mutex(false)
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path == "/api/chat-threads/thread/artifacts" {
-        return ChatHTTPResponse(body: "{\"runs\":[]}")
+      if request.url?.path == "/api/artifacts/by-url" {
+        return ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"No detail\"}}")
       }
       guard request.url?.path == "/api/host/sites/court/preview" else {
         throw URLError(.unsupportedURL)
@@ -79,7 +79,7 @@ final class HostedSitePreviewTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let viewer = MessageArtifactStore(
-      service: commands.artifacts, threadID: "thread", webURL: URL(string: "https://app.okou.ai")!,
+      service: commands.artifacts, webURL: URL(string: "https://app.okou.ai")!,
       markdown: MessageMarkdownCache(baseURL: fixture.baseURL), graph: makeTestWorkspaceGraph(),
       didFail: { _ in XCTFail("Site access denial must not expire the account") })
     defer { viewer.close() }

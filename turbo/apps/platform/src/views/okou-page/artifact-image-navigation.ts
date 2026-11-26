@@ -1,30 +1,17 @@
-import type {
-  ChatThreadArtifactFile,
-  ChatThreadArtifactRun,
-  UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Element, Root } from "hast";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { UserMessageRenderDocument } from "../../signals/chat-page/chat-event.ts";
 
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
-import { artifactPreviewUrlsMatch } from "./attachment-url.ts";
+import { messageArtifactKey } from "./attachment-url.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 
 export type ImageArtifactNavigationItem = {
   readonly url: string;
   readonly filename: string;
+  readonly contentType?: string;
   readonly preview?: AttachmentPreviewSignals;
-  /**
-   * Present when the image is a run artifact (agent-generated / hosted): carries
-   * the artifact file and its run so the lightbox keeps full download/share/sync
-   * metadata. Absent for human-uploaded images, which resolve from the user
-   * artifacts bucket and are not part of the thread's run artifacts.
-   */
-  readonly artifact?: {
-    readonly file: ChatThreadArtifactFile;
-    readonly runId: string;
-  };
 };
 
 type ImageArtifactNavigation = {
@@ -66,12 +53,8 @@ function isImageDescriptor(descriptor: {
 type EventImage = {
   readonly url: string;
   readonly filename: string;
+  readonly contentType?: string;
   readonly preview?: AttachmentPreviewSignals;
-};
-
-type ArtifactImageMetadata = {
-  readonly file: ChatThreadArtifactFile;
-  readonly runId: string;
 };
 
 // Matches markdown images `![alt](url)` and links `[label](url)`, capturing the
@@ -99,7 +82,10 @@ function filenameFromMarkdownLink(label: string, url: string): string {
 }
 
 /** Ordered, de-duplicated images (url + filename) shown in a single event. */
-function eventImages(event: EventImageSource): EventImage[] {
+function eventImages(
+  event: EventImageSource,
+  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
+): EventImage[] {
   const images: EventImage[] = [];
   const seen = new Set<string>();
   const add = (
@@ -128,7 +114,7 @@ function eventImages(event: EventImageSource): EventImage[] {
     }
   }
   if (event.tree) {
-    visitTreeImages(event.tree, add);
+    visitTreeImages(event.tree, knownImages, add);
   }
   return images;
 }
@@ -147,6 +133,7 @@ function nodeText(node: Element): string {
 /** Walks a rendered body for its images: card slots, `<img>`, image links. */
 function visitTreeImages(
   root: Root,
+  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
   add: (
     url: string,
     filename: string,
@@ -160,8 +147,13 @@ function visitTreeImages(
       }
       const card = child.data?.card;
       if (card !== undefined) {
-        if (card.kind === "artifact" && card.signals.kind === "image") {
-          add(card.signals.url, card.signals.filename, card.signals);
+        if (card.kind !== "artifact") {
+          continue;
+        }
+        const { url, filename, kind } = card.signals;
+        const known = knownImages.get(messageArtifactKey(url));
+        if (kind === "image" || (kind === "file" && known)) {
+          add(url, known?.filename ?? filename, card.signals);
         }
         continue;
       }
@@ -189,87 +181,47 @@ function visitTreeImages(
   visit(root);
 }
 
-function eventHasImageUrl(
-  event: EventImageSource,
-  currentUrl: string,
-): boolean {
-  return eventImages(event).some((image) => {
-    return artifactPreviewUrlsMatch(image.url, currentUrl);
-  });
-}
-
-function scopedEventImages(events: readonly EventImageSource[]): EventImage[] {
+function scopedEventImages(
+  events: readonly EventImageSource[],
+  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
+): EventImage[] {
   const images: EventImage[] = [];
+  const seen = new Set<string>();
   for (const event of events) {
-    for (const image of eventImages(event)) {
-      if (
-        images.some((candidate) => {
-          return artifactPreviewUrlsMatch(candidate.url, image.url);
-        })
-      ) {
+    for (const image of eventImages(event, knownImages)) {
+      const id = messageArtifactKey(image.url);
+      if (seen.has(id)) {
         continue;
       }
-      images.push(image);
+      seen.add(id);
+      const known = knownImages.get(id);
+      images.push(
+        known
+          ? {
+              ...image,
+              filename: known.filename,
+              contentType: known.contentType,
+            }
+          : image,
+      );
     }
   }
   return images;
 }
 
-function artifactMetadataForUrl(
-  artifacts: readonly ArtifactImageMetadata[],
-  url: string,
-): ArtifactImageMetadata | undefined {
-  return artifacts.find((artifact) => {
-    return artifactPreviewUrlsMatch(artifact.file.url, url);
-  });
-}
-
-/**
- * Navigate image previews within the displayed image scope for `currentUrl`.
- * The rendered chat event group is the scope boundary, so agent and human
- * events use the same rule: extract the images visible in the group that
- * contains the current image. Run artifacts only enrich metadata when
- * available; generated/hosted artifacts that live in the run but are not shown
- * in rendered events are excluded.
- */
+/** The clicked occurrence supplies its group even when two messages link to the same image. */
 export function currentEventImageArtifactNavigation(
-  runs: readonly ChatThreadArtifactRun[],
-  groups: readonly EventImageGroup[],
+  group: EventImageGroup | undefined,
   currentUrl: string,
+  knownImages: ReadonlyMap<string, ImageArtifactNavigationItem>,
 ): ImageArtifactNavigation {
-  const group = groups.find((candidateGroup) => {
-    return candidateGroup.events.some((event) => {
-      return eventHasImageUrl(event, currentUrl);
-    });
-  });
-
   if (!group) {
     return {};
   }
-
-  const artifacts: ArtifactImageMetadata[] = [];
-  for (const run of runs) {
-    for (const file of run.files) {
-      artifacts.push({ file, runId: run.runId });
-    }
-  }
-
-  const images: ImageArtifactNavigationItem[] = scopedEventImages(
-    group.events,
-  ).map((image) => {
-    const artifact = artifactMetadataForUrl(artifacts, image.url);
-    if (artifact) {
-      return {
-        url: image.url,
-        preview: image.preview,
-        filename: artifact.file.filename,
-        artifact,
-      };
-    }
-    return image;
-  });
+  const currentId = messageArtifactKey(currentUrl);
+  const images = scopedEventImages(group.events, knownImages);
   const currentIndex = images.findIndex((item) => {
-    return artifactPreviewUrlsMatch(item.url, currentUrl);
+    return messageArtifactKey(item.url) === currentId;
   });
 
   if (currentIndex === -1) {

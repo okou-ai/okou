@@ -1,93 +1,141 @@
-import { command, computed, type Command, type Computed } from "ccstate";
-import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
-
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
+import { messageArtifactKey } from "../../views/okou-page/attachment-url.ts";
 import {
   currentEventImageArtifactNavigation,
   type ImageArtifactNavigationItem,
 } from "../../views/okou-page/artifact-image-navigation.ts";
-import { lightboxUrl$ } from "../okou-page/attachment-chips.ts";
+import {
+  lightboxUrl$,
+  navigateImageLightbox$,
+} from "../okou-page/attachment-chips.ts";
+import { pageSignal$ } from "../page-signal.ts";
 import type { EventImageGroupProjection } from "./chat-panel-signals.ts";
-import type { ThreadSidebarTarget } from "./thread-sidebar.ts";
+import type { ThreadSidebarSignals } from "./thread-sidebar.ts";
 
 export type EventImageNavigationDirection = "previous" | "next";
 
-/**
- * Previous/next navigation for one image preview surface. Navigation stays in
- * the chat group that contains the current image. The rendering values are
- * primitives so transcript updates elsewhere do not re-render the preview.
- */
+interface ImageSelection {
+  readonly groupId?: string;
+  readonly url: string;
+}
+
 export interface EventImageNavigationSignals {
-  /** Role of the group holding the current image; null when it is not shown. */
-  readonly role$: Computed<EventImageGroupProjection["role"] | null>;
   readonly hasPrevious$: Computed<boolean>;
   readonly hasNext$: Computed<boolean>;
-  /** Resolves the neighbor on demand, enriched with the loaded run artifacts. */
-  readonly target$: Command<
-    ImageArtifactNavigationItem | undefined,
-    [EventImageNavigationDirection, readonly ChatThreadArtifactRun[]]
-  >;
+  readonly navigate$: Command<void, [EventImageNavigationDirection]>;
 }
 
 export interface ThreadImageNavigationSignals {
-  /** The image open in the lightbox dialog. */
+  readonly openGroupForImage$: Command<
+    string | undefined,
+    [string, ImageArtifactNavigationItem]
+  >;
   readonly lightbox: EventImageNavigationSignals;
-  /** The attachment open in this thread's artifact sidebar. */
   readonly sidebar: EventImageNavigationSignals;
 }
 
 function createEventImageNavigation(
   groups$: Computed<readonly EventImageGroupProjection[]>,
-  url$: Computed<string | null>,
+  knownImages$: State<ReadonlyMap<string, ImageArtifactNavigationItem>>,
+  selection$: Computed<ImageSelection | null>,
+  select$: Command<void, [ImageArtifactNavigationItem, string, boolean]>,
 ): EventImageNavigationSignals {
-  // Without a current image the groups are not read, so a closed preview does
-  // not follow transcript updates.
   const neighbors$ = computed((get) => {
-    const url = get(url$);
-    return url === null
-      ? {}
-      : currentEventImageArtifactNavigation([], get(groups$), url);
+    const selection = get(selection$);
+    if (!selection?.groupId) {
+      return {};
+    }
+    const group = get(groups$).find((candidate) => {
+      return candidate.id === selection.groupId;
+    });
+    return currentEventImageArtifactNavigation(
+      group,
+      selection.url,
+      get(knownImages$),
+    );
   });
   return {
-    role$: computed((get) => {
-      return get(neighbors$).role ?? null;
-    }),
     hasPrevious$: computed((get) => {
       return get(neighbors$).previous !== undefined;
     }),
     hasNext$: computed((get) => {
       return get(neighbors$).next !== undefined;
     }),
-    target$: command(({ get }, direction, runs) => {
-      const url = get(url$);
-      return url === null
-        ? undefined
-        : currentEventImageArtifactNavigation(runs, get(groups$), url)[
-            direction
-          ];
+    navigate$: command(({ get, set }, direction) => {
+      const groupId = get(selection$)?.groupId;
+      const neighbors = get(neighbors$);
+      const item = neighbors[direction];
+      if (groupId && item) {
+        set(select$, item, groupId, neighbors.role !== "user");
+      }
     }),
   };
 }
 
+/** Each surface owns its current URL and group. Switching never enumerates thread artifacts. */
 export function createThreadImageNavigationSignals(
+  threadId: string,
   groups$: Computed<readonly EventImageGroupProjection[]>,
-  sidebarTarget$: Computed<ThreadSidebarTarget | null>,
+  sidebar: Pick<ThreadSidebarSignals, "target$" | "openAttachment$">,
 ): ThreadImageNavigationSignals {
+  // A link without an extension joins the gallery once its own detail identifies it as an image.
+  const knownImages$ = state<ReadonlyMap<string, ImageArtifactNavigationItem>>(
+    new Map(),
+  );
   return {
+    openGroupForImage$: command(({ get, set }, eventId, item) => {
+      const id = messageArtifactKey(item.url);
+      const previous = get(knownImages$);
+      if (!previous.has(id)) {
+        set(knownImages$, new Map(previous).set(id, item));
+      }
+      return get(groups$).find((group) => {
+        return group.events.some((event) => {
+          return event.id === eventId;
+        });
+      })?.id;
+    }),
     lightbox: createEventImageNavigation(
       groups$,
+      knownImages$,
       computed((get) => {
         const preview = get(lightboxUrl$);
-        return preview?.kind === "image" ? preview.url : null;
+        return preview?.kind === "image" && preview.threadId === threadId
+          ? preview
+          : null;
+      }),
+      command(({ set }, item, groupId, shareAvailable) => {
+        set(navigateImageLightbox$, {
+          ...item,
+          groupId,
+          threadId,
+          shareAvailable,
+        });
       }),
     ),
     sidebar: createEventImageNavigation(
       groups$,
+      knownImages$,
       computed((get) => {
-        const target = get(sidebarTarget$);
+        const target = get(sidebar.target$);
         return target?.type === "artifact" &&
           target.source.kind === "attachment"
-          ? target.source.ref.url
+          ? target.source.ref
           : null;
+      }),
+      command(({ get, set }, item, groupId, shareAvailable) => {
+        set(
+          sidebar.openAttachment$,
+          { ...item, groupId, shareAvailable },
+          get(pageSignal$),
+        );
       }),
     ),
   };

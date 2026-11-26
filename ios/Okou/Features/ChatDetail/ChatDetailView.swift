@@ -436,7 +436,7 @@ struct ChatDetailView: View {
           permissionActions: conversation.permissionActions,
           approvals: message.role == .assistant ? conversation.approvals : nil,
           artifacts: message.role == .assistant ? conversation.artifacts : nil,
-          artifactImageSources: conversation.artifactImageSources(for: message.id),
+          artifactGroup: conversation.artifactGroup(for: message.id),
           loadsActions: presentation.loadsAttachments, loadsDiagrams: presentation.loadsAttachments
         )
         .equatable()

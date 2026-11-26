@@ -3,6 +3,8 @@ import { beforeEach, expect, test } from "vitest";
 import { array, number, object, record, string } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
@@ -51,7 +53,7 @@ function app(user: ApiTestUser) {
   });
   return setupAppWithRoutes({
     context,
-    routes: hostRoutes,
+    routes: [...hostRoutes, ...artifactReferenceRoutes],
     baseUrl: "https://api.okou.ai",
   });
 }
@@ -275,6 +277,16 @@ test("an owner searches verified accounts, shares privately, and revokes an exis
     });
   };
   expect((await accept(access(), [200])).body.decision).toBe("allow");
+  const detail = (user: ApiTestUser) => {
+    return app(user)(artifactReferencesContract).byUrl({
+      headers,
+      query: { url: `https://${site.publicSlug}.okou.app/` },
+    });
+  };
+  const allowed = await accept(detail(viewer), [200]);
+  expect(allowed.body.preview.kind).toBe("website");
+  expect(allowed.body.owner).toBeUndefined();
+  await accept(detail(stranger), [404]);
   await accept(authorization(stranger, site), [403]);
   await accept(
     app(owner)(hostedSiteSharingContract).remove({
@@ -284,6 +296,7 @@ test("an owner searches verified accounts, shares privately, and revokes an exis
     [200],
   );
   expect((await accept(access(), [200])).body.decision).toBe("deny");
+  await accept(detail(viewer), [404]);
   await accept(
     app(viewer)(hostContract).sitePreview({
       headers,

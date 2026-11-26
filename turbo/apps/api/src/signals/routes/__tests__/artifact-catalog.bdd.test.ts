@@ -1,3 +1,7 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { randomUUID } from "node:crypto";
 import {
   CompleteMultipartUploadCommand,
@@ -416,6 +420,113 @@ async function publishHostedSite(args: {
   };
 }
 
+describe("GET /api/artifacts/by-url", () => {
+  it("reads one owned file from its message links and keeps its metadata private", async () => {
+    const owner = await catalogActor("File details owner");
+    const uploaded = await uploadFile({
+      owner,
+      prompt: "Publish the notes",
+      filename: "notes.md",
+      contentType: "text/markdown",
+    });
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    for (const url of [
+      uploaded.url,
+      "/api/web/file-url?file_id=" + uploaded.fileId,
+      "http://localhost:3000/api/web/file-url?file_id=" + uploaded.fileId,
+    ]) {
+      const result = await accept(
+        client.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        filename: "notes.md",
+        size: 1024,
+        preview: { kind: "markdown" },
+        owner: { artifactId: expect.any(String) },
+      });
+    }
+    const other = await catalogActor("Unrelated file reader");
+    await accept(
+      client.byUrl({
+        headers: authenticateSharedThread(other.actor),
+        query: { url: uploaded.url },
+      }),
+      [404],
+    );
+  });
+
+  it("describes an exact public template without granting the reader owner controls", async () => {
+    const owner = await catalogActor("Template reader");
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    const detail = await accept(
+      client.byUrl({ headers, query: { url: template.embedUrl } }),
+      [200],
+    );
+    expect(detail.body.preview).toStrictEqual({
+      kind: "presentation-html",
+      pageUrl: template.embedUrl,
+      coverUrl: template.previewImage,
+    });
+    expect(detail.body.owner).toBeUndefined();
+    await accept(
+      client.byUrl({
+        headers,
+        query: { url: template.embedUrl + ".unlisted" },
+      }),
+      [404],
+    );
+  });
+
+  it("resolves each immutable site publication and the current alias independently", async () => {
+    const owner = await catalogActor("Publication details owner");
+    const site = "artifact-detail-" + randomUUID().slice(0, 8);
+    const first = await publishHostedSite({
+      owner,
+      site,
+      artifactKind: "presentation-html",
+    });
+    const second = await publishHostedSite({
+      owner,
+      site,
+      artifactKind: "presentation-html",
+    });
+    const headers = authenticateSharedThread(owner.actor);
+    const client = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const firstFiles = await chat.listThreadArtifacts(
+      owner.actor,
+      first.threadId,
+    );
+    const old = firstFiles.runs[0]!.files[0]!;
+    const latest = (
+      await chat.listThreadArtifacts(owner.actor, second.threadId)
+    ).runs[0]!.files[0]!;
+    for (const [url, version] of [
+      [old.url, old],
+      [latest.url, latest],
+      [latest.aliasUrl!, latest],
+    ] as const) {
+      const result = await accept(
+        client.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(result.body).toMatchObject({
+        preview: { kind: "presentation-html", pageUrl: version.url },
+        owner: { artifactId: version.artifactId, fileId: version.id },
+      });
+    }
+  });
+});
+
 describe("GET /api/artifacts/catalog", () => {
   it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
     const owner = await catalogActor("Private video catalog owner");
@@ -487,6 +598,38 @@ describe("GET /api/artifacts/catalog", () => {
     // The publish-time API response already supplies the original identity.
     const originalCatalog = publications[0]!.catalog;
     const artifactId = originalCatalog.artifacts[0]!.id;
+    const reference = artifactReferencePath(
+      prepared.body.id,
+      "private-video.mp4",
+    );
+    const references = setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    );
+    const headers = authenticateSharedThread(owner.actor);
+    for (const url of [
+      reference,
+      "http://localhost:3002" + reference + "#t=3",
+    ]) {
+      const response = await accept(
+        references.byUrl({ headers, query: { url } }),
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        filename: "private-video.mp4",
+        preview: { kind: "video" },
+        owner: { artifactId },
+      });
+      const publicationId = response.body.owner!.publicationId;
+      const status = await accept(
+        references.driveStatus({
+          headers,
+          params: { publicationId },
+          query: { chatThreadId: first.threadId },
+        }),
+        [200],
+      );
+      expect(status.body.googleDriveSync.status).toBe("disconnected");
+    }
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
     ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });

@@ -3970,6 +3970,13 @@
       "when": 1795674897721,
       "tag": "1645_enable_antigravity_routes",
       "breakpoints": true
+    },
+    {
+      "idx": 1646,
+      "version": "7",
+      "when": 1795681890138,
+      "tag": "1646_message_artifact_url_lookup",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { classifyMessageArtifact as classifyChatAttachment } from "@okouai/api-contracts/validators/message-artifact";
 import { getDefaults, Lexer, Tokenizer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/validators/artifact-references";
@@ -66,7 +67,7 @@ import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
 import {
   isOfficialTemplatePreviewUrl,
   officialTemplatePreviewContentType,
-} from "./official-template-preview.ts";
+} from "@okouai/core/official-template-preview";
 import {
   parseSubscriptionResetUrl,
   subscriptionResetResourceKey,
@@ -173,7 +174,7 @@ export type ParsedBodyBlock =
       descriptor: BrowserUserActionDescriptor;
     };
 
-type ChatAttachmentKind = BodyPreviewKind;
+export { classifyChatAttachment };
 
 interface ChatAttachmentDescriptor {
   filename: string;
@@ -279,104 +280,6 @@ function tryParseUrl(input: string, base?: string): URL | null {
 // ---------------------------------------------------------------------------
 // classifyChatAttachment helpers
 // ---------------------------------------------------------------------------
-
-function fileExt(filename: string): string {
-  return filename.split(".").pop()?.toLowerCase() ?? "";
-}
-
-function normalizeType(contentType?: string): string {
-  return (contentType ?? "").split(";")[0]?.trim().toLowerCase();
-}
-
-const CHAT_KIND_BY_CONTENT_TYPE: Readonly<Record<string, BodyPreviewKind>> = {
-  "text/markdown": "markdown",
-  "text/x-markdown": "markdown",
-  "text/plain": "text",
-  "text/tab-separated-values": "text",
-  "text/xml": "text",
-  "text/yaml": "text",
-  "text/x-yaml": "text",
-  "application/xml": "text",
-  "application/yaml": "text",
-  "application/x-yaml": "text",
-  "application/json": "json",
-  "text/csv": "csv",
-  "application/pdf": "pdf",
-  "text/html": "html",
-} as const;
-
-const CHAT_KIND_BY_EXTENSION: Readonly<Record<string, BodyPreviewKind>> = {
-  md: "markdown",
-  txt: "text",
-  log: "text",
-  xml: "text",
-  yaml: "text",
-  yml: "text",
-  tsv: "text",
-  json: "json",
-  csv: "csv",
-  pdf: "pdf",
-  html: "html",
-  htm: "html",
-  png: "image",
-  jpg: "image",
-  jpeg: "image",
-  gif: "image",
-  webp: "image",
-  svg: "image",
-  bmp: "image",
-  avif: "image",
-  heic: "image",
-  heif: "image",
-  tif: "image",
-  tiff: "image",
-  psd: "image",
-  mp4: "video",
-  webm: "video",
-  mov: "video",
-  ogv: "video",
-  mp3: "audio",
-  wav: "audio",
-  wave: "audio",
-  m4a: "audio",
-  aac: "audio",
-  ogg: "audio",
-  oga: "audio",
-  opus: "audio",
-  flac: "audio",
-  mpga: "audio",
-} as const;
-
-function mediaKindFromContentType(type: string): BodyPreviewKind | null {
-  if (type.startsWith("image/")) {
-    return "image";
-  }
-  if (type.startsWith("video/")) {
-    return "video";
-  }
-  if (type.startsWith("audio/")) {
-    return "audio";
-  }
-  return null;
-}
-
-export function classifyChatAttachment(
-  attachment: Pick<ChatAttachmentDescriptor, "filename" | "contentType"> & {
-    readonly url?: string;
-  },
-): ChatAttachmentKind {
-  const type = normalizeType(attachment.contentType);
-  const ext = fileExt(attachment.filename);
-  const mediaKind = mediaKindFromContentType(type);
-
-  if (mediaKind) {
-    return mediaKind;
-  }
-
-  return (
-    CHAT_KIND_BY_CONTENT_TYPE[type] ?? CHAT_KIND_BY_EXTENSION[ext] ?? "file"
-  );
-}
 
 function isAuthenticatedFileUrl(url: URL): boolean {
   return (

@@ -128,6 +128,16 @@ export const runUploadedFiles = pgTable(
         table.source,
         table.externalId,
       ),
+      // One message link can identify a historical version or a file outside the catalog.
+      index("run_uploaded_files_owner_url_idx")
+        .on(
+          table.orgId,
+          table.userId,
+          sql`md5(${table.url})`,
+          table.createdAt.desc(),
+          table.id.desc(),
+        )
+        .where(sql`${table.url} IS NOT NULL AND ${table.deletedAt} IS NULL`),
       index("idx_run_uploaded_files_updated")
         .on(table.updatedAt, table.id)
         .where(sql`${table.url} IS NOT NULL`),
