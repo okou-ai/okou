@@ -99,6 +99,7 @@ struct ChatThreadFeedbackView: View {
         && !workspace.needsUpgrade
         && (!feedback.requiresNavigation || !workspace.isCreating),
       actionHint: feedback.actionHint,
+      showsDismiss: feedback.kind != .archiveUndo(showsBanner: true),
       autoDismissAfter: feedback.persists ? nil : .seconds(6),
       action: {
         Task { await store.navigationActions.performThreadFeedback(feedback.id) }
