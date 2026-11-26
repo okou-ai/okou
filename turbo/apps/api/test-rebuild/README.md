@@ -365,3 +365,32 @@ Ethan asked whether the unselected cases are mostly extreme. A seeded random sam
 Including variants that use contrived setups, 166 cases (41.9%) are extreme or hard to construct from the user's point of view. The unselected set is therefore mainly repeats plus extreme or hard-to-construct cases, not only extreme cases.
 
 The 18 confirmed misses are now selected. The selection is 3,517 of 7,453 cases (47.2%), with exceptions in 130 files: 18 `more` and 112 `fewer`. The sampled miss rate suggests about 180 similar gaps among the remaining unselected cases. A further pass could find them.
+
+## Step 3: Rewrite pilot (in progress)
+
+The pilot rewrites selected cases from their BDD, the production contracts and the shared test infrastructure. It does not change production code, timers or the global `signal-timers` mock. New tests use the real route slices with typed contract clients and mock only external boundaries. They use no `isolatePg`, fake timers, sleeps or per-case delay doubles, and no Vitest case may take 200 ms or more. Each test name starts with its case ID, so tests and IDs map one to one.
+
+`pilot.tsv` records each planned ID with its status (`planned`, `rewritten` or `skipped`), its accepted Vitest duration and a note. The plan has 112 whole files and 709 IDs. The original 71 files were sampled by domain. Another 41 lighter files were added after the first pass showed that scenarios needing a dispatched chat Run cost 240–790 ms.
+
+| Status    | IDs |
+| --------- | --: |
+| Rewritten | 357 |
+| Skipped   |  25 |
+| Planned   | 327 |
+
+- **Durations:** the accepted Vitest durations of the rewritten cases are P50 66.7 ms, P95 163.5 ms and max 196.4 ms. Acceptance batches ran locally with one Vitest worker on a two-CPU machine. In a later rerun, `cloudflare-access-lifecycle-005` (222 ms) and `connected-connectors-003` (228 ms) crossed the limit. CI per-test timings decide these borderline cases.
+- **Skip reasons:**
+  - `slow-setup` (12): dispatched Run, Runner or member-lifecycle setups measured at 240–790 ms.
+  - `adapter-runtime` (8): the Android version-floor configuration and a library predicate.
+  - `isolated-db` (5): signed Notion deliveries need the plaintext verification token, which only a clean database exposes.
+  - Cases left unfinished stay `planned`.
+- **Quality checks:**
+  - Production code is unchanged, and new tests have zero `isolatePg` calls.
+  - Prettier and oxlint (`--deny-warnings`) pass per file.
+  - The API test type check (`.typecheck/tsconfig.tests-*`) reports no errors in committed pilot tests.
+  - Copy review against the frozen baseline found a mean line overlap of 0.19 per file. The maximum is 0.57, on small files where the shared lines are boilerplate plus literals quoted in the BDD.
+- **Known gaps:**
+  - The first test of a file pays a 150–250 ms warm-up on this machine. That blocks about 40 otherwise passing tests in 10 local files; they stay `planned`.
+  - Two tests drafted with a test-only token signer or a tolerance for leftover state were removed.
+
+`upstream-changes.tsv` records API tests that changed on `main` after the frozen baseline. Merging `main` at `4781feba4d` changed nine old test files and renamed `cron-official-workflow-catalog.test.ts` to `builtin-workflow-automations.test.ts`. The branch keeps those files deleted and keeps the pilot rewrite of `onboarding.test.ts`. The frozen BDDs are unchanged, and the upstream changes should be reviewed at the next screening.
