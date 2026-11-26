@@ -96,19 +96,17 @@ describe("GET /api/billing/usage-pack-credits", () => {
       bonusCredits: 400,
       hasUsagePack: true,
     });
-    expect(
-      body.creditGrants.map((grant) => {
-        return [
-          grant.grantType,
-          grant.amount,
-          grant.remaining,
-          grant.expiresAt,
-        ];
-      }),
-    ).toStrictEqual([
-      ["purchased", 20_000, 20_000, "2026-09-09T00:00:00.000Z"],
-      ["bonus", 400, 400, "2026-09-09T00:00:00.000Z"],
-    ]);
+    // Both grants expire together, so the API does not define their order.
+    const grants = body.creditGrants.map((grant) => {
+      return [grant.grantType, grant.amount, grant.remaining, grant.expiresAt];
+    });
+    expect(grants).toHaveLength(2);
+    expect(grants).toStrictEqual(
+      expect.arrayContaining([
+        ["purchased", 20_000, 20_000, "2026-09-09T00:00:00.000Z"],
+        ["bonus", 400, 400, "2026-09-09T00:00:00.000Z"],
+      ]),
+    );
     expect(body.memberCredits).toBeUndefined();
   });
 
