@@ -20,6 +20,7 @@
     <string name="settings_email_load_failed">ईमेल सेटिंग कुछ समय के लिए उपलब्ध नहीं हैं।</string>
     <string name="settings_email_refresh_failed">सिंक नहीं हो सका। पिछली सेव की गई सदस्यता दिखाई जा रही है।</string>
     <string name="settings_email_refreshing">ईमेल सदस्यता सिंक हो रही है</string>
+    <string name="settings_email_saving">ईमेल सदस्यता अपडेट हो रही है…</string>
     <string name="settings_email_save_failed">ईमेल सदस्यता अपडेट नहीं हो सकी।</string>
     <string name="settings_email_save_unconfirmed">ईमेल सदस्यता में बदलाव की पुष्टि अभी नहीं हुई है।</string>
     <string name="settings_models">मॉडल</string>
@@ -64,7 +65,6 @@
     <string name="settings_credits_less_than">&lt; %1$s</string>
     <string name="settings_credit_balance">क्रेडिट बैलेंस</string>
     <string name="settings_credit_scope">“%1$s” में Okou क्रेडिट</string>
-    <string name="settings_credit_update_failed">रीफ़्रेश नहीं हो सका। पिछला बैलेंस दिखाया जा रहा है।</string>
     <string name="settings_credit_unavailable">फ़िलहाल बैलेंस नहीं दिखाया जा सकता।</string>
     <string name="settings_credit_member">व्यक्तिगत उपयोग पैक</string>
     <string name="settings_credit_workspace">वर्कस्पेस बैलेंस</string>

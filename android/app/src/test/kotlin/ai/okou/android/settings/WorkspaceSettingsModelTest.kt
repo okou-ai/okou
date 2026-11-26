@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -192,6 +193,53 @@ class WorkspaceSettingsModelTest {
                 val restored = model.uiState.first { it.workspaceCredits.value != null }
                 assertEquals(2400.0, restored.workspaceCredits.value!!.credits, 0.0)
                 assertEquals(2, fixture.billingReads.get())
+            }
+        } finally {
+            closeOwners(store)
+        }
+    }
+
+    @Test
+    fun bothCachedCreditReadFailuresShareOneNoticePerRefresh() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                val model = settings(store, api, admin = true)
+                val notices = mutableListOf<SettingsNotice>()
+                backgroundScope.launch { model.notices.collect { notices.add(it) } }
+                model.visible(SettingsDestination.CreditBalance)
+                val confirmed =
+                    model.uiState.first {
+                        it.usagePack.value != null && it.workspaceCredits.value != null
+                    }
+
+                repeat(2) { refresh ->
+                    model.visible(null)
+                    fixture.usagePackStatus = 400
+                    fixture.billingStatus = 400
+                    model.visible(SettingsDestination.CreditBalance)
+                    val failed =
+                        model.uiState.first {
+                            it.usagePack.unavailable && it.workspaceCredits.unavailable
+                        }
+                    runCurrent()
+                    assertEquals(confirmed.usagePack.value, failed.usagePack.value)
+                    assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
+                    assertEquals(
+                        List(refresh + 1) { SettingsNotice.CreditBalanceRefreshFailed },
+                        notices,
+                    )
+                    // The next visible refresh starts with successful, confirmed reads.
+                    model.visible(null)
+                    fixture.usagePackStatus = 200
+                    fixture.billingStatus = 200
+                    model.visible(SettingsDestination.CreditBalance)
+                    model.uiState.first {
+                        !it.usagePack.unavailable && !it.workspaceCredits.unavailable
+                    }
+                }
             }
         } finally {
             closeOwners(store)
