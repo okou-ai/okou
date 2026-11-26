@@ -1776,33 +1776,33 @@ messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integr
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-029	planned					d-other
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-030	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has an executing chat Run, and the Run's Okou token is used"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-031	planned					d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-001	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-002	planned				B14	d-other
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-003	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-004	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-005	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-006	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-001	rewritten	69.7		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-002	rewritten	73.5		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-003	rewritten	64.7		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-004	rewritten	74.8		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-005	rewritten	66.6		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-006	rewritten	73.0		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-012	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-013	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-014	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-015	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-019	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-020	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-021	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-022	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-023	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-024	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-025	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-029	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-030	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-013	rewritten	86.0		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-014	rewritten	77.8		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-015	rewritten	67.0		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-019	rewritten	67.8		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-020	rewritten	75.3		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-021	rewritten	72.4		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-022	rewritten	113.6		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-023	rewritten	90.4		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-024	rewritten	94.4		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-025	rewritten	77.8		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-029	rewritten	74.3		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-030	rewritten	80.1		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-031	planned					a-run
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-032	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-035	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-036	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-038	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-042	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	planned				B14	b-install
-messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	planned				B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-032	rewritten	76.0		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-035	rewritten	129.1		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-036	rewritten	111.5		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-038	rewritten	87.2		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-042	rewritten	99.2		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-045	rewritten	90.5		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/integrations-discord-native.test.ts	integrations-discord-native-053	rewritten	95.2		src/signals/routes/__tests__/integrations-discord-native.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-001	rewritten	7.1	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-002	rewritten	7.3	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
 messaging	src/signals/routes/__tests__/integrations-discord.test.ts	integrations-discord-003	rewritten	8.4	accepted by the non-first median rule	src/signals/routes/__tests__/integrations-discord.test.ts	B12	d-other
