@@ -2714,7 +2714,13 @@ export function createThreadClaimRunObjects(
         }
         signal.throwIfAborted();
       }
-      await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      // The initiating send publishes both invalidations after its sort touch.
+      if (
+        dispatched.kind !== "accepted" ||
+        pending.head.id !== requestInput?.id
+      ) {
+        await set(publishChatQueueHeadConsumed$, pending.head, signal);
+      }
     },
   );
 
