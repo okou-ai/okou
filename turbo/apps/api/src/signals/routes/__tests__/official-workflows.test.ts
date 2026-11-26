@@ -885,7 +885,9 @@ describe("Standalone proactive dispatch", () => {
       throw new Error("Missing active legacy Morning Brief");
     }
     const client = app(cronProactiveContract);
-    const tick = () => accept(client.compare({ headers: cron }), [200]);
+    const tick = () => {
+      return accept(client.compare({ headers: cron }), [200]);
+    };
     const firstTicks = await Promise.all([tick(), tick()]);
     for (const response of firstTicks) {
       expect(response.body).toMatchObject({ phase: "draining" });
