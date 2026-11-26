@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { bankingRoutes } from "../banking";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -23,8 +23,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 
 const FINICITY = "https://api.finicity.com";
-// Each file configures its own Finicity webhook secret; signatures read it back
-// from the configured environment.
+// A generated Finicity webhook secret, configured for the route below.
 const APP_SECRET = randomUUID();
 const TOPIC = "bankingAccessChanged";
 
@@ -189,7 +188,7 @@ async function bankingMember() {
       webhookData: provider.webhookData.at(-1),
       ...event.extra,
     });
-    const signature = createHmac("sha256", env("FINICITY_APP_SECRET"))
+    const signature = createHmac("sha256", APP_SECRET)
       .update(body)
       .digest("hex");
     return await webhooks.finicityWebhook({
