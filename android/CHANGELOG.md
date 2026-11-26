@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.57.2](https://github.com/okou-ai/okou/compare/android-v0.57.1...android-v0.57.2) (2026-11-26)
+
+
+### Refactoring
+
+* **api:** retire official workflow catalog and automation identities ([#50902](https://github.com/okou-ai/okou/issues/50902)) ([1edc731](https://github.com/okou-ai/okou/commit/1edc731cfb612688e2c648ce00f4fd7f1da98e45))
+
 ## [0.57.1](https://github.com/okou-ai/okou/compare/android-v0.57.0...android-v0.57.1) (2026-11-25)
 
 

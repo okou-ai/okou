@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1186.3](https://github.com/okou-ai/okou/compare/app-v0.1186.2...app-v0.1186.3) (2026-11-26)
+
+
+### Refactoring
+
+* **api:** retire official workflow catalog and automation identities ([#50902](https://github.com/okou-ai/okou/issues/50902)) ([1edc731](https://github.com/okou-ai/okou/commit/1edc731cfb612688e2c648ce00f4fd7f1da98e45))
+
+
+### Performance Improvements
+
+* **app:** narrow home and chat subscriptions ([#50915](https://github.com/okou-ai/okou/issues/50915)) ([ef09be7](https://github.com/okou-ai/okou/commit/ef09be7f9ece42d6540ec32c690417e2a216dd73))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.129.1
+    * @okouai/core bumped to 8.881.4
+    * @okouai/ui bumped to 1.22.26
+
 ## [0.1186.2](https://github.com/okou-ai/okou/compare/app-v0.1186.1...app-v0.1186.2) (2026-11-25)
 
 
