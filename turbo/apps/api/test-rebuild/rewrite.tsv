@@ -1295,10 +1295,10 @@ connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connector
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-087	planned				
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-088	planned				
 connectors	src/signals/routes/__tests__/connectors-oauth-start.test.ts	connectors-oauth-start-091	planned				
-connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-001	planned				B04
-connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-003	planned				B04
-connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-004	planned				B04
-connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-005	planned				B04
+connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-001	rewritten	129.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04
+connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-003	rewritten	95.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04
+connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-004	rewritten	157.5		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04
+connectors	src/signals/routes/__tests__/connectors-openid.bdd.test.ts	connectors-openid.bdd-005	rewritten	76.9		src/signals/routes/__tests__/connectors-openid.bdd.test.ts	B04
 connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-002	rewritten	62.0	extension after sandbox reset	src/signals/routes/__tests__/connectors-search.test.ts	pilot
 connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-003	rewritten	12.0	extension after sandbox reset	src/signals/routes/__tests__/connectors-search.test.ts	pilot
 connectors	src/signals/routes/__tests__/connectors-search.test.ts	connectors-search-008	rewritten	29.2	extension after sandbox reset	src/signals/routes/__tests__/connectors-search.test.ts	pilot
