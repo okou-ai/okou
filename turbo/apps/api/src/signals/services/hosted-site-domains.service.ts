@@ -669,6 +669,38 @@ async function verifyHostedDomainIngress(
     verification.status = "ready";
   }
 }
+function hostedDomainCertificateCheck(
+  ssl: Awaited<ReturnType<typeof readHostedDomain>>["ssl"],
+): HostedDomainVerification["checks"]["certificate"] {
+  if (ssl.status === "active") {
+    return { status: "passed", message: "HTTPS certificate is active" };
+  }
+  const failed =
+    Boolean(ssl.validation_errors?.length) ||
+    [
+      "validation_timed_out",
+      "issuance_timed_out",
+      "deployment_timed_out",
+      "expired",
+      "deleted",
+    ].includes(ssl.status);
+  const validationErrors = ssl.validation_errors
+    ?.map((error) => {
+      return error.message;
+    })
+    .join("; ")
+    .slice(0, 400);
+  return {
+    status: failed ? "failed" : "pending",
+    message:
+      validationErrors ||
+      (ssl.status.endsWith("_timed_out")
+        ? "HTTPS certificate setup timed out. Verify again or contact support."
+        : ["expired", "deleted"].includes(ssl.status)
+          ? "HTTPS certificate setup failed. Verify again or contact support."
+          : "HTTPS certificate setup usually takes a few minutes; no additional DNS records are needed."),
+  };
+}
 const checkHostedDomain$ = command(
   async (
     { set },
@@ -722,35 +754,9 @@ const checkHostedDomain$ = command(
             ? "Domain provider is ready"
             : "Domain activation is in progress. This usually takes a few minutes; no additional DNS records are needed.",
       };
-      verification.checks.certificate = {
-        status:
-          provider.ssl.status === "active"
-            ? "passed"
-            : provider.ssl.validation_errors?.length ||
-                [
-                  "validation_timed_out",
-                  "issuance_timed_out",
-                  "deployment_timed_out",
-                  "expired",
-                  "deleted",
-                ].includes(provider.ssl.status)
-              ? "failed"
-              : "pending",
-        message:
-          provider.ssl.status === "active"
-            ? "HTTPS certificate is active"
-            : provider.ssl.validation_errors
-                ?.map((error) => {
-                  return error.message;
-                })
-                .join("; ")
-                .slice(0, 400) ||
-              (provider.ssl.status.endsWith("_timed_out")
-                ? "HTTPS certificate setup timed out. Verify again or contact support."
-                : ["expired", "deleted"].includes(provider.ssl.status)
-                  ? "HTTPS certificate setup failed. Verify again or contact support."
-                  : "HTTPS certificate setup usually takes a few minutes; no additional DNS records are needed."),
-      };
+      verification.checks.certificate = hostedDomainCertificateCheck(
+        provider.ssl,
+      );
       if (verification.checks.certificate.status === "pending") {
         verification.checks.route = {
           status: "pending",

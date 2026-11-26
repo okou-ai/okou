@@ -254,8 +254,9 @@ function domainProvider() {
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
       async ({ request, params }) => {
         const current = providers.get(String(params.id));
-        if (!current)
+        if (!current) {
           return HttpResponse.json({ success: false }, { status: 404 });
+        }
         const body = object({
           ssl: object({
             method: literal("http"),
@@ -294,12 +295,13 @@ function domainProvider() {
   );
   return {
     txtValidation: () => {
-      if (provider)
+      if (provider) {
         provider.ssl = {
           ...provider.ssl,
           method: "txt",
           settings: { min_tls_version: "1.3", early_hints: "on" },
         };
+      }
     },
     extraRecords: (value: typeof extraRecords) => {
       extraRecords = value;
@@ -995,7 +997,7 @@ test("a provider identity mismatch disables selection and never deletes another 
   expect(external.deletes()).toBe(0);
 });
 
-test("HTTP certificate validation keeps the configuration to one ownership TXT and one CNAME", async () => {
+test("http certificate validation keeps the configuration to one ownership TXT and one CNAME", async () => {
   const fixture = await scenario();
   const external = domainProvider();
   const domain = (await add(fixture)).domains[0]!;
@@ -1134,18 +1136,18 @@ test("only the saved domain serves a website and switching retains configured do
   })!;
   external.recordValues(second.records[0]!.name, [second.records[0]!.value]);
   settings = (await accept(verifyDomainRequest(fixture, second), [200])).body;
-  expect(await resolve(second.hostname)).toBeNull();
+  await expect(resolve(second.hostname)).resolves.toBeNull();
   await select(second.id);
-  expect(await resolve(first.hostname)).toBeNull();
+  await expect(resolve(first.hostname)).resolves.toBeNull();
   expect((await resolve(second.hostname))?.siteId).toBe(
     fixture.prepared.siteId,
   );
   await select(first.id);
   expect((await resolve(first.hostname))?.siteId).toBe(fixture.prepared.siteId);
-  expect(await resolve(second.hostname)).toBeNull();
+  await expect(resolve(second.hostname)).resolves.toBeNull();
   await select(null);
-  expect(await resolve(first.hostname)).toBeNull();
-  expect(await resolve(second.hostname)).toBeNull();
+  await expect(resolve(first.hostname)).resolves.toBeNull();
+  await expect(resolve(second.hostname)).resolves.toBeNull();
   expect(settings.domains).toHaveLength(2);
 });
 

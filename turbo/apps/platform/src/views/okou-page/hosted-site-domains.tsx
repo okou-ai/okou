@@ -405,7 +405,9 @@ function DomainSteps({
       return $.artifacts.customDomain.steps.enable;
     }),
   ];
-  if (!signal) return null;
+  if (!signal) {
+    return null;
+  }
   return (
     <ol
       className="grid grid-cols-3 gap-2"

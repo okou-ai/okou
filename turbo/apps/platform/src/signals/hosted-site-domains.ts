@@ -144,7 +144,9 @@ function createDomainWizard(
       set(scope.resetVerificationSignal$);
       set(scope.viewedStage$, stage);
       set(scope.notice$, null);
-      if (stage === 1) set(resumeVerification$, signal);
+      if (stage === 1) {
+        set(resumeVerification$, signal);
+      }
     },
   );
   return { wizard$, reviewStage$ };
@@ -485,8 +487,9 @@ function createDomainMutations(scope: DomainState) {
           Object.values(checks).some((check) => {
             return check.status === "failed" || check.status === "unavailable";
           })
-        )
+        ) {
           return true;
+        }
         if (first) {
           first = false;
           return false;

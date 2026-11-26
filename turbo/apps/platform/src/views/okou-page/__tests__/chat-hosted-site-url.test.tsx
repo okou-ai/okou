@@ -879,16 +879,14 @@ test("unavailable verification stays in the verification stage until DNS changes
             eligibleForSelection: false,
             checkedAt,
             validationRecords: [],
-            recordChecks: [
-              ...records.map((record) => {
-                return {
-                  ...record,
-                  ...passed,
-                  observedValues: [record.value],
-                  checkedAt,
-                };
-              }),
-            ],
+            recordChecks: records.map((record) => {
+              return {
+                ...record,
+                ...passed,
+                observedValues: [record.value],
+                checkedAt,
+              };
+            }),
             checks: {
               ownership: passed,
               dns: passed,
@@ -1010,7 +1008,9 @@ test("HTTPS activation resumes automatic refresh after reopening and still requi
   context.mocks.api(hostContract.verifySiteDomain, async ({ respond }) => {
     requests += 1;
     if (requests >= 2) {
-      if (requests === 2) refreshStarted.resolve();
+      if (requests === 2) {
+        refreshStarted.resolve();
+      }
       await finishRefresh.promise;
     }
     const ready = requests >= 2;
