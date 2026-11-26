@@ -15,10 +15,6 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
-import {
-  createBddApi,
-  type ApiTestUser,
-} from "../../routes/__tests__/helpers/api-bdd";
 import { createAuthDeviceSupportApi } from "../../routes/__tests__/helpers/api-bdd-auth-device-support";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
@@ -28,7 +24,6 @@ import { createDeferredPromise } from "../../utils";
 import { recordBillingOperationTimings } from "../sandbox-op-log";
 
 const context = testContext();
-const timingOwnerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
 
 function sdkClientForDataset(
   mocks: ReturnType<typeof getApiTestMocks>,
@@ -794,9 +789,7 @@ describe("Run phase observation transport", () => {
     async (skipResearch) => {
       // Telemetry-client exception: these optional events have no raw API read
       // route. Construct every stage through its authenticated production API.
-      const owned = await publicChatActor(context, {
-        actor: createBddApi(context).user({ userId: timingOwnerId }),
-      });
+      const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
       const events: unknown[] = [];
       context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
@@ -814,12 +807,6 @@ describe("Run phase observation transport", () => {
         ),
       );
       await owned.run(async () => {
-        await createAuthDeviceSupportApi(context).updateFeatureSwitches(
-          owned.actor,
-          {
-            [FeatureSwitchKey.ArtifactThreePointTiming]: true,
-          },
-        );
         const run = await createRunsApi(context).createThreadRun(owned.actor, {
           prompt: "Create the phase transport example",
           model: "claude-fable-5-1",
@@ -905,14 +892,10 @@ describe("Run phase start and completion transport", () => {
   // All Run state is created and completed through public API endpoints.
   async function callbackFixture(
     options: {
-      readonly actor?: ApiTestUser;
       readonly threePointEnabled?: boolean;
     } = {},
   ) {
-    const owned = await publicChatActor(context, {
-      actor:
-        options.actor ?? createBddApi(context).user({ userId: timingOwnerId }),
-    });
+    const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     const events: unknown[] = [];
     context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
@@ -1116,57 +1099,30 @@ describe("Run phase start and completion transport", () => {
     });
   });
 
-  it.each([
-    {
-      scenario: "owner opt-out",
-      userId: timingOwnerId,
-      threePointEnabled: false,
-    },
-    {
-      scenario: "non-audience default",
-      userId: undefined,
-      threePointEnabled: undefined,
-    },
-    {
-      scenario: "non-audience stored opt-in",
-      userId: undefined,
-      threePointEnabled: true,
-    },
-  ])(
-    "suppresses collection while preserving normal completion for $scenario",
-    async ({ userId, threePointEnabled }) => {
-      const f = await callbackFixture({
-        actor: createBddApi(context).user({ userId }),
-        threePointEnabled,
-      });
-      await f.owned.run(async () => {
-        const api = setupApp({ context, routes: runPhaseTimingRoutes })(
-          runPhaseTimingContract,
+  it("suppresses collection while preserving normal completion after a personal opt-out", async () => {
+    const f = await callbackFixture({ threePointEnabled: false });
+    await f.owned.run(async () => {
+      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+        runPhaseTimingContract,
+      );
+      expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
+      for (const body of [
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "report", skipResearch: false },
+      ] as const) {
+        const marked = await accept(
+          api.mark({ headers: f.markHeaders, body }),
+          [404],
         );
-        expect(f.execution.appendSystemPrompt).not.toContain("okou run mark");
-        for (const body of [
-          { phase: "research-start" },
-          { phase: "generation-start", kind: "report", skipResearch: false },
-        ] as const) {
-          const marked = await accept(
-            api.mark({ headers: f.markHeaders, body }),
-            [404],
-          );
-          expect(marked.headers.get("cache-control")).toBe("no-store");
-        }
-        await completePublicClaudeRun(
-          context,
-          f.run,
-          f.headers,
-          "Report ready",
-        );
-        expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
-          "completed",
-        );
-        expect(f.events).toHaveLength(0);
-      });
-    },
-  );
+        expect(marked.headers.get("cache-control")).toBe("no-store");
+      }
+      await completePublicClaudeRun(context, f.run, f.headers, "Report ready");
+      expect((await runs.readRun(f.owned.actor, f.run.runId)).status).toBe(
+        "completed",
+      );
+      expect(f.events).toHaveLength(0);
+    });
+  });
 
   it("stops collecting starts and completion points after a live opt-out", async () => {
     const f = await callbackFixture();
