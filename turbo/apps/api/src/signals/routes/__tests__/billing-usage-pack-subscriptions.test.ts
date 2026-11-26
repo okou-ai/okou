@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  billingConcurrencyCheckoutContract,
+  billingRestoreContract,
   billingStatusContract,
   billingUsagePackCreditsContract,
   billingUsagePackManagementContract,
@@ -31,6 +33,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { billingCheckoutRoutes } from "../billing-checkout";
+import { billingConcurrencyCheckoutRoutes } from "../billing-concurrency-checkout";
+import { billingRestoreRoutes } from "../billing-restore";
 import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -136,6 +140,8 @@ interface PlanState {
 
 const PRICE_20 = "price_public_usage_20";
 const PRICE_50 = "price_public_usage_50";
+const PRICE_100 = "price_public_usage_100";
+const PRICE_200 = "price_public_usage_200";
 
 function planPrice(tier: "pro" | "team") {
   return tier === "team"
@@ -700,123 +706,6 @@ const schedulePhasesSchema = object({
 });
 type SchedulePhase = zInfer<typeof schedulePhasesSchema>["phases"][number];
 
-/** Two members each downgrade $50 to $20; Stripe creates a schedule split mid-period. */
-async function scheduledMemberDowngrades() {
-  mockNow(Date.parse("2035-03-01T00:00:00.000Z"));
-  const owner = admin();
-  const members = [`user_${randomUUID()}`, `user_${randomUUID()}`];
-  const paid = await purchaseUsagePacks(
-    context,
-    owner,
-    members.map((userId) => {
-      return { userId, usd: 50 as const };
-    }),
-  );
-  usagePackCatalog();
-  stripeConcurrencyPrice();
-  const period = periodOf(paid);
-  const midPeriod = Math.floor(Date.parse("2035-03-16T00:00:00.000Z") / 1000);
-  mockNow(midPeriod * 1000);
-  const scheduleId = `sub_sched_${randomUUID()}`;
-  const subscription = planSubscription({
-    event: paid,
-    tier: "pro",
-    packs: [{ price: PRICE_50, quantity: 2 }],
-    start: period.start,
-    end: period.end,
-  });
-  // Stripe's schedule as it evolves; reads return the latest written phases.
-  const schedule: {
-    readonly id: string;
-    readonly end_behavior: string;
-    readonly current_phase: { start_date: number; end_date: number };
-    phases: SchedulePhase[];
-  } = {
-    id: scheduleId,
-    end_behavior: "release",
-    current_phase: { start_date: midPeriod, end_date: period.end },
-    phases: [
-      {
-        start_date: midPeriod,
-        end_date: period.end,
-        items: [
-          { price: planPrice("pro"), quantity: 1 },
-          { price: PRICE_50, quantity: 2 },
-        ],
-      },
-    ],
-  };
-  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
-  context.mocks.stripe.subscriptionSchedules.create.mockImplementation(() => {
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      ...subscription,
-      schedule: scheduleId,
-    });
-    return Promise.resolve(schedule);
-  });
-  context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
-    schedule,
-  );
-  context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
-    (_id: unknown, input: unknown) => {
-      const params = schedulePhasesSchema.parse(input);
-      schedule.phases = params.phases.map((phase) => {
-        return {
-          ...phase,
-          end_date: phase.end_date ?? phase.start_date + 30 * 86_400,
-        };
-      });
-      return Promise.resolve(schedule);
-    },
-  );
-  stripePrices(0, 6000, PRICE_20);
-  const management = () => {
-    signIn(owner);
-    return setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackManagementContract,
-    );
-  };
-  const changeIds: string[] = [];
-  const statuses: string[] = [];
-  for (const memberId of members) {
-    const preview = await accept(
-      management().previewChange({
-        headers,
-        body: { memberId, targetUsagePackUsd: 20 },
-      }),
-      [200],
-    );
-    changeIds.push(preview.body.changeId);
-    const confirmed = await accept(
-      management().confirmChange({
-        headers,
-        params: { changeId: preview.body.changeId },
-        body: {},
-      }),
-      [200],
-    );
-    statuses.push(confirmed.body.status);
-  }
-  return { owner, members, paid, period, changeIds, statuses };
-}
-
-async function membersCreditGrants(owner: Admin, members: readonly string[]) {
-  signIn(owner);
-  const read = await accept(
-    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
-      billingUsagePackCreditsContract,
-    ).get({ headers }),
-    [200],
-  );
-  return (read.body.memberCredits ?? [])
-    .filter((entry) => {
-      return members.includes(entry.memberId);
-    })
-    .flatMap((entry) => {
-      return entry.creditGrants;
-    });
-}
-
 describe("member usage pack change confirmation", () => {
   it("billing-usage-pack-subscriptions-034 pays a member upgrade in app with the saved card and grants it at once", async () => {
     const plan = await proPlanWithMemberPack("2035-01-05T00:00:00.000Z");
@@ -919,101 +808,6 @@ describe("member usage pack change confirmation", () => {
     await expect(
       memberCreditGrants(plan.owner, plan.memberId),
     ).resolves.toHaveLength(4);
-  });
-
-  it("billing-usage-pack-subscriptions-036 (1/2) schedules both member downgrades into one mid-period Stripe schedule", async () => {
-    const { owner, members, period, changeIds, statuses } =
-      await scheduledMemberDowngrades();
-
-    expect(statuses).toStrictEqual(["scheduled", "scheduled"]);
-    const updates =
-      context.mocks.stripe.subscriptionSchedules.update.mock.calls;
-    expect(updates).toHaveLength(2);
-    const [first, second] = updates;
-    expect(first?.[1]).toMatchObject({
-      phases: expect.arrayContaining([
-        expect.objectContaining({
-          start_date: period.end,
-          items: expect.arrayContaining([
-            expect.objectContaining({ price: PRICE_20, quantity: 1 }),
-            expect.objectContaining({ price: PRICE_50, quantity: 1 }),
-          ]),
-        }),
-      ]),
-    });
-    expect(first?.[2]).toStrictEqual({
-      idempotencyKey: `usage-pack-change:${changeIds[0]}:schedule-update`,
-    });
-    expect(second?.[1]).toMatchObject({
-      phases: [
-        expect.objectContaining({ end_date: period.end }),
-        expect.objectContaining({
-          start_date: period.end,
-          items: expect.arrayContaining([
-            expect.objectContaining({ price: PRICE_20, quantity: 2 }),
-          ]),
-        }),
-      ],
-    });
-    expect(second?.[2]).toStrictEqual({
-      idempotencyKey: `usage-pack-change:${changeIds[1]}:schedule-update`,
-    });
-    const read = await readManagement(owner);
-    for (const memberId of members) {
-      expect(
-        read.allocations.find((allocation) => {
-          return allocation.memberId === memberId;
-        }),
-      ).toMatchObject({ usagePackUsd: 50, pendingChange: expect.anything() });
-    }
-    await expect(membersCreditGrants(owner, members)).resolves.toHaveLength(4);
-  });
-
-  it("billing-usage-pack-subscriptions-036 (2/2) applies both scheduled downgrades once at the period boundary", async () => {
-    const { owner, members, paid, period } = await scheduledMemberDowngrades();
-    mockNow((period.end + 60) * 1000);
-    const renewed = planSubscription({
-      event: paid,
-      tier: "pro",
-      packs: [{ price: PRICE_20, quantity: 2 }],
-      start: period.end,
-      end: period.end + 30 * 86_400,
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(renewed);
-    const boundary = {
-      id: `evt_${randomUUID()}`,
-      type: "customer.subscription.updated",
-      created: period.end + 60,
-      data: { object: renewed },
-    };
-
-    await deliverStripe(boundary);
-    const [read, grants] = await Promise.all([
-      readManagement(owner),
-      membersCreditGrants(owner, members),
-    ]);
-    expect(
-      read.allocations
-        .map((allocation) => {
-          return [
-            allocation.memberId,
-            allocation.usagePackUsd,
-            allocation.pendingChange,
-          ];
-        })
-        .sort(),
-    ).toStrictEqual(
-      members
-        .map((memberId) => {
-          return [memberId, 20, null];
-        })
-        .sort(),
-    );
-    await deliverStripe({ ...boundary, id: `evt_${randomUUID()}` });
-
-    await expect(
-      Promise.all([readManagement(owner), membersCreditGrants(owner, members)]),
-    ).resolves.toStrictEqual([read, grants]);
   });
 
   it("billing-usage-pack-subscriptions-020 refuses a downgrade when the Plan now ends before it takes effect", async () => {
@@ -1693,6 +1487,194 @@ function stripePrices(
   return previews;
 }
 
+/** A Team Plan bought through Checkout where one person holds a $100 pack. */
+async function teamPlanWithHundredPack(holder: "member" | "admin") {
+  mockNow(Date.parse("2035-03-01T00:00:00.000Z"));
+  const owner = admin();
+  const member =
+    holder === "admin"
+      ? owner
+      : { userId: `user_${randomUUID()}`, orgId: owner.orgId };
+  usagePackCatalog();
+  stripeConcurrencyPrice();
+  mockOptionalEnv("STRIPE_WEBHOOK_SECRET", `whsec_${randomUUID()}`);
+  clerkMembers(...new Set([owner, member]));
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+    id: owner.orgId,
+    name: "Hundred pack team",
+    slug: `team-${randomUUID()}`,
+    createdBy: owner.userId,
+    createdAt: now(),
+  });
+  context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+    { data: [] },
+  );
+  const customer = `cus_${randomUUID()}`;
+  context.mocks.stripe.customers.create.mockResolvedValueOnce({ id: customer });
+  const checkoutSchema = object({
+    metadata: object({ usagePackSubscriptionId: string() }).catchall(string()),
+  });
+  let metadata: zInfer<typeof checkoutSchema>["metadata"] | undefined;
+  const sessionId = `cs_${randomUUID()}`;
+  context.mocks.stripe.checkout.sessions.create.mockImplementationOnce(
+    (input: unknown) => {
+      metadata = checkoutSchema.parse(input).metadata;
+      return Promise.resolve({
+        id: sessionId,
+        url: `https://checkout.stripe.test/${sessionId}`,
+      });
+    },
+  );
+  signIn(owner);
+  const origin = new URL(env("APP_URL")).origin;
+  await accept(
+    setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackCheckoutContract,
+    ).create({
+      headers,
+      body: {
+        tier: "team",
+        memberUsagePacks:
+          holder === "admin"
+            ? [{ memberId: owner.userId, usagePackUsd: 100 }]
+            : [
+                { memberId: owner.userId, usagePackUsd: 0 },
+                { memberId: member.userId, usagePackUsd: 100 },
+              ],
+        successUrl: `${origin}/billing`,
+        cancelUrl: `${origin}/billing`,
+      },
+    }),
+    [200],
+  );
+  if (!metadata) {
+    throw new Error("Stripe checkout did not receive allocation metadata");
+  }
+  const start = Math.floor(now() / 1000);
+  const period = { start, end: start + 30 * 86_400 };
+  const paid: PaidEvent = {
+    id: `evt_${randomUUID()}`,
+    type: "invoice.paid",
+    created: start,
+    data: {
+      object: {
+        id: `in_${randomUUID()}`,
+        customer,
+        metadata,
+        status: "paid",
+        paid: true,
+        paid_out_of_band: false,
+        currency: "usd",
+        amount_paid: 10_000,
+        parent: {
+          subscription_details: {
+            subscription: `sub_${randomUUID()}`,
+            metadata,
+          },
+        },
+        lines: {
+          has_more: false,
+          data: [invoiceLine(PRICE_100, 1, 10_000, period, false)],
+        },
+      },
+    },
+  };
+  const subscription = {
+    ...planSubscription({
+      event: paid,
+      tier: "team",
+      packs: [{ price: PRICE_100, quantity: 1 }],
+      start: period.start,
+      end: period.end,
+    }),
+    default_payment_method: "pm_team_card",
+  };
+  context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
+  await deliverStripe(paid);
+  const management = () => {
+    signIn(owner);
+    return setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+  };
+  return {
+    owner,
+    memberId: member.userId,
+    paid,
+    period,
+    subscription,
+    management,
+  };
+}
+
+/** Given of 038: the admin's $100 pack is scheduled to drop to $20 in a Stripe schedule. */
+async function scheduledHundredPackDowngrade() {
+  const plan = await teamPlanWithHundredPack("admin");
+  const midPeriod = Math.floor(Date.parse("2035-03-16T00:00:00.000Z") / 1000);
+  mockNow(midPeriod * 1000);
+  const scheduleId = `sub_sched_${randomUUID()}`;
+  const schedule: {
+    readonly id: string;
+    readonly end_behavior: string;
+    readonly current_phase: { start_date: number; end_date: number };
+    phases: SchedulePhase[];
+  } = {
+    id: scheduleId,
+    end_behavior: "release",
+    current_phase: { start_date: midPeriod, end_date: plan.period.end },
+    phases: [
+      {
+        start_date: midPeriod,
+        end_date: plan.period.end,
+        items: [
+          { price: planPrice("team"), quantity: 1 },
+          { price: PRICE_100, quantity: 1 },
+        ],
+      },
+    ],
+  };
+  const scheduled = { ...plan.subscription, schedule: scheduleId };
+  context.mocks.stripe.subscriptionSchedules.create.mockImplementation(() => {
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(scheduled);
+    return Promise.resolve(schedule);
+  });
+  context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue(
+    schedule,
+  );
+  context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+    (_id: unknown, input: unknown) => {
+      const params = schedulePhasesSchema.parse(input);
+      schedule.phases = params.phases.map((phase) => {
+        return {
+          ...phase,
+          end_date: phase.end_date ?? phase.start_date + 30 * 86_400,
+        };
+      });
+      return Promise.resolve(schedule);
+    },
+  );
+  stripePrices(0, 22_000, PRICE_20);
+  const preview = await accept(
+    plan.management().previewChange({
+      headers,
+      body: { memberId: plan.owner.userId, targetUsagePackUsd: 20 },
+    }),
+    [200],
+  );
+  const confirmed = await accept(
+    plan.management().confirmChange({
+      headers,
+      params: { changeId: preview.body.changeId },
+      body: {},
+    }),
+    [200],
+  );
+  if (confirmed.body.status !== "scheduled") {
+    throw new Error("Expected the $20 downgrade to be scheduled");
+  }
+  return { ...plan, scheduleId, scheduled };
+}
+
 describe("existing subscription changes", () => {
   it("billing-usage-pack-subscriptions-022 previews a mid-period pack upgrade with prorated credits and a fresh change each time", async () => {
     const plan = await proPlanWithMemberPack("2035-01-01T00:00:00.000Z");
@@ -1850,6 +1832,279 @@ describe("existing subscription changes", () => {
     await expect(
       memberCreditGrants(plan.owner, plan.memberId),
     ).resolves.toStrictEqual(grantsBefore);
+  });
+
+  it("billing-usage-pack-subscriptions-027 clears the scheduled package change when the admin restores the Plan", async () => {
+    const plan = await teamPlanWithHundredPack("member");
+    stripePrices(0, 4000, planPrice("pro"));
+    const downgrade = await accept(
+      plan.management().previewSubscriptionChange({
+        headers,
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [
+            { memberId: plan.owner.userId, usagePackUsd: 0 },
+            { memberId: plan.memberId, usagePackUsd: 20 },
+          ],
+        },
+      }),
+      [200],
+    );
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+      id: scheduleId,
+    });
+    const scheduled = await accept(
+      plan.management().confirmSubscriptionChange({
+        headers,
+        body: { changeId: downgrade.body.changeId },
+      }),
+      [200],
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      ...plan.subscription,
+      schedule: scheduleId,
+    });
+    expect(scheduled.body).toMatchObject({ status: "scheduled" });
+    await expect(readStatus(plan.owner)).resolves.toMatchObject({
+      scheduledChange: { targetTier: "pro" },
+    });
+    context.mocks.stripe.subscriptionSchedules.release.mockImplementation(
+      () => {
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          plan.subscription,
+        );
+        return Promise.resolve({ id: scheduleId });
+      },
+    );
+
+    signIn(plan.owner);
+    const restored = await accept(
+      setupApp({ context, routes: billingRestoreRoutes })(
+        billingRestoreContract,
+      ).create({ headers, body: {} }),
+      [200],
+    );
+    stripePrices(18_000, 40_000, PRICE_200);
+
+    expect(restored.body).toStrictEqual({ status: "restored" });
+    expect(
+      context.mocks.stripe.subscriptionSchedules.release,
+    ).toHaveBeenCalledWith(scheduleId);
+    await expect(readStatus(plan.owner)).resolves.toMatchObject({
+      scheduledChange: null,
+      cancelAtPeriodEnd: false,
+    });
+    const read = await readManagement(plan.owner);
+    expect(read.allocations).toStrictEqual([
+      expect.objectContaining({
+        memberId: plan.memberId,
+        usagePackUsd: 100,
+        pendingChange: null,
+      }),
+    ]);
+    await accept(
+      plan.management().previewSubscriptionChange({
+        headers,
+        body: {
+          targetTier: "team",
+          memberUsagePacks: [
+            { memberId: plan.owner.userId, usagePackUsd: 0 },
+            { memberId: plan.memberId, usagePackUsd: 200 },
+          ],
+        },
+      }),
+      [200],
+    );
+  });
+
+  it("billing-usage-pack-subscriptions-038 adds concurrency to the Plan schedule without replacing the scheduled pack downgrade", async () => {
+    const plan = await scheduledHundredPackDowngrade();
+    const subscriptionId = plan.subscription.id;
+    const invoiceId = `in_${randomUUID()}`;
+    context.mocks.stripe.invoices.createPreview.mockImplementation(
+      (input: unknown) => {
+        const prorationDate =
+          previewParamsSchema.parse(input).subscription_details?.proration_date;
+        const amount = prorationDate === undefined ? 30_000 : 15_000;
+        return Promise.resolve({
+          id: `upcoming_${randomUUID()}`,
+          currency: "usd",
+          amount_due: amount,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_${randomUUID()}`,
+                amount,
+                taxes: [],
+                pricing: { price_details: { price: CONCURRENCY_PRICE } },
+                period: {
+                  start: prorationDate ?? plan.period.end,
+                  end: plan.period.end + 30 * 86_400,
+                },
+                parent: {
+                  type: "subscription_item_details",
+                  subscription_item_details: {
+                    proration: prorationDate !== undefined,
+                  },
+                },
+              },
+            ],
+          },
+        });
+      },
+    );
+    const scheduleUpdates =
+      context.mocks.stripe.subscriptionSchedules.update.mock.calls.length;
+    const updateSchedule =
+      context.mocks.stripe.subscriptionSchedules.update.getMockImplementation();
+    if (!updateSchedule) {
+      throw new Error("Expected the Stripe schedule fake from the Given");
+    }
+    context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+      (...args: unknown[]) => {
+        // Stripe invoices the prorated concurrency as a new draft invoice.
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+          ...plan.scheduled,
+          latest_invoice: { id: invoiceId, status: "draft", paid: false },
+        });
+        return updateSchedule(...args);
+      },
+    );
+    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
+      id: invoiceId,
+      status: "open",
+      paid: false,
+    });
+    context.mocks.stripe.invoices.pay.mockResolvedValue({
+      id: invoiceId,
+      status: "paid",
+      paid: true,
+    });
+    signIn(plan.owner);
+    const concurrency = setupApp({
+      context,
+      routes: billingConcurrencyCheckoutRoutes,
+    })(billingConcurrencyCheckoutContract);
+    const origin = new URL(env("APP_URL")).origin;
+
+    const preview = await accept(
+      concurrency.preview({ headers, body: { quantity: 3 } }),
+      [200],
+    );
+    const bought = await accept(
+      concurrency.create({
+        headers,
+        body: {
+          quantity: 3,
+          successUrl: `${origin}/billing?concurrency=success`,
+          cancelUrl: `${origin}/billing`,
+        },
+      }),
+      [200],
+    );
+
+    expect(preview.body).toStrictEqual({
+      currentQuantity: 0,
+      targetQuantity: 3,
+      immediateAmountCents: 15_000,
+      nextRecurringAmountCents: 30_000,
+      currency: "usd",
+    });
+    expect(bought.body).toStrictEqual({
+      url: `${origin}/billing?concurrency=success`,
+    });
+    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ schedule: plan.scheduleId }),
+    );
+    const concurrencyScheduleUpdates =
+      context.mocks.stripe.subscriptionSchedules.update.mock.calls.slice(
+        scheduleUpdates,
+      );
+    expect(concurrencyScheduleUpdates).toStrictEqual([
+      [
+        plan.scheduleId,
+        expect.objectContaining({
+          proration_behavior: "always_invoice",
+          phases: [
+            expect.objectContaining({
+              items: expect.arrayContaining([
+                expect.objectContaining({ price: PRICE_100, quantity: 1 }),
+                expect.objectContaining({
+                  price: CONCURRENCY_PRICE,
+                  quantity: 3,
+                }),
+              ]),
+            }),
+            expect.objectContaining({
+              items: expect.arrayContaining([
+                expect.objectContaining({ price: PRICE_20, quantity: 1 }),
+                expect.objectContaining({
+                  price: CONCURRENCY_PRICE,
+                  quantity: 3,
+                }),
+              ]),
+            }),
+          ],
+        }),
+        {
+          idempotencyKey: expect.stringMatching(
+            /^concurrency-change:sub_[\w-]+:[\w-]+:schedule-update$/,
+          ),
+        },
+      ],
+    ]);
+    expect(concurrencyScheduleUpdates[0]?.[2]).toStrictEqual({
+      idempotencyKey: expect.stringContaining(
+        `concurrency-change:${subscriptionId}:`,
+      ),
+    });
+    expect(
+      context.mocks.stripe.subscriptionSchedules.release,
+    ).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.invoices.finalizeInvoice).toHaveBeenCalledWith(
+      invoiceId,
+      {},
+      {
+        idempotencyKey: `concurrency-change:${subscriptionId}:${invoiceId}:finalize`,
+      },
+    );
+    expect(context.mocks.stripe.invoices.pay).toHaveBeenCalledWith(
+      invoiceId,
+      {},
+      {
+        idempotencyKey: `concurrency-change:${subscriptionId}:${invoiceId}:pay`,
+      },
+    );
+
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      planSubscription({
+        event: plan.paid,
+        tier: "team",
+        packs: [{ price: PRICE_100, quantity: 1 }],
+        concurrency: 3,
+        start: plan.period.start,
+        end: plan.period.end,
+        schedule: plan.scheduleId,
+      }),
+    );
+    await deliverStripe(
+      invoicePaid(
+        plan.paid,
+        [invoiceLine(CONCURRENCY_PRICE, 3, 15_000, plan.period, true)],
+        15_000,
+        invoiceId,
+      ),
+    );
+    const status = await readStatus(plan.owner);
+    expect(status.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({ id: subscriptionId, quantity: 3 }),
+    ]);
   });
 });
 
