@@ -112,6 +112,11 @@ internal fun DefaultModelSetting(
     val state by model.state.collectAsStateWithLifecycle()
     val options = state.options
     val record = state.record
+    SettingsRefreshFeedback(
+        snackbar,
+        state.settingsCatalogRefreshFailure,
+        R.string.settings_model_catalog_refresh_failed,
+    )
     if (options == null || record == null) {
         val status =
             when {
@@ -184,25 +189,22 @@ private fun DefaultModelSheet(
     onFeedbackInOverlay: (Boolean) -> Unit,
     dismiss: () -> Unit,
 ) {
+    val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
+    DisposableEffect(Unit) {
+        routeFeedback(true)
+        onDispose { routeFeedback(false) }
+    }
     ModelPickerSheet(
         title = title,
         choices = state.options?.choices,
         selectedId = state.selected?.id ?: state.selectedModel.takeUnless(::isAutoDefaultModel),
         effort = state.effort,
         fast = state.fast,
-        catalogUnavailable = state.catalogUnavailable,
         select = model::select,
         selectEffort = model::effort,
         selectFast = model::fast,
         dismiss = dismiss,
-        footer = {
-            val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
-            DisposableEffect(Unit) {
-                routeFeedback(true)
-                onDispose { routeFeedback(false) }
-            }
-            WorkspaceFeedbackHost(snackbar, Modifier.padding(top = 8.dp))
-        },
+        snackbar = snackbar,
     )
 }
 
@@ -218,13 +220,14 @@ internal fun ModelPickerSheet(
     selectFast: (Boolean) -> Unit,
     dismiss: () -> Unit,
     catalogUnavailable: Boolean = false,
+    snackbar: SnackbarHostState? = null,
     footer: @Composable () -> Unit = {},
 ) {
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
     val selected = choices?.firstOrNull { it.id == selectedId }
-    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
+    val panel: @Composable (Boolean) -> Unit = { centered ->
         val size =
             if (fullScreen) Modifier.fillMaxHeight()
             else
@@ -332,7 +335,10 @@ internal fun ModelPickerSheet(
                                     checked = fast,
                                     onCheckedChange = selectFast,
                                     supportingText =
-                                        stringResource(R.string.settings_model_fast_usage, value),
+                                        stringResource(
+                                            R.string.settings_model_fast_usage,
+                                            value,
+                                        ),
                                 )
                             }
                         }
@@ -340,6 +346,20 @@ internal fun ModelPickerSheet(
             }
             footer()
         }
+    }
+    SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
+        if (snackbar == null) panel(centered)
+        else
+            Box(propagateMinConstraints = true) {
+                panel(centered)
+                Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = 8.dp),
+                        manageTimeout = false,
+                    )
+                }
+            }
     }
 }
 

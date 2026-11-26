@@ -110,4 +110,5 @@
     <string name="settings_suggestions_save_failed">Impossibile salvare i suggerimenti. È stata ripristinata l’impostazione precedente.</string>
     <string name="settings_timezone_save_rejected">Impossibile salvare il fuso orario. È stato ripristinato quello precedente.</string>
     <string name="settings_timezone_schedule_update_failed">Fuso orario salvato. Impossibile aggiornare l’orario del riepilogo del mattino.</string>
+    <string name="settings_model_catalog_refresh_failed">Impossibile aggiornare i modelli disponibili. Viene mostrato l’ultimo elenco caricato.</string>
 </resources>

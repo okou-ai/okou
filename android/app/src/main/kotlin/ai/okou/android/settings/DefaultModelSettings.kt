@@ -135,6 +135,7 @@ internal data class DefaultModelState(
     val save: DefaultModelSave? = null,
     val options: DefaultModelOptions? = null,
     val catalogUnavailable: Boolean = false,
+    val settingsCatalogRefreshFailure: SettingsRefreshFailure? = null,
 ) {
     val pending: UpdateDefaultModelPreference?
         get() = save?.request
@@ -300,12 +301,20 @@ internal class DefaultModelSettings(
                 (composerOptionsVisible ||
                     destination == SettingsDestination.Overview ||
                     destination == SettingsDestination.Instructions)
+        if (!catalogVisible || destination != SettingsDestination.Overview)
+            clearSettingsCatalogRefreshFailure()
         if (!catalogVisible) {
             catalogRead?.cancel()
             catalogRead = null
         } else if (catalogRead == null) {
             catalogRead = scope.launch { refreshCatalog() }
         }
+    }
+
+    private fun clearSettingsCatalogRefreshFailure() {
+        val current = mutable.value
+        if (current.settingsCatalogRefreshFailure != null)
+            mutable.value = current.copy(settingsCatalogRefreshFailure = null)
     }
 
     private suspend fun refreshPreferences() {
@@ -366,7 +375,12 @@ internal class DefaultModelSettings(
                 val options = loadOptions()
                 currentCoroutineContext().ensureActive()
                 if (!authorized()) return
-                mutable.value = mutable.value.copy(options = options, catalogUnavailable = false)
+                mutable.value =
+                    mutable.value.copy(
+                        options = options,
+                        catalogUnavailable = false,
+                        settingsCatalogRefreshFailure = null,
+                    )
                 mutable.value.record?.let { publishConfirmed(it) }
                 return
             } catch (cancelled: CancellationException) {
@@ -378,7 +392,18 @@ internal class DefaultModelSettings(
                 val wait =
                     if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
                 if (wait == null) {
-                    mutable.value = mutable.value.copy(catalogUnavailable = true)
+                    val latest = mutable.value
+                    mutable.value =
+                        latest.copy(
+                            catalogUnavailable = true,
+                            settingsCatalogRefreshFailure =
+                                if (
+                                    destination == SettingsDestination.Overview &&
+                                        latest.options != null
+                                )
+                                    SettingsRefreshFailure()
+                                else null,
+                        )
                     return
                 }
                 delay(wait)

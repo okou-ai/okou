@@ -110,4 +110,5 @@
     <string name="settings_suggestions_save_failed">제안 설정을 저장하지 못했습니다. 이전 설정을 복원했습니다.</string>
     <string name="settings_timezone_save_rejected">시간대를 저장하지 못했습니다. 이전 시간대로 복원했습니다.</string>
     <string name="settings_timezone_schedule_update_failed">시간대를 저장했습니다. 아침 브리핑 시간을 업데이트하지 못했습니다.</string>
+    <string name="settings_model_catalog_refresh_failed">사용 가능한 모델을 새로 고칠 수 없습니다. 마지막으로 불러온 목록을 표시합니다.</string>
 </resources>

@@ -4,6 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.DefaultModelApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.SettingsRow
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.DefaultModelPreferenceServiceTier
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
@@ -145,10 +146,14 @@ class DefaultModelSettingTest {
                 val store = DefaultModelStore(PreferenceDataStoreFactory.create { file }, scope)
                 val initialCatalog = CompletableDeferred<Unit>()
                 val pendingSave = CompletableDeferred<Unit>()
+                var catalogFails = false
                 val service =
                     object : WorkspaceSession by api.service {
                         override suspend fun recoveryCatalog() =
-                            initialCatalog.await().let { api.service.recoveryCatalog() }
+                            initialCatalog.await().let {
+                                if (catalogFails) throw ApiFailure.Http(400, null, null, null)
+                                api.service.recoveryCatalog()
+                            }
 
                         override suspend fun updateDefaultModelPreference(
                             update: UpdateDefaultModelPreference,
@@ -159,7 +164,7 @@ class DefaultModelSettingTest {
                     }
                 val model =
                     DefaultModelSettings(scope, service, api.identity, store, { true }) {
-                        throw it
+                        if (!catalogFails || it !is ApiFailure.Http || it.status != 400) throw it
                     }
                 compose.runOnIdle {
                     model.foreground(true)
@@ -206,7 +211,27 @@ class DefaultModelSettingTest {
 
                 val auto = compose.onNode(hasText("Auto") and isSelectable())
                 val listTop = auto.getUnclippedBoundsInRoot().top
+                compose.runOnIdle {
+                    model.foreground(false)
+                    catalogFails = true
+                    model.foreground(true)
+                }
+                compose.waitUntil("Cached catalog failure reaches the model", 10_000) {
+                    compose.runOnIdle { model.state.value.settingsCatalogRefreshFailure != null }
+                }
+                compose
+                    .onNodeWithText(
+                        "Could not refresh available models. Showing the last loaded list.",
+                    )
+                    .assertIsDisplayed()
+                assertEquals(listTop, auto.getUnclippedBoundsInRoot().top)
+                gpt.assertIsFocused()
                 compose.runOnIdle { model.foreground(false) }
+                compose
+                    .onNodeWithText(
+                        "Could not refresh available models. Showing the last loaded list.",
+                    )
+                    .assertDoesNotExist()
                 assertEquals(listTop, auto.getUnclippedBoundsInRoot().top)
                 claude.assertIsEnabled().performClick().assertIsSelected()
                 assertTrue(fixture.writes.isEmpty())

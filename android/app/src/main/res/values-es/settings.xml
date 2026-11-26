@@ -110,4 +110,5 @@
     <string name="settings_suggestions_save_failed">No se pudieron guardar las sugerencias. Se restauró el ajuste anterior.</string>
     <string name="settings_timezone_save_rejected">No se pudo guardar la zona horaria. Se restauró la zona anterior.</string>
     <string name="settings_timezone_schedule_update_failed">Se guardó la zona horaria, pero no se pudo actualizar el horario del resumen matutino.</string>
+    <string name="settings_model_catalog_refresh_failed">No se pudieron actualizar los modelos disponibles. Se muestra la última lista cargada.</string>
 </resources>
