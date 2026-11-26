@@ -9,6 +9,30 @@ import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const app = setupApp({ context, routes: modelCatalogRoutes });
 
+test("model-catalog-authority-001 exposes canonical Auto first without a provider chooser", async () => {
+  createRouteMocks(context).clerk.session(
+    `user_${randomUUID()}`,
+    `org_${randomUUID()}`,
+    "org:member",
+  );
+
+  const response = await accept(
+    app(modelCatalogContract).get({
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
+
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.body.systemDefaultModel).toBe("auto");
+  expect(response.body.models[0]?.model).toBe("auto");
+  const autoRoutes = response.body.routes.filter((route) => {
+    return route.model === "auto" && route.enabled;
+  });
+  expect(autoRoutes).toHaveLength(1);
+  expect(autoRoutes[0]?.subscriptionType).toBeNull();
+});
+
 test("model-catalog-authority-002 exposes Sol Fast usage and Pi capability per subscription route", async () => {
   createRouteMocks(context).clerk.session(
     `user_${randomUUID()}`,
