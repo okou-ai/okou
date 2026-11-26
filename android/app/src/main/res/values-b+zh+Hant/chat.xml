@@ -67,7 +67,7 @@
     <string name="chat_unpin">取消置頂</string>
     <string name="chat_move_pin_up">上移</string>
     <string name="chat_move_pin_down">下移</string>
-    <string name="chat_title_field">聊天標題</string>
+    <string name="chat_title_field">新名稱</string>
     <string name="chat_rename_confirm">重新命名</string>
     <string name="chat_rename_cancel">取消</string>
     <string name="chat_delete">刪除聊天</string>
@@ -98,6 +98,7 @@
     <string name="chat_project_delete_title">刪除專案？</string>
     <string name="chat_project_delete_description">「%1$s」中的聊天將移到專案外，正在執行的任務會繼續。</string>
     <string name="chat_project_delete_pending">正在刪除專案…</string>
+    <string name="chat_delete_pending">正在刪除…</string>
     <string name="chat_project_deleted">已刪除專案，聊天已移到專案外。</string>
     <string name="chat_project_delete_rejected">無法刪除專案。</string>
     <string name="chat_project_delete_unconfirmed">無法確認專案是否已刪除。</string>
