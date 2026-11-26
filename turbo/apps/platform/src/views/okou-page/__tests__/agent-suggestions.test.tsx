@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
@@ -906,6 +907,86 @@ test.each([
     expect(screen.queryAllByRole("alert")).toHaveLength(status === 503 ? 1 : 0);
   },
 );
+
+function prefetchReadSummary(firstItem: Suggestion | null) {
+  const bootstrap = document.createElement("script");
+  bootstrap.type = "application/json";
+  bootstrap.dataset.okouApiBootstrap = "";
+  bootstrap.dataset.method = feedContract.summary.method;
+  bootstrap.dataset.path = encodeURIComponent(feedContract.summary.path);
+  bootstrap.dataset.contentType = "application/json";
+  bootstrap.textContent = JSON.stringify({
+    hasUnread: false,
+    firstItem,
+  });
+  document.head.append(bootstrap);
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      bootstrap.remove();
+    },
+    { once: true },
+  );
+}
+
+test("The For you entry shows a prefetched read card and follows live feed changes", async () => {
+  const first = proposal("Check the harbor lights");
+  prefetchReadSummary(first);
+  let current: Suggestion | null = null;
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: current !== null, firstItem: current });
+  });
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.HideEmptyForYou]: true },
+  });
+  const row = await findFastControl("link", /For you/);
+  expect(within(row).queryByText("Unread")).toBeNull();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await waitFor(() => {
+    expect(queryFastControl("link", /For you/)).toBeNull();
+  });
+  current = proposal("Inspect the new ferry");
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  const restored = await findFastControl("link", /For you/);
+  await expect(
+    within(restored).findByText("Unread"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A delivery before the mobile chat list opens supersedes its unused Worker summary", async () => {
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
+  createChatRunFixtures(context).installRunChat();
+  prefetchReadSummary(null);
+  const card = proposal("Review the ferry alert");
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true, firstItem: card });
+  });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/chats/${RUN_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HideEmptyForYou]: true },
+  });
+  const back = await findFastControl("link", "Back to chats");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  click(back);
+  const row = await findFastControl("link", /For you/);
+  await expect(within(row).findByText("Unread")).resolves.toBeInTheDocument();
+});
 
 test("Opening For you during a live summary refresh uses the fresh list even if the summary arrives later", async () => {
   const earlier = proposal("Survey the north quay");
