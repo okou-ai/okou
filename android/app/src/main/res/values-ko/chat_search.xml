@@ -20,6 +20,7 @@
     <string name="chat_search_unavailable">일부 결과를 불러오지 못했습니다</string>
     <string name="chat_search_message_unavailable">이 메시지는 더 이상 사용할 수 없습니다</string>
     <string name="chat_search_workflow_add_draft">새 채팅 초안에 추가</string>
+    <string name="chat_search_workflow_opening_draft">새 채팅 초안을 여는 중…</string>
     <string name="chat_search_workflow_details">워크플로 세부 정보 보기</string>
     <string name="chat_search_workflow_shadowed">비공개 워크플로에서 이 명령을 사용합니다</string>
     <string name="chat_search_artifact_preview">결과물 미리보기</string>
