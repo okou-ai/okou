@@ -318,18 +318,44 @@ internal constructor(
                     } else ArtifactSaveResult.Failed
                 }
             if (result == ArtifactSaveResult.Denied) {
-                previews[id]?.let { previews[id] = it.withoutSave() }
+                withdrawExport(id, saveDenied = true)
+            } else {
+                mutable.update { it.copy(saveResult = id to result) }
             }
-            mutable.update {
-                val preview = it.preview
-                it.copy(
-                    saveResult = id to result,
-                    preview =
-                        if (result == ArtifactSaveResult.Denied && preview?.id == id)
-                            preview.withoutSave()
-                        else preview,
-                )
-            }
+        }
+    }
+
+    internal suspend fun prepareOriginalShare(
+        id: String,
+        original: ArtifactSave,
+        destination: () -> OutputStream,
+    ): ArtifactSaveResult {
+        fun isCurrent() = mutable.value.preview?.takeIf { it.id == id }?.access?.save == original
+        if (!isCurrent()) return ArtifactSaveResult.Denied
+        return try {
+            // The private temporary destination can be replaced on a recoverable retry.
+            retryArtifactOperation { service.save(original, destination) }
+            if (isCurrent()) ArtifactSaveResult.Saved else ArtifactSaveResult.Denied
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            handleSessionFailure(error)
+            if (error is ApiFailure.Http && error.status in 401..404) {
+                withdrawExport(id)
+                ArtifactSaveResult.Denied
+            } else ArtifactSaveResult.Failed
+        }
+    }
+
+    private fun withdrawExport(id: String, saveDenied: Boolean = false) {
+        previews[id]?.let { previews[id] = it.withoutSave() }
+        mutable.update { current ->
+            val preview = current.preview
+            current.copy(
+                preview = if (preview?.id == id) preview.withoutSave() else preview,
+                saveResult =
+                    if (saveDenied) id to ArtifactSaveResult.Denied else current.saveResult,
+            )
         }
     }
 

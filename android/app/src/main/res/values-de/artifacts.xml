@@ -72,4 +72,10 @@
     <string name="artifact_image_zoom_in">Vergrößern</string>
     <string name="artifact_image_zoom_out">Verkleinern</string>
     <string name="artifact_image_fit">Bild einpassen</string>
+    <string name="artifact_share_file">Datei teilen</string>
+    <string name="artifact_share_image">Bild teilen</string>
+    <string name="artifact_save_image">Bild speichern</string>
+    <string name="artifact_share_preparing">Freigabe wird vorbereitet…</string>
+    <string name="artifact_share_denied">Diese Datei kann nicht geteilt werden</string>
+    <string name="artifact_share_failed">Datei konnte nicht zum Teilen vorbereitet werden</string>
 </resources>
