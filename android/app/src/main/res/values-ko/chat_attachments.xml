@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_attachments">첨부파일</string>
+    <string name="chat_attachment_photos">사진 및 동영상</string>
+    <string name="chat_attachment_files">파일</string>
+    <string name="chat_attachment_count">첨부파일 %1$d개</string>
+    <string name="chat_attachment_done">완료</string>
+    <string name="chat_attachment_remove">%1$s 삭제</string>
+    <string name="chat_attachment_uploading">업로드 중 %1$d%%</string>
+    <string name="chat_attachment_waiting">업로드 대기 중</string>
+    <string name="chat_attachment_failed">업로드 실패</string>
+    <string name="chat_attachment_reselect">파일 다시 선택</string>
+    <string name="chat_attachment_too_large">파일이 512 MiB를 초과합니다</string>
+    <string name="chat_attachment_type_file">파일</string>
+    <string name="chat_attachment_type_image">이미지</string>
+    <string name="chat_attachment_type_video">동영상</string>
+    <string name="chat_attachment_type_text">텍스트</string>
+    <string name="chat_attachment_type_size">%1$s · %2$s</string>
+    <string name="chat_attachment_preview_unavailable">미리보기를 사용할 수 없습니다</string>
+    <string name="chat_attachment_save">저장</string>
+    <string name="chat_attachment_open">다른 앱에서 열기</string>
+</resources>

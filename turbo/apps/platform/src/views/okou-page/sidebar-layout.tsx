@@ -472,7 +472,9 @@ function WorkspaceSheet({
     <div
       data-slot="workspace-sheet"
       data-chat-list={chatList && !chatListHidden ? "expanded" : "collapsed"}
-      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border"
+      // The panel stays mounted through its exit transition. Once it unmounts,
+      // the collapsed divider's hit target can extend back into the nav rail.
+      className="group/workspace-sheet flex min-h-0 min-w-0 flex-1 md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border md:has-[[data-sidebar-layout-owner=chat-list]]:overflow-clip"
     >
       {chatList}
       {children}

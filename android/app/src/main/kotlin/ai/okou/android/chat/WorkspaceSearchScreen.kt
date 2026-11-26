@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -80,6 +81,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 private data class SearchSources(
     val chats: ChatListUiState,
@@ -866,11 +868,18 @@ private fun SearchEmpty(
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
         if (type != WorkspaceSearchType.All) {
-            ChatListTextAction(
-                R.string.chat_search_all_types,
-                modifier = Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp)),
+            TextButton(
+                onClick = { onSelectType(WorkspaceSearchType.All) },
+                modifier = Modifier.heightIn(min = 48.dp).workspaceSearchFocusOutline(CircleShape),
             ) {
-                onSelectType(WorkspaceSearchType.All)
+                Text(
+                    stringResource(R.string.chat_search_all_types),
+                    style =
+                        MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                        ),
+                )
             }
         }
     }

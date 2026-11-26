@@ -90,6 +90,46 @@ internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable 
     mutableStateOf(false)
 }
 
+internal data class AttachmentPickerSelection(
+    val draftKey: String,
+    val targetKey: String,
+    val replacing: String?,
+)
+
+@Composable
+internal fun rememberAttachmentPickerSelection(): MutableState<AttachmentPickerSelection?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<AttachmentPickerSelection?, String>(
+                save = { selection ->
+                    if (selection == null) emptyList()
+                    else
+                        listOf(
+                            selection.draftKey,
+                            selection.targetKey,
+                            selection.replacing.orEmpty(),
+                        )
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        AttachmentPickerSelection(it, values[1], values[2].ifEmpty { null })
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
+@Composable
+internal fun rememberDraftAttachmentPreview(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
+internal fun rememberDraftAttachmentsOpen(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
 internal data class ChatConnectorVisit(
     val composerKey: String,
     val slug: String?,

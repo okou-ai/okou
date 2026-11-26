@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -116,13 +117,18 @@ internal fun ConversationMessageRow(
                 Modifier.fillMaxWidth().testTag("message_${message.id}"),
                 contentAlignment = Alignment.CenterEnd,
             ) {
+                val attachments = message.blocks.mapNotNull { it.attachment }
                 Box(modifier = Modifier.fillMaxWidth(.85f).wrapContentWidth(Alignment.End)) {
                     val delivery = entry.preview?.pendingDelivery
                     val status = delivery?.let { stringResource(it.label()) }
                     Surface(
                         modifier =
-                            if (status == null) Modifier
-                            else Modifier.semantics { stateDescription = status },
+                            (if (attachments.isEmpty()) Modifier
+                                else Modifier.widthIn(max = 292.dp))
+                                .then(
+                                    if (status == null) Modifier
+                                    else Modifier.semantics { stateDescription = status },
+                                ),
                         shape = RoundedCornerShape(16.dp),
                         color = colors.surfaceVariant,
                         contentColor = colors.onSurface,
@@ -131,7 +137,15 @@ internal fun ConversationMessageRow(
                             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            MessageBody(message, findHighlight = findHighlight)
+                            if (message.blocks.any { it.kind != HistoryBlockKind.Attachment })
+                                MessageBody(message, findHighlight = findHighlight)
+                            if (attachments.isNotEmpty())
+                                ChatMessageAttachments(
+                                    message.id,
+                                    attachments,
+                                    artifactActions,
+                                    entry.preview?.attachmentFiles.orEmpty(),
+                                )
                             MessageStatus(message)
                         }
                     }
@@ -521,6 +535,7 @@ private fun MessageBody(
                         ConversationMeta(stringResource(R.string.history_unsupported))
                     HistoryBlockKind.Reference ->
                         ConversationMeta(block.title ?: stringResource(R.string.history_reference))
+                    HistoryBlockKind.Attachment -> Unit
                     HistoryBlockKind.Error -> Text(block.text, style = style, color = foreground)
                     HistoryBlockKind.Text ->
                         if (message.role == HistoryRole.Assistant)

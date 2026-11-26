@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.885.0](https://github.com/okou-ai/okou/compare/core-v8.884.0...core-v8.885.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.132.0
+
 ## [8.884.0](https://github.com/okou-ai/okou/compare/core-v8.883.2...core-v8.884.0) (2026-11-26)
 
 

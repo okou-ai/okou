@@ -35,6 +35,13 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
         </provider>
+        <provider
+            android:name=".chat.ChatAttachmentFileProvider"
+            android:authorities="${applicationId}.chat-attachments"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/chat_attachment_paths" />
+        </provider>
         <!-- Clerk requires this component at startup; keep sharing private and disabled. -->
         <provider
             android:name="com.clerk.api.sharedsession.SharedSessionSyncProvider"

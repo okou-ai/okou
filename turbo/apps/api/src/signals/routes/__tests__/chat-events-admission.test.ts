@@ -690,6 +690,18 @@ describe("CHAT-02: dispatch failure", () => {
     }
     expect(chatEventDisplayText(rejection)).toBe("fail before worker start");
     expect(error.seqId).toBe(rejection.seqId + 1);
+    expect(
+      (await chat.searchChat(actor, "fail before worker start")).results,
+    ).toStrictEqual([
+      expect.objectContaining({
+        chatThreadId: threadId,
+        matchedMessage: expect.objectContaining({
+          content: "fail before worker start",
+          seqId: rejection.seqId,
+          runId: null,
+        }),
+      }),
+    ]);
     const runs = await reads.requestListLogs(actor, { limit: 100 }, [200]);
     expect(runs.body.data).toStrictEqual([]);
 
