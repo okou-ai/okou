@@ -52,6 +52,7 @@
     <string name="conversation_skip_failed">未能跳过自动化</string>
     <string name="conversation_find">查找消息</string>
     <string name="conversation_find_turns">按轮次浏览</string>
+    <string name="conversation_find_loaded_scope">仅查找已加载的消息</string>
     <string name="conversation_find_empty">暂无可查找的消息</string>
     <string name="conversation_find_no_match">没有匹配的消息</string>
     <string name="conversation_find_you">你的消息</string>
