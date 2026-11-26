@@ -26,6 +26,7 @@ import androidx.test.core.app.takeScreenshot
 import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
@@ -62,6 +63,7 @@ class ScreenshotScenario {
             val fixture = SettingsApiFixture(api)
             val response = api.commandResponse
             api.commandResponse = { request ->
+                val reply = response(request)
                 if (request.method == "PUT" &&
                     request.requestUrl?.encodedPath == SettingsApiFixture.emailPath
                 ) {
@@ -69,7 +71,7 @@ class ScreenshotScenario {
                         check(it.await(20, TimeUnit.SECONDS)) { "Email mock stayed gated" }
                     }
                 }
-                response(request)
+                reply
             }
             val user = "settings-feedback-${UUID.randomUUID()}"
             var scenario: ActivityScenario<MainActivity>? = null
@@ -117,35 +119,37 @@ class ScreenshotScenario {
 
                 open(R.string.settings_email_updates)
                 await(By.pkg(app.packageName).textContains(SettingsApiFixture.emailAddress))
-                subscriptionSwitch(checked = false, enabled = true)
+                val receive = By.pkg(app.packageName)
+                    .textContains(app.getString(R.string.settings_email_receive))
+                await(receive)
                 device.waitForIdle()
-                val idlePosition = subscriptionSwitch(checked = false, enabled = true).visibleBounds
+                val idlePosition = await(receive).visibleBounds
                 capture("03-email-idle.png")
                 capturePress(
-                    x = idlePosition.left + idlePosition.width() / 3f,
+                    x = idlePosition.exactCenterX(),
                     y = idlePosition.exactCenterY(),
                 )
                 check(fixture.emailWrites.isEmpty())
                 fixture.emailWriteStatus = 400
                 val inlineFailure = holdWrite()
-                subscriptionSwitch(checked = false, enabled = true).click()
+                await(receive).click()
                 await(label(app.getString(R.string.settings_email_saving)))
                 device.waitForIdle()
-                check(subscriptionSwitch(checked = true, enabled = false).visibleBounds == idlePosition)
+                check(await(receive).visibleBounds == idlePosition)
                 capture("05-email-updating.png")
+                await(receive).click()
                 releaseWrite(inlineFailure)
                 val failure = label(app.getString(R.string.settings_email_save_failed))
                 await(failure)
                 device.waitForIdle()
-                check(subscriptionSwitch(checked = false, enabled = true).visibleBounds == idlePosition)
+                check(await(receive).visibleBounds == idlePosition)
                 capture("06-email-rejected-inline.png")
 
                 val afterClose = holdWrite()
-                subscriptionSwitch(checked = false, enabled = true).click()
+                await(receive).click()
                 await(label(app.getString(R.string.settings_email_saving)))
-                subscriptionSwitch(checked = true, enabled = false)
                 device.pressBack()
-                check(device.wait(Until.gone(subscriptionSelector().enabled(false)), 10_000) == true)
+                check(device.wait(Until.gone(receive), 10_000) == true)
                 device.waitForIdle()
                 releaseWrite(afterClose)
                 await(failure)
@@ -155,6 +159,9 @@ class ScreenshotScenario {
             } catch (error: Throwable) {
                 try {
                     takeScreenshot().writeToTestStorage("settings-feedback-diagnostic")
+                    TestStorage().openOutputFile("settings-feedback-window.xml").use {
+                        device.dumpWindowHierarchy(it)
+                    }
                 } catch (diagnostic: Throwable) {
                     error.addSuppressed(diagnostic)
                 }
@@ -179,11 +186,6 @@ class ScreenshotScenario {
         check(writeGate.compareAndSet(gate, null))
         gate.countDown()
     }
-
-    private fun subscriptionSelector() = By.pkg(app.packageName).clazz("android.widget.Switch")
-
-    private fun subscriptionSwitch(checked: Boolean, enabled: Boolean) =
-        await(subscriptionSelector().checked(checked).enabled(enabled))
 
     private fun capture(name: String) {
         device.waitForIdle()
