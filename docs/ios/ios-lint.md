@@ -122,11 +122,15 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   inside a private resource implementation is not a public feature interface.
   A private setter alone still exposes a mutable atom through its getter.
 - `okou_observable_graph` checks the stored properties of `@Observable` classes
-  for a CCState `State`, `Computed`, `Command` or `Store`, by type annotation,
-  including generic arguments, or by constructor. A computed property that
-  returns an existing signal, and a graph owner that is not Observable, remain
-  valid. Observation-tracked native interaction state stays valid; an
-  `@ObservationIgnored` marker does not exempt a graph value.
+  and `ObservableObject`s, including members inside `#if`, for a CCState
+  `State`, `Computed`, `Command` or `Store` by type annotation (with generic
+  arguments) or by constructor. A `CCState.`-qualified name always counts. A
+  bare name counts where the file imports CCState and declares no type of that
+  name. An `@ObservationIgnored` marker does not exempt a graph value. A
+  computed property that returns an existing signal, a graph owner outside
+  Observation, and Observation-tracked native interaction state remain valid.
+  A value whose type is only inferred from another owner's property is a review
+  responsibility.
 - A scoped native async command may use its context after suspension. Passing
   it to an ordinary helper or capturing it into a separate Task is different.
 - Known transport definition sites implement API requests or credential-free

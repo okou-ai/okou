@@ -351,20 +351,20 @@ where the read publishes it, and views resolve it like any other signal.
 
 ### Observation and Graph Ownership
 
-Observation keeps native interaction state: focus, a form being edited, an input
-menu's query and highlighted row, gesture and scroll state. Business state is
-graph `State`, including confirmed values, write phases and their failures,
-notices, a new chat's pending choices and the pages an owner presents. Expose
-it as a `Computed` that views resolve, plus synchronous accessors for actions
-and tests. An owner that keeps business state in the graph is not
-`@Observable`; `okou_observable_graph` rejects graph signals and Stores stored
-in an `@Observable` class. A computed property may still return an existing
-signal for views to resolve.
+Observation keeps native interaction state: focus, a presented form's fields
+and its own submission phase, an input menu's query and highlighted row,
+gesture and scroll state. Business state that outlives a form, or that several
+views and actions read, is graph `State`: confirmed values, an owner's write
+phases and failures, the notices it reports, pending choices, and the pages it
+presents. Expose it as a `Computed` that views resolve, plus synchronous
+accessors for actions and tests. An owner that keeps business state in the
+graph is not `@Observable`. `okou_observable_graph` rejects graph signals and
+Stores stored in an Observation owner. A computed property may still return an
+existing signal for views to resolve.
 
 - A view updates only when its `body` reads the resolved value. When a
-  synchronous helper decides what a view shows, pass it the value the view
-  resolved, such as `canUpdate(id, mutations:)`. Do not resolve a value only to
-  trigger a render.
+  synchronous helper decides what a view shows, the view passes it the value it
+  resolved. Do not resolve a value only to trigger a render.
 - UIKit-backed representables receive resolved values as inputs, so a change
   runs `updateUIView` and rebuilds a native menu. Resolve in the SwiftUI view
   that creates the representable.
@@ -372,8 +372,8 @@ signal for views to resolve.
   that need part of a larger State. Read a whole State in a small modifier
   rather than around a page. A gate that shows parent-built content stores that
   content instead of rebuilding it.
-- A view whose owner is optional resolves a static fallback signal, such as
-  `ComposerConnectorStore.status(of:)`, so the wrapper keeps one signal type.
+- A view whose owner is optional resolves a static fallback signal, so the
+  wrapper keeps one signal type.
 - A multi-field change publishes in one write, so a view never renders half of
   it.
 
