@@ -56,7 +56,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -253,13 +252,10 @@ internal fun UpdateHost(
 ) {
     var details by detailsOpen
     val savedUi = rememberUpdateWorkspaceState()
-    var returningToDetails by remember { mutableStateOf(false) }
-    if (details && installProgress != null) SideEffect { returningToDetails = true }
     val showDetails = details && !state.required
     if (state.required) {
         LaunchedEffect(Unit) {
             details = false
-            returningToDetails = false
             savedUi.removeState("update-details")
         }
         RequiredUpdateScreen(state, check, download, install, installProgress)
@@ -286,11 +282,8 @@ internal fun UpdateHost(
                 download,
                 install,
                 installProgress,
-                restoreInstallFocus = returningToDetails && installProgress == null,
-                onInstallFocusRestored = { returningToDetails = false },
                 close = {
                     details = false
-                    returningToDetails = false
                     savedUi.removeState("update-details")
                 },
             )
@@ -361,8 +354,6 @@ private fun UpdateSheet(
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
-    restoreInstallFocus: Boolean,
-    onInstallFocusRestored: () -> Unit,
     close: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -375,15 +366,6 @@ private fun UpdateSheet(
     val compact = windowHeight < base * 13
     val short = windowHeight < base * 9
     SettingsModal(close, showDragHandle = !compact) { centered ->
-        val focused = LocalWindowInfo.current.isWindowFocused
-        val installFocus = remember { FocusRequester() }
-        val inputMode = LocalInputModeManager.current
-        LaunchedEffect(restoreInstallFocus, focused) {
-            if (restoreInstallFocus && focused) {
-                if (inputMode.inputMode == InputMode.Keyboard) installFocus.requestFocus()
-                onInstallFocusRestored()
-            }
-        }
         val release = state.displayedRelease?.takeIf { state.available }
         val inset = if (compact) 16.dp else 24.dp
         val verticalInset = if (short) 8.dp else if (compact) 12.dp else 24.dp
@@ -487,9 +469,7 @@ private fun UpdateSheet(
                         download,
                         install,
                         installProgress = installProgress,
-                        Modifier.weight(1f)
-                            .heightIn(min = actions.height)
-                            .focusRequester(installFocus),
+                        Modifier.weight(1f).heightIn(min = actions.height),
                     )
                 }
             }
@@ -766,7 +746,7 @@ private fun UpdateAction(
         if (state.required)
             PaddingValues(requiredUpdateActionHorizontalPadding, updateActionVerticalPadding)
         else updateActionPadding
-    val focus = rememberUpdateControlFocus(away = installProgress != null)
+    val focus = remember { UpdateControlFocus() }
     val checking =
         state.check == UpdateCheck.Checking &&
             transfer !is UpdateTransfer.Downloading &&
@@ -871,10 +851,7 @@ private fun UpdateAction(
             else -> R.string.updates_check to check
         }
     Button(
-        onClick = {
-            if (state.canInstall) focus.rememberTrigger()
-            action()
-        },
+        onClick = action,
         modifier = controlModifier,
         shape = shape,
         contentPadding = contentPadding,
