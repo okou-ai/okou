@@ -191,6 +191,8 @@ describe("GET /api/integrations/slack", () => {
     const bdd = createBddApi(context);
     const slack = createPublicSlackOrgApi(context);
     const integrations = createBddIntegrationApi(context);
+    // Slack answers the connection welcome messages like the real Web API.
+    integrations.configureSlackAppMocks();
     const admin = bdd.user({ orgRole: "org:admin" });
     const orgId = admin.orgId ?? "";
     const installed = await slack.installForOrg({ orgId, installer: admin });
