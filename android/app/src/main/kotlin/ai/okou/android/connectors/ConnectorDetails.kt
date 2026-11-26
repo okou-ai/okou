@@ -165,8 +165,16 @@ internal fun ConnectorDetails(
 
     val confirmingDisconnect = disconnectImpact != null
 
-    LaunchedEffect(action?.authorization) {
-        if (panel == null && action?.authorization != null && !action.reconciling) {
+    val authorization = action?.authorization
+    LaunchedEffect(authorization) {
+        if (
+            panel == null &&
+                action != null &&
+                authorization != null &&
+                (!action.reconciling ||
+                    authorization is ConnectorAuthorization.Receipt &&
+                        authorization.externalCodeSessionId != null)
+        ) {
             accountId = action.target.connectionId
             panel = ConnectorPanel.Authorize
         }

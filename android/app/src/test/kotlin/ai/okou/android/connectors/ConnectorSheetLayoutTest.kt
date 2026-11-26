@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -25,6 +26,7 @@ import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -91,14 +93,7 @@ class ConnectorSheetLayoutTest {
     fun externalCodeKeepsTheFieldAndActionsThroughValidationAndReceiptReadback() {
         ConnectorApiFixture(includeGrantExamples = true).use { fixture ->
             withConnectors(fixture) {
-                val service = "External code sample"
-                compose.onNodeWithTag("connector-search").performTextReplacement("External code")
-                compose.waitUntilAtLeastOneExists(hasText(service), 10_000)
-                compose.onNodeWithText(service).performClick()
-                compose.waitUntilAtLeastOneExists(hasText("Connect account"), 10_000)
-                compose.onNodeWithText("Connect account").performClick()
-                compose.onNodeWithText("Continue to provider").performClick()
-                compose.waitUntilAtLeastOneExists(hasTestTag("connector-input"), 10_000)
+                openExternalCodeForm()
 
                 val field = compose.onNodeWithTag("connector-input")
                 val cancel = compose.onNodeWithText("Cancel")
@@ -157,6 +152,48 @@ class ConnectorSheetLayoutTest {
     }
 
     @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(qualifiers = "en-rUS-w412dp-h892dp")
+    fun externalCodeChecksTheOriginalAttemptAfterTheFormIsRecreated() {
+        val restoration = StateRestorationTester(compose)
+        ConnectorApiFixture(includeGrantExamples = true).use { fixture ->
+            withConnectors(fixture, restoration) {
+                openExternalCodeForm()
+                fixture.loseFirstExternalCodeReply = true
+                fixture.externalCodeStillCompleting = true
+                fixture.externalAccountReplyGate = CountDownLatch(1)
+                compose
+                    .onNodeWithTag("connector-input")
+                    .performTextReplacement(CONNECTOR_EXAMPLE_EXTERNAL_CODE)
+                compose.onNodeWithText("Confirm code").performClick()
+                val pending = "The outcome is still unconfirmed."
+                compose.waitUntilAtLeastOneExists(hasText(pending), 10_000)
+                restoration.emulateSavedInstanceStateRestore()
+                compose.waitUntilAtLeastOneExists(hasText(pending), 10_000)
+                val check = compose.onNodeWithText("Check authorization")
+                check.assertIsEnabled().performClick()
+                compose.waitUntil(10_000) {
+                    compose.runOnIdle { fixture.externalCodeRequests.get() == 2 }
+                }
+                compose.waitUntilAtLeastOneExists(hasText(pending), 10_000)
+                fixture.externalCodeStillCompleting = false
+                check.assertIsEnabled().performClick()
+                compose.waitUntil(10_000) {
+                    compose.runOnIdle { fixture.externalAccountReadStarted.count == 0L }
+                }
+                restoration.emulateSavedInstanceStateRestore()
+                compose.waitUntilAtLeastOneExists(hasText("Checking…"), 10_000)
+                compose.onNodeWithTag("connector-input").assertIsDisplayed()
+                compose.onNodeWithText("Checking…").assertIsNotEnabled()
+                fixture.externalAccountReplyGate?.countDown()
+                compose.waitUntilDoesNotExist(hasTestTag("connector-sheet"), 10_000)
+                compose.onNodeWithText("Verified account").assertIsDisplayed()
+                assertEquals(3, fixture.externalCodeRequests.get())
+            }
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w760dp-h892dp")
     fun bottomSheetUsesAvailableSpaceAndKeepsActionsBelowTheScrollBody() {
         showLongSheet()
@@ -182,7 +219,23 @@ class ConnectorSheetLayoutTest {
         assertEquals(footer, actions.getUnclippedBoundsInRoot())
     }
 
-    private fun withConnectors(fixture: ConnectorApiFixture, exercise: (ConnectorModel) -> Unit) {
+    @OptIn(ExperimentalTestApi::class)
+    private fun openExternalCodeForm() {
+        val service = "External code sample"
+        compose.onNodeWithTag("connector-search").performTextReplacement("External code")
+        compose.waitUntilAtLeastOneExists(hasText(service), 10_000)
+        compose.onNodeWithText(service).performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Connect account"), 10_000)
+        compose.onNodeWithText("Connect account").performClick()
+        compose.onNodeWithText("Continue to provider").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("connector-input"), 10_000)
+    }
+
+    private fun withConnectors(
+        fixture: ConnectorApiFixture,
+        restoration: StateRestorationTester? = null,
+        exercise: (ConnectorModel) -> Unit,
+    ) {
         val store = ViewModelStore()
         try {
             val model = compose.runOnIdle {
@@ -197,7 +250,11 @@ class ConnectorSheetLayoutTest {
                         },
                     )[ConnectorModel::class]
             }
-            compose.setContent { OkouTheme(false) { ConnectorsPage(model, null) {} } }
+            val content: @Composable () -> Unit = {
+                OkouTheme(false) { ConnectorsPage(model, null) {} }
+            }
+            if (restoration == null) compose.setContent(content)
+            else restoration.setContent(content)
             exercise(model)
         } finally {
             compose.runOnIdle { store.clear() }

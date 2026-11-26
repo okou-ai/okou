@@ -92,6 +92,7 @@ internal class ConnectorApiFixture(
     @Volatile var externalCodeReplyGate: CountDownLatch? = null
     @Volatile var externalAccountReplyGate: CountDownLatch? = null
     @Volatile var loseFirstExternalCodeReply = false
+    @Volatile var externalCodeStillCompleting = false
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -638,6 +639,7 @@ internal class ConnectorApiFixture(
                 )
                     return rejected(400)
                 val firstCompletion = CONNECTOR_EXTERNAL_ACCOUNT !in accounts
+                if (!firstCompletion && externalCodeStillCompleting) return rejected(400)
                 accounts[CONNECTOR_EXTERNAL_ACCOUNT] =
                     FixtureAccount(
                         CONNECTOR_EXTERNAL_EXAMPLE,

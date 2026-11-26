@@ -232,7 +232,8 @@ internal fun ConnectorAuthorizationSheet(
             is ConnectorAuthorization.Receipt,
             is ConnectorAuthorization.DeviceVerification -> canDismiss
             is ConnectorAuthorization.External ->
-                canContinue && codeLength in 1..CONNECTOR_EXTERNAL_CODE_LIMIT
+                canContinue &&
+                    (awaitingExternalReceipt || codeLength in 1..CONNECTOR_EXTERNAL_CODE_LIMIT)
             null ->
                 canModify &&
                     action?.problem != ConnectorProblem.AuthorizationUnconfirmed &&
@@ -259,7 +260,8 @@ internal fun ConnectorAuthorizationSheet(
                             if (browserOpened) model.checkAuthorization() else continueInBrowser()
                         is ConnectorAuthorization.Device -> continueInBrowser()
                         is ConnectorAuthorization.External ->
-                            model.completeExternal(code.text.toString())
+                            if (awaitingExternalReceipt) model.checkExternalAuthorization()
+                            else model.completeExternal(code.text.toString())
                         is ConnectorAuthorization.DeviceVerification,
                         is ConnectorAuthorization.Receipt -> model.checkAuthorization()
                         null ->
