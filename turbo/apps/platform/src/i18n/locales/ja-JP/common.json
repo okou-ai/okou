@@ -7446,6 +7446,7 @@
       "sort": {
         "alphabetical": "アルファベット順",
         "created": "作成日時が新しい順",
+        "heading": "並べ替え",
         "label": "ワークフローの並べ替え",
         "nextRun": "次の実行"
       },

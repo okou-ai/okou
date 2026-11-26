@@ -7446,6 +7446,7 @@
       "sort": {
         "alphabetical": "按名称",
         "created": "最近创建",
+        "heading": "排序方式",
         "label": "工作流排序",
         "nextRun": "下次运行"
       },

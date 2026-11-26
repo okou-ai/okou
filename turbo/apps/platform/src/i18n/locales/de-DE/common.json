@@ -7475,6 +7475,7 @@
       "sort": {
         "alphabetical": "Alphabetisch",
         "created": "Zuletzt erstellt",
+        "heading": "Sortieren nach",
         "label": "Workflows sortieren",
         "nextRun": "Nächste Ausführung"
       },

@@ -6,14 +6,7 @@ import {
   useSet,
 } from "ccstate-react";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
-import {
-  ArrowUpDown,
-  Check,
-  ChevronDown,
-  Download,
-  Filter,
-  Search,
-} from "lucide-react";
+import { ArrowUpDown, Check, Download, Filter, Search } from "lucide-react";
 import {
   surfaceVariants,
   Badge,
@@ -24,6 +17,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
 } from "@okouai/ui";
@@ -78,7 +72,7 @@ function WorkflowRow({
 }) {
   const title = workflowTitle(workflow);
   return (
-    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
+    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
       <WorkflowTooltip workflow={workflow}>
         <Link
           pathname={ROUTES.workflowDetailAutomations}
@@ -184,6 +178,10 @@ function applyWorkflowFilters(
   });
 }
 
+function WorkflowRowDivider() {
+  return <div className="mx-5 h-px bg-divider/50" />;
+}
+
 function WorkflowRowList({
   workflows,
   entriesByWorkflowId,
@@ -193,27 +191,20 @@ function WorkflowRowList({
   readonly entriesByWorkflowId: WorkflowAutomationEntryMap;
   readonly displayTimezone: string;
 }) {
-  const rows = (
-    <>
-      {workflows.map((workflow) => {
+  return (
+    <div className={surfaceVariants({ className: "overflow-hidden" })}>
+      {workflows.map((workflow, index) => {
         return (
-          <WorkflowRow
-            key={workflow.id}
-            workflow={workflow}
-            entries={entriesByWorkflowId.get(workflow.id) ?? []}
-            displayTimezone={displayTimezone}
-          />
+          <div key={workflow.id}>
+            {index > 0 ? <WorkflowRowDivider /> : null}
+            <WorkflowRow
+              workflow={workflow}
+              entries={entriesByWorkflowId.get(workflow.id) ?? []}
+              displayTimezone={displayTimezone}
+            />
+          </div>
         );
       })}
-    </>
-  );
-  return (
-    <div
-      className={surfaceVariants({
-        className: "flex flex-col gap-1 overflow-hidden p-2",
-      })}
-    >
-      {rows}
     </div>
   );
 }
@@ -275,16 +266,33 @@ function WorkflowListPanel({
   );
 }
 
-function FilterOptions<T extends string>({
+/**
+ * Toolbar menu triggers share the search field's frame: `neutral` already
+ * draws `Input`'s height, radius and hairline, and `bg-input` takes its fill in
+ * every theme, so the toolbar reads as one row of controls and stays lighter
+ * than the header's page actions. The fill is opaque, so the open state is an
+ * overlay like `neutral`'s hover and press.
+ *
+ * Below a 520px toolbar the labels drop out and each trigger becomes a 36px
+ * square beside the search field (`min-w-9` with `px-2`); the active filter
+ * count stays visible.
+ */
+const TOOLBAR_TRIGGER_CLASS =
+  "min-w-9 shrink-0 gap-1.5 bg-input px-2 aria-expanded:bg-state-hover-overlay @[520px]:px-3";
+const TOOLBAR_LABEL_CLASS = "hidden @[520px]:inline";
+
+function MenuRadioSection<T extends string>({
   label,
   value,
   options,
   onChange,
+  closeOnClick,
 }: {
   readonly label: string;
   readonly value: T;
   readonly options: readonly { readonly value: T; readonly label: string }[];
   readonly onChange: (value: T) => void;
+  readonly closeOnClick: boolean;
 }) {
   return (
     <DropdownMenuRadioGroup
@@ -292,18 +300,23 @@ function FilterOptions<T extends string>({
       onValueChange={onChange}
       aria-label={label}
     >
-      <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">{label}</p>
+      <div
+        aria-hidden
+        className="px-2 pb-1 pt-1.5 text-xs font-medium text-muted-foreground/80"
+      >
+        {label}
+      </div>
       {options.map((option) => {
         return (
           <DropdownMenuRadioItem
             key={option.value}
             value={option.value}
-            closeOnClick={false}
+            closeOnClick={closeOnClick}
             className="justify-between gap-4"
           >
             {option.label}
             <DropdownMenuRadioItemIndicator>
-              <Check size={14} aria-hidden />
+              <Check size={16} aria-hidden />
             </DropdownMenuRadioItemIndicator>
           </DropdownMenuRadioItem>
         );
@@ -327,7 +340,7 @@ function FilterDropdown() {
           <Button
             type="button"
             variant="neutral"
-            className="gap-2 rounded-lg px-3"
+            className={TOOLBAR_TRIGGER_CLASS}
             aria-label={t(($) => {
               return $.workflows.list.filter;
             })}
@@ -335,23 +348,25 @@ function FilterDropdown() {
         }
       >
         <Filter size={16} aria-hidden />
-        {t(($) => {
-          return $.workflows.list.filters;
-        })}
+        <span className={TOOLBAR_LABEL_CLASS}>
+          {t(($) => {
+            return $.workflows.list.filters;
+          })}
+        </span>
         {count > 0 ? (
-          <span className="flex size-5 items-center justify-center rounded-md bg-nested-fill text-xs tabular-nums">
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-md bg-nested-fill px-1 text-xs font-medium tabular-nums">
             {count}
           </span>
         ) : null}
-        <ChevronDown size={14} aria-hidden />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-52">
-        <FilterOptions
+      <DropdownMenuContent align="end" className="w-56">
+        <MenuRadioSection
           label={t(($) => {
             return $.workflows.list.visibility;
           })}
           value={filter}
           onChange={setFilter}
+          closeOnClick={false}
           options={[
             {
               value: "all",
@@ -373,12 +388,14 @@ function FilterDropdown() {
             },
           ]}
         />
-        <FilterOptions
+        <DropdownMenuSeparator />
+        <MenuRadioSection
           label={t(($) => {
             return $.workflows.list.automations;
           })}
           value={automationFilter}
           onChange={setAutomationFilter}
+          closeOnClick={false}
           options={[
             {
               value: "all",
@@ -400,16 +417,17 @@ function FilterDropdown() {
             },
           ]}
         />
-        {count > 0 ? (
-          <DropdownMenuItem
-            onClick={clearFilters}
-            className="mt-1 text-muted-foreground"
-          >
-            {t(($) => {
-              return $.workflows.list.clearFilters;
-            })}
-          </DropdownMenuItem>
-        ) : null}
+        <DropdownMenuSeparator />
+        {/* Always present so the menu keeps its height while choices stay open. */}
+        <DropdownMenuItem
+          disabled={count === 0}
+          onClick={clearFilters}
+          className="text-muted-foreground"
+        >
+          {t(($) => {
+            return $.workflows.list.clearFilters;
+          })}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -459,39 +477,31 @@ function SortDropdown({
           <Button
             type="button"
             variant="neutral"
-            size="sm"
-            className="h-9 shrink-0 gap-2 rounded-lg"
+            className={TOOLBAR_TRIGGER_CLASS}
             aria-label={i18n.t(($) => {
               return $.workflows.list.sort.label;
             })}
           />
         }
       >
-        <ArrowUpDown size={15} aria-hidden />
-        {current?.label ??
-          i18n.t(($) => {
-            return $.workflows.list.sort.label;
-          })}
-        <ChevronDown size={14} aria-hidden />
+        <ArrowUpDown size={16} aria-hidden />
+        <span className={TOOLBAR_LABEL_CLASS}>
+          {current?.label ??
+            i18n.t(($) => {
+              return $.workflows.list.sort.label;
+            })}
+        </span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
-          {options.map((option) => {
-            return (
-              <DropdownMenuRadioItem
-                key={option.value}
-                value={option.value}
-                closeOnClick
-                className="justify-between gap-4"
-              >
-                {option.label}
-                <DropdownMenuRadioItemIndicator>
-                  <Check size={14} aria-hidden />
-                </DropdownMenuRadioItemIndicator>
-              </DropdownMenuRadioItem>
-            );
+      <DropdownMenuContent align="end" className="w-48">
+        <MenuRadioSection
+          label={i18n.t(($) => {
+            return $.workflows.list.sort.heading;
           })}
-        </DropdownMenuRadioGroup>
+          value={value}
+          onChange={onChange}
+          closeOnClick
+          options={options}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -551,9 +561,9 @@ function WorkflowFilterBar({
       aria-label={t(($) => {
         return $.workflows.common.workflows;
       })}
-      className="flex flex-wrap items-center gap-2"
+      className="@container flex items-center gap-2"
     >
-      <div className="relative w-full min-w-0 sm:w-72 sm:max-w-sm sm:flex-1">
+      <div className="relative min-w-0 flex-1 @[520px]:max-w-sm">
         <Search
           size={15}
           aria-hidden
@@ -570,7 +580,7 @@ function WorkflowFilterBar({
           className="pl-9"
         />
       </div>
-      <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <FilterDropdown />
         <SortDropdown value={sortMode} onChange={setSortMode} />
       </div>
@@ -731,22 +741,23 @@ export function WorkflowDirectoryPage() {
 function WorkflowIndexSkeleton() {
   return (
     <div
-      className={surfaceVariants({
-        className: "flex flex-col gap-1 overflow-hidden p-2",
-      })}
+      className={surfaceVariants({ className: "overflow-hidden" })}
       data-testid="workflows-loading"
     >
       {[0, 1, 2, 3].map((rowIndex) => {
         return (
-          <div key={rowIndex} className="flex items-center gap-3 px-3 py-3">
-            <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
-              <div className="h-3 w-56 max-w-full rounded bg-muted/40" />
+          <div key={rowIndex}>
+            {rowIndex > 0 ? <WorkflowRowDivider /> : null}
+            <div className="flex items-center gap-3 px-5 py-3">
+              <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
+                <div className="h-3 w-56 max-w-full rounded bg-muted/40" />
+              </div>
+              <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
+              <div className="h-5 w-5 rounded-full bg-muted/40" />
+              <div className="h-6 w-6 rounded-md bg-muted/40" />
             </div>
-            <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
-            <div className="h-5 w-5 rounded-full bg-muted/40" />
-            <div className="h-6 w-6 rounded-md bg-muted/40" />
           </div>
         );
       })}
