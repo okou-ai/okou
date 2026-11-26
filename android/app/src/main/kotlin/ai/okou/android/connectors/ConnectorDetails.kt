@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.ContentReadFailureLayout
 import ai.okou.android.OkouActionButton
 import ai.okou.android.OkouActionTreatment
@@ -293,12 +294,26 @@ internal fun ConnectorDetails(
                                 R.string.connector_accounts_failed,
                                 Modifier.fillMaxWidth(),
                             )
-                        null ->
-                            ConnectorSkeleton(
-                                stringResource(R.string.connector_loading_accounts),
-                                rows = 1,
-                            )
-                        else -> Unit
+                        else -> {
+                            val bodyHeight = if (isShortSettingsPanelWindow()) 160.dp else 208.dp
+                            Box(
+                                Modifier.fillMaxWidth().heightIn(min = bodyHeight),
+                                propagateMinConstraints = true,
+                            ) {
+                                if (state.accounts.failure == null) {
+                                    ConnectorSkeleton(
+                                        stringResource(R.string.connector_loading_accounts),
+                                        rows = 1,
+                                    )
+                                } else {
+                                    ContentReadFailure(
+                                        R.string.chat_list_first_load_failed,
+                                        Modifier.fillMaxWidth(),
+                                        failureLayout = ContentReadFailureLayout.Section,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 if (detail != null && hasAccountContent) {
@@ -368,10 +383,7 @@ internal fun ConnectorDetails(
                             if (detail == null) R.string.connector_load_failed
                             else R.string.connector_refresh_failed,
                         ),
-                        state.accounts.notice(
-                            if (hasAccountContent) R.string.connector_refresh_failed
-                            else R.string.connector_accounts_failed,
-                        ),
+                        state.accounts.notice().takeIf { hasAccountContent },
                     )
                     .maxByOrNull(ConnectorReadNotice::round)
             ConnectorReadFeedbackHost(

@@ -77,6 +77,7 @@ internal class ConnectorApiFixture(
     @Volatile var denyCatalogDetail = false
     @Volatile var offerLiveDeviceEnvironment = true
     @Volatile var failAccountReads = false
+    @Volatile var accountRetryAfterSeconds: Long? = null
     @Volatile var denyAccountReads = false
     @Volatile var failPermissionReads = false
     @Volatile var denyPermissionReads = false
@@ -482,7 +483,11 @@ internal class ConnectorApiFixture(
             }
             path == "/api/connector-accounts/connections" -> {
                 if (denyAccountReads) return rejected(403)
-                if (failAccountReads) return rejected(503)
+                if (failAccountReads) {
+                    val response = rejected(503)
+                    accountRetryAfterSeconds?.let { response.setHeader("Retry-After", it) }
+                    return response
+                }
                 if (
                     querySlug == null ||
                         url.queryParameter("kind") != "builtin" ||
