@@ -82,6 +82,18 @@ pub(crate) struct Carrier {
     pub(crate) access: Option<crate::diagnostics::trace::Snapshot>,
 }
 
+impl Carrier {
+    fn progress_mut(&mut self) -> impl Iterator<Item = &mut Progress> {
+        [
+            Some(&mut self.status),
+            self.node_setup.as_mut(),
+            self.origin_tls.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+    }
+}
+
 #[derive(Clone, Serialize)]
 pub(crate) struct Snapshot {
     pub(crate) route: &'static str,
@@ -156,11 +168,17 @@ pub(super) fn route(transport: Transport) -> &'static str {
 }
 
 impl Snapshot {
+    fn carriers_mut(&mut self) -> impl Iterator<Item = &mut Carrier> {
+        [
+            self.rfb_carrier.as_deref_mut(),
+            self.kdc_carrier.as_deref_mut(),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
     pub(super) fn failed_carrier(&mut self, resource: Uuid) {
-        for carrier in [&mut self.rfb_carrier, &mut self.kdc_carrier]
-            .into_iter()
-            .flatten()
-        {
+        for carrier in self.carriers_mut() {
             if carrier.resource_id == Some(resource) && carrier.status != Progress::NotReached {
                 carrier.status = Progress::Failed;
             }
@@ -204,18 +222,8 @@ impl Snapshot {
         }
     }
     pub(super) fn finish(&mut self, failure: Failure) {
-        for carrier in [&mut self.rfb_carrier, &mut self.kdc_carrier]
-            .into_iter()
-            .flatten()
-        {
-            for status in [
-                Some(&mut carrier.status),
-                carrier.node_setup.as_mut(),
-                carrier.origin_tls.as_mut(),
-            ]
-            .into_iter()
-            .flatten()
-            {
+        for carrier in self.carriers_mut() {
+            for status in carrier.progress_mut() {
                 if *status == Progress::Running {
                     *status = if matches!(failure, Failure::Cancelled | Failure::TimedOut) {
                         Progress::Unknown
@@ -246,18 +254,8 @@ impl Snapshot {
         started: Option<Instant>,
     ) -> Self {
         let mut snapshot = self.clone();
-        for carrier in [&mut snapshot.rfb_carrier, &mut snapshot.kdc_carrier]
-            .into_iter()
-            .flatten()
-        {
-            for status in [
-                Some(&mut carrier.status),
-                carrier.node_setup.as_mut(),
-                carrier.origin_tls.as_mut(),
-            ]
-            .into_iter()
-            .flatten()
-            {
+        for carrier in snapshot.carriers_mut() {
+            for status in carrier.progress_mut() {
                 if *status == Progress::Passed {
                     *status = Progress::Reused;
                 }
