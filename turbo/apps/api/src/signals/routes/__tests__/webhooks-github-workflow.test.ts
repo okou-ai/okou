@@ -14,6 +14,8 @@ describe("POST /api/webhooks/github for workflow automations", () => {
   it("webhooks-github-workflow-010 rejects a workflow job event signed with another secret", async () => {
     createWebhookCallbackApi(context).configureGithubWebhookSecret();
     const body = JSON.stringify({ action: "queued", workflow_job: null });
+    // A secret other than the configured webhook secret.
+    const anotherSecret = randomUUID();
     const request = setupRawAppRequest({
       context,
       routes: webhooksGithubRoutes,
@@ -27,7 +29,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
         "content-type": "application/json",
         "x-github-delivery": `delivery-${randomUUID()}`,
         "x-github-event": "workflow_job",
-        "x-hub-signature-256": `sha256=${createHmac("sha256", "another-secret")
+        "x-hub-signature-256": `sha256=${createHmac("sha256", anotherSecret)
           .update(body)
           .digest("hex")}`,
       },
