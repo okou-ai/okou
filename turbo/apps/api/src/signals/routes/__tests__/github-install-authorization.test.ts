@@ -488,4 +488,36 @@ describe("GitHub installation authorization", () => {
       installation: { installationId },
     });
   });
+
+  it("github-install-authorization-001 requires sign-in before accepting a named administrator", async () => {
+    const admin = await configuredAdmin();
+    if (!admin.orgId) {
+      throw new Error("Expected an organization");
+    }
+    signOut();
+
+    const response = await accept(
+      oauthClient().install({
+        query: { userId: admin.userId, orgId: admin.orgId },
+      }),
+      [307],
+    );
+
+    expect(locationOf(response).pathname).toBe("/sign-in");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(installationStatus(admin)).resolves.toBe(404);
+  });
+
+  it("github-install-authorization-020 keeps GitHub update without valid state read only (undefined)", async () => {
+    const admin = await configuredAdmin();
+    signOut();
+
+    const location = await callback(
+      { setup_action: "update", installation_id: "988000" },
+      null,
+    );
+
+    expect(location.pathname).toBe("/workflows");
+    await expect(installationStatus(admin)).resolves.toBe(404);
+  });
 });
