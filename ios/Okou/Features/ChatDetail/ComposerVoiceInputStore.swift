@@ -366,6 +366,18 @@ final class ComposerVoiceInputStore {
     phase = .idle
   }
 
+  private func finishAudio(
+    session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID,
+    send: (@MainActor () async -> Void)?
+  ) async throws {
+    guard generation == owner, composer.canEditVoice else { return }
+    let upload = Task { try await session.uploadClip(recordingID: id) }
+    preparationTask = upload
+    try await insertUploadedRecording(
+      upload.value, session: session, id: id, composer: composer, owner: owner)
+    if generation == owner, phase == .idle { await send?() }
+  }
+
   func finish(
     asAudio: Bool? = nil,
     send: (@MainActor () async -> Void)? = nil
@@ -397,12 +409,7 @@ final class ComposerVoiceInputStore {
       await transcriptionTask?.value
       _ = await preparationTask?.result
       if uploadsAudio {
-        guard generation == owner, composer.canEditVoice else { return }
-        let upload = Task { try await session.uploadClip(recordingID: id) }
-        preparationTask = upload
-        try await insertUploadedRecording(
-          upload.value, session: session, id: id, composer: composer, owner: owner)
-        if generation == owner, phase == .idle { await send?() }
+        try await finishAudio(session: session, id: id, composer: composer, owner: owner, send: send)
         return
       }
       let hasPreparedText = await session.hasPreparedText

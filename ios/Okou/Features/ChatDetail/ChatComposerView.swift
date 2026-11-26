@@ -162,7 +162,8 @@ private struct ChatComposerContent: View {
     models?.snapshot.usesFollowupPlaceholder == true
   }
   private var visibleFollowup: String? {
-    guard !canStop, !voiceActive, usesFollowupPlaceholder, current.text.isEmpty, !hasContent, !isBusy, !needsUpgrade,
+    guard !canStop, !voiceActive, usesFollowupPlaceholder, current.text.isEmpty, !hasContent,
+      !isBusy, !needsUpgrade,
       current.canSend, let followup = configuration.recommendedFollowup,
       !followup.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     else { return nil }
@@ -435,15 +436,16 @@ private struct ChatComposerContent: View {
     action.link = URL(string: "okou-followup:accept")
     action.foregroundColor = OkouColor.foreground
     text.append(action)
+    let accept = OpenURLAction { _ in
+      draftState.editor.acceptFollowup(prompt)
+      return .handled
+    }
     return Text(text)
       .font(.okou(.body))
       .foregroundStyle(OkouColor.mutedForeground)
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .environment(\.openURL, OpenURLAction { _ in
-        draftState.editor.acceptFollowup(prompt)
-        return .handled
-      })
+      .environment(\.openURL, accept)
   }
 
   private var trailingActions: some View {

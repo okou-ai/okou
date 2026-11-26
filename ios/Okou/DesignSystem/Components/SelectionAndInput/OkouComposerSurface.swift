@@ -44,6 +44,10 @@ struct OkouComposerSurface<
   private var toolbarInset: CGFloat { cornerRadius - actionSize / 2 }
   private var textInset: CGFloat { toolbarInset + (actionSize - OkouIconSize.toolbar) / 2 }
 
+  private var compactTrailingInset: CGFloat {
+    CGFloat(compactTrailingCount) * (actionSize + OkouSpace.xs) + OkouSpace.xs
+  }
+
   var body: some View {
     HStack(spacing: OkouSpace.xs) {
       // Compact text needs breathing room. The inline button already has a full-height hit target.
@@ -51,10 +55,7 @@ struct OkouComposerSurface<
       inlineAction
     }
     .padding(.leading, isExpanded ? textInset : actionSize + OkouSpace.sm)
-    .padding(
-      .trailing,
-      isExpanded ? textInset : CGFloat(compactTrailingCount) * (actionSize + OkouSpace.xs)
-        + OkouSpace.xs)
+    .padding(.trailing, isExpanded ? textInset : compactTrailingInset)
     .padding(.top, isExpanded ? 17 : 0)
     .padding(.bottom, isExpanded ? 62 : 0)
     .frame(
