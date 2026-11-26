@@ -7,6 +7,10 @@ import Foundation
 @MainActor
 final class ComposerVoiceInputStore {
   enum Phase: Equatable { case idle, starting, recording, processing, saved }
+  enum AudioUpload: Equatable {
+    case uploading
+    case uploaded(String)
+  }
 
   /// What the voice controls read.
   struct Content: Equatable {
@@ -16,7 +20,7 @@ final class ComposerVoiceInputStore {
     var error: String?
     var microphoneDenied = false
     var asVoiceMessage = false
-    var uploadingAudio = false
+    var audioUpload: AudioUpload?
     var recordingID: UUID?
     var hasSession = false
 
@@ -26,7 +30,12 @@ final class ComposerVoiceInputStore {
 
   private(set) var phase: Phase {
     get { snapshot.phase }
-    set { update { $0.phase = newValue } }
+    set {
+      update {
+        $0.phase = newValue
+        $0.audioUpload = nil
+      }
+    }
   }
   private(set) var duration: Double {
     get { snapshot.duration }
@@ -354,6 +363,7 @@ final class ComposerVoiceInputStore {
     owner: UUID
   ) async throws {
     guard generation == owner, composer.canEditVoice else { return }
+    update { $0.audioUpload = .uploaded(fileID) }
     composer.insertVoiceClip(fileID, recordingID: id, at: insertion)
     guard !composer.hasLocalFailure else {
       error = "Save the draft on this device before discarding the recording."
@@ -396,7 +406,7 @@ final class ComposerVoiceInputStore {
     let uploadsAudio = asVoiceMessage && asAudio != false
     update {
       $0.phase = .processing
-      $0.uploadingAudio = uploadsAudio
+      $0.audioUpload = uploadsAudio ? .uploading : nil
       $0.error = nil
     }
     defer {

@@ -18,8 +18,8 @@
   "crates/nbd-cow": "0.5.33",
   "crates/process-control-ipc": "0.5.105",
   "crates/process-launch": "0.1.8",
-  "crates/guest-agent": "0.113.9",
-  "crates/guest-agent-tests": "0.3.12",
+  "crates/guest-agent": "0.113.10",
+  "crates/guest-agent-tests": "0.3.13",
   "crates/guest-contracts": "0.33.7",
   "crates/guest-tool-exec": "0.3.109",
   "crates/guest-task-exec": "0.2.106",
@@ -30,7 +30,7 @@
   "crates/codex-mock": "0.12.107",
   "crates/guest-state-restore": "0.4.48",
   "crates/guest-write-file": "0.1.330",
-  "crates/runner": "0.251.25",
+  "crates/runner": "0.251.26",
   "crates/runner-executor": "0.24.13",
   "crates/runner-host": "0.12.23",
   "crates/runner-lifecycle": "0.18.43",
@@ -56,7 +56,7 @@
   "crates/linux-mountinfo": "0.2.0",
   "crates/kerberos-worker": "0.3.11",
   "crates/rfb-client": "0.25.7",
-  "ios": "0.69.2",
+  "ios": "0.69.3",
   "crates/kerberos-credentials": "0.2.0",
   "desktop": "0.58.0"
 }

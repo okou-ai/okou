@@ -79,17 +79,19 @@ public struct ChatMessageAttachment: Equatable, Identifiable, Sendable {
   public let contentType: String
   public let size: Int?
   public let renderedFileID: String?
+  public let isVoiceRecording: Bool
   public var downloadID: String { renderedFileID ?? id }
 
   public init(
     id: String, filename: String, contentType: String, size: Int? = nil,
-    renderedFileID: String? = nil
+    renderedFileID: String? = nil, isVoiceRecording: Bool = false
   ) {
     self.id = id
     self.filename = filename
     self.contentType = contentType
     self.size = size
     self.renderedFileID = renderedFileID
+    self.isVoiceRecording = isVoiceRecording
   }
 }
 

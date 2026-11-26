@@ -87,7 +87,7 @@ final class ComposerDraftStore {
   let attachments: AttachmentDraftStore
   let editor: ComposerEditor
   let voice: ComposerVoiceInputStore?
-  let voicePlayback: ComposerVoicePlayback
+  let voicePlayback: VoiceClipPlayback
   private var consumedVoiceID: UUID?
   var canEditVoice: Bool { canEditDocument }
   private var canEditDocument: Bool {
@@ -213,7 +213,7 @@ final class ComposerDraftStore {
     let store = graph
     self.store = store
     editor = ComposerEditor(graph: store)
-    voicePlayback = ComposerVoicePlayback(artifacts: commands.artifacts)
+    voicePlayback = VoiceClipPlayback(artifacts: commands.artifacts)
     let voice =
       target == .unassigned
       ? nil

@@ -150,8 +150,9 @@ private struct ChatComposerContent: View {
   }
 
   private var expandsInput: Bool {
-    writesDirection || showsEditingLayout || hasText || hasMultipleVoiceParts
-      || current.draft.document.hasFeedback || (voiceActive && hasContent) || showsModels
+    if voiceActive { return hasContent && !current.containsOnlyFinishingRecording }
+    return writesDirection || showsEditingLayout || hasText || hasMultipleVoiceParts
+      || current.draft.document.hasFeedback || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
@@ -249,16 +250,18 @@ private struct ChatComposerContent: View {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
         let followup = visibleFollowup
+        let hidesEditor = voiceActive && !expandsInput
         OkouComposerSurface(
-          isExpanded: voiceActive ? hasContent : expandsInput,
+          isExpanded: expandsInput,
           compactTrailingCount: draftState.voice == nil ? 1 : 2,
           showsBottomBar: voiceActive
         ) {
           ZStack(alignment: .topLeading) {
             textInput(id: inputID, followup: followup)
-              .opacity(voiceActive && !hasContent ? 0 : 1)
+              .frame(height: hidesEditor ? 0 : nil)
+              .opacity(hidesEditor ? 0 : 1)
               .allowsHitTesting(!voiceActive)
-              .accessibilityHidden(voiceActive && !hasContent)
+              .accessibilityHidden(hidesEditor)
             if expandsInput, let followup {
               followupSuggestion(followup)
             }

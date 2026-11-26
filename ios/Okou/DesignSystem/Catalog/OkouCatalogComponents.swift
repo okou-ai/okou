@@ -310,6 +310,9 @@
           ChatFeedbackSurface(
             message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
             dismiss: {})
+          ChatFeedbackSurface(
+            message: "Automation enabled", icon: "circle-check", showsDismiss: false, action: {},
+            dismiss: {})
           NavigationLink {
             ChatSyncStatusGallery()
               .toolbar {

@@ -7,7 +7,7 @@ import SwiftUI
 struct OkouGlassControl: ViewModifier {
   enum Shape { case circle, capsule }
   /// What the glass stands on. Clear glass takes the colour of whatever is behind it, which is
-  /// right over a page or a bar. Over a strongly coloured picture (For you's sea) it turns the
+  /// right over a page or a bar. Over a strongly coloured picture (a cover or a photo) it turns the
   /// picture's colour and the controls melt into it, so there the glass holds a veil of the page's
   /// own background: still glass at its edges and in its touch response, but it reads as a
   /// control lifted off the scene, in both themes. A `Glass.tint` of the background does not do
@@ -44,8 +44,8 @@ struct OkouGlassControl: ViewModifier {
   }
 }
 
-/// A prompt on a glass capsule that stands in for an input until it opens (For you's "What do you
-/// have in mind?"). Its text takes the glass's own vibrancy through the hierarchical `.secondary`
+/// A prompt on a glass capsule that stands in for an input until it opens ("What do you have in
+/// mind?"). Its text takes the glass's own vibrancy through the hierarchical `.secondary`
 /// style instead of a fixed grey: on a plain page it reads as the placeholder does, and over a
 /// picture or a coloured scene the system adapts it to what the glass picks up, so it never washes
 /// out. A fixed colour would be drawn as it is, whatever the glass sits on.

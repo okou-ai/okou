@@ -194,6 +194,15 @@ final class ComposerReferenceAttachment: NSTextAttachment {
     super.init(data: nil, ofType: nil)
   }
 
+  convenience init(clips: [ChatUserMessage.Part.VoiceClip], font: UIFont) {
+    self.init(
+      part: .object([
+        "type": .string("voice"),
+        "clips": .array(clips.map { .object(["fileId": .string($0.fileId)]) })
+      ]), font: font)
+    bounds = voiceBounds(availableWidth: .greatestFiniteMagnitude)
+  }
+
   override var accessibilityLabel: String? {
     get {
       if part["type"]?.string == "voice" { return title }
@@ -214,7 +223,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   func voiceBounds(availableWidth: CGFloat) -> CGRect {
     let font = referenceFont
     let height = max(OkouControl.minimumTarget, ceil(font.lineHeight))
-    let width = min(ComposerVoiceClipControl.preferredWidth(font: font), availableWidth)
+    let width = min(VoiceClipControl.preferredWidth(font: font), availableWidth)
     return CGRect(
       x: 0, y: (font.ascender + font.descender - height) / 2, width: width, height: height)
   }

@@ -291,37 +291,20 @@ def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
 
 
 def test_node_id_guard_covers_deselected_cases(suite: Path) -> None:
-    ids = ["x" * 1100 + str(index) for index in range(16)]
+    oversized_id = "x" * 1100 + "0"
     (suite / "tests/test_payload.py").write_text(
         "import pytest\n"
-        f'@pytest.mark.parametrize("value", range(16), ids={ids!r})\n'
+        f'@pytest.mark.parametrize("value", [0], ids={[oversized_id]!r})\n'
         "def test_payload(value):\n    assert True\n"
     )
     guard = "tests/test_collection.py::test_collected_test_node_ids_are_bounded"
-    for index in (1, 2):
-        selector = (f"--test-shard={index}/2",)
-        collected, report = _run_suite(suite, (*selector, "--collect-only"))
-        assert collected.returncode == pytest.ExitCode.OK, collected.stdout + collected.stderr
-        if guard not in report["selected"]:
-            continue
-        deselected_ids = [
-            node_id
-            for node_id in ids
-            if f"tests/test_payload.py::test_payload[{node_id}]" not in report["selected"]
-        ]
-        assert deselected_ids
-        lone_id = deselected_ids[0]
-        (suite / "tests/test_payload.py").write_text(
-            "import pytest\n"
-            f'@pytest.mark.parametrize("value", [0], ids={[lone_id]!r})\n'
-            "def test_payload(value):\n    assert True\n"
-        )
-        result, final_report = _run_suite(suite, selector)
-        assert all(len(node) <= 1024 for node in final_report["selected"])
-        assert [node for node in final_report["collected"] if len(node) > 1024] == [
-            f"tests/test_payload.py::test_payload[{lone_id}]"
-        ]
-        assert result.returncode == pytest.ExitCode.TESTS_FAILED
-        assert "Use short, semantic IDs for large test parameters" in result.stdout
-        return
-    pytest.fail("node-ID guard was not assigned to any shard")
+    # These fixture IDs put the guard on shard 1 and the oversized case on shard 2.
+    result, report = _run_suite(suite, ("--test-shard=1/2",))
+
+    assert all(len(node) <= 1024 for node in report["selected"])
+    assert [node for node in report["collected"] if len(node) > 1024] == [
+        f"tests/test_payload.py::test_payload[{oversized_id}]"
+    ]
+    assert result.returncode == pytest.ExitCode.TESTS_FAILED
+    assert report["failed"] == [f"call:{guard}"]
+    assert "Use short, semantic IDs for large test parameters" in result.stdout
