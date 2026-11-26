@@ -33,6 +33,15 @@ fn raw_publication_preserves_unknown_and_skipped_fields_without_coercing_them() 
         context.instruction_file.unwrap().storage_mount,
         "/home/user/.vm0/agent-instructions/codex"
     );
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+    body["contentBundles"]["futureBundles"] = Value::Bool(true);
+    body["contentBundles"]["skills"][0]["futureSkill"] = Value::Bool(true);
+    assert_eq!(
+        decode_execution_publication(body.to_string().as_bytes())
+            .unwrap()
+            .storage_manifest,
+        context.storage_manifest,
+    );
     let body = RUNNER_EXECUTION_CONTEXT_FIXTURE.replace("\"prompt\"", r#""\u0070rompt""#);
     assert_eq!(
         decode_execution_publication(body.as_bytes())
@@ -75,7 +84,7 @@ fn raw_publication_rejects_duplicate_context_and_bundle_members() {
 }
 
 #[test]
-fn raw_publication_preserves_missing_null_and_nested_strictness() {
+fn raw_publication_preserves_missing_and_null_semantics() {
     let fixture: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let mut context = fixture.as_object().unwrap().clone();
     context.remove("contentBundles");
@@ -84,7 +93,6 @@ fn raw_publication_preserves_missing_null_and_nested_strictness() {
     for package in [
         "null".to_owned(),
         r#"{"format":"tar-gzip-v1","skills":[],"instructions":null}"#.to_owned(),
-        r#"{"format":"tar-gzip-v1","skills":[],"private-secret":1}"#.to_owned(),
         r#"{"format":"tar-gzip-v1","skills":null}"#.to_owned(),
         r#"{"format":"tar-gzip-v1","skills":[],"templates":null}"#.to_owned(),
     ] {

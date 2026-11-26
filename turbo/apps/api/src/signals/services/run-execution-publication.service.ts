@@ -3,7 +3,6 @@ import type {
   ExecutionContext,
   PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { generateFirewallToken, generateSandboxToken } from "../auth/tokens";
@@ -105,14 +104,40 @@ export function buildExecutionContext(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
-  const bundledMountPaths = new Set([
-    ...args.contentBundles.skills.map((skill) => {
-      return skill.mountPath;
-    }),
-    ...(args.contentBundles.templates ?? []).map(templateGuidanceMountPath),
-  ]);
+  const storageMounts = args.preparedContext.storageMounts.map(
+    (storageMount) => {
+      const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
+      return mount;
+    },
+  );
+  // Only Member Memory uses storageMounts on the current API producer.
+  const [mount] = storageMounts;
+  const memory = mount
+    ? {
+        storageId: mount.storageId,
+        versionId: mount.versionId,
+        archiveUrl: mount.archiveUrl,
+        archiveSize: mount.archiveSize,
+        empty: mount.empty,
+        missingRootPolicy: mount.missingRootPolicy,
+      }
+    : null;
   return {
     ...runnerContext,
+    // Older Runners read the legacy projection below. Remove it in #51111 after
+    // those Runners have drained and left the rollback set.
+    startupInputs: {
+      memory,
+      contentBundles: {
+        ...args.contentBundles,
+        skills: args.contentBundles.skills.map(({ mountPath, ...bundle }) => {
+          return {
+            name: mountPath.slice(mountPath.lastIndexOf("/") + 1),
+            bundle,
+          };
+        }),
+      },
+    },
     contentBundles: args.contentBundles,
     isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
@@ -120,16 +145,7 @@ export function buildExecutionContext(args: {
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: { ...args.run.vars, ...args.preparedContext.vars },
-    storageManifest: {
-      storageMounts: args.preparedContext.storageMounts
-        .filter((mount) => {
-          return !bundledMountPaths.has(mount.mountPath);
-        })
-        .map((storageMount) => {
-          const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-          return mount;
-        }),
-    },
+    storageManifest: { storageMounts },
     sandboxToken: generateSandboxToken(
       args.run.userId,
       args.run.id,

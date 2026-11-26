@@ -181,6 +181,43 @@ function preparedExecutionContextFixture() {
 }
 
 describe("runner execution context contract", () => {
+  it("ignores unknown fields in explicit startup inputs", () => {
+    const context = executionContextSchema.parse(
+      loadRunnerExecutionContextFixture(),
+    );
+    const memory = { storageId: "memory", versionId: "version", empty: true };
+    const bundle = {
+      sha256: "a".repeat(64),
+      archiveBytes: 128,
+      downloadUrl: "https://example.test/archive",
+    };
+    const parsed = executionContextSchema.parse({
+      ...context,
+      startupInputs: {
+        memory: { ...memory, futureMemory: true },
+        contentBundles: {
+          format: "tar-gzip-v1",
+          skills: [
+            {
+              name: "example",
+              bundle: { ...bundle, futureReference: true },
+              futureSkill: true,
+            },
+          ],
+          futurePackages: true,
+        },
+        futureInputs: true,
+      },
+    });
+    expect(parsed.startupInputs).toEqual({
+      memory,
+      contentBundles: {
+        format: "tar-gzip-v1",
+        skills: [{ name: "example", bundle }],
+      },
+    });
+  });
+
   it.each([".claude", ".codex", ".pi/agent"])(
     "accepts the X Connector Skill in the %s execution context",
     (root) => {

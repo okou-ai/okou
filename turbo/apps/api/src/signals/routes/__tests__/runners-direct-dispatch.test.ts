@@ -72,6 +72,18 @@ test("delivers complete input after binding its process", async () => {
   expect(input.sandboxToken).toBeTruthy();
   expect(input.platformEnvironment.OKOU_TOKEN).toMatch(/^vm0_sandbox_/);
   expect(input.contentBundles).toBeDefined();
+  const legacyMemory = input.storageManifest?.storageMounts[0];
+  expect(legacyMemory).toBeDefined();
+  expect(input.startupInputs?.memory).toMatchObject({
+    storageId: legacyMemory?.storageId,
+    versionId: legacyMemory?.versionId,
+  });
+  expect(input.startupInputs?.contentBundles).toStrictEqual({
+    ...input.contentBundles,
+    skills: input.contentBundles.skills.map(({ mountPath, ...bundle }) => {
+      return { name: mountPath.split("/").at(-1), bundle };
+    }),
+  });
   expect(run.status).toBe("running");
   expect(
     (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
