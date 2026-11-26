@@ -179,22 +179,22 @@ account-org	src/signals/routes/__tests__/antigravity-personal-subscription.test.
 artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-002	skipped		slow-setup: Given prefix alone 429 ms and 232 ms (cold and warm rows of one measurement run), before the Run upload, Drive connections and thread selections: Pro member entitlement via Stripe invoice webhook + personal model 212/121 ms, Runner group + member Chat Run to dispatched execution 216/111 ms		B06	
 artifacts	src/signals/routes/__tests__/artifact-catalog-drive.test.ts	artifact-catalog-drive-004	skipped		slow-setup: Given prefix alone 429 ms and 232 ms (same measurement run as 002; identical first Given step), before the Run upload, Drive connection and peer thread: Pro member entitlement via Stripe invoice webhook + personal model 212/121 ms, Runner group + member Chat Run to dispatched execution 216/111 ms		B06	
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-002	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-003	planned					d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-003	revisit		revisit: reclassify to a-run: Publishing a hosted site linked to Chat thread artifact lists requires Run execution credentials (runId) from dispatched Runs in two Chats			d-other
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-005	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-007	planned					d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-007	revisit		revisit: reclassify to a-run: Hosted-site entries only enter the artifact catalog via recordHostedSiteArtifact$ when published with Run execution credentials (runId) from a dispatched Run			d-other
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-008	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-009	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-010	planned					d-other
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-013	planned					d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-010	revisit		revisit: reclassify to a-run: Uploading files scoped to separate Chat threads and reading GET /api/chat-threads/:threadId/artifacts requires Run execution credentials (runId) from dispatched Runs			d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-013	rewritten	154.0		src/signals/routes/__tests__/artifact-catalog.bdd.test.ts		d-other
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-014	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-015	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-021	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-022	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-024	planned					d-other
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-025	planned					d-other
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-026	planned					d-other
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-030	planned					d-other
-artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-031	planned					d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-024	revisit		revisit: reclassify to a-run: Populating a hosted-site entry in the artifact catalog for kind filtering requires publishing with Run execution credentials (runId) from a dispatched Run			d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-025	rewritten	135.1		src/signals/routes/__tests__/artifact-catalog.bdd.test.ts		d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-026	revisit		revisit: reclassify to a-run: Associating uploaded file artifacts with specific Chat threads for chatThreadId-filtered catalog pagination requires Run execution credentials (runId) from dispatched Runs			d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-030	rewritten	158.5		src/signals/routes/__tests__/artifact-catalog.bdd.test.ts		d-other
+artifacts	src/signals/routes/__tests__/artifact-catalog.bdd.test.ts	artifact-catalog.bdd-031	revisit		revisit: reclassify to a-run: Producing an assistant reply (output.message) and non-shareable run events in a completed Chat requires a dispatched Run			d-other
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-001	skipped		slow-setup:run-token: the /files step needs a Run token with host:read, only issued by a dispatched chat Run (240-790 ms setup)		B01	
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-003	skipped		slow-setup: Pro entitlement (Stripe invoice webhook) + org membership + artifact upload/complete + owner resolve already measured 202 ms before the first share; the case still needs org share, two downloads/resolves, public share copy and unshare		B01	
 artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downloads-007	rewritten	131.2		src/signals/routes/__tests__/artifact-downloads.test.ts	pilot	
