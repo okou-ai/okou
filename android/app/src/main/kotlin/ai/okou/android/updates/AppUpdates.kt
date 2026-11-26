@@ -136,6 +136,30 @@ data class UpdateUiState(
 private val UpdateUiState.needsRequiredRelease: Boolean
     get() = required && displayedRelease?.let(::isEligible) != true
 
+private fun UpdateUiState.canRetryPackage(release: AndroidUpdatesRelease?): Boolean {
+    val current = candidate ?: return false
+    return release != null &&
+        current.version == release.version &&
+        current.sha256 == release.sha256 &&
+        isEligible(current)
+}
+
+private fun UpdateUiState.withoutObsoleteFailure(previousCandidate: AndroidUpdatesRelease?) =
+    if (
+        (transfer == UpdateTransfer.Failed || transfer == UpdateTransfer.Interrupted) &&
+            !canRetryPackage(previousCandidate)
+    )
+        copy(transfer = UpdateTransfer.Idle, problem = null)
+    else this
+
+private fun UpdateUiState.withDownloadFailure(
+    release: AndroidUpdatesRelease,
+    failure: UpdateProblem,
+    phase: UpdateTransfer = UpdateTransfer.Failed,
+) =
+    if (canRetryPackage(release)) copy(transfer = phase, problem = failure)
+    else copy(transfer = UpdateTransfer.Idle, problem = null)
+
 @Serializable
 data class UpdateRecord(
     val installedVersion: String,
@@ -207,21 +231,26 @@ class AppUpdates(
                 service.initialize(target)
                 val file = target?.let { service.recover(it) }
                 mutable.update {
-                    it.copy(
-                        transfer =
-                            when {
-                                target == null -> UpdateTransfer.Idle
-                                file != null -> UpdateTransfer.Ready(target)
-                                else -> UpdateTransfer.Interrupted
-                            },
-                        problem =
-                            if (target != null && file == null) UpdateProblem.Interrupted else null,
-                    )
+                    when {
+                        target == null -> it.copy(transfer = UpdateTransfer.Idle)
+                        file != null -> it.copy(transfer = UpdateTransfer.Ready(target))
+                        else ->
+                            it.withDownloadFailure(
+                                target,
+                                UpdateProblem.Interrupted,
+                                UpdateTransfer.Interrupted,
+                            )
+                    }
                 }
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 val failure = classify(error, UpdateProblem.Storage)
-                mutable.update { it.copy(transfer = UpdateTransfer.Failed, problem = failure) }
+                mutable.update {
+                    val selected = it.selectedRelease
+                    if (selected == null || failure == UpdateProblem.Storage)
+                        it.copy(transfer = UpdateTransfer.Failed, problem = failure)
+                    else it.withDownloadFailure(selected, failure)
+                }
             } finally {
                 initialized.complete(Unit)
             }
@@ -263,11 +292,12 @@ class AppUpdates(
             checkedAt = now()
             mutable.update {
                 it.copy(
-                    info = info,
-                    minimum = floor,
-                    required = blocked,
-                    check = UpdateCheck.Checked,
-                )
+                        info = info,
+                        minimum = floor,
+                        required = blocked,
+                        check = UpdateCheck.Checked,
+                    )
+                    .withoutObsoleteFailure(it.candidate)
             }
             retireUnsuitableTransfer()
             try {
@@ -309,9 +339,10 @@ class AppUpdates(
             initialized.await()
             mutable.update {
                 it.copy(
-                    required = true,
-                    minimum = higherMinimum(it.minimum, requirement.minimumSupportedVersion),
-                )
+                        required = true,
+                        minimum = higherMinimum(it.minimum, requirement.minimumSupportedVersion),
+                    )
+                    .withoutObsoleteFailure(it.candidate)
             }
             retireUnsuitableTransfer()
             try {
@@ -367,7 +398,7 @@ class AppUpdates(
                 if (ticket != transferTicket) return
                 val failure = classify(error, UpdateProblem.Download)
                 if (!error.isTemporaryNetworkFailure() || retries == 2) {
-                    mutable.update { it.copy(transfer = UpdateTransfer.Failed, problem = failure) }
+                    mutable.update { it.withDownloadFailure(release, failure) }
                     return
                 }
                 retries++
@@ -427,9 +458,7 @@ class AppUpdates(
             currentCoroutineContext().ensureActive()
             val failure = classify(error, UpdateProblem.Download)
             mutable.update {
-                if (it.transfer == selected)
-                    it.copy(transfer = UpdateTransfer.Failed, problem = failure)
-                else it
+                if (it.transfer == selected) it.withDownloadFailure(release, failure) else it
             }
             null
         }
