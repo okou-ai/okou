@@ -121,8 +121,7 @@ struct ForYouView: View {
     let panel =
       !visit.cards.isEmpty ? "cards" : visit.error != nil ? "error" : visit.loaded ? "rest" : "load"
     return visit.cards.map(\.id) + [
-      panel, visit.error ?? "", visit.notice?.text ?? "", visit.notice?.undo?.undoID ?? "",
-      hasDock ? "dock" : ""
+      panel, visit.error ?? "", visit.notice?.text ?? "", hasDock ? "dock" : ""
     ]
   }
 
@@ -162,9 +161,9 @@ struct ForYouView: View {
 
   /// What the page has to say floats under the header, over the scene, so the deck never moves
   /// and the card's directions are never covered. A failure stays until it is dismissed. A
-  /// finished action ("Noted for later · Undo") is the chat's feedback surface and
-  /// lifts away after a few idle seconds or a sideways swipe, its Undo kept in the caught-up
-  /// recap. Each drops in from under the header, and a new one replaces the last in place.
+  /// message sent is a plain toast that lifts away after a few idle seconds or a sideways swipe;
+  /// a card turned down from the Dismiss menu says nothing, as the menu was its confirmation.
+  /// Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {
     Group {
       if let error = visit.error, visit.current != nil {
@@ -181,24 +180,14 @@ struct ForYouView: View {
     .padding(.horizontal, OkouSpace.lg)
   }
 
+  /// A plain toast: a message sent can not be taken back, so there is nothing to act on.
   private func confirmation(_ notice: ForYouStore.Notice) -> some View {
-    // Feedback on a card can be taken back, so it offers Undo and a ✕. A sent message can not,
-    // so its confirmation is a plain toast, as is any other notice with nothing to act on.
     ChatFeedbackSurface(
-      message: notice.text, icon: "circle-check",
-      actionTitle: notice.undo != nil ? String(localized: "Undo") : nil,
-      actionEnabled: !visit.busy, actionIdentifier: "for-you-undo",
-      showsDismiss: notice.undo != nil,
-      autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
-      dismiss: clearNotice
+      message: notice.text, icon: "circle-check", showsDismiss: false,
+      autoDismissAfter: Self.confirmationLife, action: {}, dismiss: clearNotice
     )
-    .id(notice.undo?.undoID ?? notice.text)
+    .id(notice.text)
     .transition(noticeTransition)
-  }
-
-  private func act(on notice: ForYouStore.Notice) {
-    guard let undo = notice.undo else { return }
-    run { await store.undo(undo) }
   }
 
   // MARK: Cards

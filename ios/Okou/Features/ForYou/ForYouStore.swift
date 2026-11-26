@@ -6,15 +6,10 @@ import Foundation
 /// The deck keeps its order for one visit. Only the visible card gets a read receipt.
 @MainActor
 final class ForYouStore {
+  /// A plain toast for an action that did something past the deck, such as a message sent. A
+  /// card turned down from the Dismiss menu has none: the menu was the confirmation.
   struct Notice: Equatable {
     let text: String
-    var undo: Undo?
-  }
-  struct Undo: Equatable {
-    let card: ForYouCard
-    let position: Int
-    let feedbackID: String
-    let undoID = UUID().uuidString
   }
   /// One card this visit settled. Only their count is read: a new one plays the success haptic.
   struct Handled: Identifiable, Equatable {
@@ -113,48 +108,22 @@ final class ForYouStore {
       do {
         try await feed.feedback(card, reason: reason, id: id)
       } catch let failure as APIClientError {
+        // Settled on another device: it leaves the deck all the same.
         guard failure.statusCode == 409 else { throw failure }
         remove(card)
-        notice = Notice(text: String(localized: "This suggestion was already handled."))
         return
       }
-      let undo = Undo(card: card, position: position, feedbackID: id)
-      notice = Notice(
-        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"), undo: undo)
       record(card)
       remove(card)
       feedbackID = nil
     }
   }
 
-  func undo(_ action: Undo) async {
-    await perform {
-      let restored = try await feed.feedback(
-        action.card, reason: nil, id: action.undoID, undoing: action.feedbackID)
-      if restored {
-        // A card that came back is no longer settled.
-        handled.removeAll { $0.id == action.card.id }
-        updateDeck { deck in
-          if let index = deck.cards.firstIndex(where: { $0.id == action.card.id }) {
-            deck.position = index
-          } else {
-            deck.position = min(action.position, deck.cards.count)
-            deck.cards.insert(action.card, at: deck.position)
-          }
-        }
-      }
-      notice =
-        restored ? nil : Notice(text: String(localized: "This suggestion is no longer available."))
-      workspace?.requestRefresh(.forYou)
-    }
-  }
-
   func resolve(_ card: ForYouCard, event: ForYouAutomation, enable: Bool) async {
     await perform {
       try await feed.resolve(event, cardID: card.id, enable: enable)
-      notice = Notice(
-        text: enable
-          ? String(localized: "Automation enabled") : String(localized: "Event dismissed"))
+      // Enabling did something worth a word; dismissing an event, like a card, says nothing.
+      notice = enable ? Notice(text: String(localized: "Automation enabled")) : nil
       record(card)
       remove(card)
     }
@@ -391,10 +360,6 @@ extension ForYouStore {
   private(set) var cards: [ForYouCard] {
     get { deck.cards }
     set { updateDeck { $0.cards = newValue } }
-  }
-  private(set) var position: Int {
-    get { deck.position }
-    set { updateDeck { $0.position = newValue } }
   }
   private(set) var loaded: Bool {
     get { deck.loaded }

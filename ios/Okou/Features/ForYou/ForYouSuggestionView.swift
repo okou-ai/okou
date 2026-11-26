@@ -463,13 +463,4 @@ extension ForYouFeedback {
     case .lessLikeThis: "eye-off"
     }
   }
-
-  var confirmation: String {
-    switch self {
-    case .alreadyDone: String(localized: "Noted — this is already done")
-    case .notPlanned: String(localized: "Noted — you won't do this")
-    case .later: String(localized: "Noted for later")
-    case .lessLikeThis: String(localized: "You’ll see fewer suggestions like this.")
-    }
-  }
 }

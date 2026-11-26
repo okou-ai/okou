@@ -987,15 +987,16 @@ feature; the catalog shows each one.
 - **The dock** is the sidebar footer's pair: "What do you have in mind?" in the placeholder grey
   on a glass capsule, as New Message is, which grows into the composer, and a round glass ✕, as
   Search is, that opens Dismiss with its reasons menu.
-- **Confirmations are the chat's feedback surface, under the header.** Feedback on a card
-  ("Noted — you won't do this · Undo") drops in as `ChatFeedbackSurface` with Undo on the right
-  and a ✕, since it can be taken back. A sent message ("Sent to a new chat") can not, so it is a
-  plain toast: one line, no action, no ✕; so is any other notice with nothing to act on. Both
-  float over the ground so the deck never moves and the card's directions are never covered, and
-  lift away after six idle seconds or a sideways swipe. A failure floats in the same place and
-  stays until it is dismissed.
+- **Turning a card down says nothing.** Done, Won't do, Later, Less like this and Just dismiss
+  are chosen from the Dismiss menu, which is already the second step, so the card simply sinks
+  away: no confirmation and no Undo. Dismissing a paused automation's event is the same.
+- **A message sent is a plain toast, under the header.** "Sent to a new chat" (or "Sent to the
+  chat", "Automation enabled") drops in as `ChatFeedbackSurface` with one line, no action and no
+  ✕, since it can not be taken back. It floats over the ground so the deck never moves and the
+  card's directions are never covered, and lifts away after six idle seconds or a sideways swipe.
+  A failure floats in the same place and stays until it is dismissed.
 - **Caught up** is the rest picture, "All caught up", one line, and Back to chats. It lists
-  nothing of what the visit settled and offers no Undo: each card's own confirmation already did.
+  nothing of what the visit settled and offers no Undo.
 - **Writing a direction focuses the page.** The ground recedes under the page's canvas, so the
   composer's glass and the keyboard read plain. The card stays above the input as its context:
   its heading only, as tall as it is up to the room under the header, held still while the member
@@ -1126,7 +1127,7 @@ authentication or product services.
 
 In Debug builds, `--for-you-deck` opens the production For you page (`ForYouDeckGallery`)
 against an isolated `.invalid` HTTP fixture with suggestion and paused-automation cards, so
-the deck, the dock, dismissal with Undo and the caught-up panel can be checked without signing
+the deck, the dock, dismissal and the caught-up panel can be checked without signing
 in or sending read receipts. Add `--for-you-deck-slow` to hold the first load (the skeleton)
 and every choice (a direction's progress), or `--for-you-deck-failure` to fail the first load.
 
