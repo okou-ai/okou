@@ -88,6 +88,20 @@ def validate_initial_status_receipt(initial, policy, sandbox, paths, *, path_err
     return baseline
 
 
+def bind_history_operation(evidence, identities, baseline, sandbox, *, replay_error, binding_error):
+    """Reserve the canonical IDs and verify their binding to the original parked sandbox."""
+    history = report.validate_evidence_uuid(evidence.get("history_run_id"))
+    operation = report.validate_evidence_uuid(evidence.get("operation_run_id"))
+    if history == operation or history in identities or operation in identities:
+        raise ValueError(replay_error)
+    identities.update((history, operation))
+    reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX + history
+    report.exact(
+        baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": sandbox}], binding_error
+    )
+    return history, operation, reuse
+
+
 def current_status(value, initial, sandbox=None, reuse=None, blank=False):
     expected = _base_status(
         value, "current status missing", "invalid current status timestamp"

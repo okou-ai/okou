@@ -8,30 +8,12 @@ import pressure_report as pressure
 import report
 import status_evidence
 from cleanup_report import COUNTS, accounting, exact_coverage, supplied_policy
-from report import exact
+from report import exact, validate_evidence_uuid
 
 PREFIX = "NATIVE_LATER_PARKING_WITNESS "
 CASES = {f"Later{kind}-{mode}" for kind in ("Exact", "Blank") for mode in ("fresh", "snapshot")}
 PHASES = ("tail_blocked", "pool_wait_progress", "tail_wait_progress", "status_wait_progress",
           "original_completed", "later_retired", "producers_joined")
-
-
-def identifier(value):
-    if not isinstance(value, str) or not report.is_canonical_uuid(value):
-        raise ValueError("later parking identity is not canonical")
-    return value
-
-
-def bind_history_operation(evidence, identities, baseline, sandbox, *, replay_error, binding_error):
-    """Reserve the canonical IDs and verify their binding to the original parked sandbox."""
-    history = identifier(evidence.get("history_run_id"))
-    operation = identifier(evidence.get("operation_run_id"))
-    if history == operation or history in identities or operation in identities:
-        raise ValueError(replay_error)
-    identities.update((history, operation))
-    reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX + history
-    exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": sandbox}], binding_error)
-    return history, operation, reuse
 
 
 def clock(value, begin, end):
@@ -74,7 +56,7 @@ def validate(directory):
         preparation = blocked.get("preparation")
         if not isinstance(preparation, dict):
             raise ValueError("missing actual incoming preparation")
-        new, backing, operation = [identifier(preparation.get(k)) for k in (
+        new, backing, operation = [validate_evidence_uuid(preparation.get(k)) for k in (
             "sandbox_id", "backing_generation", "operation_id")]
         if new == backing or new in identities or backing in identities or operation in operations:
             raise ValueError("incoming preparation reused an owner or operation")
@@ -90,7 +72,7 @@ def validate(directory):
         prefix = "thread:native-later-"
         if not isinstance(reuse, str) or not reuse.startswith(prefix):
             raise ValueError("later exact reuse identity missing")
-        identifier(reuse[len(prefix):])
+        validate_evidence_uuid(reuse[len(prefix):])
         if reuse in reuse_keys or reuse == initial["idle_sandboxes"][0]["reuse_key"]:
             raise ValueError("later parking reuses original key")
         reuse_keys.add(reuse)
