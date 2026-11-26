@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
+import ai.okou.android.WithButtonFocusOutline
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
@@ -573,13 +574,15 @@ internal fun ChatListScreen(
                                     if (!newChatEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
-                                    ChatListTextAction(
-                                        R.string.composer_new_project,
-                                        icon = R.drawable.ic_add,
-                                        enabled = newChatEnabled,
-                                        colors = ButtonDefaults.textButtonColors(),
-                                    ) {
-                                        newChat(project.id)
+                                    WithButtonFocusOutline(MaterialTheme.colorScheme.onSurface) {
+                                        ChatListTextAction(
+                                            R.string.composer_new_project,
+                                            icon = R.drawable.ic_add,
+                                            enabled = newChatEnabled,
+                                            colors = ButtonDefaults.textButtonColors(),
+                                        ) {
+                                            newChat(project.id)
+                                        }
                                     }
                                 }
                             }
@@ -708,11 +711,13 @@ private fun ChatListEmptyState(filter: ChatListFilter, showInbox: () -> Unit) {
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
         if (filter != ChatListFilter.Inbox) {
-            ChatListTextAction(
-                R.string.chat_back_to_inbox,
-                colors = ButtonDefaults.textButtonColors(),
-                onClick = showInbox,
-            )
+            WithButtonFocusOutline(MaterialTheme.colorScheme.onSurface) {
+                ChatListTextAction(
+                    R.string.chat_back_to_inbox,
+                    colors = ButtonDefaults.textButtonColors(),
+                    onClick = showInbox,
+                )
+            }
         }
     }
 }
