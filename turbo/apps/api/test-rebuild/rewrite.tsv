@@ -1755,7 +1755,7 @@ account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.t
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-012	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-013	planned				
 account-org	src/signals/routes/__tests__/integration-model-recovery-slack.test.ts	integration-model-recovery-slack-014	planned				
-account-org	src/signals/routes/__tests__/integration-model-recovery-teams.test.ts	integration-model-recovery-teams-001	planned				B06
+account-org	src/signals/routes/__tests__/integration-model-recovery-teams.test.ts	integration-model-recovery-teams-001	skipped		slow-setup: the Given alone, measured only up to the dispatched Teams Run (before the Runner failure report, the error card and the first When), took 545 ms and 711 ms in two runs (rows 741 ms and 922 ms with fixture teardown). Dominant Given steps: onboarded paid-native Teams user with Pro entitlement, personal claude-fable-5-1 subscription, Teams installation and account link 331/427 ms; Teams personal message dispatch to an accepted Run 214/284 ms.		B06
 account-org	src/signals/routes/__tests__/integration-model-recovery-telegram.test.ts	integration-model-recovery-telegram-001	planned				B06
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-002	planned				
 messaging	src/signals/routes/__tests__/integrations-discord-files.test.ts	integrations-discord-files-003	planned				
