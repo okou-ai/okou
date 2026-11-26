@@ -175,6 +175,8 @@ describe("GET /api/integrations/slack", () => {
   });
 
   it("integrations-slack-status-004 offers an unconnected member a Slack connect link", async () => {
+    // Slack answers the installation notices like the real Web API.
+    createBddIntegrationApi(context).configureSlackAppMocks();
     const slack = createPublicSlackOrgApi(context);
     const orgId = `org_${randomUUID()}`;
     await slack.installForOrg({ orgId });
@@ -208,6 +210,8 @@ describe("GET /api/integrations/slack", () => {
 
   it("integrations-slack-status-008 asks an admin to reinstall a workspace missing bot scopes", async () => {
     const integrations = createBddIntegrationApi(context);
+    // Slack answers the installation notices like the real Web API.
+    integrations.configureSlackAppMocks();
     const slack = createPublicSlackOrgApi(context);
     const admin = integrations.user({ orgRole: "org:admin" });
     if (!admin.orgId) {
@@ -231,6 +235,8 @@ describe("GET /api/integrations/slack", () => {
   });
 
   it("integrations-slack-status-011 hides scope mismatch details from a regular member", async () => {
+    // Slack answers the installation and connect notices like the real Web API.
+    createBddIntegrationApi(context).configureSlackAppMocks();
     const slack = createPublicSlackOrgApi(context);
     const orgId = `org_${randomUUID()}`;
     const memberId = `user_${randomUUID()}`;
