@@ -31,8 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -297,28 +297,36 @@ internal fun ChatComposerField(
                             LaunchedEffect(editorFocus) { editorFocus.requestFocus() }
                         }
                     }
-                    FilledIconButton(
+                    val canSend = state.canSend(target)
+                    IconButton(
                         onClick = {
                             focus.clearFocus()
                             beforeSend()
                             model.send(target, defaultModel?.state?.value?.options)
                         },
-                        modifier = Modifier.semantics { contentDescription = sendLabel },
-                        enabled = state.canSend(target),
-                        shape = CircleShape,
+                        modifier =
+                            Modifier.size(48.dp).semantics { contentDescription = sendLabel },
+                        enabled = canSend,
                         colors =
-                            IconButtonDefaults.filledIconButtonColors(
-                                containerColor = colors.primary,
+                            IconButtonDefaults.iconButtonColors(
                                 contentColor = colors.onPrimary,
-                                disabledContainerColor = colors.surfaceVariant,
                                 disabledContentColor = colors.onSurfaceVariant,
                             ),
                     ) {
-                        Icon(
-                            painterResource(R.drawable.ic_arrow_upward),
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
+                        Box(
+                            Modifier.size(40.dp)
+                                .background(
+                                    if (canSend) colors.primary else colors.surfaceVariant,
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_upward),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
                 }
             }
