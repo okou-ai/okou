@@ -75,8 +75,12 @@ internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWork
     val matches = rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } }
     return SearchRead.Ready(
         matches,
-        refreshing = catalogRefreshing,
-        refreshFailed = !catalogRefreshing && catalogFailure != null,
+        refresh =
+            when {
+                catalogRefreshing -> SearchRefresh.Reading
+                catalogFailure != null -> SearchRefresh.Failed
+                else -> SearchRefresh.Idle
+            },
     )
 }
 
@@ -91,6 +95,8 @@ interface WorkspaceSearchService {
 }
 
 internal sealed interface SearchRead<out T> {
+    data object Scheduled : SearchRead<Nothing>
+
     data object Loading : SearchRead<Nothing>
 
     data object Retrying : SearchRead<Nothing>
@@ -102,9 +108,15 @@ internal sealed interface SearchRead<out T> {
     data class Ready<T>(
         val rows: List<T>,
         val nextCursor: String? = null,
-        val refreshFailed: Boolean = false,
-        val refreshing: Boolean = false,
+        val refresh: SearchRefresh = SearchRefresh.Idle,
     ) : SearchRead<T>
+}
+
+internal enum class SearchRefresh {
+    Idle,
+    Scheduled,
+    Reading,
+    Failed,
 }
 
 internal val SearchRead<*>?.hasFailure: Boolean
@@ -112,23 +124,24 @@ internal val SearchRead<*>?.hasFailure: Boolean
         when (this) {
             SearchRead.Failed,
             SearchRead.AccessLost -> true
-            is SearchRead.Ready -> refreshFailed
+            is SearchRead.Ready -> refresh == SearchRefresh.Failed
             else -> false
         }
 
 private fun <T> SearchRead<T>.updated(read: SearchRead<T>): SearchRead<T> =
     when {
         this !is SearchRead.Ready -> read
-        read == SearchRead.Loading -> copy(refreshFailed = false, refreshing = true)
+        read == SearchRead.Scheduled -> copy(refresh = SearchRefresh.Scheduled)
+        read == SearchRead.Loading -> copy(refresh = SearchRefresh.Reading)
         read == SearchRead.Retrying -> this
-        read == SearchRead.Failed -> copy(refreshFailed = true, refreshing = false)
+        read == SearchRead.Failed -> copy(refresh = SearchRefresh.Failed)
         else -> read
     }
 
 internal data class WorkspaceSearchResults(
     val keyword: String = "",
-    val messages: SearchRead<SearchMessageHit> = SearchRead.Loading,
-    val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Loading,
+    val messages: SearchRead<SearchMessageHit> = SearchRead.Scheduled,
+    val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Scheduled,
     val artifactPaging: ArtifactSearchPaging = ArtifactSearchPaging.Idle,
 )
 
@@ -193,7 +206,7 @@ internal constructor(
             artifactPageJob = null
             mutable.value =
                 mutable.value.copy(
-                    artifacts = SearchRead.Loading,
+                    artifacts = SearchRead.Scheduled,
                     artifactPaging = ArtifactSearchPaging.Idle,
                 )
         }
@@ -254,7 +267,7 @@ internal constructor(
             !authorized() ||
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
-                loaded.refreshFailed ||
+                loaded.refresh == SearchRefresh.Failed ||
                 artifactPageJob?.isActive == true
         )
             return
@@ -262,14 +275,19 @@ internal constructor(
             searches[WorkspaceSearchType.Artifacts]?.join()
             val state = mutable.value
             val currentPage = state.artifacts as? SearchRead.Ready ?: return@launch
-            if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-            mutable.value = state.copy(artifactPaging = paging)
+            if (currentPage.nextCursor != cursor || currentPage.refresh == SearchRefresh.Failed) {
+                return@launch
+            }
             readSearch(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },
             ) { next ->
                 if (next == SearchRead.Retrying) return@readSearch
                 val latest = mutable.value
+                if (next == SearchRead.Loading) {
+                    mutable.value = latest.copy(artifactPaging = paging)
+                    return@readSearch
+                }
                 val merged =
                     (next as? SearchRead.Ready)?.let { page ->
                         val rows = (currentPage.rows + page.rows).distinctBy { it.id }
@@ -301,7 +319,7 @@ internal constructor(
         publish: (WorkspaceSearchResults, SearchRead<T>) -> WorkspaceSearchResults,
     ) {
         if (searches[type]?.let { it.isActive || !refresh } == true) return
-        mutable.value = publish(mutable.value, SearchRead.Loading)
+        mutable.value = publish(mutable.value, SearchRead.Scheduled)
         searches[type] = viewModelScope.launch {
             delay(SearchDebounceMillis)
             readSearch({ it.includes(type) }, read) { result ->
@@ -321,6 +339,7 @@ internal constructor(
             visibleType.first { it != null && inScope(it) }
             context.ensureActive()
             if (!authorized()) return
+            if (failures == 0) publish(SearchRead.Loading)
             val result =
                 try {
                     read()

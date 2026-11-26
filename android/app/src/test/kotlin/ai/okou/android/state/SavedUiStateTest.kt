@@ -13,6 +13,7 @@ import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.SearchArtifactHit
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchRefresh
 import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.WorkspaceSearchResults
 import ai.okou.android.chat.WorkspaceSearchScreen
@@ -261,7 +262,10 @@ class SavedUiStateTest {
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
 
         compose.runOnIdle {
-            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshing = true))
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Reading),
+                )
         }
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(280)
@@ -326,7 +330,10 @@ class SavedUiStateTest {
                     true,
                 )
             }
-        var remote by mutableStateOf(WorkspaceSearchResults(keyword = "Release"))
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Loading),
+            )
         compose.setContent {
             OkouTheme(false) {
                 WorkspaceSearchScreen(

@@ -10,7 +10,6 @@ import ai.okou.android.WorkspaceSearchGroupHeading
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
-import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberReadFailureFeedback
 import ai.okou.android.retainSearchResultsWhileComposing
 import ai.okou.android.searchClearAction
@@ -81,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 private data class SearchSources(
     val chats: ChatListUiState,
@@ -248,11 +248,17 @@ private fun searchResultType(key: String): WorkspaceSearchType =
         else -> WorkspaceSearchType.Chats
     }
 
-private val SearchRead<*>?.isPending: Boolean
+private val SearchRead<*>?.isReading: Boolean
     get() =
         this == SearchRead.Loading ||
             this == SearchRead.Retrying ||
-            this is SearchRead.Ready && refreshing
+            this is SearchRead.Ready && refresh == SearchRefresh.Reading
+
+private val SearchRead<*>?.isPending: Boolean
+    get() =
+        isReading ||
+            this == SearchRead.Scheduled ||
+            this is SearchRead.Ready && refresh == SearchRefresh.Scheduled
 
 private sealed interface SearchItem {
     val key: String
@@ -366,7 +372,7 @@ private fun SearchResults(
         when {
             keyword.isEmpty() || !type.includes(WorkspaceSearchType.Messages) -> null
             currentRemote != null -> currentRemote.messages
-            remoteActive -> SearchRead.Loading
+            remoteActive -> SearchRead.Scheduled
             else -> workspacePreparation
         }
     val workflowRead =
@@ -374,7 +380,7 @@ private fun SearchResults(
             keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Workflows)
         }
     val artifactResults =
-        (currentRemote?.artifacts ?: SearchRead.Loading).takeIf {
+        (currentRemote?.artifacts ?: SearchRead.Scheduled).takeIf {
             remoteActive && onOpenArtifact != null
         }
     val artifactRead =
@@ -421,8 +427,7 @@ private fun SearchResults(
             ?.takeIf {
                 type == WorkspaceSearchType.Artifacts &&
                     artifactPaging != ArtifactSearchPaging.Failed &&
-                    !it.refreshing &&
-                    !it.refreshFailed
+                    it.refresh == SearchRefresh.Idle
             }
             ?.nextCursor
     val waitingForArtifactPage =
@@ -490,6 +495,7 @@ private fun SearchResults(
     val remotePending =
         reads.any { it.isPending } || waitingForMessageMetadata || waitingForArtifactPage
     val pending = waitingForList || remotePending
+    val reading = waitingForList || waitingForArtifactPage || reads.any { it.isReading }
     fun waitingForResult(key: String): Boolean =
         when (searchResultType(key)) {
             WorkspaceSearchType.Chats -> showChats && waitingForList
@@ -523,14 +529,21 @@ private fun SearchResults(
             !artifactPageFailed &&
             !sourceUnavailable &&
             reads.all { it == null || it is SearchRead.Ready }
-    val showPending =
-        key(keyword, type) {
-            rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { pending })
+    val showDelayedFeedback =
+        key(keyword, type, pending) {
+            var shown by remember { mutableStateOf(false) }
+            if (reading && !shown) {
+                LaunchedEffect(Unit) {
+                    delay(ContentReadFeedbackDelayMillis)
+                    shown = true
+                }
+            }
+            shown
         }
-    val showSkeleton = showPending && items.isEmpty() && !showEmpty
+    val showSkeleton = showDelayedFeedback && items.isEmpty() && !showEmpty
     val showProgress =
         (items.isNotEmpty() || showEmpty) &&
-            (showPending || needsChatList && list.listRetryProgressVisible)
+            (showDelayedFeedback || needsChatList && list.listRetryProgressVisible)
     val showFailure = readFailed && !pending && items.isEmpty() && !showEmpty
     val failureLabel =
         if (chatRefreshFailed && showChats && !grouped) R.string.chat_search_chats_failed
@@ -788,20 +801,20 @@ private fun SearchGroup(group: SearchItem.Group, onMore: () -> Unit) {
     ) {
         WorkspaceSearchGroupHeading(label, Modifier.weight(1f))
         if (group.more) {
-            Box(
-                Modifier.widthIn(min = 48.dp)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onMore)
-                    .semantics { contentDescription = moreLabel }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                contentAlignment = Alignment.Center,
+            val shape = RoundedCornerShape(12.dp)
+            TextButton(
+                onClick = onMore,
+                modifier =
+                    Modifier.widthIn(min = 48.dp)
+                        .heightIn(min = 48.dp)
+                        .workspaceSearchFocusOutline(shape)
+                        .semantics { contentDescription = moreLabel },
+                shape = shape,
+                contentPadding = PaddingValues(horizontal = 8.dp),
             ) {
                 Text(
                     stringResource(R.string.chat_search_view_all),
                     style = workspaceSearchSecondaryStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
