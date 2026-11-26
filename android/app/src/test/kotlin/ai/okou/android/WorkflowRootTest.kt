@@ -344,6 +344,23 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         selectScope("All")
         row.assertIsDisplayed()
         compose.onNodeWithText(message).assertDoesNotExist()
+
+        back()
+        val nextRead = CountDownLatch(1)
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") nextRead.await()
+            response(request)
+        }
+        try {
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            row.assertIsDisplayed()
+            compose.onNodeWithText(message).assertDoesNotExist()
+            compose.activityRule.scenario.recreate()
+            row.assertIsDisplayed()
+            compose.onNodeWithText(message).assertDoesNotExist()
+        } finally {
+            nextRead.countDown()
+        }
     }
 
     @Test

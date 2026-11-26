@@ -43,11 +43,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?, failureViewport: Modifier) {
+internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?, modifier: Modifier) {
     if (failure == WorkflowReadFailure.Unavailable) {
         WorkflowInitialReadError(R.string.workflow_history_unavailable)
     } else if (failure is WorkflowReadFailure.Failed) {
-        WorkflowReadFailureContent(failureViewport)
+        WorkflowReadFailureContent(modifier)
     } else if (rememberContentReadSkeleton()) {
         val label = stringResource(R.string.workflow_history_loading)
         Column(

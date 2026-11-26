@@ -14,6 +14,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+internal class WorkflowReadAnnouncements {
+    val directory = mutableSetOf<WorkflowReadFailure.Failed>()
+    val detail = mutableSetOf<WorkflowReadFailure.Failed>()
+}
+
 internal data class WorkflowReadNotice(
     val failure: WorkflowReadFailure.Failed,
     @StringRes val message: Int,

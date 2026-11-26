@@ -29,6 +29,7 @@ import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.settings.WorkspaceSettingsModel
 import ai.okou.android.workflows.WorkflowModel
+import ai.okou.android.workflows.WorkflowReadAnnouncements
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -85,7 +86,10 @@ data class ReadyWorkspace(
     val connectors: ConnectorModel? = null,
     val search: WorkspaceSearchModel,
     internal val namePresentation: WorkspaceNamePresentation,
-)
+) {
+    // Cached refresh results can outlive the workflow destination and the Activity.
+    internal val workflowReadAnnouncements = workflows?.let { WorkflowReadAnnouncements() }
+}
 
 sealed interface OpeningWorkspace {
     val identity: WorkspaceIdentity

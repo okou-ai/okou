@@ -137,6 +137,7 @@ internal fun WorkflowScreen(
     handoffPending: Boolean,
     createError: Int?,
     useError: Int?,
+    readAnnouncements: WorkflowReadAnnouncements,
     actionSnackbar: SnackbarHostState,
     onClose: () -> Unit,
     onCreate: (Boolean) -> Unit,
@@ -157,13 +158,11 @@ internal fun WorkflowScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val editing = state.editing
     val detail = state.detail?.takeIf { it.id == route.id }
-    val directoryAnnouncements = remember(model) { mutableSetOf<WorkflowReadFailure.Failed>() }
-    val detailAnnouncements = remember(model) { mutableSetOf<WorkflowReadFailure.Failed>() }
     SideEffect {
-        directoryAnnouncements.retainAll(
+        readAnnouncements.directory.retainAll(
             listOfNotNull(state.catalogFailure, state.rulesFailure, state.connectionsFailure),
         )
-        detailAnnouncements.retainAll(
+        readAnnouncements.detail.retainAll(
             listOfNotNull(state.detailFailure, state.connectionsFailure, state.historyFailure),
         )
     }
@@ -189,7 +188,7 @@ internal fun WorkflowScreen(
                 .maxByOrNull { it.failure.sequence }
     val detailFeedback: @Composable () -> Unit = {
         key(route.id, route.tab, editing != null) {
-            WorkflowReadFeedbackHost(detailNotice, detailAnnouncements, actionSnackbar)
+            WorkflowReadFeedbackHost(detailNotice, readAnnouncements.detail, actionSnackbar)
         }
     }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
@@ -245,7 +244,7 @@ internal fun WorkflowScreen(
                 state = state,
                 route = route,
                 query = query,
-                announced = directoryAnnouncements,
+                announced = readAnnouncements.directory,
                 modifier =
                     if (listWidth != null)
                         Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
