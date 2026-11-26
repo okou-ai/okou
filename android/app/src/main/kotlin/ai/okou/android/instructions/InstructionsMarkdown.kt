@@ -1,7 +1,7 @@
 package ai.okou.android.instructions
 
+import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.AnnotatedString
@@ -10,9 +10,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -31,18 +28,18 @@ import org.commonmark.parser.IncludeSourceSpans
 import org.commonmark.parser.Parser
 
 @Composable
-internal fun rememberInstructionsMarkdown(source: String): VisualTransformation {
-    val formatted by
+internal fun rememberInstructionsMarkdown(source: String): OutputTransformation {
+    val formatted =
         produceState<AnnotatedString?>(null, source) {
             value = withContext(Dispatchers.Default) { styleInstructionsMarkdown(source) }
         }
+    // A new transformation identity restarts Compose's active platform input session.
     return remember(formatted) {
-        VisualTransformation { input ->
-            // Keep the source offsets for native selection, deletion, and IME composition.
-            TransformedText(
-                formatted?.takeIf { it.text == input.text } ?: input,
-                OffsetMapping.Identity,
-            )
+        OutputTransformation {
+            val styled = formatted.value
+            if (styled != null && styled.text.contentEquals(asCharSequence())) {
+                styled.spanStyles.forEach { addStyle(it.item, it.start, it.end) }
+            }
         }
     }
 }

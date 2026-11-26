@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -39,8 +36,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-internal val ToolDirectorySearchShape = RoundedCornerShape(18.dp)
-
 @Composable
 internal fun WorkspaceSearchInput(
     value: TextFieldValue,
@@ -48,7 +43,6 @@ internal fun WorkspaceSearchInput(
     label: String,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = CircleShape,
     clearLabel: String = stringResource(R.string.chat_search_clear),
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -67,14 +61,13 @@ internal fun WorkspaceSearchInput(
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-        cursorBrush = SolidColor(style.color),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         decorationBox = { input ->
             SearchInputDecoration(
                 value.text.isNotEmpty(),
                 label,
                 clearLabel,
                 style,
-                shape,
                 focused,
                 onClear,
                 input,
@@ -89,7 +82,6 @@ internal fun WorkspaceSearchInput(
     label: String,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
-    shape: Shape = CircleShape,
     inputTransformation: InputTransformation? = null,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -108,14 +100,13 @@ internal fun WorkspaceSearchInput(
         lineLimits = TextFieldLineLimits.SingleLine,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         onKeyboardAction = { keyboard?.hide() },
-        cursorBrush = SolidColor(style.color),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         decorator = { input ->
             SearchInputDecoration(
                 state.text.isNotEmpty(),
                 label,
                 stringResource(R.string.chat_search_clear),
                 style,
-                shape,
                 focused,
                 onClear,
                 input,
@@ -130,17 +121,16 @@ private fun SearchInputDecoration(
     label: String,
     clearLabel: String,
     style: TextStyle,
-    shape: Shape,
     focused: Boolean,
     onClear: () -> Unit,
     input: @Composable () -> Unit,
 ) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    var clearFocused by remember { mutableStateOf(false) }
     WorkspaceSearchField(
         Modifier.fillMaxWidth(),
-        focused = focused,
+        focused = focused || (hasText && clearFocused),
         hasTrailingAction = hasText,
-        shape = shape,
     ) {
         Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
             if (!hasText) {
@@ -157,7 +147,7 @@ private fun SearchInputDecoration(
         if (hasText) {
             IconButton(
                 onClick = onClear,
-                modifier = Modifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+                modifier = Modifier.size(48.dp).onFocusChanged { clearFocused = it.isFocused },
             ) {
                 Icon(
                     painterResource(R.drawable.ic_close),

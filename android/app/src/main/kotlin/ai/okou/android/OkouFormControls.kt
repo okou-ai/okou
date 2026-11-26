@@ -1,12 +1,12 @@
 package ai.okou.android
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -19,12 +19,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +47,76 @@ internal object OkouFormLayout {
 
 @Composable
 internal fun okouFormInputStyle() = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
+
+// Compose Material 3 adds 4 dp below and on either side of an above-field label.
+private val NativeAboveLabelPadding = 4.dp
+
+@Composable
+internal fun OkouFormLabel(label: String) {
+    Text(
+        label,
+        Modifier.padding(bottom = OkouFormLayout.LabelGap - NativeAboveLabelPadding),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
+internal fun okouFormLabelHeight(label: String, fieldWidth: Int): Dp {
+    val style = MaterialTheme.typography.bodyMedium
+    val measurer = rememberTextMeasurer()
+    return with(LocalDensity.current) {
+        val textWidth = (fieldWidth - NativeAboveLabelPadding.roundToPx() * 2).coerceAtLeast(1)
+        measurer
+            .measure(label, style, constraints = Constraints(maxWidth = textWidth))
+            .size
+            .height
+            .toDp() + OkouFormLayout.LabelGap
+    }
+}
+
+@Composable
+internal fun okouFormSupportingTextHeight() = with(LocalDensity.current) { 16.sp.toDp() }
+
+@Composable
+internal fun okouFormSupportingTextStyle() =
+    MaterialTheme.typography.bodySmall.copy(
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        lineHeightStyle =
+            LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+    )
+
+@Composable
+internal fun okouFormSupportingLineHeight(reference: String): Dp {
+    val style = okouFormSupportingTextStyle()
+    val measurer = rememberTextMeasurer()
+    return with(LocalDensity.current) {
+        measurer
+            .measure(AnnotatedString(reference), style, softWrap = false, maxLines = 1)
+            .size
+            .height
+            .toDp()
+            .coerceAtLeast(style.lineHeight.toDp())
+    }
+}
+
+@Composable
+internal fun OkouFormFieldSupport(
+    message: String?,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.heightIn(min = okouFormSupportingTextHeight())) {
+        if (message != null) {
+            Text(
+                message,
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = color,
+                style = okouFormSupportingTextStyle(),
+            )
+        }
+    }
+}
 
 internal enum class OkouActionTreatment {
     Primary,
@@ -57,7 +134,6 @@ internal fun OkouActionButton(
     layoutLabels: List<String> = emptyList(),
     retainDisabledFocus: Boolean = false,
 ) {
-    val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.medium
     val size = modifier.minimumInteractiveComponentSize().heightIn(min = 48.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
@@ -69,7 +145,7 @@ internal fun OkouActionButton(
             fontWeight = FontWeight(550),
         )
     val text: @Composable () -> Unit = {
-        if (layoutLabels.isEmpty()) Text(label, style = style)
+        if (layoutLabels.isEmpty()) Text(label, style = style, textAlign = TextAlign.Center)
         else
             Box(contentAlignment = Alignment.Center) {
                 for (layoutLabel in layoutLabels) {
@@ -77,9 +153,10 @@ internal fun OkouActionButton(
                         layoutLabel,
                         Modifier.clearAndSetSemantics {}.alpha(0f),
                         style = style,
+                        textAlign = TextAlign.Center,
                     )
                 }
-                Text(label, style = style)
+                Text(label, style = style, textAlign = TextAlign.Center)
             }
     }
     when (treatment) {
@@ -89,7 +166,6 @@ internal fun OkouActionButton(
                 size,
                 enabled,
                 shape = shape,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
                 contentPadding = padding,
                 content = { text() },
             )
@@ -99,12 +175,11 @@ internal fun OkouActionButton(
                 size,
                 enabled,
                 shape = shape,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-                border = BorderStroke(1.dp, colors.outline),
                 contentPadding = padding,
                 content = { text() },
             )
-        OkouActionTreatment.Primary ->
+        OkouActionTreatment.Primary -> {
+            val defaults = ButtonDefaults.buttonColors()
             Button(
                 onClick = { if (enabled) onClick() },
                 modifier =
@@ -117,19 +192,16 @@ internal fun OkouActionButton(
                 enabled = enabled || retainDisabledFocus,
                 shape = shape,
                 colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor =
-                            if (retainDisabledFocus) colors.surfaceVariant
-                            else colors.inverseSurface,
-                        contentColor =
-                            if (retainDisabledFocus) colors.onSurfaceVariant
-                            else colors.inverseOnSurface,
-                        disabledContainerColor = colors.surfaceVariant,
-                        disabledContentColor = colors.onSurfaceVariant,
-                    ),
+                    if (retainDisabledFocus)
+                        defaults.copy(
+                            containerColor = defaults.disabledContainerColor,
+                            contentColor = defaults.disabledContentColor,
+                        )
+                    else defaults,
                 contentPadding = padding,
                 content = { text() },
             )
+        }
     }
 }
 

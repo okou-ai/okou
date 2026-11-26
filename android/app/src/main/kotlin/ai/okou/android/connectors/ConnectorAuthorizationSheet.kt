@@ -1,9 +1,11 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormFieldSupport
+import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
+import ai.okou.android.RenameDraft
 import ai.okou.android.RenameFieldError
 import ai.okou.android.SettingsChoiceRow
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItem
@@ -11,17 +13,18 @@ import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGran
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
 import ai.okou.android.chat.ContentReadFeedback
 import ai.okou.android.okouFormInputStyle
-import ai.okou.android.renameForm
+import ai.okou.android.okouFormLabelHeight
+import ai.okou.android.okouFormSupportingTextHeight
 import ai.okou.android.updates.updateFocusOutline
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
@@ -37,8 +40,8 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,10 +75,11 @@ internal fun ConnectorRenameSheet(
     cancel: () -> Unit,
 ) {
     val currentLabel = account.label()
-    val baseline = remember(account.id) { currentLabel }
-    val label = remember(account.id) { TextFieldState(initialText = baseline) }
-    val form =
-        renameForm(label.text, baseline, currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
+    val draft = remember(account.id) { RenameDraft(currentLabel) }
+    LaunchedEffect(draft, currentLabel, action?.busy) {
+        if (action?.busy != true) draft.receive(currentLabel)
+    }
+    val form = draft.form(currentLabel, canModify, CONNECTOR_ACCOUNT_NAME_LIMIT)
     val errorMessage =
         when (form.error) {
             RenameFieldError.Required -> stringResource(R.string.connector_rename_required)
@@ -83,30 +87,51 @@ internal fun ConnectorRenameSheet(
                 stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
             null -> null
         }
+    val saving = action?.busy == true && !action.reconciling
+    val problem = action?.problem
+    val feedback =
+        when {
+            action?.reconciling == true && action.busy ->
+                stringResource(R.string.chat_rename_checking_result)
+            problem != null -> stringResource(connectorActionProblemMessage(problem))
+            else -> null
+        }
+    val definiteFailure = problem == ConnectorProblem.Failed || problem == ConnectorProblem.Network
+    val colors = MaterialTheme.colorScheme
+    val saveLabel = stringResource(R.string.instructions_save)
+    val savingLabel = stringResource(R.string.settings_saving)
     ConnectorSheet(
         stringResource(R.string.connector_rename_title),
         cancel,
         dismissible = action?.busy != true,
         actions = {
-            ConnectorFormActions(
-                stringResource(R.string.instructions_save),
-                enabled = form.canSave,
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.settings_cancel),
+                confirmLabel = if (saving) savingLabel else saveLabel,
                 cancel = cancel,
+                confirm = { save(form.name) },
+                confirmEnabled = form.canSave,
+                modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
                 cancelEnabled = action?.busy != true,
-            ) {
-                save(form.name)
-            }
+                confirmLayoutLabels = listOf(saveLabel, savingLabel),
+            )
         },
     ) {
         ConnectorInput(
             stringResource(R.string.connector_account_name),
-            label,
+            draft.input,
             readOnly = !canModify,
-            supportingText =
-                stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
-            errorMessage = errorMessage,
+            showLabel = false,
+            supportingText = {
+                OkouFormFieldSupport(
+                    errorMessage ?: feedback,
+                    if (errorMessage != null || definiteFailure) colors.error
+                    else colors.onSurfaceVariant,
+                    Modifier.animateContentSize(),
+                )
+            },
+            errorMessage = errorMessage ?: feedback.takeIf { definiteFailure },
         )
-        ConnectorActionFeedback(action)
     }
 }
 
@@ -406,7 +431,6 @@ private fun ConnectorChoice(
             selected,
             onClick = null,
             enabled = enabled,
-            colors = RadioButtonDefaults.colors(selectedColor = LocalActivityStatusColor.current),
         )
         Text(label, style = connectorBodyType())
     }
@@ -419,38 +443,46 @@ private fun ConnectorInput(
     readOnly: Boolean,
     modifier: Modifier = Modifier,
     secret: Boolean = false,
+    showLabel: Boolean = true,
     placeholder: String? = null,
-    supportingText: String? = null,
+    supportingText: (@Composable () -> Unit)? = null,
     errorMessage: String? = null,
 ) {
-    val colors = MaterialTheme.colorScheme
-    val field =
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
-            .testTag("connector-input")
-            .semantics {
-                contentDescription = label
-                if (errorMessage != null) error(errorMessage)
-            }
+    val supportHeight =
+        if (supportingText != null)
+            okouFormSupportingTextHeight() + OkouFormLayout.SupportingTextGap
+        else 0.dp
     val shape = MaterialTheme.shapes.medium
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
     val padding = OkouFormLayout.FieldPadding
     val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
         { Text(it, style = connectorBodyType()) }
     }
-    Column(Modifier.fillMaxWidth()) {
-        Text(label, style = connectorFeedbackType())
-        Spacer(Modifier.height(OkouFormLayout.LabelGap))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val labelHeight = if (showLabel) okouFormLabelHeight(label, constraints.maxWidth) else 0.dp
+        val field =
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = OutlinedTextFieldDefaults.MinHeight + supportHeight + labelHeight)
+                .testTag("connector-input")
+                .semantics {
+                    contentDescription = label
+                    if (errorMessage != null) error(errorMessage)
+                }
         if (secret) {
             OutlinedSecureTextField(
                 state = state,
                 modifier = field,
                 inputTransformation = InputTransformation { if (readOnly) revertAllChanges() },
                 textObfuscationMode = TextObfuscationMode.Hidden,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
+                isError = errorMessage != null,
+                supportingText = supportingText,
                 shape = shape,
                 textStyle = okouFormInputStyle(),
-                colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
@@ -459,24 +491,19 @@ private fun ConnectorInput(
                 state = state,
                 modifier = field,
                 readOnly = readOnly,
+                labelPosition = TextFieldLabelPosition.Above(),
+                label =
+                    if (showLabel) {
+                        { OkouFormLabel(label) }
+                    } else null,
                 isError = errorMessage != null,
+                supportingText = supportingText,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 shape = shape,
                 textStyle = okouFormInputStyle(),
-                colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
             )
-        }
-        val supportStyle =
-            MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
-        if (supportingText != null) {
-            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
-            Text(supportingText, style = supportStyle, color = colors.onSurfaceVariant)
-        }
-        if (errorMessage != null) {
-            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
-            Text(errorMessage, style = supportStyle, color = colors.error)
         }
     }
 }

@@ -36,7 +36,6 @@
     <string name="connector_rename">Umbenennen</string>
     <string name="connector_rename_title">Konto umbenennen</string>
     <string name="connector_account_name">Kontoname</string>
-    <string name="connector_rename_hint">Leerzeichen am Anfang und Ende werden entfernt. Maximal %1$d Zeichen.</string>
     <string name="connector_rename_required">Gib einen Kontonamen ein.</string>
     <string name="connector_rename_too_long">Der Kontoname darf höchstens %1$d Zeichen enthalten.</string>
     <string name="connector_disconnect">Konto trennen</string>

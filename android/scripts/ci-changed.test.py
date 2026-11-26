@@ -58,11 +58,12 @@ class ChangeSelectionTest(unittest.TestCase):
             expect(first, "true")
             current = git("rev-parse", "HEAD")
             write("turbo/packages/ui/src/styles/globals.css")
+            write("turbo/apps/platform/src/views/css/index.css")
             commit()
-            expect(current, "true")
+            expect(current, "false")
             for path in ["turbo/packages/api-contracts/src/contracts/user-preferences.ts",
                          ".github/workflows/android-screenshots.yml",
-                         "turbo/apps/platform/src/views/css/index.css",
+                         ".node-version",
                          "ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt",
                          "turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts",
                          "turbo/packages/api-contracts/src/validators/user-preferences.ts",

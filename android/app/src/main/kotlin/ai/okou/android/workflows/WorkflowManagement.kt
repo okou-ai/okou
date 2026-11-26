@@ -1,7 +1,9 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.LocalOkouDarkMode
 import ai.okou.android.OkouActionButton
+import ai.okou.android.OkouActionTreatment
+import ai.okou.android.OkouFormLabel
 import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsTrigger
@@ -22,10 +24,13 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant4
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
 import ai.okou.android.okouFormInputStyle
+import ai.okou.android.okouFormLabelHeight
+import ai.okou.android.okouFormSupportingTextStyle
 import ai.okou.android.preferences.TimezoneSelectionSheet
 import ai.okou.android.preferences.timezoneLabel
 import ai.okou.android.updates.updateFocusOutline
-import ai.okou.android.workspaceSearchFocusOutline
+import android.app.TimePickerDialog
+import android.text.format.DateFormat as AndroidDateFormat
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +38,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,17 +53,22 @@ import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -70,6 +79,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -96,6 +106,7 @@ import androidx.compose.ui.unit.sp
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.ceil
 import kotlinx.coroutines.flow.filterNotNull
@@ -127,7 +138,7 @@ internal fun WorkflowRuleRow(
     val badgeColor =
         when {
             connectionRequired -> colors.error
-            rule.enabled -> LocalActivityStatusColor.current
+            rule.enabled -> MaterialTheme.colorScheme.primary
             else -> colors.onSurfaceVariant
         }
     val editable = remember(rule, timezone) { rule.editableRule(timezone) }
@@ -397,7 +408,7 @@ internal fun WorkflowEditor(
     val issue = state.issue
     if (issue?.rejectedDraft != null) {
         LaunchedEffect(model, editing, issue) {
-            snapshotFlow { editing.draft }.first { it != issue.rejectedDraft }
+            snapshotFlow { editing.draft.hasSameInput(issue.rejectedDraft) }.first { !it }
             model.clearRejectedEdit(editing, issue)
         }
     }
@@ -505,20 +516,22 @@ internal fun WorkflowEditor(
                     Arrangement.spacedBy(OkouFormLayout.ActionGap, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
             ) {
-                WorkflowAction(
+                OkouActionButton(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
                     Modifier.focusRequester(cancelFocus),
                     enabled = !state.writing,
+                    treatment = OkouActionTreatment.Text,
                 )
                 if (showConnectionAction) {
-                    WorkflowAction(
+                    OkouActionButton(
                         stringResource(R.string.workflow_view_connection),
                         { onViewConnection?.invoke(connector) },
                         Modifier.focusRequester(recoveryFocus).onFocusChanged {
                             connectionFocused = it.isFocused
                         },
                         enabled = !state.writing && onViewConnection != null,
+                        treatment = OkouActionTreatment.Outline,
                     )
                 }
                 val saveLabel = stringResource(R.string.workflow_save)
@@ -548,7 +561,7 @@ internal fun WorkflowEditor(
                             .onFocusChanged { saveFocused = it.isFocused }
                             .updateFocusOutline(
                                 MaterialTheme.shapes.medium,
-                                MaterialTheme.colorScheme.background,
+                                MaterialTheme.colorScheme.onPrimary,
                             )
                             .testTag("workflow_save")
                             .then(pendingSemantics),
@@ -557,6 +570,12 @@ internal fun WorkflowEditor(
         }
     }
 }
+
+private fun WorkflowEdit.hasSameInput(other: WorkflowEdit): Boolean =
+    when (this) {
+        is WorkflowEdit.Instructions -> other is WorkflowEdit.Instructions && value == other.value
+        is WorkflowEdit.Rule -> other is WorkflowEdit.Rule && id == other.id && value == other.value
+    }
 
 @Composable
 private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowWriteFailure?) {
@@ -685,13 +704,7 @@ private fun WorkflowRuleFields(
             ) { chosen ->
                 editFields { it.copy(weekdays = chosen == 0) }
             }
-            WorkflowField(
-                R.string.workflow_time,
-                editing.time,
-                enabled,
-                inputGuard,
-                fieldFocus,
-            )
+            WorkflowTime(fields.time, enabled) { time -> editFields { it.copy(time = time) } }
             WorkflowTimezone(fields.timezone, enabled) { timezone ->
                 editFields { it.copy(timezone = timezone) }
             }
@@ -801,77 +814,66 @@ private fun WorkflowField(
     validation: WorkflowValidation? = null,
 ) {
     val title = stringResource(label)
-    val colors = MaterialTheme.colorScheme
     val baseHeight = if (singleLine) OutlinedTextFieldDefaults.MinHeight else 112.dp
     val errorMessage = validation?.errorMessage
-    Column {
-        WorkflowFieldLabel(title)
-        Spacer(Modifier.height(OkouFormLayout.LabelGap))
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val requester = remember { FocusRequester() }
-            var focused by remember { mutableStateOf(false) }
-            val supportStyle =
-                MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
-            val minimumHeight =
-                if (validation == null) baseHeight
-                else baseHeight + OkouFormLayout.SupportingTextGap
-            val supportHeight =
-                if (validation == null) 0.dp
-                else workflowSupportingHeight(validation, supportStyle, constraints.maxWidth)
-            OutlinedTextField(
-                state = input,
-                inputTransformation = inputGuard,
-                modifier =
-                    Modifier.fillMaxWidth()
-                        .heightIn(min = minimumHeight + supportHeight)
-                        .focusRequester(requester)
-                        .onFocusChanged { focused = it.isFocused }
-                        .semantics {
-                            contentDescription = title
-                            if (errorMessage != null) error(errorMessage)
-                        },
-                readOnly = !enabled,
-                isError = errorMessage != null,
-                lineLimits =
-                    if (singleLine) TextFieldLineLimits.SingleLine
-                    else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
-                textStyle = okouFormInputStyle(),
-                shape = RoundedCornerShape(12.dp),
-                colors =
-                    OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.onSurface,
-                        focusedContainerColor = colors.surface,
-                        unfocusedContainerColor = colors.surface,
-                        errorContainerColor = colors.surface,
-                    ),
-                contentPadding = OkouFormLayout.FieldPadding,
-                supportingText =
-                    if (validation == null) null
-                    else {
-                        {
-                            Box(Modifier.height(supportHeight).clipToBounds()) {
-                                if (errorMessage != null) {
-                                    Text(
-                                        errorMessage,
-                                        modifier =
-                                            Modifier.wrapContentHeight(
-                                                Alignment.Top,
-                                                unbounded = true,
-                                            ),
-                                        style = supportStyle,
-                                    )
-                                }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val requester = remember { FocusRequester() }
+        var focused by remember { mutableStateOf(false) }
+        val supportStyle = okouFormSupportingTextStyle()
+        val labelHeight = okouFormLabelHeight(title, constraints.maxWidth)
+        val minimumHeight =
+            if (validation == null) baseHeight else baseHeight + OkouFormLayout.SupportingTextGap
+        val supportHeight =
+            if (validation == null) 0.dp
+            else workflowSupportingHeight(validation, supportStyle, constraints.maxWidth)
+        OutlinedTextField(
+            state = input,
+            inputTransformation = inputGuard,
+            modifier =
+                Modifier.fillMaxWidth()
+                    .heightIn(min = minimumHeight + supportHeight + labelHeight)
+                    .focusRequester(requester)
+                    .onFocusChanged { focused = it.isFocused }
+                    .semantics {
+                        contentDescription = title
+                        if (errorMessage != null) error(errorMessage)
+                    },
+            enabled = enabled,
+            labelPosition = TextFieldLabelPosition.Above(),
+            label = { OkouFormLabel(title) },
+            isError = errorMessage != null,
+            lineLimits =
+                if (singleLine) TextFieldLineLimits.SingleLine
+                else TextFieldLineLimits.MultiLine(maxHeightInLines = 8),
+            textStyle = okouFormInputStyle(),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = OkouFormLayout.FieldPadding,
+            supportingText =
+                if (validation == null) null
+                else {
+                    {
+                        Box(Modifier.height(supportHeight).clipToBounds()) {
+                            if (errorMessage != null) {
+                                Text(
+                                    errorMessage,
+                                    modifier =
+                                        Modifier.wrapContentHeight(
+                                            Alignment.Top,
+                                            unbounded = true,
+                                        ),
+                                    style = supportStyle,
+                                )
                             }
                         }
-                    },
-            )
-            LaunchedEffect(input, fieldFocus) {
-                if (fieldFocus.discarding) return@LaunchedEffect
-                fieldFocus.restore(input, requester)
-                snapshotFlow { if (focused) input.selection else null }
-                    .filterNotNull()
-                    .collect { fieldFocus.rememberSelection(input, it) }
-            }
+                    }
+                },
+        )
+        LaunchedEffect(input, fieldFocus) {
+            if (fieldFocus.discarding) return@LaunchedEffect
+            fieldFocus.restore(input, requester)
+            snapshotFlow { if (focused) input.selection else null }
+                .filterNotNull()
+                .collect { fieldFocus.rememberSelection(input, it) }
         }
     }
 }
@@ -915,11 +917,6 @@ private fun workflowSupportingHeight(
 }
 
 @Composable
-private fun WorkflowFieldLabel(title: String) {
-    Text(title, style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp))
-}
-
-@Composable
 private fun WorkflowChoice(
     label: Int,
     options: List<String>,
@@ -927,27 +924,24 @@ private fun WorkflowChoice(
     enabled: Boolean,
     pick: (Int) -> Unit,
 ) {
-    Column {
-        WorkflowFieldLabel(stringResource(label))
-        Spacer(Modifier.height(8.dp))
-        Box {
-            SettingsTrigger(
-                enabled = enabled,
-                content = { dismiss ->
-                    WorkspaceMenu(
-                        items =
-                            options.mapIndexed { index, option ->
-                                WorkspaceMenuItem(option, selected = index == selected) {
-                                    dismiss()
-                                    if (index != selected) pick(index)
-                                }
-                            },
-                        close = dismiss,
-                    )
-                },
-            ) { trigger, open ->
-                WorkflowSelection(options[selected], enabled, trigger, onClick = open)
-            }
+    val title = stringResource(label)
+    Box {
+        SettingsTrigger(
+            enabled = enabled,
+            content = { dismiss ->
+                WorkspaceMenu(
+                    items =
+                        options.mapIndexed { index, option ->
+                            WorkspaceMenuItem(option, selected = index == selected) {
+                                dismiss()
+                                if (index != selected) pick(index)
+                            }
+                        },
+                    close = dismiss,
+                )
+            },
+        ) { trigger, open ->
+            WorkflowSelection(title, options[selected], enabled, trigger, onClick = open)
         }
     }
 }
@@ -955,14 +949,13 @@ private fun WorkflowChoice(
 @Composable
 private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -> Unit) {
     val title = stringResource(R.string.workflow_timezone)
-    Column {
-        WorkflowFieldLabel(title)
-        Spacer(Modifier.height(8.dp))
+    Box {
         SettingsTrigger(
             enabled = enabled,
             content = { dismiss -> TimezoneSelectionSheet(current, title, dismiss, pick) },
         ) { trigger, open ->
             WorkflowSelection(
+                title,
                 timezoneLabel(current),
                 enabled,
                 trigger.testTag("workflow_timezone"),
@@ -973,34 +966,96 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
 }
 
 @Composable
+private fun WorkflowTime(value: String, enabled: Boolean, pick: (String) -> Unit) {
+    val context = LocalContext.current
+    val dark = LocalOkouDarkMode.current
+    val latestPick by rememberUpdatedState(pick)
+    var showing by remember { mutableStateOf(false) }
+    if (showing && enabled) {
+        DisposableEffect(context, dark) {
+            val (hour, minute) = value.split(":").map(String::toInt)
+            val theme =
+                if (dark) android.R.style.Theme_Material_Dialog_Alert
+                else android.R.style.Theme_Material_Light_Dialog_Alert
+            val dialog =
+                TimePickerDialog(
+                    context,
+                    theme,
+                    { _, pickedHour, pickedMinute ->
+                        latestPick(
+                            String.format(Locale.ROOT, "%02d:%02d", pickedHour, pickedMinute),
+                        )
+                    },
+                    hour,
+                    minute,
+                    AndroidDateFormat.is24HourFormat(context),
+                )
+            dialog.setOnDismissListener { showing = false }
+            dialog.show()
+            onDispose {
+                dialog.setOnDismissListener(null)
+                dialog.dismiss()
+            }
+        }
+    }
+    WorkflowSelection(
+        stringResource(R.string.workflow_time),
+        value,
+        enabled,
+        icon = R.drawable.ic_schedule,
+        onClick = { showing = true },
+    )
+}
+
+@Composable
 private fun WorkflowSelection(
+    label: String,
     value: String,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    icon: Int = R.drawable.ic_expand_more,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
     val colors = MaterialTheme.colorScheme
-    OutlinedButton(
-        onClick,
-        modifier.fillMaxWidth().heightIn(min = 56.dp).workspaceSearchFocusOutline(shape),
-        enabled = enabled,
-        shape = shape,
-        border = BorderStroke(1.dp, colors.outline),
-        contentPadding = PaddingValues(12.dp),
-    ) {
+    var focused by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(OkouFormLayout.LabelGap)) {
         Text(
-            value,
-            Modifier.weight(1f),
-            color = if (enabled) colors.onBackground else colors.onSurfaceVariant,
-            style = workflowBodyStyle(),
+            label,
+            color =
+                when {
+                    !enabled -> colors.onSurface.copy(alpha = 0.38f)
+                    focused -> colors.primary
+                    else -> colors.onSurfaceVariant
+                },
+            style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.size(8.dp))
-        Icon(
-            painterResource(R.drawable.ic_expand_more),
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = colors.onSurfaceVariant,
-        )
+        OutlinedButton(
+            onClick,
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .onFocusChanged { focused = it.isFocused }
+                .semantics { contentDescription = label },
+            enabled = enabled,
+            shape = shape,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
+            border =
+                when {
+                    !enabled -> BorderStroke(1.dp, colors.onSurface.copy(alpha = 0.12f))
+                    focused -> BorderStroke(2.dp, colors.primary)
+                    else -> BorderStroke(1.dp, colors.outline)
+                },
+            contentPadding = OkouFormLayout.FieldPadding,
+        ) {
+            Text(value, Modifier.weight(1f), style = okouFormInputStyle())
+            Spacer(Modifier.size(8.dp))
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = if (enabled) colors.onSurfaceVariant else LocalContentColor.current,
+            )
+        }
     }
 }

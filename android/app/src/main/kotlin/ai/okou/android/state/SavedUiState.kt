@@ -9,6 +9,7 @@ import ai.okou.android.chat.ConversationLinkSource
 import ai.okou.android.chat.WorkspaceSearchType
 import ai.okou.android.hasPendingSearchText
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
@@ -711,7 +712,20 @@ internal fun rememberConversationUiState(): ConversationUiState {
     return remember(holder, recent) { ConversationUiState(holder, recent) }
 }
 
-internal class JournalEditor(val value: TextFieldValue, val edit: (TextFieldValue) -> Unit)
+internal class JournalEditor(
+    val value: TextFieldValue,
+    private val updateNative: (TextFieldValue) -> Unit,
+) {
+    private var lastInputText = value.text
+
+    fun edit(input: TextFieldValue): Boolean {
+        // Several input events can arrive before the next composition.
+        val changed = input.text != lastInputText
+        lastInputText = input.text
+        updateNative(input)
+        return changed
+    }
+}
 
 /** Wait for journal hydration before consuming the restored native selection. */
 @Composable
@@ -738,3 +752,20 @@ internal fun rememberJournalEditor(
     val presented = if (native.text == text) native else TextFieldValue(text, replacementSelection)
     return JournalEditor(presented) { native = it }
 }
+
+@Composable
+internal fun rememberJournalTextField(text: String): TextFieldState =
+    rememberSaveable(
+        saver =
+            listSaver(
+                save = { listOf(it.selection.start, it.selection.end) },
+                restore = {
+                    TextFieldState(
+                        text,
+                        TextRange(it[0].coerceIn(0, text.length), it[1].coerceIn(0, text.length)),
+                    )
+                },
+            ),
+    ) {
+        TextFieldState(text, TextRange.Zero)
+    }

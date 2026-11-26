@@ -1,7 +1,6 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.R
-import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
@@ -170,7 +169,6 @@ internal fun ArtifactCatalogList(
                 onClear = clearQuery,
                 modifier =
                     Modifier.fillMaxWidth().focusRequester(searchFocus).testTag("artifact_query"),
-                shape = ToolDirectorySearchShape,
                 inputTransformation = InputTransformation.maxLengthReject(256),
             )
             WorkspaceFilterRow(

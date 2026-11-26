@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">ワークスペースで共有 · 使用可</string>
     <string name="workflow_show_all">すべて表示</string>
     <string name="workflow_status_connection">%1$s · 接続が必要</string>
-    <string name="workflow_time">時刻（HH:mm）</string>
+    <string name="workflow_time">時刻</string>
     <string name="workflow_timezone">タイムゾーン</string>
     <string name="workflow_transcript">Google Meet の文字起こしが完了</string>
     <string name="workflow_trigger">トリガー</string>

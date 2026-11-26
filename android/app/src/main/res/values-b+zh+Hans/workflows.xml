@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">工作区共享 · 可使用</string>
     <string name="workflow_show_all">查看全部</string>
     <string name="workflow_status_connection">%1$s · 需连接</string>
-    <string name="workflow_time">时间（HH:mm）</string>
+    <string name="workflow_time">时间</string>
     <string name="workflow_timezone">时区</string>
     <string name="workflow_transcript">Google Meet 转录已完成</string>
     <string name="workflow_trigger">触发方式</string>

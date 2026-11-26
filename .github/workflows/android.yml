@@ -143,6 +143,17 @@ jobs:
           android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
       - *android-complete-history
       - *android-sdk
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: android/scripts/theme/package.json
+      - name: Verify generated Android palette
+        working-directory: android
+        run: |
+          pnpm --dir scripts/theme install --frozen-lockfile --ignore-scripts
+          node scripts/theme/generate.mjs --check
       - name: Run source checks, lint, and build the Debug APK
         working-directory: android
         run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest

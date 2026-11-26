@@ -158,17 +158,13 @@ internal fun WorkspaceSearchField(
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val outline =
-        when (focused) {
-            true -> Modifier.border(2.dp, colors.onBackground, shape)
-            false -> Modifier.border(1.dp, colors.outline, shape)
-            null -> Modifier
-        }
+    // SearchBar has no resting border. Its focus outline uses the theme primary.
+    val outline = if (focused == true) Modifier.border(2.dp, colors.primary, shape) else Modifier
     Row(
         modifier
             .heightIn(min = workspaceSearchControlHeight())
             .clip(shape)
-            .background(colors.surfaceVariant)
+            .background(colors.surfaceContainerHigh)
             .then(outline)
             .then(
                 if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)

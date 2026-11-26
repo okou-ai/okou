@@ -1,6 +1,5 @@
 package ai.okou.android.settings
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsModal
@@ -343,7 +342,7 @@ private fun ModelOption(
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
-    val radioColor = LocalActivityStatusColor.current
+    val radioColor = MaterialTheme.colorScheme.primary
     val disabledColor = colors.onSurface.copy(alpha = 0.38f)
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
     Row(

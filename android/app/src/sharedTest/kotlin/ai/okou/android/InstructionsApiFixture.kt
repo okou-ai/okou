@@ -59,7 +59,9 @@ class InstructionsApiFixture : Closeable {
                         return MockResponse().setResponseCode(404)
                     if (request.method == "GET") {
                         beforeRead()
-                        if (rejectRead) return MockResponse().setResponseCode(503)
+                        if (rejectRead) {
+                            return MockResponse().setResponseCode(503).setHeader("Retry-After", "0")
+                        }
                     }
                     if (denied)
                         return json("""{"error":{"code":"FORBIDDEN","message":"Unavailable"}}""")

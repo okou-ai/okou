@@ -4,6 +4,7 @@ import ai.okou.android.api.generated.WorkflowRunHistory
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import android.app.TimePickerDialog
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -79,6 +80,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.shadows.ShadowDialog
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
@@ -391,6 +393,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         name.performTextReplacement("Release checklist")
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
         assertEquals(purposeTop, purpose.getUnclippedBoundsInRoot().top)
+        name.performTextInputSelection(TextRange.Zero)
+        name.performSemanticsAction(SemanticsActions.SetText) { setText ->
+            assertTrue(setText(AnnotatedString("Temporary name")))
+            assertTrue(setText(AnnotatedString("Release checklist")))
+        }
+        name.assertTextContains("Release checklist")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
         val instructions =
             "Confirm the release owner.\n![Launch screenshot](<https://example.test/release.png>)"
         compose
@@ -704,7 +713,14 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     @Test
     fun instructionConflictShowsTheServerOutcomeAndPreservesTheEdit() {
         openWorkflowDetail()
-        app.fixture.instructionSaveConflict = true
+        val model = compose.runOnIdle {
+            val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+            checkNotNull(session.uiState.value.ready?.workflows)
+        }
+        val fixture = app.fixture
+        val latest = "Review the release checklist in the web app."
+        fixture.beforeInstructionSave = { fixture.instruction = latest }
+        fixture.instructionSaveConflict = true
         compose.onNodeWithText("Edit instructions").performClick()
         val instruction = compose.onNodeWithContentDescription("Workflow instructions")
         instruction.performTextReplacement("Check the launch owner.")
@@ -712,12 +728,17 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         save.performClick()
 
         val error = "This workflow changed while saving. Your edits are preserved."
-        waitFor(error)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.state.value.detail?.instruction == latest }
+        }
         instruction.assertTextContains("Check the launch owner.")
         assertTrue(
-            compose.onNodeWithText(error).getUnclippedBoundsInRoot().bottom <=
+            compose.onNodeWithText(error).assertIsDisplayed().getUnclippedBoundsInRoot().bottom <=
                 save.assertIsEnabled().getUnclippedBoundsInRoot().top,
         )
+
+        instruction.performTextReplacement("Check the launch owner and date.")
+        compose.onNodeWithText(error).assertDoesNotExist()
     }
 
     @Test
@@ -960,10 +981,10 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val saveBounds = save.getUnclippedBoundsInRoot()
         assertTrue(saveBounds.bottom - saveBounds.top >= 48.dp)
         assertEquals(useBounds.right, saveBounds.right)
-        val time = compose.onNodeWithContentDescription("Time (HH:mm)")
+        val time = compose.onNodeWithContentDescription("Time")
         val timeBounds = time.getUnclippedBoundsInRoot()
         assertTrue(timeBounds.bottom - timeBounds.top >= 56.dp)
-        time.performTextReplacement("09:30")
+        pickWorkflowTime(time, 9, 30)
         val timezone = compose.onNodeWithTag("workflow_timezone")
         timezone.pressEnter()
         compose
@@ -1008,7 +1029,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
                 hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")),
             )
         edit.pressEnter()
-        compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
+        pickWorkflowTime(time, 10, 0)
         save.assertIsEnabled().pressEnter()
         waitFor("Weekdays at 10:00")
         edit.assertIsFocused()
@@ -1019,6 +1040,16 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         waitFor("Paused")
         toggle.assertIsFocused()
         compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
+    }
+
+    private fun pickWorkflowTime(field: SemanticsNodeInteraction, hour: Int, minute: Int) {
+        field.pressEnter()
+        compose.runOnIdle {
+            val dialog = ShadowDialog.getLatestDialog() as TimePickerDialog
+            assertTrue(dialog.isShowing)
+            dialog.updateTime(hour, minute)
+            dialog.getButton(TimePickerDialog.BUTTON_POSITIVE).performClick()
+        }
     }
 
     @Test

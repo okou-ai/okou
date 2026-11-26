@@ -86,10 +86,7 @@ private fun EmailSubscriptionSheet(
         titleInset = 8.dp,
         progress = {
             if (state.read.refreshing) {
-                ContentReadProgress(
-                    R.string.settings_email_refreshing,
-                    background = MaterialTheme.colorScheme.surface,
-                )
+                ContentReadProgress(R.string.settings_email_refreshing)
             }
         },
         actions =

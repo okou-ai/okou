@@ -1,9 +1,7 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
-import ai.okou.android.ToolDirectorySearchShape
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
@@ -64,6 +62,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
@@ -178,7 +177,7 @@ internal fun WorkflowScreen(
         }
     }
     BackHandler(onBack = ::back)
-    if (discard && editing?.draft?.changed == true && detail != null) {
+    if (discard && editing != null && detail != null) {
         OkouConfirmationDialog(
             title = stringResource(R.string.workflow_discard_title),
             confirm = stringResource(R.string.workflow_discard),
@@ -436,10 +435,6 @@ private fun WorkflowDirectory(
                         .updateFocusOutline(shape, MaterialTheme.colorScheme.onBackground)
                         .testTag("workflow_create"),
                 shape = shape,
-                colors =
-                    ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onBackground,
-                    ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
@@ -474,7 +469,6 @@ private fun WorkflowDirectory(
                         .focusRequester(searchFocus)
                         .onFocusChanged { if (!it.isFocused) query.cancelComposition() }
                         .testTag("workflow_query"),
-                shape = ToolDirectorySearchShape,
                 clearLabel = stringResource(R.string.workflow_clear_search),
             )
             WorkspaceFilterRow(
@@ -654,7 +648,7 @@ private fun WorkflowRow(
                         R.plurals.workflow_enabled_count,
                         enabledCount,
                         enabledCount,
-                    ) to LocalActivityStatusColor.current
+                    ) to MaterialTheme.colorScheme.primary
                 !rules.isNullOrEmpty() ->
                     stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
                 else -> null
@@ -919,6 +913,7 @@ private fun WorkflowUseBar(
 
 @Composable
 private fun WorkflowDetailHeader(detail: WorkflowDetail) {
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(bottom = 20.dp)) {
         Text(
             detail.displayName ?: detail.name,
@@ -942,10 +937,11 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
             Text(
                 "/${detail.name}",
                 Modifier.background(
-                        MaterialTheme.colorScheme.surfaceVariant,
+                        colors.tertiaryContainer,
                         RoundedCornerShape(8.dp),
                     )
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = colors.onTertiaryContainer,
                 style =
                     MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
             )
@@ -968,7 +964,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
 @Composable
 private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val accent = LocalActivityStatusColor.current
+    val accent = MaterialTheme.colorScheme.primary
     val tabs = WorkflowTab.entries
     val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
@@ -1118,12 +1114,7 @@ internal fun WorkflowAction(
         Box(contentAlignment = Alignment.Center) {
             Text(
                 label,
-                color =
-                    when {
-                        showProgress -> Color.Transparent
-                        pendingStatus != null -> colors.onSurfaceVariant
-                        else -> Color.Unspecified
-                    },
+                color = if (showProgress) Color.Transparent else Color.Unspecified,
                 style = workflowSmallStyle(),
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight(550),
@@ -1131,7 +1122,7 @@ internal fun WorkflowAction(
             if (showProgress) {
                 CircularProgressIndicator(
                     Modifier.size(16.dp),
-                    color = colors.onSurfaceVariant,
+                    color = LocalContentColor.current,
                     strokeWidth = 2.dp,
                 )
             }
@@ -1142,17 +1133,10 @@ internal fun WorkflowAction(
             click,
             modifier
                 .heightIn(min = 48.dp)
-                .updateFocusOutline(shape, colors.background)
+                .updateFocusOutline(shape, colors.onPrimary)
                 .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
-            colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = colors.onBackground,
-                    contentColor = colors.background,
-                    disabledContainerColor = colors.surfaceVariant,
-                    disabledContentColor = colors.onSurfaceVariant,
-                ),
             contentPadding = padding,
         ) {
             content()
@@ -1169,10 +1153,9 @@ internal fun WorkflowAction(
                 .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
             border =
-                if (keyboardFocused) BorderStroke(2.dp, colors.onBackground)
-                else BorderStroke(1.dp, colors.outline),
+                if (enabled && keyboardFocused) BorderStroke(2.dp, colors.onBackground)
+                else ButtonDefaults.outlinedButtonBorder(enabled),
             contentPadding = padding,
         ) {
             content()

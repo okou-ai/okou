@@ -88,7 +88,7 @@
     <string name="workflow_shared_usable">Condiviso nello spazio · Utilizzabile</string>
     <string name="workflow_show_all">Mostra tutti</string>
     <string name="workflow_status_connection">%1$s · Connessione richiesta</string>
-    <string name="workflow_time">Ora (HH:mm)</string>
+    <string name="workflow_time">Ora</string>
     <string name="workflow_timezone">Fuso orario</string>
     <string name="workflow_transcript">Trascrizione di Google Meet disponibile</string>
     <string name="workflow_trigger">Trigger</string>

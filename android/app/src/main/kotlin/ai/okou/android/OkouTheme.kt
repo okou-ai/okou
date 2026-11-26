@@ -2,42 +2,17 @@ package ai.okou.android
 
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesTheme
-import android.content.Context
-import android.content.res.Configuration
-import android.util.TypedValue
-import android.view.ContextThemeWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.text.selection.LocalTextSelectionColors
-import androidx.compose.foundation.text.selection.TextSelectionColors
-import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 
-internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
 internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
-
-internal fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
-    when (palette) {
-        UserPreferencesColorTheme.DEFAULT -> Color(if (dark) 0xFFFFA500 else 0xFFB5790C)
-        UserPreferencesColorTheme.GOLDEN_HOUR -> Color(if (dark) 0xFFD09E63 else 0xFFBB731B)
-        UserPreferencesColorTheme.CITRUS_SPARK -> Color(if (dark) 0xFFF4E33C else 0xFF908730)
-        UserPreferencesColorTheme.BERRY_BLUSH -> Color(if (dark) 0xFFE38CA6 else 0xFFC22E5A)
-        UserPreferencesColorTheme.COTTON_SKY -> Color(if (dark) 0xFFE4ABC8 else 0xFF9F7A8D)
-        UserPreferencesColorTheme.BLUE_HORIZON -> Color(if (dark) 0xFF8BA6E2 else 0xFF3758A1)
-        UserPreferencesColorTheme.DAYDREAM -> Color(if (dark) 0xFF9CB7F2 else 0xFF7385AC)
-        UserPreferencesColorTheme.DEEP_LAGOON -> Color(if (dark) 0xFF53C6B3 else 0xFF017562)
-    }
 
 internal fun UserPreferencesTheme.resolveDark(systemDark: Boolean): Boolean =
     when (this) {
@@ -46,18 +21,14 @@ internal fun UserPreferencesTheme.resolveDark(systemDark: Boolean): Boolean =
         UserPreferencesTheme.DARK -> true
     }
 
-/** Colors follow Web semantic roles; Android owns control geometry and interaction. */
+/** Uses the Android Tonal Spot palette selected by the synced workspace preference. */
 @Composable
 fun OkouTheme(
     dark: Boolean = isSystemInDarkTheme(),
     palette: UserPreferencesColorTheme = UserPreferencesColorTheme.DEFAULT,
     content: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val resolved =
-        remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
-    val colors = resolved.scheme
+    val colors = remember(dark, palette) { resolvePalette(palette, dark) }
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }
     MaterialTheme(
@@ -81,110 +52,7 @@ fun OkouTheme(
                 labelSmall = typography.labelSmall.copy(fontFamily = font),
             ),
         content = {
-            CompositionLocalProvider(
-                LocalActivityStatusColor provides activityStatusColor(palette, dark),
-                LocalOkouDarkMode provides dark,
-                LocalTextSelectionColors provides
-                    TextSelectionColors(
-                        handleColor = colors.onSurface,
-                        backgroundColor = resolved.selection,
-                    ),
-                content = content,
-            )
+            CompositionLocalProvider(LocalOkouDarkMode provides dark, content = content)
         },
-    )
-}
-
-internal data class PaletteColors(
-    val scheme: ColorScheme,
-    val selection: Color,
-    val swatchCompanion: Color,
-)
-
-/** The wrapper is used only for color lookup; native controls keep the real Activity context. */
-internal fun resolvePalette(
-    context: Context,
-    dark: Boolean,
-    palette: UserPreferencesColorTheme,
-): PaletteColors {
-    val configuration =
-        Configuration(context.resources.configuration).apply {
-            uiMode =
-                (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                    if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
-        }
-    val style =
-        when (palette) {
-            UserPreferencesColorTheme.DEFAULT -> R.style.OkouPalette_default
-            UserPreferencesColorTheme.GOLDEN_HOUR -> R.style.OkouPalette_golden_hour
-            UserPreferencesColorTheme.CITRUS_SPARK -> R.style.OkouPalette_citrus_spark
-            UserPreferencesColorTheme.BERRY_BLUSH -> R.style.OkouPalette_berry_blush
-            UserPreferencesColorTheme.COTTON_SKY -> R.style.OkouPalette_cotton_sky
-            UserPreferencesColorTheme.BLUE_HORIZON -> R.style.OkouPalette_blue_horizon
-            UserPreferencesColorTheme.DAYDREAM -> R.style.OkouPalette_daydream
-            UserPreferencesColorTheme.DEEP_LAGOON -> R.style.OkouPalette_deep_lagoon
-        }
-    val themed = ContextThemeWrapper(context.createConfigurationContext(configuration), style)
-    fun role(id: Int): Color {
-        val value = TypedValue()
-        check(themed.theme.resolveAttribute(id, value, true)) { "Missing generated palette role" }
-        check(value.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT)
-        return Color(value.data)
-    }
-    val background = role(R.attr.okou_palette_background)
-    val surface = role(R.attr.okou_palette_card)
-    val onSurface = role(R.attr.okou_palette_card_foreground)
-    val inverseAccent = activityStatusColor(palette, !dark)
-    fun mixOutline(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
-    val colors =
-        (if (dark) darkColorScheme() else lightColorScheme()).copy(
-            primary = role(R.attr.okou_palette_primary),
-            onPrimary = role(R.attr.okou_palette_primary_foreground),
-            primaryContainer = role(R.attr.okou_palette_accent),
-            onPrimaryContainer = role(R.attr.okou_palette_accent_foreground),
-            secondary = role(R.attr.okou_palette_foreground),
-            onSecondary = background,
-            secondaryContainer = role(R.attr.okou_palette_accent),
-            onSecondaryContainer = role(R.attr.okou_palette_accent_foreground),
-            tertiary = role(R.attr.okou_palette_primary),
-            onTertiary = role(R.attr.okou_palette_primary_foreground),
-            tertiaryContainer = role(R.attr.okou_palette_muted),
-            onTertiaryContainer = role(R.attr.okou_palette_foreground),
-            background = background,
-            onBackground = role(R.attr.okou_palette_foreground),
-            surface = surface,
-            onSurface = onSurface,
-            surfaceVariant = role(R.attr.okou_palette_muted),
-            onSurfaceVariant = role(R.attr.okou_palette_muted_foreground),
-            surfaceTint = role(R.attr.okou_palette_primary),
-            surfaceContainerLowest = background,
-            surfaceContainerLow = surface,
-            surfaceContainer = role(R.attr.okou_palette_muted),
-            surfaceContainerHigh = role(R.attr.okou_palette_muted),
-            surfaceContainerHighest = role(R.attr.okou_palette_muted),
-            outline =
-                Color(
-                    red = mixOutline(onSurface.red, surface.red),
-                    green = mixOutline(onSurface.green, surface.green),
-                    blue = mixOutline(onSurface.blue, surface.blue),
-                ),
-            outlineVariant = role(R.attr.okou_palette_border),
-            error = role(R.attr.okou_palette_destructive),
-            onError = role(R.attr.okou_palette_destructive_foreground),
-            errorContainer = role(R.attr.okou_palette_muted),
-            onErrorContainer = role(R.attr.okou_palette_destructive),
-            inverseSurface = role(R.attr.okou_palette_foreground),
-            inverseOnSurface = background,
-            inversePrimary =
-                Color(
-                    red = (background.red + inverseAccent.red) * 0.5f,
-                    green = (background.green + inverseAccent.green) * 0.5f,
-                    blue = (background.blue + inverseAccent.blue) * 0.5f,
-                ),
-        )
-    return PaletteColors(
-        colors,
-        role(R.attr.okou_palette_selection),
-        role(R.attr.okou_palette_swatch_companion),
     )
 }
