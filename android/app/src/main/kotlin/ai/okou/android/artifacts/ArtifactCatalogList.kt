@@ -288,6 +288,7 @@ internal fun ArtifactToolbar(
     @StringRes back: Int,
     onBack: () -> Unit,
     horizontalPadding: Dp = 12.dp,
+    backFocusModifier: Modifier = Modifier,
 ) {
     val minimum = with(LocalDensity.current) { maxOf(64.dp, 28.sp.toDp() + 16.dp) }
     Row(
@@ -297,7 +298,7 @@ internal fun ArtifactToolbar(
     ) {
         IconButton(
             onClick = onBack,
-            modifier = Modifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
+            modifier = backFocusModifier.size(48.dp).workspaceSearchFocusOutline(CircleShape),
         ) {
             Icon(painterResource(R.drawable.ic_arrow_back), stringResource(back))
         }

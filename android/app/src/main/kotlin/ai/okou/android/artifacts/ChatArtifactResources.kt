@@ -1,6 +1,7 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.ContentReadProgress
+import ai.okou.android.DirectoryReturnFocus
 import ai.okou.android.R
 import ai.okou.android.chat.ChatResourceOrigin
 import ai.okou.android.chat.ConversationLink
@@ -10,6 +11,7 @@ import ai.okou.android.chat.MessageLinkAnchor
 import ai.okou.android.chat.conversationLink
 import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.rememberContentReadSkeleton
+import ai.okou.android.restoreDirectoryFocus
 import ai.okou.android.state.rememberArtifactPageState
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -27,7 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -88,13 +90,17 @@ internal fun ChatArtifactResources(
     history: ConversationUiState,
     resourceFocusKey: String?,
     availableRelatedChats: Map<String, String?>,
-    onResourceFocusRestored: () -> Unit,
+    onResourceFocusTaken: () -> Unit,
     onOpenLink: (ConversationLink, String) -> Unit,
     onOpenWorkflow: ((String, String) -> Unit)?,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val query = remember(threadId) { ArtifactQuery(chatThreadId = threadId) }
     val page = rememberArtifactPageState()
+    val focusReturn = remember(model, threadId) { DirectoryReturnFocus() }
+    val inputMode = LocalInputModeManager.current
+    val rowFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val position = rememberLazyListState()
     val matchesQuery = state.query == query
@@ -113,7 +119,6 @@ internal fun ChatArtifactResources(
     LaunchedEffect(unavailable) {
         if (unavailable != null) {
             page.selectedId = null
-            page.restoreRow = null
         }
     }
     val references = history.transcript?.resources.takeIf { unavailable == null }
@@ -124,11 +129,17 @@ internal fun ChatArtifactResources(
     }
     LaunchedEffect(model, selected) { model.select(selected) }
     LaunchedEffect(model, threadId, workflowIds) { model.relatedWorkflowIds(threadId, workflowIds) }
+    LaunchedEffect(focusReturn, resourceFocusKey, selected) {
+        if (selected == null && resourceFocusKey != null) {
+            focusReturn.returningFrom(resourceFocusKey, inputMode.inputMode, keyboardOnly = false)
+            onResourceFocusTaken()
+        }
+    }
 
     fun back() {
         if (selected == null) onClose()
         else {
-            page.restoreRow = selected
+            focusReturn.returningFrom(selected, inputMode.inputMode)
             page.selectedId = null
             model.select(null)
         }
@@ -138,10 +149,18 @@ internal fun ChatArtifactResources(
     val toolbarPadding = if (wide) 28.dp else 12.dp
     if (unavailable != null) {
         Column(
-            Modifier.fillMaxSize().testTag("chat_artifact_resources"),
+            Modifier.fillMaxSize()
+                .restoreDirectoryFocus(focusReturn, true, position, rowFocus, backFocus, false)
+                .testTag("chat_artifact_resources"),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
+            ArtifactToolbar(
+                R.string.chat_resources,
+                R.string.back,
+                ::back,
+                toolbarPadding,
+                Modifier.focusRequester(backFocus),
+            )
             ArtifactInitialReadFailure(unavailable, Modifier.widthIn(max = 768.dp).weight(1f))
         }
         return
@@ -213,15 +232,38 @@ internal fun ChatArtifactResources(
             },
         )
     val dates = rememberArtifactDates()
-    val rowFocus = remember { FocusRequester() }
-    val resourceFocus = remember { FocusRequester() }
+    val historySettled = history.transcript != null || history.phase == HistoryPhase.Failed
+    val restoreRow = focusReturn.pending?.rowKey
     fun returnFocus(key: String): Modifier =
-        if (key == resourceFocusKey) {
-            Modifier.focusRequester(resourceFocus).onGloballyPositioned {
-                if (resourceFocus.requestFocus()) onResourceFocusRestored()
-            }
-        } else Modifier
-    val restoreRow = page.restoreRow
+        if (key == restoreRow) Modifier.focusRequester(rowFocus) else Modifier
+    val targetReady =
+        when {
+            restoreRow == null -> false
+            restoreRow.startsWith("workflow:") ->
+                historySettled &&
+                    (workflowIds.isEmpty() ||
+                        workflows?.confirmed != null ||
+                        workflows?.failed == true)
+            restoreRow.startsWith("related:") ->
+                forwarded?.threadId == restoreRow.substringAfter(':') ||
+                    related?.confirmed != null ||
+                    related?.failure != null ||
+                    history.phase == HistoryPhase.Failed
+            restoreRow == "origin-external" -> historySettled
+            else -> result != null || failure != null
+        }
+    val targetAvailable =
+        when {
+            restoreRow == null -> false
+            restoreRow.startsWith("workflow:") ->
+                workflowRows.any { "workflow:${it.id}" == restoreRow }
+            restoreRow.startsWith("related:") ->
+                forwarded?.threadId == restoreRow.substringAfter(':') ||
+                    relatedRows.any { "related:${it.threadId}" == restoreRow }
+            restoreRow == "origin-external" ->
+                externalTitle != null && external.sourceLink() != null
+            else -> result?.items?.any { it.id == restoreRow } == true
+        }
     LaunchedEffect(result, reading, failure) {
         if (result?.nextCursor != null && reading == null && failure == null) {
             snapshotFlow {
@@ -233,10 +275,25 @@ internal fun ChatArtifactResources(
         }
     }
     Column(
-        Modifier.fillMaxSize().testTag("chat_artifact_resources"),
+        Modifier.fillMaxSize()
+            .restoreDirectoryFocus(
+                focusReturn,
+                targetReady,
+                position,
+                rowFocus,
+                backFocus,
+                targetAvailable,
+            )
+            .testTag("chat_artifact_resources"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
+        ArtifactToolbar(
+            R.string.chat_resources,
+            R.string.back,
+            ::back,
+            toolbarPadding,
+            Modifier.focusRequester(backFocus),
+        )
         if (
             result == null &&
                 failure != null &&
@@ -297,15 +354,9 @@ internal fun ChatArtifactResources(
                             dates.timestamp(checkNotNull(item.createdAt), showDay = true),
                         ),
                         item.kind.icon(),
-                        if (item.id == restoreRow) {
-                            Modifier.focusRequester(rowFocus).onGloballyPositioned {
-                                if (page.restoreRow == item.id) {
-                                    page.restoreRow = null
-                                    rowFocus.requestFocus()
-                                }
-                            }
-                        } else Modifier,
+                        returnFocus(item.id),
                     ) {
+                        focusReturn.cancel()
                         page.selectedId = item.id
                         model.select(item.id, item)
                     }
@@ -331,7 +382,7 @@ internal fun ChatArtifactResources(
                             null,
                             if (external.kind == "mcp") R.drawable.ic_extension
                             else R.drawable.ic_chat_bubble,
-                            Modifier,
+                            returnFocus("origin-external"),
                             trailingIcon = R.drawable.ic_open_in_new,
                             onClick = link?.let { { onOpenLink(it, "origin-external") } },
                         )

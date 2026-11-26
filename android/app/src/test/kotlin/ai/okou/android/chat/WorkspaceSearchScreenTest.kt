@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -102,6 +103,39 @@ class WorkspaceSearchScreenTest {
         field.assertIsFocused()
         assertEquals(bounds, field.getUnclippedBoundsInRoot())
         assertSurface()
+    }
+
+    @Test
+    fun aLateResultDoesNotTakeFocusFromTheSearchField() {
+        val search =
+            ChatSearchState(TextFieldValue("Release"), type = WorkspaceSearchType.Artifacts)
+        val hit = SearchArtifactHit("report", "Release report", ArtifactKind.File)
+        var artifacts by mutableStateOf<SearchRead<SearchArtifactHit>>(SearchRead.Loading)
+        search.returnToResult("artifact:report", InputMode.Touch)
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = WorkspaceSearchResults("Release", artifacts = artifacts),
+                    onOpenArtifact = {},
+                )
+            }
+        }
+
+        val input = compose.onNodeWithTag("chat_search_query")
+        compose.runOnIdle { checkNotNull(search.returnFocus.pending) }
+        input.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        compose.runOnIdle { artifacts = SearchRead.Ready(listOf(hit)) }
+
+        compose.onNodeWithText(hit.title).assertIsDisplayed()
+        input.assertIsFocused()
     }
 
     @Test

@@ -150,8 +150,7 @@ internal fun WorkflowScreen(
     connectionReturn: WorkflowConnectorVisit?,
     onConnectionFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    restoreHistoryRunId: String?,
-    onHistoryFocusRestored: () -> Unit,
+    historyReturnFocus: DirectoryReturnFocus,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     directEntry: Boolean = false,
 ) {
@@ -341,8 +340,7 @@ internal fun WorkflowScreen(
                                 handoffPending && draftFocusAction == WorkflowDraftAction.Use,
                             onUseFocusRestored = onDraftFocusRestored,
                             sourceChatAvailable = sourceChatAvailable,
-                            restoreHistoryRunId = restoreHistoryRunId,
-                            onHistoryFocusRestored = onHistoryFocusRestored,
+                            historyReturnFocus = historyReturnFocus,
                             onOpenChat = onOpenChat,
                             onEarlierRuns = model::loadEarlierRuns,
                         )
@@ -786,8 +784,7 @@ private fun WorkflowDetailPane(
     keepUseFocus: Boolean,
     onUseFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    restoreHistoryRunId: String?,
-    onHistoryFocusRestored: () -> Unit,
+    historyReturnFocus: DirectoryReturnFocus,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     onEarlierRuns: () -> Unit,
 ) {
@@ -799,8 +796,26 @@ private fun WorkflowDetailPane(
     val historyLayout =
         if (pendingHistory) remember(listPadding) { WorkflowHistoryLayout(listPadding) } else null
     val editEnabled = !state.writing && !handoffPending
+    val historyRowFocus = remember { FocusRequester() }
+    val historyTabFocus = remember { FocusRequester() }
+    val historyRow = historyReturnFocus.pending?.rowKey
+    val returnModifier =
+        if (tab == WorkflowTab.History)
+            Modifier.restoreDirectoryFocus(
+                historyReturnFocus,
+                ready = state.history != null || state.historyFailure != null,
+                position = listState,
+                row = historyRowFocus,
+                fallback = historyTabFocus,
+                rowEnabled =
+                    historyRow != null && !handoffPending &&
+                        state.history?.runs?.any {
+                            it.id == historyRow && it.chatThreadId?.let(sourceChatAvailable) == true
+                        } == true,
+            )
+        else Modifier
     Column(
-        Modifier.fillMaxSize().testTag("workflow_detail"),
+        Modifier.fillMaxSize().then(returnModifier).testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(contentWidth.weight(1f)) {
@@ -813,7 +828,7 @@ private fun WorkflowDetailPane(
                     WorkflowDetailHeader(detail, historyLayout?.detail ?: Modifier)
                 }
                 stickyHeader(key = "tabs") {
-                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier)
+                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier, historyTabFocus)
                 }
                 when (tab) {
                     WorkflowTab.Instructions ->
@@ -914,8 +929,10 @@ private fun WorkflowDetailPane(
                                 timezone = timezone,
                                 sourceChatAvailable = sourceChatAvailable,
                                 sourceNavigationEnabled = !handoffPending,
-                                restoreFocus = run.id == restoreHistoryRunId,
-                                onFocusRestored = onHistoryFocusRestored,
+                                focusModifier =
+                                    if (run.id == historyRow)
+                                        Modifier.focusRequester(historyRowFocus)
+                                    else Modifier,
                                 onOpenChat = onOpenChat,
                             )
                         }
@@ -1082,10 +1099,16 @@ private fun WorkflowTabs(
     current: WorkflowTab,
     pick: (WorkflowTab) -> Unit,
     modifier: Modifier = Modifier,
+    historyFocus: FocusRequester,
 ) {
     val colors = MaterialTheme.colorScheme
     val tabs = WorkflowTab.entries
-    val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
+    val tabFocus =
+        remember(historyFocus) {
+            WorkflowTab.entries.map {
+                if (it == WorkflowTab.History) historyFocus else FocusRequester()
+            }
+        }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
     Column(modifier.fillMaxWidth().background(colors.background)) {
         PrimaryTabRow(

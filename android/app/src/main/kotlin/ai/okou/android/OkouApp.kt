@@ -233,8 +233,9 @@ internal fun OkouApp(
             (connectorsOpen || workflowConnectorVisit != null || chatConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
-    var workflowHistoryReturnRunId by
-        remember(workflows, workflowRoute.id, workflowRoute.tab) { mutableStateOf<String?>(null) }
+    val workflowHistoryReturnFocus =
+        remember(workflows, workflowRoute.id, workflowRoute.tab) { DirectoryReturnFocus() }
+    val returnInputMode = LocalInputModeManager.current
     val workflowQuery = rememberChatSearchState()
     val workflowPositions =
         key(workflowRoute.id) {
@@ -831,7 +832,7 @@ internal fun OkouApp(
                 when (activeComposer.prefillNew(prefix)) {
                     ComposerPrefillResult.Ready -> {
                         handoff = null
-                        workflowHistoryReturnRunId = null
+                        workflowHistoryReturnFocus.cancel()
                         if (fromSearch) leaveWorkflowChat()
                         clearConversationLinks()
                         focus.clearFocus()
@@ -1026,7 +1027,8 @@ internal fun OkouApp(
     fun back() {
         val find = findVisit
         if (settings == null && find != null) {
-            if (find.target == null) closeFind(returnToActions = true) else find.returnToResults()
+            if (find.target == null) closeFind(returnToActions = true)
+            else find.returnToResults(returnInputMode.inputMode)
             return
         }
         when (settings) {
@@ -1233,14 +1235,16 @@ internal fun OkouApp(
                 sourceChatAvailable = { id ->
                     list.threads.any { it.id == id && it.hidden != true }
                 },
-                restoreHistoryRunId = workflowHistoryReturnRunId,
-                onHistoryFocusRestored = { workflowHistoryReturnRunId = null },
+                historyReturnFocus = workflowHistoryReturnFocus,
                 onOpenChat = { runId, threadId ->
                     if (!handoffPending) {
                         list.threads
                             .firstOrNull { it.id == threadId && it.hidden != true }
                             ?.let {
-                                workflowHistoryReturnRunId = runId
+                                workflowHistoryReturnFocus.returningFrom(
+                                    runId,
+                                    returnInputMode.inputMode,
+                                )
                                 openChat(it)
                                 changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
                             }
@@ -1488,7 +1492,7 @@ internal fun OkouApp(
                         { restoreFocus ->
                             val find = findVisit
                             if (find != null) {
-                                find.returnToResults()
+                                find.returnToResults(returnInputMode.inputMode)
                             } else {
                                 val history = chats?.history
                                 val transcript =
@@ -1941,7 +1945,7 @@ internal fun OkouApp(
                                                 ?: ConversationUiState(),
                                         resourceFocusKey = linkFocusKey,
                                         availableRelatedChats = availableChats,
-                                        onResourceFocusRestored = { linkFocusKey = null },
+                                        onResourceFocusTaken = { linkFocusKey = null },
                                         onOpenLink = { link, key ->
                                             openMessageLink(
                                                 link,

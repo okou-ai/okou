@@ -16,13 +16,18 @@ import androidx.compose.ui.platform.LocalInputModeManager
 
 /** Owns one transient keyboard return for the current directory visit. */
 internal class DirectoryReturnFocus {
-    class Request(val rowKey: String)
+    class Request(val rowKey: String, val inputMode: InputMode)
 
     var pending by mutableStateOf<Request?>(null)
         private set
 
-    fun returningFrom(rowKey: String?, inputMode: InputMode) {
-        pending = rowKey?.takeIf { inputMode == InputMode.Keyboard }?.let(::Request)
+    fun returningFrom(rowKey: String?, inputMode: InputMode, keyboardOnly: Boolean = true) {
+        pending =
+            rowKey
+                ?.takeIf { !keyboardOnly || inputMode == InputMode.Keyboard }
+                ?.let {
+                    Request(it, inputMode)
+                }
     }
 
     fun cancel() {
@@ -32,9 +37,30 @@ internal class DirectoryReturnFocus {
     fun finish(request: Request) {
         if (pending === request) cancel()
     }
+
+    fun isCurrent(request: Request, inputMode: InputMode): Boolean =
+        pending === request && request.inputMode == inputMode
 }
 
-/** Restores keyboard focus after placement while the directory has no focused control. */
+@Composable
+internal fun Modifier.observeReturnFocus(
+    returnFocus: DirectoryReturnFocus,
+    active: Boolean = true,
+): Modifier {
+    if (!active) return this
+    val request = returnFocus.pending ?: return this
+    val input = LocalInputModeManager.current
+    if (input.inputMode != request.inputMode) {
+        SideEffect { returnFocus.finish(request) }
+        return this
+    }
+    return onFocusChanged {
+        if (it.hasFocus) returnFocus.finish(request)
+    }
+        .focusGroup()
+}
+
+/** Restores focus after placement while the directory has no focused control. */
 @Composable
 internal fun Modifier.restoreDirectoryFocus(
     returnFocus: DirectoryReturnFocus,
@@ -46,17 +72,10 @@ internal fun Modifier.restoreDirectoryFocus(
 ): Modifier {
     val request = returnFocus.pending ?: return this
     val input = LocalInputModeManager.current
-    if (input.inputMode != InputMode.Keyboard) {
-        SideEffect { returnFocus.finish(request) }
-        return this
-    }
-    val directoryFocus = onFocusChanged {
-        if (it.hasFocus) returnFocus.finish(request)
-    }
-        .focusGroup()
+    val directoryFocus = observeReturnFocus(returnFocus)
     if (!ready) return directoryFocus
     return directoryFocus.onGloballyPositioned {
-        if (returnFocus.pending === request && input.inputMode == InputMode.Keyboard) {
+        if (returnFocus.isCurrent(request, input.inputMode)) {
             val rowVisible =
                 rowEnabled && position.layoutInfo.visibleItemsInfo.any { it.key == request.rowKey }
             if ((rowVisible && row.requestFocus()) || fallback.requestFocus()) {

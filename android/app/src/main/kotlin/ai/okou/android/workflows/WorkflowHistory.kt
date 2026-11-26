@@ -24,16 +24,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
@@ -106,20 +102,12 @@ internal fun WorkflowHistoryRow(
     timezone: String,
     sourceChatAvailable: (String) -> Boolean,
     sourceNavigationEnabled: Boolean,
-    restoreFocus: Boolean,
-    onFocusRestored: () -> Unit,
+    focusModifier: Modifier,
     onOpenChat: (runId: String, threadId: String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val source = run.chatThreadId?.takeIf(sourceChatAvailable)
     val openChatLabel = stringResource(R.string.workflow_history_open_chat)
-    val requester = remember { FocusRequester() }
-    LaunchedEffect(restoreFocus, source, sourceNavigationEnabled) {
-        if (restoreFocus) {
-            if (source != null && sourceNavigationEnabled) requester.requestFocus()
-            onFocusRestored()
-        }
-    }
     val statusColor =
         when (run.status) {
             WorkflowRunHistoryEntryStatus.RUNNING -> MaterialTheme.colorScheme.primary
@@ -136,7 +124,7 @@ internal fun WorkflowHistoryRow(
             .then(
                 if (source == null) Modifier.semantics(mergeDescendants = true) {}
                 else
-                    Modifier.focusRequester(requester)
+                    focusModifier
                         .updateFocusOutline(shape, colors.onBackground)
                         .clickable(
                             enabled = sourceNavigationEnabled,
