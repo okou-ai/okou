@@ -15,7 +15,7 @@ struct ComposerVoiceInputButton: View {
 
   var body: some View {
     Button {
-      Task { await voice.start() }
+      Task { await voice.start(choosesOutput: true) }
     } label: {
       Group {
         if phase == .starting {
@@ -34,117 +34,121 @@ struct ComposerVoiceInputButton: View {
   }
 }
 
-/// Recording above the composer, as ChatGPT draws dictation: one glass bar with discard, the
-/// elapsed time, a live waveform and Done, which turns the recording into text in the draft.
-/// A recording kept from an earlier session offers Use instead. Problems are the shared quiet
-/// banner.
-struct ComposerVoiceInputTray: View {
+/// Permission and capture failures stay visible in the existing composer notice area.
+struct ComposerVoiceInputNotice: View {
   let voice: ComposerVoiceInputStore
   @ResolvedValue private var recording: ComposerVoiceInputStore.Content?
   @Environment(\.openURL) private var openURL
-  @State private var lastSampleAt = Date.distantPast
-  @State private var sampleInterval = OkouMotion.waveformSample
 
   init(voice: ComposerVoiceInputStore) {
     self.voice = voice
     _recording = ResolvedValue(voice.value)
   }
 
-  /// This render's graph value. The synchronous read only covers a missing first resolution.
+  var body: some View {
+    if let error = recording?.error {
+      OkouBanner(Text(error), icon: "mic", tone: .problem) {
+        if recording?.microphoneDenied == true {
+          Button("Open Settings") {
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+          }
+        }
+      }
+      .accessibilityIdentifier("voice-input-status")
+    }
+  }
+}
+
+struct ComposerVoiceInputTray: View {
+  let voice: ComposerVoiceInputStore
+  let canSend: Bool
+  let send: @MainActor () async -> Void
+  @ResolvedValue private var recording: ComposerVoiceInputStore.Content?
+  @State private var lastSampleAt = Date.distantPast
+  @State private var sampleInterval = OkouMotion.waveformSample
+
+  init(
+    voice: ComposerVoiceInputStore, canSend: Bool,
+    send: @escaping @MainActor () async -> Void
+  ) {
+    self.voice = voice
+    self.canSend = canSend
+    self.send = send
+    _recording = ResolvedValue(voice.value)
+  }
+
   private var state: ComposerVoiceInputStore.Content { recording ?? voice.snapshot }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if let error = state.error {
-        OkouBanner(Text(error), icon: "mic", tone: .problem) {
-          if state.microphoneDenied {
-            Button("Open Settings") {
-              if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-            }
-          }
-        }
-        .accessibilityIdentifier("voice-input-status")
+    HStack(spacing: OkouSpace.xs) {
+      Button {
+        Task { await voice.discard() }
+      } label: {
+        OkouToolbarIcon("x")
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .contentShape(Rectangle())
       }
-      if state.phase == .recording || state.phase == .saved || state.phase == .processing {
-        bar
+      .buttonStyle(.plain)
+      .accessibilityLabel("Discard recording")
+      .disabled(state.phase == .processing)
+
+      Group {
+        switch state.phase {
+        case .processing:
+          HStack(spacing: OkouSpace.sm) {
+            ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+            Text(state.uploadingAudio ? "Uploading recording…" : "Preparing text…")
+          }
+        case .recording:
+          OkouLiveWaveform(
+            levels: state.levels, lastSampleAt: lastSampleAt, interval: sampleInterval)
+        default:
+          Text("Recording saved")
+        }
+      }
+      .font(.okou(.subheadline))
+      .foregroundStyle(OkouColor.mutedForeground)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(height: OkouControl.waveformHeight)
+
+      if state.phase != .processing {
+        if state.asVoiceMessage {
+          Button {
+            Task { await voice.finish(asAudio: true, send: send) }
+          } label: {
+            OkouToolbarIcon("arrow-up")
+          }
+          .buttonStyle(.borderedProminent)
+          .buttonBorderShape(.circle)
+          .tint(OkouColor.primary)
+          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+          .accessibilityLabel("Send recording")
+          .disabled(!canSend || !state.canUseRecording)
+        }
+
+        Button {
+          Task { await voice.finish(asAudio: false) }
+        } label: {
+          OkouToolbarIcon("check")
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.circle)
+        .tint(OkouColor.foreground)
+        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+        .accessibilityLabel("Transcribe recording")
+        .accessibilityIdentifier("finish-voice-input")
+        .disabled(!state.canUseRecording)
       }
     }
+    .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget)
     .accessibilityIdentifier("voice-input-tray")
+    .sensoryFeedback(.start, trigger: state.phase == .recording)
     .onChange(of: state.levels) { _, _ in
-      // The waveform glides one bar per sample; follow the capture's own cadence.
       let now = Date.now
       let gap = now.timeIntervalSince(lastSampleAt)
       if gap > 0.01 && gap < 0.5 { sampleInterval = sampleInterval * 0.7 + gap * 0.3 }
       lastSampleAt = now
     }
-  }
-
-  private var bar: some View {
-    HStack(spacing: OkouSpace.xs) {
-      Button(role: .destructive) {
-        Task { await voice.discard() }
-      } label: {
-        OkouToolbarIcon("trash-2")
-          .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-          .contentShape(Circle())
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(OkouColor.foreground)
-      .accessibilityLabel("Discard recording")
-      .disabled(state.phase == .processing)
-
-      Group {
-        if state.phase == .processing {
-          HStack(spacing: OkouSpace.sm) {
-            ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
-            Text(state.asVoiceMessage ? "Uploading recording…" : "Preparing text…")
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-          HStack(spacing: OkouSpace.sm) {
-            Text(String(format: "%02d:%02d", Int(state.duration) / 60, Int(state.duration) % 60))
-              .monospacedDigit()
-              .accessibilityLabel("Recording duration, \(Int(state.duration)) seconds")
-            if state.phase == .recording {
-              OkouLiveWaveform(
-                levels: state.levels, lastSampleAt: lastSampleAt, interval: sampleInterval)
-            } else {
-              Text("Recording saved")
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-          }
-        }
-      }
-      .font(.okou(.subheadline))
-      .foregroundStyle(OkouColor.mutedForeground)
-      .frame(maxWidth: .infinity)
-      .frame(height: OkouControl.waveformHeight)
-
-      if state.phase != .processing {
-        Button {
-          Task { await voice.finish() }
-        } label: {
-          Text(state.phase == .recording ? "Done" : "Use")
-            .font(.okou(.subheadline).weight(.semibold))
-            .foregroundStyle(OkouColor.primaryForeground)
-            .padding(.horizontal, OkouSpace.xs)
-        }
-        // A solid fill: the recording bar under it is already glass.
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .tint(OkouColor.primary)
-        .disabled(!state.canUseRecording)
-        .accessibilityLabel(state.phase == .recording ? "Finish recording" : "Use recording")
-        .accessibilityIdentifier("finish-voice-input")
-      }
-    }
-    .padding(.leading, OkouSpace.six)
-    .padding(.trailing, OkouSpace.sm)
-    .frame(minHeight: OkouControl.minimumTarget + OkouSpace.sm)
-    .glassEffect(.regular, in: Capsule())
-    .sensoryFeedback(.start, trigger: state.phase == .recording)
-    .accessibilityElement(children: .contain)
   }
 }
 

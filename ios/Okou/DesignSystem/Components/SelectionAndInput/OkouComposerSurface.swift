@@ -1,8 +1,13 @@
 import SwiftUI
 
 /// The catalog and chat share one surface without replacing the mounted editor on expansion.
-struct OkouComposerSurface<Content: View, InlineAction: View, Leading: View, Trailing: View>: View {
+struct OkouComposerSurface<
+  Content: View, InlineAction: View, Leading: View, Trailing: View, BottomBar: View
+>: View {
   let isExpanded: Bool
+  let compactTrailingCount: Int
+  let showsBottomBar: Bool
+  let bottomBar: BottomBar
   let content: Content
   let inlineAction: InlineAction
   let leading: Leading
@@ -10,12 +15,18 @@ struct OkouComposerSurface<Content: View, InlineAction: View, Leading: View, Tra
 
   init(
     isExpanded: Bool = false,
+    compactTrailingCount: Int = 1,
+    showsBottomBar: Bool = false,
     @ViewBuilder content: () -> Content,
     @ViewBuilder inlineAction: () -> InlineAction = { EmptyView() },
     @ViewBuilder leading: () -> Leading,
-    @ViewBuilder trailing: () -> Trailing
+    @ViewBuilder trailing: () -> Trailing,
+    @ViewBuilder bottomBar: () -> BottomBar = { EmptyView() }
   ) {
     self.isExpanded = isExpanded
+    self.compactTrailingCount = compactTrailingCount
+    self.showsBottomBar = showsBottomBar
+    self.bottomBar = bottomBar()
     self.content = content()
     self.inlineAction = inlineAction()
     self.leading = leading()
@@ -33,6 +44,10 @@ struct OkouComposerSurface<Content: View, InlineAction: View, Leading: View, Tra
   private var toolbarInset: CGFloat { cornerRadius - actionSize / 2 }
   private var textInset: CGFloat { toolbarInset + (actionSize - OkouIconSize.toolbar) / 2 }
 
+  private var compactTrailingInset: CGFloat {
+    CGFloat(compactTrailingCount) * (actionSize + OkouSpace.xs) + OkouSpace.xs
+  }
+
   var body: some View {
     HStack(spacing: OkouSpace.xs) {
       // Compact text needs breathing room. The inline button already has a full-height hit target.
@@ -40,8 +55,7 @@ struct OkouComposerSurface<Content: View, InlineAction: View, Leading: View, Tra
       inlineAction
     }
     .padding(.leading, isExpanded ? textInset : actionSize + OkouSpace.sm)
-    // Only the primary toolbar action needs trailing space in the compact row.
-    .padding(.trailing, isExpanded ? textInset : actionSize + OkouSpace.sm)
+    .padding(.trailing, isExpanded ? textInset : compactTrailingInset)
     .padding(.top, isExpanded ? 17 : 0)
     .padding(.bottom, isExpanded ? 62 : 0)
     .frame(
@@ -50,16 +64,21 @@ struct OkouComposerSurface<Content: View, InlineAction: View, Leading: View, Tra
     )
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
     .overlay(alignment: isExpanded ? .bottomLeading : .leading) {
-      leading
-        .padding([.leading, .bottom], toolbarInset)
+      if !showsBottomBar {
+        leading.padding([.leading, .bottom], toolbarInset)
+      }
     }
     .overlay(alignment: isExpanded ? .bottomTrailing : .trailing) {
-      trailing
-        // Resolve motion at the toolbar so fading controls inherit its animated
-        // position while the keyboard raises the surface.
-        .geometryGroup()
-        .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
-        .padding([.trailing, .bottom], toolbarInset)
+      if showsBottomBar {
+        bottomBar
+          .padding(.horizontal, toolbarInset)
+          .padding(.bottom, toolbarInset)
+      } else {
+        trailing
+          .geometryGroup()
+          .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
+          .padding([.trailing, .bottom], toolbarInset)
+      }
     }
   }
 }

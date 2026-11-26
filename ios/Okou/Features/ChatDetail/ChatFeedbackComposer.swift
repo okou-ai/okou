@@ -9,10 +9,11 @@ struct ChatFeedbackComposer: View {
   let inputID: UUID
   @Binding var isFocused: Bool
   let acceptsImages: Bool
-  var placeholder = String(localized: "Message Okou")
+  var placeholder = ""
   var followup: String?
   var showsTrailingParagraph = true
   var expanded = false
+  var showsFollowupPlaceholder = true
   var mentionSource: ComposerMentionSource?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
@@ -26,7 +27,7 @@ struct ChatFeedbackComposer: View {
         VStack(alignment: .leading, spacing: OkouSpace.md) {
           ForEach(Array(blocks.enumerated()), id: \.element.id) { order, block in
             if block.isFeedback || !block.content.text.isEmpty
-              || !block.content.contextLabels.isEmpty
+              || !block.content.parts.isEmpty
               || (block.id == blocks.last?.id
                 && (showsTrailingParagraph || !presentation.draft.document.hasFeedback))
               || focusedBlock == block.id
@@ -90,9 +91,10 @@ struct ChatFeedbackComposer: View {
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   followup: block.isFeedback ? nil : followup,
+                  showsFollowupPlaceholder: showsFollowupPlaceholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: expanded || presentation.draft.document.hasFeedback || isFocused,
-                  mentionSource: mentionSource
+                  mentionSource: mentionSource, voicePlayback: state.voicePlayback
                 )
               }
               .id(block.id)

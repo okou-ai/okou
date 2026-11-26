@@ -44,6 +44,20 @@ final class ChatEventProjectionTests: XCTestCase {
     XCTAssertTrue(history.messages.isEmpty)
   }
 
+  func testOptimisticInterruptDoesNotRemoveQueuedInput() {
+    let original = ChatHistory(
+      messages: [], executionState: .running, activeRunIDs: ["active"],
+      activityRunID: "active", queuedEventIDs: ["next"])
+
+    let interrupted = original.interrupting(["active"])
+
+    XCTAssertEqual(interrupted.executionState, .queued)
+    XCTAssertEqual(interrupted.activeRunIDs, [])
+    XCTAssertEqual(interrupted.queuedEventIDs, ["next"])
+    XCTAssertNil(interrupted.activityRunID)
+    XCTAssertEqual(original.executionState, .running)
+  }
+
   func testQueuePrioritizesPromptsThenSubmissionTimeThenIdentity() throws {
     let rows = [
       event(5, type: .inputAutomation, at: 1),

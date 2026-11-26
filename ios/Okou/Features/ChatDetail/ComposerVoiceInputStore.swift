@@ -16,6 +16,7 @@ final class ComposerVoiceInputStore {
     var error: String?
     var microphoneDenied = false
     var asVoiceMessage = false
+    var uploadingAudio = false
     var recordingID: UUID?
     var hasSession = false
 
@@ -140,9 +141,9 @@ final class ComposerVoiceInputStore {
     }
   }
 
-  func start() async {
+  func start(choosesOutput: Bool = false) async {
     startRequested = false
-    await beginStart()?.value
+    await beginStart(choosesOutput: choosesOutput)?.value
   }
 
   /// A system entry may arrive before the new draft's native editor is mounted.
@@ -162,7 +163,7 @@ final class ComposerVoiceInputStore {
     _ = beginStart()
   }
 
-  private func beginStart() -> Task<Void, Never>? {
+  private func beginStart(choosesOutput: Bool = false) -> Task<Void, Never>? {
     guard phase == .idle, startingTask == nil, let composer, composer.canEditVoice else {
       return nil
     }
@@ -180,7 +181,9 @@ final class ComposerVoiceInputStore {
       bufferingPolicy: .bufferingNewest(1))
     startActivation = activation
     let starting = Task {
-      await begin(composer: composer, target: target, owner: owner, activations: activations)
+      await begin(
+        composer: composer, target: target, owner: owner, activations: activations,
+        choosesOutput: choosesOutput)
       activation.finish()
       if generation == owner {
         startActivation = nil
@@ -194,7 +197,7 @@ final class ComposerVoiceInputStore {
 
   private func begin(
     composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID,
-    activations: AsyncStream<Void>
+    activations: AsyncStream<Void>, choosesOutput: Bool
   ) async {
     guard generation == owner, !Task.isCancelled else { return }
     do {
@@ -203,7 +206,7 @@ final class ComposerVoiceInputStore {
         return
       }
       asVoiceMessage = asMessage
-      quotaTask = asMessage ? nil : checkQuota()
+      quotaTask = asMessage || choosesOutput ? nil : checkQuota()
       try await capture.requestPermission()
       // Allow can arrive before the scene becomes active again. Keep the same tap,
       // but wait to open the microphone until the composer is back in the foreground.
@@ -351,7 +354,7 @@ final class ComposerVoiceInputStore {
     owner: UUID
   ) async throws {
     guard generation == owner, composer.canEditVoice else { return }
-    composer.appendVoiceClip(fileID, recordingID: id)
+    composer.insertVoiceClip(fileID, recordingID: id, at: insertion)
     guard !composer.hasLocalFailure else {
       error = "Save the draft on this device before discarding the recording."
       return
@@ -363,7 +366,23 @@ final class ComposerVoiceInputStore {
     phase = .idle
   }
 
-  func finish() async {
+  private func finishAudio(
+    session: VoiceDraftSession, id: UUID, composer: ComposerDraftStore, owner: UUID,
+    send: (@MainActor () async -> Void)?
+  ) async throws {
+    _ = await preparationTask?.result
+    guard generation == owner, composer.canEditVoice else { return }
+    let upload = Task { try await session.uploadClip(recordingID: id) }
+    preparationTask = upload
+    try await insertUploadedRecording(
+      upload.value, session: session, id: id, composer: composer, owner: owner)
+    if generation == owner, phase == .idle { await send?() }
+  }
+
+  func finish(
+    asAudio: Bool? = nil,
+    send: (@MainActor () async -> Void)? = nil
+  ) async {
     guard phase == .recording || phase == .saved,
       let composer, composer.canEditVoice, let session, let id = recordingID
     else { return }
@@ -374,8 +393,12 @@ final class ComposerVoiceInputStore {
       return
     }
     let owner = generation
-    phase = .processing
-    error = nil
+    let uploadsAudio = asVoiceMessage && asAudio != false
+    update {
+      $0.phase = .processing
+      $0.uploadingAudio = uploadsAudio
+      $0.error = nil
+    }
     defer {
       // A remote draft conflict can make insertion unavailable during HTTP work.
       if generation == owner, phase == .processing { phase = .saved }
@@ -385,19 +408,16 @@ final class ComposerVoiceInputStore {
       try await captureTask?.value
       captureTask = nil
       await transcriptionTask?.value
-      _ = await preparationTask?.result
-      if asVoiceMessage {
-        guard generation == owner, composer.canEditVoice else { return }
-        let upload = Task { try await session.uploadClip(recordingID: id) }
-        preparationTask = upload
-        try await insertUploadedRecording(
-          upload.value, session: session, id: id, composer: composer, owner: owner)
+      if uploadsAudio {
+        try await finishAudio(
+          session: session, id: id, composer: composer, owner: owner, send: send)
         return
       }
+      _ = await preparationTask?.result
       let hasPreparedText = await session.hasPreparedText
       guard generation == owner, composer.canEditVoice else { return }
       if !hasPreparedText {
-        if usingSavedRecording {
+        if usingSavedRecording || quotaTask == nil {
           quotaTask?.cancel()
           quotaTask = checkQuota()
           quotaAllowed = false
