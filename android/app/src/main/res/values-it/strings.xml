@@ -80,7 +80,6 @@
     <string name="composer_check">Verifica consegna</string>
     <string name="composer_retry">Riprova lo stesso messaggio</string>
     <string name="composer_not_observed">Il messaggio non è ancora visibile. La consegna resta non confermata.</string>
-    <string name="composer_request_failed">Richiesta non riuscita. La bozza e il messaggio in attesa vengono conservati.</string>
     <string name="updates_title">Aggiornamenti app</string>
     <string name="updates_installed">Versione corrente: %1$s</string>
     <string name="updates_current">Hai la versione più recente</string>

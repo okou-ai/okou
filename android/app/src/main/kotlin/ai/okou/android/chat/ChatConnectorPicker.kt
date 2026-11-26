@@ -47,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -90,6 +91,7 @@ internal fun ChatConnectorOptionsButton(
     editorFocus: FocusRequester,
     manageConnectors: (ConnectorAccountTarget?) -> Unit,
     defaultModel: DefaultModelSettings? = null,
+    conversationModel: ConversationModelControls? = null,
 ) {
     var presentation by rememberComposerOptions(target.key)
     val buttonFocus = remember { FocusRequester() }
@@ -109,19 +111,6 @@ internal fun ChatConnectorOptionsButton(
         if (open) defaultModel?.showComposerOptions(true)
         onDispose { if (open) defaultModel?.showComposerOptions(false) }
     }
-    val modelState = if (open) defaultModel?.state?.collectAsStateWithLifecycle()?.value else null
-    val catalog = modelState?.options
-    val override = composerState.journal?.newChatModel
-    val selection = remember(override, modelState) { override ?: modelState?.draftDefaults() }
-    val selectedId = catalog?.resolve(selection?.model) ?: selection?.model
-    val choice = catalog?.choices?.firstOrNull { it.id == selectedId }
-    val showModel =
-        modelState != null &&
-            (catalog == null || selectedId != null || catalog.choices.any { it.canSelect })
-    val modelChoices =
-        if (modelState?.record != null && composerState.journal != null) catalog?.choices else null
-    val modelEnabled = showModel && modelChoices != null && composerState.canEditDraftModel(target)
-
     LaunchedEffect(page, restoreTrigger) {
         if (page == ComposerOptionsPage.Closed && restoreTrigger) {
             withFrameNanos {}
@@ -151,6 +140,30 @@ internal fun ChatConnectorOptionsButton(
         )
     }
     if (page == ComposerOptionsPage.Closed) return
+
+    val modelState = defaultModel?.state?.collectAsStateWithLifecycle()?.value
+    val catalog = modelState?.options
+    val override = composerState.journal?.newChatModel.takeIf { conversationModel == null }
+    val confirmed = conversationModel?.confirmed
+    val edits = conversationModel?.edits
+    val shown = remember(confirmed, edits) { confirmed?.withModelEdits(edits) }
+    val selection =
+        remember(override, modelState, shown) {
+            shown?.modelSelection() ?: override ?: modelState?.draftDefaults()
+        }
+    val selectedId = catalog?.resolve(selection?.model) ?: selection?.model
+    val choice = catalog?.choices?.firstOrNull { it.id == selectedId }
+    val showModel =
+        modelState != null &&
+            (catalog == null || selectedId != null || catalog.choices.any { it.canSelect })
+    val modelChoices =
+        if (confirmed != null || modelState?.record != null && composerState.journal != null)
+            catalog?.choices
+        else null
+    val modelEnabled =
+        showModel &&
+            modelChoices != null &&
+            (conversationModel != null || composerState.canEditDraftModel(target))
 
     val showingAccounts = page == ComposerOptionsPage.Connectors
     val state =
@@ -189,29 +202,72 @@ internal fun ChatConnectorOptionsButton(
             fast = selection.fast && choice?.fastMultiplier != null,
             catalogUnavailable = catalog == null && modelState?.catalogUnavailable == true,
             select = { id ->
-                val next =
-                    if (id == null) selection.copy(model = null, fast = false)
-                    else
-                        catalog
-                            ?.choices
-                            ?.firstOrNull { it.id == id && it.canSelect }
-                            ?.let {
+                val selectedChoice = modelChoices?.firstOrNull { it.id == id && it.canSelect }
+                if (id == null || selectedChoice != null) {
+                    if (conversationModel != null) {
+                        if (id != selectedId)
+                            conversationModel.chats.saveConversationModel(
+                                conversationModel.confirmed.id,
+                                id,
+                                null,
+                                false,
+                                selectingModel = true,
+                            )
+                    } else {
+                        val next =
+                            selectedChoice?.let {
                                 selection.withModel(it, fast = id == selectedId && selection.fast)
-                            }
-                if (next != null) composer.editDraftModel(target, next)
+                            } ?: selection.copy(model = null, fast = false)
+                        composer.editDraftModel(target, next)
+                    }
+                }
             },
             selectEffort = { effort ->
-                if (choice != null && effort in choice.efforts)
-                    composer.editDraftModel(
-                        target,
-                        selection.withModel(choice, selection.fast, effort),
-                    )
+                if (choice != null && effort in choice.efforts) {
+                    if (conversationModel == null)
+                        composer.editDraftModel(
+                            target,
+                            selection.withModel(choice, selection.fast, effort),
+                        )
+                    else if (effort != selection.effortFor(choice))
+                        conversationModel.chats.saveConversationModel(
+                            conversationModel.confirmed.id,
+                            choice.id,
+                            effort,
+                            fast = false.takeIf { choice.fastMultiplier == null },
+                        )
+                }
             },
             selectFast = { enabled ->
-                if (choice?.fastMultiplier != null)
-                    composer.editDraftModel(target, selection.withModel(choice, fast = enabled))
+                if (choice?.fastMultiplier != null) {
+                    if (conversationModel == null)
+                        composer.editDraftModel(target, selection.withModel(choice, fast = enabled))
+                    else if (enabled != selection.fast)
+                        conversationModel.chats.saveConversationModel(
+                            conversationModel.confirmed.id,
+                            choice.id,
+                            null,
+                            enabled,
+                        )
+                }
             },
             dismiss = ::back,
+            footer = {
+                (edits?.failure ?: edits?.phase?.message)?.let { message ->
+                    ConnectorOptionFeedback(message, Modifier.padding(top = 8.dp))
+                }
+                if (edits?.phase == ConversationModelSave.NeedsCheck) {
+                    TextButton(
+                        onClick = {
+                            conversationModel.chats.retryConversationModelCheck(
+                                conversationModel.confirmed.id,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
+            },
         )
         return
     }
@@ -272,8 +328,9 @@ internal fun ChatConnectorOptionsButton(
                         val value =
                             choice?.label
                                 ?: selectedId?.let { id ->
-                                    modelState.record?.confirmedLabel?.takeIf { override == null }
-                                        ?: id
+                                    modelState.record?.confirmedLabel?.takeIf {
+                                        override == null && confirmed == null
+                                    } ?: id
                                 }
                                 ?: stringResource(R.string.settings_auto_model)
                         ConnectorOptionRow(

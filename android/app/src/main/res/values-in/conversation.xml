@@ -62,4 +62,6 @@
     </plurals>
     <string name="conversation_link_unavailable">Tautan percakapan ini tidak tersedia</string>
     <string name="conversation_link_no_browser">Tidak ada browser yang dapat membuka tautan ini</string>
+    <string name="chat_model_check_required">Model yang disimpan tidak dapat diperiksa.</string>
+    <string name="chat_model_save_rejected">Model untuk chat ini tidak dapat disimpan.</string>
 </resources>
