@@ -51,7 +51,7 @@ non-route	src/lib/__tests__/user-export-restore.test.ts	user-export-restore-009	
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-001	rewritten	8.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
 non-route	src/lib/__tests__/user-export-zip.test.ts	user-export-zip-002	rewritten	8.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/lib/__tests__/user-export-zip.test.ts	B06	
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-001	planned					a-run
-non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	planned					d-other
+non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-002	skipped		private-state: directly tests internal signPatJwtForTests/isPatToken/verifyCliToken helpers; forbidden by api/no-test-credential-forging and BRIEF4/BRIEF20 (no sign*ForTests or self-signed Okou credentials; PAT CLI flow is covered via real HTTP routes)			d-other
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-004	planned					a-run
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-006	planned					a-run
 non-route	src/signals/auth/__tests__/tokens.test.ts	tokens-009	planned					a-run
