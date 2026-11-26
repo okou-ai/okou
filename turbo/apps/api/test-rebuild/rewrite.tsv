@@ -65,10 +65,10 @@ non-route	src/signals/external/__tests__/axiom.test.ts	axiom-023	planned
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-001	rewritten	9.5		src/signals/external/__tests__/wechat-client.test.ts	B06
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-002	rewritten	7.0		src/signals/external/__tests__/wechat-client.test.ts	B06
 non-route	src/signals/external/__tests__/wechat-client.test.ts	wechat-client-003	rewritten	25.0		src/signals/external/__tests__/wechat-client.test.ts	B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	planned				B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	planned				B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	planned				B06
-non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	planned				B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-001	rewritten	7.8		src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-007	rewritten	4.4		src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-010	rewritten	9.3		src/signals/external/__tests__/wechat-media.test.ts	B06
+non-route	src/signals/external/__tests__/wechat-media.test.ts	wechat-media-011	rewritten	34.2		src/signals/external/__tests__/wechat-media.test.ts	B06
 account-org	src/signals/routes/__tests__/agent-custom-connectors.test.ts	agent-custom-connectors-001	planned				
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-001	rewritten	105.3		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
 messaging	src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-002	rewritten	135.4		src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	B04
