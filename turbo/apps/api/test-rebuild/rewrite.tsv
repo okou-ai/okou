@@ -1683,12 +1683,12 @@ artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-d
 artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-018	planned				
 artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-019	planned				
 artifacts	src/signals/routes/__tests__/hosted-site-scope.test.ts	hosted-site-scope-001	planned				
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-001	planned				B04
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-002	planned				B04
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-003	planned				B04
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-004	planned				B04
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-005	planned				B04
-artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-008	planned				B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-001	rewritten	111.9	split n=2: 1/2=91.0; 2/2=111.9	src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-002	rewritten	96.8		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-003	rewritten	88.3		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-004	rewritten	144.0		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-005	rewritten	142.6		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04
+artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-008	revisit		revisit: over 200 ms (239 ms and 265 ms, writer run under load); evidence: ten accepted shares are needed before the quota answer, so every split row repeats them (Given with site + switch is ~60 ms, each share ~15-20 ms); resume: measure ten shares alone; if still over 200 ms record slow-setup or split per BRIEF7 with the coordinator's decision		B04
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-001	planned				B04
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-002	planned				B04
 artifacts	src/signals/routes/__tests__/hosted-site-url.test.ts	hosted-site-url-003	planned				B04
