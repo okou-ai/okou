@@ -7,6 +7,7 @@ import pytest
 
 import mitm_addon
 import usage
+from tests.repeated_bytes_helpers import join_repeated_bytes
 from tests.x_flow_helpers import make_x_pipeline_flow
 
 
@@ -99,7 +100,7 @@ def test_quoted_delimiters_and_escapes_preserve_exact_depth(
 
 
 def test_many_shallow_containers_do_not_exhaust_depth(tweet_create_response):
-    body = b'{"text":"hello","items":[' + b",".join([b"{}"] * 512) + b"]}"
+    body = join_repeated_bytes(b",", b"{}", 512, prefix=b'{"text":"hello","items":[', suffix=b"]}")
 
     events, _ = tweet_create_response(body)
 

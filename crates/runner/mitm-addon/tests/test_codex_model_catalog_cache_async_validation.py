@@ -22,7 +22,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_miss,
 )
 from tests.flow_helpers import response_stream
-from tests.repeated_bytes_helpers import repeat_bytes
+from tests.repeated_bytes_helpers import join_repeated_bytes, repeat_bytes
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -85,7 +85,7 @@ def _dense_catalog_body(label: str) -> bytes:
     item_count = (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix) + 1) // (
         len(item) + 1
     )
-    body = prefix + b",".join([item] * item_count) + suffix
+    body = join_repeated_bytes(b",", item, item_count, prefix=prefix, suffix=suffix)
     assert len(body) <= catalog_validation.MAX_ENTRY_BYTES
     assert len(body) >= catalog_validation.MAX_ENTRY_BYTES * 9 // 10
     return body
