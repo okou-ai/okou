@@ -209,7 +209,7 @@ class UpdateRootTest {
                 app.fixture.response =
                     AndroidUpdates(
                         null,
-                        updateRelease("99.0.0").copy(minimumSdk = Build.VERSION.SDK_INT + 1),
+                        updateRelease("99.0.0").copy(minimumSdk = Build.VERSION.SDK_INT + 1L),
                     )
             }
             checkNotNull(app.fixture.heldCheck).complete(Unit)
