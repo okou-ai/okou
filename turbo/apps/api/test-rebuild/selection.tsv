@@ -554,7 +554,7 @@ src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.b
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-003	selected	access-isolation
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-004	not-selected	
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-005	selected	core-path
-src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-006	not-selected	
+src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-006	selected	business-rule
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-007	selected	access-isolation
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-008	not-selected	
 src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	agentphone-connect.bdd-009	not-selected	
@@ -4862,7 +4862,7 @@ src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-007	not-selec
 src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-008	not-selected	
 src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-009	not-selected	
 src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-010	selected	business-rule
-src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-011	not-selected	
+src/signals/routes/__tests__/mcp-connectors.test.ts	mcp-connectors-011	selected	access-isolation
 src/signals/routes/__tests__/mcp-oauth-foundations.test.ts	mcp-oauth-foundations-001	selected	business-rule
 src/signals/routes/__tests__/mcp-oauth-foundations.test.ts	mcp-oauth-foundations-002	selected	visible-result
 src/signals/routes/__tests__/mcp-oauth-foundations.test.ts	mcp-oauth-foundations-003	not-selected	
@@ -6023,7 +6023,7 @@ src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-006	selecte
 src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-007	selected	business-rule
 src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-008	selected	access-isolation
 src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-009	selected	access-isolation
-src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-010	not-selected	
+src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-010	selected	access-isolation
 src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-011	not-selected	
 src/signals/routes/__tests__/ssh-connections.test.ts	ssh-connections-012	not-selected	
 src/signals/routes/__tests__/ssh-create-retries.test.ts	ssh-create-retries-001	selected	visible-result
@@ -6097,7 +6097,7 @@ src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-004	selected	access-isolation
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-005	not-selected	
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-006	selected	access-isolation
-src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-007	not-selected	
+src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-007	selected	access-isolation
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-008	not-selected	
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-009	selected	business-rule
 src/signals/routes/__tests__/subscription-controls.test.ts	subscription-controls-010	selected	visible-result

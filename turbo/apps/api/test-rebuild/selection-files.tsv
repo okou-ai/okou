@@ -47,7 +47,7 @@ src/signals/external/__tests__/s3-list.test.ts	11	6	0	fewer	S3 listing provider-
 src/signals/external/__tests__/wechat-client.test.ts	14	7	3	fewer	WeChat protocol adapter; error-wrapping, abort and origin-validation rows are parameter variants; kept message fidelity, rejected send and expired session
 src/signals/external/__tests__/wechat-media.test.ts	12	6	4	fewer	Media wire adapter; kept inbound file/image and outbound file/image delivery, dropped key-encoding, origin and size-bound variants
 src/signals/routes/__tests__/agent-custom-connectors.test.ts	2	1	1	none	
-src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	9	5	5	none	
+src/signals/routes/__tests__/agentphone-connect.bdd.test.ts	9	5	6	more	Rewrite review added agentphone-connect.bdd-006 (a stale phone switch must be refused while the member stays on the current number; no selected case covers the stale replacement handle)
 src/signals/routes/__tests__/agentphone-groups.bdd.test.ts	21	11	11	none	
 src/signals/routes/__tests__/agentphone-verification.test.ts	6	3	3	none	
 src/signals/routes/__tests__/agentphone.bdd.test.ts	145	73	73	none	
@@ -404,7 +404,7 @@ src/signals/routes/__tests__/marketing-reward-routing.test.ts	2	1	1	none
 src/signals/routes/__tests__/marketing-reward-settlement.test.ts	8	4	4	none	
 src/signals/routes/__tests__/marketing-reward-workflow-progress.test.ts	1	1	1	none	
 src/signals/routes/__tests__/marketing-reward-workflows.test.ts	3	2	2	none	
-src/signals/routes/__tests__/mcp-connectors.test.ts	11	6	6	none	
+src/signals/routes/__tests__/mcp-connectors.test.ts	11	6	7	more	Rewrite review added mcp-connectors-011 (the reauthorize write route's authentication is not covered; only the read route's is)
 src/signals/routes/__tests__/mcp-oauth-foundations.test.ts	28	14	14	none	
 src/signals/routes/__tests__/mcp-server-reads.test.ts	19	10	10	none	
 src/signals/routes/__tests__/mcp-server.test.ts	28	14	14	none	
@@ -511,7 +511,7 @@ src/signals/routes/__tests__/slack-oauth.test.ts	21	11	11	none
 src/signals/routes/__tests__/slack-preview-image.test.ts	6	3	3	none	
 src/signals/routes/__tests__/ssh-access.test.ts	8	4	4	none	
 src/signals/routes/__tests__/ssh-authorization.test.ts	6	3	3	none	
-src/signals/routes/__tests__/ssh-connections.test.ts	12	6	6	none	
+src/signals/routes/__tests__/ssh-connections.test.ts	12	6	7	more	Rewrite review added ssh-connections-010 (a host-key reset by the same user ID in another organization is not covered; selected cases cover only another member of the same organization)
 src/signals/routes/__tests__/ssh-create-retries.test.ts	11	6	6	none	
 src/signals/routes/__tests__/ssh-credential-rotation-race.test.ts	3	2	2	none	
 src/signals/routes/__tests__/ssh-credentials.test.ts	13	7	7	none	
@@ -521,7 +521,7 @@ src/signals/routes/__tests__/ssh-network-binding-publication.test.ts	6	3	3	none
 src/signals/routes/__tests__/ssh-tailscale-binding-atomicity.test.ts	5	3	3	none	
 src/signals/routes/__tests__/storage-presigned-url-cache.test.ts	16	8	8	none	
 src/signals/routes/__tests__/stripe-connect-events.test.ts	3	2	2	none	
-src/signals/routes/__tests__/subscription-controls.test.ts	11	6	6	none	
+src/signals/routes/__tests__/subscription-controls.test.ts	11	6	7	more	Rewrite review added subscription-controls-007 (subscription resets by foreign users, other organizations and deleted or logical IDs are not covered by the read and activate isolation case)
 src/signals/routes/__tests__/subscription-credit-balances.test.ts	4	2	2	none	
 src/signals/routes/__tests__/subscription-deletion.test.ts	2	1	1	none	
 src/signals/routes/__tests__/suggestions.test.ts	28	14	14	none	
