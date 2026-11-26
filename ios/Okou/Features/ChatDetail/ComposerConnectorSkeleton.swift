@@ -1,0 +1,47 @@
+import SwiftUI
+
+struct ComposerConnectorSkeletonRow: View {
+  var showsDescription = false
+
+  var body: some View {
+    HStack(spacing: OkouSpace.md) {
+      let logoSize = showsDescription ? OkouControl.logoTile : OkouControl.rowLeadingSlot
+      OkouSkeletonBlock(width: logoSize, height: logoSize)
+      VStack(alignment: .leading, spacing: OkouSpace.xs) {
+        OkouSkeletonBlock(height: OkouControl.skeletonLine)
+          .frame(maxWidth: OkouControl.logoTile * 3)
+        if showsDescription {
+          OkouSkeletonBlock(height: OkouSpace.md)
+          OkouSkeletonBlock(height: OkouSpace.md)
+            .frame(maxWidth: OkouControl.logoTile * 4)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if showsDescription {
+        OkouSkeletonBlock(
+          width: OkouControl.addControl, height: OkouControl.addControl, radius: OkouRadius.card)
+      } else {
+        OkouSkeletonBlock(width: OkouControl.logoTile, height: OkouControl.skeletonLine)
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+struct ComposerConnectorDirectorySkeleton: View {
+  var body: some View {
+    LazyVStack(spacing: OkouSpace.sm) {
+      ForEach(0..<6, id: \.self) { _ in
+        ComposerConnectorSkeletonRow(showsDescription: true)
+          .padding(.leading, OkouSpace.lg)
+          .padding(.trailing, OkouSpace.six)
+          .padding(.vertical, OkouSpace.md)
+          .modifier(OkouSurfaceStyle())
+      }
+    }
+    .padding(.horizontal, OkouSpace.lg)
+    .okouShimmer()
+    .accessibilityRepresentation { ProgressView("Loading connectors…") }
+  }
+}
