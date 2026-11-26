@@ -417,15 +417,15 @@ billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-011	r
 billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-012	rewritten	36.4	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	pilot
 billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-013	rewritten	6.0	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	B01
 billing	src/signals/routes/__tests__/billing-portal.test.ts	billing-portal-014	rewritten	4.9	extension after sandbox reset	src/signals/routes/__tests__/billing-portal.test.ts	B01
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-001	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-003	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-005	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-009	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-010	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-011	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-012	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-013	planned				B03
-billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-017	planned				B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-001	rewritten	84.9		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-003	rewritten	45.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-005	rewritten	18.4		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-009	rewritten	26.4		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-010	rewritten	127.7		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-011	rewritten	42.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-012	rewritten	33.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-013	rewritten	26.0		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
+billing	src/signals/routes/__tests__/billing-redeem-code.test.ts	billing-redeem-code-017	rewritten	27.5		src/signals/routes/__tests__/billing-redeem-code.test.ts	B03
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-001	planned				B03
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-002	planned				B03
 billing	src/signals/routes/__tests__/billing-redeem.test.ts	billing-redeem-005	planned				B03
