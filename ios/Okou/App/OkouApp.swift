@@ -12,6 +12,9 @@ struct OkouApp: App {
   private let configuration = Result { try AppConfiguration() }
 
   private static var isDesignPreview: Bool {
+    #if STAGING
+      if ProcessInfo.processInfo.arguments.contains("--credit-usage-211") { return true }
+    #endif
     if isSSHAuthorizationPreview { return true }
     #if DEBUG
       return ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
@@ -109,7 +112,11 @@ struct OkouApp: App {
                 productRoot
               }
             #else
-              productRoot
+              if ProcessInfo.processInfo.arguments.contains("--credit-usage-211") {
+                CreditUsageDevicePreview()
+              } else {
+                productRoot
+              }
             #endif
           }
         #else
