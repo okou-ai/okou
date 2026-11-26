@@ -2924,12 +2924,12 @@ remote-access	src/signals/routes/__tests__/tailscale.test.ts	tailscale-034	rewri
 messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-001	skipped		slow-setup: Given+first When/Then (onboarded member with Teams installed and personal identity connected, signed personal message dispatching the Run, run-log read showing one running teams Run) measured 378.8 ms and 394.2 ms in two runs (file already warm); dominant step is the first When itself, the signed personal message that dispatches the Run (226.8 ms and 251.8 ms), Given via helpers/public-teams-dispatch-fixture create({ onboarded: true }) 146.1 ms and 135.7 ms; with fixture teardown the whole row took 547-603 ms		B06	
 messaging	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	teams-bot-compose-owner-003	rewritten	170.9	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-bot-compose-owner.test.ts	B06	
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-001	planned					a-run
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	planned				B14	b-install
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-011	planned				B14	b-install
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-012	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-013	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-015	planned				B14	b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-006	rewritten	8.6		src/signals/routes/__tests__/teams-bot.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-007	rewritten	85.2		src/signals/routes/__tests__/teams-bot.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-011	rewritten	28.1		src/signals/routes/__tests__/teams-bot.test.ts	B14	b-install
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-012	rewritten	14.4		src/signals/routes/__tests__/teams-bot.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-013	rewritten	49.4		src/signals/routes/__tests__/teams-bot.test.ts	B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-015	rewritten	16.1		src/signals/routes/__tests__/teams-bot.test.ts	B14	b-install
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-019	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-020	planned				B14	d-other
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-026	planned				B14	d-other
@@ -2941,7 +2941,7 @@ messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-031	planned		
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-032	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-033	planned					a-run
 messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-035	planned				B14	d-other
-messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	planned				B14	d-other
+messaging	src/signals/routes/__tests__/teams-bot.test.ts	teams-bot-037	rewritten	73.3		src/signals/routes/__tests__/teams-bot.test.ts	B14	d-other
 messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-002	rewritten	15.7	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B06	
 messaging	src/signals/routes/__tests__/teams-browser-connect.test.ts	teams-browser-connect-001	rewritten	6.1	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/teams-browser-connect.test.ts	B07	
 messaging	src/signals/routes/__tests__/teams-connect.test.ts	teams-connect-004	rewritten	174.3	extension after sandbox reset	src/signals/routes/__tests__/teams-connect.test.ts	B01	
