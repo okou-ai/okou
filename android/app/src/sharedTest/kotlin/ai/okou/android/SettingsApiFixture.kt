@@ -132,7 +132,11 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                 alternateAccount -> "work@example.com"
                 else -> "claude@example.com"
             }
-        val shortWindow = if (id == alternateAccount) "null" else window(72, 18_000, now + 3.hours)
+        val shortWindow = when (id) {
+            alternateAccount -> "null"
+            primaryAccount -> """{"usedPercent":28,"remainingPercent":72,"windowSeconds":4500,"resetAt":null}"""
+            else -> window(72, 18_000, now + 3.hours)
+        }
         val week =
             window(if (claude) 0 else if (id == primaryAccount) 42 else 84, 604_800, now + 3.days)
         val credits =
