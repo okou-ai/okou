@@ -42,10 +42,11 @@ private struct SettingsConnectorsContent: View {
   }
 
   var body: some View {
+    let current = status ?? store.status
     Group {
-      if tab == "discover", let directory = (status ?? store.status).directory {
+      if tab == "discover", let directory = current.directory {
         ComposerConnectorDirectory(store: store, resources: directory, showsCustom: false)
-      } else if let resources = store.resources {
+      } else if !current.isClosed, let resources = store.resources {
         StoreProvider(resources.store) {
           SettingsConnectedConnectors(store: store, resources: resources)
         }

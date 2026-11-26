@@ -7,7 +7,22 @@ struct ComposerConnectorSheet: View {
   let store: ComposerConnectorStore
 
   var body: some View {
-    if let resources = store.resources {
+    // The sheet empties when its owner closes, which the session Store records.
+    StoreProvider(store.graph) { ComposerConnectorSheetRoot(store: store) }
+  }
+}
+
+private struct ComposerConnectorSheetRoot: View {
+  let store: ComposerConnectorStore
+  @ResolvedValue private var status: ComposerConnectorStore.Status?
+
+  init(store: ComposerConnectorStore) {
+    self.store = store
+    _status = ResolvedValue(store.statusValue)
+  }
+
+  var body: some View {
+    if !(status ?? store.status).isClosed, let resources = store.resources {
       StoreProvider(resources.store) {
         ComposerConnectorSheetContent(store: store, resources: resources)
           .id(ObjectIdentifier(resources))
@@ -176,9 +191,17 @@ struct ConnectorLoadError: View {
 struct ComposerConnectorReadError: View {
   let store: ComposerConnectorStore
   let retry: @MainActor () async -> Void
+  /// Whether the owner closed, kept in the session Store.
+  @ResolvedValue private var status: ComposerConnectorStore.Status?
+
+  init(store: ComposerConnectorStore, retry: @escaping @MainActor () async -> Void) {
+    self.store = store
+    self.retry = retry
+    _status = ResolvedValue(store.statusValue)
+  }
 
   var body: some View {
-    if let resources = store.resources {
+    if !(status ?? store.status).isClosed, let resources = store.resources {
       StoreProvider(resources.store) {
         ComposerConnectorReadErrorContent(store: store, resources: resources, retry: retry)
       }

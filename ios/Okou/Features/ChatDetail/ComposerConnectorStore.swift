@@ -532,7 +532,10 @@ final class ComposerConnectorStore {
     closed = true
     generation = UUID()
     authorization.close()
-    webDestination = nil
+    updateStatus {
+      $0.webDestination = nil
+      $0.isClosed = true
+    }
   }
 }
 
@@ -551,6 +554,8 @@ extension ComposerConnectorStore {
     var webDestination: WebDestination?
     var directory: ComposerConnectorDirectoryResources?
     var permissions: ComposerConnectorPermissionResources?
+    /// The owner closed: its reads and pages are gone.
+    var isClosed = false
 
     var canSend: Bool { !isSaving && !uncertain }
 
@@ -561,6 +566,7 @@ extension ComposerConnectorStore {
         && lhs.pendingOptions == rhs.pendingOptions
         && lhs.webDestination?.id == rhs.webDestination?.id
         && lhs.directory === rhs.directory && lhs.permissions === rhs.permissions
+        && lhs.isClosed == rhs.isClosed
     }
   }
 
