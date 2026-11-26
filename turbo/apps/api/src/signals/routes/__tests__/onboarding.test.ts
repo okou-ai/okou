@@ -264,6 +264,42 @@ describe("member source-first onboarding", () => {
 });
 
 describe("POST /api/onboarding/complete", () => {
+  it("onboarding-009 starts Suggestions for each new account when that person finishes onboarding", async () => {
+    const { orgId, adminId, memberId } = newWorkspace();
+    registerNewAccounts(adminId, memberId);
+    const people = [
+      { userId: adminId, role: "admin" as const },
+      { userId: memberId, role: "member" as const },
+    ];
+    const store = createStore();
+    await Promise.all(
+      people.map((person) => {
+        return store.set(
+          seedOrgMembership$,
+          { ...person, orgId },
+          context.signal,
+        );
+      }),
+    );
+
+    for (const person of people) {
+      signIn(person.userId, orgId, `org:${person.role}`);
+      const before = await readSuggestions();
+      await complete({ timezone: "Asia/Shanghai" });
+      const after = await readSuggestions();
+
+      expect(before.enabled).toBeFalsy();
+      expect(after).toMatchObject({ enabled: true, status: "enabled" });
+    }
+
+    await turnSuggestionsOff();
+    await complete({ timezone: "Asia/Shanghai" });
+
+    await expect(readSuggestions()).resolves.toMatchObject({
+      enabled: false,
+    });
+  });
+
   it("onboarding-011 preserves a new account's opt-out made before onboarding", async () => {
     const { orgId, adminId } = newWorkspace();
     registerNewAccounts(adminId);

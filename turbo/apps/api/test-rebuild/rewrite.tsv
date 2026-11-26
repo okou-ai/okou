@@ -2339,16 +2339,16 @@ account-org	src/signals/routes/__tests__/onboarding-bootstrap.test.ts	onboarding
 account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-001	planned				
 account-org	src/signals/routes/__tests__/onboarding-recommendations.test.ts	onboarding-recommendations-002	planned				
 account-org	src/signals/routes/__tests__/onboarding-sources.test.ts	onboarding-sources-002	planned				
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	rewritten	80.3	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-001	rewritten	82.1	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-002	rewritten	43.7	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	rewritten	9.2	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-006	rewritten	38.9	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	rewritten	69.5	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	revisit		revisit: upstream removed GET /api/cron/sync-official-workflow-catalog, so Suggestions report status preparing instead of enabled; evidence: route absent from contracts after the main merge; resume: confirm how the built-in workflow catalog syncs now and update the BDD Then if behaviour changed		B01
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewritten	34.1	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	36.8	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	55.9	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
-account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.4	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-004	rewritten	9.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-006	rewritten	43.8	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-008	rewritten	62.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-009	rewritten	105.3	revisit: upstream removed GET /api/cron/sync-official-workflow-catalog, so Suggestions report status preparing instead of enabled; evidence: route absent from contracts after the main merge; resume: confirm how the built-in workflow catalog syncs now and update the BDD Then if behaviour changed	src/signals/routes/__tests__/onboarding.test.ts	B01
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-011	rewritten	24.7	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-012	rewritten	41.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-013	rewritten	58.7	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
+account-org	src/signals/routes/__tests__/onboarding.test.ts	onboarding-016	rewritten	20.6	extension after sandbox reset	src/signals/routes/__tests__/onboarding.test.ts	pilot
 account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-002	planned				
 account-org	src/signals/routes/__tests__/ops-logs.bdd.test.ts	ops-logs.bdd-003	planned				
 account-org	src/signals/routes/__tests__/org-cache.test.ts	org-cache-001	planned				
