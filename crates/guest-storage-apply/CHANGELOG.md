@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.53](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.52...guest-storage-apply-v0.32.53) (2026-11-26)
+
+
+### Bug Fixes
+
+* **runner:** deliver member instructions to antigravity runs ([#51071](https://github.com/okou-ai/okou/issues/51071)) ([a62e7e4](https://github.com/okou-ai/okou/commit/a62e7e45026cea7ea7dc4fca79146226360961ee))
+
 ## [0.32.52](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.51...guest-storage-apply-v0.32.52) (2026-11-26)
 
 ## [0.32.51](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.50...guest-storage-apply-v0.32.51) (2026-11-25)
