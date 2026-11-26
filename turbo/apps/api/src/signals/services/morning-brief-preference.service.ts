@@ -1,3 +1,4 @@
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import { proactiveDispatchPhase$ } from "./proactive-dispatch-ownership.service";
 import {
   standalonePreference$,
@@ -229,17 +230,27 @@ export const updateMorningBriefPreference$ = command(
   ): Promise<MorningBriefPreferenceResult> => {
     const identity = morningBriefOwner(args);
     if ((await set(proactiveDispatchPhase$, signal)) !== "automation") {
-      const timezone = await set(loadMorningBriefTimezone$, identity, signal);
-      await set(
+      const { timezone } = await set(
+        loadProactivePreferences$,
+        identity,
+        signal,
+      );
+      const saved = await set(
         setStandalonePreferences$,
         {
           owner: identity,
           tasks: ["morning-brief"],
           enabled: args.enabled,
-          timezone: timezone,
+          timezone,
         },
         signal,
       );
+      if (!saved) {
+        return conflict(
+          "MORNING_BRIEF_STATE_CONFLICT",
+          MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
+        );
+      }
       return {
         kind: "ok",
         preference: await set(

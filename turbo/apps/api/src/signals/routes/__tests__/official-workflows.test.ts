@@ -917,6 +917,28 @@ describe("Standalone proactive dispatch", () => {
       }),
       [200],
     );
+    const installed = await accept(
+      workflowCollectionClient().list({ headers, query: {} }),
+      [200],
+    );
+    const learning = installed.body.find((workflow) => {
+      return workflow.official?.definitionName === "proactive-learning";
+    });
+    if (!learning) {
+      throw new Error("Expected the original Learning installation");
+    }
+    const automations = await accept(
+      automationClient().list({ headers, params: { workflowId: learning.id } }),
+      [200],
+    );
+    const [nightly] = automations.body;
+    if (!nightly) {
+      throw new Error("Expected the original nightly schedule");
+    }
+    await accept(
+      automationClient().run({ headers, params: { id: nightly.id } }),
+      [409],
+    );
     await accept(
       client.handoff({ headers: {}, body: { action: "drain", apply: true } }),
       [401],
@@ -1426,6 +1448,22 @@ describe("Standalone proactive dispatch", () => {
       [200],
     );
     expect(tool.body).toMatchObject({ resolvedSecrets: ["OKOU_DATA_TOKEN"] });
+    const modelKey = await createFirewallApi(context).requestFirewallAuth(
+      { authorization: `Bearer ${execution.firewallToken}` },
+      {
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+        },
+        firewallBillable: true,
+      },
+      [200],
+    );
+    expect(modelKey.body).toMatchObject({
+      headers: {
+        Authorization: "Bearer okou-fake-proactive-model-key-sentinel-8d2b6f41",
+      },
+      resolvedSecrets: ["OPENROUTER_API_KEY"],
+    });
     const headers = {
       authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
     };
@@ -1454,6 +1492,67 @@ describe("Standalone proactive dispatch", () => {
     );
     await completeWithSearchUsage(run.id, sandboxHeaders, 7);
     await expect(walletCredits(actor)).resolves.toBe(0);
+  });
+  it("reschedules an enabled Morning Brief when the member changes timezone and preserves a later opt-out", async () => {
+    const app = await setupApp({
+      context,
+      isolatePg: true,
+      routes: [...cronProactiveRoutes, ...morningBriefPreferenceRoutes],
+    });
+    const start = Date.UTC(2030, 0, 2, 3);
+    mockNow(start);
+    const { actor } = await prepareBriefMember();
+    await bdd.completeOnboarding(actor);
+    const cronClient = app(cronProactiveContract);
+    await accept(
+      cronClient.handoff({
+        headers: cron,
+        body: { action: "drain", apply: true },
+      }),
+      [200],
+    );
+    mockNow(start + 5 * 60_000);
+    await accept(
+      cronClient.handoff({
+        headers: cron,
+        body: { action: "activate", apply: true },
+      }),
+      [200],
+    );
+    const brief = app(morningBriefPreferenceContract);
+    const headers = authHeaders(actor);
+    const pending = await accept(
+      brief.update({ headers, body: { enabled: true } }),
+      [200],
+    );
+    expect(pending.body).toMatchObject({
+      enabled: true,
+      unavailableReason: "missing-timezone",
+    });
+    await bdd.updateUserTimezone(actor, "UTC");
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    const ready = await accept(
+      brief.get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(ready.body).toMatchObject({ enabled: true, status: "enabled" });
+    mockNow(Date.UTC(2030, 0, 2, 7));
+    expect(
+      (await accept(cronClient.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ enqueued: 0, inactive: 0, expired: 0 });
+    mockNow(Date.UTC(2030, 0, 2, 23));
+    expect(
+      (await accept(cronClient.compare({ headers: cron }), [200])).body,
+    ).toMatchObject({ enqueued: 0, inactive: 1, expired: 0 });
+    await accept(
+      brief.update({ headers: authHeaders(actor), body: { enabled: false } }),
+      [200],
+    );
+    await bdd.updateUserTimezone(actor, "UTC");
+    expect(
+      (await accept(brief.get({ headers: authHeaders(actor) }), [200])).body,
+    ).toMatchObject({ enabled: false, status: "paused" });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 });
 

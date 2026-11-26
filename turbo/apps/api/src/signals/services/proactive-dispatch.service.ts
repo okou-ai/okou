@@ -275,7 +275,7 @@ const recoverProactiveSchedules$ = command(
           eq(proactiveSchedules.intendedEnabled, true),
           isNull(proactiveSchedules.reconciliationStatus),
           currentMember,
-          sql`(${proactiveSchedules.task}='suggestions' OR ${proactiveSchedules.timezone} IS NOT NULL)`,
+          sql`(${proactiveSchedules.task}='suggestions' OR ${orgMembersMetadata.timezone} IS NOT NULL)`,
         ),
       )
       .limit(100);
@@ -288,10 +288,7 @@ const recoverProactiveSchedules$ = command(
           owner: schedule,
           tasks: [schedule.task],
           enabled: true,
-          timezone:
-            schedule.task === "suggestions"
-              ? memberTimezone
-              : schedule.timezone,
+          timezone: memberTimezone,
           preserveChoice: true,
         },
         signal,

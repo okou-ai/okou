@@ -32,18 +32,18 @@ export const reconcileExistingMorningBrief$ = command(
         return "absent";
       }
       const { timezone } = await set(loadProactivePreferences$, owner, signal);
-      await set(
+      const saved = await set(
         setStandalonePreferences$,
         {
-          owner: owner,
+          owner,
           tasks: ["morning-brief"],
           enabled: true,
-          timezone: timezone,
+          timezone,
           preserveChoice: true,
         },
         signal,
       );
-      return "current";
+      return saved ? "current" : "conflict";
     }
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
     if (!ownership.installation) {

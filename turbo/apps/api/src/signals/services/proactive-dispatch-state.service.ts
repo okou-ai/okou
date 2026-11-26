@@ -1,5 +1,5 @@
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { object, string } from "zod";
+import { boolean, object, string } from "zod";
 import { revokeStaleProactiveInputs$ } from "./proactive-queued-input.service";
 import type {
   ProactivePreference,
@@ -85,17 +85,32 @@ export const setStandalonePreferences$ = command(
   async ({ set }, preference: SchedulePreference, signal: AbortSignal) => {
     const { owner, tasks, enabled, timezone, preserveChoice } = preference;
     const morning = tasks.includes("morning-brief");
-    // Timezone/onboarding reconciliation never publishes an older member choice.
-    const gate = morning
+    // Lock the metadata used for this calendar choice. A later timezone update reconciles after this write.
+    const member = sql`SELECT timezone,proactive_suggestions_enabled FROM org_members_metadata
+      WHERE org_id=${owner.orgId} AND user_id=${owner.userId} FOR SHARE`;
+    const sameTimezone = sql`(SELECT timezone FROM member) IS NOT DISTINCT FROM ${timezone}::text`;
+    const choice = morning
       ? preserveChoice
         ? sql`EXISTS (SELECT 1 FROM proactive_schedules WHERE org_id=${owner.orgId} AND user_id=${owner.userId} AND task='morning-brief' AND intended_enabled)`
         : sql`true`
-      : sql`EXISTS (SELECT 1 FROM org_members_metadata WHERE org_id=${owner.orgId} AND user_id=${owner.userId}
-      AND coalesce(proactive_suggestions_enabled,false)=${enabled} AND timezone IS NOT DISTINCT FROM ${timezone}::text)`;
-    await set(writeDb$).execute(upsertSchedulesSql(preference, gate));
+      : sql`EXISTS (SELECT 1 FROM member WHERE coalesce(proactive_suggestions_enabled,false)=${enabled})`;
+    const schedule = upsertSchedulesSql(
+      preference,
+      sql`(SELECT eligible FROM observed)`,
+    );
+    const [observation] = parseRawRows(
+      object({ eligible: boolean() }),
+      await set(writeDb$)
+        .execute(sql`WITH member AS MATERIALIZED (${member}), observed AS MATERIALIZED (SELECT (${sameTimezone} AND ${choice}) AS eligible),
+      saved AS (${schedule} RETURNING task) SELECT eligible FROM observed`),
+    );
     signal.throwIfAborted();
+    if (!observation?.eligible) {
+      return false;
+    }
     await set(revokeStaleProactiveInputs$, owner, signal);
     signal.throwIfAborted();
+    return true;
   },
 );
 
