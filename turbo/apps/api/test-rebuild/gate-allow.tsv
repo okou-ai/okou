@@ -56,3 +56,5 @@ feishu-branding-connection-026	Failed to send Feishu connect welcome	Given: Feis
 integrations-telegram-007	Failed to send Telegram connect success message	Given: Telegram rejects the welcome DM with HTTP 403 "Bot was blocked"
 mail-039	Unhandled request error: Gmail rejected the draft send \(HTTP 400; reason: unrecognized\)	Given: Gmail rejects the send with HTTP 400 and an unknown reason; the Then expects HTTP 500
 mail-030	Unhandled request error: Failed to read Gmail draft \(HTTP 403\)	Given: Gmail answers the draft read with a non-scope 403; the Then expects the server error
+image-io-generate-048	Fal built-in generation webhook reported failed generation	Given: Fal posts a failure callback with status ERROR and error Invalid status code: 403
+image-io-generate-079	Fal image queue request failed	Given: Fal rejects the image submission with HTTP 429; the Then expects HTTP 502 FAL_IMAGE_REQUEST_FAILED
