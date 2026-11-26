@@ -42,16 +42,22 @@ import { ChatComposer } from "./composer.tsx";
 // their text lines up with the heading. Hover lays the state overlay over the
 // row's own fill, so the row darkens instead of losing it.
 const SUGGESTION_ROW =
-  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal rounded-xl px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
+  "h-auto min-h-14 w-full justify-between gap-3 whitespace-normal px-4 py-3 text-left text-sm font-normal [&:hover]:bg-state-hover-overlay";
 
-// An option is a raised button on the card whose text can still be selected;
-// the direction trigger stays a quiet input-like row in the muted fill, the
+// The simplified deck uses the For you redesign's tighter corners: 12px rows
+// and panels, 8px feedback buttons.
+function suggestionRowRadius(simplified: boolean) {
+  return simplified ? "rounded-xl" : "rounded-3xl";
+}
+
+// An option is a raised button on the card, and in the simplified deck its
+// text can still be selected; the direction trigger stays a quiet input-like row in the muted fill, the
 // gray ramp's Linen stop that the brand's Off White sits on. The option's
 // outline is a real hairline border on a pointer-transparent layer, so it
 // rounds to device pixels exactly like the feedback buttons' border beside it,
 // yet takes no width: the label keeps the 16px inset the heading aligns to.
 const SUGGESTION_OPTION =
-  "relative select-text bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:rounded-xl after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
+  "relative bg-card text-foreground shadow-[0_1px_2px_rgb(37_33_33/0.04)] after:pointer-events-none after:absolute after:inset-0 after:border after:border-border hover:bg-card hover:shadow-surface hover:after:border-control-border";
 
 const SUGGESTION_DIRECTION_TRIGGER =
   "bg-muted text-muted-foreground hover:bg-muted";
@@ -86,7 +92,7 @@ function optionSourceTitle(option: SuggestionOption) {
   return part?.type === "chat_thread" ? part.titleSnapshot : null;
 }
 
-function SuggestionOptionContent({
+function SuggestionOptionAction({
   option,
 }: {
   readonly option: SuggestionOption;
@@ -110,17 +116,29 @@ function SuggestionOptionContent({
           return $.chat.agentSuggestions.draftInChat;
         });
   return (
+    <span
+      aria-hidden
+      className={cn(
+        "mb-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-4 font-medium",
+        option.threadId ? "text-muted-foreground" : "text-brand-text",
+      )}
+    >
+      <span className="size-1.5 shrink-0 rounded-full bg-current" />
+      <span className="truncate">{action}</span>
+    </span>
+  );
+}
+
+function SuggestionOptionContent({
+  option,
+  labeled,
+}: {
+  readonly option: SuggestionOption;
+  readonly labeled: boolean;
+}) {
+  return (
     <span className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-break-word">
-      <span
-        aria-hidden
-        className={cn(
-          "mb-0.5 flex min-w-0 items-center gap-1.5 text-xs leading-4 font-medium",
-          option.threadId ? "text-muted-foreground" : "text-brand-text",
-        )}
-      >
-        <span className="size-1.5 shrink-0 rounded-full bg-current" />
-        <span className="truncate">{action}</span>
-      </span>
+      {labeled && <SuggestionOptionAction option={option} />}
       <span className="leading-6">{option.label}</span>
       {option.description && (
         <span className="text-[13px] leading-5 text-muted-foreground">
@@ -283,11 +301,16 @@ function SuggestionDirectionEntry({
   const { t } = useTranslation();
   const open = useSet(openSuggestionDirection$);
   const signal = useGet(pageSignal$);
+  const simplified = useForYouSimplifiedDeck();
   return (
     <Button
       type="button"
       variant="quiet"
-      className={cn(SUGGESTION_ROW, SUGGESTION_DIRECTION_TRIGGER)}
+      className={cn(
+        SUGGESTION_ROW,
+        suggestionRowRadius(simplified),
+        SUGGESTION_DIRECTION_TRIGGER,
+      )}
       aria-description={t(($) => {
         return $.chat.agentSuggestions.customDirectionDescription;
       })}
@@ -330,6 +353,7 @@ function SuggestionDirectionComposer({
   const composer =
     prepared.state === "hasData" && prepared.data ? prepared.data : null;
   const ready = composer !== null || prepared.state === "hasError";
+  const radius = suggestionRowRadius(useForYouSimplifiedDeck());
   return (
     <section
       aria-label={t(($) => {
@@ -339,7 +363,12 @@ function SuggestionDirectionComposer({
       className="min-w-0"
     >
       {!ready && (
-        <div className="flex min-h-14 items-center justify-center rounded-xl bg-muted">
+        <div
+          className={cn(
+            "flex min-h-14 items-center justify-center bg-muted",
+            radius,
+          )}
+        >
           <Loader2
             size={16}
             className="animate-spin text-muted-foreground"
@@ -349,7 +378,8 @@ function SuggestionDirectionComposer({
       )}
       <div
         className={cn(
-          "grid min-w-0 rounded-xl",
+          "grid min-w-0",
+          radius,
           ready
             ? "grid-rows-[1fr] motion-safe:animate-suggestion-direction-expand"
             : "grid-rows-[0fr] overflow-clip",
@@ -492,7 +522,14 @@ export function AgentSuggestionCard({
               key={option.id}
               type="button"
               variant="quiet"
-              className={cn(SUGGESTION_ROW, SUGGESTION_OPTION)}
+              className={cn(
+                SUGGESTION_ROW,
+                suggestionRowRadius(simplified),
+                SUGGESTION_OPTION,
+                simplified
+                  ? "select-text after:rounded-xl"
+                  : "after:rounded-3xl",
+              )}
               aria-label={option.label}
               aria-description={[
                 option.description,
@@ -507,7 +544,7 @@ export function AgentSuggestionCard({
                 .filter(Boolean)
                 .join(" ")}
               onClick={(event) => {
-                if (selectsOptionText(event)) {
+                if (simplified && selectsOptionText(event)) {
                   return;
                 }
                 detach(
@@ -516,7 +553,7 @@ export function AgentSuggestionCard({
                 );
               }}
             >
-              <SuggestionOptionContent option={option} />
+              <SuggestionOptionContent option={option} labeled={simplified} />
               {option.threadId ? (
                 <SquarePen
                   aria-hidden
@@ -618,7 +655,10 @@ function SuggestionFeedback({
             key={kind}
             type="button"
             variant="neutral"
-            className="h-auto min-h-9 gap-1.5 rounded-lg border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground"
+            className={cn(
+              "h-auto min-h-9 gap-1.5 border-border bg-card px-3 py-1.5 text-[13px] font-normal whitespace-normal [&_svg]:text-muted-foreground",
+              simplified ? "rounded-lg" : "rounded-3xl",
+            )}
             onClick={() => {
               detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
             }}

@@ -283,6 +283,20 @@ test("agent-suggestions-043 each option says whether it sends to a new chat or d
   ).resolves.toHaveTextContent(/^Draft in Renewals chat/);
 });
 
+test("agent-suggestions-044 without the simplified deck, options keep their label alone", async () => {
+  const item = proposal("Vendor renewals");
+  feed([item]);
+  await openDeck("/for-you", false);
+  const option = await findFastControl(
+    "button",
+    "Prepare Vendor renewals",
+    await activeCard(item),
+  );
+
+  expect(option).toHaveTextContent(/^Prepare Vendor renewals/);
+  expect(option).not.toHaveTextContent("Send to a new chat");
+});
+
 test("agent-suggestions-020 changing cards discards the first inline direction", async () => {
   const one = proposal("Supply forecast");
   const two = proposal("Packing list", 1);

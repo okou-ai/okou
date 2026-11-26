@@ -57,7 +57,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     displayName: "Simplified For you deck",
     description:
-      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, and size cards from the deck width.",
+      "Browse For you without arrow buttons, show a display-only progress bar, lower the card stack, size cards from the deck width, use tighter card and option corners, label what each option does, and let option text be selected.",
     enabled: false,
   },
   [FeatureSwitchKey.WorkflowListRedesign]: {
