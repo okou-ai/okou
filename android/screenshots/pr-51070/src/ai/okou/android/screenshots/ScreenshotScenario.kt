@@ -19,6 +19,7 @@ import android.app.LocaleManager
 import android.content.res.Configuration
 import android.os.LocaleList
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -78,6 +79,13 @@ class ScreenshotScenario {
                 press(key)
             }
             check(focused(label, description) != null) { "Keyboard did not reach $label" }
+        }
+        fun requestListFocus(label: String) {
+            val node = generateSequence(find(text(label)).accessibilityNodeInfo) { it.parent }
+                .first { it.isFocusable && it.isClickable && it.isEnabled }
+            check(node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) { "Input focus rejected by $label" }
+            device.waitForIdle()
+            check(focused(label) != null) { "Input focus did not reach $label" }
         }
         fun capture(file: String, label: String, description: Boolean = false) {
             val bounds = checkNotNull(focused(label, description)) { "Expected focus on $label" }.visibleBounds
@@ -144,11 +152,10 @@ class ScreenshotScenario {
 
                             focus(newChat, key = KeyEvent.KEYCODE_DPAD_DOWN)
                             capture("wide-new-chat-focus.png", newChat)
-                            focus(projectTitle, key = KeyEvent.KEYCODE_DPAD_UP)
+                            requestListFocus(projectTitle)
                             press(KeyEvent.KEYCODE_ENTER)
                             val newProjectChat = label(R.string.composer_new_project)
-                            find(text(newProjectChat))
-                            focus(newProjectChat, key = KeyEvent.KEYCODE_DPAD_DOWN)
+                            requestListFocus(newProjectChat)
                             capture("wide-project-focus.png", newProjectChat)
                             press(KeyEvent.KEYCODE_ENTER)
                             device.waitForIdle()
