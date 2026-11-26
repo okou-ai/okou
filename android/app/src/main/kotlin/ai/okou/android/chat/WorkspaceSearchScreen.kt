@@ -48,7 +48,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -393,10 +395,14 @@ private fun SearchResults(
         }
     var unresolvedChats by remember(keyword, messageHits) { mutableStateOf(emptySet<String>()) }
     val uncheckedChats = missingMessageChats - unresolvedChats
-    LaunchedEffect(keyword, messageHits, uncheckedChats) {
-        if (uncheckedChats.isNotEmpty()) {
-            // Chats found by the owner remain pending until the visible list includes them.
-            unresolvedChats += resolveMessageChats(uncheckedChats)
+    if (missingMessageChats.isNotEmpty()) {
+        val latestMissingChats by rememberUpdatedState(missingMessageChats)
+        LaunchedEffect(keyword, messageHits) {
+            // A list publication can resolve part of the batch while the read completes.
+            snapshotFlow { latestMissingChats - unresolvedChats }
+                .collect { chats ->
+                    if (chats.isNotEmpty()) unresolvedChats += resolveMessageChats(chats)
+                }
         }
     }
     val workflows = (workflowRead as? SearchRead.Ready)?.rows.orEmpty()

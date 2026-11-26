@@ -507,8 +507,11 @@ class SavedUiStateTest {
         val search = ChatSearchState(TextFieldValue("Release"))
         val knownChat = searchResult("known", "Release brief")
         val missingChat = searchResult("missing", "Design review")
+        val otherChat = searchResult("other", "Delivery plan")
         val message = SearchMessageHit("missing", 1L, "Check the release brief", listOf(10..16))
+        val otherMessage = SearchMessageHit("other", 2L, "Release window", listOf(0..6))
         val resolved = CompletableDeferred<Set<String>>()
+        var catchUps = 0
         var list by
             mutableStateOf(
                 ChatListUiState(
@@ -529,13 +532,14 @@ class SavedUiStateTest {
                     onClose = {},
                     onOpen = {},
                     resolveMessageChats = { chatIds ->
-                        assertEquals(setOf(missingChat.id), chatIds)
+                        catchUps++
+                        assertEquals(setOf(missingChat.id, otherChat.id), chatIds)
                         resolved.await()
                     },
                     remote =
                         WorkspaceSearchResults(
                             "Release",
-                            messages = SearchRead.Ready(listOf(message)),
+                            messages = SearchRead.Ready(listOf(message, otherMessage)),
                         ),
                 )
             }
@@ -549,20 +553,28 @@ class SavedUiStateTest {
         progress.assertIsDisplayed()
         assertEquals(top, row.fetchSemanticsNode().boundsInRoot.top)
 
-        compose.runOnIdle { resolved.complete(emptySet()) }
+        compose.runOnIdle {
+            list = list.copy(threadsByRecency = listOf(knownChat, missingChat))
+        }
+        compose.onNodeWithText(message.content).assertIsDisplayed()
         progress.assertIsDisplayed()
-        notice.assertDoesNotExist()
+        compose.runOnIdle { assertEquals(1, catchUps) }
+
+        compose.runOnIdle { resolved.complete(setOf(otherChat.id)) }
+        progress.assertDoesNotExist()
+        notice.assertIsDisplayed()
+        compose.runOnIdle { assertEquals(1, catchUps) }
 
         compose.runOnIdle {
             list =
                 list.copy(
-                    threadsByRecency = listOf(knownChat, missingChat),
+                    threadsByRecency = listOf(knownChat, missingChat, otherChat),
                 )
         }
         progress.assertDoesNotExist()
         notice.assertDoesNotExist()
         row.assertIsDisplayed()
-        compose.onNodeWithText(message.content).assertIsDisplayed()
+        compose.onNodeWithText(otherMessage.content).assertIsDisplayed()
     }
 
     @Test
