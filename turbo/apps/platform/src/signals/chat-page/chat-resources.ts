@@ -47,7 +47,7 @@ export const copyChatResourceArtifact$ = command(
       return;
     }
     const currentUrl = currentHostedSiteUrl(
-      new URL(url, window.location.origin).href,
+      url.startsWith("/") ? new URL(url, window.location.origin).href : url,
       get(hostedSiteUrlChanges$),
     );
     const copied = await writeToClipboard(publicAttachmentUrl(currentUrl));
