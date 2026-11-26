@@ -646,8 +646,6 @@
       "video": "视频"
     },
     "library": {
-      "allArtifacts": "全部成果",
-      "allTypes": "全部类型",
       "categories": {
         "all": "全部",
         "audio": "音频",

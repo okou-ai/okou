@@ -646,8 +646,6 @@
       "video": "비디오"
     },
     "library": {
-      "allArtifacts": "모든 아티팩트",
-      "allTypes": "모든 유형",
       "categories": {
         "all": "전체",
         "audio": "오디오",

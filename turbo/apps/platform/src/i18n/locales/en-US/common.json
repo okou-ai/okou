@@ -647,8 +647,6 @@
       "video": "Video"
     },
     "library": {
-      "allArtifacts": "All artifacts",
-      "allTypes": "All types",
       "categories": {
         "all": "All",
         "audio": "Audio",

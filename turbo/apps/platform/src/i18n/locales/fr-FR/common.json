@@ -663,8 +663,6 @@
       "video": "Vidéo"
     },
     "library": {
-      "allArtifacts": "Tous les artéfacts",
-      "allTypes": "Tous les types",
       "categories": {
         "all": "Tous",
         "audio": "Audio",
