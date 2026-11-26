@@ -72,7 +72,7 @@ function WorkflowRow({
 }) {
   const title = workflowTitle(workflow);
   return (
-    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
+    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
       <WorkflowTooltip workflow={workflow}>
         <Link
           pathname={ROUTES.workflowDetailAutomations}
@@ -179,7 +179,7 @@ function applyWorkflowFilters(
 }
 
 function WorkflowRowDivider() {
-  return <div className="mx-5 h-px bg-divider/50" />;
+  return <div className="mx-3 h-px bg-divider/50" />;
 }
 
 function WorkflowRowList({
@@ -192,7 +192,7 @@ function WorkflowRowList({
   readonly displayTimezone: string;
 }) {
   return (
-    <div className={surfaceVariants({ className: "overflow-hidden" })}>
+    <div className={surfaceVariants({ className: "overflow-hidden p-2" })}>
       {workflows.map((workflow, index) => {
         return (
           <div key={workflow.id}>
@@ -741,14 +741,14 @@ export function WorkflowDirectoryPage() {
 function WorkflowIndexSkeleton() {
   return (
     <div
-      className={surfaceVariants({ className: "overflow-hidden" })}
+      className={surfaceVariants({ className: "overflow-hidden p-2" })}
       data-testid="workflows-loading"
     >
       {[0, 1, 2, 3].map((rowIndex) => {
         return (
           <div key={rowIndex}>
             {rowIndex > 0 ? <WorkflowRowDivider /> : null}
-            <div className="flex items-center gap-3 px-5 py-3">
+            <div className="flex items-center gap-3 px-3 py-3">
               <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
