@@ -268,7 +268,7 @@ account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-001	r
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-004	rewritten	147.0		src/signals/routes/__tests__/auth-org.bdd.test.ts	pilot
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-006	rewritten	133.6	split n=4: 1/4=54.3; 2/4=84.0; 3/4=133.6; 4/4=121.8	src/signals/routes/__tests__/auth-org.bdd.test.ts	B01
 account-org	src/signals/routes/__tests__/auth-org.bdd.test.ts	auth-org.bdd-007	rewritten	167.4		src/signals/routes/__tests__/auth-org.bdd.test.ts	B01
-account-org	src/signals/routes/__tests__/auto-run-routing.test.ts	auto-run-routing-001	planned				B06
+account-org	src/signals/routes/__tests__/auto-run-routing.test.ts	auto-run-routing-001	skipped		slow-setup: Given+first When/Then 235 ms and 257 ms as the only row of its file (225-377 ms across five runs). Given steps in the first run: member onboarding with workspace provisioning 73 ms, Pro plan Stripe lifecycle 64 ms, personal Claude subscription connect 42 ms; the When/Then requests take 30 ms. A warm second run in the same file took 120-125 ms, so the excess is the onboarding/billing/thread path cold start that only this case reaches.		B06
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-001	planned				pilot
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-002	planned				pilot
 workflows	src/signals/routes/__tests__/automation-disabled-feed-events.test.ts	automation-disabled-feed-events-003	planned				pilot
