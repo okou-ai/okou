@@ -63,6 +63,27 @@ export function remoteDeviceStatementTime() {
   return nowDateSql(sql`(statement_timestamp() AT TIME ZONE 'UTC')`);
 }
 
+export function ownedRemoteDevice(owner: RemoteDeviceOwner, deviceId: string) {
+  return and(
+    eq(remoteDevices.id, deviceId),
+    eq(remoteDevices.orgId, owner.orgId),
+    eq(remoteDevices.userId, owner.userId),
+    remoteDeviceMode(owner),
+  );
+}
+
+export function remoteDeviceDestination(
+  owner: RemoteDeviceOwner,
+  deviceId: string,
+) {
+  return exists(
+    new QueryBuilder()
+      .select({ id: remoteDevices.id })
+      .from(remoteDevices)
+      .where(ownedRemoteDevice(owner, deviceId)),
+  );
+}
+
 export function remoteDeviceAllowed(
   channel: SqlOwner & { readonly remoteDeviceId: SQLWrapper },
 ) {

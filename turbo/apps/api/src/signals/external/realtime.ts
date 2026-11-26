@@ -451,6 +451,13 @@ export function publishAgentSuggestionsChangedSafely(target: {
   return publishChatDatabaseSignal(target, "agentSuggestionsChanged");
 }
 
+export function publishRemoteDevicesChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, "remoteDevicesChanged");
+}
+
 /**
  * Schedule a per-user invalidation/notification signal.
  *

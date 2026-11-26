@@ -14,6 +14,7 @@ enum MessageActionBody {
     case mailDraft(String)
     case computerAuthorization(ChatComputerAuthorizationAction)
     case sshAuthorization(ChatSSHAuthorizationAction)
+    case remoteDeviceApproval(ChatRemoteDeviceApprovalAction)
   }
 
   /// Mail draft references on the configured web origin.
@@ -112,6 +113,10 @@ enum MessageActionBody {
     -> Block?
   {
     if let approval = approvalBlock(value, webURL: webURL) { return approval }
+    if let action = ChatRemoteDeviceApprovalAction.parse(value, webURL: webURL, threadID: threadID)
+    {
+      return .remoteDeviceApproval(action)
+    }
     if let action = ChatSSHAuthorizationAction.parse(value, webURL: webURL, threadID: threadID) {
       return .sshAuthorization(action)
     }

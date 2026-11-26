@@ -1,3 +1,4 @@
+import CCState
 import CCStateSwiftUI
 import ChatData
 import SwiftUI
@@ -6,14 +7,17 @@ struct ComposerConnectorTools: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorResources
   @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
+  @ResolvedValue private var remoteDevicesEnabled: Bool?
   @State private var showsDesktopSetup = false
   /// The composer's confirmed connectors and remote access, kept in the session Store.
   @ResolvedValue private var resolvedSnapshot: ComposerConnectorStore.Snapshot?
+  private static let disabled = Computed<Bool> { _ in false }
 
   init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
     self.store = store
     self.resources = resources
     _remote = LoadableValue(task: resources.remote, keepLast: true)
+    _remoteDevicesEnabled = ResolvedValue(store.remoteDevices?.enabled ?? Self.disabled)
     _resolvedSnapshot = ResolvedValue(store.snapshotValue)
   }
 
@@ -40,14 +44,19 @@ struct ComposerConnectorTools: View {
         .tint(OkouColor.primary400)
         .disabled(store.isSaving || store.uncertain || !value.overview.cloudBrowserAvailable)
       }
-      NavigationLink {
-        ComposerRemoteControls(store: store, resources: resources)
-      } label: {
-        OkouRowLabel("Remote access", okouSymbol: "monitor")
+      if remoteDevicesEnabled != true {
+        NavigationLink {
+          ComposerRemoteControls(store: store, resources: resources)
+        } label: {
+          OkouRowLabel("Remote access", okouSymbol: "monitor")
+        }
+        Button("Connect my computer", okouSymbol: "plus") { showsDesktopSetup = true }
       }
-      Button("Connect my computer", okouSymbol: "plus") { showsDesktopSetup = true }
     }
     .sheet(isPresented: $showsDesktopSetup) { ComposerDesktopSetup(store: store) }
+    if remoteDevicesEnabled == true, let devices = store.remoteDevices {
+      RemoteDeviceRows(resources: devices, webURL: store.webURL)
+    }
   }
 }
 

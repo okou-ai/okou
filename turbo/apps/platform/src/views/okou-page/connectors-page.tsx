@@ -1,4 +1,8 @@
 import {
+  remoteDeviceDirectory$,
+  remoteDevicesEnabled$,
+} from "../../signals/remote-devices.ts";
+import {
   BuiltinConnectorAccountDialogs,
   useBuiltinConnectorConnectHandlers,
 } from "./builtin-connector-account-dialogs.tsx";
@@ -190,6 +194,20 @@ function CustomScopeCount() {
 }
 
 function RemoteControlScopeCount() {
+  const enabled = useLastResolved(remoteDevicesEnabled$);
+  return enabled ? (
+    <RemoteDeviceScopeCount />
+  ) : (
+    <LegacyRemoteControlScopeCount />
+  );
+}
+
+function RemoteDeviceScopeCount() {
+  const devices = useLastResolved(remoteDeviceDirectory$);
+  return <ConnectorsScopeCount value={devices?.length ?? 0} />;
+}
+
+function LegacyRemoteControlScopeCount() {
   const ssh = useLastLoadable(sshSummary$);
   const vnc = useLastLoadable(vncSummary$);
   return (

@@ -218,6 +218,7 @@ import { createBrowserAuthorizationCardSignalsRegistry } from "./browser-authori
 import { createHostAuthorizationCardSignalsRegistry } from "./host-authorization-block.ts";
 import { createDesktopShellAuthorizationCardSignalsRegistry } from "./desktop-shell-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
+import { createRemoteDeviceApprovalRegistry } from "./remote-device-approval-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
 import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
 import {
@@ -1484,6 +1485,9 @@ interface EventTreeRegistries {
   readonly connectorAccountActionCardSignals: ReturnType<
     typeof createConnectorAccountActionCardSignalsRegistry
   >;
+  readonly remoteDeviceApprovalSignals: ReturnType<
+    typeof createRemoteDeviceApprovalRegistry
+  >;
   readonly permissionCardSignals: ReturnType<
     typeof createPermissionCardSignalsRegistry
   >;
@@ -1633,6 +1637,15 @@ function createCardRefRegistrar(
             kind: descriptor.type,
             signals: set(
               cards.connectorAccountActionCardSignals.register$,
+              descriptor.descriptor,
+            ),
+          };
+        }
+        case "remote-device-approval": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              cards.remoteDeviceApprovalSignals.register$,
               descriptor.descriptor,
             ),
           };
@@ -2017,6 +2030,7 @@ function createPagedEventResources({
       artifactCardSignals,
       connectorCardSignals,
       connectorAccountActionCardSignals,
+      remoteDeviceApprovalSignals: createRemoteDeviceApprovalRegistry(),
       permissionCardSignals,
       permissionBatchCardSignals,
       bankingCardSignals,

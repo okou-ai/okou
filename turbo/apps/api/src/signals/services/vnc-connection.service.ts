@@ -5,7 +5,11 @@ import {
   type UpdateVncConnectionRequest,
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
@@ -547,7 +551,7 @@ function vncConnectionCreationValues(
   return {
     ...args.owner,
     id: args.body.id,
-    remoteDeviceId: sql`gen_random_uuid()`,
+    remoteDeviceId: args.body.remoteDeviceId ?? sql`gen_random_uuid()`,
     displayName: args.body.displayName,
     host: prepared.host.value,
     port: args.body.port,
@@ -583,18 +587,17 @@ const writeInlineVncConnectionCreate$ = command(
         })
         .returning({ ...vncCreationSelection }),
     );
-    const device = publishRemoteChannelDevice(
-      db,
-      connection,
-      args.body.displayName,
-    );
+    const devices =
+      args.body.remoteDeviceId === undefined
+        ? [publishRemoteChannelDevice(db, connection, args.body.displayName)]
+        : [];
     const complete = publication.completion(connection);
     const [created] = await db
       .with(
         ...publication.ctes,
         generated,
         connection,
-        device,
+        ...devices,
         createdCredential,
         complete,
       )
@@ -623,6 +626,12 @@ export const createVncConnection$ = command(
     args: CreateVncConnectionArgs,
     signal: AbortSignal,
   ): Promise<VncResult<VncConnectionResponse | undefined>> => {
+    if (
+      args.body.remoteDeviceId !== undefined &&
+      !isFeatureEnabled(FeatureSwitchKey.RemoteDevices, args.featureContext)
+    ) {
+      return vncFailure("remoteDeviceNotFound");
+    }
     const db = set(writeDb$);
     const prepared = await set(prepareCreateVncConnection$, args, signal);
     signal.throwIfAborted();
@@ -702,10 +711,13 @@ export const createVncConnection$ = command(
             })
             .returning({ ...vncCreationSelection }),
         );
-        const device = publishRemoteChannelDevice(db, connection, displayName);
+        const devices =
+          args.body.remoteDeviceId === undefined
+            ? [publishRemoteChannelDevice(db, connection, displayName)]
+            : [];
         const complete = publication.completion(connection);
         const [created] = await db
-          .with(...publication.ctes, connection, device, complete)
+          .with(...publication.ctes, connection, ...devices, complete)
           .select()
           .from(complete)
           .leftJoin(connection, sql`true`);
@@ -720,6 +732,14 @@ export const createVncConnection$ = command(
     );
     signal.throwIfAborted();
     if (!written.ok) {
+      if (
+        isForeignKeyViolation(
+          written.error,
+          "vnc_connections_remote_device_owner_fk",
+        )
+      ) {
+        return vncFailure("remoteDeviceNotFound");
+      }
       if (safeSqlStateCode(written.error) === "40P01") {
         return vncFailure("generationConflict");
       }

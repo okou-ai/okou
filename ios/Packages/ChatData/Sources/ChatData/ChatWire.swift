@@ -212,6 +212,7 @@ public struct SidebarFeatureSwitches: Codable, Sendable {
 
   public var canLinkSubscriptions: Bool { effectiveSwitches["subscriptionLinkingEntry"] == true }
   public var canManageConnectors: Bool { effectiveSwitches["iosConnectorManagement"] == true }
+  public var usesRemoteDevices: Bool { effectiveSwitches["remoteDevices"] == true }
   public var usesMemberConnectorAccess: Bool {
     effectiveSwitches["memberConnectorAccountAccess"] == true
   }

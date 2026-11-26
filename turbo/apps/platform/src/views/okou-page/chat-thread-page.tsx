@@ -18,6 +18,7 @@ import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/share
 import type { SharedThreadVisibilitySignals } from "../../signals/shared-thread-visibility.ts";
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
+import { RemoteDeviceApprovalLinkDialog } from "./remote-device-approval-card.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
@@ -2787,6 +2788,7 @@ export function ChatThreadPage() {
     <>
       <ChatThreadArea leftPane={leftPane} rightPane={rightPane} />
       <ChatConnectorActionConnectModal />
+      <RemoteDeviceApprovalLinkDialog />
     </>
   );
 }

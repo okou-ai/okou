@@ -11,6 +11,8 @@ final class ApprovalCardRegistry {
   private let client: APIClient
   private let graph: CCState.Store
   private let didContinue: @MainActor () async -> Void
+  private let remoteDevices: RemoteDeviceResources?
+  private var deviceApprovals: [ChatRemoteDeviceApprovalAction: RemoteDeviceApprovalStore] = [:]
   private final class WeakMailDraft {
     weak var value: MailDraftCardStore?
     init(_ value: MailDraftCardStore) { self.value = value }
@@ -68,6 +70,7 @@ final class ApprovalCardRegistry {
 
   init(
     thread: ChatThread, commands: ChatCommands, sync: ChatSync, graph: CCState.Store,
+    remoteDevices: RemoteDeviceResources? = nil,
     didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void
   ) {
@@ -75,6 +78,7 @@ final class ApprovalCardRegistry {
     self.commands = commands
     self.sync = sync
     self.graph = graph
+    self.remoteDevices = remoteDevices
     self.didFail = didFail
     self.client = commands.approvalClient
     self.didContinue = didContinue
@@ -148,6 +152,7 @@ final class ApprovalCardRegistry {
   func activate() {
     guard !closed else { return }
     active = true
+    for card in deviceApprovals.values { card.activate() }
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.activate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
@@ -158,6 +163,7 @@ final class ApprovalCardRegistry {
 
   func deactivate() {
     active = false
+    for card in deviceApprovals.values { card.deactivate() }
     liveMailDrafts = liveMailDrafts.filter { $0.value.value != nil }
     for card in liveMailDrafts.values.compactMap(\.value) { card.deactivate() }
     liveComputers = liveComputers.filter { $0.value.value != nil }
@@ -177,6 +183,8 @@ final class ApprovalCardRegistry {
   func close() {
     closed = true
     active = false
+    for card in deviceApprovals.values { card.deactivate() }
+    deviceApprovals.removeAll()
     for card in liveMailDrafts.values.compactMap(\.value) { card.close() }
     mailDrafts.removeAllObjects()
     liveMailDrafts = [:]
@@ -189,6 +197,17 @@ final class ApprovalCardRegistry {
     sshCards.removeAllObjects()
     liveSSH = [:]
     sshInteractions = [:]
+  }
+
+  func remoteDevice(_ action: ChatRemoteDeviceApprovalAction) -> RemoteDeviceApprovalStore? {
+    guard !closed, let remoteDevices else { return nil }
+    if let existing = deviceApprovals[action] { return existing }
+    let card = RemoteDeviceApprovalStore(
+      action: action, resources: remoteDevices, graph: graph, thread: thread, commands: commands,
+      didContinue: didContinue, didFail: didFail)
+    if active { card.activate() }
+    deviceApprovals[action] = card
+    return card
   }
 
 }

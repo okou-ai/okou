@@ -297,6 +297,124 @@ describe("live chat SSH Run inventory", () => {
     );
   }
 
+  it("attaches and moves a channel without changing its identity or either device's access", async () => {
+    const f = await publicInventoryRun();
+    const policy = setupApp({ context, routes: remoteDevicesRoutes })(
+      remoteDevicesContract,
+    );
+    const original = { id: randomUUID(), displayName: "Build machine" };
+    await accept(policy.create({ headers, body: original }), [404]);
+    await accept(policy.listForRun({ headers: f.token() }), [404]);
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(f);
+
+    const { body: source } = await accept(
+      policy.create({ headers, body: original }),
+      [201],
+    );
+    expect(source).toMatchObject({
+      ...original,
+      accessAllowed: false,
+      accessExpiresAt: null,
+    });
+    await accept(policy.create({ headers, body: original }), [200]);
+    const destinationId = randomUUID();
+    await accept(
+      policy.create({
+        headers,
+        body: { id: destinationId, displayName: "Other machine" },
+      }),
+      [201],
+    );
+    await accept(
+      policy.setAccess({
+        headers,
+        params: { deviceId: source.id },
+        body: { mode: "always" },
+      }),
+      [200],
+    );
+
+    const { body: channel } = await accept(
+      config().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          remoteDeviceId: source.id,
+          displayName: "Build login",
+          host: "build.example.com",
+          credential: inlineSshKey("deploy", "test-private-key"),
+        },
+      }),
+      [201],
+    );
+    const { body: discovery } = await accept(
+      policy.listForRun({ headers: f.token() }),
+      [200],
+    );
+    expect(discovery).toMatchObject({
+      chatThreadId: f.threadId,
+      devices: [
+        {
+          id: source.id,
+          channels: [
+            { id: channel.id, kind: "ssh", displayName: "Build login" },
+          ],
+        },
+      ],
+    });
+    expect(
+      (await accept(inventory().list({ headers: f.token() }), [200])).body
+        .hosts,
+    ).toMatchObject([{ id: channel.id }]);
+
+    const other = { orgId: f.orgId, userId: `user_ssh_${randomUUID()}` };
+    await updateFeatureSwitchesForUser(context, other, {
+      [FeatureSwitchKey.RemoteDevices]: true,
+    });
+    authenticate(other);
+    const foreignId = randomUUID();
+    await accept(
+      policy.create({
+        headers,
+        body: { id: foreignId, displayName: "Different owner" },
+      }),
+      [201],
+    );
+    const move = (deviceId: string) => {
+      return policy.moveChannel({
+        headers,
+        params: { deviceId, channelId: channel.id, kind: "ssh" },
+        body: undefined,
+      });
+    };
+    await accept(move(foreignId), [404]);
+    authenticate(f);
+    await accept(move(foreignId), [404]);
+    await accept(move(destinationId), [204]);
+
+    const { body: directory } = await accept(policy.list({ headers }), [200]);
+    expect(directory.devices).toMatchObject([
+      { id: source.id, accessAllowed: true, channels: [] },
+      {
+        id: destinationId,
+        accessAllowed: false,
+        channels: [{ id: channel.id, kind: "ssh" }],
+      },
+    ]);
+    expect(
+      (await accept(inventory().list({ headers: f.token() }), [200])).body
+        .hosts,
+    ).toStrictEqual([]);
+    const { body: connections } = await accept(
+      config().list({ headers }),
+      [200],
+    );
+    expect(connections.connections).toStrictEqual([channel]);
+  });
+
   it("admits a running SSH client on approval and distinguishes changed configuration from expiry", async () => {
     const f = await publicInventoryRun();
     const host = await createHost();

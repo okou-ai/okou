@@ -47,6 +47,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   instructions: ["instructions:read", "instructions:write"],
   workflow: null,
   connector: ["connector:read", "connector:write"],
+  remote: "connector:read",
   "remote-control": ["connector:read", "connector:write"],
   mcp: "connector:read",
   ssh: ["ssh:read", "ssh:write", "connector:read", "connector:write"],
@@ -140,6 +141,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "Read or set an owned artifact's visibility and return its URL",
     load: async () => {
       return artifactCommand;
+    },
+  },
+  {
+    name: "remote",
+    description: "Discover Remote Devices and request device access",
+    load: async () => {
+      return (await import("./commands/remote")).remoteCommand;
     },
   },
   {

@@ -18,6 +18,40 @@ export const remoteDevicesContract: ClientDescriptor<
       404: true,
     },
   },
+  listForRun: {
+    method: "GET",
+    path: "/api/run/remote-devices",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  create: {
+    method: "POST",
+    path: "/api/remote-devices",
+    statuses: {
+      200: true,
+      201: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  moveChannel: {
+    method: "PUT",
+    path: "/api/remote-devices/:deviceId/channels/:kind/:channelId",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   setAccess: {
     method: "PUT",
     path: "/api/remote-devices/:deviceId/access",

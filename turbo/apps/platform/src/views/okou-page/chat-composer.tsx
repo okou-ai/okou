@@ -1,4 +1,7 @@
 import { ChatConnectorAccountDialogs } from "./chat-connector-account-dialogs.tsx";
+import { authenticatedSessionKey$ } from "../../signals/auth.ts";
+import { remoteDevicesEnabled$ } from "../../signals/remote-devices.ts";
+import { ComposerRemoteDevices } from "./remote-device-directory.tsx";
 import { ComposerPresentationFormatSetup } from "./composer-presentation-format-setup.tsx";
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 
@@ -2034,6 +2037,39 @@ function ComposerTemplatePreviewSlot({
   return <BuiltInTemplatePreviewDialog signals={signals} onChange={select} />;
 }
 
+function ComposerCloudBrowserToggle({
+  computerUse,
+}: {
+  readonly computerUse: ComposerComputerUse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+        <Globe size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-foreground">
+          {t(($) => {
+            return $.chat.computerUse.cloudBrowser;
+          })}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center">
+        <LoadingSwitch
+          checked={computerUse.cloudBrowserEnabled}
+          disabled={!computerUse.cloudBrowserAvailable}
+          onCheckedChange={onDomEventFn((enabled) => {
+            computerUse.onCloudBrowserChange(enabled);
+          })}
+          loading={computerUse.cloudBrowserLoading}
+          size="sm"
+        />
+      </span>
+    </label>
+  );
+}
+
 function ComputerUseConnectorMenuSection({
   computerUse,
   onOpenDownloadDialog,
@@ -2046,29 +2082,7 @@ function ComputerUseConnectorMenuSection({
   const { t } = useTranslation();
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">
-      <label className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
-          <Globe size={16} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-foreground">
-            {t(($) => {
-              return $.chat.computerUse.cloudBrowser;
-            })}
-          </span>
-        </span>
-        <span className="flex shrink-0 items-center">
-          <LoadingSwitch
-            checked={computerUse.cloudBrowserEnabled}
-            disabled={!computerUse.cloudBrowserAvailable}
-            onCheckedChange={onDomEventFn((enabled) => {
-              computerUse.onCloudBrowserChange(enabled);
-            })}
-            loading={computerUse.cloudBrowserLoading}
-            size="sm"
-          />
-        </span>
-      </label>
+      <ComposerCloudBrowserToggle computerUse={computerUse} />
       {remoteAccess}
       <div className="mx-2 my-1 border-t border-border/50" />
       <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
@@ -2178,9 +2192,21 @@ function ComposerRemoteAccessMenu({
   computerUse: ComposerComputerUse | undefined;
   onOpenDownloadDialog: () => void;
 }) {
+  const deviceMode = useLastResolved(remoteDevicesEnabled$);
+  const session = useGet(authenticatedSessionKey$);
   const openRemoteAccessDialog = useSet(
     signals.connector.openRemoteAccessDialog$,
   );
+  if (deviceMode) {
+    return (
+      <>
+        {computerUse && (
+          <ComposerCloudBrowserToggle computerUse={computerUse} />
+        )}
+        <ComposerRemoteDevices key={session} />
+      </>
+    );
+  }
   const remoteAccess = (
     <ThreadRemoteAccessSection
       threadId={signals.threadId}

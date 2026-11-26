@@ -1,5 +1,5 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -36,6 +36,8 @@ import { VncDialog } from "./vnc-dialog.tsx";
 import { REMOTE_PAGE_ACTION } from "./remote-editor-frame.tsx";
 import { RemoteComputerNetwork } from "./remote-computer-setup.tsx";
 import { ComputerUseDownloadDialog } from "./computer-use-download-dialog.tsx";
+import { PhoneUseDeviceSetup } from "./phone-use-connector-menu.tsx";
+import { remoteDevicesEnabled$ } from "../../signals/remote-devices.ts";
 
 function ComputerUseChoice() {
   const { t } = useTranslation();
@@ -91,6 +93,7 @@ function ComputerUseChoice() {
 
 function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
   const { t } = useTranslation();
+  const deviceMode = useLastResolved(remoteDevicesEnabled$);
   const choose = useSet(chooseRemoteProtocol$);
   const [opening, open] = useLoadableSet(openRemoteLogin$);
   const signal = useGet(pageSignal$);
@@ -121,6 +124,7 @@ function ProtocolChoice({ setup }: { readonly setup: RemoteSetup }) {
   return (
     <div className="grid gap-3">
       {!setup.sourceNetwork && <ComputerUseChoice />}
+      {deviceMode && !setup.sourceNetwork && <PhoneUseDeviceSetup />}
       {options.map((option) => {
         return (
           <Button

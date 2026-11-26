@@ -12,7 +12,11 @@ import type {
   SshConnectionResponse,
   UpdateSshConnectionRequest,
 } from "@okouai/api-contracts/contracts/ssh-connections";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import {
   ownedSshCredential,
@@ -120,6 +124,11 @@ type UpdateSshConnectionArgs = {
 };
 
 const SSH_FAILURES = {
+  remoteDeviceNotFound: {
+    kind: "not_found",
+    message: "Remote device not found",
+    code: SSH_ERROR_CODES.UNAVAILABLE,
+  },
   invalidHost: {
     kind: "bad_request",
     message: "Invalid SSH host",
@@ -547,11 +556,10 @@ const commitSshConnectionCreationAttempt$ = command(
         )
         .returning({ ...connectionSelection }),
     );
-    const device = publishRemoteChannelDevice(
-      db,
-      written,
-      args.body.displayName,
-    );
+    const devices =
+      args.body.remoteDeviceId === undefined
+        ? [publishRemoteChannelDevice(db, written, args.body.displayName)]
+        : [];
     const complete =
       sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
         pgIntegerDecoder,
@@ -569,7 +577,7 @@ const commitSshConnectionCreationAttempt$ = command(
         ...(access === undefined ? [] : [access]),
         ...(tailscale === undefined ? [] : [tailscale]),
         written,
-        device,
+        ...devices,
       )
       .select({
         existing: { ...reads.current._.selectedFields },
@@ -613,6 +621,14 @@ const commitSshConnectionCreation$ = command(
       set(commitSshConnectionCreationAttempt$, args),
     );
     if (!transaction.ok) {
+      if (
+        isForeignKeyViolation(
+          transaction.error,
+          "ssh_connections_remote_device_owner_fk",
+        )
+      ) {
+        return failure("remoteDeviceNotFound");
+      }
       if (isSshCredentialReferenceViolation(transaction.error)) {
         return sshCredentialFailure("notFound");
       }
@@ -645,6 +661,12 @@ export const createSshConnection$ = command(
     { set },
     args: CreateSshConnectionArgs,
   ): Promise<SshConnectionResult<SshConnectionResponse | undefined>> => {
+    if (
+      args.body.remoteDeviceId !== undefined &&
+      !isFeatureEnabled(FeatureSwitchKey.RemoteDevices, args.featureContext)
+    ) {
+      return failure("remoteDeviceNotFound");
+    }
     const tailscaleTransport = selectedSshTailscaleConnection(
       args.body.transport,
     );

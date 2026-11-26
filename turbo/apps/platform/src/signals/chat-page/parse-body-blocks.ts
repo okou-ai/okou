@@ -11,6 +11,10 @@ import {
   parseConnectorAccountActionUrl,
   type ConnectorAccountActionDescriptor,
 } from "./connector-account-action-block.ts";
+import {
+  parseRemoteDeviceApprovalUrl,
+  type RemoteDeviceApprovalDescriptor,
+} from "./remote-device-approval-block.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
 import {
   parsePermissionBatchActionUrl,
@@ -106,6 +110,11 @@ export type ParsedBodyBlock =
       type: "connector-account-action";
       resourceKey: string;
       descriptor: ConnectorAccountActionDescriptor;
+    }
+  | {
+      type: "remote-device-approval";
+      resourceKey: string;
+      descriptor: RemoteDeviceApprovalDescriptor;
     }
   | {
       type: "permission-action";
@@ -939,6 +948,25 @@ function createActionBlockFromUrl(
     };
   }
 
+  const remoteDeviceApproval = parseRemoteDeviceApprovalUrl(
+    url,
+    chatActionContext,
+  );
+  if (remoteDeviceApproval.status === "valid") {
+    return {
+      type: "remote-device-approval",
+      resourceKey: url,
+      descriptor: remoteDeviceApproval.descriptor,
+    };
+  }
+  if (remoteDeviceApproval.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: url,
+      descriptor: { originalUrl: url },
+    };
+  }
+
   const permissionAction = createPermissionActionBlock(url, chatActionContext);
   if (permissionAction) {
     return permissionAction;
@@ -1569,7 +1597,8 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     case "connector-action": {
       return block.descriptor.originalUrl;
     }
-    case "connector-account-action": {
+    case "connector-account-action":
+    case "remote-device-approval": {
       return block.descriptor.originalUrl;
     }
     case "permission-action":

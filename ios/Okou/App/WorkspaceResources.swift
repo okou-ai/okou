@@ -24,6 +24,7 @@ final class WorkspaceResources {
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
   let featureSnapshot: WorkspaceFeatureSwitches
+  let remoteDevices: RemoteDeviceResources
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
@@ -62,6 +63,9 @@ final class WorkspaceResources {
     let featureSnapshot = WorkspaceFeatureSwitches(
       sync: sync, service: service, store: store, lifecycleTasks: lifecycleTasks)
     self.featureSnapshot = featureSnapshot
+    remoteDevices = RemoteDeviceResources(
+      client: client, graph: store, switches: featureSnapshot.confirmedValue,
+      lifetime: lifetime, lifecycleTasks: lifecycleTasks, sleep: sleep)
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       readiness: modelReadiness, read: featureSnapshot.refresh)
@@ -204,6 +208,7 @@ final class WorkspaceResources {
     available.close()
     catalog.close()
     features.close()
+    remoteDevices.close()
     featureSnapshot.close()
     projects.close()
     sidebarDrafts.close()
@@ -213,6 +218,96 @@ final class WorkspaceResources {
           "event=workspace.resources.retired_observers.notify.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
     }
+  }
+}
+
+@MainActor
+final class RemoteDeviceResources {
+  enum Mutation: Sendable {
+    case create(UUID, String)
+    case move(ChatRemoteDevice.Channel, UUID)
+    case policy(ChatRemoteDevices.Policy, UUID)
+  }
+
+  struct WriteState: Equatable {
+    var saving = false
+    var error: String?
+  }
+
+  let enabled: Computed<Bool>
+  let directory: Computed<Task<[ChatRemoteDevice], Error>>
+  let writeState: Computed<WriteState>
+  private let write = CCState.State(WriteState())
+  private let service: ChatRemoteDevices
+  private let read: WorkspaceRead<[ChatRemoteDevice]>
+  private let graph: CCState.Store
+  private let lifecycleTasks: LifecycleTasks
+  private var closed = false
+
+  init(
+    client: APIClient, graph: CCState.Store, switches: Computed<WorkspaceFeatureSwitches.Confirmed>,
+    lifetime: CCState.State<Bool>, lifecycleTasks: LifecycleTasks,
+    sleep: @escaping @Sendable (Duration) async throws -> Void
+  ) {
+    self.graph = graph
+    self.lifecycleTasks = lifecycleTasks
+    let service = ChatRemoteDevices(client: client)
+    self.service = service
+    let read = WorkspaceRead(
+      "remote devices", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: service.list)
+    self.read = read
+    directory = read.value
+    enabled = Computed { get in try get(switches).switches?.usesRemoteDevices == true }
+    let write = write
+    writeState = Computed { try $0(write) }
+  }
+
+  func refresh() {
+    try? graph.set(read.reload)
+  }
+
+  func reload() async {
+    refresh()
+    _ = try? await graph.get(directory).value
+  }
+
+  func apply(_ mutation: Mutation) async -> Bool {
+    guard !closed, (try? graph.get(write).saving) != true else { return false }
+    try? graph.set(write, WriteState(saving: true))
+    let task = Task { @MainActor [service] in
+      switch mutation {
+      case .create(let id, let name): try await service.create(id: id, displayName: name)
+      case .move(let channel, let id): try await service.move(channel, to: id)
+      case .policy(let policy, let id): try await service.setPolicy(policy, deviceID: id)
+      }
+    }
+    lifecycleTasks.track(task)
+    do {
+      try await task.value
+      guard !closed else { return false }
+      try graph.set(read.reload)
+      try graph.set(write, WriteState())
+      return true
+    } catch {
+      if !closed {
+        try? graph.set(
+          write, WriteState(error: String(localized: "Could not save the device change.")))
+      }
+      return false
+    }
+  }
+
+  func approve(_ action: ChatRemoteDeviceApprovalAction) async throws {
+    guard !closed else { throw CancellationError() }
+    try await service.approve(deviceID: action.deviceID, threadID: action.threadID)
+    try Task.checkCancellation()
+    refresh()
+  }
+
+  func close() {
+    closed = true
+    read.close()
   }
 }
 
