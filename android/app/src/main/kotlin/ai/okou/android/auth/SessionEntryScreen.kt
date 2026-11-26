@@ -390,17 +390,19 @@ private fun SessionPrimaryAction(
     enabled: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
-    val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-    WithButtonFocusOutline(if (enabled) foreground else colors.onSurface) {
+    val defaults = ButtonDefaults.buttonColors()
+    WithButtonFocusOutline(if (enabled) colors.onPrimary else colors.onSurface) {
         Button(
             onClick = { if (enabled) onClick() },
             modifier =
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).sessionActionAvailability(enabled),
             colors =
-                ButtonDefaults.buttonColors(
-                    containerColor = if (enabled) colors.primary else colors.surfaceVariant,
-                    contentColor = foreground,
-                ),
+                if (enabled) defaults
+                else
+                    defaults.copy(
+                        containerColor = defaults.disabledContainerColor,
+                        contentColor = defaults.disabledContentColor,
+                    ),
         ) {
             Text(stringResource(label), textAlign = TextAlign.Center)
         }
@@ -416,6 +418,7 @@ private fun SessionTextAction(
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = ButtonDefaults.textShape
+    val defaults = ButtonDefaults.textButtonColors()
     TextButton(
         onClick = { if (enabled) onClick() },
         modifier =
@@ -425,8 +428,8 @@ private fun SessionTextAction(
                 .sessionActionAvailability(enabled),
         shape = shape,
         colors =
-            ButtonDefaults.textButtonColors(
-                contentColor = if (enabled) colors.onSurface else colors.onSurfaceVariant,
+            defaults.copy(
+                contentColor = if (enabled) colors.onSurface else defaults.disabledContentColor,
             ),
     ) {
         Text(stringResource(label), textAlign = TextAlign.Center)
