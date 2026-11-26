@@ -440,7 +440,7 @@ export const renderFeishuArtifactPreview$ = command(
         type: "raw",
         data: feishuArtifactCard({
           title: preview.title,
-          text: preview.description ?? "Open in Okou to view this artifact.",
+          text: preview.description,
           url: resource.url,
           imageKey,
         }),

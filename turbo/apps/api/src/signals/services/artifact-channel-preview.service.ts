@@ -25,6 +25,7 @@ import {
 import { hostedPreviewArtifactIds } from "./hosted-preview.service";
 
 export interface ArtifactChannelPreview extends ArtifactLinkPreview {
+  readonly description: string;
   readonly image: {
     readonly bucket: string;
     readonly key: string;
