@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,12 +25,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -41,6 +47,27 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+internal class WorkflowHistoryLayout {
+    private var listHeight by mutableIntStateOf(0)
+    private var detailHeight by mutableIntStateOf(0)
+    private var tabsHeight by mutableIntStateOf(0)
+    private var headingHeight by mutableIntStateOf(0)
+
+    val list = Modifier.onSizeChanged { listHeight = it.height }
+    val detail = Modifier.onSizeChanged { detailHeight = it.height }
+    val tabs = Modifier.onSizeChanged { tabsHeight = it.height }
+    val heading = Modifier.onSizeChanged { headingHeight = it.height }
+
+    fun body(padding: PaddingValues): Modifier = Modifier.layout { measurable, constraints ->
+        val insets =
+            padding.calculateTopPadding().roundToPx() + padding.calculateBottomPadding().roundToPx()
+        val available = listHeight - detailHeight - tabsHeight - headingHeight - insets
+        val minimum = available.coerceIn(constraints.minHeight, constraints.maxHeight)
+        val content = measurable.measure(constraints.copy(minHeight = minimum))
+        layout(content.width, content.height) { content.placeRelative(0, 0) }
+    }
+}
 
 @Composable
 internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?, modifier: Modifier) {

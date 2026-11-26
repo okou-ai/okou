@@ -744,10 +744,17 @@ private fun WorkflowDetailPane(
 ) {
     val padding = if (wide) 32.dp else 20.dp
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    val listPadding =
+        PaddingValues(
+            start = padding,
+            end = padding,
+            top = if (wide) 24.dp else 16.dp,
+            bottom = 24.dp,
+        )
     // An empty loading layout must not clamp the saved position of a long history.
-    val listState =
-        if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
-        else position
+    val pendingHistory = tab == WorkflowTab.History && state.history == null
+    val listState = if (pendingHistory) rememberLazyListState() else position
+    val historyLayout = if (pendingHistory) remember { WorkflowHistoryLayout() } else null
     val editEnabled = !state.writing && !handoffPending
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
@@ -755,18 +762,16 @@ private fun WorkflowDetailPane(
     ) {
         Box(contentWidth.weight(1f)) {
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().then(historyLayout?.list ?: Modifier),
                 state = listState,
-                contentPadding =
-                    PaddingValues(
-                        start = padding,
-                        end = padding,
-                        top = if (wide) 24.dp else 16.dp,
-                        bottom = 24.dp,
-                    ),
+                contentPadding = listPadding,
             ) {
-                item(key = "header") { WorkflowDetailHeader(detail) }
-                stickyHeader(key = "tabs") { WorkflowTabs(tab, onTab) }
+                item(key = "header") {
+                    WorkflowDetailHeader(detail, historyLayout?.detail ?: Modifier)
+                }
+                stickyHeader(key = "tabs") {
+                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier)
+                }
                 when (tab) {
                     WorkflowTab.Instructions ->
                         item {
@@ -843,13 +848,16 @@ private fun WorkflowDetailPane(
                         val history = state.history
                         val earlier = state.historyRead?.earlier == true
                         item(key = "history_heading") {
-                            WorkflowSectionHeader(R.string.workflow_recent_runs)
+                            WorkflowSectionHeader(
+                                R.string.workflow_recent_runs,
+                                historyLayout?.heading ?: Modifier,
+                            )
                         }
                         if (history == null) {
                             item(key = "history_pending") {
                                 WorkflowHistoryPending(
                                     state.historyFailure,
-                                    Modifier.fillParentMaxHeight(),
+                                    historyLayout?.body(listPadding) ?: Modifier,
                                 )
                             }
                         } else if (history.runs.isEmpty()) {
@@ -967,9 +975,9 @@ private fun WorkflowUseBar(
 }
 
 @Composable
-private fun WorkflowDetailHeader(detail: WorkflowDetail) {
+private fun WorkflowDetailHeader(detail: WorkflowDetail, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.padding(bottom = 20.dp)) {
+    Column(modifier.padding(bottom = 20.dp)) {
         Text(
             detail.displayName ?: detail.name,
             Modifier.semantics { heading() }.testTag("workflow_detail_title"),
@@ -1017,12 +1025,16 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
+private fun WorkflowTabs(
+    current: WorkflowTab,
+    pick: (WorkflowTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     val tabs = WorkflowTab.entries
     val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
-    Column(Modifier.fillMaxWidth().background(colors.background)) {
+    Column(modifier.fillMaxWidth().background(colors.background)) {
         PrimaryTabRow(
             selectedTabIndex = current.ordinal,
             containerColor = colors.background,
@@ -1093,10 +1105,11 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
 @Composable
 private fun WorkflowSectionHeader(
     label: Int,
+    modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        modifier.fillMaxWidth().padding(bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

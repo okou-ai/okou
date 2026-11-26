@@ -1237,6 +1237,27 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
+    fun firstHistoryFailureUsesTheBodyBetweenTheHeadingAndUseAction() {
+        val fixture = app.fixture
+        val respond = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows/$WORKFLOW_RELEASE/run-history") {
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick().assertIsSelected()
+        waitFor("Temporarily unable to load")
+
+        val heading = compose.onNodeWithText("Recent automation runs").getUnclippedBoundsInRoot()
+        val body = compose.onNodeWithTag("workflow_read_failure").getUnclippedBoundsInRoot()
+        val action =
+            compose.onNodeWithTag("workflow_use").assertIsEnabled().getUnclippedBoundsInRoot()
+        assertEquals(8.dp, body.top - heading.bottom)
+        assertEquals(33.dp, action.top - body.bottom)
+    }
+
+    @Test
     fun unavailableConnectorAnnouncesTheReadFailureAndReturnsToTheDraft() {
         app.connectorFixture.unavailableCatalogSlugs = setOf("gmail")
         openWorkflowDetail()
