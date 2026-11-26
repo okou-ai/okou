@@ -206,6 +206,7 @@ internal fun ModelPickerSheet(
     selectFast: (Boolean) -> Unit,
     dismiss: () -> Unit,
     catalogUnavailable: Boolean = false,
+    updateEnabled: Boolean = true,
     footer: @Composable () -> Unit = {},
 ) {
     val windowHeight = currentWindowSizeDp().height
@@ -278,7 +279,7 @@ internal fun ModelPickerSheet(
                     ModelOption(
                         stringResource(R.string.settings_auto_model),
                         selected = selectedId == null,
-                        enabled = true,
+                        enabled = updateEnabled,
                         supportingText = stringResource(R.string.settings_auto_model_detail),
                         modifier = if (initialModel == null) initialRow else Modifier,
                         onClick = { select(null) },
@@ -288,7 +289,7 @@ internal fun ModelPickerSheet(
                             ModelOption(
                                 choice.label,
                                 selected = choice.id == selected?.id,
-                                enabled = choice.canSelect,
+                                enabled = updateEnabled && choice.canSelect,
                                 supportingText =
                                     if (choice.canSelect) null
                                     else stringResource(R.string.settings_model_plan_restricted),
@@ -306,7 +307,7 @@ internal fun ModelPickerSheet(
                         HorizontalDivider()
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             if (choice.efforts.isNotEmpty()) {
-                                EffortMenu(choice.efforts, effort, selectEffort)
+                                EffortMenu(choice.efforts, effort, selectEffort, updateEnabled)
                             }
                             choice.fastMultiplier?.let { multiplier ->
                                 val value =
@@ -318,7 +319,7 @@ internal fun ModelPickerSheet(
                                     stringResource(R.string.settings_model_fast),
                                     leading = {},
                                     checked = fast,
-                                    onCheckedChange = selectFast,
+                                    onCheckedChange = selectFast.takeIf { updateEnabled },
                                     supportingText =
                                         stringResource(R.string.settings_model_fast_usage, value),
                                 )
@@ -392,8 +393,9 @@ private fun EffortMenu(
     efforts: List<ModelEffort>,
     current: ModelEffort?,
     select: (ModelEffort) -> Unit,
+    enabled: Boolean,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(enabled) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val label = stringResource(R.string.settings_model_effort)
         Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -401,6 +403,7 @@ private fun EffortMenu(
             OutlinedCard(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(
                     role = Role.Button,
+                    enabled = enabled,
                 ) {
                     expanded = true
                 },
