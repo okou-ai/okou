@@ -232,7 +232,7 @@ const dispatchSlot$ = command(
   },
 );
 
-/** Completion, including rejection before launch, releases the task's outstanding slot. */
+/** Release the slot and retain its Run in history. Only failures under the current choice can pause the schedule. */
 const settleProactiveOccurrences$ = command(
   async ({ set }, at: Date, signal: AbortSignal) => {
     await set(writeDb$).execute(sql`WITH terminal AS (
@@ -245,9 +245,10 @@ const settleProactiveOccurrences$ = command(
   ), settled AS (UPDATE proactive_occurrences o SET settled_at=${at.toISOString()}::timestamp FROM terminal t
     WHERE o.id=t.id AND o.settled_at IS NULL RETURNING o.*, t.status)
   UPDATE proactive_schedules s SET last_run_id=coalesce(t.run_id,s.last_run_id),
-    consecutive_failures=CASE WHEN t.status='completed' THEN 0 WHEN t.status IN ('failed','timeout') THEN s.consecutive_failures+1 ELSE s.consecutive_failures END,
-    enabled=CASE WHEN t.status IN ('failed','timeout') AND s.consecutive_failures>=2 THEN false ELSE s.enabled END
-    FROM settled t WHERE (s.org_id,s.user_id,s.task,s.preference_revision)=(t.org_id,t.user_id,t.task,t.preference_revision)`);
+    consecutive_failures=CASE WHEN s.preference_revision<>t.preference_revision THEN s.consecutive_failures
+      WHEN t.status='completed' THEN 0 WHEN t.status IN ('failed','timeout') THEN s.consecutive_failures+1 ELSE s.consecutive_failures END,
+    enabled=CASE WHEN s.preference_revision=t.preference_revision AND t.status IN ('failed','timeout') AND s.consecutive_failures>=2 THEN false ELSE s.enabled END
+    FROM settled t WHERE (s.org_id,s.user_id,s.task,s.chat_thread_id)=(t.org_id,t.user_id,t.task,t.chat_thread_id)`);
     signal.throwIfAborted();
   },
 );

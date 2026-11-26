@@ -1492,6 +1492,13 @@ describe("Standalone proactive dispatch", () => {
     );
     await completeWithSearchUsage(run.id, sandboxHeaders, 7);
     await expect(walletCredits(actor)).resolves.toBe(0);
+    const settled = await accept(client.compare({ headers: cron }), [200]);
+    expect(settled.body).toMatchObject({ enqueued: 0 });
+    const setting = await accept(
+      app(proactiveSuggestionsContract).get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(setting.body).toMatchObject({ enabled: false, status: "paused" });
   });
   it("reschedules an enabled Morning Brief when the member changes timezone and preserves a later opt-out", async () => {
     const app = await setupApp({
