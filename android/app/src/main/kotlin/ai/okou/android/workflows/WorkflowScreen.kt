@@ -1192,56 +1192,58 @@ internal fun WorkflowAction(
     enabled: Boolean = true,
     @StringRes pendingStatus: Int? = null,
     showPendingProgress: Boolean = true,
-) = WorkflowActionRipple(pendingStatus != null) {
-    val colors = MaterialTheme.colorScheme
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    val pending = pendingStatus != null
-    val showProgress = pending && showPendingProgress
-    val pendingSemantics =
-        if (pendingStatus != null) {
-            val status = stringResource(pendingStatus)
-            Modifier.semantics {
-                contentDescription = label
-                stateDescription = status
-                if (showProgress) liveRegion = LiveRegionMode.Polite
-                disabled()
-            }
-        } else Modifier
-    val defaults = ButtonDefaults.outlinedButtonColors()
-    // Keep the initiating keyboard target while the model confirms the change.
-    OutlinedButton(
-        { if (!pending) onClick() },
-        modifier
-            .heightIn(min = 48.dp)
-            .updateFocusOutline(
-                ButtonDefaults.outlinedShape,
-                colors.onBackground,
-                keyboardOnly = true,
-            )
-            .then(pendingSemantics),
-        enabled = enabled,
-        colors =
-            if (pending) defaults.copy(contentColor = defaults.disabledContentColor) else defaults,
-        border = ButtonDefaults.outlinedButtonBorder(enabled && !pending),
-        contentPadding = padding,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                modifier = if (pending) Modifier.clearAndSetSemantics {} else Modifier,
-                color = if (showProgress) Color.Transparent else Color.Unspecified,
-                textAlign = TextAlign.Center,
-            )
-            if (showProgress) {
-                CircularProgressIndicator(
-                    Modifier.size(16.dp).clearAndSetSemantics {},
-                    color = LocalContentColor.current,
-                    strokeWidth = 2.dp,
+) =
+    WorkflowActionRipple(pendingStatus != null) {
+        val colors = MaterialTheme.colorScheme
+        val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        val pending = pendingStatus != null
+        val showProgress = pending && showPendingProgress
+        val pendingSemantics =
+            if (pendingStatus != null) {
+                val status = stringResource(pendingStatus)
+                Modifier.semantics {
+                    contentDescription = label
+                    stateDescription = status
+                    if (showProgress) liveRegion = LiveRegionMode.Polite
+                    disabled()
+                }
+            } else Modifier
+        val defaults = ButtonDefaults.outlinedButtonColors()
+        // Keep the initiating keyboard target while the model confirms the change.
+        OutlinedButton(
+            { if (!pending) onClick() },
+            modifier
+                .heightIn(min = 48.dp)
+                .updateFocusOutline(
+                    ButtonDefaults.outlinedShape,
+                    colors.onBackground,
+                    keyboardOnly = true,
                 )
+                .then(pendingSemantics),
+            enabled = enabled,
+            colors =
+                if (pending) defaults.copy(contentColor = defaults.disabledContentColor)
+                else defaults,
+            border = ButtonDefaults.outlinedButtonBorder(enabled && !pending),
+            contentPadding = padding,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    label,
+                    modifier = if (pending) Modifier.clearAndSetSemantics {} else Modifier,
+                    color = if (showProgress) Color.Transparent else Color.Unspecified,
+                    textAlign = TextAlign.Center,
+                )
+                if (showProgress) {
+                    CircularProgressIndicator(
+                        Modifier.size(16.dp).clearAndSetSemantics {},
+                        color = LocalContentColor.current,
+                        strokeWidth = 2.dp,
+                    )
+                }
             }
         }
     }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
