@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 import Synchronization
@@ -98,15 +99,50 @@ final class NewChatNavigationTests: XCTestCase {
     await reopened.prepareWorkspaceComposer()
     XCTAssertEqual(reopened.newChatDraft, saved + " 继续")
   }
+
+  func testPendingSystemNewChatOpensOnceTheWorkspaceComposerIsPrepared() async throws {
+    let fixture = MentionNavigationFixture()
+    let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { workspace.close() }
+    workspace.setPhase(.active)
+    let requests = NewChatRequests()
+    // A cold launch delivers the request before the workspace composer is prepared.
+    requests.request()
+    XCTAssertFalse(workspace.canOpenNewChatFromSystem)
+    var opened = 0
+    let host = UIHostingController(
+      rootView: SystemNewChatHarness(
+        workspace: workspace, isAuthenticated: true, requests: requests, didOpen: { opened += 1 }))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    XCTAssertNotNil(requests.pendingID)
+
+    // Only the workspace status changes; the pending request opens without another entry.
+    await workspace.prepareWorkspaceComposer()
+    XCTAssertTrue(workspace.shell.isComposerReady)
+    try await waitForBusinessResult(watching: workspace) {
+      requests.pendingID == nil && requests.openedID != nil
+    }
+    XCTAssertEqual(opened, 1)
+  }
 }
 
 private struct SystemNewChatHarness: View {
   let workspace: WorkspaceStore
   let isAuthenticated: Bool
+  var requests = NewChatRequests.shared
+  var didOpen: () -> Void = {}
 
   var body: some View {
-    MentionComposerHarness(workspace: workspace)
-      .modifier(NewChatNavigation(workspace: workspace, isAuthenticated: isAuthenticated))
-      .environment(\.scenePhase, .active)
+    // Production provides the session Store at the workspace root.
+    StoreProvider(workspace.graph) {
+      MentionComposerHarness(workspace: workspace)
+        .modifier(
+          NewChatNavigation(
+            workspace: workspace, isAuthenticated: isAuthenticated, requests: requests,
+            didOpen: didOpen)
+        )
+        .environment(\.scenePhase, .active)
+    }
   }
 }

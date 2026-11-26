@@ -1,5 +1,5 @@
 {
-  "id": "24c44de4-32fb-4c83-a2cf-ff18479d103e",
+  "id": "c6f38dc0-6e85-4ddf-a5d4-50f4c5c8775a",
   "prevId": "378de671-b5ba-4158-8f38-0e18cbc22aeb",
   "version": "7",
   "dialect": "postgresql",
@@ -25664,6 +25664,185 @@
       },
       "isRLSEnabled": false
     },
+    "public.proactive_schedules": {
+      "name": "proactive_schedules",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task": {
+          "name": "task",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intended_enabled": {
+          "name": "intended_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_run_at": {
+          "name": "last_run_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_run_id": {
+          "name": "last_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consecutive_failures": {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reconciliation_status": {
+          "name": "reconciliation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_anchor_at": {
+          "name": "deferred_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_until": {
+          "name": "deferred_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_reason": {
+          "name": "deferred_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_proactive_schedules_due": {
+          "name": "idx_proactive_schedules_due",
+          "columns": [
+            {
+              "expression": "next_run_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"proactive_schedules\".\"enabled\" AND \"proactive_schedules\".\"next_run_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_proactive_schedules_user": {
+          "name": "idx_proactive_schedules_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_proactive_schedules_thread": {
+          "name": "idx_proactive_schedules_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"proactive_schedules\".\"chat_thread_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "proactive_schedules_chat_thread_id_chat_threads_id_fk": {
+          "name": "proactive_schedules_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "proactive_schedules",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "proactive_schedules_org_id_user_id_task_pk": {
+          "name": "proactive_schedules_org_id_user_id_task_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "task"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_proactive_schedule_task": {
+          "name": "chk_proactive_schedule_task",
+          "value": "\"proactive_schedules\".\"task\" IN ('morning-brief', 'suggestions', 'learning')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.project_event_sequences": {
       "name": "project_event_sequences",
       "schema": "",
@@ -27175,46 +27354,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "run_uploaded_files_owner_url_idx": {
-          "name": "run_uploaded_files_owner_url_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "md5(\"url\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"run_uploaded_files\".\"url\" IS NOT NULL AND \"run_uploaded_files\".\"deleted_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -37975,7 +38114,122 @@
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
+  "views": {
+    "public.legacy_proactive_schedules": {
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task": {
+          "name": "task",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intended_enabled": {
+          "name": "intended_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_run_at": {
+          "name": "last_run_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_run_id": {
+          "name": "last_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consecutive_failures": {
+          "name": "consecutive_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reconciliation_status": {
+          "name": "reconciliation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_anchor_at": {
+          "name": "deferred_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_until": {
+          "name": "deferred_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_reason": {
+          "name": "deferred_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "installed": {
+          "name": "installed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_timezone": {
+          "name": "member_timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "\n  WITH definitions(name, task, blueprint) AS (\n    VALUES ('morning-brief', 'morning-brief', 'daily-delivery'),\n           ('internal-test-morning-brief', 'morning-brief', 'daily-delivery'),\n           ('agent-suggestions', 'suggestions', 'hourly-check'),\n           ('proactive-learning', 'learning', 'nightly-learning')\n  ), installations AS (\n    SELECT w.org_id, w.owner_user_id AS user_id, d.task, d.blueprint, w.id\n    FROM workflows w JOIN definitions d ON d.name = w.official_definition_name\n    WHERE w.visibility = 'private'\n  ), owners AS (\n    SELECT org_id, user_id, task FROM installations\n    UNION\n    SELECT org_id, user_id, 'morning-brief' FROM morning_brief_enrollments\n    WHERE state IN ('pending', 'cancelled')\n    UNION\n    SELECT m.org_id, m.user_id, d.task FROM org_members_metadata m\n    CROSS JOIN (VALUES ('suggestions'), ('learning')) d(task)\n    WHERE m.proactive_suggestions_enabled IS TRUE\n  )\n  SELECT o.org_id, o.user_id, o.task,\n    CASE WHEN o.task = 'morning-brief'\n      THEN COALESCE(a.official_intended_enabled, e.state = 'pending', false)\n      ELSE COALESCE(m.proactive_suggestions_enabled, false)\n    END AS intended_enabled,\n    COALESCE(a.enabled, false) AS enabled,\n    COALESCE(a.timezone, CASE WHEN o.task = 'suggestions' THEN 'UTC' ELSE m.timezone END) AS timezone,\n    a.next_run_at, a.last_run_at, a.last_run_id,\n    COALESCE(a.consecutive_failures, 0) AS consecutive_failures,\n    a.official_reconciliation_status AS reconciliation_status,\n    a.deferred_anchor_at, a.deferred_until, a.deferred_reason,\n    t.id AS chat_thread_id, a.id IS NOT NULL AS installed, m.timezone AS member_timezone\n  FROM owners o\n  LEFT JOIN installations i USING (org_id, user_id, task)\n  LEFT JOIN workflow_automations a ON a.workflow_id = i.id\n    AND a.org_id = o.org_id AND a.owner_user_id = o.user_id\n    AND a.official_blueprint_key = i.blueprint AND a.kind = 'schedule' AND a.schedule_type = 'cron'\n  LEFT JOIN morning_brief_enrollments e ON o.task = 'morning-brief'\n    AND e.org_id = o.org_id AND e.user_id = o.user_id\n  LEFT JOIN org_members_metadata m ON m.org_id = o.org_id AND m.user_id = o.user_id\n  LEFT JOIN workflow_user_automation_threads b ON b.workflow_id = i.id\n    AND b.org_id = o.org_id AND b.user_id = o.user_id\n  LEFT JOIN chat_threads t ON t.id = b.chat_thread_id AND t.org_id = o.org_id AND t.user_id = o.user_id\n  WHERE e.state IS DISTINCT FROM 'departed'\n",
+      "name": "legacy_proactive_schedules",
+      "schema": "public",
+      "isExisting": false,
+      "with": {
+        "securityInvoker": true
+      },
+      "materialized": false
+    }
+  },
   "_meta": {
     "columns": {},
     "schemas": {},

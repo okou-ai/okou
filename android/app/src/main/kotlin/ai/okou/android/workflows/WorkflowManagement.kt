@@ -365,6 +365,7 @@ internal fun WorkflowEditor(
     state: WorkflowState,
     model: WorkflowModel,
     wide: Boolean,
+    feedback: @Composable () -> Unit,
     discarding: Boolean,
     onCancel: () -> Unit,
     onViewConnection: ((String) -> Unit)?,
@@ -379,7 +380,7 @@ internal fun WorkflowEditor(
     val connector = connectionRequired?.connector
     val showConnectionAction = connector != null && state.connections != null
     val connectionFeedback =
-        state.connectionReadFeedback().takeIf {
+        state.connectionAccessFeedback().takeIf {
             activeRule?.value?.trigger?.source?.connector != null
         }
     val saveEnabled =
@@ -425,69 +426,70 @@ internal fun WorkflowEditor(
         }
     }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(
-            Modifier.widthIn(max = 730.dp)
-                .fillMaxWidth()
-                .weight(1f)
-                .testTag("workflow_editor_fields")
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = horizontalPadding, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            val heading =
-                when (editor) {
-                    is WorkflowEdit.Instructions -> R.string.workflow_edit_instructions
-                    is WorkflowEdit.Rule ->
-                        if (editor.id == null) R.string.workflow_add_automation
-                        else R.string.workflow_edit_automation
+        Box(Modifier.widthIn(max = 730.dp).fillMaxWidth().weight(1f)) {
+            Column(
+                Modifier.fillMaxSize()
+                    .testTag("workflow_editor_fields")
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = horizontalPadding, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                val heading =
+                    when (editor) {
+                        is WorkflowEdit.Instructions -> R.string.workflow_edit_instructions
+                        is WorkflowEdit.Rule ->
+                            if (editor.id == null) R.string.workflow_add_automation
+                            else R.string.workflow_edit_automation
+                    }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(heading),
+                        Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    if (activeRule != null)
+                        WorkflowSecondary(detail.displayName ?: detail.name, small = true)
                 }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    stringResource(heading),
-                    Modifier.semantics { heading() },
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                if (activeRule != null)
-                    WorkflowSecondary(detail.displayName ?: detail.name, small = true)
-            }
-            when (editing) {
-                is WorkflowEditSession.Instructions -> {
-                    val value = editing.draft.value
-                    WorkflowField(
-                        R.string.workflow_name,
-                        editing.title,
-                        available,
-                        inputGuard,
-                        fieldFocus,
-                        validation =
-                            workflowValidation(
-                                value.title,
-                                WORKFLOW_DISPLAY_NAME_LIMIT,
-                                stringResource(R.string.workflow_name_required),
-                            ),
-                    )
-                    WorkflowField(
-                        R.string.workflow_purpose,
-                        editing.purpose,
-                        available,
-                        inputGuard,
-                        fieldFocus,
-                        validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
-                    )
-                    WorkflowField(
-                        R.string.workflow_instructions_heading,
-                        editing.instruction,
-                        available,
-                        inputGuard,
-                        fieldFocus,
-                        singleLine = false,
-                        validation =
-                            workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
-                    )
+                when (editing) {
+                    is WorkflowEditSession.Instructions -> {
+                        val value = editing.draft.value
+                        WorkflowField(
+                            R.string.workflow_name,
+                            editing.title,
+                            available,
+                            inputGuard,
+                            fieldFocus,
+                            validation =
+                                workflowValidation(
+                                    value.title,
+                                    WORKFLOW_DISPLAY_NAME_LIMIT,
+                                    stringResource(R.string.workflow_name_required),
+                                ),
+                        )
+                        WorkflowField(
+                            R.string.workflow_purpose,
+                            editing.purpose,
+                            available,
+                            inputGuard,
+                            fieldFocus,
+                            validation = workflowValidation(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                        )
+                        WorkflowField(
+                            R.string.workflow_instructions_heading,
+                            editing.instruction,
+                            available,
+                            inputGuard,
+                            fieldFocus,
+                            singleLine = false,
+                            validation =
+                                workflowValidation(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
+                        )
+                    }
+                    is WorkflowEditSession.Rule ->
+                        WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
                 }
-                is WorkflowEditSession.Rule ->
-                    WorkflowRuleFields(editing, available, model, inputGuard, fieldFocus)
             }
+            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
         }
         WorkflowDivider()
         Column(
@@ -497,8 +499,7 @@ internal fun WorkflowEditor(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(OkouFormLayout.ActionGap),
         ) {
-            val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
-            if (readFeedback != null) WorkflowNotice(readFeedback)
+            if (connectionFeedback != null) WorkflowNotice(connectionFeedback)
             if (connectionRequired != null && state.connections != null) {
                 WorkflowStatus(
                     stringResource(
@@ -613,20 +614,10 @@ private fun WorkflowEditorWriteFeedback(editor: WorkflowEdit, failure: WorkflowW
     }
 }
 
-internal fun WorkflowReadFailure?.cachedReadFeedback(
-    label: Int = R.string.workflow_refresh_failed,
-): Int? =
-    when (this) {
-        WorkflowReadFailure.Unavailable,
-        WorkflowReadFailure.Network,
-        WorkflowReadFailure.RefreshFailed -> label
-        null -> null
+internal fun WorkflowState.connectionAccessFeedback(): Int? =
+    R.string.connector_accounts_failed.takeIf {
+        connectionsFailure == WorkflowReadFailure.Unavailable
     }
-
-internal fun WorkflowState.connectionReadFeedback(): Int? =
-    if (connectionsFailure == null) null
-    else if (connections == null) R.string.connector_accounts_failed
-    else connectionsFailure.cachedReadFeedback()
 
 @Composable
 private fun WorkflowRuleFields(

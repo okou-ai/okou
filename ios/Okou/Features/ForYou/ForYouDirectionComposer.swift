@@ -30,8 +30,10 @@ struct ForYouDirectionComposer: View {
   let card: ForYouCard
   let suggestion: ForYouSuggestion
   let workspace: WorkspaceStore
-  /// The confirmed chats for mentions, kept in the workspace session's Store.
+  /// The confirmed chats for mentions and the workspace's status, kept in the workspace
+  /// session's Store.
   @ResolvedValue private var threads: [ChatThread]?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(
     direction: ForYouDirection, card: ForYouCard, suggestion: ForYouSuggestion,
@@ -42,6 +44,7 @@ struct ForYouDirectionComposer: View {
     self.suggestion = suggestion
     self.workspace = workspace
     _threads = ResolvedValue(workspace.list.threadsValue)
+    _actionStatus = ResolvedValue(workspace.actionStatusValue)
   }
 
   var body: some View {
@@ -53,7 +56,8 @@ struct ForYouDirectionComposer: View {
       }
       ChatComposerView(
         isBusy: workspace.forYou.busy, showsProgress: workspace.forYou.busy,
-        canStop: false, needsUpgrade: workspace.needsUpgrade, error: nil,
+        canStop: false, needsUpgrade: (actionStatus ?? workspace.actionStatus).needsUpgrade,
+        error: nil,
         attachmentURL: workspace.webURL, draftState: composer,
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,

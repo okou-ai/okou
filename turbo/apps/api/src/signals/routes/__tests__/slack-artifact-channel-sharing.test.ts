@@ -115,7 +115,6 @@ function directory(users: readonly ApiTestUser[]) {
 async function fixture(
   options: {
     readonly audience?: "private" | "organization" | "public";
-    readonly enabled?: boolean;
     readonly kind?: "file" | "site";
     readonly siteReference?: boolean;
     readonly image?: boolean;
@@ -136,7 +135,6 @@ async function fixture(
     { ...owner, orgId: owner.orgId },
     {
       [FeatureSwitchKey.HostedSiteEmailSharing]: true,
-      [FeatureSwitchKey.SlackArtifactChannelSharing]: options.enabled ?? true,
     },
   );
   directory([owner]);
@@ -538,15 +536,6 @@ test("does not prompt or inspect members for public artifacts", async () => {
   );
 });
 
-test("never changes access when a link is posted with the feature disabled", async () => {
-  const f = await fixture({ enabled: false });
-  addMember(f, `external-${randomUUID()}@example.com`);
-  await postLink(f);
-  expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-  expect(context.mocks.slack.conversations.members).not.toHaveBeenCalled();
-  await expect(shares(f)).resolves.toStrictEqual([]);
-});
-
 test("does not let a connected non-owner manage another person's artifact", async () => {
   const f = await fixture();
   const viewer = await connectedMember(f);
@@ -787,22 +776,13 @@ test("keeps invitations pending without duplicate email and ignores bots and del
   expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
 });
 
-test.each(["disabled", "membership", "banned", "left-channel"])(
+test.each(["membership", "banned", "left-channel"])(
   "rechecks %s before applying an old sharing button",
   async (change) => {
     const f = await fixture();
     addMember(f, `member-${randomUUID()}@example.com`);
     await postLink(f);
-    if (change === "disabled") {
-      if (!f.owner.orgId) {
-        throw new Error("Expected a workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...f.owner, orgId: f.owner.orgId },
-        { [FeatureSwitchKey.SlackArtifactChannelSharing]: false },
-      );
-    } else if (change === "membership") {
+    if (change === "membership") {
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
         { data: [] },
       );

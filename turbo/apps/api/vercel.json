@@ -37,6 +37,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/proactive",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/execute-workflow-automations",
       "schedule": "* * * * *"
     },

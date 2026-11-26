@@ -1,7 +1,9 @@
 package ai.okou.android.workflows
 
+import ai.okou.android.ContentReadFailure
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackTimeout
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchInput
 import ai.okou.android.WorkspaceToolDirectoryRow
@@ -66,6 +68,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
@@ -135,7 +138,8 @@ internal fun WorkflowScreen(
     handoffPending: Boolean,
     createError: Int?,
     useError: Int?,
-    feedback: @Composable () -> Unit,
+    readAnnouncements: WorkflowReadAnnouncements,
+    actionSnackbar: SnackbarHostState,
     onClose: () -> Unit,
     onCreate: (Boolean) -> Unit,
     onUse: (WorkflowDetail, Boolean) -> Unit,
@@ -155,6 +159,41 @@ internal fun WorkflowScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val editing = state.editing
     val detail = state.detail?.takeIf { it.id == route.id }
+    SideEffect {
+        readAnnouncements.directory.retainAll(
+            listOfNotNull(state.catalogFailure, state.rulesFailure, state.connectionsFailure),
+        )
+        readAnnouncements.detail.retainAll(
+            listOfNotNull(state.detailFailure, state.connectionsFailure, state.historyFailure),
+        )
+    }
+    val connectionReadApplies =
+        if (editing != null)
+            (editing.draft as? WorkflowEdit.Rule)?.value?.trigger?.source?.connector != null
+        else
+            route.tab == WorkflowTab.Automations &&
+                detail?.automations?.any { it.source.connector != null } == true
+    val detailNotice =
+        if (detail == null) null
+        else
+            listOfNotNull(
+                    state.detailFailure.notice(),
+                    state.connectionReadNotice().takeIf { connectionReadApplies },
+                    state.historyFailure.notice().takeIf {
+                        editing == null &&
+                            route.tab == WorkflowTab.History &&
+                            state.history != null &&
+                            state.historyRead?.earlier != true
+                    },
+                )
+                .maxByOrNull { it.failure.sequence }
+    // Keep the action timeout with the detail pane across tab and editor changes.
+    if (route.id != null) WorkspaceFeedbackTimeout(actionSnackbar)
+    val detailFeedback: @Composable () -> Unit = {
+        key(route.id, route.tab, editing != null) {
+            WorkflowReadFeedbackHost(detailNotice, readAnnouncements.detail, actionSnackbar)
+        }
+    }
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editing != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
@@ -208,6 +247,7 @@ internal fun WorkflowScreen(
                 state = state,
                 route = route,
                 query = query,
+                announced = readAnnouncements.directory,
                 modifier =
                     if (listWidth != null)
                         Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
@@ -247,12 +287,10 @@ internal fun WorkflowScreen(
                         else stringResource(R.string.workspace_workflows),
                         ::back,
                     )
-                if (route.id != null) {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { feedback() }
-                }
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
+                    detail == null ->
+                        WorkflowPendingDetail(wide, state.detailFailure, detailFeedback)
                     editing != null ->
                         WorkflowEditor(
                             detail,
@@ -260,6 +298,7 @@ internal fun WorkflowScreen(
                             state,
                             model,
                             wide,
+                            feedback = detailFeedback,
                             discarding = discard,
                             onCancel = ::exitEditor,
                             onViewConnection =
@@ -276,6 +315,7 @@ internal fun WorkflowScreen(
                             position = positions[route.tab.ordinal],
                             wide = wide,
                             timezone = timezone,
+                            feedback = detailFeedback,
                             onTab = { if (it != route.tab) changeRoute(route.copy(tab = it)) },
                             editorReturnFocus = editorReturnFocus,
                             onEditorFocusRestored = { editorReturnFocus = null },
@@ -351,6 +391,7 @@ private fun WorkflowDirectory(
     state: WorkflowState,
     route: WorkflowsRoute,
     query: ChatSearchState,
+    announced: MutableSet<WorkflowReadFailure.Failed>,
     modifier: Modifier,
     canNavigate: Boolean,
     keepCreateFocus: Boolean,
@@ -391,24 +432,32 @@ private fun WorkflowDirectory(
         remember(catalog, route.scope, text) {
             catalog?.filter { it.matches(route.scope, text) }.orEmpty()
         }
-    val readFeedback =
+    val accessFeedback =
+        if (catalog == null) null
+        else if (state.rulesFailure == WorkflowReadFailure.Unavailable)
+            R.string.workflow_rules_load_failed
+        else state.connectionAccessFeedback()
+    val readNotice =
         if (catalog == null) null
         else
-            state.catalogFailure.cachedReadFeedback(R.string.workflow_catalog_refresh_failed)
-                ?: state.rulesFailure?.let {
-                    if (state.rules == null) R.string.workflow_rules_load_failed
-                    else it.cachedReadFeedback()
-                }
-                ?: state.connectionReadFeedback()
-    KeepWorkflowReadStart(query.position, readFeedback != null)
+            listOfNotNull(
+                    state.catalogFailure.notice(R.string.workflow_catalog_refresh_failed),
+                    state.rulesFailure.notice(
+                        if (state.rules == null) R.string.workflow_rules_load_failed
+                        else R.string.workflow_refresh_failed,
+                    ),
+                    state.connectionReadNotice(),
+                )
+                .maxByOrNull { it.failure.sequence }
+    KeepWorkflowReadStart(query.position, accessFeedback != null)
     val anchor = query.pendingAnchor
-    LaunchedEffect(rows, anchor, catalog, readFeedback != null) {
+    LaunchedEffect(rows, anchor, catalog, accessFeedback != null) {
         if (anchor != null && catalog != null) {
             val rowIndex = rows.indexOfFirst { it.id == anchor.key }
             query.restorePosition(
                 when {
-                    rowIndex >= 0 -> rowIndex + if (readFeedback == null) 0 else 1
-                    anchor.key == DIRECTORY_READ_FEEDBACK && readFeedback != null -> 0
+                    rowIndex >= 0 -> rowIndex + if (accessFeedback == null) 0 else 1
+                    anchor.key == DIRECTORY_READ_FEEDBACK && accessFeedback != null -> 0
                     else -> null
                 },
             )
@@ -484,7 +533,7 @@ private fun WorkflowDirectory(
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
                 catalog == null && state.catalogFailure != null ->
-                    WorkflowInitialReadError(R.string.workflow_load_failed)
+                    WorkflowReadFailureContent(Modifier.fillMaxSize().padding(horizontal = 16.dp))
                 catalog == null -> WorkflowSkeleton(directory = true)
                 else ->
                     LazyColumn(
@@ -492,9 +541,9 @@ private fun WorkflowDirectory(
                         state = query.position,
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
                     ) {
-                        if (readFeedback != null)
+                        if (accessFeedback != null)
                             item(key = DIRECTORY_READ_FEEDBACK) {
-                                WorkflowNotice(readFeedback, PaddingValues(bottom = 12.dp))
+                                WorkflowNotice(accessFeedback, PaddingValues(bottom = 12.dp))
                             }
                         if (rows.isEmpty())
                             item(key = "workflow_directory_empty") {
@@ -503,7 +552,7 @@ private fun WorkflowDirectory(
                                     text,
                                     clearQuery,
                                     onScope,
-                                    topPadding = if (readFeedback == null) 24.dp else 0.dp,
+                                    topPadding = if (accessFeedback == null) 24.dp else 0.dp,
                                 )
                             }
                         items(rows, key = { it.id }) { row ->
@@ -519,6 +568,9 @@ private fun WorkflowDirectory(
                             )
                         }
                     }
+            }
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                key(route.scope, text) { WorkflowReadFeedbackHost(readNotice, announced) }
             }
         }
     }
@@ -672,6 +724,7 @@ private fun WorkflowDetailPane(
     position: LazyListState,
     wide: Boolean,
     timezone: String,
+    feedback: @Composable () -> Unit,
     onTab: (WorkflowTab) -> Unit,
     editorReturnFocus: String?,
     onEditorFocusRestored: () -> Unit,
@@ -694,160 +747,166 @@ private fun WorkflowDetailPane(
 ) {
     val padding = if (wide) 32.dp else 20.dp
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    val listPadding =
+        PaddingValues(
+            start = padding,
+            end = padding,
+            top = if (wide) 24.dp else 16.dp,
+            bottom = 24.dp,
+        )
     // An empty loading layout must not clamp the saved position of a long history.
-    val listState =
-        if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
-        else position
+    val pendingHistory = tab == WorkflowTab.History && state.history == null
+    val listState = if (pendingHistory) rememberLazyListState() else position
+    val historyLayout =
+        if (pendingHistory) remember(listPadding) { WorkflowHistoryLayout(listPadding) } else null
     val editEnabled = !state.writing && !handoffPending
-    val detailFeedback = state.detailFailure.cachedReadFeedback()
-    KeepWorkflowReadStart(listState, detailFeedback != null)
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LazyColumn(
-            contentWidth.weight(1f),
-            state = listState,
-            contentPadding =
-                PaddingValues(
-                    start = padding,
-                    end = padding,
-                    top = if (wide) 24.dp else 16.dp,
-                    bottom = 24.dp,
-                ),
-        ) {
-            if (detailFeedback != null)
-                item(key = "workflow_detail_read_feedback") {
-                    WorkflowNotice(detailFeedback, PaddingValues(bottom = 12.dp))
+        Box(contentWidth.weight(1f)) {
+            LazyColumn(
+                Modifier.fillMaxSize().then(historyLayout?.list ?: Modifier),
+                state = listState,
+                contentPadding = listPadding,
+            ) {
+                item(key = "header") {
+                    WorkflowDetailHeader(detail, historyLayout?.detail ?: Modifier)
                 }
-            item(key = "header") { WorkflowDetailHeader(detail) }
-            stickyHeader(key = "tabs") { WorkflowTabs(tab, onTab) }
-            when (tab) {
-                WorkflowTab.Instructions ->
-                    item {
-                        WorkflowSectionHeader(R.string.workflow_instructions_heading) {
-                            if (detail.canManage) {
-                                WorkflowEditorAction(
-                                    R.string.workflow_edit_instructions,
-                                    enabled = editEnabled,
-                                    restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
-                                    onFocusRestored = onEditorFocusRestored,
-                                ) { focused ->
-                                    onEdit(detail.editableInstructions(), focused)
+                stickyHeader(key = "tabs") {
+                    WorkflowTabs(tab, onTab, historyLayout?.tabs ?: Modifier)
+                }
+                when (tab) {
+                    WorkflowTab.Instructions ->
+                        item {
+                            WorkflowSectionHeader(R.string.workflow_instructions_heading) {
+                                if (detail.canManage) {
+                                    WorkflowEditorAction(
+                                        R.string.workflow_edit_instructions,
+                                        enabled = editEnabled,
+                                        restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
+                                        onFocusRestored = onEditorFocusRestored,
+                                    ) { focused ->
+                                        onEdit(detail.editableInstructions(), focused)
+                                    }
+                                }
+                            }
+                            Text(
+                                detail.instruction?.takeIf { it.isNotBlank() }
+                                    ?: stringResource(R.string.workflow_no_instructions),
+                                style = workflowBodyStyle(),
+                            )
+                        }
+                    WorkflowTab.Automations -> {
+                        item(key = "workflow_trigger_rules_heading") {
+                            WorkflowSectionHeader(R.string.workflow_trigger_rules) {
+                                if (detail.canAddAutomation) {
+                                    WorkflowEditorAction(
+                                        R.string.workflow_add_automation,
+                                        enabled = editEnabled,
+                                        restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
+                                        onFocusRestored = onEditorFocusRestored,
+                                    ) { focused ->
+                                        onEdit(
+                                            WorkflowEdit.Rule(
+                                                null,
+                                                RuleFields(timezone = timezone),
+                                            ),
+                                            focused,
+                                        )
+                                    }
                                 }
                             }
                         }
-                        Text(
-                            detail.instruction?.takeIf { it.isNotBlank() }
-                                ?: stringResource(R.string.workflow_no_instructions),
-                            style = workflowBodyStyle(),
-                        )
-                    }
-                WorkflowTab.Automations -> {
-                    item(key = "workflow_trigger_rules_heading") {
-                        WorkflowSectionHeader(R.string.workflow_trigger_rules) {
-                            if (detail.canAddAutomation) {
-                                WorkflowEditorAction(
-                                    R.string.workflow_add_automation,
-                                    enabled = editEnabled,
-                                    restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
-                                    onFocusRestored = onEditorFocusRestored,
-                                ) { focused ->
-                                    onEdit(
-                                        WorkflowEdit.Rule(null, RuleFields(timezone = timezone)),
-                                        focused,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    val connectionFeedback =
-                        state.connectionReadFeedback().takeIf {
-                            detailFeedback == null &&
+                        val connectionFeedback =
+                            state.connectionAccessFeedback().takeIf {
                                 detail.automations.any { it.source.connector != null }
-                        }
-                    if (connectionFeedback != null)
-                        item(key = "workflow_connections_read_feedback") {
-                            WorkflowNotice(connectionFeedback, PaddingValues(bottom = 12.dp))
-                        }
-                    if (detail.automations.isEmpty())
-                        item(key = "workflow_no_rules") {
-                            WorkflowSecondary(stringResource(R.string.workflow_no_rules))
-                        }
-                    items(detail.automations, key = { it.id }) { rule ->
-                        WorkflowRuleRow(
-                            rule = rule,
-                            state = state,
-                            actionsEnabled = !handoffPending,
-                            timezone = timezone,
-                            onEdit = onEdit,
-                            restoreEditorFocus = editorReturnFocus == ruleEditorFocusKey(rule.id),
-                            onEditorFocusRestored = onEditorFocusRestored,
-                            onToggle = onToggle,
-                            onViewConnection = onViewConnection,
-                            restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
-                            onConnectionFocusRestored = onConnectionFocusRestored,
-                        )
-                        if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
-                    }
-                }
-                WorkflowTab.History -> {
-                    val history = state.history
-                    val earlier = state.historyRead?.earlier == true
-                    val historyFeedback =
-                        state.historyFailure.cachedReadFeedback().takeIf {
-                            detailFeedback == null && history != null && !earlier
-                        }
-                    item(key = "history_heading") {
-                        WorkflowSectionHeader(R.string.workflow_recent_runs)
-                    }
-                    if (historyFeedback != null)
-                        item(key = "workflow_history_read_feedback") {
-                            WorkflowNotice(historyFeedback, PaddingValues(bottom = 12.dp))
-                        }
-                    if (history == null) {
-                        item(key = "history_pending") {
-                            WorkflowHistoryPending(state.historyFailure)
-                        }
-                    } else if (history.runs.isEmpty()) {
-                        item(key = "history_empty") {
-                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
+                            }
+                        if (connectionFeedback != null)
+                            item(key = "workflow_connections_read_feedback") {
+                                WorkflowNotice(connectionFeedback, PaddingValues(bottom = 12.dp))
+                            }
+                        if (detail.automations.isEmpty())
+                            item(key = "workflow_no_rules") {
+                                WorkflowSecondary(stringResource(R.string.workflow_no_rules))
+                            }
+                        items(detail.automations, key = { it.id }) { rule ->
+                            WorkflowRuleRow(
+                                rule = rule,
+                                state = state,
+                                actionsEnabled = !handoffPending,
+                                timezone = timezone,
+                                onEdit = onEdit,
+                                restoreEditorFocus =
+                                    editorReturnFocus == ruleEditorFocusKey(rule.id),
+                                onEditorFocusRestored = onEditorFocusRestored,
+                                onToggle = onToggle,
+                                onViewConnection = onViewConnection,
+                                restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
+                                onConnectionFocusRestored = onConnectionFocusRestored,
+                            )
+                            if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                         }
                     }
-                    items(history?.runs.orEmpty(), key = { it.id }) { run ->
-                        WorkflowHistoryRow(
-                            run = run,
-                            timezone = timezone,
-                            sourceChatAvailable = sourceChatAvailable,
-                            sourceNavigationEnabled = !handoffPending,
-                            restoreFocus = run.id == restoreHistoryRunId,
-                            onFocusRestored = onHistoryFocusRestored,
-                            onOpenChat = onOpenChat,
-                        )
-                    }
-                    if (history?.nextCursor != null) {
-                        if (earlier && state.historyFailure != null)
-                            item(key = "workflow_history_page_feedback") {
-                                WorkflowNotice(
-                                    R.string.workflow_history_earlier_failed,
-                                    PaddingValues(top = 12.dp),
+                    WorkflowTab.History -> {
+                        val history = state.history
+                        val earlier = state.historyRead?.earlier == true
+                        item(key = "history_heading") {
+                            WorkflowSectionHeader(
+                                R.string.workflow_recent_runs,
+                                historyLayout?.heading ?: Modifier,
+                            )
+                        }
+                        if (history == null) {
+                            item(key = "history_pending") {
+                                WorkflowHistoryPending(
+                                    state.historyFailure,
+                                    historyLayout?.body ?: Modifier,
                                 )
                             }
-                        item(key = "history_earlier") {
-                            ChatListTextAction(
-                                if (state.historyRead == WorkflowHistoryRead.Earlier)
-                                    R.string.workflow_history_loading
-                                else R.string.workflow_history_earlier,
-                                onClick = onEarlierRuns,
-                                enabled = !handoffPending && state.historyRead?.loading != true,
-                                modifier =
-                                    Modifier.workspaceSearchFocusOutline(RoundedCornerShape(12.dp))
-                                        .testTag("workflow_earlier_runs"),
+                        } else if (history.runs.isEmpty()) {
+                            item(key = "history_empty") {
+                                WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
+                            }
+                        }
+                        items(history?.runs.orEmpty(), key = { it.id }) { run ->
+                            WorkflowHistoryRow(
+                                run = run,
+                                timezone = timezone,
+                                sourceChatAvailable = sourceChatAvailable,
+                                sourceNavigationEnabled = !handoffPending,
+                                restoreFocus = run.id == restoreHistoryRunId,
+                                onFocusRestored = onHistoryFocusRestored,
+                                onOpenChat = onOpenChat,
                             )
+                        }
+                        if (history?.nextCursor != null) {
+                            if (earlier && state.historyFailure != null)
+                                item(key = "workflow_history_page_feedback") {
+                                    WorkflowNotice(
+                                        R.string.workflow_history_earlier_failed,
+                                        PaddingValues(top = 12.dp),
+                                    )
+                                }
+                            item(key = "history_earlier") {
+                                ChatListTextAction(
+                                    if (state.historyRead == WorkflowHistoryRead.Earlier)
+                                        R.string.workflow_history_loading
+                                    else R.string.workflow_history_earlier,
+                                    onClick = onEarlierRuns,
+                                    enabled = !handoffPending && state.historyRead?.loading != true,
+                                    modifier =
+                                        Modifier.workspaceSearchFocusOutline(
+                                                RoundedCornerShape(12.dp),
+                                            )
+                                            .testTag("workflow_earlier_runs"),
+                                )
+                            }
                         }
                     }
                 }
             }
+            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
         }
         WorkflowUseBar(
             wide = wide,
@@ -863,15 +922,23 @@ private fun WorkflowDetailPane(
 }
 
 @Composable
-private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) {
+private fun WorkflowPendingDetail(
+    wide: Boolean,
+    failure: WorkflowReadFailure?,
+    feedback: @Composable () -> Unit,
+) {
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when (failure) {
                 null -> WorkflowSkeleton(directory = false)
                 WorkflowReadFailure.Unavailable ->
                     WorkflowInitialReadError(R.string.workflow_unavailable)
-                else -> WorkflowInitialReadError(R.string.workflow_load_failed)
+                is WorkflowReadFailure.Failed ->
+                    WorkflowReadFailureContent(
+                        Modifier.fillMaxSize().padding(horizontal = if (wide) 32.dp else 20.dp),
+                    )
             }
+            Box(Modifier.align(Alignment.BottomCenter)) { feedback() }
         }
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
     }
@@ -912,9 +979,9 @@ private fun WorkflowUseBar(
 }
 
 @Composable
-private fun WorkflowDetailHeader(detail: WorkflowDetail) {
+private fun WorkflowDetailHeader(detail: WorkflowDetail, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.padding(bottom = 20.dp)) {
+    Column(modifier.padding(bottom = 20.dp)) {
         Text(
             detail.displayName ?: detail.name,
             Modifier.semantics { heading() }.testTag("workflow_detail_title"),
@@ -962,12 +1029,16 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
+private fun WorkflowTabs(
+    current: WorkflowTab,
+    pick: (WorkflowTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     val tabs = WorkflowTab.entries
     val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
     val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
-    Column(Modifier.fillMaxWidth().background(colors.background)) {
+    Column(modifier.fillMaxWidth().background(colors.background)) {
         PrimaryTabRow(
             selectedTabIndex = current.ordinal,
             containerColor = colors.background,
@@ -1038,10 +1109,11 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
 @Composable
 private fun WorkflowSectionHeader(
     label: Int,
+    modifier: Modifier = Modifier,
     action: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        modifier.fillMaxWidth().padding(bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1240,6 +1312,14 @@ private fun KeepWorkflowReadStart(position: LazyListState, hasFeedback: Boolean)
 @Composable
 internal fun WorkflowInitialReadError(label: Int) {
     WorkflowNotice(label, PaddingValues(start = 12.dp, top = 24.dp, end = 12.dp))
+}
+
+@Composable
+internal fun WorkflowReadFailureContent(modifier: Modifier) {
+    ContentReadFailure(
+        R.string.chat_list_first_load_failed,
+        modifier.fillMaxWidth().testTag("workflow_read_failure"),
+    )
 }
 
 @Composable

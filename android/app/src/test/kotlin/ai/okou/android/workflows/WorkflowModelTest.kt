@@ -360,11 +360,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
 
     @Test
     fun failedCatalogReadRecoversWhenTheAppReturnsToTheForeground() = check { service, model ->
-        var reachable = false
-        service.catalogRead = {
-            if (!reachable) throw ApiFailure.Network(IOException("Offline"))
-            listOf(service.summary)
-        }
+        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
         model.visibilityChanged(true)
         runCurrent()
 
@@ -374,13 +370,20 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         advanceTimeBy(6_000)
         runCurrent()
         assertEquals(3, service.catalogReads)
-        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+        assertTrue(model.state.value.catalogFailure is WorkflowReadFailure.Failed)
 
-        reachable = true
+        val response = CompletableDeferred<List<WorkflowSummary>>()
+        service.catalogRead = { response.await() }
         model.foregroundChanged(false)
         model.foregroundChanged(true)
         runCurrent()
         assertEquals(4, service.catalogReads)
+        assertTrue(model.state.value.catalogRefreshing)
+        assertNull(model.state.value.catalogFailure)
+        assertNull(model.state.value.catalog)
+
+        response.complete(listOf(service.summary))
+        runCurrent()
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
     }
@@ -400,14 +403,24 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         runCurrent()
         assertEquals(4, service.catalogReads)
         assertEquals(saved, model.state.value.catalog)
-        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+        val first = model.state.value.catalogFailure as WorkflowReadFailure.Failed
+
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(7, service.catalogReads)
+        assertEquals(saved, model.state.value.catalog)
+        val second = model.state.value.catalogFailure as WorkflowReadFailure.Failed
+        assertTrue(second.sequence > first.sequence)
 
         val refreshed = listOf(service.summary.copy(displayName = "Refreshed"))
         service.catalogRead = { refreshed }
         model.foregroundChanged(false)
         model.foregroundChanged(true)
         runCurrent()
-        assertEquals(5, service.catalogReads)
+        assertEquals(8, service.catalogReads)
         assertEquals(refreshed, model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
         assertEquals(0, service.ruleReads)
@@ -418,7 +431,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         model.foregroundChanged(false)
         model.foregroundChanged(true)
         runCurrent()
-        assertEquals(5, service.catalogReads)
+        assertEquals(8, service.catalogReads)
     }
 
     @Test
@@ -465,7 +478,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
         model.visibilityChanged(true)
         advanceTimeBy(6_000)
         runCurrent()
-        assertEquals(WorkflowReadFailure.Network, model.state.value.detailFailure)
+        assertTrue(model.state.value.detailFailure is WorkflowReadFailure.Failed)
 
         model.foregroundChanged(false)
         model.foregroundChanged(true)
@@ -508,7 +521,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
 
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+            assertTrue(model.state.value.catalogFailure is WorkflowReadFailure.Failed)
             assertEquals(listOf(service.summary), model.state.value.catalog)
             assertEquals(editing, model.state.value.editor)
             advanceTimeBy(60_000)
@@ -1352,7 +1365,7 @@ internal class WorkflowHistoryModelTest : WorkflowModelTestFixture() {
         assertNull(model.state.value.historyFailure)
         advanceTimeBy(6_000)
         runCurrent()
-        assertEquals(WorkflowReadFailure.Network, model.state.value.historyFailure)
+        assertTrue(model.state.value.historyFailure is WorkflowReadFailure.Failed)
         assertEquals(listOf(recentRun), model.state.value.history?.runs)
 
         reachable = true

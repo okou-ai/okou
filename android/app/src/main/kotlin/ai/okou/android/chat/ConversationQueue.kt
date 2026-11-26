@@ -116,7 +116,11 @@ internal fun conversationContent(
                 preview.eventId,
                 null,
                 HistoryRole.User,
-                listOf(HistoryBlock(HistoryBlockKind.Text, preview.text)),
+                buildList {
+                    if (preview.text.isNotEmpty())
+                        add(HistoryBlock(HistoryBlockKind.Text, preview.text))
+                    preview.attachments.forEach { add(it.historyBlock()) }
+                },
                 queued = preview.disposition == TextDisposition.Queued,
                 rejected = preview.disposition == TextDisposition.Rejected,
                 queueSequence = preview.sequence,
@@ -306,7 +310,8 @@ private fun QueueRow(
                     .mapNotNull {
                         when (it.kind) {
                             HistoryBlockKind.Text -> it.text
-                            HistoryBlockKind.Reference -> it.title
+                            HistoryBlockKind.Reference,
+                            HistoryBlockKind.Attachment -> it.title
                             else -> null
                         }
                     }
@@ -315,9 +320,10 @@ private fun QueueRow(
     val attachments =
         remember(message.blocks) {
             message.blocks.count {
-                it.kind == HistoryBlockKind.Reference &&
-                    Json.parseToJsonElement(it.text).jsonObject.text("type") in
-                        setOf("attachment", "file", "image")
+                it.kind == HistoryBlockKind.Attachment ||
+                    it.kind == HistoryBlockKind.Reference &&
+                        Json.parseToJsonElement(it.text).jsonObject.text("type") in
+                            setOf("attachment", "file", "image")
             }
         }
     val metadata =

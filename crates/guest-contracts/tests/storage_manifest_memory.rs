@@ -4,8 +4,8 @@ use guest_contracts::storage_manifest::{
     ArtifactEntry, InstructionCleanupEntry, Manifest, StorageEntry,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::fs::{self, File};
+use std::io::{self, BufWriter, Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static MEASURING: AtomicBool = AtomicBool::new(false);
@@ -69,23 +69,15 @@ fn check_wire(manifest: &Manifest, expected: &str) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-fn check_complete_files(mut actual: File, mut expected: File) -> io::Result<()> {
-    let mut remaining = actual.metadata()?.len();
-    assert_eq!(remaining, expected.metadata()?.len());
-    let mut actual_bytes = [0; 8192];
+fn check_complete_wire(actual: &[u8], mut expected: File) -> io::Result<()> {
+    assert_eq!(actual.len() as u64, expected.metadata()?.len());
     let mut expected_bytes = [0; 8192];
-    while remaining > 0 {
-        let length = usize::try_from(remaining.min(8192)).map_err(io::Error::other)?;
-        let actual_chunk = actual_bytes
-            .get_mut(..length)
-            .ok_or_else(|| io::Error::other("actual comparison buffer too small"))?;
+    for actual_chunk in actual.chunks(expected_bytes.len()) {
         let expected_chunk = expected_bytes
-            .get_mut(..length)
+            .get_mut(..actual_chunk.len())
             .ok_or_else(|| io::Error::other("expected comparison buffer too small"))?;
-        actual.read_exact(actual_chunk)?;
         expected.read_exact(expected_chunk)?;
         assert_eq!(actual_chunk, expected_chunk);
-        remaining -= length as u64;
     }
     Ok(())
 }
@@ -195,8 +187,9 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
     result?;
     let largest = LARGEST.load(Ordering::Relaxed);
 
-    check_complete_files(File::open(&actual_path)?, File::open(&expected_path)?)?;
-    let decoded: Manifest = serde_json::from_reader(BufReader::new(File::open(&actual_path)?))?;
+    let actual_bytes = fs::read(&actual_path)?;
+    check_complete_wire(&actual_bytes, File::open(&expected_path)?)?;
+    let decoded: Manifest = serde_json::from_slice(&actual_bytes)?;
     assert!(
         decoded == manifest,
         "complete large manifest did not round trip"

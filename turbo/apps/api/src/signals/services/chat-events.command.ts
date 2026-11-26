@@ -2272,17 +2272,6 @@ const publishEnqueuedNormalSend$ = command(
     }
     await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
     signal.throwIfAborted();
-    waitUntil(
-      set(
-        projectCommittedChatThreadSearch$,
-        {
-          userId: args.userId,
-          orgId: args.orgId,
-          threadId: thread.threadId,
-        },
-        signal,
-      ),
-    );
     await set(
       publishChatThreadMessageCreated$,
       {

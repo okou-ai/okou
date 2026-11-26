@@ -14,6 +14,9 @@ data class InputObservation(
 )
 
 interface ChatComposerService {
+    val attachmentService: ChatAttachmentService?
+        get() = null
+
     suspend fun newChatReady(): Boolean
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft

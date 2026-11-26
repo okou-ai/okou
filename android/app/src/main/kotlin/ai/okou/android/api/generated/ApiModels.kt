@@ -9781,6 +9781,147 @@ data class DeleteProjectRequest(
 )
 
 @Serializable
+enum class PrepareChatUploadRequestPurpose {
+    @SerialName("artifact") ARTIFACT,
+}
+
+@Serializable
+data class PrepareChatUploadRequest(
+    val `requirePrivateArtifact`: Boolean? = null,
+    val `filename`: String,
+    val `contentType`: String,
+    val `size`: Long,
+    val `multipart`: CanonicalTrue? = null,
+    val `purpose`: PrepareChatUploadRequestPurpose? = null,
+)
+
+@Serializable(with = PrepareChatUploadResultSerializer::class)
+sealed interface PrepareChatUploadResult
+
+@Serializable
+data class PrepareChatUploadResultVariant1(
+    val `id`: String,
+    val `filename`: String,
+    val `contentType`: String,
+    val `size`: Double,
+    val `url`: String,
+    val `uploadUrl`: String,
+    val `uploadHeaders`: Map<String, String>,
+) : PrepareChatUploadResult
+
+@Serializable
+data class PrepareChatUploadResultVariant2MultipartPartsItem(
+    val `partNumber`: Long,
+    val `uploadUrl`: String,
+)
+
+@Serializable
+data class PrepareChatUploadResultVariant2Multipart(
+    val `uploadId`: String,
+    val `partSize`: Long,
+    val `parts`: List<PrepareChatUploadResultVariant2MultipartPartsItem>,
+)
+
+@Serializable
+data class PrepareChatUploadResultVariant2(
+    val `id`: String,
+    val `filename`: String,
+    val `contentType`: String,
+    val `size`: Double,
+    val `url`: String,
+    val `multipart`: PrepareChatUploadResultVariant2Multipart,
+) : PrepareChatUploadResult
+
+object PrepareChatUploadResultSerializer : KSerializer<PrepareChatUploadResult> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.PrepareChatUploadResult")
+
+    override fun deserialize(decoder: Decoder): PrepareChatUploadResult {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for PrepareChatUploadResult")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for PrepareChatUploadResult")
+        val matches = listOf(value.containsKey("uploadUrl"), value.containsKey("multipart"))
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous PrepareChatUploadResult variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    PrepareChatUploadResultVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    PrepareChatUploadResultVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown PrepareChatUploadResult variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: PrepareChatUploadResult) {
+        when (value) {
+            is PrepareChatUploadResultVariant1 ->
+                encoder.encodeSerializableValue(PrepareChatUploadResultVariant1.serializer(), value)
+            is PrepareChatUploadResultVariant2 ->
+                encoder.encodeSerializableValue(PrepareChatUploadResultVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable
+data class CompleteChatUploadRequest(
+    val `id`: String,
+    val `contentType`: String? = null,
+)
+
+@Serializable
+data class CompleteChatUploadResult(
+    val `id`: String,
+    val `filename`: String,
+    val `contentType`: String,
+    val `size`: Double,
+    val `url`: String,
+)
+
+@Serializable
+data class CompleteChatMultipartUploadRequest(
+    val `id`: String,
+    val `filename`: String,
+    val `uploadId`: String,
+    val `partCount`: Long,
+)
+
+@Serializable
+data class CompleteChatMultipartUploadResult(
+    val `id`: String,
+    val `url`: String,
+)
+
+@Serializable
+data class AbortChatMultipartUploadRequest(
+    val `id`: String,
+    val `filename`: String,
+    val `uploadId`: String,
+)
+
+@Serializable
+data class AbortChatMultipartUploadResult(
+    val `id`: String,
+)
+
+@Serializable
+data class ChatUploadedFile(
+    val `url`: String,
+    val `expiresAt`: String,
+    val `downloadUrl`: String,
+    val `publicUrl`: String?,
+    val `previewImageUrl`: String? = null,
+)
+
+@Serializable
 data class RenameThreadRequest(
     val `title`: String,
     val `eventId`: String? = null,

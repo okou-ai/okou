@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import SwiftUI
@@ -292,12 +293,15 @@ private struct VoiceEntryHarness: View {
   var didOpen: () -> Void = {}
 
   var body: some View {
-    MentionComposerHarness(workspace: workspace)
-      .modifier(
-        NewChatNavigation(
-          workspace: workspace, isAuthenticated: isAuthenticated, didOpen: didOpen)
-      )
-      .environment(\.scenePhase, .active)
+    // Production provides the session Store at the workspace root.
+    StoreProvider(workspace.graph) {
+      MentionComposerHarness(workspace: workspace)
+        .modifier(
+          NewChatNavigation(
+            workspace: workspace, isAuthenticated: isAuthenticated, didOpen: didOpen)
+        )
+        .environment(\.scenePhase, .active)
+    }
   }
 }
 

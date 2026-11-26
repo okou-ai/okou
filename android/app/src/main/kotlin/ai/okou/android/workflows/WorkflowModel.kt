@@ -69,11 +69,17 @@ internal enum class WorkflowTogglePhase {
 
 internal data class WorkflowToggle(val enabled: Boolean, val phase: WorkflowTogglePhase)
 
-internal enum class WorkflowReadFailure {
-    Unavailable,
-    Network,
-    RefreshFailed,
+internal sealed interface WorkflowReadFailure {
+    data object Unavailable : WorkflowReadFailure
+
+    // The result identifies one completed read round, even when the next round fails the same way.
+    data class Failed(val sequence: Long) : WorkflowReadFailure
 }
+
+private fun WorkflowReadFailure?.whileReading(hasContent: Boolean): WorkflowReadFailure? =
+    takeUnless {
+        !hasContent && it is WorkflowReadFailure.Failed
+    }
 
 internal enum class WorkflowWriteFailure {
     Failed,
@@ -304,7 +310,15 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
-            started = { mutable.value = mutable.value.copy(catalogRefreshing = true) },
+            started = {
+                val current = mutable.value
+                mutable.value =
+                    current.copy(
+                        catalogRefreshing = true,
+                        catalogFailure =
+                            current.catalogFailure.whileReading(current.catalog != null),
+                    )
+            },
             fetch = { service.workflows().filter { it.official == null } },
             receive = ::publishCatalog,
             denied = ::clearAccess,
@@ -490,9 +504,14 @@ internal constructor(
         if (detailLoad?.isActive == true) return
         val state = mutable.value
         val restoringAccess = state.detailFailure == WorkflowReadFailure.Unavailable
-        if (state.toggles.any { it.value.phase == WorkflowTogglePhase.Unconfirmed }) {
+        val failure = state.detailFailure.whileReading(state.detail != null)
+        if (
+            failure != state.detailFailure ||
+                state.toggles.any { it.value.phase == WorkflowTogglePhase.Unconfirmed }
+        ) {
             mutable.value =
                 state.copy(
+                    detailFailure = failure,
                     toggles =
                         state.toggles.mapValues { (_, toggle) ->
                             if (toggle.phase == WorkflowTogglePhase.Unconfirmed)
@@ -582,7 +601,7 @@ internal constructor(
                 historyRead =
                     if (earlier) WorkflowHistoryRead.Earlier else WorkflowHistoryRead.Latest,
                 historyFailure =
-                    current.historyFailure.takeIf {
+                    current.historyFailure.whileReading(current.history != null).takeIf {
                         (current.historyRead?.earlier == true) == earlier
                     },
             )
@@ -677,11 +696,8 @@ internal constructor(
         publishFailure: (WorkflowReadFailure) -> Unit,
         attempt: suspend () -> Throwable?,
     ) {
-        val error = retryBoundedRead(canRead = authorized, attempt = attempt) ?: return
-        publishFailure(
-            if (error is ApiFailure.Network) WorkflowReadFailure.Network
-            else WorkflowReadFailure.RefreshFailed,
-        )
+        retryBoundedRead(canRead = authorized, attempt = attempt) ?: return
+        publishFailure(WorkflowReadFailure.Failed(++readSequence))
     }
 
     internal fun edit(value: WorkflowEdit?) {

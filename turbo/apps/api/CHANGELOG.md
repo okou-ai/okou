@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.135.0](https://github.com/okou-ai/okou/compare/api-v2.134.1...api-v2.135.0) (2026-11-26)
+
+
+### Features
+
+* **ios:** authorize supported connectors through installed apps ([#50975](https://github.com/okou-ai/okou/issues/50975)) ([a105bd9](https://github.com/okou-ai/okou/commit/a105bd92a24247370daf3b932a7d20fc7ab61d87))
+
+
+### Performance Improvements
+
+* **api:** prefetch execution bundle URL cache with package sources ([#51056](https://github.com/okou-ai/okou/issues/51056)) ([897d1e1](https://github.com/okou-ai/okou/commit/897d1e187f337a39688bcaaa9fb32f412f5117fd))
+* **api:** reuse the serialized body for preferred home dispatch ([#51063](https://github.com/okou-ai/okou/issues/51063)) ([52482b9](https://github.com/okou-ai/okou/commit/52482b9014d36c98db7783ead28326ce6d4806e8))
+* **api:** trim run startup SQL results ([#51060](https://github.com/okou-ai/okou/issues/51060)) ([94374ba](https://github.com/okou-ai/okou/commit/94374ba48828673d96c89e7fe1d85691d411146a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.132.0
+    * @okouai/connectors bumped to 3.26.0
+    * @okouai/core bumped to 8.885.0
+    * @okouai/db bumped to 2.70.2
+    * @okouai/pi-agent-runtime bumped to 1.52.88
+
 ## [2.134.1](https://github.com/okou-ai/okou/compare/api-v2.134.0...api-v2.134.1) (2026-11-26)
 
 

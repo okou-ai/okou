@@ -41,18 +41,25 @@ struct ChatThreadFeedback: Identifiable {
 struct ChatThreadFeedbackView: View {
   let store: WorkspaceStore
   let feedback: ChatThreadFeedback
-  /// The chat list's status, kept in the workspace session's Store, so a mark-all-read that
-  /// starts or ends updates whether the action applies.
+  /// The chat list's status and row mutations and the workspace's status, kept in the workspace
+  /// session's Store, so a mark-all-read, a chat write, an update requirement or a new chat
+  /// being created updates whether the action applies.
   @ResolvedValue private var listStatus: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore, feedback: ChatThreadFeedback) {
     self.store = store
     self.feedback = feedback
     _listStatus = ResolvedValue(store.list.statusValue)
+    _mutations = ResolvedValue(store.list.mutationsValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   var body: some View {
     let markingAllRead = (listStatus ?? store.list.status).markingAllRead
+    let activity = mutations ?? store.list.mutations
+    let workspace = actionStatus ?? store.actionStatus
     ChatFeedbackSurface(
       message: feedback.message,
       icon: feedback.kind == .error ? "circle-alert" : "circle-check",
@@ -60,9 +67,10 @@ struct ChatThreadFeedbackView: View {
       actionTitle: feedback.actionTitle,
       actionEnabled: !markingAllRead
         && (feedback.actsOnHiddenChat
-          ? store.list.canWrite(feedback.threadID) : store.list.canUpdate(feedback.threadID))
-        && !store.needsUpgrade
-        && (!feedback.requiresNavigation || !store.isCreating),
+          ? store.list.canWrite(feedback.threadID, mutations: activity)
+          : store.list.canUpdate(feedback.threadID, mutations: activity))
+        && !workspace.needsUpgrade
+        && (!feedback.requiresNavigation || !workspace.isCreating),
       actionHint: feedback.actionHint,
       autoDismissAfter: feedback.persists ? nil : .seconds(6),
       action: {

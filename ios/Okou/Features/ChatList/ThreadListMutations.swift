@@ -1,11 +1,20 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// Owns row mutation identities, optimistic events and their original command Tasks.
-@MainActor @Observable
+@MainActor
 final class ThreadListMutations {
+  /// Chats with a write in flight and the last action's failure, kept in the workspace session's
+  /// Store. Views resolve `activityValue`; the accessors serve owner logic and tests.
+  struct Activity: Equatable {
+    var updatingThreads: Set<String> = []
+    var actionError: String?
+  }
+  let activityValue: Computed<Activity>
+  private let activityState = CCState.State(Activity())
+  private let graph: CCState.Store
   private weak var owner: ThreadListStore?
   private let client: APIClient
   private let commands: ChatCommands
@@ -31,7 +40,7 @@ final class ThreadListMutations {
   }
 
   init(
-    owner: ThreadListStore, client: APIClient, commands: ChatCommands,
+    owner: ThreadListStore, graph: CCState.Store, client: APIClient, commands: ChatCommands,
     lifecycleTasks: LifecycleTasks,
     readThreads: @escaping @MainActor () -> [ChatThread],
     isClosed: @escaping @MainActor () -> Bool, isBlocked: @escaping @MainActor () -> Bool,
@@ -43,6 +52,9 @@ final class ThreadListMutations {
     advanceReadRevision: @escaping @MainActor () -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
+    self.graph = graph
+    let activityState = activityState
+    activityValue = Computed { try $0(activityState) }
     self.owner = owner
     self.client = client
     self.commands = commands
@@ -63,9 +75,32 @@ final class ThreadListMutations {
   private var pinTasks: [String: Task<Void, Never>] = [:]
   private var lastPinIDs: [String: String] = [:]
   private var optimisticChanges: [(id: String, change: ChatThreadChange)] = []
-  private(set) var actionError: String?
-  private(set) var updatingThreads: Set<String> = []
   private var updateTasks: [String: Task<Void, Never>] = [:]
+
+  /// The current value of `activityValue`.
+  var activity: Activity {
+    // A synchronous local business value, not a network or persistence boundary.
+    do { return try graph.get(activityValue) } catch {
+      preconditionFailure("Cannot read the chat list's mutations: \(error)")
+    }
+  }
+  private(set) var actionError: String? {
+    get { activity.actionError }
+    set { updateActivity { $0.actionError = newValue } }
+  }
+  private(set) var updatingThreads: Set<String> {
+    get { activity.updatingThreads }
+    set { updateActivity { $0.updatingThreads = newValue } }
+  }
+
+  private func updateActivity(_ change: (inout Activity) -> Void) {
+    var next = activity
+    change(&next)
+    guard next != activity else { return }
+    do { try graph.set(activityState, next) } catch {
+      preconditionFailure("Cannot publish the chat list's mutations: \(error)")
+    }
+  }
 
   func canPin(_ id: String) -> Bool {
     !closed && !blocked && (!updatingThreads.contains(id) || lastPinIDs[id] != nil)
@@ -219,13 +254,14 @@ final class ThreadListMutations {
   }
 
   /// Whether a write may start, apart from the chat still being listed: a delete retry targets
-  /// a chat its own optimistic event already hides.
-  func canWrite(_ id: String) -> Bool {
-    !closed && !blocked && !updatingThreads.contains(id) && !markingAllRead
+  /// a chat its own optimistic event already hides. A view passes the activity it resolved.
+  func canWrite(_ id: String, activity: Activity? = nil) -> Bool {
+    !closed && !blocked && !(activity ?? self.activity).updatingThreads.contains(id)
+      && !markingAllRead
   }
 
-  func canUpdate(_ id: String) -> Bool {
-    canWrite(id) && threads.contains(where: { $0.id == id })
+  func canUpdate(_ id: String, activity: Activity? = nil) -> Bool {
+    canWrite(id, activity: activity) && threads.contains(where: { $0.id == id })
   }
 
   @discardableResult

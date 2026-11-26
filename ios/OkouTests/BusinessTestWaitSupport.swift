@@ -92,6 +92,19 @@ extension XCTestCase {
       file: file, line: line, message: message(), predicate)
   }
 
+  /// Waits for a predicate over the workspace's status: a required update, sidebar restoration,
+  /// and the new chat's creation, submission, Project, failure and composer.
+  func waitForBusinessResult(
+    watching workspace: WorkspaceStore,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: workspace.shellValue, in: workspace.graph, timeout: timeout, file: file,
+      line: line, message: message(), predicate)
+  }
+
   /// Waits for a predicate over a connector authorization: its attempt, notices and activation
   /// failure, and the attempt's own form and phases.
   func waitForBusinessResult(

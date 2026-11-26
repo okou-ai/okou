@@ -6,13 +6,15 @@ import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { projectRoutes } from "../projects";
 import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
-import { describe, expect, it } from "vitest";
+import { HttpResponse } from "msw";
+import { describe, expect, it, vi } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -38,6 +40,87 @@ describe("chat search publication", () => {
     expect(response.body).toStrictEqual({
       error: { code: "UNAUTHORIZED", message: "Invalid cron secret" },
     });
+  });
+
+  it("indexes the claimed message while the first Runner reply is pending", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const posted = createDeferredPromise<string>(context.signal);
+    const reply = createDeferredPromise<void>(context.signal);
+    await createRunsApi(context).configureRunnerGroup({
+      async reply(envelope) {
+        const runId = envelope.executionContext.runId;
+        posted.resolve(runId);
+        await reply.promise;
+        return HttpResponse.json({
+          runnerId: envelope.runnerId,
+          heartbeatGeneration: envelope.heartbeatGeneration,
+          runId,
+          disposition: "accepted",
+        });
+      },
+    });
+    bdd.acceptStorageWrites();
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    await bdd.provisionWorkspace(owner);
+    await bdd.completeOnboarding(owner);
+    const keyword = `dispatchsearch${randomUUID().replaceAll("-", "")}`;
+
+    await (async () => {
+      const sent = await chat.requestSendEvent(
+        owner,
+        { model: null, prompt: keyword },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the chat send to be accepted");
+      }
+      const runId = await posted.promise;
+      await vi.waitFor(async () => {
+        expect((await chat.searchChat(owner, keyword)).results).toStrictEqual([
+          expect.objectContaining({
+            chatThreadId: sent.body.threadId,
+            matchedMessage: expect.objectContaining({
+              content: keyword,
+              runId,
+            }),
+          }),
+        ]);
+      });
+    })().finally(() => {
+      if (!reply.settled()) {
+        reply.resolve(undefined);
+      }
+    });
+    await flushWaitUntilForTest();
+  });
+
+  it("indexes the claimed message when no Runner POST can be made", async () => {
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const runs = createRunsApi(context);
+    await runs.configureRunnerGroup({ registerRunner: false });
+    bdd.acceptStorageWrites();
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    await bdd.provisionWorkspace(owner);
+    await bdd.completeOnboarding(owner);
+    const keyword = `unavailabledispatchsearch${randomUUID().replaceAll("-", "")}`;
+
+    const run = await runs.createThreadRun(owner, {
+      model: null,
+      prompt: keyword,
+    });
+
+    expect(run.status).toBe("failed");
+    expect((await chat.searchChat(owner, keyword)).results).toStrictEqual([
+      expect.objectContaining({
+        chatThreadId: run.threadId,
+        matchedMessage: expect.objectContaining({
+          content: keyword,
+          runId: run.runId,
+        }),
+      }),
+    ]);
   });
 
   it("withdraws recalled queued messages while another input is published", async () => {

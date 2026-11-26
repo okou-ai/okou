@@ -59,7 +59,6 @@ export enum FeatureSwitchKey {
   HostedSiteCustomDomains = "hostedSiteCustomDomains",
   HostedSiteShareRows = "hostedSiteShareRows",
   HostedSiteEmailSharing = "hostedSiteEmailSharing",
-  SlackArtifactChannelSharing = "slackArtifactChannelSharing",
   FeishuArtifactChannelSharing = "feishuArtifactChannelSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",

@@ -240,9 +240,8 @@ private struct WorkspaceRootView: View {
   private var workspace: some View {
     WorkspaceNavigation(sidebar: sidebar, forYouBusy: store.forYou.busy) {
       // Mount the sidebar after identity and its complete local baseline are restored.
-      Group {
-        if store.hasRestoredSidebar,
-          authentication.presentation?.userID == userID,
+      RestoredSidebarGate(store: store) {
+        if authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
           ChatSidebarView(
@@ -302,15 +301,15 @@ private struct WorkspaceRootView: View {
       OkouWidgetPublishing.clear()
     }
     .modifier(ChatListActionAlert(list: store.list))
-    .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
-      RequiredUpdateView()
-        .background(OkouColor.background)
-        .interactiveDismissDisabled()
-    }
+    .modifier(RequiredUpdateCover(store: store))
   }
 
   private var chatPage: some View {
-    SelectedConversationReader(store: store) { selected in
+    SelectedConversationReader(store: store) { selected in chatPage(selected: selected) }
+  }
+
+  private func chatPage(selected: ConversationStore?) -> some View {
+    Group {
       if let conversation = selected {
         WorkspaceChatDetail(
           store: store, conversation: conversation,
@@ -325,24 +324,11 @@ private struct WorkspaceRootView: View {
             newChatComposer
               .chatFeedbackAnchor()
           }
-          .modifier(
-            ComposerVoiceAnimation(
-              voice: store.newComposer.voice,
-              animation: reduceMotion ? nil : .easeInOut(duration: 0.22)))
+          .modifier(NewChatVoiceAnimation(store: store, reduceMotion: reduceMotion))
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
-    .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
-    .overlay {
-      if let submission = store.newChatSubmission, submission.isPresenting {
-        NewChatSubmissionView(
-          submission: submission, conversation: store.selectedConversation, webURL: store.webURL
-        )
-        .id(submission.message.id)
-        .background { OkouColor.background.ignoresSafeArea() }
-      }
-    }
+    .modifier(NewChatSubmissionCover(store: store, conversation: selected))
     .safeAreaBar(edge: .top, spacing: 0) {
       ChatWorkspaceHeader(store: store, height: headerHeight)
         .onGeometryChange(for: CGFloat.self) {
@@ -414,6 +400,99 @@ private struct WorkspaceRootView: View {
   }
 }
 
+/// Shows its content once the workspace has restored the sidebar's cached chats, Projects and
+/// disclosure. The status is read from the workspace session's graph, so this applies under the
+/// workspace's Store provider. The content is built by the parent, so a status change does not
+/// rebuild it.
+private struct RestoredSidebarGate<Content: View>: View {
+  let store: WorkspaceStore
+  let content: Content
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(store: WorkspaceStore, @ViewBuilder content: () -> Content) {
+    self.store = store
+    self.content = content()
+    _shell = ResolvedValue(store.shellValue)
+  }
+
+  var body: some View {
+    if (shell ?? store.shell).hasRestoredSidebar { content }
+  }
+}
+
+/// Animates the new chat's composer for voice input. The composer is read from the workspace
+/// session's graph, so this applies under the workspace's Store provider.
+private struct NewChatVoiceAnimation: ViewModifier {
+  let store: WorkspaceStore
+  let reduceMotion: Bool
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(store: WorkspaceStore, reduceMotion: Bool) {
+    self.store = store
+    self.reduceMotion = reduceMotion
+    _shell = ResolvedValue(store.shellValue)
+  }
+
+  func body(content: Content) -> some View {
+    content.modifier(
+      ComposerVoiceAnimation(
+        voice: (shell ?? store.shell).newComposer.voice,
+        animation: reduceMotion ? nil : .easeInOut(duration: 0.22)))
+  }
+}
+
+/// Covers the chat page with the new chat's first message while it is presented, and keeps the
+/// page beneath from taking input. The submission is read from the workspace session's graph,
+/// so this applies under the workspace's Store provider.
+private struct NewChatSubmissionCover: ViewModifier {
+  let store: WorkspaceStore
+  let conversation: ConversationStore?
+  @ResolvedValue private var shell: WorkspaceStore.Shell?
+
+  init(store: WorkspaceStore, conversation: ConversationStore?) {
+    self.store = store
+    self.conversation = conversation
+    _shell = ResolvedValue(store.shellValue)
+  }
+
+  func body(content: Content) -> some View {
+    let submission = (shell ?? store.shell).newChatSubmission
+    content
+      .allowsHitTesting(submission?.isPresenting != true)
+      .accessibilityHidden(submission?.isPresenting == true)
+      .overlay {
+        if let submission, submission.isPresenting {
+          NewChatSubmissionView(
+            submission: submission, conversation: conversation, webURL: store.webURL
+          )
+          .id(submission.message.id)
+          .background { OkouColor.background.ignoresSafeArea() }
+        }
+      }
+  }
+}
+
+/// Covers the workspace once the API requires an update. The requirement is read from the
+/// workspace session's graph, so this applies under the workspace's Store provider.
+private struct RequiredUpdateCover: ViewModifier {
+  let store: WorkspaceStore
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
+
+  init(store: WorkspaceStore) {
+    self.store = store
+    _actionStatus = ResolvedValue(store.actionStatusValue)
+  }
+
+  func body(content: Content) -> some View {
+    let needsUpgrade = (actionStatus ?? store.actionStatus).needsUpgrade
+    content.fullScreenCover(isPresented: Binding(get: { needsUpgrade }, set: { _ in })) {
+      RequiredUpdateView()
+        .background(OkouColor.background)
+        .interactiveDismissDisabled()
+    }
+  }
+}
+
 /// Resolves the selected chat's owner from the workspace session's graph, for content under the
 /// workspace's Store provider.
 private struct SelectedConversationReader<Content: View>: View {
@@ -465,20 +544,23 @@ private struct WorkspaceWidgetPublisher: View {
   }
 }
 
-/// Reports a failed chat action once no rename editor is open or saving. The rename state is
-/// read from the workspace session's graph, so this applies under the workspace's Store provider.
+/// Reports a failed chat action once no rename editor is open or saving. The failure and the
+/// rename state are read from the workspace session's graph, so this applies under the
+/// workspace's Store provider.
 private struct ChatListActionAlert: ViewModifier {
   let list: ThreadListStore
   @ResolvedValue private var status: ThreadListStore.Status?
+  @ResolvedValue private var mutations: ThreadListMutations.Activity?
 
   init(list: ThreadListStore) {
     self.list = list
     _status = ResolvedValue(list.statusValue)
+    _mutations = ResolvedValue(list.mutationsValue)
   }
 
   func body(content: Content) -> some View {
     let current = status ?? list.status
-    let error = list.actionError
+    let error = (mutations ?? list.mutations).actionError
     content.alert(
       "Unable to update chats",
       isPresented: Binding(
@@ -552,6 +634,7 @@ private struct WorkspaceNewChatComposer: View {
   let reduceMotion: Bool
   @ResolvedValue private var projects: [ChatProject]?
   @ResolvedValue private var threads: [ChatThread]?
+  @ResolvedValue private var resolvedShell: WorkspaceStore.Shell?
 
   init(store: WorkspaceStore, notifications: NotificationService, reduceMotion: Bool) {
     self.store = store
@@ -559,16 +642,17 @@ private struct WorkspaceNewChatComposer: View {
     self.reduceMotion = reduceMotion
     _projects = ResolvedValue(store.projects.confirmedValue)
     _threads = ResolvedValue(store.list.threadsValue)
+    _resolvedShell = ResolvedValue(store.shellValue)
   }
 
   var body: some View {
-    let composer = store.newComposer
+    let shell = resolvedShell ?? store.shell
     ChatComposerView(
-      isBusy: store.isCreating,
-      showsProgress: store.isCreating, canStop: false,
-      needsUpgrade: store.needsUpgrade,
-      error: store.error, attachmentURL: store.webURL,
-      draftState: composer,
+      isBusy: shell.isCreating,
+      showsProgress: shell.isCreating, canStop: false,
+      needsUpgrade: shell.needsUpgrade,
+      error: shell.error, attachmentURL: store.webURL,
+      draftState: shell.newComposer,
       submit: {
         await store.sendNewChat(
           sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
@@ -579,7 +663,7 @@ private struct WorkspaceNewChatComposer: View {
       connectorSelection: store.newModelSelection.connectors,
       mentionSource: ComposerMentionSource(threads: threads ?? store.list.threads),
       workflowSource: store.composerWorkflows,
-      project: store.newChatProjectID.flatMap { id in
+      project: shell.newChatProjectID.flatMap { id in
         (projects ?? store.projects.projects).first { $0.id == id }
       },
       removeProject: store.removeNewChatProject
@@ -593,19 +677,21 @@ private struct WorkspaceForkSheet: View {
   let flow: ChatForkStore
   @ResolvedValue private var projects: [ChatProject]?
   @ResolvedValue private var threads: [ChatThread]?
+  @ResolvedValue private var actionStatus: WorkspaceStore.ActionStatus?
 
   init(store: WorkspaceStore, flow: ChatForkStore) {
     self.store = store
     self.flow = flow
     _projects = ResolvedValue(store.projects.confirmedValue)
     _threads = ResolvedValue(store.list.threadsValue)
+    _actionStatus = ResolvedValue(store.actionStatusValue)
   }
 
   var body: some View {
     ChatForkView(
       flow: flow, webURL: store.webURL, threads: threads ?? store.list.threads,
       project: (projects ?? store.projects.projects).first { $0.id == flow.projectID },
-      needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+      needsUpgrade: (actionStatus ?? store.actionStatus).needsUpgrade, dismiss: store.dismissFork)
   }
 }
 
