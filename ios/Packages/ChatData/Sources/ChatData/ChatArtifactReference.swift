@@ -124,6 +124,6 @@ public enum ChatArtifactReference {
     if ["pv-", "ps-", "sh-"].contains(where: slug.hasPrefix) {
       return .published(url)
     }
-    return domain == "sites.vm0.io" ? .legacyHostedSite(url) : .hostedSite(url)
+    return domain == "sites.vm0.io" ? .publishedSite(url) : .hostedSite(url)
   }
 }

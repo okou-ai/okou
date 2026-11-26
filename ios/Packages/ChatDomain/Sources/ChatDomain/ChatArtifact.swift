@@ -6,13 +6,13 @@ public struct ChatArtifact: Equatable, Hashable, Sendable, Identifiable {
     case reference(String, fragment: String)
     case file(String)
     case hostedSite(URL)
-    case legacyHostedSite(URL)
+    case publishedSite(URL)
     case published(URL)
 
     /// Only a site's original address can be handed to another reader.
     public var websiteShareURL: URL? {
       switch self {
-      case .hostedSite(let url), .legacyHostedSite(let url): url
+      case .hostedSite(let url), .publishedSite(let url): url
       case .reference, .file, .published: nil
       }
     }
