@@ -35,3 +35,9 @@ agentphone-groups.bdd-007	Rejected AgentPhone webhook	When: the same signed grou
 agentphone-groups.bdd-014	AgentPhone conversation lookup failed	Given: AgentPhone reports the first group conversation as removed (HTTP 404)
 agentphone-groups.bdd-020	AgentPhone conversation lookup failed	Given: AgentPhone's conversation lookup returns HTTP 503
 webhooks-agent-firewall-auth.bdd-032	test-oauth token refresh failed	Given: the provider token endpoint first returns HTTP 500
+billing-archived-stripe-events-019	Unhandled request error: Stripe is temporarily unavailable	Given: a temporary Stripe Price error; Then: HTTP 500
+billing-archived-stripe-events-037	Unhandled request error: Stripe is temporarily unavailable	Given: a temporary Stripe Price error; Then: HTTP 500
+org-delete-billing-019	Unhandled request error: Stripe is temporarily unavailable	Given: the refund fails; Then: HTTP 500
+org-delete-billing-022	organization.deleted billing cleanup failed	Then: the first organization.deleted delivery returns 503
+voice-io-polish-007	Google voice request rejected	Given: the provider rejects the request
+voice-io-polish-010	Google voice request rejected	Given: the provider rejects the request

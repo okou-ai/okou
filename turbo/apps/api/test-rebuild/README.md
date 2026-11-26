@@ -495,3 +495,15 @@ A case whose Given requires a paid member with a dispatched Run includes at leas
 **Run fixture experiment (not adopted).** In a loaded, interleaved comparison, the median Run-class row dropped from 196.8 ms to about 145–147 ms, with 16 of 16 rows at or under 200 ms. Two changes did this: granting the Run's admission through the public `organization.created` webhook (active `limited_free` entitlement plus onboarding credits, 13–16 ms) instead of the Pro invoice webhook (48–66 ms), and skipping `initializePreferences`. Cleanup cannot leave the row without deferring teardown past the case. Completing a Run is not cheaper than cancel plus acknowledgement (about 40 ms). This only fits cases that do not need Pro-gated behaviour, and the change is waiting for a decision.
 
 **Shuffled rule, five seeds.** A row whose three-seed median exceeds 200 ms after running first in at least two orders gets two more seeds and is judged on the five-run median. `connector-oauth-completion-002` and `webhooks-google-calendar-005`/`-006` were split under this rule.
+
+### Round 15: light Run fixture, typed Worker host and B08–B09
+
+**Light Run fixture.** `createRunExecutionCredentials(context, { plan: "limited-free", preferences: false })` funds the workspace through the public `organization.created` bootstrap. It is only for cases whose Given needs no paid plan. Only an admin's Run starts on limited free; a member's chat send is accepted but launches no Run. The fixture alone costs 149–192 ms per row once its teardown is counted. With a Slack install (Slack read, message and upload) or a connector connect (firewall auth) added on top, every rewritten candidate stayed over 200 ms in all shuffled orders, and so did the re-checked `connector-check` cases. No case was released with it this round. Those cases are slow-setup with their own medians, and the drafts are kept.
+
+**Copy review.** The fixture probe read three deleted tests last round: chat-threads-archive, vnc-authority-cache and automation-disabled-feed-events. No test committed since then shares more than generic setup lines with them (`testContext()`, `accept(`, `createBddApi`). The highest line overlap is 0.19.
+
+**Worker host.** `worker-lifecycle.test.ts` now passes an `ExecutionContext` and a Hyperdrive binding that implement every member: an untraced tracing SDK and the local database connection. There are no casts.
+
+**Calendar.** `webhooks-google-calendar-005` is split. Row (1/2) still misses the shuffled median because whichever of the file's three rows runs first pays about 150 ms of cold start. `-006` left the committed file, which had omitted its reconnect-and-delete Then.
+
+**Pre-classification check.** A probe check confirmed all three sampled `b-install` cases as install flows. All three sampled `c-timer` cases were keyword false positives: an admin re-confirming, a `mockNow` timeout comparison and an early device poll. So `c-timer` is not reliable.
