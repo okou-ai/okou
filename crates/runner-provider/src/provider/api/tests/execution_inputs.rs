@@ -8,15 +8,21 @@ fn explicit_startup_inputs_work_alone_and_take_precedence() {
     let mut packages = fixture["contentBundles"].clone();
     let mut bundle = packages["skills"][0].as_object().unwrap().clone();
     bundle.remove("mountPath").unwrap();
-    packages["skills"] = serde_json::json!([{"name": "named-skill", "bundle": bundle}]);
+    bundle.insert("futureReference".into(), Value::Bool(true));
+    packages["skills"] =
+        serde_json::json!([{"name": "named-skill", "bundle": bundle, "futureSkill": true}]);
+    packages["futurePackages"] = Value::Bool(true);
+    packages["instructions"]["futureInstructions"] = Value::Bool(true);
     let explicit = serde_json::json!({
         "memory": {
             "storageId": "member-memory-id",
             "versionId": "accepted-memory-version",
             "empty": true,
             "missingRootPolicy": "preserveParentVersion",
+            "futureMemory": true,
         },
         "contentBundles": packages,
+        "futureInput": true,
     });
     for retain_legacy in [true, false] {
         let mut body = fixture.clone();

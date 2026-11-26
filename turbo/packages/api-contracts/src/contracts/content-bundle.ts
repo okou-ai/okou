@@ -20,14 +20,17 @@ export const contentBundleSchema = object({
 
 export type ContentBundle = zInfer<typeof contentBundleSchema>;
 
-const contentBundleDownloadSchema = contentBundleSchema
-  .extend({
-    downloadUrl: url({ protocol: /^https$/u }).refine((value) => {
-      const parsed = new URL(value);
-      return parsed.username === "" && parsed.password === "";
-    }),
-  })
-  .strict();
+const bundleDownloadUrlSchema = url({ protocol: /^https$/u }).refine(
+  (value) => {
+    const parsed = new URL(value);
+    return parsed.username === "" && parsed.password === "";
+  },
+);
+
+const contentBundleDownloadSchema = object({
+  ...contentBundleSchema.shape,
+  downloadUrl: bundleDownloadUrlSchema,
+});
 
 /** Immutable packages selected and authorized for execution. */
 export const executionContentBundlesSchema = object({
@@ -35,25 +38,19 @@ export const executionContentBundlesSchema = object({
   instructions: contentBundleDownloadSchema.optional(),
   // Omit entirely until a selected template has an immutable owner reference.
   templates: array(
-    storedTemplateGuidanceBundleSchema
-      .extend({
-        downloadUrl: url({ protocol: /^https$/u }).refine((value) => {
-          const parsed = new URL(value);
-          return parsed.username === "" && parsed.password === "";
-        }),
-      })
-      .strict(),
+    object({
+      ...storedTemplateGuidanceBundleSchema.shape,
+      downloadUrl: bundleDownloadUrlSchema,
+    }),
   ).optional(),
   skills: array(
-    contentBundleDownloadSchema
-      .extend({
-        mountPath: string().regex(
-          /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u,
-        ),
-      })
-      .strict(),
+    contentBundleDownloadSchema.extend({
+      mountPath: string().regex(
+        /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u,
+      ),
+    }),
   ),
-}).strict();
+});
 
 export const namedExecutionContentBundlesSchema =
   executionContentBundlesSchema.extend({
@@ -61,6 +58,6 @@ export const namedExecutionContentBundlesSchema =
       object({
         name: string().regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u),
         bundle: contentBundleDownloadSchema,
-      }).strict(),
+      }),
     ),
   });

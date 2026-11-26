@@ -23,7 +23,6 @@ use std::{collections::HashSet, path::Path};
 mod publication;
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ContentBundles<S> {
     #[serde(rename = "format")]
     _format: BundleFormat,
@@ -41,7 +40,7 @@ enum BundleFormat {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct BundleReference {
     sha256: String,
     archive_bytes: u64,
@@ -49,7 +48,7 @@ struct BundleReference {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct SkillBundle {
     sha256: String,
     archive_bytes: u64,
@@ -58,21 +57,21 @@ struct SkillBundle {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct NamedSkillBundle {
     name: String,
     bundle: BundleReference,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct StartupInputs {
     memory: Option<MemoryInput>,
     content_bundles: ContentBundles<NamedSkillBundle>,
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct MemoryInput {
     storage_id: String,
     version_id: String,
@@ -108,7 +107,7 @@ enum TemplateOwnerKind {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct TemplateBundle {
     sha256: String,
     archive_bytes: u64,

@@ -508,13 +508,12 @@ const startupInputsSchema = object({
     empty: boolean().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
   })
-    .strict()
     .refine((memory) => {
       return memory.archiveUrl !== undefined || memory.empty === true;
     })
     .nullable(),
   contentBundles: namedExecutionContentBundlesSchema,
-}).strict();
+});
 
 /** Retained native files are disposable; Chat remains the recovery source. */
 export const nativeContinuationSchema = object({
