@@ -3025,10 +3025,10 @@ billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	u
 billing	src/signals/routes/__tests__/usage-pack-subscription-lifecycle.test.ts	usage-pack-subscription-lifecycle-026	skipped		slow-setup:run-token: needs a dispatched Run (measured 250-350 ms setup) to spend the organization into -5000 credits after the ZERO100 credits expire		B03	
 account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-002	rewritten	7.6	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/usage-record.test.ts	B06	
 account-org	src/signals/routes/__tests__/usage-record.test.ts	usage-record-003	rewritten	35.3	accepted by shuffled 3-run median (provisional cold-start rule)	src/signals/routes/__tests__/usage-record.test.ts	B06	
-account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	planned				B11	d-other
-account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	planned				B11	d-other
-account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-005	planned				B11	d-other
-account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-008	planned				B11	d-other
+account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-002	revisit		revisit: row (1/2) has a non-first median of 222.4 ms (145.4/220.4/225.1/224.4); draft /home/user/pilot-env/wip/r16/user-config.bdd.test.ts; resume: split (1/2) further		B11	d-other
+account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-004	rewritten	26.1		src/signals/routes/__tests__/user-config.bdd.test.ts	B11	d-other
+account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-005	rewritten	92.9		src/signals/routes/__tests__/user-config.bdd.test.ts	B11	d-other
+account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-008	rewritten	44.9		src/signals/routes/__tests__/user-config.bdd.test.ts	B11	d-other
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-009	planned					a-run
 account-org	src/signals/routes/__tests__/user-config.bdd.test.ts	user-config.bdd-011	planned					a-run
 account-org	src/signals/routes/__tests__/user-export-publication.test.ts	user-export-publication-002	revisit		revisit: both rows over 200 ms by shuffled 3-run median (warm (2/2) 204-211 ms per the writer); evidence: user-export-publication-002 (1/2) 338.2 ms (338/377/206); user-export-publication-002 (2/2) 242.4 ms (205/242/355); draft /home/user/pilot-env/wip/r13b/user-export-publication.test.ts; resume: lighten the export Given or record slow-setup with Given+first When/Then		B06	
