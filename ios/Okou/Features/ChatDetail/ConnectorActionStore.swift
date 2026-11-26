@@ -138,9 +138,6 @@ final class ConnectorActionStore {
     _ = await resources.read(action).result(refresh: true)
   }
   func refreshKnown() async { await resources.refreshKnown() }
-  func isAuthorizing(target: ChatConnectorTarget) -> Bool {
-    presentation.isAuthorizing(target: target)
-  }
   func activate(_ action: ChatConnectorAction) {
     guard !closed, active == nil else { return }
     update { $0.activationError = nil }

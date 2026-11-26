@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -56,7 +57,10 @@ struct ConnectorCardHarness: View {
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   var body: some View {
-    ConnectorActionCard(action: action, store: store, loadsState: false)
-      .connectorAuthorization(store: store, failureTitle: "Unable to open connection")
+    // The authorization presentation reads the session Store the store writes to.
+    StoreProvider(store.graph) {
+      ConnectorActionCard(action: action, store: store, loadsState: false)
+        .connectorAuthorization(store: store, failureTitle: "Unable to open connection")
+    }
   }
 }
