@@ -18,31 +18,37 @@ import { builtInWorkflowBundleUrl } from "./builtin-workflows";
 
 export function selectExecutionContentBundles(
   packages: CapturedExecutionPackages,
-  context: ExecutionPackageMounts & { readonly skillRoot: string },
+  context: ExecutionPackageMounts,
 ) {
-  const workflows = packages.workflows.map(({ name, contentBundle }) => {
-    return { ...contentBundle, mountPath: `${context.skillRoot}/${name}` };
-  });
-  const workflowMountPaths = new Set(
-    workflows.map(({ mountPath }) => {
-      return mountPath;
+  const workflowNames = new Set(
+    packages.workflows.map(({ name }) => {
+      return name;
     }),
   );
   const instructions = packages.instructionsBundle;
-  const skills = [
-    ...workflows,
+  const preparedSkills = [
     ...context.officialWorkflowBundles,
-    ...context.seedSkillBundles.filter(({ mountPath }) => {
-      return !workflowMountPaths.has(mountPath);
+    ...context.seedSkillBundles.filter(({ name }) => {
+      return !workflowNames.has(name);
+    }),
+  ];
+  const skills = [
+    ...packages.workflows,
+    ...preparedSkills.map(({ name, mount: { sha256, archiveBytes } }) => {
+      return { name, contentBundle: { sha256, archiveBytes } };
     }),
   ];
   const templates = context.templateGuidanceBundles;
   const hashes = [
-    ...new Set(
-      [instructions, ...skills, ...templates].map(({ sha256 }) => {
+    ...new Set([
+      instructions.sha256,
+      ...skills.map(({ contentBundle }) => {
+        return contentBundle.sha256;
+      }),
+      ...templates.map(({ sha256 }) => {
         return sha256;
       }),
-    ),
+    ]),
   ];
   return {
     instructions,
@@ -54,7 +60,7 @@ export function selectExecutionContentBundles(
   };
 }
 
-/** Share URLs for identical bytes while retaining each reference's mount metadata. */
+/** Share URLs across references to identical archives. */
 export const signExecutionContentBundles$ = command(
   async (
     { get },
@@ -62,7 +68,7 @@ export const signExecutionContentBundles$ = command(
     cache: ContentBundleUrlCacheSnapshot,
     signal: AbortSignal,
   ): Promise<{
-    readonly contentBundles: ExecutionContext["contentBundles"];
+    readonly contentBundles: ExecutionContext["startupInputs"]["contentBundles"];
     readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   }> => {
     signal.throwIfAborted();
@@ -103,7 +109,9 @@ export const signExecutionContentBundles$ = command(
       contentBundles: {
         format: "tar-gzip-v1",
         instructions: withDownloadUrl(bundles.instructions),
-        skills: bundles.skills.map(withDownloadUrl),
+        skills: bundles.skills.map(({ name, contentBundle }) => {
+          return { name, bundle: withDownloadUrl(contentBundle) };
+        }),
         ...(bundles.templates.length > 0
           ? { templates: bundles.templates.map(withDownloadUrl) }
           : {}),

@@ -110,4 +110,5 @@
     <string name="settings_suggestions_save_failed">提案の設定を保存できませんでした。以前の設定に戻しました。</string>
     <string name="settings_timezone_save_rejected">タイムゾーンを保存できませんでした。以前のタイムゾーンに戻しました。</string>
     <string name="settings_timezone_schedule_update_failed">タイムゾーンを保存しました。朝のブリーフィングの配信時刻は更新できませんでした。</string>
+    <string name="settings_model_catalog_refresh_failed">利用可能なモデルを更新できませんでした。前回読み込んだ一覧を表示しています。</string>
 </resources>

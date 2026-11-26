@@ -43,9 +43,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -222,7 +224,24 @@ class WorkspaceSearchScreenTest {
         assertTrue(artifactTab.getUnclippedBoundsInRoot().right > 264.dp)
         compose.onNodeWithText("Launch file 2").assertIsDisplayed()
         compose.onNodeWithText("Launch file 3").assertDoesNotExist()
-        compose.onNodeWithContentDescription("View all Artifacts").performClick()
+        val viewAll = compose.onNodeWithContentDescription("View all Artifacts")
+        val actionBounds = viewAll.getUnclippedBoundsInRoot()
+        assertTrue(actionBounds.bottom - actionBounds.top >= 48.dp)
+        assertTrue(actionBounds.right - actionBounds.left >= 48.dp)
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("View all", useUnmergedTree = true).performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult,
+        ) {
+            it(layouts)
+        }
+        val style = layouts.single().layoutInput.style
+        assertEquals(
+            resolvePalette(UserPreferencesColorTheme.DEFAULT, dark = false).primary,
+            style.color,
+        )
+        assertEquals(13.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        viewAll.performClick()
         query.assertTextContains("Launch")
         artifactTab.assertIsSelected().assertIsFocused()
         assertTrue(artifactTab.getUnclippedBoundsInRoot().right <= 264.dp)
@@ -415,18 +434,34 @@ class WorkspaceSearchScreenTest {
 
         compose.onNodeWithTag("search_type_Messages").performClick()
         val emptyMessages = compose.onNodeWithText("No matching messages")
+        val progress = compose.onNodeWithContentDescription("Searching…")
         compose.runOnIdle {
-            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshing = true))
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Scheduled),
+                )
+        }
+        compose.mainClock.advanceTimeBy(320)
+        emptyMessages.assertIsDisplayed()
+        progress.assertDoesNotExist()
+        compose.runOnIdle {
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Reading),
+                )
         }
         emptyMessages.assertIsDisplayed()
         compose.mainClock.advanceTimeBy(280)
-        compose.onNodeWithContentDescription("Searching…").assertIsDisplayed()
+        progress.assertIsDisplayed()
         compose.runOnIdle {
-            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshFailed = true))
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Failed),
+                )
         }
         emptyMessages.assertIsDisplayed()
         partial.assertIsDisplayed()
-        compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+        progress.assertDoesNotExist()
 
         compose.onNodeWithTag("search_type_Chats").performClick()
         partial.assertDoesNotExist()
@@ -436,10 +471,57 @@ class WorkspaceSearchScreenTest {
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
         partial.assertDoesNotExist()
         compose.runOnIdle {
-            remote = remote.copy(messages = SearchRead.Ready(emptyList(), refreshFailed = true))
+            remote =
+                remote.copy(
+                    messages = SearchRead.Ready(emptyList(), refresh = SearchRefresh.Failed),
+                )
         }
         emptyMessages.assertIsDisplayed()
         partial.assertIsDisplayed()
+    }
+
+    @Test
+    fun coldRemoteReadSkipsFeedbackWhenTheResponseIsFast() {
+        val search = ChatSearchState(TextFieldValue("Launch"), type = WorkspaceSearchType.Messages)
+        var messages by mutableStateOf<SearchRead<SearchMessageHit>>(SearchRead.Scheduled)
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = WorkspaceSearchResults(search.keyword, messages),
+                )
+            }
+        }
+
+        val skeleton = compose.onNodeWithContentDescription("Searching…")
+        val empty = compose.onNodeWithText("No matching messages")
+        compose.mainClock.advanceTimeBy(320)
+        skeleton.assertDoesNotExist()
+        empty.assertDoesNotExist()
+
+        compose.runOnIdle { messages = SearchRead.Loading }
+        compose.mainClock.advanceTimeBy(96)
+        skeleton.assertDoesNotExist()
+        compose.runOnIdle { messages = SearchRead.Ready(emptyList()) }
+        empty.assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(280)
+        skeleton.assertDoesNotExist()
+
+        compose.runOnIdle {
+            search.edit(TextFieldValue("Later"))
+            messages = SearchRead.Loading
+        }
+        skeleton.assertDoesNotExist()
+        empty.assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(280)
+        skeleton.assertIsDisplayed()
     }
 
     @Test
@@ -498,7 +580,7 @@ class WorkspaceSearchScreenTest {
             )
         val search = ChatSearchState(TextFieldValue("Launch"))
         var visible by mutableStateOf(true)
-        var messages by mutableStateOf<SearchRead<SearchMessageHit>>(SearchRead.Retrying)
+        var messages by mutableStateOf<SearchRead<SearchMessageHit>>(SearchRead.Scheduled)
         var artifacts by mutableStateOf<SearchRead<SearchArtifactHit>>(SearchRead.Failed)
         compose.setContent {
             OkouTheme(false) {
@@ -527,11 +609,25 @@ class WorkspaceSearchScreenTest {
         val rowBounds = row.getUnclippedBoundsInRoot()
         val viewport = compose.onNodeWithTag("chat_search_results")
         val viewportBounds = viewport.getUnclippedBoundsInRoot()
-        compose.mainClock.advanceTimeBy(280)
+        compose.mainClock.advanceTimeBy(320)
+        progress.assertDoesNotExist()
+        partial.assertDoesNotExist()
+        compose.runOnIdle { messages = SearchRead.Loading }
+        progress.assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(160)
+        progress.assertDoesNotExist()
+        compose.runOnIdle { messages = SearchRead.Retrying }
+        compose.mainClock.advanceTimeBy(160)
         progress.assertIsDisplayed()
         partial.assertDoesNotExist()
 
-        compose.runOnIdle { messages = SearchRead.Failed }
+        compose.runOnIdle {
+            messages = SearchRead.Failed
+            artifacts = SearchRead.Scheduled
+        }
+        progress.assertIsDisplayed()
+        partial.assertDoesNotExist()
+        compose.runOnIdle { artifacts = SearchRead.Failed }
         partial.assertIsDisplayed()
         progress.assertDoesNotExist()
         assertEquals(rowBounds, row.getUnclippedBoundsInRoot())

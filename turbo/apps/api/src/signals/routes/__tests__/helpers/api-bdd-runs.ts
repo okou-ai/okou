@@ -38,8 +38,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersSteerContract,
-  type CanonicalStorageManifest,
-  type StorageManifest,
 } from "@okouai/api-contracts/contracts/runners";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
@@ -86,18 +84,6 @@ type RunnerHeartbeatBody = zInfer<
 type RunnerRealtimeTokenBody = zInfer<
   (typeof runnerRealtimeTokenContract.create)["body"]
 >;
-
-export function expectCanonicalStorageManifest(
-  manifest: StorageManifest | null | undefined,
-): CanonicalStorageManifest | null | undefined {
-  if (manifest === null || manifest === undefined) {
-    return manifest;
-  }
-  if (!("storageMounts" in manifest)) {
-    throw new Error("Expected a canonical Storage manifest");
-  }
-  return manifest;
-}
 
 interface ClerkUserProfile {
   readonly id: string;

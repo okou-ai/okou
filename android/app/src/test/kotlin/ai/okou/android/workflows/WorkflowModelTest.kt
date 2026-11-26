@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
 import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchRefresh
 import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.searchCatalog
 import ai.okou.android.state.WorkflowTab
@@ -257,10 +258,10 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
             val matches = model.state.value.searchCatalog("release") as SearchRead.Ready
-            assertTrue(matches.refreshing)
+            assertEquals(SearchRefresh.Reading, matches.refresh)
             assertEquals(listOf(service.summary.id), matches.rows.map { it.id })
             assertEquals(
-                noMatches.copy(refreshing = true),
+                noMatches.copy(refresh = SearchRefresh.Reading),
                 model.state.value.searchCatalog("unmatched"),
             )
             assertEquals(2, service.catalogReads)
@@ -279,7 +280,7 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
 
             model.searchVisibilityChanged(false)
             assertEquals(
-                matches.copy(refreshing = false),
+                matches.copy(refresh = SearchRefresh.Idle),
                 model.state.value.searchCatalog("release"),
             )
             advanceTimeBy(600_000)

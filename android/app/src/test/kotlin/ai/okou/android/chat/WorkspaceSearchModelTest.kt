@@ -29,6 +29,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -72,8 +73,19 @@ class WorkspaceSearchModelTest {
         val hit = SearchMessageHit("thread", 23, "current", listOf(0..6))
         try {
             model.update("older", WorkspaceSearchType.All)
-            advanceTimeBy(300)
+            advanceTimeBy(299)
+            assertEquals(SearchRead.Scheduled, model.results.value.messages)
+            assertTrue(requests.isEmpty())
+            model.update("older", WorkspaceSearchType.Chats)
+            advanceTimeBy(1)
             runCurrent()
+            assertEquals(SearchRead.Scheduled, model.results.value.messages)
+            assertTrue(requests.isEmpty())
+
+            model.update("older", WorkspaceSearchType.Messages)
+            runCurrent()
+            assertEquals(SearchRead.Loading, model.results.value.messages)
+            assertEquals(listOf("older"), requests)
             model.update("current", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
@@ -191,20 +203,33 @@ class WorkspaceSearchModelTest {
             model.update("launch", WorkspaceSearchType.Messages, visible = false)
             assertEquals(confirmed, model.results.value.messages)
             model.update("launch", WorkspaceSearchType.Messages)
+            assertEquals(
+                confirmed.copy(refresh = SearchRefresh.Scheduled),
+                model.results.value.messages,
+            )
             advanceTimeBy(300)
             runCurrent()
             assertEquals(2, requests)
-            assertEquals(confirmed.copy(refreshing = true), model.results.value.messages)
+            assertEquals(
+                confirmed.copy(refresh = SearchRefresh.Reading),
+                model.results.value.messages,
+            )
 
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(3, requests)
-            assertEquals(confirmed.copy(refreshing = true), model.results.value.messages)
+            assertEquals(
+                confirmed.copy(refresh = SearchRefresh.Reading),
+                model.results.value.messages,
+            )
 
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(4, requests)
-            assertEquals(confirmed.copy(refreshFailed = true), model.results.value.messages)
+            assertEquals(
+                confirmed.copy(refresh = SearchRefresh.Failed),
+                model.results.value.messages,
+            )
 
             advanceTimeBy(60_000)
             assertEquals(4, requests)

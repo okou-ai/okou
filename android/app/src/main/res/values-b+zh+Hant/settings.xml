@@ -110,4 +110,5 @@
     <string name="settings_suggestions_save_failed">無法儲存建議設定，已還原原值。</string>
     <string name="settings_timezone_save_rejected">無法儲存時區，已還原原值。</string>
     <string name="settings_timezone_schedule_update_failed">時區已儲存，無法更新晨報時間。</string>
+    <string name="settings_model_catalog_refresh_failed">暫時無法重新整理可用模型，已保留上次載入的清單。</string>
 </resources>

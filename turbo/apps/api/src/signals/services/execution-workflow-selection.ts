@@ -34,10 +34,16 @@ export interface CapturedExecutionPackages {
   readonly instructionsBundle: ContentBundle;
 }
 
-export type ExecutionPackageMounts = Pick<
-  PreparedExecutionContext,
-  "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
->;
+type SelectedSkillBundle = {
+  readonly name: string;
+  readonly mount: PreparedExecutionContext["seedSkillBundles"][number];
+};
+
+export interface ExecutionPackageMounts {
+  readonly officialWorkflowBundles: readonly SelectedSkillBundle[];
+  readonly seedSkillBundles: readonly SelectedSkillBundle[];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
+}
 
 export function resolveOrdinaryAutomationWorkflowName(
   target: Pick<ThreadAutomationTarget, "automation" | "workflow">,
@@ -160,11 +166,19 @@ export function prepareRunPackageMounts(args: {
     mounts: {
       officialWorkflowBundles:
         args.officialWorkflow?.definitions.map(({ name, contentBundle }) => {
-          return { ...contentBundle, mountPath: `${skillRoot}/${name}` };
+          return {
+            name,
+            mount: { ...contentBundle, mountPath: `${skillRoot}/${name}` },
+          };
         }) ?? [],
       seedSkillBundles: packageMounts.flatMap((mount) => {
         return "contentBundle" in mount
-          ? [{ ...mount.contentBundle, mountPath: mount.mountPath }]
+          ? [
+              {
+                name: mount.skillName,
+                mount: { ...mount.contentBundle, mountPath: mount.mountPath },
+              },
+            ]
           : [];
       }),
       templateGuidanceBundles: packageMounts.flatMap((mount, index) => {

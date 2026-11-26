@@ -241,6 +241,7 @@ import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-req
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksRunMemoryArchiveRoutes } from "./routes/webhooks-run-memory-archive";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
+import { webhooksAgentGmailDraftUpdatedRoutes } from "./routes/webhooks-agent-gmail-draft-updated";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
@@ -294,6 +295,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentDataRequestRoutes,
   ...dataRouterHistoryRoutes,
   ...webhooksAgentEventsRoutes,
+  ...webhooksAgentGmailDraftUpdatedRoutes,
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,

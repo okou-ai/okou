@@ -574,12 +574,12 @@ class ChatComposerRootTest {
                 )
                 .chats
         }
-        // Finish the real HTTP warm and cache write before opening the unselected conversation.
+        compose.onNodeWithContentDescription("Back").performClick()
+        // Returning to the list restores the reads used by history warming.
         compose.waitUntil(10_000) {
             compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
         }
         assertEquals(0, app.fixture.chats.readRequests.get())
-        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Personal chat").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("No messages yet.").fetchSemanticsNodes().isNotEmpty()
@@ -871,11 +871,14 @@ class ChatComposerRootTest {
             compose.onNodeWithText("New chat").performClick()
             captureOwners()
             awaitConversation { editor?.uiState?.value?.journal != null }
+            // The provisional conversation can start a list read before its first send completes.
+            app.fixture.beforeListReturn = { containsCreatedChat ->
+                if (containsCreatedChat) oldList.await()
+            }
             compose.onNodeWithTag("message_input").performTextInput("An accepted first send")
             compose.onNodeWithContentDescription("Send").performClick()
             awaitConversation { app.fixture.inputs.size == 1 }
             val pending = checkNotNull(editor?.uiState?.value?.entry(ComposerTarget())?.pending)
-            app.fixture.beforeListReturn = { oldList.await() }
             app.sendGate.countDown()
             awaitConversation {
                 val state = editor?.uiState?.value

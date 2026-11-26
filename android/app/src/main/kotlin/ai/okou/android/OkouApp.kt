@@ -999,6 +999,7 @@ internal fun OkouApp(
         showWorkflows &&
             workflowRoute.tab == WorkflowTab.History &&
             workflowState?.history?.runs?.any { it.chatThreadId != null } == true
+    // An open conversation uses the live list projection for its title and chat actions.
     val needsChatList =
         needsWorkflowSourceChats ||
             (settings == null &&
@@ -1007,7 +1008,7 @@ internal fun OkouApp(
                 (showArtifacts ||
                     showList ||
                     (provisionalId != null && provisionalChat == null) ||
-                    (target is WorkspaceTarget.Chat && thread == null)))
+                    target is WorkspaceTarget.Chat))
     DisposableEffect(chats, needsChatList) {
         chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
@@ -1682,11 +1683,15 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!feedbackInOverlay && !showChatList && visibleConversationId == null) {
-                WorkspaceFeedbackHost(
-                    snackbar,
-                    Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
-                )
+            if (!showChatList && visibleConversationId == null) {
+                // The visible host can move into the model picker during the same notice.
+                WorkspaceFeedbackTimeout(snackbar)
+                if (!feedbackInOverlay)
+                    WorkspaceFeedbackHost(
+                        snackbar,
+                        Modifier.padding(bottom = if (settings != null) 8.dp else 16.dp),
+                        manageTimeout = false,
+                    )
             }
         },
         topBar = {

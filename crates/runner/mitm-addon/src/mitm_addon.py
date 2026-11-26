@@ -59,6 +59,7 @@ import data_router
 import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
+import gmail_draft_update
 import header_auth_response
 import http_local_responses
 import http_network_log
@@ -133,6 +134,7 @@ _FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS = "_firewall_auth_applied_in_requesthea
 _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
     metadata_keys.FIREWALL_BASE,
     metadata_keys.FIREWALL_API_ID,
+    metadata_keys.FIREWALL_SOURCE_ID,
     metadata_keys.FIREWALL_AUTH_CACHE_KEY,
     metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY,
     metadata_keys.FIREWALL_NAME,
@@ -2059,14 +2061,13 @@ def _handle_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
             original_url=original_url,
             firewall_action=firewall_action,
         )
-    _finish_response_handling(
+    return _finish_response_handling(
         flow,
         run_id=run_id,
         latency_ms=latency_ms,
         original_url=original_url,
         firewall_action=firewall_action,
     )
-    return None
 
 
 async def _finish_response_after_terminal_work(
@@ -2079,13 +2080,15 @@ async def _finish_response_after_terminal_work(
     firewall_action: str,
 ) -> None:
     await pending_work
-    _finish_response_handling(
+    notification = _finish_response_handling(
         flow,
         run_id=run_id,
         latency_ms=latency_ms,
         original_url=original_url,
         firewall_action=firewall_action,
     )
+    if notification is not None:
+        await notification
 
 
 def _finish_response_handling(
@@ -2095,8 +2098,7 @@ def _finish_response_handling(
     latency_ms: int,
     original_url: str,
     firewall_action: str,
-) -> None:
-
+) -> Awaitable[None] | None:
     request_size = http_network_log.request_size(flow)
     status_code = flow.response.status_code if flow.response else 0
 
@@ -2143,6 +2145,8 @@ def _finish_response_handling(
             status=flow.response.status_code,
             **url_projection.truncation_fields(),
         )
+
+    return gmail_draft_update.notify_if_updated(flow, run_id)
 
 
 def error(flow: http.HTTPFlow) -> Awaitable[None] | None:

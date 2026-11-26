@@ -87,6 +87,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
@@ -799,26 +800,36 @@ private fun UpdateAction(
     if (progress != null) {
         val fraction = downloadPercent?.let { it / 100f }
         val disabledColors = ButtonDefaults.buttonColors()
+        val waitingToInstall =
+            state.canInstall && installProgress == R.string.updates_waiting_to_install
+        val useDisabledColors = checking || waitingToInstall
         Box(
             controlModifier
                 .focusable()
                 .clip(shape)
                 .background(
-                    if (checking) disabledColors.disabledContainerColor else colors.surfaceVariant,
+                    if (useDisabledColors) disabledColors.disabledContainerColor
+                    else colors.surfaceVariant,
                 )
                 .semantics(
                     mergeDescendants = true,
                 ) {
-                    progressBarRangeInfo =
-                        if (fraction == null) ProgressBarRangeInfo.Indeterminate
-                        else ProgressBarRangeInfo(fraction, 0f..1f)
+                    if (waitingToInstall) {
+                        disabled()
+                    } else {
+                        progressBarRangeInfo =
+                            if (fraction == null) ProgressBarRangeInfo.Indeterminate
+                            else ProgressBarRangeInfo(fraction, 0f..1f)
+                    }
                 },
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 progress,
                 modifier = Modifier.padding(contentPadding),
-                color = if (checking) disabledColors.disabledContentColor else colors.onBackground,
+                color =
+                    if (useDisabledColors) disabledColors.disabledContentColor
+                    else colors.onBackground,
                 style = updateProgressStyle(),
                 textAlign = TextAlign.Center,
             )
