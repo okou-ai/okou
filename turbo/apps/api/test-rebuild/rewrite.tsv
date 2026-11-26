@@ -915,8 +915,8 @@ chat	src/signals/routes/__tests__/chat-threads-model-selection.test.ts	chat-thre
 chat	src/signals/routes/__tests__/chat-threads-model-selection.test.ts	chat-threads-model-selection-008	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads-model-selection.test.ts	chat-threads-model-selection-009	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads-model-selection.test.ts	chat-threads-model-selection-012	skipped		slow-setup: lower bound - the Given requires a paid member with a dispatched Run ("has a Run token with `chat-thread:write`"); the shared Run dispatch fixture (createRunExecutionCredentials: Pro entitlement, Runner group, dispatched chat Run with Okou and sandbox tokens, plus its teardown) has a row-duration floor of 213.5 ms over 12 idle runs (in-test floor 163.5 ms), so Given plus the first When/Then exceeds 200 ms; README round 14			a-run
-chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-001	planned		extension after sandbox reset		B07	d-other
-chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-003	planned		extension after sandbox reset		B07	d-other
+chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-001	rewritten	123.3	extension after sandbox reset	src/signals/routes/__tests__/chat-threads-mute.test.ts	B07	d-other
+chat	src/signals/routes/__tests__/chat-threads-mute.test.ts	chat-threads-mute-003	rewritten	78.5	extension after sandbox reset	src/signals/routes/__tests__/chat-threads-mute.test.ts	B07	d-other
 chat	src/signals/routes/__tests__/chat-threads-pin-order.test.ts	chat-threads-pin-order-001	planned					a-run
 chat	src/signals/routes/__tests__/chat-threads-pin-order.test.ts	chat-threads-pin-order-003	planned					d-other
 chat	src/signals/routes/__tests__/chat-threads-rename.test.ts	chat-threads-rename-001	planned					a-run
