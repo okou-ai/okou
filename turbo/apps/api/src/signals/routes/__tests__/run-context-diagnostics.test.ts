@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { HttpResponse } from "msw";
 import { expect, onTestFinished, test } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -15,13 +17,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function diagnosticFixture() {
+async function diagnosticFixture(registerRunner = true) {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   bdd.acceptStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  await api.configureRunnerGroup();
+  const group = await api.configureRunnerGroup({ registerRunner });
   const actor = bdd.user();
   await api.grantProEntitlement(actor);
   await api.ensurePersonalSubscriptionModel(actor);
@@ -80,8 +82,46 @@ async function diagnosticFixture() {
     return run;
   }
 
-  return { api, bdd, actor, snapshots, launch };
+  return { api, bdd, actor, group, snapshots, launch };
 }
+
+test("makes the Run context available while the Runner response is pending", async () => {
+  const f = await diagnosticFixture(false);
+  const received = createDeferredPromise<string>(context.signal);
+  const respond = createDeferredPromise<void>(context.signal);
+  await f.api.registerDirectRunner(f.group, {
+    reply: async (envelope) => {
+      const { runId } = envelope.executionContext;
+      received.resolve(runId);
+      await respond.promise;
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId,
+        disposition: "accepted",
+      });
+    },
+  });
+
+  const prompt = "Read diagnostics during Runner delivery";
+  await createChatFilesBddApi(context).requestSendEvent(
+    f.actor,
+    { prompt, clientEventId: randomUUID() },
+    [201],
+  );
+  const runId = await received.promise;
+  onTestFinished(async () => {
+    await f.api.requestCancelRun(f.actor, runId, [200]);
+  });
+  await expect
+    .poll(() => {
+      return f.api.requestRunContext(f.actor, runId, [200, 404]);
+    })
+    .toMatchObject({ status: 200, body: { prompt } })
+    .finally(() => {
+      respond.resolve();
+    });
+});
 
 test.each(["data router", "Preview"])(
   "masks API-only %s credentials in captured diagnostics",
