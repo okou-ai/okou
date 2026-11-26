@@ -228,7 +228,11 @@ internal class DefaultModelSettings(
         val value = mutable.value
         val options = value.options ?: return
         val choice = options.choices.firstOrNull { it.id == id }
-        if (value.selected?.id == id || id != null && choice?.canSelect != true) return
+        if (id == null) {
+            if (isAutoDefaultModel(value.selectedModel)) return
+        } else if (value.selected?.id == id || choice?.canSelect != true) {
+            return
+        }
         submit(id, fast = false, choice = choice)
     }
 
@@ -556,13 +560,13 @@ internal class DefaultModelSettings(
         val state = mutable.value
         val selectedModel = record.confirmed.selectedModel
         val label =
-            if (state.options != null) {
-                val model = state.options.resolve(selectedModel)
-                state.options.choices.firstOrNull { it.id == model }?.label
-            } else
-                state.record?.confirmedLabel?.takeIf {
-                    state.record.confirmed.selectedModel == selectedModel
-                }
+            state.options?.let { options ->
+                val model = options.resolve(selectedModel)
+                options.choices.firstOrNull { it.id == model }?.label
+            }
+                ?: state.record
+                    ?.takeIf { it.confirmed.selectedModel == selectedModel }
+                    ?.confirmedLabel
         val updated = record.copy(confirmedLabel = label)
         mutable.value = state.copy(record = updated, save = save)
         if (updated != state.record) store.save(identity, updated)

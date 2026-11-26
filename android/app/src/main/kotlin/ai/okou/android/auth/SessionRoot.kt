@@ -391,6 +391,7 @@ private fun WorkspaceSettingsContent(
                         ready?.settings?.defaultModel,
                         snackbar,
                         onFeedbackInOverlay,
+                        fallbackFocus = rowFocus.getValue(SettingsDestination.ModelAccounts),
                     )
                     SettingsRow(
                         stringResource(R.string.settings_model_accounts),

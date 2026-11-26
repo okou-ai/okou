@@ -336,6 +336,7 @@ internal fun SettingsTrigger(
     enabled: Boolean = true,
     visible: Boolean = true,
     fallbackFocus: FocusRequester? = null,
+    keepOpenWhenHidden: Boolean = false,
     content: @Composable (dismiss: () -> Unit) -> Unit,
     trigger: @Composable (Modifier, open: () -> Unit) -> Unit,
 ) {
@@ -343,6 +344,7 @@ internal fun SettingsTrigger(
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
     val focus = remember { FocusRequester() }
+    val showContent = open && enabled && (visible || keepOpenWhenHidden)
     // Resolve return focus before Compose detaches the hidden trigger.
     val restoreRelatedFocus = !visible && (focused || restoreFocus)
     if (visible) {
@@ -352,10 +354,10 @@ internal fun SettingsTrigger(
                 open = true
             }
         }
-        if (open && enabled) content { open = false }
     }
-    LaunchedEffect(open, enabled, visible) {
-        if (!visible) {
+    if (showContent) content { open = false }
+    LaunchedEffect(open, enabled, visible, showContent) {
+        if (!visible && !showContent) {
             open = false
             restoreFocus = false
             if (restoreRelatedFocus) fallbackFocus?.requestFocus()
