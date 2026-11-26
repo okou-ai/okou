@@ -35,7 +35,7 @@ import {
   RETIRED_PROACTIVE_DEFINITION_NAMES,
 } from "./proactive-workflow-definitions";
 import { calculateNextRun } from "./time-automation";
-import { officialScheduleOwnerHash } from "./official-workflow-owner-schedule";
+import { hourlySuggestionsCron } from "./official-workflow-owner-schedule";
 import {
   inactiveProactiveAutomationCondition,
   proactiveWorkflowOwnerEnabledSql,
@@ -44,10 +44,6 @@ import { proactiveNightlyCron } from "./proactive-nightly-schedule";
 import { builtInWorkflow, builtinCronBindings } from "./builtin-workflows";
 
 const log = logger("ProactiveWorkflows");
-
-function ownerMinute(owner: ProactiveWorkflowOwner): number {
-  return officialScheduleOwnerHash(owner) % 60;
-}
 
 function proactiveSchedule(
   owner: ProactiveWorkflowOwner,
@@ -65,7 +61,7 @@ function proactiveSchedule(
   const cron =
     kind === "learning"
       ? proactiveNightlyCron(owner)
-      : `${ownerMinute(owner)} * * * *`;
+      : hourlySuggestionsCron(owner);
   return { builtin, cron };
 }
 

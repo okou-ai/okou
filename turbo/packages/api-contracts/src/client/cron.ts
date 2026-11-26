@@ -13,6 +13,7 @@ import type {
   cronDrainEmailOutboxContract as OriginalCronDrainEmailOutboxContract,
   cronExecuteWorkflowAutomationsContract as OriginalCronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract as OriginalCronMonitorChatEventQueueContract,
+  cronProactiveContract as OriginalCronProactiveContract,
   cronProcessBackgroundJobsContract as OriginalCronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract as OriginalCronProcessUsageEventsContract,
   cronProjectChatEventSearchContract as OriginalCronProjectChatEventSearchContract,
@@ -173,6 +174,19 @@ export const cronMonitorChatEventQueueContract: ClientDescriptor<
       200: true,
       401: true,
       500: true,
+    },
+  },
+};
+
+export const cronProactiveContract: ClientDescriptor<
+  typeof OriginalCronProactiveContract
+> = {
+  compare: {
+    method: "GET",
+    path: "/api/cron/proactive",
+    statuses: {
+      200: true,
+      401: true,
     },
   },
 };

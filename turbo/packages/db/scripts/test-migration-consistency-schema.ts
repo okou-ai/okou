@@ -91,6 +91,7 @@ import { validatePermanentRegistryArchives } from "./test-registry-archives-perm
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
+import { validateProactiveSchedulePreparation } from "./test-proactive-schedule-preparation";
 import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validateCustomConnectorCloudflareStorage } from "./test-custom-connector-cloudflare-storage-permanent";
@@ -2902,6 +2903,10 @@ async function main(): Promise<void> {
       await migrationTimestamp(
         "1638_retire_official_workflow_installation_state",
       ),
+    );
+    await validateProactiveSchedulePreparation(
+      dbUrl1,
+      await migrationTimestamp("1646_prepare_proactive_schedules"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

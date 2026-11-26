@@ -28,3 +28,8 @@ export function morningBriefCronExpression(owner: OfficialScheduleOwner) {
   const minute = 30 + ((officialScheduleOwnerHash(owner) + 15) % 30);
   return `${minute} 6 * * *`;
 }
+
+/** Suggestions is sharded by owner in UTC, including owners without a timezone. */
+export function hourlySuggestionsCron(owner: OfficialScheduleOwner) {
+  return `${officialScheduleOwnerHash(owner) % 60} * * * *`;
+}

@@ -4,6 +4,7 @@ import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
 import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { proactiveSchedules } from "@okouai/db/schema/proactive-schedule";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -109,8 +110,19 @@ const deleteMemberInitialization$ = command(
         )
         .returning({ userId: orgMembersMetadata.userId }),
     );
+    const removedSchedules = db.$with("removed_proactive_schedules").as(
+      db
+        .delete(proactiveSchedules)
+        .where(
+          and(
+            eq(proactiveSchedules.orgId, args.orgId),
+            eq(proactiveSchedules.userId, args.userId),
+          ),
+        )
+        .returning({ task: proactiveSchedules.task }),
+    );
     await db
-      .with(removed)
+      .with(removed, removedSchedules)
       .update(workflowAutomations)
       .set({
         enabled: false,
