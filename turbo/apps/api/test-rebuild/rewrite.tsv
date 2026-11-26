@@ -203,36 +203,36 @@ artifacts	src/signals/routes/__tests__/artifact-downloads.test.ts	artifact-downl
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-001	revisit		revisit: artifact-library-002 fails the five-seed shuffled median (239 ms over 299/242/239/143/147 ms); dropping it would leave 001 alone with the cold path; evidence: artifact-library-001 73.8 ms (73/74/126); artifact-library-002 242.2 ms (299/242/239); draft /home/user/pilot-env/wip/r14/artifact-library.test.ts; resume: split 002		B07	d-other
 artifacts	src/signals/routes/__tests__/artifact-library.test.ts	artifact-library-002	revisit		revisit: artifact-library-002 fails the five-seed shuffled median (239 ms over 299/242/239/143/147 ms); dropping it would leave 001 alone with the cold path; evidence: artifact-library-001 73.8 ms (73/74/126); artifact-library-002 242.2 ms (299/242/239); draft /home/user/pilot-env/wip/r14/artifact-library.test.ts; resume: split 002		B07	d-other
 artifacts	src/signals/routes/__tests__/artifact-paywall.test.ts	artifact-paywall-001	rewritten	123.9		src/signals/routes/__tests__/artifact-paywall.test.ts	B03	
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-001	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-002	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-003	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-004	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-008	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-010	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-011	planned				B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-001	rewritten	75.2		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-002	rewritten	76.2		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-003	rewritten	78.4		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-004	rewritten	38.8		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-008	rewritten	45.9		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-010	rewritten	36.4		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-011	rewritten	50.7		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-012	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-013	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-014	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-015	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-016	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-017	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-018	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-019	planned				B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-016	rewritten	40.2		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-017	rewritten	74.0		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-018	rewritten	72.1		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-019	rewritten	63.9		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-020	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-021	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-022	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-025	planned					a-run
 artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-026	planned					a-run
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-027	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-028	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-034	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-036	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-037	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-047	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-050	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-055	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-056	planned				B12	d-other
-artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-057	planned				B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-027	rewritten	67.1		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-028	rewritten	56.6		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-034	skipped		private-state: the Given rewrites the stored R2 share policy object to an existing 24-character public token; no public API creates such a legacy policy, so the case needs a direct write to Okou-owned policy storage		B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-036	rewritten	49.9		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-037	rewritten	36.5		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-047	rewritten	53.4		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-050	rewritten	48.5		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-055	rewritten	114.7		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-056	rewritten	84.2		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
+artifacts	src/signals/routes/__tests__/artifact-shares.test.ts	artifact-shares-057	rewritten	69.6		src/signals/routes/__tests__/artifact-shares.test.ts	B12	d-other
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-001	rewritten	144.6	split n=3: 1/3=59.7; 2/3=144.6; 3/3=126.1	src/signals/routes/__tests__/artifact-sharing.test.ts	B04	
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-003	rewritten	78.1		src/signals/routes/__tests__/artifact-sharing.test.ts	B04	
 artifacts	src/signals/routes/__tests__/artifact-sharing.test.ts	artifact-sharing-004	rewritten	73.8		src/signals/routes/__tests__/artifact-sharing.test.ts	B04	
