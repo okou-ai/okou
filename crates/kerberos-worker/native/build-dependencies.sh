@@ -28,26 +28,42 @@ exec 9>"$entry.lock"
 flock 9
 mkdir -p "$entry"
 fetch() {
-  local url=$1 sha=$2 file=$3
+  local sha=$1 file=$2 url status=1
+  shift 2
   [[ ! -L "$file" && ! -L "$file.part" ]] || return 1
-  if [[ -f "$file" ]] && ! printf '%s  %s\n' "$sha" "$file" | sha256sum --check --status; then
+  if [[ -f "$file" ]]; then
+    if printf '%s  %s\n' "$sha" "$file" | sha256sum --check --status; then
+      return 0
+    fi
     echo "discarding corrupt pinned native archive: ${file##*/}" >&2
     rm -- "$file"
   fi
-  if [[ ! -f "$file" ]]; then
-    # The retry clock includes the first attempt; leave room for a full-timeout
-    # retry while keeping repeated downloads bounded.
-    curl --fail --silent --show-error --location --proto '=https' --max-time 180 \
-      --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 240 "$url" -o "$file.part"
-    printf '%s  %s\n' "$sha" "$file.part" | sha256sum --check --status
-    mv -- "$file.part" "$file"
-  fi
-  printf '%s  %s\n' "$sha" "$file" | sha256sum --check --status
+  # Try each host once. A stalled transfer should leave time for its alternate.
+  for url in "$@"; do
+    if curl --disable --fail --silent --show-error --location --proto '=https' \
+      --connect-timeout 20 --speed-limit 1 --speed-time 30 --max-time 180 "$url" -o "$file.part"; then
+      if ! printf '%s  %s\n' "$sha" "$file.part" | sha256sum --check --status; then
+        printf 'pinned native archive SHA-256 verification failed for %s from %s\n' "${url##*/}" "$url" >&2
+        rm -f -- "$file.part"
+        return 1
+      fi
+      mv -T -- "$file.part" "$file"
+      return 0
+    else
+      status=$?
+    fi
+    printf 'pinned native archive download failed for %s from %s (curl exit %s)\n' "${url##*/}" "$url" "$status" >&2
+    rm -f -- "$file.part"
+  done
+  return "$status"
 }
-# Use an upstream-listed mirror so cold builds finish within the download budget.
-# https://ziglang.org/download/community-mirrors.txt
-fetch "https://pkg.hexops.org/zig/zig-$host-linux-0.15.2.tar.xz" "$zig_sha" "$entry/zig.tar.xz"
-fetch https://kerberos.org/dist/krb5/1.22/krb5-1.22.2.tar.gz "$krb5_sha" "$entry/krb5.tar.gz"
+# Zig lists the alternate host at https://ziglang.org/download/community-mirrors.txt.
+fetch "$zig_sha" "$entry/zig.tar.xz" \
+  "https://ziglang.org/download/0.15.2/zig-$host-linux-0.15.2.tar.xz" \
+  "https://zig.squirl.dev/zig-$host-linux-0.15.2.tar.xz"
+fetch "$krb5_sha" "$entry/krb5.tar.gz" \
+  https://kerberos.org/dist/krb5/1.22/krb5-1.22.2.tar.gz \
+  https://distfiles.macports.org/kerberos5/krb5-1.22.2.tar.gz
 
 # Extract from the pinned archives each time, rather than trusting cached SDK
 # executables/source trees. Only the small generated link products are reused.
