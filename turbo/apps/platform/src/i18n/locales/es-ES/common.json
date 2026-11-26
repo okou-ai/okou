@@ -7562,7 +7562,7 @@
       "clearSearch": "Borrar búsqueda",
       "createdBy": "Creado por",
       "createInChat": "Crear en el chat",
-      "description": "Un procedimiento operativo reutilizable para una tarea. Ejecútalo, edítalo o automatízalo.",
+      "description": "Un flujo de trabajo es un procedimiento reutilizable para una tarea recurrente. Escribe los pasos una vez y luego ejecútalo, edítalo o automatízalo cuando lo necesites. En otros productos pueden llamarse skills.",
       "empty": {
         "all": "Crea un flujo de trabajo desde el chat o guarda uno a partir de una ejecución útil.",
         "automated": "Si añades una automatización a un flujo de trabajo, aparece aquí.",

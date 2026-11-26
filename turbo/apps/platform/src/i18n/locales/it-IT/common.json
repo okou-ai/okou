@@ -7562,7 +7562,7 @@
       "clearSearch": "Cancella ricerca",
       "createdBy": "Creato da",
       "createInChat": "Crea nella chat",
-      "description": "Una SOP riutilizzabile per un'attività. Eseguila, modificala o automatizzala.",
+      "description": "Un flusso di lavoro è una SOP riutilizzabile per un'attività ricorrente. Scrivi i passaggi una volta, poi eseguilo, modificalo o automatizzalo quando serve. In altri prodotti potrebbe chiamarsi skill.",
       "empty": {
         "all": "Crea un flusso di lavoro dalla chat o salvane uno da una esecuzione utile.",
         "automated": "Aggiungi un'automazione a un flusso di lavoro e verrà visualizzata qui.",

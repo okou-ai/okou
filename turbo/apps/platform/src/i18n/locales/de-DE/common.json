@@ -7480,7 +7480,7 @@
       "clearSearch": "Suche löschen",
       "createdBy": "Erstellt von",
       "createInChat": "Im Chat erstellen",
-      "description": "Eine wiederverwendbare SOP für eine Aufgabe. Ausführen, bearbeiten oder automatisieren.",
+      "description": "Ein Workflow ist eine wiederverwendbare SOP für eine wiederkehrende Aufgabe. Schreiben Sie die Schritte einmal auf und führen Sie ihn dann jederzeit aus, bearbeiten oder automatisieren Sie ihn. In anderen Produkten heißen sie möglicherweise Skills.",
       "empty": {
         "all": "Erstellen Sie einen Workflow aus dem Chat oder speichern Sie einen aus einer nützlichen Ausführung.",
         "automated": "Wenn Sie einem Workflow eine Automatisierung hinzufügen, wird sie hier angezeigt.",
