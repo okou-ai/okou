@@ -1670,19 +1670,19 @@ artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-ac
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-018	rewritten	56.9		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot	
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-027	rewritten	107.7		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot	
 artifacts	src/signals/routes/__tests__/hosted-site-access.test.ts	hosted-site-access-028	rewritten	46.8		src/signals/routes/__tests__/hosted-site-access.test.ts	pilot	
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-001	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-002	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-003	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-004	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-005	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-006	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-009	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-010	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-011	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-016	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-017	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-018	planned					d-other
-artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-019	planned					d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-001	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-002	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-003	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-004	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-005	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-006	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-009	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-010	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-011	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-016	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-017	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-018	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
+artifacts	src/signals/routes/__tests__/hosted-site-domains.test.ts	hosted-site-domains-019	planned		affected by #51105 (custom domain onboarding and activation): rewrite against the current behaviour			d-other
 artifacts	src/signals/routes/__tests__/hosted-site-scope.test.ts	hosted-site-scope-001	skipped		slow-setup: Given+first When/Then 655 ms and 649 ms (Given needs two dispatched chat Runs with issued OKOU tokens via createRunExecutionCredentials: first Run launch 421/417 ms incl. cold start, second fresh Run 182/185 ms warm; owner session prepare 35/26 ms; first Run prepare 17/21 ms, returned the same site at version 2)		B05	
 artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-001	rewritten	111.9	split n=2: 1/2=91.0; 2/2=111.9	src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04	
 artifacts	src/signals/routes/__tests__/hosted-site-sharing.test.ts	hosted-site-sharing-002	rewritten	96.8		src/signals/routes/__tests__/hosted-site-sharing.test.ts	B04	
