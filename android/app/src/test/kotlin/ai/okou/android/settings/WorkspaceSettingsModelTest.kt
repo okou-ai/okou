@@ -23,7 +23,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -249,19 +248,22 @@ class WorkspaceSettingsModelTest {
             ChatListApiFixture().use { api ->
                 val fixture = SettingsApiFixture(api)
                 val model = settings(store, api, admin = true)
-                val notices = mutableListOf<SettingsNotice>()
-                backgroundScope.launch { model.notices.collect { notices.add(it) } }
                 model.visible(SettingsDestination.CreditBalance)
                 val confirmed =
                     model.uiState.first {
                         it.usagePack.value != null && it.workspaceCredits.value != null
                     }
 
-                repeat(2) { refresh ->
+                var previousFailure: SettingsRefreshFailure? = null
+                repeat(2) {
                     model.visible(null)
+                    assertNull(model.uiState.value.creditRefreshFailure)
                     fixture.usagePackStatus = 400
                     fixture.billingStatus = 400
                     model.visible(SettingsDestination.CreditBalance)
+                    val first =
+                        model.uiState.first { it.creditRefreshFailure != null }
+                            .creditRefreshFailure
                     val failed =
                         model.uiState.first {
                             it.usagePack.unavailable && it.workspaceCredits.unavailable
@@ -269,10 +271,9 @@ class WorkspaceSettingsModelTest {
                     runCurrent()
                     assertEquals(confirmed.usagePack.value, failed.usagePack.value)
                     assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                    assertEquals(
-                        List(refresh + 1) { SettingsNotice.CreditBalanceRefreshFailed },
-                        notices,
-                    )
+                    assertTrue(first !== previousFailure)
+                    assertEquals(first, failed.creditRefreshFailure)
+                    previousFailure = first
                     // The next visible refresh starts with successful, confirmed reads.
                     model.visible(null)
                     fixture.usagePackStatus = 200
@@ -281,6 +282,7 @@ class WorkspaceSettingsModelTest {
                     model.uiState.first {
                         !it.usagePack.unavailable && !it.workspaceCredits.unavailable
                     }
+                    assertNull(model.uiState.value.creditRefreshFailure)
                 }
             }
         } finally {
@@ -656,7 +658,9 @@ class WorkspaceSettingsModelTest {
                 assertEquals(4, roleReads)
                 assertTrue(failed.showWorkspaceCredits)
                 assertEquals(confirmed.workspaceCredits.value, failed.workspaceCredits.value)
-                assertEquals(SettingsNotice.CreditBalanceRefreshFailed, model.notices.first())
+                assertTrue(
+                    model.uiState.first { it.creditRefreshFailure != null }.showWorkspaceCredits,
+                )
                 assertEquals(1, fixture.billingReads.get())
 
                 unavailable = false
