@@ -78,4 +78,26 @@
     <string name="artifact_share_preparing">Préparation du partage…</string>
     <string name="artifact_share_denied">Ce fichier ne peut pas être partagé</string>
     <string name="artifact_share_failed">Impossible de préparer le partage du fichier</string>
+    <string name="artifact_more_actions">Autres actions</string>
+    <string name="artifact_copy_link">Copier le lien</string>
+    <string name="artifact_share_link">Partager le lien</string>
+    <string name="artifact_manage_access">Gérer les accès</string>
+    <string name="artifact_link_current_access">Accès actuel · %1$s</string>
+    <string name="artifact_link_private">Moi uniquement</string>
+    <string name="artifact_link_workspace">Membres de l’espace de travail</string>
+    <string name="artifact_link_public">Toute personne disposant du lien</string>
+    <string name="artifact_link_copied">Lien copié</string>
+    <string name="artifact_private_link_copied">Lien copié. Vous seul pouvez l’ouvrir.</string>
+    <string name="artifact_private_link_hint">Vous seul pouvez ouvrir ce lien.</string>
+    <string name="artifact_link_version">%1$s · Version %2$d</string>
+    <string name="artifact_link_loading">Vérification des accès…</string>
+    <string name="artifact_link_unavailable">L’accès au lien est indisponible</string>
+    <string name="artifact_link_load_failed">Impossible de vérifier l’accès au lien</string>
+    <string name="artifact_link_save_failed">Impossible d’enregistrer les accès. Réessayez.</string>
+    <string name="artifact_link_verifying">Vérification de l’accès actuel…</string>
+    <string name="artifact_link_verify_failed">Impossible de confirmer l’enregistrement. Vérifiez le résultat avant de réessayer.</string>
+    <string name="artifact_link_handoff_failed">Impossible d’ouvrir le partage Android</string>
+    <string name="artifact_link_who_can_view">Qui peut consulter le lien</string>
+    <string name="artifact_workspace_link_hint">Les membres de %1$s peuvent ouvrir ce lien.</string>
+    <string name="artifact_public_link_hint">Toute personne disposant du lien peut l’ouvrir.</string>
 </resources>

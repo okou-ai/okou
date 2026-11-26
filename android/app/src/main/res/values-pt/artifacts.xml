@@ -78,4 +78,26 @@
     <string name="artifact_share_preparing">Preparando compartilhamento…</string>
     <string name="artifact_share_denied">Não é possível compartilhar este arquivo</string>
     <string name="artifact_share_failed">Não foi possível preparar o arquivo para compartilhar</string>
+    <string name="artifact_more_actions">Mais ações</string>
+    <string name="artifact_copy_link">Copiar link</string>
+    <string name="artifact_share_link">Compartilhar link</string>
+    <string name="artifact_manage_access">Gerenciar acesso</string>
+    <string name="artifact_link_current_access">Acesso atual · %1$s</string>
+    <string name="artifact_link_private">Somente eu</string>
+    <string name="artifact_link_workspace">Membros do espaço de trabalho</string>
+    <string name="artifact_link_public">Qualquer pessoa com o link</string>
+    <string name="artifact_link_copied">Link copiado</string>
+    <string name="artifact_private_link_copied">Link copiado. Só você pode abri-lo.</string>
+    <string name="artifact_private_link_hint">Só você pode abrir este link.</string>
+    <string name="artifact_link_version">%1$s · Versão %2$d</string>
+    <string name="artifact_link_loading">Verificando acesso…</string>
+    <string name="artifact_link_unavailable">O acesso ao link está indisponível</string>
+    <string name="artifact_link_load_failed">Não foi possível verificar o acesso ao link</string>
+    <string name="artifact_link_save_failed">Não foi possível salvar o acesso. Tente novamente.</string>
+    <string name="artifact_link_verifying">Verificando o acesso atual…</string>
+    <string name="artifact_link_verify_failed">Não foi possível confirmar o salvamento. Verifique o resultado antes de salvar novamente.</string>
+    <string name="artifact_link_handoff_failed">Não foi possível abrir o painel de compartilhamento do Android</string>
+    <string name="artifact_link_who_can_view">Quem pode visualizar</string>
+    <string name="artifact_workspace_link_hint">Os membros de %1$s podem abrir este link.</string>
+    <string name="artifact_public_link_hint">Qualquer pessoa com este link pode abri-lo.</string>
 </resources>

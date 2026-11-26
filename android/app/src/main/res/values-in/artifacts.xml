@@ -78,4 +78,26 @@
     <string name="artifact_share_preparing">Menyiapkan untuk dibagikan…</string>
     <string name="artifact_share_denied">File ini tidak dapat dibagikan</string>
     <string name="artifact_share_failed">Gagal menyiapkan file untuk dibagikan</string>
+    <string name="artifact_more_actions">Tindakan lainnya</string>
+    <string name="artifact_copy_link">Salin tautan</string>
+    <string name="artifact_share_link">Bagikan tautan</string>
+    <string name="artifact_manage_access">Kelola akses</string>
+    <string name="artifact_link_current_access">Akses saat ini · %1$s</string>
+    <string name="artifact_link_private">Hanya saya</string>
+    <string name="artifact_link_workspace">Anggota ruang kerja</string>
+    <string name="artifact_link_public">Siapa pun yang memiliki tautan</string>
+    <string name="artifact_link_copied">Tautan disalin</string>
+    <string name="artifact_private_link_copied">Tautan disalin. Hanya Anda yang dapat membukanya.</string>
+    <string name="artifact_private_link_hint">Hanya Anda yang dapat membuka tautan ini.</string>
+    <string name="artifact_link_version">%1$s · Versi %2$d</string>
+    <string name="artifact_link_loading">Memeriksa akses…</string>
+    <string name="artifact_link_unavailable">Akses tautan tidak tersedia</string>
+    <string name="artifact_link_load_failed">Tidak dapat memeriksa akses tautan</string>
+    <string name="artifact_link_save_failed">Tidak dapat menyimpan akses. Coba lagi.</string>
+    <string name="artifact_link_verifying">Memeriksa akses saat ini…</string>
+    <string name="artifact_link_verify_failed">Penyimpanan tidak dapat dikonfirmasi. Periksa hasilnya sebelum menyimpan lagi.</string>
+    <string name="artifact_link_handoff_failed">Tidak dapat membuka panel berbagi Android</string>
+    <string name="artifact_link_who_can_view">Siapa yang dapat melihat</string>
+    <string name="artifact_workspace_link_hint">Anggota %1$s dapat membuka tautan ini.</string>
+    <string name="artifact_public_link_hint">Siapa pun yang memiliki tautan ini dapat membukanya.</string>
 </resources>

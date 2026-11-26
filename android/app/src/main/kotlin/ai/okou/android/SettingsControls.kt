@@ -43,12 +43,15 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.LocalRippleThemeConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.RippleThemeConfiguration
 import androidx.compose.material3.SheetValue
@@ -523,6 +526,7 @@ internal fun SettingsSheet(
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
     fullScreenInShortWindow: Boolean = false,
+    showBack: Boolean = false,
     confirmDismiss: (() -> Boolean)? = null,
     snackbar: SnackbarHostState? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -547,22 +551,40 @@ internal fun SettingsSheet(
                 modifier
                     .fillMaxWidth()
                     .padding(settingsPanelContentPadding(compactHeight))
-                    .padding(top = if (centered) 16.dp else 0.dp)
+                    .padding(
+                        top = if (centered && !(compactHeight && showBack)) 16.dp else 0.dp,
+                    )
                     .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
             ) {
                 Box(Modifier.fillMaxWidth()) {
                     val compactTitle = compactHeight && fullScreenInShortWindow
-                    Text(
-                        title,
-                        Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
-                            .semantics { heading() },
-                        style =
-                            MaterialTheme.typography.titleLarge.copy(
-                                fontSize = if (compactTitle) 16.sp else 22.sp,
-                                lineHeight = if (compactTitle) 24.sp else 28.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                    )
+                    val titleStyle =
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    if (showBack) {
+                        Row(
+                            Modifier.heightIn(min = 64.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onDismiss, Modifier.size(48.dp), enabled = dismissible) {
+                                Icon(
+                                    painterResource(R.drawable.ic_arrow_back),
+                                    stringResource(R.string.back),
+                                )
+                            }
+                            Text(title, Modifier.semantics { heading() }, style = titleStyle)
+                        }
+                    } else {
+                        Text(
+                            title,
+                            Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
+                                .semantics { heading() },
+                            style = titleStyle,
+                        )
+                    }
                     if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
                 }
                 val body = Modifier.fillMaxWidth()
@@ -886,6 +908,62 @@ internal fun SettingsChoicePanel(
                 if (it.isFocused) focusedKey = key
             }
         }
+    }
+}
+
+@Composable
+internal fun SettingsRadioRow(
+    title: String,
+    selected: Boolean,
+    enabled: Boolean,
+    supportingText: String?,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val radioColor = MaterialTheme.colorScheme.primary
+    val disabledColor = colors.onSurface.copy(alpha = 0.38f)
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
+            .clip(shape)
+            .updateFocusOutline(shape, foreground)
+            .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = if (enabled) foreground else foreground.copy(alpha = 0.38f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            supportingText?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
+                )
+            }
+        }
+        RadioButton(
+            selected,
+            onClick = null,
+            enabled = enabled,
+            colors =
+                RadioButtonDefaults.colors(
+                    selectedColor = radioColor,
+                    unselectedColor = colors.onSurfaceVariant,
+                    disabledSelectedColor = disabledColor,
+                    disabledUnselectedColor = disabledColor,
+                ),
+        )
     }
 }
 

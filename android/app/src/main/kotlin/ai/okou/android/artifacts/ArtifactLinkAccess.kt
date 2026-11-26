@@ -1,0 +1,313 @@
+package ai.okou.android.artifacts
+
+import ai.okou.android.api.ApiClient
+import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ArtifactShareStatus
+import ai.okou.android.api.generated.ArtifactShareStatusSelectedTargetVariant1
+import ai.okou.android.api.generated.ArtifactShareStatusSelectedTargetVariant2
+import ai.okou.android.api.generated.ArtifactShareTargetVariant1
+import ai.okou.android.api.generated.ArtifactShareTargetVariant1Kind
+import ai.okou.android.api.generated.ArtifactShareTargetVariant2
+import ai.okou.android.api.generated.ArtifactShareTargetVariant2Kind
+import ai.okou.android.api.generated.ArtifactShareUpdate
+import ai.okou.android.api.generated.ArtifactShareUpdateAudience
+import ai.okou.android.api.generated.ArtifactShareUpdateTargetVariant1
+import ai.okou.android.api.generated.ArtifactShareUpdateTargetVariant1Kind
+import ai.okou.android.api.generated.ArtifactSiteVisibility
+import ai.okou.android.api.generated.ArtifactSiteVisibilityUpdate
+import ai.okou.android.api.generated.ArtifactSiteVisibilityUpdateVisibility
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import okhttp3.HttpUrl
+
+internal sealed interface ArtifactLinkSource {
+    data class File(val id: String) : ArtifactLinkSource
+
+    data class LegacyDeployment(val id: String) : ArtifactLinkSource
+
+    data class Website(val address: HttpUrl, val siteId: String? = null, val version: Int? = null) :
+        ArtifactLinkSource
+}
+
+internal enum class ArtifactAudience {
+    PRIVATE,
+    ORGANIZATION,
+    PUBLIC,
+}
+
+internal data class ArtifactLink(
+    val address: HttpUrl,
+    val audience: ArtifactAudience,
+    val organization: String? = null,
+    val version: Int? = null,
+    val canManage: Boolean = false,
+    val siteId: String? = null,
+    val revision: String? = null,
+)
+
+internal class ArtifactLinkAccess(private val api: ApiClient) {
+    // The catalog and chat preview can both open the same link. A fresh read in
+    // either surface waits for a write already sent by the other surface.
+    private val writes = Mutex()
+
+    suspend fun read(source: ArtifactLinkSource): ArtifactLink = writes.withLock {
+        when (source) {
+            is ArtifactLinkSource.File ->
+                api.read {
+                        artifactShareStatus(
+                            it,
+                            ArtifactShareTargetVariant1(
+                                ArtifactShareTargetVariant1Kind.FILE,
+                                source.id,
+                            ),
+                        )
+                    }
+                    .fileLink(source)
+            is ArtifactLinkSource.LegacyDeployment -> legacyDeploymentLink(source.id)
+            is ArtifactLinkSource.Website -> websiteLink(source)
+        }
+    }
+
+    suspend fun update(
+        source: ArtifactLinkSource,
+        confirmed: ArtifactLink,
+        audience: ArtifactAudience,
+    ): ArtifactLink = writes.withLock {
+        when (source) {
+            is ArtifactLinkSource.File ->
+                api.write {
+                        updateArtifactShare(
+                            it,
+                            ArtifactShareUpdate(
+                                ArtifactShareUpdateTargetVariant1(
+                                    ArtifactShareUpdateTargetVariant1Kind.FILE,
+                                    source.id,
+                                ),
+                                ArtifactShareUpdateAudience.valueOf(audience.name),
+                            ),
+                        )
+                    }
+                    .fileLink(source)
+            is ArtifactLinkSource.Website -> {
+                val siteId = checkNotNull(confirmed.siteId)
+                val status = api.write {
+                    updateArtifactSiteVisibility(
+                        it,
+                        siteId,
+                        ArtifactSiteVisibilityUpdate(
+                            ArtifactSiteVisibilityUpdateVisibility.valueOf(audience.name),
+                            confirmed.revision,
+                        ),
+                    )
+                }
+                status.link(siteId, confirmed.address, confirmed.version, confirmed.organization)
+            }
+            is ArtifactLinkSource.LegacyDeployment -> error("Legacy deployments are read-only")
+        }.also {
+            if (it.audience != audience) throw ApiFailure.IncompatibleResponse()
+        }
+    }
+
+    private suspend fun websiteLink(source: ArtifactLinkSource.Website): ArtifactLink {
+        val host = source.address.host
+        val label = host.substringBefore('.')
+        val deployment = legacyDeploymentHost.matchEntire(label)?.groupValues?.get(1)
+        val site =
+            try {
+                api.read { artifactSiteUrl(it, label, host) }
+            } catch (error: ApiFailure.Http) {
+                if (error.status != 404) throw error
+                if (deployment != null && source.siteId != null) {
+                    return legacyDeploymentLink(deployment)
+                }
+                if (source.siteId != null) throw error
+                // A recipient can share the preview URL only when the server
+                // confirmed the same public site address without an expiry.
+                val preview = api.artifactSitePreview(label, host)
+                if (preview.expiresAt != null || artifactHttpsUrl(preview.url) != source.address)
+                    throw error
+                return ArtifactLink(source.address, ArtifactAudience.PUBLIC)
+            }
+        if (source.siteId != null && site.siteId != source.siteId)
+            throw ApiFailure.IncompatibleResponse()
+        // An immutable deployment stays selected even when the site alias
+        // points at a newer publication.
+        val address =
+            if (deployment != null) source.address
+            else
+                artifactHttpsUrl(site.effectiveUrl ?: site.url)
+                    ?: throw ApiFailure.IncompatibleResponse()
+        if (host.endsWith(".sites.vm7.io") || host.endsWith(".sites.vm0.io")) {
+            // The owner lookup verifies that this is a published legacy site.
+            return ArtifactLink(address, ArtifactAudience.PUBLIC, version = source.version)
+        }
+        val status = api.read { artifactSiteVisibility(it, site.siteId) }
+        return status.link(site.siteId, address, source.version, api.organization().name)
+    }
+
+    private suspend fun legacyDeploymentLink(id: String): ArtifactLink {
+        val status = api.read {
+            artifactShareStatus(
+                it,
+                ArtifactShareTargetVariant2(ArtifactShareTargetVariant2Kind.HTML, id),
+            )
+        }
+        val matches =
+            (status.selectedTarget as? ArtifactShareStatusSelectedTargetVariant2)?.id == id
+        return status.link(matches, status.candidateVersion?.toInt(), canManage = false)
+    }
+}
+
+private val legacyDeploymentHost =
+    Regex("dpl-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})")
+
+private fun ArtifactShareStatus.fileLink(source: ArtifactLinkSource.File): ArtifactLink {
+    val matches = (selectedTarget as? ArtifactShareStatusSelectedTargetVariant1)?.id == source.id
+    return link(matches, version = null, canManage = true)
+}
+
+private fun ArtifactShareStatus.link(
+    selectedTargetMatches: Boolean,
+    version: Int?,
+    canManage: Boolean,
+): ArtifactLink {
+    val confirmed =
+        if (selectedTargetMatches) ArtifactAudience.valueOf(audience.name)
+        else ArtifactAudience.PRIVATE
+    val address =
+        (if (confirmed == ArtifactAudience.PRIVATE) ownerUrl else url)?.let(::artifactHttpsUrl)
+            ?: throw ApiFailure.IncompatibleResponse()
+    return ArtifactLink(address, confirmed, organization.name, version, canManage)
+}
+
+private fun ArtifactSiteVisibility.link(
+    expectedSiteId: String,
+    address: HttpUrl,
+    version: Int?,
+    workspace: String?,
+): ArtifactLink {
+    if (siteId != expectedSiteId) throw ApiFailure.IncompatibleResponse()
+    return ArtifactLink(
+        address,
+        ArtifactAudience.valueOf(visibility.name),
+        workspace,
+        version,
+        canManage = true,
+        siteId = siteId,
+        revision = revision,
+    )
+}
+
+internal enum class ArtifactLinkPhase {
+    Idle,
+    Loading,
+    Ready,
+    Saving,
+    Verifying,
+    Unavailable,
+    ReadFailed,
+    SaveFailed,
+    VerificationFailed,
+}
+
+internal data class ArtifactLinkState(
+    val phase: ArtifactLinkPhase = ArtifactLinkPhase.Idle,
+    val confirmed: ArtifactLink? = null,
+    val draft: ArtifactAudience? = null,
+) {
+    val busy: Boolean
+        get() = phase == ArtifactLinkPhase.Saving || phase == ArtifactLinkPhase.Verifying
+
+    val usable: ArtifactLink?
+        get() = confirmed.takeIf {
+            phase == ArtifactLinkPhase.Ready || phase == ArtifactLinkPhase.SaveFailed
+        }
+
+    val canEdit: Boolean
+        get() = usable?.canManage == true
+
+    val canSave: Boolean
+        get() = canEdit && draft != null && draft != confirmed?.audience
+}
+
+internal class ArtifactLinkEditor(
+    private val source: ArtifactLinkSource,
+    private val access: ArtifactLinkAccess,
+    private val scope: CoroutineScope,
+    private val onSessionFailure: (Exception) -> Unit,
+) {
+    private val mutable = MutableStateFlow(ArtifactLinkState())
+    val state = mutable.asStateFlow()
+
+    fun refresh() {
+        val current = mutable.value
+        if (current.busy || current.phase == ArtifactLinkPhase.Loading) return
+        val verify = current.phase == ArtifactLinkPhase.VerificationFailed
+        read(if (verify) current else ArtifactLinkState(), verify)
+    }
+
+    fun select(audience: ArtifactAudience) {
+        val current = mutable.value
+        if (current.canEdit) mutable.value = current.copy(draft = audience)
+    }
+
+    fun save() {
+        val current = mutable.value
+        val confirmed = current.usable ?: return
+        val draft = current.draft ?: return
+        if (!current.canSave) return
+        mutable.value = current.copy(phase = ArtifactLinkPhase.Saving)
+        scope.launch {
+            try {
+                val saved = access.update(source, confirmed, draft)
+                mutable.value = ArtifactLinkState(ArtifactLinkPhase.Ready, saved, saved.audience)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                onSessionFailure(error)
+                val status = (error as? ApiFailure.Http)?.status
+                if (status == 400 || status == 402 || status == 429) {
+                    mutable.value = current.copy(phase = ArtifactLinkPhase.SaveFailed)
+                } else {
+                    // The response might have been lost or another editor may
+                    // have changed the policy. Never replay the write here.
+                    read(current, verify = true)
+                }
+            }
+        }
+    }
+
+    private fun read(previous: ArtifactLinkState, verify: Boolean) {
+        mutable.value =
+            previous.copy(
+                phase = if (verify) ArtifactLinkPhase.Verifying else ArtifactLinkPhase.Loading,
+            )
+        scope.launch {
+            try {
+                val link = retryArtifactOperation { access.read(source) }
+                val draft = previous.draft.takeIf { verify } ?: link.audience
+                val phase =
+                    if (verify && draft != link.audience) ArtifactLinkPhase.SaveFailed
+                    else ArtifactLinkPhase.Ready
+                mutable.value = ArtifactLinkState(phase, link, draft)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                onSessionFailure(error)
+                val status = (error as? ApiFailure.Http)?.status
+                mutable.value =
+                    when {
+                        status == 403 || status == 404 || status == 410 ->
+                            previous.copy(phase = ArtifactLinkPhase.Unavailable, confirmed = null)
+                        verify -> previous.copy(phase = ArtifactLinkPhase.VerificationFailed)
+                        else -> ArtifactLinkState(ArtifactLinkPhase.ReadFailed)
+                    }
+            }
+        }
+    }
+}

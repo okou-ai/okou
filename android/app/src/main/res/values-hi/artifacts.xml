@@ -78,4 +78,26 @@
     <string name="artifact_share_preparing">शेयर करने की तैयारी हो रही है…</string>
     <string name="artifact_share_denied">यह फ़ाइल शेयर नहीं की जा सकती</string>
     <string name="artifact_share_failed">फ़ाइल शेयर करने के लिए तैयार नहीं हो सकी</string>
+    <string name="artifact_more_actions">और कार्रवाइयाँ</string>
+    <string name="artifact_copy_link">लिंक कॉपी करें</string>
+    <string name="artifact_share_link">लिंक शेयर करें</string>
+    <string name="artifact_manage_access">ऐक्सेस मैनेज करें</string>
+    <string name="artifact_link_current_access">मौजूदा ऐक्सेस · %1$s</string>
+    <string name="artifact_link_private">सिर्फ़ मैं</string>
+    <string name="artifact_link_workspace">वर्कस्पेस के सदस्य</string>
+    <string name="artifact_link_public">लिंक वाला कोई भी व्यक्ति</string>
+    <string name="artifact_link_copied">लिंक कॉपी हो गया</string>
+    <string name="artifact_private_link_copied">लिंक कॉपी हो गया। इसे सिर्फ़ आप खोल सकते हैं।</string>
+    <string name="artifact_private_link_hint">सिर्फ़ आप यह लिंक खोल सकते हैं।</string>
+    <string name="artifact_link_version">%1$s · वर्शन %2$d</string>
+    <string name="artifact_link_loading">ऐक्सेस की जाँच हो रही है…</string>
+    <string name="artifact_link_unavailable">लिंक का ऐक्सेस उपलब्ध नहीं है</string>
+    <string name="artifact_link_load_failed">लिंक के ऐक्सेस की जाँच नहीं हो सकी</string>
+    <string name="artifact_link_save_failed">ऐक्सेस सेव नहीं हो सका। फिर से कोशिश करें।</string>
+    <string name="artifact_link_verifying">मौजूदा ऐक्सेस की जाँच हो रही है…</string>
+    <string name="artifact_link_verify_failed">सेव करने की पुष्टि नहीं हो सकी। फिर से सेव करने से पहले नतीजा देखें।</string>
+    <string name="artifact_link_handoff_failed">Android शेयर पैनल नहीं खुल सका</string>
+    <string name="artifact_link_who_can_view">कौन देख सकता है</string>
+    <string name="artifact_workspace_link_hint">%1$s के सदस्य यह लिंक खोल सकते हैं।</string>
+    <string name="artifact_public_link_hint">जिसके पास यह लिंक है, वह इसे खोल सकता है।</string>
 </resources>

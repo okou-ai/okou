@@ -78,4 +78,26 @@
     <string name="artifact_share_preparing">共有の準備中…</string>
     <string name="artifact_share_denied">このファイルを共有できません</string>
     <string name="artifact_share_failed">共有用にファイルを準備できませんでした</string>
+    <string name="artifact_more_actions">その他の操作</string>
+    <string name="artifact_copy_link">リンクをコピー</string>
+    <string name="artifact_share_link">リンクを共有</string>
+    <string name="artifact_manage_access">アクセスを管理</string>
+    <string name="artifact_link_current_access">現在の公開範囲 · %1$s</string>
+    <string name="artifact_link_private">自分のみ</string>
+    <string name="artifact_link_workspace">ワークスペースのメンバー</string>
+    <string name="artifact_link_public">リンクを知っている全員</string>
+    <string name="artifact_link_copied">リンクをコピーしました</string>
+    <string name="artifact_private_link_copied">リンクをコピーしました。開けるのは自分だけです。</string>
+    <string name="artifact_private_link_hint">このリンクを開けるのは自分だけです。</string>
+    <string name="artifact_link_version">%1$s · バージョン %2$d</string>
+    <string name="artifact_link_loading">アクセス権を確認しています…</string>
+    <string name="artifact_link_unavailable">リンクのアクセス権を利用できません</string>
+    <string name="artifact_link_load_failed">リンクのアクセス権を確認できませんでした</string>
+    <string name="artifact_link_save_failed">アクセス権を保存できませんでした。もう一度お試しください。</string>
+    <string name="artifact_link_verifying">現在のアクセス権を確認しています…</string>
+    <string name="artifact_link_verify_failed">保存結果を確認できませんでした。再度保存する前に結果を確認してください。</string>
+    <string name="artifact_link_handoff_failed">Android の共有パネルを開けませんでした</string>
+    <string name="artifact_link_who_can_view">閲覧できるユーザー</string>
+    <string name="artifact_workspace_link_hint">%1$s のメンバーはこのリンクを開けます。</string>
+    <string name="artifact_public_link_hint">リンクを知っていれば誰でも開けます。</string>
 </resources>
